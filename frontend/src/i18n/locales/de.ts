@@ -730,6 +730,7 @@ export default {
       printing: 'Druckt',
       queued: 'In Warteschlange',
       totalTime: 'Gesamte Wartezeit',
+      totalWeight: 'Gesamtgewicht der Warteschlange',
       history: 'Verlauf',
     },
     // Filters
