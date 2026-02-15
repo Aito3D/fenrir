@@ -205,7 +205,7 @@ export interface PrinterStatus {
   hms_errors: HMSError[];
   ams: AMSUnit[];
   ams_exists: boolean;
-  vt_tray: AMSTray | null;  // Virtual tray / external spool
+  vt_tray: AMSTray[];  // Virtual tray / external spool(s)
   sdcard: boolean;  // SD card inserted
   store_to_sdcard: boolean;  // Store sent files on SD card
   timelapse: boolean;  // Timelapse recording active
@@ -250,6 +250,7 @@ export interface PrinterStatus {
   big_fan1_speed: number | null;     // Auxiliary fan
   big_fan2_speed: number | null;     // Chamber/exhaust fan
   heatbreak_fan_speed: number | null; // Hotend heatbreak fan
+  firmware_version: string | null;   // Firmware version from MQTT
 }
 
 export interface PrinterCreate {
@@ -791,6 +792,8 @@ export interface AppSettings {
   // Prometheus metrics
   prometheus_enabled: boolean;
   prometheus_token: string;
+  // Bed cooled threshold
+  bed_cooled_threshold: number;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -1403,6 +1406,8 @@ export interface NotificationProvider {
   on_ams_ht_temperature_high: boolean;
   // Build plate detection
   on_plate_not_empty: boolean;
+  // Bed cooled
+  on_bed_cooled: boolean;
   // Print queue events
   on_queue_job_added: boolean;
   on_queue_job_assigned: boolean;
@@ -1453,6 +1458,8 @@ export interface NotificationProviderCreate {
   on_ams_ht_temperature_high?: boolean;
   // Build plate detection
   on_plate_not_empty?: boolean;
+  // Bed cooled
+  on_bed_cooled?: boolean;
   // Print queue events
   on_queue_job_added?: boolean;
   on_queue_job_assigned?: boolean;
@@ -1496,6 +1503,8 @@ export interface NotificationProviderUpdate {
   on_ams_ht_temperature_high?: boolean;
   // Build plate detection
   on_plate_not_empty?: boolean;
+  // Bed cooled
+  on_bed_cooled?: boolean;
   // Print queue events
   on_queue_job_added?: boolean;
   on_queue_job_assigned?: boolean;
@@ -3030,6 +3039,8 @@ export const api = {
     request<SlicerSettingsResponse>(`/cloud/settings?version=${version}`),
   getBuiltinFilaments: () =>
     request<BuiltinFilament[]>('/cloud/builtin-filaments'),
+  getFilamentIdMap: () =>
+    request<Record<string, string>>('/cloud/filament-id-map'),
   getCloudSettingDetail: (settingId: string) =>
     request<SlicerSettingDetail>(`/cloud/settings/${settingId}`),
   createCloudSetting: (data: SlicerSettingCreate) =>
@@ -3427,6 +3438,8 @@ export const api = {
     request<{ status: string }>('/inventory/colors/reset', { method: 'POST' }),
   lookupColor: (manufacturer: string, colorName: string, material?: string) =>
     request<ColorLookupResult>(`/inventory/colors/lookup?manufacturer=${encodeURIComponent(manufacturer)}&color_name=${encodeURIComponent(colorName)}${material ? `&material=${encodeURIComponent(material)}` : ''}`),
+  searchColors: (manufacturer?: string, material?: string) =>
+    request<ColorCatalogEntry[]>(`/inventory/colors/search?${manufacturer ? `manufacturer=${encodeURIComponent(manufacturer)}` : ''}${manufacturer && material ? '&' : ''}${material ? `material=${encodeURIComponent(material)}` : ''}`),
   linkTagToSpool: (spoolId: number, data: { tag_uid?: string; tray_uuid?: string; tag_type?: string; data_origin?: string }) =>
     request<InventorySpool>(`/inventory/spools/${spoolId}/link-tag`, {
       method: 'PATCH',
