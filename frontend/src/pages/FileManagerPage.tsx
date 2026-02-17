@@ -39,6 +39,7 @@ import {
   Image,
   User,
   Box,
+  AlarmSmoke,
 } from 'lucide-react';
 import { api } from '../api/client';
 import type {
@@ -913,7 +914,12 @@ interface FileCardProps {
 
 function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onAddToQueue, onPrint, onPreview3d, onRename, onGenerateThumbnail, thumbnailVersion, hasPermission, canModify, authEnabled, t }: FileCardProps) {
   const [showActions, setShowActions] = useState(false);
-
+  // Fetch archive data to get nozzle diameter
+  const { data: libData } = useQuery({
+    queryKey: ['library_file', file.id],
+    queryFn: () => api.getLibraryFile(file.id!),
+    enabled: !!file.id,
+  });
   return (
     <div
       className={`group relative bg-bambu-dark-secondary rounded-lg border transition-all cursor-pointer overflow-hidden ${
@@ -959,12 +965,20 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
             </span>
           )}
         </div>
-        {file.sliced_for_model && (
+         <div className="flex items-center gap-3 mt-1 text-xs text-bambu-gray">
+          {file.sliced_for_model && (
+            <div className="mt-1 text-xs text-bambu-gray flex items-center gap-1">
+              <Printer className="w-3 h-3" />
+              {file.sliced_for_model}
+            </div>
+        )}
+        {libData?.metadata?.nozzle_diameter && (
           <div className="mt-1 text-xs text-bambu-gray flex items-center gap-1">
-            <Printer className="w-3 h-3" />
-            {file.sliced_for_model}
+            <AlarmSmoke className="w-3.5 h-3.5" />
+            {libData?.metadata?.nozzle_diameter || '--'}mm
           </div>
         )}
+        </div>
         {file.print_count > 0 && (
           <div className="mt-1 text-xs text-bambu-green">
             {t('fileManager.printedCount', { count: file.print_count })}

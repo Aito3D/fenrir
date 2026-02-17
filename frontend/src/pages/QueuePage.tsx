@@ -48,6 +48,7 @@ import {
   User,
   Pause,
   Weight,
+  AlarmSmoke,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { parseUTCDate, formatDateTime, type TimeFormat, formatETA, formatDuration } from '../utils/date';
@@ -342,6 +343,22 @@ function SortableQueueItem({
   const platesData = isLibraryFile ? libraryPlatesData : archivePlatesData;
   const plates = platesData?.plates ?? [];
 
+  // Fetch archive data to get nozzle diameter
+  const { data: archiveData } = useQuery({
+    queryKey: ['archive', item.archive_id],
+    queryFn: () => api.getArchive(item.archive_id!),
+    enabled: !!item.archive_id,
+  });
+
+  console.log(item.library_file_id)
+
+  // Fetch archive data to get nozzle diameter
+  const { data: libData } = useQuery({
+    queryKey: ['library_file', item.library_file_id],
+    queryFn: () => api.getLibraryFile(item.library_file_id!),
+    enabled: !!item.library_file_id,
+  });
+
   const canReorder = hasPermission('queue:reorder');
   const {
     attributes,
@@ -471,6 +488,12 @@ function SortableQueueItem({
                   ? t('queue.filter.unassigned')
                   : (item.printer_name || `${t('common.printer')} #${item.printer_id}`)}
             </span>
+            {libData?.metadata?.nozzle_diameter && (
+              <span className="flex items-center gap-1.5">
+                <AlarmSmoke className="w-3.5 h-3.5" />
+              {libData?.metadata?.nozzle_diameter || '--'}mm
+              </span>
+            )}
             {item.print_time_seconds && (
               <span className="flex items-center gap-1.5">
                 <Timer className="w-3.5 h-3.5" />
