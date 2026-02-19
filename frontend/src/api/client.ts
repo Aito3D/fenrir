@@ -3188,10 +3188,11 @@ export const api = {
     request<HASensorEntity[]>('/smart-plugs/ha/sensors'),
 
   // Print Queue
-  getQueue: (printerId?: number, status?: string) => {
+  getQueue: (printerId?: number, status?: string, targetModel?: string) => {
     const params = new URLSearchParams();
     if (printerId) params.set('printer_id', String(printerId));
     if (status) params.set('status', status);
+    if (targetModel) params.set('target_model', targetModel);
     return request<PrintQueueItem[]>(`/queue/?${params}`);
   },
   getQueueItem: (id: number) => request<PrintQueueItem>(`/queue/${id}`),
