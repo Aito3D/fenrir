@@ -2,7 +2,7 @@
 # Install with: pip install pre-commit && pre-commit install
 
 repos:
-  # Ruff - Fast Python linter and formatter
+  # Ruff - Fast Python linter and formatter (backend only)
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.11
     hooks:
@@ -10,9 +10,12 @@ repos:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
         types_or: [python, pyi]
+        files: ^backend/
       # Formatter
       - id: ruff-format
+        args: [--check]
         types_or: [python, pyi]
+        files: ^backend/
 
   # Standard pre-commit hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -32,12 +35,30 @@ repos:
       - id: debug-statements
       - id: detect-private-key
 
+  # Frontend - TypeScript & ESLint enforcement
+  - repo: local
+    hooks:
+      # TypeScript type checking
+      - id: frontend-typecheck
+        name: Frontend TypeScript type check
+        entry: bash -c 'cd frontend && npx tsc -b --noEmit'
+        language: system
+        pass_filenames: false
+        files: ^frontend/src/.*\.(ts|tsx)$
+      # ESLint
+      - id: frontend-eslint
+        name: Frontend ESLint
+        entry: bash -c 'cd frontend && npx eslint --max-warnings=0 "$@"' --
+        language: system
+        types_or: [ts, tsx]
+        files: ^frontend/src/
+
   # Check for import shadowing (custom)
   - repo: local
     hooks:
       - id: check-import-shadowing
         name: Check for dangerous import shadowing
-        entry: python -m pytest backend/tests/unit/test_code_quality.py::TestImportShadowing -v --tb=short
+        entry: python -m pytest backend/tests/unit/test_code_quality.py::TestImportShadowing -q --no-header --tb=line
         language: system
         pass_filenames: false
         types: [python]
