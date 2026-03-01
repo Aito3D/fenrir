@@ -105,6 +105,7 @@ async def init_db():
         spoolbuddy_device,
         user,
         virtual_printer,
+        kanban_card,
     )
 
     async with engine.begin() as conn:
@@ -1315,6 +1316,12 @@ async def run_migrations(conn):
     # Migration: Add filament_overrides column to print_queue for filament override in model-based assignment
     try:
         await conn.execute(text("ALTER TABLE print_queue ADD COLUMN filament_overrides TEXT"))
+    except OperationalError:
+        pass  # Already applied
+
+    # Migration: Add is_approved column to kanban_cards
+    try:
+        await conn.execute(text("ALTER TABLE kanban_cards ADD COLUMN is_approved BOOLEAN DEFAULT 0"))
     except OperationalError:
         pass  # Already applied
 

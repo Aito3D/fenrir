@@ -17,6 +17,7 @@ import { ExternalLinkPage } from './pages/ExternalLinkPage';
 import { GroupEditPage } from './pages/GroupEditPage';
 import InventoryPage from './pages/InventoryPage';
 import { SystemInfoPage } from './pages/SystemInfoPage';
+import { TodoPage } from './pages/TodoPage';
 import { LoginPage } from './pages/LoginPage';
 import { SetupPage } from './pages/SetupPage';
 import { useWebSocket } from './hooks/useWebSocket';
@@ -130,6 +131,7 @@ function App() {
                 {/* Main app with WebSocket for real-time updates */}
                 <Route element={<ProtectedRoute><WebSocketProvider><Layout /></WebSocketProvider></ProtectedRoute>}>
                   <Route index element={<PrintersPage />} />
+                  <Route path="todo" element={<TodoPage />} />
                   <Route path="archives" element={<ArchivesPage />} />
                   <Route path="queue" element={<QueuePage />} />
                   <Route path="stats" element={<StatsPage />} />

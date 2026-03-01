@@ -25,6 +25,7 @@ from backend.app.api.routes import (
     github_backup,
     groups,
     inventory,
+    kanban,
     kprofiles,
     library,
     local_presets,
@@ -3619,6 +3620,7 @@ app.include_router(github_backup.router, prefix=app_settings.api_prefix)
 app.include_router(metrics.router, prefix=app_settings.api_prefix)
 app.include_router(virtual_printers.router, prefix=app_settings.api_prefix)
 app.include_router(spoolbuddy.router, prefix=app_settings.api_prefix)
+app.include_router(kanban.router, prefix=app_settings.api_prefix)
 
 
 # Serve static files (React build)

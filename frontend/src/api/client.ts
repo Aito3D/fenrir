@@ -4896,3 +4896,77 @@ export const spoolbuddyApi = {
       body: JSON.stringify({ spool_id: spoolId, weight_grams: weightGrams }),
     }),
 };
+
+// ── Kanban API ────────────────────────────────────────────────────────────
+
+export type CardState = 'progress' | 'finished';
+
+export interface KanbanCardResponse {
+  id: number;
+  title: string;
+  quote_id: string;
+  quote_name: string;
+  client_id: string;
+  client_name: string;
+  client_phone: string;
+  quantity: number;
+  is_approved: boolean;
+  column: string;
+  state: CardState;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KanbanCardCreate {
+  title: string;
+  quote_id: string;
+  quote_name: string;
+  client_id: string;
+  client_name: string;
+  client_phone: string;
+  quantity: number;
+  is_approved: boolean;
+  column: string;
+}
+
+export interface KanbanCardUpdate {
+  title?: string;
+  quote_id?: string;
+  quote_name?: string;
+  client_id?: string;
+  client_name?: string;
+  client_phone?: string;
+  quantity?: number;
+  is_approved?: boolean;
+  column?: string;
+  sort_order?: number;
+}
+
+export const kanbanApi = {
+  getCards: () =>
+    request<KanbanCardResponse[]>('/kanban/cards'),
+
+  createCard: (data: KanbanCardCreate) =>
+    request<KanbanCardResponse>('/kanban/cards', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateCard: (id: number, data: KanbanCardUpdate) =>
+    request<KanbanCardResponse>(`/kanban/cards/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  deleteCard: (id: number) =>
+    request<{ message: string }>(`/kanban/cards/${id}`, {
+      method: 'DELETE',
+    }),
+
+  reorderCards: (ids: number[]) =>
+    request<KanbanCardResponse[]>('/kanban/cards/reorder', {
+      method: 'PUT',
+      body: JSON.stringify({ ids }),
+    }),
+};
