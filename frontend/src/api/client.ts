@@ -4913,6 +4913,7 @@ export interface KanbanCardResponse {
   is_approved: boolean;
   file_id: number | null;
   archive_id: number | null;
+  archive_completed_at: string | null;
   column: string;
   state: CardState;
   sort_order: number;

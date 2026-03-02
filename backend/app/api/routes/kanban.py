@@ -14,6 +14,7 @@ from backend.app.api.routes.library import (
     to_relative_path,
 )
 from backend.app.core.database import get_db
+from backend.app.models.archive import PrintArchive
 from backend.app.models.kanban_card import KanbanCard
 from backend.app.models.library import LibraryFile
 from backend.app.schemas.kanban_card import (
@@ -33,13 +34,46 @@ def _resolve_state(column: str) -> str:
     return "finished" if column == "done" else "progress"
 
 
+async def _enrich_card(card: KanbanCard, db: AsyncSession) -> KanbanCardResponse:
+    """Build a KanbanCardResponse with archive_completed_at populated."""
+    resp = KanbanCardResponse.model_validate(card)
+    if card.archive_id:
+        result = await db.execute(
+            select(PrintArchive.completed_at).where(PrintArchive.id == card.archive_id)
+        )
+        resp.archive_completed_at = result.scalar_one_or_none()
+    return resp
+
+
+async def _enrich_cards(cards: list[KanbanCard], db: AsyncSession) -> list[KanbanCardResponse]:
+    """Batch-enrich cards with archive completion timestamps."""
+    archive_ids = [c.archive_id for c in cards if c.archive_id]
+    completed_map: dict[int, object] = {}
+    if archive_ids:
+        result = await db.execute(
+            select(PrintArchive.id, PrintArchive.completed_at).where(
+                PrintArchive.id.in_(archive_ids)
+            )
+        )
+        completed_map = {row.id: row.completed_at for row in result.all()}
+
+    responses = []
+    for card in cards:
+        resp = KanbanCardResponse.model_validate(card)
+        if card.archive_id and card.archive_id in completed_map:
+            resp.archive_completed_at = completed_map[card.archive_id]
+        responses.append(resp)
+    return responses
+
+
 @router.get("/cards", response_model=list[KanbanCardResponse])
 async def list_cards(
     db: AsyncSession = Depends(get_db),
 ):
     """List all kanban cards ordered by sort_order."""
     result = await db.execute(select(KanbanCard).order_by(KanbanCard.sort_order))
-    return list(result.scalars().all())
+    cards = list(result.scalars().all())
+    return await _enrich_cards(cards, db)
 
 
 @router.post("/cards", response_model=KanbanCardResponse)
@@ -88,7 +122,7 @@ async def get_card(
     card = result.scalar_one_or_none()
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
-    return card
+    return await _enrich_card(card, db)
 
 
 @router.patch("/cards/{card_id}", response_model=KanbanCardResponse)
@@ -121,7 +155,7 @@ async def update_card(
     await db.refresh(card)
 
     logger.info("Updated kanban card: %s (column=%s, state=%s)", card.title, card.column, card.state)
-    return card
+    return await _enrich_card(card, db)
 
 
 @router.delete("/cards/{card_id}")
@@ -158,10 +192,10 @@ async def reorder_cards(
     await db.commit()
 
     result = await db.execute(select(KanbanCard).order_by(KanbanCard.sort_order))
-    cards = result.scalars().all()
+    cards = list(result.scalars().all())
 
     logger.info("Reordered %d kanban cards", len(reorder_data.ids))
-    return list(cards)
+    return await _enrich_cards(cards, db)
 
 
 @router.post("/cards/{card_id}/upload", response_model=KanbanCardResponse)
@@ -269,4 +303,4 @@ async def upload_card_file(
     await db.refresh(card)
 
     logger.info("Uploaded file '%s' to card '%s', moved to to-print", filename, card.title)
-    return card
+    return await _enrich_card(card, db)

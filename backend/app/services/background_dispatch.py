@@ -721,6 +721,23 @@ class BackgroundDispatchService:
 
             await db.flush()
 
+            # Link archive to kanban card if one references this library file
+            try:
+                from backend.app.models.kanban_card import KanbanCard
+
+                card_result = await db.execute(
+                    select(KanbanCard)
+                    .where(KanbanCard.file_id == job.source_id)
+                    .where(KanbanCard.archive_id.is_(None))
+                )
+                kanban_card = card_result.scalar_one_or_none()
+                if kanban_card:
+                    kanban_card.archive_id = archive.id
+                    await db.flush()
+                    logger.info("Linked archive %s to kanban card %s", archive.id, kanban_card.id)
+            except Exception as e:
+                logger.warning("Failed to link archive to kanban card: %s", e)
+
             base_name = lib_file.filename
             if base_name.endswith(".gcode.3mf"):
                 base_name = base_name[:-10]

@@ -265,15 +265,23 @@ function CardContent({ card, onPreview }: { card: KanbanCardResponse; onPreview?
           <div className="mt-2 border-t border-[var(--text-muted)]" />
           <button
             onClick={(e) => { e.stopPropagation(); onPreview?.(card); }}
-            className="mt-2 flex items-center gap-1.5 text-xs text-[var(--accent)] hover:underline cursor-pointer"
+            className="mt-2 flex w-full items-center gap-1.5 text-xs text-green-500 hover:underline cursor-pointer"
           >
             <FileCode2 className="h-3.5 w-3.5 shrink-0" />
             <span className="font-medium">Gcode attached</span>
+            <CircleCheck className="h-3.5 w-3.5 shrink-0 ml-auto" />
           </button>
           {card.archive_id && (
-            <div className="mt-1 flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+            <div className="mt-1 flex items-center gap-1.5 text-xs text-green-500">
               <Archive className="h-3.5 w-3.5 shrink-0" />
-              <span className="font-medium">Archive</span>
+              <span className="font-medium">Archive #{card.archive_id}</span>
+              <CircleCheck className="h-3.5 w-3.5 shrink-0 ml-auto" />
+            </div>
+          )}
+          {card.archive_id && card.archive_completed_at && (
+            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+              <Clock className="h-3 w-3 shrink-0" />
+              <span>Printed {new Date(card.archive_completed_at).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })} at {new Date(card.archive_completed_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
             </div>
           )}
         </>
@@ -460,17 +468,13 @@ function KanbanColumn({
 
   const handleSubmit = () => {
     const t = form.title.trim();
-    const qi = form.quote_id.trim();
-    const qn = form.quote_name.trim();
-    const ci = form.client_id.trim();
-    const cn = form.client_name.trim();
-    if (t && qi && qn && ci && cn) {
+    if (t) {
       onAdd(columnId, {
         title: t,
-        quote_id: qi,
-        quote_name: qn,
-        client_id: ci,
-        client_name: cn,
+        quote_id: form.quote_id.trim(),
+        quote_name: form.quote_name.trim(),
+        client_id: form.client_id.trim(),
+        client_name: form.client_name.trim(),
         client_phone: form.client_phone.trim(),
         quantity: form.quantity,
         is_approved: form.is_approved,

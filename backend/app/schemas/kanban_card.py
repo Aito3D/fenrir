@@ -10,10 +10,10 @@ class KanbanCardBase(BaseModel):
     """Base schema for kanban cards."""
 
     title: str = Field(..., min_length=1, max_length=200)
-    quote_id: str = Field(..., min_length=1, max_length=50)
-    quote_name: str = Field(..., min_length=1, max_length=100)
-    client_id: str = Field(..., min_length=1, max_length=50)
-    client_name: str = Field(..., min_length=1, max_length=200)
+    quote_id: str = Field(default="", max_length=50)
+    quote_name: str = Field(default="", max_length=100)
+    client_id: str = Field(default="", max_length=50)
+    client_name: str = Field(default="", max_length=200)
     client_phone: str = Field(default="", max_length=50)
     quantity: int = Field(default=1, ge=1)
     is_approved: bool = False
@@ -53,6 +53,7 @@ class KanbanCardResponse(KanbanCardBase):
     sort_order: float
     created_at: datetime
     updated_at: datetime
+    archive_completed_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

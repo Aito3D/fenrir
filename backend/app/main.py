@@ -2218,28 +2218,6 @@ async def on_print_complete(printer_id: int, data: dict):
                 await db.commit()
                 logger.info("Updated queue item %s status to %s", queue_item.id, queue_status)
 
-                # Auto-link archive to kanban card on successful print
-                if queue_status == "completed" and queue_item.library_file_id and queue_item.archive_id:
-                    try:
-                        from backend.app.models.kanban_card import KanbanCard
-
-                        card_result = await db.execute(
-                            select(KanbanCard)
-                            .where(KanbanCard.file_id == queue_item.library_file_id)
-                            .where(KanbanCard.archive_id.is_(None))
-                        )
-                        kanban_card = card_result.scalar_one_or_none()
-                        if kanban_card:
-                            kanban_card.archive_id = queue_item.archive_id
-                            await db.commit()
-                            logger.info(
-                                "Linked archive %s to kanban card %s",
-                                queue_item.archive_id,
-                                kanban_card.id,
-                            )
-                    except Exception as e:
-                        logger.warning("Failed to link archive to kanban card: %s", e)
-
                 # MQTT relay - publish queue job completed
                 try:
                     printer_info = printer_manager.get_printer(printer_id)

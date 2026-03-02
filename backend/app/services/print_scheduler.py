@@ -1034,6 +1034,22 @@ class PrintScheduler:
                         archive.id,
                         item.library_file_id,
                     )
+                    # Link archive to kanban card if one references this library file
+                    try:
+                        from backend.app.models.kanban_card import KanbanCard
+
+                        card_result = await db.execute(
+                            select(KanbanCard)
+                            .where(KanbanCard.file_id == item.library_file_id)
+                            .where(KanbanCard.archive_id.is_(None))
+                        )
+                        kanban_card = card_result.scalar_one_or_none()
+                        if kanban_card:
+                            kanban_card.archive_id = archive.id
+                            await db.flush()
+                            logger.info("Linked archive %s to kanban card %s", archive.id, kanban_card.id)
+                    except Exception as exc:
+                        logger.warning("Failed to link archive to kanban card: %s", exc)
             except Exception as e:
                 logger.warning("Queue item %s: Failed to create archive from library file: %s", item.id, e)
 
