@@ -23,6 +23,7 @@ export default {
     switchToLight: 'Zum hellen Modus wechseln',
     switchToDark: 'Zum dunklen Modus wechseln',
     smartSwitches: 'Smart Switches',
+    todo: 'Aufgaben',
     logout: 'Abmelden',
   },
 

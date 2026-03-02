@@ -22,8 +22,11 @@ import {
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Plus, X, Building2, FileText, Pencil, Phone, Clock, Check, Camera, CircleCheck, FilePlus2 } from 'lucide-react';
-import { kanbanApi, type KanbanCardResponse } from '../api/client';
+import { Plus, X, Building2, FileText, Pencil, Phone, Clock, Check, Camera, CircleCheck, FilePlus2, FileCode2, Printer, CalendarClock, Archive } from 'lucide-react';
+import { api, kanbanApi, type KanbanCardResponse } from '../api/client';
+import { UploadFilesModal } from '../components/UploadFilesModal';
+import { PrintModal } from '../components/PrintModal';
+import { ModelViewerModal } from '../components/ModelViewerModal';
 import { formatRelativeTime } from '../utils/date';
 
 // ── Data model ──────────────────────────────────────────────────────────────
@@ -173,7 +176,7 @@ function EditCardModal({
             type="checkbox"
             checked={form.is_approved}
             onChange={(e) => updateForm({ is_approved: e.target.checked })}
-            className="h-4 w-4 rounded border-[var(--text-muted)] accent-emerald-500"
+            className="h-4 w-4 rounded border-[var(--text-muted)] accent-[var(--accent)]"
           />
           <span className="text-xs font-medium text-[var(--text-muted)]">Approved</span>
         </label>
@@ -190,9 +193,39 @@ function EditCardModal({
   );
 }
 
+// ── Gcode upload modal (wraps shared UploadFilesModal) ──────────────────────
+
+function GcodeUploadModal({
+  card,
+  onUpload,
+  onClose,
+}: {
+  card: KanbanCardResponse;
+  onUpload: (cardId: number, file: File) => void;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+
+  const handler = {
+    upload: async (file: File) => {
+      onUpload(card.id, file);
+    },
+  };
+
+  return (
+    <UploadFilesModal
+      title={`Add gcode — ${card.title}`}
+      handler={handler}
+      onClose={onClose}
+      singleFile
+      t={t}
+    />
+  );
+}
+
 // ── Card content (shared between card & overlay) ────────────────────────────
 
-function CardContent({ card }: { card: KanbanCardResponse }) {
+function CardContent({ card, onPreview }: { card: KanbanCardResponse; onPreview?: (card: KanbanCardResponse) => void }) {
   return (
     <>
       <p className="break-words text-sm font-medium text-[var(--text-primary)]">
@@ -227,6 +260,24 @@ function CardContent({ card }: { card: KanbanCardResponse }) {
           <span className="truncate">Created {formatRelativeTime(card.created_at)}</span>
         </div>
       </div>
+      {card.file_id && (
+        <>
+          <div className="mt-2 border-t border-[var(--text-muted)]" />
+          <button
+            onClick={(e) => { e.stopPropagation(); onPreview?.(card); }}
+            className="mt-2 flex items-center gap-1.5 text-xs text-[var(--accent)] hover:underline cursor-pointer"
+          >
+            <FileCode2 className="h-3.5 w-3.5 shrink-0" />
+            <span className="font-medium">Gcode attached</span>
+          </button>
+          {card.archive_id && (
+            <div className="mt-1 flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+              <Archive className="h-3.5 w-3.5 shrink-0" />
+              <span className="font-medium">Archive</span>
+            </div>
+          )}
+        </>
+      )}
     </>
   );
 }
@@ -239,12 +290,20 @@ function SortableCard({
   onEdit,
   onQuickMove,
   onFinish,
+  onUploadGcode,
+  onPrint,
+  onSchedule,
+  onPreview,
 }: {
   card: KanbanCardResponse;
   onDelete: (id: number) => void;
   onEdit: (card: KanbanCardResponse) => void;
   onQuickMove: (id: number, targetColumn: ColumnId) => void;
   onFinish: (id: number) => void;
+  onUploadGcode: (card: KanbanCardResponse) => void;
+  onPrint: (card: KanbanCardResponse) => void;
+  onSchedule: (card: KanbanCardResponse) => void;
+  onPreview: (card: KanbanCardResponse) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: card.id });
 
@@ -283,19 +342,38 @@ function SortableCard({
         </button>
       </div>
 
-      <CardContent card={card} />
+      <CardContent card={card} onPreview={onPreview} />
 
       {card.column === 'todo' && (
         <button
-          onClick={(e) => { e.stopPropagation(); }}
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-500"
+          onClick={(e) => { e.stopPropagation(); onUploadGcode(card); }}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--accent)] px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-light)]"
         >
           <FilePlus2 className="h-4 w-4" />
           Add gcode
         </button>
       )}
 
-      {quickAction && (
+      {card.column === 'to-print' && card.file_id && (
+        <div className="mt-3 flex gap-2">
+          <button
+            onClick={(e) => { e.stopPropagation(); onPrint(card); }}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[var(--accent-light)]"
+          >
+            <Printer className="h-3.5 w-3.5" />
+            Print
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onSchedule(card); }}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[var(--bg-secondary)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-tertiary)] border border-[var(--bg-tertiary)]"
+          >
+            <CalendarClock className="h-3.5 w-3.5" />
+            Schedule
+          </button>
+        </div>
+      )}
+
+      {quickAction && (quickAction.column !== 'to-print' || card.archive_id) && (
         <div className="mt-2 flex justify-end">
           <button
             onClick={(e) => { e.stopPropagation(); onQuickMove(card.id, quickAction.target); }}
@@ -311,7 +389,7 @@ function SortableCard({
         <div className="mt-2 flex justify-end">
           <button
             onClick={(e) => { e.stopPropagation(); onFinish(card.id); }}
-            className="flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-emerald-500"
+            className="flex items-center gap-1 rounded-md bg-[var(--accent)] px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-[var(--accent-light)]"
           >
             <CircleCheck className="h-3 w-3" />
             Finish
@@ -321,7 +399,7 @@ function SortableCard({
 
       {card.state === 'finished' && (
         <div className="mt-2 flex justify-end">
-          <span className="flex items-center gap-1 rounded-md bg-emerald-600/20 px-2 py-1 text-xs font-medium text-emerald-400">
+          <span className="flex items-center gap-1 rounded-md bg-[var(--accent)]/20 px-2 py-1 text-xs font-medium text-[var(--accent)]">
             <CircleCheck className="h-3 w-3" />
             Finished
           </span>
@@ -349,6 +427,10 @@ function KanbanColumn({
   onEdit,
   onQuickMove,
   onFinish,
+  onUploadGcode,
+  onPrint,
+  onSchedule,
+  onPreview,
 }: {
   columnId: ColumnId;
   cards: KanbanCardResponse[];
@@ -357,6 +439,10 @@ function KanbanColumn({
   onEdit: (card: KanbanCardResponse) => void;
   onQuickMove: (id: number, targetColumn: ColumnId) => void;
   onFinish: (id: number) => void;
+  onUploadGcode: (card: KanbanCardResponse) => void;
+  onPrint: (card: KanbanCardResponse) => void;
+  onSchedule: (card: KanbanCardResponse) => void;
+  onPreview: (card: KanbanCardResponse) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: columnId });
   const [adding, setAdding] = useState(false);
@@ -419,7 +505,7 @@ function KanbanColumn({
       <div ref={setNodeRef} className="flex min-h-[60px] flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
         <SortableContext items={cards.map((c) => c.id)} strategy={verticalListSortingStrategy}>
           {cards.map((card) => (
-            <SortableCard key={card.id} card={card} onDelete={onDelete} onEdit={onEdit} onQuickMove={onQuickMove} onFinish={onFinish} />
+            <SortableCard key={card.id} card={card} onDelete={onDelete} onEdit={onEdit} onQuickMove={onQuickMove} onFinish={onFinish} onUploadGcode={onUploadGcode} onPrint={onPrint} onSchedule={onSchedule} onPreview={onPreview} />
           ))}
         </SortableContext>
       </div>
@@ -451,6 +537,10 @@ export function TodoPage() {
   const [localCards, setLocalCards] = useState<KanbanCardResponse[] | null>(null);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [editingCard, setEditingCard] = useState<KanbanCardResponse | null>(null);
+  const [uploadingCard, setUploadingCard] = useState<KanbanCardResponse | null>(null);
+  const [printingCard, setPrintingCard] = useState<KanbanCardResponse | null>(null);
+  const [schedulingCard, setSchedulingCard] = useState<KanbanCardResponse | null>(null);
+  const [previewingCard, setPreviewingCard] = useState<KanbanCardResponse | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -460,6 +550,12 @@ export function TodoPage() {
   const { data: serverCards = [] } = useQuery({
     queryKey: ['kanban-cards'],
     queryFn: kanbanApi.getCards,
+  });
+
+  const { data: previewLibFile } = useQuery({
+    queryKey: ['library-file', previewingCard?.file_id],
+    queryFn: () => api.getLibraryFile(previewingCard!.file_id!),
+    enabled: !!previewingCard?.file_id,
   });
 
   // Use local cards during drag, server cards otherwise
@@ -487,6 +583,15 @@ export function TodoPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['kanban-cards'] }),
   });
 
+  const uploadMutation = useMutation({
+    mutationFn: ({ cardId, file }: { cardId: number; file: File }) =>
+      kanbanApi.uploadCardFile(cardId, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
+      setUploadingCard(null);
+    },
+  });
+
   const addCard = (columnId: ColumnId, data: CardFormData) => {
     createMutation.mutate({ columnId, ...data });
   };
@@ -506,6 +611,10 @@ export function TodoPage() {
 
   const finishCard = (id: number) => {
     updateMutation.mutate({ id, column: 'done' });
+  };
+
+  const uploadCard = (cardId: number, file: File) => {
+    uploadMutation.mutate({ cardId, file });
   };
 
   // Group and sort cards by column
@@ -678,6 +787,10 @@ export function TodoPage() {
                 onEdit={setEditingCard}
                 onQuickMove={quickMove}
                 onFinish={finishCard}
+                onUploadGcode={setUploadingCard}
+                onPrint={setPrintingCard}
+                onSchedule={setSchedulingCard}
+                onPreview={setPreviewingCard}
               />
             ))}
           </div>
@@ -692,6 +805,50 @@ export function TodoPage() {
           card={editingCard}
           onSave={editCard}
           onClose={() => setEditingCard(null)}
+        />
+      )}
+
+      {uploadingCard && (
+        <GcodeUploadModal
+          card={uploadingCard}
+          onUpload={uploadCard}
+          onClose={() => setUploadingCard(null)}
+        />
+      )}
+
+      {printingCard && printingCard.file_id && (
+        <PrintModal
+          mode="reprint"
+          libraryFileId={printingCard.file_id}
+          archiveName={printingCard.title}
+          onClose={() => setPrintingCard(null)}
+          onSuccess={() => {
+            setPrintingCard(null);
+            queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
+          }}
+        />
+      )}
+
+      {schedulingCard && schedulingCard.file_id && (
+        <PrintModal
+          mode="add-to-queue"
+          libraryFileId={schedulingCard.file_id}
+          archiveName={schedulingCard.title}
+          onClose={() => setSchedulingCard(null)}
+          onSuccess={() => {
+            setSchedulingCard(null);
+            queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
+            queryClient.invalidateQueries({ queryKey: ['queue'] });
+          }}
+        />
+      )}
+
+      {previewingCard && previewingCard.file_id && previewLibFile && (
+        <ModelViewerModal
+          libraryFileId={previewingCard.file_id}
+          title={previewLibFile.print_name || previewLibFile.filename || previewingCard.title}
+          fileType={previewLibFile.file_type}
+          onClose={() => setPreviewingCard(null)}
         />
       )}
     </div>

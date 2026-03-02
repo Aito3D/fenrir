@@ -22,6 +22,7 @@ export default {
     switchToLight: 'Passa a tema chiaro',
     switchToDark: 'Passa a tema scuro',
     smartSwitches: 'Interruttori Smart',
+    todo: 'Da fare',
     logout: 'Esci',
   },
 

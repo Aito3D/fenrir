@@ -23,6 +23,7 @@ export default {
     switchToLight: 'Passer au mode clair',
     switchToDark: 'Passer au mode sombre',
     smartSwitches: 'Interrupteurs intelligents',
+    todo: 'À faire',
     logout: 'Déconnexion',
   },
 

@@ -4911,6 +4911,8 @@ export interface KanbanCardResponse {
   client_phone: string;
   quantity: number;
   is_approved: boolean;
+  file_id: number | null;
+  archive_id: number | null;
   column: string;
   state: CardState;
   sort_order: number;
@@ -4969,4 +4971,22 @@ export const kanbanApi = {
       method: 'PUT',
       body: JSON.stringify({ ids }),
     }),
+
+  uploadCardFile: async (cardId: number, file: File): Promise<KanbanCardResponse> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    const response = await fetch(`${API_BASE}/kanban/cards/${cardId}/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    if (!response.ok) {
+      throw new Error(`Upload failed: ${response.statusText}`);
+    }
+    return response.json();
+  },
 };

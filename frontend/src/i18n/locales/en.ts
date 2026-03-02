@@ -23,6 +23,7 @@ export default {
     switchToLight: 'Switch to light mode',
     switchToDark: 'Switch to dark mode',
     smartSwitches: 'Smart Switches',
+    todo: 'Todo',
     logout: 'Logout',
   },
 

@@ -2,12 +2,20 @@
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes.library import (
+    calculate_file_hash,
+    extract_gcode_thumbnail,
+    get_library_files_dir,
+    get_library_thumbnails_dir,
+    to_relative_path,
+)
 from backend.app.core.database import get_db
 from backend.app.models.kanban_card import KanbanCard
+from backend.app.models.library import LibraryFile
 from backend.app.schemas.kanban_card import (
     KanbanCardCreate,
     KanbanCardReorder,
@@ -154,3 +162,111 @@ async def reorder_cards(
 
     logger.info("Reordered %d kanban cards", len(reorder_data.ids))
     return list(cards)
+
+
+@router.post("/cards/{card_id}/upload", response_model=KanbanCardResponse)
+async def upload_card_file(
+    card_id: int,
+    file: UploadFile,
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload a file to a kanban card and move it to to-print."""
+    import os
+    import uuid
+
+    from backend.app.services.archive import ThreeMFParser
+
+    result = await db.execute(select(KanbanCard).where(KanbanCard.id == card_id))
+    card = result.scalar_one_or_none()
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Filename is required")
+
+    filename = file.filename
+    ext = os.path.splitext(filename)[1].lower()
+    file_type = ext[1:] if ext else "unknown"
+
+    # Save file
+    unique_filename = f"{uuid.uuid4().hex}{ext}"
+    file_path = get_library_files_dir() / unique_filename
+
+    content = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    file_hash = calculate_file_hash(file_path)
+
+    # Extract metadata and thumbnail (same logic as library upload)
+    metadata = {}
+    thumbnail_path = None
+    thumbnails_dir = get_library_thumbnails_dir()
+
+    if ext == ".3mf":
+        try:
+            parser = ThreeMFParser(str(file_path))
+            raw_metadata = parser.parse()
+
+            thumbnail_data = raw_metadata.get("_thumbnail_data")
+            thumbnail_ext = raw_metadata.get("_thumbnail_ext", ".png")
+
+            if thumbnail_data:
+                thumb_filename = f"{uuid.uuid4().hex}{thumbnail_ext}"
+                thumb_path = thumbnails_dir / thumb_filename
+                with open(thumb_path, "wb") as f:
+                    f.write(thumbnail_data)
+                thumbnail_path = str(thumb_path)
+
+            def clean_metadata(obj):
+                if isinstance(obj, dict):
+                    return {
+                        k: clean_metadata(v)
+                        for k, v in obj.items()
+                        if not isinstance(v, bytes) and k not in ("_thumbnail_data", "_thumbnail_ext")
+                    }
+                elif isinstance(obj, list):
+                    return [clean_metadata(i) for i in obj if not isinstance(i, bytes)]
+                elif isinstance(obj, bytes):
+                    return None
+                return obj
+
+            metadata = clean_metadata(raw_metadata)
+        except Exception as e:
+            logger.warning("Failed to parse 3MF: %s", e)
+
+    elif ext == ".gcode":
+        try:
+            thumbnail_data = extract_gcode_thumbnail(file_path)
+            if thumbnail_data:
+                thumb_filename = f"{uuid.uuid4().hex}.png"
+                thumb_path = thumbnails_dir / thumb_filename
+                with open(thumb_path, "wb") as f:
+                    f.write(thumbnail_data)
+                thumbnail_path = str(thumb_path)
+        except Exception as e:
+            logger.warning("Failed to extract gcode thumbnail: %s", e)
+
+    # Create library file record with full metadata
+    lib_file = LibraryFile(
+        filename=filename,
+        file_path=to_relative_path(file_path),
+        file_type=file_type,
+        file_size=len(content),
+        file_hash=file_hash,
+        thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
+        file_metadata=metadata if metadata else None,
+    )
+    db.add(lib_file)
+    await db.flush()
+
+    # Link file to card and move to to-print
+    card.file_id = lib_file.id
+    card.column = "to-print"
+    card.state = _resolve_state("to-print")
+
+    await db.commit()
+    await db.refresh(card)
+
+    logger.info("Uploaded file '%s' to card '%s', moved to to-print", filename, card.title)
+    return card

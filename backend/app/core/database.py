@@ -1325,6 +1325,18 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Add file_id column to kanban_cards
+    try:
+        await conn.execute(text("ALTER TABLE kanban_cards ADD COLUMN file_id INTEGER"))
+    except OperationalError:
+        pass  # Already applied
+
+    # Migration: Add archive_id column to kanban_cards
+    try:
+        await conn.execute(text("ALTER TABLE kanban_cards ADD COLUMN archive_id INTEGER"))
+    except OperationalError:
+        pass  # Already applied
+
 
 async def seed_notification_templates():
     """Seed default notification templates if they don't exist."""

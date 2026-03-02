@@ -23,6 +23,8 @@ class KanbanCard(Base):
     client_phone: Mapped[str] = mapped_column(String(50), default="")
     quantity: Mapped[int] = mapped_column(Integer, default=1)
     is_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    file_id: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    archive_id: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     column: Mapped[str] = mapped_column(String(20), default="backlog")
     state: Mapped[str] = mapped_column(String(20), default="progress")
     sort_order: Mapped[float] = mapped_column(Float, default=0)

@@ -20,6 +20,7 @@ export default {
     switchToLight: 'ライトモードに切替',
     switchToDark: 'ダークモードに切替',
     smartSwitches: 'スマートスイッチ',
+    todo: 'やること',
     logout: 'ログアウト',
     updateAvailableBanner: 'バージョン {{version}} が利用可能です！',
     viewUpdate: 'アップデートを表示',

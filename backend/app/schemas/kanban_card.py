@@ -17,6 +17,8 @@ class KanbanCardBase(BaseModel):
     client_phone: str = Field(default="", max_length=50)
     quantity: int = Field(default=1, ge=1)
     is_approved: bool = False
+    file_id: int | None = None
+    archive_id: int | None = None
 
 
 class KanbanCardCreate(KanbanCardBase):
@@ -36,6 +38,8 @@ class KanbanCardUpdate(BaseModel):
     client_phone: str | None = Field(default=None, max_length=50)
     quantity: int | None = Field(default=None, ge=1)
     is_approved: bool | None = None
+    file_id: int | None = None
+    archive_id: int | None = None
     column: str | None = Field(default=None, max_length=20)
     sort_order: float | None = None
 
