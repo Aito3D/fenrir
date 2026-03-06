@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Archive, Trash2, FileBox, Clock, Upload, ChevronDown, ChevronUp } from 'lucide-react';
 import { pendingUploadsApi } from '../api/client';
@@ -10,18 +11,18 @@ import { useToast } from '../contexts/ToastContext';
 import { ConfirmModal } from './ConfirmModal';
 import { formatFileSize } from '../utils/file';
 
-function formatTimeAgo(dateStr: string): string {
+function formatTimeAgo(dateStr: string, t: (k: string, opts?: Record<string, unknown>) => string): string {
   const date = new Date(dateStr);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);
 
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffMins < 1) return t('common.justNow');
+  if (diffMins < 60) return t('common.minutesAgo', { count: diffMins });
   const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffHours < 24) return t('common.hoursAgo', { count: diffHours });
   const diffDays = Math.floor(diffHours / 24);
-  return `${diffDays}d ago`;
+  return t('common.daysAgo', { count: diffDays });
 }
 
 interface PendingUploadItemProps {
@@ -41,6 +42,7 @@ function PendingUploadItem({
   isArchiving,
   isDiscarding,
 }: PendingUploadItemProps) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [tags, setTags] = useState(upload.tags || '');
   const [notes, setNotes] = useState(upload.notes || '');
@@ -60,7 +62,7 @@ function PendingUploadItem({
                 <span>·</span>
                 <span className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />
-                  {formatTimeAgo(upload.uploaded_at)}
+                  {formatTimeAgo(upload.uploaded_at, t)}
                 </span>
                 {upload.source_ip && (
                   <>
@@ -89,7 +91,7 @@ function PendingUploadItem({
               ) : (
                 <>
                   <Archive className="w-4 h-4" />
-                  Archive
+                  {t('pendingUploads.archive')}
                 </>
               )}
             </Button>
@@ -111,8 +113,8 @@ function PendingUploadItem({
         {/* Discard Confirmation Modal */}
         {showDiscardConfirm && (
           <ConfirmModal
-            title="Discard Upload"
-            message={`Are you sure you want to discard "${upload.filename}"? This cannot be undone.`}
+            title={t('pendingUploads.discardTitle')}
+            message={t('pendingUploads.discardMessage', { filename: upload.filename })}
             confirmText="Discard"
             variant="danger"
             onConfirm={() => {
@@ -127,7 +129,7 @@ function PendingUploadItem({
         {expanded && (
           <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary space-y-3">
             <div>
-              <label className="block text-sm text-bambu-gray mb-1">Tags</label>
+              <label className="block text-sm text-bambu-gray mb-1">{t('common.tags')}</label>
               <input
                 type="text"
                 value={tags}
@@ -137,7 +139,7 @@ function PendingUploadItem({
               />
             </div>
             <div>
-              <label className="block text-sm text-bambu-gray mb-1">Notes</label>
+              <label className="block text-sm text-bambu-gray mb-1">{t('common.notes')}</label>
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
@@ -147,13 +149,13 @@ function PendingUploadItem({
               />
             </div>
             <div>
-              <label className="block text-sm text-bambu-gray mb-1">Project</label>
+              <label className="block text-sm text-bambu-gray mb-1">{t('common.project')}</label>
               <select
                 value={projectId || ''}
                 onChange={(e) => setProjectId(e.target.value ? Number(e.target.value) : null)}
                 className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-md px-3 py-2 text-white text-sm"
               >
-                <option value="">No project</option>
+                <option value="">{t('pendingUploads.noProject')}</option>
                 {projects.map((project) => (
                   <option key={project.id} value={project.id}>
                     {project.name}
@@ -170,6 +172,7 @@ function PendingUploadItem({
 
 export function PendingUploadsPanel() {
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
   const { showToast } = useToast();
   const [showArchiveAllConfirm, setShowArchiveAllConfirm] = useState(false);
   const [showDiscardAllConfirm, setShowDiscardAllConfirm] = useState(false);
@@ -282,7 +285,7 @@ export function PendingUploadsPanel() {
             <div className="flex items-center gap-2">
               <Upload className="w-5 h-5 text-yellow-500" />
               <h2 className="text-lg font-semibold text-white">
-                Pending Uploads ({uploads.length})
+                {t('pendingUploads.title', { count: uploads.length })}
               </h2>
             </div>
             <div className="flex items-center gap-2">
@@ -297,7 +300,7 @@ export function PendingUploadsPanel() {
                 ) : (
                   <>
                     <Archive className="w-4 h-4" />
-                    Archive All
+                    {t('pendingUploads.archiveAll')}
                   </>
                 )}
               </Button>
@@ -312,7 +315,7 @@ export function PendingUploadsPanel() {
                 ) : (
                   <>
                     <Trash2 className="w-4 h-4" />
-                    Discard All
+                    {t('pendingUploads.discardAll')}
                   </>
                 )}
               </Button>
@@ -321,7 +324,7 @@ export function PendingUploadsPanel() {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-bambu-gray mb-4">
-            These files were uploaded via the virtual printer. Review and archive them to add to your collection.
+            {t('pendingUploads.description')}
           </p>
           <div className="space-y-3">
             {uploads.map((upload) => (
@@ -342,9 +345,9 @@ export function PendingUploadsPanel() {
       {/* Archive All Confirmation */}
       {showArchiveAllConfirm && (
         <ConfirmModal
-          title="Archive All Uploads"
-          message={`Are you sure you want to archive all ${uploads.length} pending uploads?`}
-          confirmText="Archive All"
+          title={t('pendingUploads.archiveAllTitle')}
+          message={t('pendingUploads.archiveAllMessage', { count: uploads.length })}
+          confirmText={t('pendingUploads.archiveAll')}
           onConfirm={() => {
             archiveAllMutation.mutate();
             setShowArchiveAllConfirm(false);
@@ -356,9 +359,9 @@ export function PendingUploadsPanel() {
       {/* Discard All Confirmation */}
       {showDiscardAllConfirm && (
         <ConfirmModal
-          title="Discard All Uploads"
-          message={`Are you sure you want to discard all ${uploads.length} pending uploads? This cannot be undone.`}
-          confirmText="Discard All"
+          title={t('pendingUploads.discardAllTitle')}
+          message={t('pendingUploads.discardAllMessage', { count: uploads.length })}
+          confirmText={t('pendingUploads.discardAll')}
           variant="danger"
           onConfirm={() => {
             discardAllMutation.mutate();

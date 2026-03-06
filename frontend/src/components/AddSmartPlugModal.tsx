@@ -944,17 +944,17 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               {settings?.mqtt_broker && (
                 <>
                   <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-sm text-blue-300">
-                    <p className="font-medium mb-1">Monitor Only</p>
+                    <p className="font-medium mb-1">{t('smartPlugs.mqtt.monitorOnly')}</p>
                     <p className="text-xs opacity-80">
-                      MQTT plugs receive power/energy data via MQTT subscription. On/off control is not available - use your MQTT broker or home automation system.
+                      {t('smartPlugs.mqtt.monitorOnlyDesc')}
                     </p>
                   </div>
 
                   {/* Power Section */}
                   <div className="space-y-3 p-3 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
-                    <p className="text-white font-medium text-sm">Power Monitoring</p>
+                    <p className="text-white font-medium text-sm">{t('smartPlugs.mqtt.powerMonitoring')}</p>
                     <div>
-                      <label className="block text-sm text-bambu-gray mb-1">Topic</label>
+                      <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.mqtt.topic')}</label>
                       <input
                         type="text"
                         value={mqttPowerTopic}
@@ -965,7 +965,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-sm text-bambu-gray mb-1">JSON Path</label>
+                        <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.mqtt.jsonPath')}</label>
                         <input
                           type="text"
                           value={mqttPowerPath}
@@ -975,7 +975,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                         />
                       </div>
                       <div>
-                        <label className="block text-sm text-bambu-gray mb-1">Multiplier</label>
+                        <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.mqtt.multiplier')}</label>
                         <input
                           type="text"
                           value={mqttPowerMultiplier}
@@ -986,16 +986,15 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                       </div>
                     </div>
                     <p className="text-xs text-bambu-gray">
-                      JSON path extracts value from JSON payload (e.g., "power_l1"). Leave empty if topic publishes raw numeric values.<br/>
-                      Use multiplier 0.001 for mW→W, 1000 for kW→W.
+                      {t('smartPlugs.mqtt.powerHelp')}
                     </p>
                   </div>
 
                   {/* Energy Section */}
                   <div className="space-y-3 p-3 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
-                    <p className="text-white font-medium text-sm">Energy Monitoring <span className="text-bambu-gray font-normal">(optional)</span></p>
+                    <p className="text-white font-medium text-sm">{t('smartPlugs.mqtt.energyMonitoring')} <span className="text-bambu-gray font-normal">({t('common.optional')})</span></p>
                     <div>
-                      <label className="block text-sm text-bambu-gray mb-1">Topic</label>
+                      <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.mqtt.topic')}</label>
                       <input
                         type="text"
                         value={mqttEnergyTopic}
@@ -1006,7 +1005,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-sm text-bambu-gray mb-1">JSON Path</label>
+                        <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.mqtt.jsonPath')}</label>
                         <input
                           type="text"
                           value={mqttEnergyPath}
@@ -1016,7 +1015,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                         />
                       </div>
                       <div>
-                        <label className="block text-sm text-bambu-gray mb-1">Multiplier</label>
+                        <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.mqtt.multiplier')}</label>
                         <input
                           type="text"
                           value={mqttEnergyMultiplier}
@@ -1027,16 +1026,15 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                       </div>
                     </div>
                     <p className="text-xs text-bambu-gray">
-                      JSON path extracts value from JSON payload. Leave empty for raw values.<br/>
-                      Use multiplier 0.001 for Wh→kWh, 1000 for MWh→kWh.
+                      {t('smartPlugs.mqtt.energyHelp')}
                     </p>
                   </div>
 
                   {/* State Section */}
                   <div className="space-y-3 p-3 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
-                    <p className="text-white font-medium text-sm">State Monitoring <span className="text-bambu-gray font-normal">(optional)</span></p>
+                    <p className="text-white font-medium text-sm">{t('smartPlugs.mqtt.stateMonitoring')} <span className="text-bambu-gray font-normal">({t('common.optional')})</span></p>
                     <div>
-                      <label className="block text-sm text-bambu-gray mb-1">Topic</label>
+                      <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.mqtt.topic')}</label>
                       <input
                         type="text"
                         value={mqttStateTopic}
@@ -1047,7 +1045,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-sm text-bambu-gray mb-1">JSON Path</label>
+                        <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.mqtt.jsonPath')}</label>
                         <input
                           type="text"
                           value={mqttStatePath}
@@ -1057,7 +1055,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                         />
                       </div>
                       <div>
-                        <label className="block text-sm text-bambu-gray mb-1">ON Value</label>
+                        <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.mqtt.onValue')}</label>
                         <input
                           type="text"
                           value={mqttStateOnValue}
@@ -1068,8 +1066,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                       </div>
                     </div>
                     <p className="text-xs text-bambu-gray">
-                      JSON path extracts value from JSON payload. Leave empty for raw values.<br/>
-                      ON value: the exact string that means "ON". Leave empty for auto-detect (ON, true, 1).
+                      {t('smartPlugs.mqtt.stateHelp')}
                     </p>
                   </div>
                 </>
@@ -1120,10 +1117,10 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                 <>
                   <CheckCircle className="w-5 h-5" />
                   <div>
-                    <p className="font-medium">Connected!</p>
+                    <p className="font-medium">{t('smartPlugs.addSmartPlug.connected')}</p>
                     <p className="text-sm opacity-80">
-                      {testResult.device_name && `Device: ${testResult.device_name} - `}
-                      State: {testResult.state}
+                      {testResult.device_name && `${t('smartPlugs.addSmartPlug.device')}: ${testResult.device_name} - `}
+                      {t('smartPlugs.addSmartPlug.state')}: {testResult.state}
                     </p>
                   </div>
                 </>
@@ -1153,7 +1150,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
             <>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm text-bambu-gray mb-1">Username</label>
+                  <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.addSmartPlug.username')}</label>
                   <input
                     type="text"
                     value={username}
@@ -1163,7 +1160,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-bambu-gray mb-1">Password</label>
+                  <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.addSmartPlug.password')}</label>
                   <input
                     type="password"
                     value={password}
@@ -1174,7 +1171,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                 </div>
               </div>
               <p className="text-xs text-bambu-gray -mt-2">
-                Leave empty if your Tasmota device doesn't require authentication
+                {t('smartPlugs.addSmartPlug.authHelp')}
               </p>
             </>
           )}
@@ -1182,13 +1179,13 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
           {/* Link to Printer - not shown for MQTT plugs (monitor-only) */}
           {plugType !== 'mqtt' && (
             <div>
-              <label className="block text-sm text-bambu-gray mb-1">Link to Printer</label>
+              <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.addSmartPlug.linkToPrinter')}</label>
               <select
                 value={printerId ?? ''}
                 onChange={(e) => setPrinterId(e.target.value ? Number(e.target.value) : null)}
                 className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
               >
-                <option value="">No printer (manual control only)</option>
+                <option value="">{t('smartPlugs.addSmartPlug.noPrinter')}</option>
                 {availablePrinters?.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -1196,7 +1193,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                 ))}
               </select>
               <p className="text-xs text-bambu-gray mt-1">
-                Linking enables automatic on/off when prints start/complete
+                {t('smartPlugs.addSmartPlug.linkingDesc')}
               </p>
             </div>
           )}
@@ -1206,7 +1203,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Bell className="w-4 h-4 text-bambu-green" />
-                <span className="text-white font-medium">Power Alerts</span>
+                <span className="text-white font-medium">{t('smartPlugs.addSmartPlug.powerAlerts')}</span>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
                 <input
@@ -1222,7 +1219,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm text-bambu-gray mb-1">Alert if above (W)</label>
+                    <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.addSmartPlug.alertAbove')}</label>
                     <input
                       type="number"
                       value={powerAlertHigh}
@@ -1234,7 +1231,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-bambu-gray mb-1">Alert if below (W)</label>
+                    <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.addSmartPlug.alertBelow')}</label>
                     <input
                       type="number"
                       value={powerAlertLow}
@@ -1247,7 +1244,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                   </div>
                 </div>
                 <p className="text-xs text-bambu-gray">
-                  Get notified when power consumption crosses these thresholds. Leave empty to disable that direction.
+                  {t('smartPlugs.addSmartPlug.alertHelp')}
                 </p>
               </div>
             )}
@@ -1259,7 +1256,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4 text-bambu-green" />
-                  <span className="text-white font-medium">Daily Schedule</span>
+                  <span className="text-white font-medium">{t('smartPlugs.addSmartPlug.dailySchedule')}</span>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
@@ -1275,7 +1272,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-sm text-bambu-gray mb-1">Turn On at</label>
+                      <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.addSmartPlug.turnOnAt')}</label>
                       <input
                         type="time"
                         value={scheduleOnTime}
@@ -1284,7 +1281,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm text-bambu-gray mb-1">Turn Off at</label>
+                      <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.addSmartPlug.turnOffAt')}</label>
                       <input
                         type="time"
                         value={scheduleOffTime}
@@ -1294,7 +1291,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                     </div>
                   </div>
                   <p className="text-xs text-bambu-gray">
-                    Automatically turn the plug on/off at these times daily. Leave empty to skip that action.
+                    {t('smartPlugs.addSmartPlug.scheduleHelp')}
                   </p>
                 </div>
               )}
@@ -1307,8 +1304,8 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               <div className="flex items-center gap-2">
                 <LayoutGrid className="w-4 h-4 text-bambu-green" />
                 <div>
-                  <span className="text-white font-medium">Show in Switchbar</span>
-                  <p className="text-xs text-bambu-gray">Quick access from sidebar</p>
+                  <span className="text-white font-medium">{t('smartPlugs.addSmartPlug.showInSwitchbar')}</span>
+                  <p className="text-xs text-bambu-gray">{t('smartPlugs.addSmartPlug.switchbarDesc')}</p>
                 </div>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
@@ -1330,8 +1327,8 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                 <div className="flex items-center gap-2">
                   <Eye className="w-4 h-4 text-bambu-green" />
                   <div>
-                    <span className="text-white font-medium">Show on Printer Card</span>
-                    <p className="text-xs text-bambu-gray">Display button on printer card</p>
+                    <span className="text-white font-medium">{t('smartPlugs.addSmartPlug.showOnPrinterCard')}</span>
+                    <p className="text-xs text-bambu-gray">{t('smartPlugs.addSmartPlug.printerCardDesc')}</p>
                   </div>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">

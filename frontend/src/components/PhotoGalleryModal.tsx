@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, ChevronLeft, ChevronRight, Download, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
 import { Button } from './Button';
@@ -19,6 +20,7 @@ export function PhotoGalleryModal({
   onClose,
   onDelete,
 }: PhotoGalleryModalProps) {
+  const { t } = useTranslation();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -75,13 +77,13 @@ export function PhotoGalleryModal({
           <div>
             <h2 className="text-lg font-semibold text-white">{archiveName}</h2>
             <p className="text-sm text-bambu-gray">
-              Photo {currentIndex + 1} of {photos.length}
+              {t('photoGallery.photoOf', { current: currentIndex + 1, total: photos.length })}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={handleDownload}>
               <Download className="w-4 h-4" />
-              Download
+              {t('common.download')}
             </Button>
             {onDelete && (
               <Button variant="secondary" size="sm" onClick={handleDelete} className="text-red-400 hover:text-red-300">
@@ -155,8 +157,8 @@ export function PhotoGalleryModal({
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <ConfirmModal
-          title="Delete Photo"
-          message="Delete this photo? This cannot be undone."
+          title={t('photoGallery.deletePhoto')}
+          message={t('photoGallery.deleteConfirm')}
           confirmText="Delete"
           variant="danger"
           onConfirm={() => {

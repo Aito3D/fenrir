@@ -14,6 +14,7 @@ import {
   Info,
   Bug,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { supportApi, type LogEntry } from '../api/client';
 
 const LOG_LEVELS = ['DEBUG', 'INFO', 'WARNING', 'ERROR'] as const;
@@ -34,6 +35,7 @@ const levelIcons: Record<LogLevel, typeof Info> = {
 };
 
 export function LogViewer() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [autoScroll, setAutoScroll] = useState(true);
   const [expandedLogs, setExpandedLogs] = useState<Set<number>>(new Set());
@@ -126,11 +128,11 @@ export function LogViewer() {
             <Bug className="w-5 h-5" />
           </div>
           <div className="text-left">
-            <p className="font-medium text-white">Application Logs</p>
+            <p className="font-medium text-white">{t('logViewer.title')}</p>
             <p className="text-sm text-bambu-gray">
               {isStreaming
-                ? `Live streaming - ${data?.filtered_count ?? 0} entries`
-                : 'View and filter application logs'}
+                ? t('logViewer.liveStreaming', { count: data?.filtered_count ?? 0 })
+                : t('logViewer.description')}
             </p>
           </div>
         </div>
@@ -138,7 +140,7 @@ export function LogViewer() {
           {isStreaming && (
             <span className="flex items-center gap-1.5 px-2 py-1 bg-bambu-green/20 rounded text-bambu-green text-xs">
               <span className="w-1.5 h-1.5 bg-bambu-green rounded-full animate-pulse" />
-              Live
+              {t('logViewer.live')}
             </span>
           )}
           {isExpanded ? (

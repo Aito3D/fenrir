@@ -1,5 +1,4 @@
 export default {
-  // Navigation
   nav: {
     printers: 'プリンター',
     archives: 'アーカイブ',
@@ -25,8 +24,6 @@ export default {
     smartSwitches: 'スマートスイッチ',
     logout: 'ログアウト',
   },
-
-  // Common
   common: {
     save: '保存',
     saving: '保存中...',
@@ -111,9 +108,19 @@ export default {
     duplicate: '複製',
     left: '左',
     right: '右',
+    copy: 'コピー',
+    processing: '処理中...',
+    tags: 'タグ',
+    notes: 'メモ',
+    project: 'プロジェクト',
+    justNow: 'たった今',
+    minutesAgo: '{{count}}分前',
+    hoursAgo: '{{count}}時間前',
+    daysAgo: '{{count}}日前',
+    successful: '成功',
+    failed: '失敗',
+    completed: '完了',
   },
-
-  // Printers page
   printers: {
     title: 'プリンター',
     addPrinter: 'プリンターを追加',
@@ -149,7 +156,6 @@ export default {
     maintenanceWarning_plural: '{{count}}件の警告',
     maintenanceDue: '{{count}}件のメンテナンス期限',
     maintenanceDue_plural: '{{count}}件の期限',
-    // Sort options
     sort: {
       name: '名前',
       status: 'ステータス',
@@ -158,20 +164,17 @@ export default {
       ascending: '昇順で並べ替え',
       descending: '降順で並べ替え',
     },
-    // Card size
     cardSize: {
       small: '小',
       medium: '中',
       large: '大',
       extraLarge: '特大',
     },
-    // Controls
     hideOffline: 'オフラインを非表示',
     nextAvailable: '次に完了',
     powerOn: '電源オン',
     offlinePrintersWithPlugs: 'スマートプラグ付きオフラインプリンター',
     noPrintersConfigured: 'プリンターが設定されていません',
-    // Printer card
     readyToPrint: '印刷可能',
     external: '外部',
     extL: 'Ext-L',
@@ -187,7 +190,6 @@ export default {
     name: '名前',
     serialCannotBeChanged: 'シリアル番号は変更できません',
     locationHelp: 'プリンターのグループ化とキュージョブのフィルタリングに使用',
-    // WiFi signal strength
     wifiSignal: {
       veryWeak: '非常に弱い',
       weak: '弱い',
@@ -195,21 +197,15 @@ export default {
       good: '良好',
       excellent: '非常に良い',
     },
-    // Maintenance
     maintenanceUpToDate: 'すべてのメンテナンスが最新です',
-    // Chamber light
     chamberLightOn: 'チャンバーライトをオンにしました',
     chamberLightOff: 'チャンバーライトをオフにしました',
-    // Files
     files: 'ファイル',
     browseFiles: 'プリンターのファイルを参照',
-    // Smart plug
     autoOffAfterPrint: '印刷後に自動電源オフ',
     autoOffExecuted: '自動オフが実行されました - リセットするにはプリンターの電源を入れてください',
-    // HMS errors
     hmsErrors: 'クリックしてHMSエラーを表示',
     viewHmsErrors: '{{count}}件のHMSエラーを表示',
-    // Actions
     resume: '再開',
     pause: '一時停止',
     stop: '停止',
@@ -249,18 +245,15 @@ export default {
     nozzleFlow: 'フロー',
     nozzleHighFlow: 'ハイフロー',
     nozzleStandardFlow: 'スタンダード',
-    // Firmware
     firmwareUpdate: 'ファームウェアアップデート',
     firmwareInstructions: 'プリンターのタッチスクリーンで',
     firmwareNav: 'に移動',
     settings: '設定',
     firmware: 'ファームウェア',
-    // Discovery
     discoverPrinters: 'プリンターを検出',
     searching: '検索中...',
     manualEntry: '手動入力',
     addFromCloud: 'クラウドから追加',
-    // Toast messages
     toast: {
       printerDeleted: 'プリンターを削除しました',
       printerAdded: 'プリンターを追加しました',
@@ -296,23 +289,18 @@ export default {
       calibrationFailed: 'キャリブレーションに失敗しました',
       rfidRereadInitiated: 'RFID再読み取りを開始しました',
     },
-    // Connection status
     connection: {
       connected: '接続中',
       offline: 'オフライン',
     },
-    // Queue info
     queue: {
       inQueue: 'キュー内',
       inQueue_plural: '{{count}}件がキュー内',
     },
-    // Controls section
     controls: 'コントロール',
-    // RFID
     rfid: {
       reread: 'RFID再読み取り',
     },
-    // Permissions
     permission: {
       noAdd: 'プリンターを追加する権限がありません',
       noEdit: 'プリンターを編集する権限がありません',
@@ -323,7 +311,6 @@ export default {
       noSmartPlugControl: 'スマートプラグを制御する権限がありません',
       noCamera: 'カメラを表示する権限がありません',
     },
-    // Add/Edit modal
     modal: {
       addTitle: 'プリンターを追加',
       editTitle: 'プリンターを編集',
@@ -336,7 +323,6 @@ export default {
       modelOptional: 'モデル（任意）',
       saveChanges: '変更を保存',
     },
-    // Skip objects
     skipObjects: {
       tooltip: 'オブジェクトスキップ',
       onlyWhilePrinting: 'オブジェクトスキップ（印刷中のみ）',
@@ -356,7 +342,6 @@ export default {
       confirmTitle: 'オブジェクトをスキップしますか？',
       confirmMessage: '「{{name}}」をスキップしますか？この操作は元に戻せません。',
     },
-    // Confirm modals
     confirm: {
       deleteTitle: 'プリンターを削除',
       deleteMessage: '「{{name}}」を削除しますか？すべての接続設定が削除されます。',
@@ -379,7 +364,6 @@ export default {
       powerOffWarning: '警告: 「{{name}}」は現在印刷中です！電源をオフにしますか？印刷が中断され、プリンターが損傷する可能性があります。',
       powerOffButton: '電源オフ',
     },
-    // Discovery
     discovery: {
       title: 'プリンター',
       searching: '検索中...',
@@ -404,16 +388,12 @@ export default {
       unknown: '不明',
       failedToStart: '印刷の開始に失敗しました',
     },
-    // Filaments section
     filaments: 'フィラメント',
-    // Camera
     openCameraOverlay: 'カメラオーバーレイを開く',
     openCameraWindow: 'カメラを新しいウィンドウで開く',
-    // Firmware
     firmwareUpdateAvailable: 'ファームウェアアップデートあり: {{current}} → {{latest}}',
     firmwareUpToDate: 'ファームウェア {{version}} — 最新',
     firmwareUpdateButton: 'アップデート',
-    // Plate detection
     plateDetection: {
       noPermission: 'このページにアクセスする権限がありません。',
       enabledClick: 'プレートチェック有効 - クリックして無効化',
@@ -435,17 +415,14 @@ export default {
       clickToEdit: '{{label}} - クリックして編集',
       clickToAddLabel: 'クリックしてラベルを追加',
     },
-    // Fans
     fans: {
       partCooling: 'パーツ冷却ファン',
       auxiliary: '補助ファン',
       chamber: 'チャンバーファン',
     },
-    // HMS errors
     clickToViewHmsErrors: 'クリックしてHMSエラーを表示',
     estimatedCompletion: '完了予定時刻',
     slotOptions: 'スロットオプション',
-    // AMS hover popup
     amsPopup: {
       friendlyName: 'AMS名',
       friendlyNamePlaceholder: '例: AMS フレンドリー名',
@@ -455,7 +432,6 @@ export default {
       clear: 'クリア',
       noEditPermission: 'AMS ユニットの名前を変更する権限がありません',
     },
-    // Firmware modal
     firmwareModal: {
       title: 'ファームウェアアップデート',
       titleUpToDate: 'ファームウェア情報',
@@ -477,7 +453,6 @@ export default {
       uploadedToast: 'ファームウェアをアップロードしました！プリンター画面からアップデートを実行してください。',
     },
     accessCodePlaceholder: 'プリンター設定から取得',
-    // ROI editor
     roi: {
       title: 'プリンター',
       xStart: 'X開始',
@@ -493,8 +468,6 @@ export default {
     dropToPrint: 'ドロップして印刷',
     cannotPrint: 'プリンター使用中',
   },
-
-  // Archives page
   archives: {
     title: '印刷アーカイブ',
     searchPlaceholder: 'アーカイブを検索...',
@@ -743,14 +716,32 @@ export default {
       cleared: '{{count}}件のログエントリを削除しました',
       clearFailed: '印刷ログの削除に失敗しました',
     },
+    compare: {
+      title: 'アーカイブを比較 ({{count}})',
+      loadFailed: '比較の読み込みに失敗',
+      setting: '設定',
+      differencesFound: '{{count}}件の相違が見つかりました',
+      vs: 'vs',
+      andMore: '...他{{count}}件',
+      successAnalysis: '成功/失敗分析',
+      successful: '{{count}}件成功',
+      failed: '{{count}}件失敗',
+      noCorrelations: '設定と成功/失敗の間に明確な相関は見つかりませんでした',
+      needBoth: '相関分析には成功と失敗の両方の印刷が必要',
+    },
+    calendar: {
+      printsThisMonth: '今月の印刷',
+      successful: '成功',
+      failed: '失敗',
+      noPrints: 'この日は印刷なし',
+      selectDay: '印刷を表示する日を選択',
+      completed: '完了',
+    },
   },
-
-  // Queue page
   queue: {
     title: '印刷キュー',
     subtitle: '印刷ジョブのスケジュールと管理',
     addToQueue: 'キューに追加',
-    // Print modal
     print: '印刷',
     reprint: '再印刷',
     schedulePrint: '印刷をスケジュール',
@@ -783,13 +774,11 @@ export default {
     clearPlateSuccess: 'プレートをクリアしました — 次の印刷の準備完了',
     plateReady: 'プレートをクリアしました — 次の印刷の準備完了',
     plateNumber: 'プレート {{index}}',
-    // Sections
     sections: {
       currentlyPrinting: '印刷中',
       queued: 'キュー中',
       history: '履歴',
     },
-    // Status
     status: {
       pending: '待機中',
       waiting: '待機中',
@@ -800,7 +789,6 @@ export default {
       skipped: 'スキップ',
       cancelled: 'キャンセル済み',
     },
-    // Summary cards
     summary: {
       printing: '印刷中',
       queued: 'キュー中',
@@ -808,7 +796,6 @@ export default {
       totalWeight: 'キュー合計重量',
       history: '履歴',
     },
-    // Filters
     filter: {
       allPrinters: 'すべてのプリンター',
       unassigned: '未割当',
@@ -816,7 +803,6 @@ export default {
       allLocations: 'すべてのロケーション',
       any: 'すべて',
     },
-    // Sort
     sort: {
       byPosition: '順番で並べ替え',
       byName: '名前で並べ替え',
@@ -826,18 +812,15 @@ export default {
       ascendingOldest: '昇順（古い順）',
       descendingNewest: '降順（新しい順）',
     },
-    // Badges
     badges: {
       staged: 'ステージ済み',
       requiresPrevious: '前の成功が必要',
       autoPowerOff: '自動電源オフ',
     },
-    // Empty state
     empty: {
       title: 'スケジュールされた印刷はありません',
       description: 'アーカイブページのコンテキストメニューから「スケジュール」オプションを使用するか、ファイルをドラッグ＆ドロップして始めましょう。',
     },
-    // Time
     time: {
       asap: '即時',
       overdue: '期限超過',
@@ -846,13 +829,11 @@ export default {
       inMinutes: '{{count}}分後',
       inHours: '{{count}}時間後',
     },
-    // Actions
     actions: {
       stopPrint: '印刷を停止',
       startPrint: '印刷を開始',
       requeue: '再キュー',
     },
-    // Bulk edit
     bulkEdit: {
       title: '{{count}}件のアイテムを編集',
       title_plural: '{{count}}件のアイテムを編集',
@@ -877,7 +858,6 @@ export default {
       editSelected: '選択を編集',
       cancelSelected: '選択をキャンセル',
     },
-    // Confirmations
     confirm: {
       cancelTitle: 'スケジュール済み印刷をキャンセル',
       cancelMessage: '「{{name}}」をキャンセルしますか？',
@@ -892,7 +872,6 @@ export default {
       thisPrint: 'この印刷',
       thisItem: 'このアイテム',
     },
-    // Toast messages
     toast: {
       cancelled: 'キャンセル済み',
       cancelFailed: 'アイテムのキャンセルに失敗しました',
@@ -909,7 +888,6 @@ export default {
       bulkCancelled: '{{count}}件のアイテムをキャンセルしました',
       bulkCancelFailed: 'アイテムのキャンセルに失敗しました',
     },
-    // Permissions
     permissions: {
       noStopPrint: '印刷を停止する権限がありません',
       noStartPrint: '印刷を開始する権限がありません',
@@ -922,7 +900,6 @@ export default {
       noCancelItems: 'キューアイテムをキャンセルする権限がありません',
     },
   },
-
   backgroundDispatch: {
     unknownFile: '不明なファイル',
     unknownPrinter: '不明なプリンター',
@@ -949,8 +926,6 @@ export default {
       completeSuccess: 'バックグラウンド配信完了: {{completed}} 件成功',
     },
   },
-
-  // Statistics page
   stats: {
     title: '統計',
     subtitle: 'ウィジェットをドラッグして並べ替え。目のアイコンをクリックして非表示。',
@@ -975,7 +950,6 @@ export default {
     last30Days: '過去30日間',
     last90Days: '過去90日間',
     allTime: '全期間',
-    // Widgets
     quickStats: 'クイック統計',
     printActivity: '印刷アクティビティ',
     filamentTypes: 'フィラメントタイプ',
@@ -994,7 +968,6 @@ export default {
     topFailureReasons: '主な失敗理由',
     failedPrintsCount: '{{failed}} / {{total}} 件の印刷が失敗',
     lastWeekRate: '先週: {{rate}}%',
-    // Actions
     resetLayout: 'レイアウトをリセット',
     recalculateCosts: 'コストを再計算',
     recalculateCostsHint: '現在のフィラメント価格ですべてのアーカイブコストを再計算',
@@ -1002,15 +975,12 @@ export default {
     exportAsCsv: 'CSVでエクスポート',
     exportAsExcel: 'Excelでエクスポート',
     hiddenCount: '{{count}}件非表示',
-    // Toast
     exportDownloaded: 'エクスポートをダウンロードしました',
     exportFailed: 'エクスポートに失敗しました',
     layoutReset: 'レイアウトをリセットしました',
     recalculatedCosts: '{{count}}件のアーカイブのコストを再計算しました',
     recalculateFailed: 'コストの再計算に失敗しました',
-    // Loading
     loadingStats: '統計を読み込み中...',
-    // Permissions
     noPermissionResetLayout: 'レイアウトをリセットする権限がありません',
     noPermissionRecalculate: 'コストを再計算する権限がありません',
     noPrintDataInRange: '選択した期間にデータがありません',
@@ -1056,8 +1026,6 @@ export default {
       to: '終了',
     },
   },
-
-  // Maintenance page
   maintenance: {
     title: 'メンテナンス',
     overview: '概要',
@@ -1080,10 +1048,8 @@ export default {
     noHistory: 'メンテナンス履歴がありません',
     editPrintHours: '印刷時間を編集',
     currentHours: '現在の時間',
-    // Tabs
     statusTab: 'ステータス',
     settingsTab: '設定',
-    // Status
     overdueCount: '{{count}}件超過',
     dueSoonCount: '{{count}}件まもなく期限',
     dueSoon: 'まもなく期限',
@@ -1091,7 +1057,6 @@ export default {
     overdueBy: '{{duration}}超過',
     dueIn: 'あと{{duration}}',
     timeLeft: '残り{{duration}}',
-    // Duration formats
     day: '1日',
     days: '日',
     week: '1週間',
@@ -1099,7 +1064,6 @@ export default {
     month: '1ヶ月',
     months: '{{count}}ヶ月',
     year: '1年',
-    // Settings
     maintenanceTypes: 'メンテナンスタイプ',
     maintenanceTypesDescription: 'システムタイプとカスタムメンテナンスタスク',
     addCustomType: 'カスタムタイプを追加',
@@ -1117,16 +1081,13 @@ export default {
     exampleName: '例: HEPAフィルター交換',
     viewDocumentation: 'ドキュメントを表示',
     timeBasedInterval: '時間ベースのインターバル',
-    // Interval overrides
     intervalOverrides: 'インターバルのオーバーライド',
     intervalOverridesDescription: '特定のプリンターの間隔をカスタマイズ',
-    // Printer assignment
     assignedToPrinters: '割り当て済みプリンター：',
     noPrintersAssigned: 'プリンター未割り当て',
     addPrinterShort: '追加:',
     printersAssignedClick: '{{count}}台のプリンターを割り当て済み - クリックして管理',
     removeFromPrinter: 'このプリンターから削除',
-    // Types
     types: {
       lubricateCarbonRods: 'カーボンロッドの潤滑',
       lubricateRails: 'リニアレールの潤滑',
@@ -1143,7 +1104,6 @@ export default {
       replaceCarbonFilter: 'カーボンフィルター交換',
       lubricateLeftNozzleRail: '左ノズルレールの潤滑',
     },
-    // Toast
     maintenanceComplete: 'メンテナンスを完了としてマークしました',
     typeUpdated: 'メンテナンスタイプを更新しました',
     typeDeleted: 'メンテナンスタイプを削除しました',
@@ -1151,11 +1111,9 @@ export default {
     printHoursUpdated: '印刷時間を更新しました',
     printerAssigned: 'プリンターを割り当てました',
     printerRemoved: 'プリンターを削除しました',
-    // Confirmation
     deleteTypeConfirm: '「{{name}}」を削除しますか？',
     deleteSystemTypeTitle: 'デフォルトのメンテナンスタスクを削除しますか？',
     deleteSystemTypeMessage: 'デフォルトのメンテナンスタスク「{{name}}」を削除してもよろしいですか？',
-    // Permissions
     noPermissionUpdate: 'メンテナンス記録を更新する権限がありません',
     noPermissionPerform: 'メンテナンスを実行する権限がありません',
     noPermissionEditTypes: 'メンテナンスタイプを編集する権限がありません',
@@ -1164,15 +1122,11 @@ export default {
     noPermissionRemovePrinter: 'プリンターの割り当てを解除する権限がありません',
     noPermissionAssignPrinter: 'プリンターを割り当てる権限がありません',
     noPermissionEditIntervals: 'メンテナンス間隔を編集する権限がありません',
-    // Configure link
     configureSettings: 'メンテナンスタイプと間隔を設定',
   },
-
-  // Settings page
   settings: {
     title: '設定',
     general: '一般',
-    // Tab names
     tabs: {
       general: '一般',
       smartPlugs: 'スマートプラグ',
@@ -1185,7 +1139,6 @@ export default {
       backup: 'バックアップ',
       emailAuth: 'メール認証',
     },
-    // Email settings
     email: {
       smtpSettings: 'SMTP設定',
       smtpHost: 'SMTPサーバー',
@@ -1213,7 +1166,6 @@ export default {
       feature2: 'ユーザーはユーザー名またはメールでログインできます',
       feature3: 'パスワード忘れ機能が利用可能です',
       feature4: '管理者はメールでユーザーパスワードをリセットできます',
-      // Error messages
       errors: {
         requiredFields: 'すべての必須フィールドに入力してください',
         usernameRequired: '認証が有効な場合、ユーザー名は必須です',
@@ -1222,17 +1174,14 @@ export default {
         usernamePasswordRequired: '認証が有効な場合、ユーザー名とパスワードは必須です',
         configureSmtpFirst: '最初にSMTP設定を構成してテストしてください',
       },
-      // Success messages
       success: {
         settingsSaved: 'SMTP設定を保存しました',
       },
-      // Security options
       securityOptions: {
         starttls: 'STARTTLS (ポート 587)',
         ssl: 'SSL/TLS (ポート 465)',
         none: 'なし (ポート 25)',
       },
-      // Authentication options
       authOptions: {
         enabled: '有効',
         disabled: '無効',
@@ -1257,7 +1206,6 @@ export default {
     latestVersion: '最新バージョン',
     upToDate: '最新です',
     updateAvailable: 'アップデートあり',
-    // Notifications
     notificationLanguage: '通知の言語',
     notificationLanguageDescription: 'プッシュ通知の言語',
     bedCooledThreshold: 'ベッド冷却しきい値',
@@ -1287,7 +1235,6 @@ export default {
       maintenanceDue: 'メンテナンス期限',
       maintenanceDueDescription: 'メンテナンスが必要なときに通知',
     },
-    // Smart Plugs
     smartPlug: {
       title: 'スマートプラグ',
       add: 'スマートプラグを追加',
@@ -1306,7 +1253,6 @@ export default {
       turnOn: '電源オン',
       turnOff: '電源オフ',
     },
-    // Filament Tracking Mode
     filamentTracking: 'フィラメント追跡',
     filamentTrackingDesc: 'フィラメントスプールの追跡方法を選択してください。内蔵インベントリまたは外部Spoolmanサーバーを使用できます。',
     trackingModeBuiltIn: '内蔵インベントリ',
@@ -1322,7 +1268,6 @@ export default {
     amsSyncing: '同期中...',
     amsSyncSuccess: '{{synced}}個のスプールを同期、{{skipped}}個をスキップ',
     amsSyncError: 'AMSからの重量同期に失敗しました',
-    // Spoolman settings
     spoolmanUrl: 'Spoolman URL',
     spoolmanUrlHint: 'Spoolmanサーバーのurl（例：http://localhost:7912）',
     spoolmanConnected: '接続中',
@@ -1344,69 +1289,51 @@ export default {
     syncAmsData: 'AMSデータを同期',
     syncAmsDataDesc: 'プリンターのAMSデータをSpoolmanに手動同期',
     allPrinters: '全プリンター',
-    // Default printer
     noDefaultPrinter: 'デフォルトなし（毎回選択）',
-    // Sidebar
     sidebarOrder: 'サイドバーの順序',
-    // Camera
     saveThumbnails: 'サムネイルを保存',
     captureFinishPhoto: '完了写真を撮影',
     noPrintersConfigured: 'プリンターが設定されていません',
-    // Archive settings
     archiveMode: {
       always: '常にアーカイブを作成',
       never: 'アーカイブを作成しない',
       ask: '毎回確認',
     },
-    // Updates
     checkForUpdatesLabel: 'アップデートを確認',
     checkPrinterFirmware: 'プリンターファームウェアの確認',
     includeBetaUpdates: 'ベータ版を含める',
     includeBetaUpdatesDesc: 'アップデート確認時にベータ版およびプレリリース版を通知する',
-    // Queue
     enableRetry: 'リトライを有効化',
-    // Home Assistant
     homeAssistantDescription: 'Home Assistantに接続してHA REST APIでスマートプラグを制御します。switch、light、input_booleanエンティティに対応しています。',
     environmentManagedLabel: '(環境変数で管理)',
     autoEnabledViaEnv: '環境変数により自動的に有効化されました',
     urlFromEnvReadOnly: 'HA_URL環境変数で設定された値（読み取り専用）',
     tokenFromEnvReadOnly: 'HA_TOKEN環境変数で設定された値（読み取り専用）',
-    // MQTT
     mqttConnectedTo: '接続先:',
-    // Prometheus
     prometheusDescription: 'プリンターデータをPrometheus形式で公開',
-    // Smart plugs empty state
     noSmartPlugsTitle: 'スマートプラグが設定されていません',
     noSmartPlugsDescription: 'Tasmotaベースのスマートプラグを追加して、エネルギー消費を追跡し、電源制御を自動化します。',
-    // Notifications empty state
     noProvidersTitle: 'プロバイダーが設定されていません',
     noProvidersDescription: 'アラートを受信するにはプロバイダーを追加してください。',
     noTemplatesAvailable: 'テンプレートがありません。バックエンドを再起動してデフォルトテンプレートを生成してください。',
-    // API permissions
     apiPermissionView: 'プリンターステータスとキューを表示',
     apiPermissionEdit: '印刷キューにアイテムを追加・削除',
-    // API keys
     apiKeysEmptyTitle: 'APIキーがありません',
     apiKeysEmptyDescription: '外部サービスと連携するためのAPIキーを作成してください。',
-    // Users
     noUsersFound: 'ユーザーが見つかりません',
     noGroupsFound: 'グループが見つかりません',
     noGroupsAvailable: '利用可能なグループがありません',
     passwordsDoNotMatch: 'パスワードが一致しません',
     systemGroupWarning: 'システムグループ名は変更できません',
-    // Auth disabled
     authDisabledTitle: '認証が無効です',
     authDisabledFeature1: 'システムへのアクセスにログインを要求',
     authDisabledFeature2: 'グループベースの権限で複数ユーザーを作成',
     authDisabledFeature3: '50以上のきめ細かな権限でアクセスを制御',
-    // User deletion
     userHasCreated: 'このユーザーは以下を作成しています：',
     userItemsQuestion: 'これらのアイテムをどうしますか？',
     deleteUserConfirm: 'このユーザーを削除してもよろしいですか？この操作は元に戻せません。',
     actionCannotBeUndone: 'この操作は元に戻せません',
-    // Smart plugs
     addFirstSmartPlug: '最初のスマートプラグを追加',
-    // Notifications
     providers: 'プロバイダー',
     log: 'ログ',
     testAll: 'すべてテスト',
@@ -1415,7 +1342,6 @@ export default {
     testFailedCount: '{{count}}件失敗',
     messageTemplates: 'メッセージテンプレート',
     messageTemplatesDescription: '各イベントの通知メッセージをカスタマイズ。',
-    // API Keys section
     apiKeys: 'APIキー',
     apiKeysDescription: '外部連携やWebhook用のAPIキーを作成します。',
     createKey: 'キーを作成',
@@ -1454,7 +1380,6 @@ export default {
     deleteApiKeyTitle: 'APIキーを削除',
     deleteApiKeyMessage: 'このAPIキーを削除してもよろしいですか？このキーを使用しているすべての連携が動作しなくなります。',
     deleteKey: 'キーを削除',
-    // Filament tab
     amsDisplayThresholds: 'AMS表示しきい値',
     amsThresholdsDescription: 'AMS湿度と温度インジケーターの色しきい値を設定します。',
     humidity: '湿度',
@@ -1470,7 +1395,6 @@ export default {
     printModal: '印刷ダイアログ',
     expandCustomMapping: 'カスタムマッピングをデフォルトで展開',
     expandCustomMappingDescription: '複数プリンターに印刷する際、プリンターごとのAMSマッピングを展開表示',
-    // User management
     authentication: '認証',
     authEnabledDescription: 'ユーザー認証でインスタンスが保護されています',
     authDisabledDescription: '認証を有効にして、ユーザーアカウントの作成、権限の管理、Bambuddyインスタンスのセキュリティを確保しましょう。',
@@ -1494,27 +1418,21 @@ export default {
     enterPassword: 'パスワードを入力（6文字以上）',
     confirmPassword: 'パスワードの確認',
     confirmPasswordPlaceholder: 'パスワードを確認',
-    // Title tooltips
     viewReleaseOnGitHub: 'GitHubでリリースを表示',
     turnAllPlugsOn: 'すべてのプラグをオン',
     turnAllPlugsOff: 'すべてのプラグをオフ',
-    // Modal: Clear logs
     clearNotificationLogs: '通知ログをクリア',
     clearLogsMessage: '30日以上前のすべての通知ログを完全に削除します。この操作は元に戻せません。',
     clearLogs: '通知ログを削除',
-    // Modal: Reset UI
     resetUiPreferences: 'UI設定をリセット',
     resetUiPreferencesMessage: 'すべてのUI設定をデフォルトにリセットします：サイドバー順序、テーマ、ダッシュボードレイアウト、表示モード、ソート設定。プリンター、アーカイブ、サーバー設定は影響を受けません。クリア後にページがリロードされます。',
     resetPreferences: '設定をリセット',
-    // Modal: Delete group
     deleteGroupTitle: 'グループを削除',
     deleteGroupMessage: 'このグループを削除しますか？このグループのユーザーはこれらの権限を失います。',
     deleteGroup: 'グループを削除',
-    // Modal: Disable auth
     disableAuthenticationTitle: '認証を無効化',
     disableAuthenticationMessage: '認証を無効にしますか？Bambuddyインスタンスにログインなしでアクセスできるようになります。ユーザーはデータベースに残りますが、認証は無効になります。',
     disableAuthentication: '認証を無効化',
-    // Additional settings
     configureBambuddy: 'Bambuddyを設定',
     systemDefault: 'システムデフォルト',
     archiveSettings: 'アーカイブ設定',
@@ -1545,7 +1463,6 @@ export default {
     editUser: 'ユーザーを編集',
     deleteUserTitle: 'ユーザーを削除',
     groupName: 'グループ名',
-    // Placeholders
     leaveEmptyForAnonymous: '匿名の場合は空のまま',
     leaveEmptyForNoAuth: '認証なしの場合は空のまま',
     enterNewPassword: '新しいパスワードを入力',
@@ -1655,8 +1572,6 @@ export default {
       importFailed: 'インポートに失敗しました：無効なJSON形式',
     },
   },
-
-  // Notifications (for push notifications)
   notification: {
     printStarted: {
       title: '印刷開始',
@@ -1695,8 +1610,6 @@ export default {
       body: '{{printer}}: {{items}} の対応が必要です',
     },
   },
-
-  // Errors
   errors: {
     generic: '問題が発生しました',
     networkError: 'ネットワークエラーです。接続を確認してください。',
@@ -1709,8 +1622,6 @@ export default {
     deleteFailed: '削除に失敗しました',
     loadFailed: 'データの読み込みに失敗しました',
   },
-
-  // HMS Errors modal
   hmsErrors: {
     title: 'エラー - {{name}}',
     noErrors: 'エラーなし',
@@ -1720,8 +1631,6 @@ export default {
     clearSuccess: 'HMSエラーをクリアしました',
     clearFailed: 'HMSエラーのクリアに失敗しました',
   },
-
-  // MQTT Debug modal
   mqttDebug: {
     title: 'MQTTデバッグログ',
     searchPlaceholder: 'トピックまたはペイロードで検索...',
@@ -1741,8 +1650,6 @@ export default {
     direction: '方向',
     all: 'すべて',
   },
-
-  // Printer File Manager modal (printer internal storage)
   printerFiles: {
     title: 'ファイル管理',
     storageUsed: '使用中:',
@@ -1760,15 +1667,11 @@ export default {
       deleteFailed: '削除に失敗: {{error}}',
     },
   },
-
-  // Confirmations
   confirm: {
     delete: '削除しますか？',
     unsavedChanges: '保存されていない変更があります。このページを離れますか？',
     clearQueue: 'キューをクリアしますか？',
   },
-
-  // Login page
   login: {
     title: 'Bambuddy ログイン',
     subtitle: 'アカウントにサインイン',
@@ -1799,8 +1702,6 @@ export default {
     resetStep4: '新しいパスワードでログインし、設定で変更',
     gotIt: '了解',
   },
-
-  // Setup page
   setup: {
     title: 'Bambuddy セットアップ',
     subtitle: 'Bambuddyインスタンスの認証を設定',
@@ -1825,8 +1726,6 @@ export default {
       passwordTooShort: 'パスワードは6文字以上必要です',
     },
   },
-
-  // Password change
   changePassword: {
     title: 'パスワードを変更',
     currentPassword: '現在のパスワード',
@@ -1841,15 +1740,11 @@ export default {
     success: 'パスワードを変更しました',
     failed: 'パスワードの変更に失敗しました',
   },
-
-  // Plate detection alert
   plateAlert: {
     title: '印刷が一時停止されました！',
     message: 'ビルドプレート上にオブジェクトが検出されました。印刷が自動的に一時停止されました。プレートをクリアして印刷を再開してください。',
     understand: '了解',
   },
-
-  // Camera page
   camera: {
     title: 'カメラビュー',
     invalidPrinterId: '無効なプリンターID',
@@ -1878,8 +1773,6 @@ export default {
     stopRecording: '録画停止',
     chamberLight: 'チャンバーライト切替',
   },
-
-  // Groups management
   groups: {
     title: 'グループ管理',
     subtitle: 'アクセス制御の権限グループを管理',
@@ -1929,8 +1822,6 @@ export default {
       noResults: '検索に一致する権限がありません',
     },
   },
-
-  // Users management
   users: {
     title: 'ユーザー管理',
     subtitle: 'ユーザーとBambuddyインスタンスへのアクセスを管理',
@@ -1993,8 +1884,6 @@ export default {
       confirm: 'ユーザーを削除',
     },
   },
-
-  // Stream overlay
   streamOverlay: {
     title: 'ストリームオーバーレイ',
     invalidPrinterId: '無効なプリンターID',
@@ -2012,8 +1901,6 @@ export default {
       unknown: '不明',
     },
   },
-
-  // Profiles
   profiles: {
     title: 'フィラメントプロファイル',
     subtitle: 'スライサープリセットと圧力キャリブレーションの管理',
@@ -2129,19 +2016,16 @@ export default {
       customizeSettings: '新しいプリセットの設定をカスタマイズ',
       compareWithBase: 'ベースプリセットと比較',
       compare: '比較',
-      // CreatePresetModal - Basic Info
       basePreset: 'ベースプリセット',
       selectBasePreset: 'ベースプリセットを選択...',
       presetName: 'プリセット名',
       myCustomPreset: 'カスタムプリセット',
       inheritsFrom: '継承元:',
       dropJsonToImport: 'JSONファイルをドロップしてインポート',
-      // CreatePresetModal - Tabs
       tabs: {
         common: '一般',
         allFields: 'すべてのフィールド',
       },
-      // CreatePresetModal - All Fields Tab
       availableFields: '利用可能なフィールド',
       searchFieldsPlaceholder: 'フィールドを検索...',
       noMatchingFields: '一致するフィールドがありません',
@@ -2159,18 +2043,15 @@ export default {
       refresh: '更新',
       newPreset: '新規プリセット',
       clearFilters: 'フィルターをクリア',
-      // Compare mode
       compareMode: '比較モード',
       selectAnotherPreset: '同じタイプ（{{type}}）の別のプリセットを選択',
       clickTwoPresets: '同じタイプのプリセットを2つクリックして比較',
       selectFirst: '1. 最初を選択',
       selectSecond: '2. 2番目を選択',
       compareNow: '比較を実行',
-      // Status row
       lastSynced: '最終同期:',
       showingCount: '{{total}}件中{{shown}}件を表示',
       noPresetsFound: 'プリセットが見つかりません',
-      // Column headers
       columns: {
         filament: 'フィラメント',
         process: 'プロセス',
@@ -2179,7 +2060,6 @@ export default {
       noFilamentPresets: 'フィラメントプリセットなし',
       noProcessPresets: 'プロセスプリセットなし',
       noPrinterPresets: 'プリンタープリセットなし',
-      // Filters
       filters: {
         type: '種類',
         owner: '所有者',
@@ -2192,7 +2072,6 @@ export default {
         builtIn: 'ビルトイン',
         process: 'プロセス',
       },
-      // Permissions
       noTemplatesPermission: 'テンプレートを管理する権限がありません',
       noRefreshPermission: 'プロファイルを更新する権限がありません',
       noCreatePermission: 'プロジェクトを作成する権限がありません',
@@ -2220,8 +2099,6 @@ export default {
       },
     },
   },
-
-  // Support/Debug
   support: {
     debugLoggingActive: 'デバッグログが有効です',
     manageLogs: '管理',
@@ -2232,8 +2109,6 @@ export default {
     collectItem11: 'データベース健全性チェック',
     collectItem12: 'Docker環境の詳細',
   },
-
-  // File manager
   fileManager: {
     title: 'ファイル管理',
     subtitle: '印刷ファイルの整理と管理',
@@ -2356,8 +2231,6 @@ export default {
       failedToGenerateThumbnail: 'サムネイルの生成に失敗: {{error}}',
     },
   },
-
-  // Projects
   projects: {
     title: 'プロジェクト',
     subtitle: '印刷プロジェクトを管理',
@@ -2381,7 +2254,6 @@ export default {
     addFiles: 'ファイルを追加',
     removeFile: 'ファイルを削除',
     viewDetails: '詳細を表示',
-    // Modal fields
     namePlaceholder: 'プロジェクト名',
     descriptionPlaceholder: 'プロジェクトの説明（任意）',
     color: '色',
@@ -2399,7 +2271,6 @@ export default {
     priorityNormal: '通常',
     priorityHigh: '高',
     priorityUrgent: '緊急',
-    // Status
     statusActive: '進行中',
     statusCompleted: '完了',
     statusArchived: 'アーカイブ済み',
@@ -2408,23 +2279,19 @@ export default {
     failed: '失敗',
     inQueue: 'キュー内',
     noPrintsYet: '印刷履歴なし',
-    // Footer stats
     printJobs: '印刷ジョブ',
     partsPrinted: '印刷済みパーツ',
     failedParts: '失敗パーツ',
-    // Actions
     import: 'インポート',
     export: 'エクスポート',
     importProject: 'プロジェクトをインポート',
     exportAll: 'すべてのプロジェクトをエクスポート',
     loading: 'プロジェクトを読み込み中...',
-    // Permissions
     noEditPermission: 'プロジェクトを編集する権限がありません',
     noDeletePermission: 'プロジェクトを削除する権限がありません',
     noCreatePermission: 'プロジェクトを作成する権限がありません',
     noImportPermission: 'プロジェクトをインポートする権限がありません',
     noExportPermission: 'プロジェクトをエクスポートする権限がありません',
-    // Toast
     toast: {
       created: 'プロジェクトを作成しました',
       updated: 'プロジェクトを更新しました',
@@ -2435,8 +2302,6 @@ export default {
       exported: 'プロジェクトをエクスポートしました（メタデータのみ）',
     },
   },
-
-  // Project detail page
   projectDetail: {
     notFound: '見つかりません',
     backToProjects: 'プロジェクト一覧に戻る',
@@ -2549,8 +2414,6 @@ export default {
       templateCreated: 'プロジェクトからテンプレートを作成しました',
     },
   },
-
-  // System info
   system: {
     title: 'システム情報',
     version: 'バージョン',
@@ -2571,8 +2434,6 @@ export default {
     platform: 'プラットフォーム',
     architecture: 'アーキテクチャ',
   },
-
-  // Library (K Profiles)
   library: {
     title: 'フィラメントライブラリ',
     addFilament: 'フィラメントを追加',
@@ -2588,8 +2449,6 @@ export default {
     importFromPrinter: 'プリンターからインポート',
     exportToFile: 'ファイルにエクスポート',
   },
-
-  // Spoolman
   spoolman: {
     title: 'Spoolman連携',
     enabled: 'Spoolman有効',
@@ -2616,8 +2475,6 @@ export default {
     reportPartialUsage: '失敗した印刷の部分使用量を報告',
     reportPartialUsageDesc: '印刷が失敗またはキャンセルされた場合、レイヤー進捗に基づいてその時点までの推定フィラメント使用量を報告します。',
   },
-
-  // Inventory
   inventory: {
     title: 'スプール在庫管理',
     addSpool: 'スプールを追加',
@@ -2681,16 +2538,13 @@ export default {
     deleteConfirm: 'このスプールを削除しますか？この操作は元に戻せません。',
     archiveConfirm: 'このスプールをアーカイブしますか？',
     advancedSettings: '詳細設定',
-    // Tabs
     filamentInfoTab: 'フィラメント情報',
     paProfileTab: 'PAプロファイル',
     filamentInfo: 'フィラメント',
     additional: '追加情報',
-    // Cloud
     loadingPresets: 'クラウドプリセットを読み込み中...',
     cloudConnected: 'クラウド接続済み',
     cloudNotConnected: 'クラウド未接続（デフォルト使用）',
-    // Colors
     recentColors: '最近',
     searchColors: '色を検索...',
     searchResults: '検索結果',
@@ -2700,7 +2554,6 @@ export default {
     showAll: 'すべて表示',
     noColorsFound: '一致する色がありません',
     noResults: '結果なし',
-    // PA Profiles
     selectMaterialFirst: 'フィラメント情報タブで素材を選択してください。',
     noPrintersConfigured: 'プリンターが設定されていません。プリンターを追加してください。',
     matchingFilter: 'フィルター',
@@ -2717,7 +2570,6 @@ export default {
     leftNozzle: '左ノズル',
     rightNozzle: '右ノズル',
     profilesSelected: 'キャリブレーションプロファイル選択済み',
-    // Stats & enhanced table
     totalInventory: '在庫合計',
     totalConsumed: '総消費量',
     byMaterial: '素材別',
@@ -2748,11 +2600,9 @@ export default {
     table: 'テーブル',
     cards: 'カード',
     net: '正味',
-    // Grouping
     groupSimilar: 'グループ化',
     groupedSpools: '{{count}}本の同一スプール',
     groupedRows: '行',
-    // Column config
     columns: '列',
     configureColumns: '列の設定',
     configureColumnsDesc: 'ドラッグして並べ替えるか、矢印を使用してください。目のアイコンで表示/非表示を切り替えます。',
@@ -2764,13 +2614,11 @@ export default {
     moveDown: '下へ移動',
     hideColumn: '列を非表示',
     showColumn: '列を表示',
-    // Tag linking
     linkToSpool: 'スプールにリンク',
     tagLinked: 'タグがスプールにリンクされました',
     tagLinkFailed: 'タグのリンクに失敗しました',
     tagAlreadyLinked: 'タグは既に別のスプールにリンクされています',
     unknownTag: '不明なRFIDタグが検出されました',
-    // Usage history
     usageHistory: '使用履歴',
     noUsageHistory: 'まだ使用記録がありません',
     printName: 'プリント名',
@@ -2780,8 +2628,6 @@ export default {
     fillSourceLabel: '(Inv)',
     lowStockThresholdError: 'しきい値は0.1から99.9の間でなければなりません',
   },
-
-  // Timelapse
   timelapse: {
     title: 'タイムラプス',
     create: 'タイムラプスを作成',
@@ -2793,8 +2639,6 @@ export default {
     processing: 'バックアップファイルを処理中...',
     noTimelapses: '利用可能なタイムラプスがありません',
   },
-
-  // AMS
   ams: {
     title: 'AMS',
     slot: 'スロット',
@@ -2817,8 +2661,6 @@ export default {
     used: '使用済み',
     remainingUnit: '残り',
   },
-
-  // Print modal
   printModal: {
     title: '印刷を開始',
     selectPrinter: 'プリンターを選択',
@@ -2850,9 +2692,8 @@ export default {
     originalFilament: 'オリジナル',
     overrideWith: '変更先',
     resetToOriginal: 'オリジナルに戻す',
+    printOptions: '印刷オプション',
   },
-
-  // Backup
   backup: {
     title: 'バックアップと復元',
     createBackup: 'バックアップを作成',
@@ -2872,9 +2713,46 @@ export default {
     backupFailed: 'バックアップに失敗しました: {{error}}',
     restoreFailed: '復元に失敗しました',
     restoreNote: '復元中、仮想プリンターは停止されます',
+    exportTitle: 'バックアップをエクスポート',
+    selectCategories: '含めるデータを選択',
+    requiresPrinters: 'プリンターの選択が必要です',
+    zipWarning: 'ZIPファイルが作成されます。',
+    zipWarningDesc: 'すべての3MFファイル、サムネイル、タイムラプス、写真が含まれます。時間がかかり、大きなファイルになる場合があります。',
+    includeAccessCodes: 'アクセスコードを含める',
+    accessCodesDesc: '別のマシンへの転送用',
+    accessCodesWarning: 'アクセスコードはプレーンテキストで含まれます。このバックアップファイルを安全に保管してください！',
+    selectedCount: '{{count}}カテゴリを選択',
+    exporting: 'エクスポート中...',
+    export: 'エクスポート',
+    categories: {
+      settings: 'アプリ設定',
+      notifications: '通知プロバイダー',
+      templates: '通知テンプレート',
+      smartPlugs: 'スマートプラグ',
+      externalLinks: '外部リンク',
+      printers: 'プリンター',
+      plateCalibration: 'プレート検出',
+      filaments: 'フィラメント在庫',
+      maintenance: 'メンテナンスタイプ',
+      archives: '印刷アーカイブ',
+      projects: 'プロジェクト',
+      pendingUploads: '保留中のアップロード',
+      apiKeys: 'APIキー',
+      settingsDesc: '言語、テーマ、更新設定',
+      notificationsDesc: 'ntfy、Pushover、Discord など',
+      templatesDesc: 'カスタムメッセージテンプレート',
+      smartPlugsDesc: 'Tasmotaプラグ設定',
+      externalLinksDesc: 'サイドバーの外部サービスリンク',
+      printersDesc: 'プリンター情報（アクセスコード除外）',
+      plateCalibrationDesc: '空プレート参照画像',
+      filamentsDesc: 'フィラメントのタイプとコスト',
+      maintenanceDesc: 'カスタムメンテナンススケジュール',
+      archivesDesc: 'すべての印刷データ + ファイル（3MF、サムネイル、写真）',
+      projectsDesc: 'プロジェクト、BOMアイテム、添付ファイル',
+      pendingUploadsDesc: '仮想プリンターのアップロード（レビュー待ち）',
+      apiKeysDesc: 'Webhook APIキー（インポート時に新しいキーが生成されます）',
+    },
   },
-
-  // Tags
   tags: {
     title: 'タグ',
     addTag: 'タグを追加',
@@ -2886,8 +2764,6 @@ export default {
     deleteConfirm: 'このタグを削除しますか？',
     manageTags: 'タグを管理',
   },
-
-  // Upload modal (archives)
   uploadModal: {
     title: '3MFファイルのアップロード',
     dragDrop: '.3mfファイルをここにドラッグ＆ドロップ',
@@ -2900,9 +2776,6 @@ export default {
     upload: 'アップロード',
     uploadFailed: 'アップロード失敗',
   },
-
-  // Edit archive modal
-  // Edit Archive Modal
   editArchive: {
     title: 'アーカイブを編集',
     name: '名前',
@@ -2931,7 +2804,6 @@ export default {
     photosHelp: '+ をクリックして印刷結果の写真を追加',
     printResult: '印刷結果',
     saving: '保存中...',
-    // Failure reasons
     failureReasons: {
       adhesionFailure: '定着不良',
       spaghettiDetached: 'スパゲッティ / 剥離',
@@ -2945,7 +2817,6 @@ export default {
       userCancelled: 'ユーザーによるキャンセル',
       other: 'その他',
     },
-    // Archive statuses
     statuses: {
       completed: '完了',
       failed: '失敗',
@@ -2953,8 +2824,6 @@ export default {
       printing: '印刷中',
     },
   },
-
-  // K-Profiles
   kProfiles: {
     title: 'Kプロファイル',
     noPrintersConfigured: 'プリンターが設定されていません',
@@ -2969,7 +2838,6 @@ export default {
     noKProfiles: 'Kプロファイルなし',
     noKProfilesDesc: '{{diameter}}mmノズル用の圧力キャリブレーションプロファイルが見つかりません',
     createFirstProfile: '最初のプロファイルを作成',
-    // Controls
     printer: 'プリンター',
     nozzle: 'ノズル',
     refresh: '更新',
@@ -2979,7 +2847,6 @@ export default {
     select: '選択',
     selectAll: 'すべて選択',
     delete: '削除',
-    // Filters
     searchPlaceholder: '名前またはフィラメントで検索...',
     allExtruders: 'すべてのエクストルーダー',
     leftOnly: '左のみ',
@@ -2990,10 +2857,8 @@ export default {
     sortName: 'ソート: 名前',
     sortKValue: 'ソート: K値',
     sortFilament: 'ソート: フィラメント',
-    // Dual extruder labels
     leftExtruder: '左エクストルーダー',
     rightExtruder: '右エクストルーダー',
-    // Modal
     modal: {
       addTitle: 'Kプロファイルを追加',
       editTitle: 'Kプロファイルを編集',
@@ -3020,19 +2885,16 @@ export default {
       savingExtruder: 'エクストルーダーに保存中 {{current}}/{{total}}...',
       pleaseWait: 'お待ちください',
     },
-    // Delete confirmation
     deleteConfirm: {
       title: 'プロファイルを削除',
       cannotUndo: '元に戻せません',
       message: '「{{name}}」をプリンターから削除しますか？',
     },
-    // Bulk delete
     bulkDelete: {
       title: 'プロファイルを削除',
       cannotUndo: '元に戻せません',
       message: '選択した{{count}}件のプロファイルをプリンターから削除しますか？',
     },
-    // Toast
     toast: {
       profileSaved: 'Kプロファイルを保存しました',
       profilesSaved: 'Kプロファイルを{{count}}台のエクストルーダーに保存しました',
@@ -3048,7 +2910,6 @@ export default {
       noteSaved: 'メモを保存しました',
       failedToSaveNote: 'メモの保存に失敗しました',
     },
-    // Permissions
     permission: {
       noRead: 'プロファイルを更新する権限がありません',
       noCreate: 'プロファイルを追加する権限がありません',
@@ -3058,8 +2919,6 @@ export default {
       noImport: 'プロファイルをインポートする権限がありません',
     },
   },
-
-  // Virtual Printer
   virtualPrinter: {
     title: '仮想プリンター',
     running: '稼働中',
@@ -3176,8 +3035,6 @@ export default {
       message: '「{{name}}」を削除してもよろしいですか？このプリンターのすべてのサービスが停止されます。',
     },
   },
-
-  // Model Viewer
   modelViewer: {
     openInSlicer: 'スライサーで開く',
     tabs: {
@@ -3208,8 +3065,6 @@ export default {
       unsupportedFormat: 'サポートされていないファイル形式です',
     },
   },
-
-  // Maintenance type descriptions (built-in)
   maintenanceDescriptions: {
     lubricateCarbonRods: 'カーボンロッドに潤滑剤を塗布してスムーズな動きを確保',
     lubricateRails: 'リニアレールの潤滑',
@@ -3226,8 +3081,6 @@ export default {
     replaceCarbonFilter: 'カーボンフィルター交換',
     lubricateLeftNozzleRail: '左ノズルレールの潤滑',
   },
-
-  // Smart Plugs
   smartPlugs: {
     offline: 'オフライン',
     admin: '管理',
@@ -3237,22 +3090,22 @@ export default {
     turnOffSmartPlug: 'スマートプラグをオフにする',
     turnOn: 'オンにする',
     turnOff: 'オフにする',
-    addSmartPlug: {
-      scanningNetwork: 'ネットワークをスキャン中...',
-      chooseEntity: 'エンティティを選択...',
-      connectionFailed: '接続失敗',
-      searchEntities: 'エンティティを検索...',
-      searchPowerSensors: '電力センサーを検索...',
-      searchEnergySensors: 'エネルギーセンサーを検索...',
-      placeholders: {
-        plugName: 'リビングルームプラグ',
-        mqttStateOnValue: 'ON, true, 1',
-        mqttSameAsPower: '電力トピックと同じ、または異なる',
-      },
+    addSmartPlug: 'undefined',
+    mqtt: {
+      monitorOnly: '監視のみ',
+      monitorOnlyDesc: 'MQTTプラグはMQTTサブスクリプション経由でデータを受信します。オン/オフ制御は利用できません。',
+      powerMonitoring: '電力監視',
+      topic: 'トピック',
+      jsonPath: 'JSONパス',
+      multiplier: '乗数',
+      energyMonitoring: 'エネルギー監視',
+      stateMonitoring: '状態監視',
+      onValue: 'ONの値',
+      powerHelp: 'JSONパスはJSONペイロードから値を抽出します。生の数値の場合は空のままに。乗数 mW→Wは0.001、kW→Wは1000。',
+      energyHelp: 'JSONパスはJSONペイロードから値を抽出します。生の値は空のまま。乗数 Wh→kWhは0.001、MWh→kWhは1000。',
+      stateHelp: 'JSONパスはJSONペイロードから値を抽出します。生の値は空のまま。ONの値："ON"の正確な文字列。自動検出は空のまま。',
     },
   },
-
-  // Rich Text Editor
   richTextEditor: {
     bold: '太字',
     italic: '斜体',
@@ -3265,8 +3118,6 @@ export default {
     addLink: 'リンクを追加',
     removeLink: 'リンクを削除',
   },
-
-  // External Links
   externalLinks: {
     noLinksConfigured: '外部リンクが設定されていません',
     deleteLink: 'リンクを削除',
@@ -3275,9 +3126,10 @@ export default {
     placeholders: {
       linkName: 'マイリンク',
     },
+    title: 'サイドバーリンク',
+    addLink: 'リンクを追加',
+    description: 'サイドバーナビゲーションに外部サービスへのリンクを追加。',
   },
-
-  // Keyboard Shortcuts Modal
   keyboardShortcuts: {
     title: 'キーボードショートカット',
     navigation: 'ナビゲーション',
@@ -3285,25 +3137,15 @@ export default {
     kProfilesSection: 'Kプロファイル',
     generalSection: '全般',
     shortcuts: {
-      goToPrinters: 'プリンターへ移動',
-      goToArchives: 'アーカイブへ移動',
-      goToQueue: 'キューへ移動',
-      goToStats: '統計へ移動',
-      goToProfiles: 'クラウドプロファイルへ移動',
-      goToSettings: '設定へ移動',
-      focusSearch: '検索にフォーカス',
-      openUploadModal: 'アップロードモーダルを開く',
-      clearSelection: '選択をクリア / 入力をぼかす',
-      contextMenu: 'カードのコンテキストメニュー',
-      refreshProfiles: 'プロファイルを更新',
-      newProfile: '新しいプロファイル',
-      exitSelectionMode: '選択モードを終了',
-      showHelp: 'このヘルプを表示',
+      exitSelection: '選択モードを終了',
+      openUpload: 'アップロードダイアログを開く',
     },
     footer: 'Escキーを押すか外側をクリックして閉じます',
+    open: '開く ',
+    goTo: '移動先 ',
+    pressEsc: '押してください',
+    orClickToClose: 'または外側をクリックして閉じる',
   },
-
-  // Notification Log
   notificationLog: {
     title: '通知ログ',
     events: {
@@ -3323,9 +3165,21 @@ export default {
       minutesAgo: '{{minutes}}分前',
       hoursAgo: '{{hours}}時間前',
     },
+    clearOld: '消去',
+    noLogs: '通知ログなし',
+    noFailed: '失敗した通知なし',
+    showFailedOnly: '失敗のみ表示',
+    period: {
+      last24h: '過去24時間',
+      last7d: '過去7日間',
+      last30d: '過去30日間',
+      last90d: '過去90日間',
+    },
+    stats: {
+      sent: '送信済み',
+      lastDays: '過去{{count}}日間',
+    },
   },
-
-  // Restore/Backup Modal
   restoreBackup: {
     title: 'バックアップを復元',
     restoring: '復元中...',
@@ -3336,13 +3190,12 @@ export default {
     clickToSelect: 'クリックしてバックアップファイルを選択（.jsonまたは.zip）',
     howDuplicateHandling: '重複の処理方法:',
     categories: {
-      printers: 'プリンター',
-      smartPlugs: 'スマートプラグ',
+      settings: '設定',
       notificationProviders: '通知プロバイダー',
-      filaments: 'フィラメント',
-      archives: 'アーカイブ',
-      pendingUploads: '保留中のアップロード',
-      settingsTemplates: '設定とテンプレート',
+      notificationTemplates: '通知テンプレート',
+      maintenanceTypes: 'メンテナンスタイプ',
+      externalLinks: '外部リンク',
+      apiKeys: 'APIキー',
     },
     matchingInfo: {
       printers: 'シリアル番号で照合',
@@ -3369,9 +3222,30 @@ export default {
     processingBackup: 'バックアップファイルを処理中...',
     noDataFound: 'バックアップファイルに復元するデータが見つかりませんでした。',
     failedToRestore: 'バックアップの復元に失敗しました。ファイル形式を確認してください。',
+    complete: '復元完了',
+    failed: '復元失敗',
+    description: 'バックアップファイルから設定をインポート',
+    selectFile: 'バックアップファイルを選択してクリック（.json または .zip）',
+    duplicateHandling: '重複処理の仕組み：',
+    restore: '復元',
+    processing: 'バックアップファイルを処理中...',
+    restoredLabel: '復元済み',
+    skippedLabel: 'スキップ（既存）',
+    andMore: '...他{{count}}件',
+    newApiKeys: '新しいAPIキーが生成されました',
+    keysOnlyOnce: 'これらのキーは一度だけ表示されます。今すぐコピーしてください！',
+    noData: 'バックアップファイルに復元するデータが見つかりませんでした。',
+    cautionMessage: '上書きすると、現在の設定がバックアップのデータに置き換えられます。セキュリティのため、プリンターのアクセスコードは上書きされません。',
+    duplicates: {
+      printers: 'シリアル番号で照合',
+      smartPlugs: 'IPアドレスで照合',
+      notificationProviders: '名前で照合',
+      filaments: '名前+タイプ+ブランドで照合',
+      archives: 'コンテンツハッシュで照合（常にスキップ）',
+      pendingUploads: 'ファイル名で照合',
+      settingsTemplates: '常に上書き',
+    },
   },
-
-  // Backup Export Modal
   backupExport: {
     title: 'バックアップをエクスポート',
     selectData: '含めるデータを選択',
@@ -3400,8 +3274,6 @@ export default {
     includeAccessCodesWarning: 'アクセスコードはプレーンテキストで含まれます。このバックアップファイルを安全に保管してください！',
     categoriesSelected: '{{selectedCount}}カテゴリー選択済み',
   },
-
-  // Pending Uploads Panel
   pendingUploads: {
     placeholders: {
       notes: 'この印刷に関するメモを追加...',
@@ -3416,17 +3288,21 @@ export default {
       hoursAgo: '{{hours}}時間前',
       daysAgo: '{{days}}日前',
     },
+    archiveAll: 'すべてアーカイブ',
+    archiveAllTitle: 'すべてのアップロードをアーカイブ',
+    archiveAllMessage: '保留中の{{count}}件すべてをアーカイブしますか？',
+    discardAll: 'すべて破棄',
+    discardAllTitle: 'すべてのアップロードを破棄',
+    discardAllMessage: '保留中の{{count}}件すべてを破棄しますか？この操作は元に戻せません。',
+    discardTitle: 'アップロードを破棄',
+    discardMessage: '"{{filename}}"を破棄しますか？元に戻せません。',
   },
-
-  // API Browser
   apiBrowser: {
     placeholders: {
       requestBody: 'JSONリクエストボディ...',
       searchEndpoints: 'エンドポイントを検索...',
     },
   },
-
-  // Configure AMS Slot Modal
   configureAmsSlot: {
     title: 'AMSスロットの設定',
     slotConfigured: 'スロットを設定しました！',
@@ -3460,87 +3336,151 @@ export default {
     configuring: '設定中...',
     configureSlot: 'スロットを設定',
   },
-
-  // GitHub Backup Settings
   githubBackup: {
     title: 'GitHubバックアップ',
     history: '履歴',
     downloadBackup: 'バックアップをダウンロード',
     restoreBackup: 'バックアップを復元',
     noBackupsYet: 'バックアップはまだありません',
+    description: 'プロファイルをプライベートGitHubリポジトリに自動同期してバックアップとバージョン履歴を管理。',
+    repoUrl: 'リポジトリURL',
+    accessToken: 'パーソナルアクセストークン',
+    tokenSaved: '（保存済み）',
+    tokenHelp: 'コンテンツの読み取り/書き込み権限を持つ細粒度トークン',
+    branch: 'ブランチ',
+    autoBackup: '自動バックアップ',
+    includeInBackup: 'バックアップに含める',
+    kProfiles: 'Kプロファイル',
+    noPrintersConnected: 'プリンター未接続',
+    kProfilesDesc: '接続されたプリンターからの圧力前進キャリブレーション',
+    cloudProfiles: 'クラウドプロファイル',
+    cloudProfilesDesc: 'Bambu Cloudからのフィラメント、プリンター、プロセスプリセット',
+    appSettings: 'アプリ設定',
+    appSettingsDesc: 'Bambuddy設定（完全なデータベース）',
+    lastBackup: '最終バックアップ：',
+    noBackups: 'まだバックアップがありません',
+    startingBackup: 'バックアップを開始...',
+    backupNow: '今すぐバックアップ',
+    test: 'テスト',
+    enableBackup: 'バックアップを有効にする',
+    testConnection: '接続テスト',
+    cloudRequired: 'Bambu Cloudログインが必要です。プロファイル → クラウドプロファイルからサインインしてGitHubバックアップを有効にしてください。',
+    localBackup: 'ローカルバックアップ',
+    localBackupDesc: 'データベース、アーカイブ、アップロード、すべてのファイルを含むBambuddyデータの完全バックアップを作成します。',
+    downloadDesc: '完全バックアップ：データベース + 全ファイル（ZIP）',
+    reloadNow: '今すぐリロード',
+    restoreWarning: '復元するとすべてのデータが置き換えられます。',
+    restoreWarningDesc: '現在のデータベースとファイルは完全に置き換えられます。復元後に再起動が必要です。',
+    confirmRestore: 'バックアップを復元',
+    confirmRestoreMessage: '"{{filename}}"から復元してよろしいですか？現在のデータベースとすべてのファイルが完全に置き換えられます。復元後にアプリケーションの再起動が必要です。',
+    confirmRestoreText: 'バックアップを復元',
+    creatingBackup: 'バックアップを作成中',
+    restoringBackup: 'バックアップを復元中',
+    doNotClose: 'このページを閉じたり移動したりしないでください。大きなバックアップの場合、数分かかることがあります。',
+    toast: {
+      tokenUpdated: 'トークンが更新されました',
+      settingsSaved: '設定が保存されました',
+      enabled: 'GitHubバックアップが有効になりました',
+      backupComplete: 'バックアップ完了 - {{count}}ファイル更新',
+      backupSkipped: 'バックアップスキップ - 変更なし',
+      logsCleared: '{{count}}件のログを消去',
+      downloaded: 'バックアップのダウンロードが完了しました',
+      restored: 'バックアップが復元されました。Bambuddyを再起動してください。',
+    },
+    validation: {
+      repoUrlRequired: 'リポジトリURLを入力してください',
+      tokenRequired: 'アクセストークンが必要です',
+      repoAndTokenRequired: 'リポジトリURLとアクセストークンを入力してください',
+    },
+    schedule: {
+      manual: '手動のみ',
+      hourly: '毎時',
+      daily: '毎日',
+      weekly: '毎週',
+    },
+    status: {
+      preparing: 'バックアップを準備中...',
+      creating: 'バックアップアーカイブを作成中... 大きなアーカイブの場合、時間がかかることがあります。',
+      downloading: 'バックアップファイルをダウンロード中...',
+    },
+    table: {
+      commit: 'コミット',
+    },
   },
-
-  // Email Settings
   emailSettings: {
     placeholders: {
       fromName: 'BamBuddy',
     },
   },
-
-  // Tag Management Modal
   tagManagement: {
+    title: 'タグを管理',
     searchTags: 'タグを検索...',
     renameTag: 'タグ名を変更',
     deleteTag: 'タグを削除',
+    searchPlaceholder: 'タグを検索...',
+    sortByCount: '使用頻度順',
+    sortByName: 'アルファベット順',
+    tagCount: '{{count}}タグ · {{usage}}回使用',
+    noMatchingTags: '一致するタグなし',
+    noTags: 'タグが見つかりません。アーカイブに追加すると作成されます。',
+    deleteConfirm: 'タグ "{{name}}" を削除しますか？{{count}}件のアーカイブから削除されます。',
   },
-
-  // Notification Template Editor
   notificationTemplates: {
     placeholders: {
       title: '通知タイトル...',
       body: '通知本文...',
     },
-  },
-
-  // Batch Tag Modal
-  batchTag: {
-    placeholders: {
-      newTag: '新しいタグを入力...',
+    titleLabel: 'タイトル',
+    validation: {
+      titleRequired: 'タイトルは必須です',
+      bodyRequired: '本文は必須です',
     },
   },
-
-  // Photo Gallery Modal
+  batchTag: {
+    addTitle: 'タグを追加',
+    removeTitle: 'タグを削除',
+    addDescription: '{{count}}件の選択したアーカイブにタグを追加',
+    removeDescription: '{{count}}件の選択したアーカイブからタグを削除',
+    addTags: 'タグを追加',
+    removeTags: 'タグを削除',
+    enterTag: '新しいタグを入力...',
+    existingTags: '既存のタグ：',
+    tagsToAdd: '追加するタグ：',
+    tagsToRemove: '削除するタグ：',
+    toast: {
+      tagsAdded: '{{count}}件のアーカイブにタグを追加しました',
+      tagsRemoved: '{{count}}件のアーカイブからタグを削除しました',
+      failed: 'タグの更新に失敗しました',
+    },
+  },
   photoGallery: {
     deletePhoto: '写真を削除',
+    photoOf: '写真 {{current}}/{{total}}',
   },
-
-  // Filament Hover Card
   filamentHoverCard: {
     copySpoolUuid: 'スプールUUIDをコピー',
   },
-
-  // K Profiles View
   kProfilesView: {
     hasNote: 'メモあり',
     copyProfile: 'プロファイルをコピー',
   },
-
-  // Layout/Navigation
   layout: {
     openMenu: 'メニューを開く',
     noPermissionSystemInfo: 'システム情報を表示する権限がありません',
   },
-
-  // Dashboard
   dashboard: {
     dragToReorder: 'ドラッグして並べ替え',
     hideWidget: 'ウィジェットを非表示',
   },
-
-  // Notification Provider Card
   notificationProviderCard: {
     deleteNotificationProvider: '通知プロバイダーを削除',
   },
-
-  // File Manager Modal
   fileManagerModal: {
     closeFileManager: 'ファイルマネージャーを閉じる',
     sortFiles: 'ファイルを並べ替え',
     goToParentFolder: '親フォルダーへ移動',
     threeView: '3Dビュー',
   },
-
-  // Embedded Camera Viewer
   embeddedCameraViewer: {
     refreshStream: 'ストリームを更新',
     close: '閉じる',
@@ -3549,14 +3489,10 @@ export default {
     zoomIn: 'ズームイン',
     dragToResize: 'ドラッグしてサイズ変更',
   },
-
-  // Timelapse Viewer
   timelapseViewer: {
     skipBack5s: '5秒戻る',
     skipForward5s: '5秒進む',
   },
-
-  // Notification Providers
   notificationProviders: {
     descriptions: {
       email: 'SMTP電子メール通知',
@@ -3567,20 +3503,29 @@ export default {
       callmebot: 'CallMeBot経由の無料WhatsApp通知',
       webhook: '任意のURLへのジェネリックHTTP POST',
     },
+    validation: {
+      nameRequired: '名前は必須です',
+      fieldRequired: '{{field}}は必須です',
+    },
   },
-
-  // Log Viewer
   logViewer: {
     searchPlaceholder: 'メッセージまたはロガー名を検索...',
     noLogEntries: 'ログエントリが見つかりません',
+    liveStreaming: 'ライブストリーミング中...',
   },
-
-  // Switchbar Popover
   switchbarPopover: {
     noSwitchesInSwitchbar: 'スイッチバーにスイッチがありません',
+    monitor: 'モニター',
+    waiting: '待機中',
+    offline: 'オフライン',
+    title: 'スマートスイッチ',
+    noSwitches: 'スイッチバーにスイッチなし',
+    enableHint: '設定 > スマートプラグで「スイッチバーに表示」を有効に',
+    confirmOn: 'オンにする',
+    confirmOff: 'オフにする',
+    confirmTitle: 'スマートプラグを{{action}}',
+    confirmMessage: '"{{name}}"を{{action}}してもよろしいですか？',
   },
-
-  // Project Page Modal
   projectPageModal: {
     placeholders: {
       title: 'タイトル',
@@ -3591,11 +3536,8 @@ export default {
       profileDescription: 'プロファイルの説明...',
     },
   },
-
-  // Spoolman Settings
-  spoolmanSettings: {},
-
-  // Time
+  spoolmanSettings: {
+  },
   time: {
     unknown: '-',
     waiting: '待機中',
@@ -3608,8 +3550,6 @@ export default {
     daysAgo: '{{count}}日前',
     inDays: 'あと{{count}}日',
   },
-
-  // SpoolBuddy Kiosk
   spoolbuddy: {
     nav: {
       dashboard: 'ダッシュボード',
@@ -3708,12 +3648,10 @@ export default {
       addSpool: 'スプール追加',
     },
     settings: {
-      // Tabs
       tabDevice: 'デバイス',
       tabDisplay: 'ディスプレイ',
       tabScale: '計量',
       tabUpdates: 'アップデート',
-      // Device tab
       nfcReader: 'NFCリーダー',
       type: 'タイプ',
       connection: '接続',
@@ -3721,14 +3659,12 @@ export default {
       deviceInfo: 'デバイス情報',
       hostname: 'ホスト',
       uptime: '稼働時間',
-      // Display tab
       brightness: '明るさ',
       saved: '保存済み',
       noBacklight: 'DSIバックライトが検出されませんでした。明るさ制御にはDSIディスプレイが必要です。',
       screenBlank: '画面オフタイムアウト',
       screenBlankDesc: '操作がないと画面がオフになります。タッチで復帰。',
       displayNote: '明るさはソフトウェアフィルターとして適用されます。',
-      // Scale tab
       scaleCalibration: '計量キャリブレーション',
       currentWeight: '現在の重量',
       tareOffset: '風袋',
@@ -3750,7 +3686,6 @@ export default {
       firmware: 'ファームウェア',
       scale: '計量',
       noDevice: 'SpoolBuddyデバイスが見つかりません',
-      // Updates tab
       daemonVersion: 'デーモンバージョン',
       currentVersion: '現在',
       versionPending: 'デーモンを待っています...',
@@ -3793,7 +3728,6 @@ export default {
       createFailed: 'スプールの作成に失敗しました',
     },
   },
-
   bugReport: {
     title: 'バグを報告',
     description: '説明',
@@ -3819,5 +3753,19 @@ export default {
     viewIssue: 'Issueを表示',
     unexpectedError: '予期しないエラーが発生しました',
     countdownSeconds: '{{seconds}}秒',
+  },
+  batchProject: {
+    title: 'プロジェクトに割り当て',
+    description: '{{count}}件の選択したアーカイブをプロジェクトに割り当て',
+    removeFromProject: 'プロジェクトから削除',
+    clearAssignment: '選択したアーカイブのプロジェクト割り当てを解除',
+    orAssignTo: 'または割り当て先',
+    noProjects: 'プロジェクトがまだありません。プロジェクトページで作成してください。',
+    toast: {
+      added: '{{count}}件のアーカイブをプロジェクトに追加',
+      assignFailed: 'プロジェクトの割り当てに失敗',
+      removed: '{{count}}件のアーカイブをプロジェクトから削除',
+      removeFailed: 'プロジェクトからの削除に失敗',
+    },
   },
 };

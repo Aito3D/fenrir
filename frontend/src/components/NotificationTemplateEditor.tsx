@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { X, Save, Loader2, RotateCcw, Plus, Eye } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { NotificationTemplate, NotificationTemplateUpdate } from '../api/client';
 import { Button } from './Button';
@@ -11,6 +12,7 @@ interface NotificationTemplateEditorProps {
 }
 
 export function NotificationTemplateEditor({ template, onClose }: NotificationTemplateEditorProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
@@ -78,11 +80,11 @@ export function NotificationTemplateEditor({ template, onClose }: NotificationTe
     setError(null);
 
     if (!titleTemplate.trim()) {
-      setError('Title is required');
+      setError(t('notificationTemplates.validation.titleRequired'));
       return;
     }
     if (!bodyTemplate.trim()) {
-      setError('Body is required');
+      setError(t('notificationTemplates.validation.bodyRequired'));
       return;
     }
 
@@ -121,7 +123,7 @@ export function NotificationTemplateEditor({ template, onClose }: NotificationTe
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary shrink-0">
           <h2 className="text-lg font-semibold text-white">
-            Edit Template: {template.name}
+            {t('notificationTemplates.editTitle', { name: template.name })}
           </h2>
           <button
             onClick={onClose}
@@ -142,7 +144,7 @@ export function NotificationTemplateEditor({ template, onClose }: NotificationTe
           {/* Title */}
           <div>
             <label className="block text-sm font-medium text-bambu-gray mb-1">
-              Title
+              {t('notificationTemplates.titleLabel')}
             </label>
             <input
               type="text"

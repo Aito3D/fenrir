@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Plug, Power, PowerOff, Loader2, Wifi, WifiOff, Zap, Radio, Eye } from 'lucide-react';
 import { api } from '../api/client';
 import type { SmartPlug } from '../api/client';
@@ -10,6 +11,7 @@ interface SwitchbarPopoverProps {
 }
 
 function SwitchItem({ plug }: { plug: SmartPlug }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [confirmAction, setConfirmAction] = useState<'on' | 'off' | null>(null);
 
@@ -70,12 +72,12 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
                     <span className="text-teal-400">{Math.round(status?.energy?.power ?? 0)}W</span>
                     <span className="text-bambu-gray mx-1">|</span>
                     <Eye className="w-3 h-3 text-bambu-gray" />
-                    <span className="text-bambu-gray">Monitor</span>
+                    <span className="text-bambu-gray">{t('switchbarPopover.monitor')}</span>
                   </>
                 ) : (
                   <>
                     <WifiOff className="w-3 h-3 text-status-error" />
-                    <span className="text-status-error">Waiting</span>
+                    <span className="text-status-error">{t('switchbarPopover.waiting')}</span>
                   </>
                 )
               ) : isReachable ? (
@@ -93,7 +95,7 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
               ) : (
                 <>
                   <WifiOff className="w-3 h-3 text-status-error" />
-                  <span className="text-status-error">Offline</span>
+                  <span className="text-status-error">{t('switchbarPopover.offline')}</span>
                 </>
               )}
             </div>
@@ -133,9 +135,9 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
 
       {confirmAction && (
         <ConfirmModal
-          title={`Turn ${confirmAction === 'on' ? 'On' : 'Off'} Smart Plug`}
-          message={`Are you sure you want to turn ${confirmAction === 'on' ? 'on' : 'off'} "${plug.name}"?`}
-          confirmText={confirmAction === 'on' ? 'Turn On' : 'Turn Off'}
+          title={t('switchbarPopover.confirmTitle', { action: confirmAction === 'on' ? t('common.on') : t('common.off') })}
+          message={t('switchbarPopover.confirmMessage', { action: confirmAction === 'on' ? t('common.on') : t('common.off'), name: plug.name })}
+          confirmText={confirmAction === 'on' ? t('switchbarPopover.confirmOn') : t('switchbarPopover.confirmOff')}
           variant={confirmAction === 'off' ? 'warning' : 'default'}
           onConfirm={handleConfirm}
           onCancel={() => setConfirmAction(null)}
@@ -146,6 +148,7 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
 }
 
 export function SwitchbarPopover({ onClose }: SwitchbarPopoverProps) {
+  const { t } = useTranslation();
   // Fetch all smart plugs
   const { data: plugs, isLoading } = useQuery({
     queryKey: ['smart-plugs'],
@@ -164,7 +167,7 @@ export function SwitchbarPopover({ onClose }: SwitchbarPopoverProps) {
       <div className="px-4 py-3 border-b border-bambu-dark-tertiary">
         <h3 className="text-sm font-semibold text-white flex items-center gap-2">
           <Plug className="w-4 h-4 text-bambu-green" />
-          Smart Switches
+          {t('switchbarPopover.title')}
         </h3>
       </div>
 
@@ -177,9 +180,9 @@ export function SwitchbarPopover({ onClose }: SwitchbarPopoverProps) {
         ) : switchbarPlugs.length === 0 ? (
           <div className="text-center py-6 px-4">
             <Plug className="w-8 h-8 text-bambu-gray mx-auto mb-2" />
-            <p className="text-sm text-bambu-gray">No switches in switchbar</p>
+            <p className="text-sm text-bambu-gray">{t('switchbarPopover.noSwitches')}</p>
             <p className="text-xs text-bambu-gray mt-1">
-              Enable "Show in Switchbar" in Settings &gt; Smart Plugs
+              {t('switchbarPopover.enableHint')}
             </p>
           </div>
         ) : (

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Tag, Pencil, Trash2, Loader2, Search, Check, AlertTriangle } from 'lucide-react';
 import { api } from '../api/client';
@@ -12,6 +13,7 @@ interface TagManagementModalProps {
 }
 
 export function TagManagementModal({ onClose }: TagManagementModalProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [search, setSearch] = useState('');
@@ -131,7 +133,7 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
           <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary flex-shrink-0">
             <div className="flex items-center gap-2">
               <Tag className="w-5 h-5 text-bambu-green" />
-              <h2 className="text-xl font-semibold text-white">Manage Tags</h2>
+              <h2 className="text-xl font-semibold text-white">{t('tagManagement.title')}</h2>
             </div>
             <button
               onClick={onClose}
@@ -148,7 +150,7 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray" />
                 <input
                   type="text"
-                  placeholder="Search tags..."
+                  placeholder={t('tagManagement.searchPlaceholder')}
                   className="w-full pl-9 pr-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -159,13 +161,13 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as 'count' | 'name')}
               >
-                <option value="count">Sort by Count</option>
-                <option value="name">Sort by Name</option>
+                <option value="count">{t('tagManagement.sortByCount')}</option>
+                <option value="name">{t('tagManagement.sortByName')}</option>
               </select>
             </div>
             {tags && (
               <p className="text-xs text-bambu-gray mt-2">
-                {tags.length} tag{tags.length !== 1 ? 's' : ''} across {totalUsage} usage{totalUsage !== 1 ? 's' : ''}
+                {t('tagManagement.tagCount', { tags: tags.length, usages: totalUsage })}
               </p>
             )}
           </div>
@@ -178,7 +180,7 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
               </div>
             ) : !filteredTags?.length ? (
               <div className="text-center py-8 text-bambu-gray">
-                {search ? 'No tags match your search' : 'No tags found'}
+                {search ? t('tagManagement.noMatchingTags') : t('tagManagement.noTags')}
               </div>
             ) : (
               <div className="space-y-2">
@@ -225,7 +227,7 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
                       <div className="flex-1 flex items-center gap-2">
                         <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0" />
                         <span className="text-sm text-bambu-gray-light flex-1">
-                          Delete "{tag.name}" from {tag.count} archive{tag.count !== 1 ? 's' : ''}?
+                          {t('tagManagement.deleteConfirm', { name: tag.name, count: tag.count })}
                         </span>
                         <Button
                           size="sm"
@@ -284,7 +286,7 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
           {/* Footer */}
           <div className="flex gap-3 p-4 border-t border-bambu-dark-tertiary flex-shrink-0">
             <Button variant="secondary" onClick={onClose} className="flex-1">
-              Close
+              {t('common.close')}
             </Button>
           </div>
         </CardContent>

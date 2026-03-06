@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { X, Save, Loader2, Send, CheckCircle, XCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { NotificationProvider, NotificationProviderCreate, NotificationProviderUpdate, ProviderType } from '../api/client';
 import { Button } from './Button';
@@ -11,17 +12,18 @@ interface AddNotificationModalProps {
   onClose: () => void;
 }
 
-const PROVIDER_OPTIONS: { value: ProviderType; label: string; description: string }[] = [
-  { value: 'email', label: 'Email', description: 'SMTP email notifications' },
-  { value: 'telegram', label: 'Telegram', description: 'Notifications via Telegram bot' },
-  { value: 'discord', label: 'Discord', description: 'Send to Discord channel via webhook' },
-  { value: 'ntfy', label: 'ntfy', description: 'Free, self-hostable push notifications' },
-  { value: 'pushover', label: 'Pushover', description: 'Simple, reliable push notifications' },
-  { value: 'callmebot', label: 'CallMeBot/WhatsApp', description: 'Free WhatsApp notifications via CallMeBot' },
-  { value: 'webhook', label: 'Webhook', description: 'Generic HTTP POST to any URL' },
+const PROVIDER_OPTIONS: { value: ProviderType; labelKey: string; descriptionKey: string }[] = [
+  { value: 'email', labelKey: 'notificationProviders.types.email', descriptionKey: 'notificationProviders.types.emailDesc' },
+  { value: 'telegram', labelKey: 'notificationProviders.types.telegram', descriptionKey: 'notificationProviders.types.telegramDesc' },
+  { value: 'discord', labelKey: 'notificationProviders.types.discord', descriptionKey: 'notificationProviders.types.discordDesc' },
+  { value: 'ntfy', labelKey: 'notificationProviders.types.ntfy', descriptionKey: 'notificationProviders.types.ntfyDesc' },
+  { value: 'pushover', labelKey: 'notificationProviders.types.pushover', descriptionKey: 'notificationProviders.types.pushoverDesc' },
+  { value: 'callmebot', labelKey: 'notificationProviders.types.callmebot', descriptionKey: 'notificationProviders.types.callmebotDesc' },
+  { value: 'webhook', labelKey: 'notificationProviders.types.webhook', descriptionKey: 'notificationProviders.types.webhookDesc' },
 ];
 
 export function AddNotificationModal({ provider, onClose }: AddNotificationModalProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const isEditing = !!provider;
 
@@ -112,7 +114,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
     setError(null);
 
     if (!name.trim()) {
-      setError('Name is required');
+      setError(t('notificationProviders.validation.nameRequired'));
       return;
     }
 
@@ -120,7 +122,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
     const requiredFields = getRequiredFields(providerType);
     for (const field of requiredFields) {
       if (!config[field.key]?.trim()) {
-        setError(`${field.label} is required`);
+        setError(t('notificationProviders.validation.fieldRequired', { field: field.label }));
         return;
       }
     }
@@ -284,12 +286,12 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
             >
               {PROVIDER_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {option.label}
+                  {t(option.labelKey)}
                 </option>
               ))}
             </select>
             <p className="text-xs text-bambu-gray mt-1">
-              {PROVIDER_OPTIONS.find(o => o.value === providerType)?.description}
+              {t(PROVIDER_OPTIONS.find(o => o.value === providerType)?.descriptionKey || '')}
             </p>
           </div>
 

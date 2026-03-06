@@ -1,23 +1,27 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { History, CheckCircle, XCircle, Loader2, Trash2, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { parseUTCDate, formatTimeOnly, formatDateTime, type TimeFormat } from '../utils/date';
 import type { NotificationLogEntry } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 
-const EVENT_LABELS: Record<string, string> = {
-  print_start: 'Print Started',
-  print_complete: 'Print Complete',
-  print_failed: 'Print Failed',
-  print_stopped: 'Print Stopped',
-  print_progress: 'Progress',
-  printer_offline: 'Printer Offline',
-  printer_error: 'Printer Error',
-  filament_low: 'Low Filament',
-  maintenance_due: 'Maintenance Due',
-  test: 'Test',
+const getEventLabel = (eventType: string, t: (k: string) => string): string => {
+  const labels: Record<string, string> = {
+    print_start: t('notificationLog.events.printStart'),
+    print_complete: t('notificationLog.events.printComplete'),
+    print_failed: t('notificationLog.events.printFailed'),
+    print_stopped: t('notificationLog.events.printStopped'),
+    print_progress: t('notificationLog.events.progress'),
+    printer_offline: t('notificationLog.events.printerOffline'),
+    printer_error: t('notificationLog.events.printerError'),
+    filament_low: t('notificationLog.events.filamentLow'),
+    maintenance_due: t('notificationLog.events.maintenanceDue'),
+    test: t('notificationLog.events.test'),
+  };
+  return labels[eventType] || eventType;
 };
 
 const EVENT_COLORS: Record<string, string> = {
@@ -38,6 +42,7 @@ interface NotificationLogViewerProps {
 }
 
 export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [days, setDays] = useState(7);
@@ -83,9 +88,9 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
     const now = new Date();
     const diff = now.getTime() - date.getTime();
 
-    if (diff < 60000) return 'Just now';
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    if (diff < 60000) return t('notificationLog.time.justNow');
+    if (diff < 3600000) return t('notificationLog.time.minutesAgo', { count: Math.floor(diff / 60000) });
+    if (diff < 86400000) return t('notificationLog.time.hoursAgo', { count: Math.floor(diff / 3600000) });
 
     return date.toLocaleDateString() + ' ' + formatTimeOnly(date, timeFormat);
   };
@@ -97,7 +102,7 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
         <div className="p-4 border-b border-bambu-dark-tertiary flex items-center justify-between">
           <div className="flex items-center gap-3">
             <History className="w-5 h-5 text-bambu-green" />
-            <h2 className="text-lg font-semibold text-white">Notification Log</h2>
+            <h2 className="text-lg font-semibold text-white">{t('notificationLog.title')}</h2>
           </div>
           <button
             onClick={onClose}
@@ -112,16 +117,16 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
           <div className="px-4 py-3 border-b border-bambu-dark-tertiary bg-bambu-dark/50">
             <div className="flex items-center gap-6 text-sm">
               <span className="text-bambu-gray">
-                Last {days} days: <span className="text-white font-medium">{stats.total}</span> notifications
+                {t('notificationLog.stats.lastDays', { days })}: <span className="text-white font-medium">{stats.total}</span> {t('notificationLog.stats.notifications')}
               </span>
               <span className="flex items-center gap-1 text-bambu-green">
                 <CheckCircle className="w-4 h-4" />
-                {stats.success_count} sent
+                {stats.success_count} {t('notificationLog.stats.sent')}
               </span>
               {stats.failure_count > 0 && (
                 <span className="flex items-center gap-1 text-red-400">
                   <XCircle className="w-4 h-4" />
-                  {stats.failure_count} failed
+                  {stats.failure_count} {t('notificationLog.stats.failed')}
                 </span>
               )}
             </div>
@@ -135,10 +140,10 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
             onChange={(e) => setDays(Number(e.target.value))}
             className="px-3 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-bambu-green"
           >
-            <option value={1}>Last 24 hours</option>
-            <option value={7}>Last 7 days</option>
-            <option value={30}>Last 30 days</option>
-            <option value={90}>Last 90 days</option>
+            <option value={1}>{t('notificationLog.period.last24h')}</option>
+            <option value={7}>{t('notificationLog.period.last7d')}</option>
+            <option value={30}>{t('notificationLog.period.last30d')}</option>
+            <option value={90}>{t('notificationLog.period.last90d')}</option>
           </select>
 
           <label className="flex items-center gap-2 text-sm text-bambu-gray cursor-pointer">
@@ -148,7 +153,7 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
               onChange={(e) => setShowFailedOnly(e.target.checked)}
               className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
             />
-            Show failed only
+            {t('notificationLog.showFailedOnly')}
           </label>
 
           <div className="flex-1" />
@@ -164,7 +169,7 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
             ) : (
               <RefreshCw className="w-4 h-4" />
             )}
-            Refresh
+            {t('common.refresh')}
           </Button>
 
           <Button
@@ -179,7 +184,7 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
             ) : (
               <Trash2 className="w-4 h-4" />
             )}
-            Clear Old
+            {t('notificationLog.clearOld')}
           </Button>
         </div>
 
@@ -199,6 +204,7 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
                   onToggle={() => setExpandedId(expandedId === log.id ? null : log.id)}
                   formatDate={formatDate}
                   formatFullDate={(dateStr) => formatDateTime(dateStr, timeFormat)}
+                  t={t}
                 />
               ))}
             </div>
@@ -206,7 +212,7 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
             <div className="text-center py-12 text-bambu-gray">
               <History className="w-12 h-12 mx-auto mb-3 opacity-30" />
               <p className="text-sm">
-                {showFailedOnly ? 'No failed notifications' : 'No notifications logged'}
+                {showFailedOnly ? t('notificationLog.noFailed') : t('notificationLog.noLogs')}
               </p>
             </div>
           )}
@@ -222,12 +228,14 @@ function LogEntry({
   onToggle,
   formatDate,
   formatFullDate,
+  t,
 }: {
   log: NotificationLogEntry;
   isExpanded: boolean;
   onToggle: () => void;
   formatDate: (date: string) => string;
   formatFullDate: (date: string) => string;
+  t: (k: string) => string;
 }) {
   return (
     <div
@@ -248,7 +256,7 @@ function LogEntry({
         )}
 
         <span className={`text-xs font-medium ${EVENT_COLORS[log.event_type] || 'text-bambu-gray'}`}>
-          {EVENT_LABELS[log.event_type] || log.event_type}
+          {getEventLabel(log.event_type, t)}
         </span>
 
         <span className="text-sm text-white truncate flex-1">

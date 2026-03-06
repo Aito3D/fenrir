@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Upload, X, AlertTriangle, CheckCircle, SkipForward, RefreshCw, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
 import { Toggle } from './Toggle';
@@ -23,22 +24,26 @@ interface RestoreModalProps {
 
 type ModalState = 'options' | 'restoring' | 'result';
 
-const CATEGORY_LABELS: Record<string, string> = {
-  settings: 'Settings',
-  notification_providers: 'Notification Providers',
-  notification_templates: 'Notification Templates',
-  smart_plugs: 'Smart Plugs',
-  printers: 'Printers',
-  filaments: 'Filaments',
-  maintenance_types: 'Maintenance Types',
-  archives: 'Archives',
-  projects: 'Projects',
-  pending_uploads: 'Pending Uploads',
-  external_links: 'External Links',
-  api_keys: 'API Keys',
+const getCategoryLabel = (key: string, t: (k: string) => string): string => {
+  const labels: Record<string, string> = {
+    settings: t('restoreBackup.categories.settings'),
+    notification_providers: t('restoreBackup.categories.notificationProviders'),
+    notification_templates: t('restoreBackup.categories.notificationTemplates'),
+    smart_plugs: t('restoreBackup.categories.smartPlugs'),
+    printers: t('restoreBackup.categories.printers'),
+    filaments: t('restoreBackup.categories.filaments'),
+    maintenance_types: t('restoreBackup.categories.maintenanceTypes'),
+    archives: t('restoreBackup.categories.archives'),
+    projects: t('restoreBackup.categories.projects'),
+    pending_uploads: t('restoreBackup.categories.pendingUploads'),
+    external_links: t('restoreBackup.categories.externalLinks'),
+    api_keys: t('restoreBackup.categories.apiKeys'),
+  };
+  return labels[key] || key;
 };
 
 export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProps) {
+  const { t } = useTranslation();
   const [state, setState] = useState<ModalState>('options');
   const [overwrite, setOverwrite] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -80,7 +85,7 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
     } catch {
       setResult({
         success: false,
-        message: 'Failed to restore backup. Please check the file format.',
+        message: t('restoreBackup.failedToRestore'),
       });
       setState('result');
     }
@@ -143,13 +148,13 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-white">
-                  {state === 'options' && 'Restore Backup'}
-                  {state === 'restoring' && 'Restoring...'}
-                  {state === 'result' && (result?.success ? 'Restore Complete' : 'Restore Failed')}
+                  {state === 'options' && t('restoreBackup.title')}
+                  {state === 'restoring' && t('restoreBackup.restoring')}
+                  {state === 'result' && (result?.success ? t('restoreBackup.complete') : t('restoreBackup.failed'))}
                 </h3>
                 <p className="text-sm text-bambu-gray">
-                  {state === 'options' && 'Import settings from a backup file'}
-                  {state === 'restoring' && 'Please wait while your data is being restored'}
+                  {state === 'options' && t('restoreBackup.description')}
+                  {state === 'restoring' && t('restoreBackup.pleaseWait')}
                   {state === 'result' && result?.message}
                 </p>
               </div>
@@ -194,7 +199,7 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
                     ) : (
                       <div className="flex flex-col items-center gap-2 text-bambu-gray">
                         <Upload className="w-8 h-8" />
-                        <span>Click to select backup file (.json or .zip)</span>
+                        <span>{t('restoreBackup.selectFile')}</span>
                       </div>
                     )}
                   </button>
@@ -205,15 +210,15 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
                   <div className="flex items-start gap-2 text-sm">
                     <AlertTriangle className="w-4 h-4 text-blue-500 dark:text-blue-400 mt-0.5 flex-shrink-0" />
                     <div className="text-blue-700 dark:text-blue-200">
-                      <p className="font-medium mb-1">How duplicate handling works:</p>
+                      <p className="font-medium mb-1">{t('restoreBackup.duplicateHandling')}</p>
                       <ul className="text-blue-600 dark:text-blue-200/80 space-y-1 text-xs">
-                        <li><strong>Printers</strong> - matched by serial number</li>
-                        <li><strong>Smart Plugs</strong> - matched by IP address</li>
-                        <li><strong>Notification Providers</strong> - matched by name</li>
-                        <li><strong>Filaments</strong> - matched by name + type + brand</li>
-                        <li><strong>Archives</strong> - matched by content hash (always skipped)</li>
-                        <li><strong>Pending Uploads</strong> - matched by filename</li>
-                        <li><strong>Settings & Templates</strong> - always overwritten</li>
+                        <li><strong>{t('restoreBackup.categories.printers')}</strong> - {t('restoreBackup.duplicates.printers')}</li>
+                        <li><strong>{t('restoreBackup.categories.smartPlugs')}</strong> - {t('restoreBackup.duplicates.smartPlugs')}</li>
+                        <li><strong>{t('restoreBackup.categories.notificationProviders')}</strong> - {t('restoreBackup.duplicates.notificationProviders')}</li>
+                        <li><strong>{t('restoreBackup.categories.filaments')}</strong> - {t('restoreBackup.duplicates.filaments')}</li>
+                        <li><strong>{t('restoreBackup.categories.archives')}</strong> - {t('restoreBackup.duplicates.archives')}</li>
+                        <li><strong>{t('restoreBackup.categories.pendingUploads')}</strong> - {t('restoreBackup.duplicates.pendingUploads')}</li>
+                        <li><strong>{t('restoreBackup.duplicates.settingsAndTemplatesLabel')}</strong> - {t('restoreBackup.duplicates.settingsAndTemplates')}</li>
                       </ul>
                     </div>
                   </div>
@@ -229,12 +234,12 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
                         ) : (
                           <SkipForward className="w-4 h-4 text-bambu-gray" />
                         )}
-                        {overwrite ? 'Replace existing data' : 'Keep existing data'}
+                        {overwrite ? t('restoreBackup.replaceExisting') : t('restoreBackup.keepExisting')}
                       </p>
                       <p className="text-sm text-bambu-gray mt-1">
                         {overwrite
-                          ? 'Overwrite items that already exist with backup data'
-                          : 'Only restore items that don\'t already exist'}
+                          ? t('restoreBackup.replaceDescription')
+                          : t('restoreBackup.keepDescription')}
                       </p>
                     </div>
                     <Toggle checked={overwrite} onChange={setOverwrite} />
@@ -246,7 +251,7 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
                     <div className="flex items-start gap-2 text-sm">
                       <AlertTriangle className="w-4 h-4 text-orange-500 dark:text-orange-400 mt-0.5 flex-shrink-0" />
                       <div className="text-orange-700 dark:text-orange-200">
-                        <span className="font-medium">Caution:</span> Overwriting will replace your current configurations with data from the backup. Printer access codes are never overwritten for security.
+                        <span className="font-medium">{t('restoreBackup.caution')}</span> {t('restoreBackup.cautionMessage')}
                       </div>
                     </div>
                   </div>
@@ -256,7 +261,7 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
               {/* Footer */}
               <div className="flex items-center justify-end gap-3 p-4 border-t border-bambu-dark-tertiary">
                 <Button type="button" variant="secondary" onClick={onClose}>
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   type="button"
@@ -265,7 +270,7 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
                   className="bg-bambu-green hover:bg-bambu-green-dark disabled:opacity-50"
                 >
                   <Upload className="w-4 h-4 mr-2" />
-                  Restore
+                  {t('restoreBackup.restore')}
                 </Button>
               </div>
             </>
@@ -275,7 +280,7 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
           {state === 'restoring' && (
             <div className="p-8 flex flex-col items-center gap-4">
               <Loader2 className="w-12 h-12 text-bambu-green animate-spin" />
-              <p className="text-bambu-gray">Processing backup file...</p>
+              <p className="text-bambu-gray">{t('restoreBackup.processing')}</p>
             </div>
           )}
 
@@ -287,11 +292,11 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
                 <div className="grid grid-cols-2 gap-3">
                   <div className="p-3 rounded-lg bg-bambu-green/10 border border-bambu-green/30">
                     <div className="text-2xl font-bold text-bambu-green">{totalRestored}</div>
-                    <div className="text-sm text-bambu-gray">Items Restored</div>
+                    <div className="text-sm text-bambu-gray">{t('restoreBackup.itemsRestored')}</div>
                   </div>
                   <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
                     <div className="text-2xl font-bold text-yellow-500">{totalSkipped}</div>
-                    <div className="text-sm text-bambu-gray">Items Skipped</div>
+                    <div className="text-sm text-bambu-gray">{t('restoreBackup.itemsSkipped')}</div>
                   </div>
                 </div>
 
@@ -300,20 +305,20 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
                   <div className="space-y-2">
                     <h4 className="text-sm font-medium text-bambu-gray flex items-center gap-2">
                       <CheckCircle className="w-4 h-4 text-bambu-green" />
-                      Restored
+                      {t('restoreBackup.restoredLabel')}
                     </h4>
                     <div className="space-y-1">
                       {Object.entries(result.restored)
                         .filter(([, count]) => count > 0)
                         .map(([key, count]) => (
                           <div key={key} className="flex items-center justify-between text-sm p-2 rounded bg-bambu-dark">
-                            <span className="text-white">{CATEGORY_LABELS[key] || key}</span>
+                            <span className="text-white">{getCategoryLabel(key, t)}</span>
                             <span className="text-bambu-green font-medium">{count}</span>
                           </div>
                         ))}
                       {(result.files_restored || 0) > 0 && (
                         <div className="flex items-center justify-between text-sm p-2 rounded bg-bambu-dark">
-                          <span className="text-white">Files (3MF, thumbnails, etc.)</span>
+                          <span className="text-white">{t('restoreBackup.filesLabel')}</span>
                           <span className="text-bambu-green font-medium">{result.files_restored}</span>
                         </div>
                       )}
@@ -326,7 +331,7 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
                   <div className="space-y-2">
                     <h4 className="text-sm font-medium text-bambu-gray flex items-center gap-2">
                       <SkipForward className="w-4 h-4 text-yellow-500" />
-                      Skipped (already exist)
+                      {t('restoreBackup.skippedLabel')}
                     </h4>
                     <div className="space-y-1">
                       {Object.entries(result.skipped)
@@ -343,7 +348,7 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
                                 }`}
                               >
                                 <span className="text-white flex items-center gap-2">
-                                  {CATEGORY_LABELS[key] || key}
+                                  {getCategoryLabel(key, t)}
                                   {details.length > 0 && (
                                     isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
                                   )}
@@ -356,7 +361,7 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
                                     <div key={i}>{item}</div>
                                   ))}
                                   {details.length > 10 && (
-                                    <div className="text-bambu-gray/60">...and {details.length - 10} more</div>
+                                    <div className="text-bambu-gray/60">{t('restoreBackup.andMore', { count: details.length - 10 })}</div>
                                   )}
                                 </div>
                               )}
@@ -372,11 +377,11 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
                   <div className="space-y-2">
                     <h4 className="text-sm font-medium text-bambu-gray flex items-center gap-2">
                       <AlertTriangle className="w-4 h-4 text-orange-500" />
-                      New API Keys Generated
+                      {t('restoreBackup.newApiKeys')}
                     </h4>
                     <div className="p-3 rounded bg-orange-500/10 border border-orange-500/30">
                       <p className="text-xs text-orange-200 mb-2">
-                        These keys are only shown once. Copy them now!
+                        {t('restoreBackup.keysOnlyOnce')}
                       </p>
                       <div className="space-y-2">
                         {result.new_api_keys.map((apiKey: { name: string; key: string; key_prefix: string }, i: number) => (
@@ -390,7 +395,7 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
                                 onClick={() => navigator.clipboard.writeText(apiKey.key)}
                                 className="text-xs text-bambu-gray hover:text-white px-2 py-1 rounded bg-bambu-dark-tertiary"
                               >
-                                Copy
+                                {t('common.copy')}
                               </button>
                             </div>
                           </div>
@@ -402,7 +407,7 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
 
                 {totalRestored === 0 && totalSkipped === 0 && (
                   <div className="p-4 text-center text-bambu-gray">
-                    No data was found to restore in the backup file.
+                    {t('restoreBackup.noData')}
                   </div>
                 )}
               </div>
@@ -410,7 +415,7 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
               {/* Footer */}
               <div className="flex items-center justify-end gap-3 p-4 border-t border-bambu-dark-tertiary">
                 <Button onClick={handleClose}>
-                  Close
+                  {t('common.close')}
                 </Button>
               </div>
             </>

@@ -65,7 +65,7 @@ describe('TagManagementModal', () => {
 
       await waitFor(() => {
         // 4 tags, 11 total usages
-        expect(screen.getByText(/4 tags across 11 usages/i)).toBeInTheDocument();
+        expect(screen.getByText(/4 tags/)).toBeInTheDocument();
       });
     });
   });
@@ -79,7 +79,7 @@ describe('TagManagementModal', () => {
         expect(screen.getByText('functional')).toBeInTheDocument();
       });
 
-      const searchInput = screen.getByPlaceholderText('Search tags...');
+      const searchInput = screen.getByPlaceholderText(/search tags/i);
       await user.type(searchInput, 'cal');
 
       await waitFor(() => {
@@ -97,11 +97,11 @@ describe('TagManagementModal', () => {
         expect(screen.getByText('functional')).toBeInTheDocument();
       });
 
-      const searchInput = screen.getByPlaceholderText('Search tags...');
+      const searchInput = screen.getByPlaceholderText(/search tags/i);
       await user.type(searchInput, 'nonexistent');
 
       await waitFor(() => {
-        expect(screen.getByText('No tags match your search')).toBeInTheDocument();
+        expect(screen.getByText(/no matching tags/i)).toBeInTheDocument();
       });
     });
   });
@@ -125,7 +125,7 @@ describe('TagManagementModal', () => {
         expect(screen.getByText('functional')).toBeInTheDocument();
       });
 
-      const sortSelect = screen.getByDisplayValue('Sort by Count');
+      const sortSelect = screen.getByDisplayValue(/most used/i);
       await user.selectOptions(sortSelect, 'name');
 
       await waitFor(() => {
@@ -216,7 +216,7 @@ describe('TagManagementModal', () => {
       await user.click(deleteButton);
 
       await waitFor(() => {
-        expect(screen.getByText(/Delete "functional" from 5 archives?/i)).toBeInTheDocument();
+        expect(screen.getByText(/delete tag "functional"/i)).toBeInTheDocument();
       });
     });
 
@@ -233,11 +233,11 @@ describe('TagManagementModal', () => {
       await user.click(deleteButton);
 
       await waitFor(() => {
-        expect(screen.getByText(/Delete "functional"/i)).toBeInTheDocument();
+        expect(screen.getByText(/delete tag "functional"/i)).toBeInTheDocument();
       });
 
       // Find the confirmation row and click the cancel (X) button within it
-      const confirmationText = screen.getByText(/Delete "functional"/i);
+      const confirmationText = screen.getByText(/delete tag "functional"/i);
       const confirmationRow = confirmationText.closest('div');
       // The X button is the last button in the confirmation row
       const buttons = within(confirmationRow!.parentElement!).getAllByRole('button');
@@ -293,7 +293,7 @@ describe('TagManagementModal', () => {
       render(<TagManagementModal onClose={mockOnClose} />);
 
       await waitFor(() => {
-        expect(screen.getByText('No tags found')).toBeInTheDocument();
+        expect(screen.getByText(/no tags found/i)).toBeInTheDocument();
       });
     });
   });

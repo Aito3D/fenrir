@@ -31,40 +31,40 @@ function getShortcuts(
     ? sidebarItems.slice(0, 9).map((item, index) => ({
         keys: [String(index + 1)],
         description: item.type === 'external'
-          ? `Open ${item.label}`
-          : `Go to ${item.labelKey ? t(item.labelKey) : item.label}`,
+          ? `${t('keyboardShortcuts.open')} ${item.label}`
+          : `${t('keyboardShortcuts.goTo')} ${item.labelKey ? t(item.labelKey) : item.label}`,
         isExternal: item.type === 'external',
       }))
     : navItems
     ? navItems.map((item, index) => ({
         keys: [String(index + 1)],
-        description: `Go to ${t(item.labelKey)}`,
+        description: `${t('keyboardShortcuts.goTo')} ${t(item.labelKey)}`,
         isExternal: false,
       }))
     : [
-        { keys: ['1'], description: 'Go to Printers', isExternal: false },
-        { keys: ['2'], description: 'Go to Archives', isExternal: false },
-        { keys: ['3'], description: 'Go to Queue', isExternal: false },
-        { keys: ['4'], description: 'Go to Statistics', isExternal: false },
-        { keys: ['5'], description: 'Go to Cloud Profiles', isExternal: false },
-        { keys: ['6'], description: 'Go to Settings', isExternal: false },
+        { keys: ['1'], description: `${t('keyboardShortcuts.goTo')} ${t('nav.printers')}`, isExternal: false },
+        { keys: ['2'], description: `${t('keyboardShortcuts.goTo')} ${t('nav.archives')}`, isExternal: false },
+        { keys: ['3'], description: `${t('keyboardShortcuts.goTo')} ${t('nav.queue')}`, isExternal: false },
+        { keys: ['4'], description: `${t('keyboardShortcuts.goTo')} ${t('nav.stats')}`, isExternal: false },
+        { keys: ['5'], description: `${t('keyboardShortcuts.goTo')} ${t('nav.profiles')}`, isExternal: false },
+        { keys: ['6'], description: `${t('keyboardShortcuts.goTo')} ${t('nav.settings')}`, isExternal: false },
       ];
 
   return [
-    { category: 'Navigation', items: navShortcuts },
-    { category: 'Archives', items: [
-      { keys: ['/'], description: 'Focus search', isExternal: false },
-      { keys: ['U'], description: 'Open upload modal', isExternal: false },
-      { keys: ['Esc'], description: 'Clear selection / blur input', isExternal: false },
-      { keys: ['Right-click'], description: 'Context menu on cards', isExternal: false },
+    { category: t('keyboardShortcuts.categories.navigation'), items: navShortcuts },
+    { category: t('keyboardShortcuts.categories.archives'), items: [
+      { keys: ['/'], description: t('keyboardShortcuts.shortcuts.focusSearch'), isExternal: false },
+      { keys: ['U'], description: t('keyboardShortcuts.shortcuts.openUpload'), isExternal: false },
+      { keys: ['Esc'], description: t('keyboardShortcuts.shortcuts.clearSelection'), isExternal: false },
+      { keys: ['Right-click'], description: t('keyboardShortcuts.shortcuts.contextMenu'), isExternal: false },
     ]},
-    { category: 'K-Profiles', items: [
-      { keys: ['R'], description: 'Refresh profiles', isExternal: false },
-      { keys: ['N'], description: 'New profile', isExternal: false },
-      { keys: ['Esc'], description: 'Exit selection mode', isExternal: false },
+    { category: t('keyboardShortcuts.categories.kProfiles'), items: [
+      { keys: ['R'], description: t('keyboardShortcuts.shortcuts.refreshProfiles'), isExternal: false },
+      { keys: ['N'], description: t('keyboardShortcuts.shortcuts.newProfile'), isExternal: false },
+      { keys: ['Esc'], description: t('keyboardShortcuts.shortcuts.exitSelection'), isExternal: false },
     ]},
-    { category: 'General', items: [
-      { keys: ['?'], description: 'Show this help', isExternal: false },
+    { category: t('keyboardShortcuts.categories.general'), items: [
+      { keys: ['?'], description: t('keyboardShortcuts.shortcuts.showHelp'), isExternal: false },
     ]},
   ];
 }
@@ -98,7 +98,7 @@ export function KeyboardShortcutsModal({ onClose, navItems, sidebarItems }: Keyb
           <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
             <div className="flex items-center gap-2">
               <Keyboard className="w-5 h-5 text-bambu-green" />
-              <h2 className="text-xl font-semibold text-white">Keyboard Shortcuts</h2>
+              <h2 className="text-xl font-semibold text-white">{t('keyboardShortcuts.title')}</h2>
             </div>
             <button
               onClick={onClose}
@@ -137,7 +137,7 @@ export function KeyboardShortcutsModal({ onClose, navItems, sidebarItems }: Keyb
           {/* Footer */}
           <div className="p-4 border-t border-bambu-dark-tertiary">
             <p className="text-xs text-bambu-gray text-center">
-              Press <KeyBadge>Esc</KeyBadge> or click outside to close
+              {t('keyboardShortcuts.pressEsc')} <KeyBadge>Esc</KeyBadge> {t('keyboardShortcuts.orClickToClose')}
             </p>
           </div>
         </CardContent>

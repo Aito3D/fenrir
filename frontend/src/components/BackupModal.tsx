@@ -8,10 +8,9 @@ import { Toggle } from './Toggle';
 interface BackupCategory {
   id: string;
   labelKey: string;
-  defaultLabel: string;
+  descriptionKey: string;
   icon: React.ReactNode;
   default: boolean;
-  description: string;
   requiresPrinters?: boolean;
 }
 
@@ -19,107 +18,94 @@ const BACKUP_CATEGORIES: BackupCategory[] = [
   {
     id: 'settings',
     labelKey: 'backup.categories.settings',
-    defaultLabel: 'App Settings',
+    descriptionKey: 'backup.categories.settingsDesc',
     icon: <Settings className="w-4 h-4" />,
     default: true,
-    description: 'Language, theme, update preferences',
   },
   {
     id: 'notifications',
     labelKey: 'backup.categories.notifications',
-    defaultLabel: 'Notification Providers',
+    descriptionKey: 'backup.categories.notificationsDesc',
     icon: <Bell className="w-4 h-4" />,
     default: true,
-    description: 'ntfy, Pushover, Discord, etc.',
   },
   {
     id: 'templates',
     labelKey: 'backup.categories.templates',
-    defaultLabel: 'Notification Templates',
+    descriptionKey: 'backup.categories.templatesDesc',
     icon: <FileText className="w-4 h-4" />,
     default: true,
-    description: 'Custom message templates',
   },
   {
     id: 'smart_plugs',
     labelKey: 'backup.categories.smartPlugs',
-    defaultLabel: 'Smart Plugs',
+    descriptionKey: 'backup.categories.smartPlugsDesc',
     icon: <Plug className="w-4 h-4" />,
     default: true,
-    description: 'Tasmota plug configurations',
   },
   {
     id: 'external_links',
     labelKey: 'backup.categories.externalLinks',
-    defaultLabel: 'External Links',
+    descriptionKey: 'backup.categories.externalLinksDesc',
     icon: <Link className="w-4 h-4" />,
     default: true,
-    description: 'Sidebar links to external services',
   },
   {
     id: 'printers',
     labelKey: 'backup.categories.printers',
-    defaultLabel: 'Printers',
+    descriptionKey: 'backup.categories.printersDesc',
     icon: <Printer className="w-4 h-4" />,
     default: false,
-    description: 'Printer info (access codes excluded)',
   },
   {
     id: 'plate_calibration',
     labelKey: 'backup.categories.plateCalibration',
-    defaultLabel: 'Plate Detection',
+    descriptionKey: 'backup.categories.plateCalibrationDesc',
     icon: <Camera className="w-4 h-4" />,
     default: false,
-    description: 'Empty plate reference images',
     requiresPrinters: true,
   },
   {
     id: 'filaments',
     labelKey: 'backup.categories.filaments',
-    defaultLabel: 'Filament Inventory',
+    descriptionKey: 'backup.categories.filamentsDesc',
     icon: <Palette className="w-4 h-4" />,
     default: false,
-    description: 'Filament types and costs',
   },
   {
     id: 'maintenance',
     labelKey: 'backup.categories.maintenance',
-    defaultLabel: 'Maintenance Types',
+    descriptionKey: 'backup.categories.maintenanceDesc',
     icon: <Wrench className="w-4 h-4" />,
     default: false,
-    description: 'Custom maintenance schedules',
   },
   {
     id: 'archives',
     labelKey: 'backup.categories.archives',
-    defaultLabel: 'Print Archives',
+    descriptionKey: 'backup.categories.archivesDesc',
     icon: <Archive className="w-4 h-4" />,
     default: false,
-    description: 'All print data + files (3MF, thumbnails, photos)',
   },
   {
     id: 'projects',
     labelKey: 'backup.categories.projects',
-    defaultLabel: 'Projects',
+    descriptionKey: 'backup.categories.projectsDesc',
     icon: <FolderKanban className="w-4 h-4" />,
     default: false,
-    description: 'Projects, BOM items, and attachments',
   },
   {
     id: 'pending_uploads',
     labelKey: 'backup.categories.pendingUploads',
-    defaultLabel: 'Pending Uploads',
+    descriptionKey: 'backup.categories.pendingUploadsDesc',
     icon: <Upload className="w-4 h-4" />,
     default: false,
-    description: 'Virtual printer uploads awaiting review',
   },
   {
     id: 'api_keys',
     labelKey: 'backup.categories.apiKeys',
-    defaultLabel: 'API Keys',
+    descriptionKey: 'backup.categories.apiKeysDesc',
     icon: <Key className="w-4 h-4" />,
     default: false,
-    description: 'Webhook API keys (new keys generated on import)',
   },
 ];
 
@@ -195,10 +181,10 @@ export function BackupModal({ onClose, onExport }: BackupModalProps) {
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-white">
-                  {t('backup.exportTitle', { defaultValue: 'Export Backup' })}
+                  {t('backup.exportTitle')}
                 </h3>
                 <p className="text-sm text-bambu-gray">
-                  {t('backup.selectCategories', { defaultValue: 'Select data to include' })}
+                  {t('backup.selectCategories')}
                 </p>
               </div>
             </div>
@@ -217,7 +203,7 @@ export function BackupModal({ onClose, onExport }: BackupModalProps) {
               disabled={isExporting}
               className="text-sm text-bambu-green hover:text-bambu-green/80 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {t('common.selectAll', { defaultValue: 'Select All' })}
+              {t('common.selectAll')}
             </button>
             <span className="text-bambu-gray">|</span>
             <button
@@ -225,7 +211,7 @@ export function BackupModal({ onClose, onExport }: BackupModalProps) {
               disabled={isExporting}
               className="text-sm text-bambu-gray hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {t('common.selectNone', { defaultValue: 'Select None' })}
+              {t('common.selectNone')}
             </button>
           </div>
 
@@ -256,12 +242,12 @@ export function BackupModal({ onClose, onExport }: BackupModalProps) {
                 </div>
                 <div className="flex-1">
                   <div className="text-white text-sm font-medium">
-                    {t(category.labelKey, { defaultValue: category.defaultLabel })}
+                    {t(category.labelKey)}
                   </div>
                   <div className="text-xs text-bambu-gray">
                     {category.requiresPrinters && !selected.printers
-                      ? 'Requires Printers to be selected'
-                      : category.description}
+                      ? t('backup.requiresPrinters')
+                      : t(category.descriptionKey)}
                   </div>
                 </div>
               </label>
@@ -275,8 +261,8 @@ export function BackupModal({ onClose, onExport }: BackupModalProps) {
               <div className="flex items-start gap-2 text-sm">
                 <Archive className="w-4 h-4 text-yellow-500 mt-0.5 flex-shrink-0" />
                 <div className="text-yellow-200 dark:text-yellow-200 text-yellow-700">
-                  <span className="font-medium">ZIP file will be created.</span>
-                  <span className="text-yellow-600 dark:text-yellow-200/70"> Includes all 3MF files, thumbnails, timelapses, and photos. This may take a while and result in a large file.</span>
+                  <span className="font-medium">{t('backup.zipWarning')}</span>
+                  <span className="text-yellow-600 dark:text-yellow-200/70"> {t('backup.zipWarningDesc')}</span>
                 </div>
               </div>
             </div>
@@ -289,8 +275,8 @@ export function BackupModal({ onClose, onExport }: BackupModalProps) {
                 <div className="flex items-start gap-2">
                   <Key className="w-4 h-4 text-orange-500 dark:text-orange-400 mt-0.5 flex-shrink-0" />
                   <div>
-                    <p className="text-sm font-medium text-white">Include Access Codes</p>
-                    <p className="text-xs text-bambu-gray">For transferring to another machine</p>
+                    <p className="text-sm font-medium text-white">{t('backup.includeAccessCodes')}</p>
+                    <p className="text-xs text-bambu-gray">{t('backup.accessCodesDesc')}</p>
                   </div>
                 </div>
                 <Toggle checked={includeAccessCodes} onChange={setIncludeAccessCodes} />
@@ -300,7 +286,7 @@ export function BackupModal({ onClose, onExport }: BackupModalProps) {
                   <div className="flex items-start gap-2 text-xs">
                     <AlertTriangle className="w-3 h-3 text-orange-500 dark:text-orange-400 mt-0.5 flex-shrink-0" />
                     <span className="text-orange-700 dark:text-orange-200">
-                      Access codes will be included in plain text. Keep this backup file secure!
+                      {t('backup.accessCodesWarning')}
                     </span>
                   </div>
                 </div>
@@ -311,14 +297,11 @@ export function BackupModal({ onClose, onExport }: BackupModalProps) {
           {/* Footer */}
           <div className="flex items-center justify-between p-4 border-t border-bambu-dark-tertiary">
             <span className="text-sm text-bambu-gray">
-              {t('backup.selectedCount', {
-                count: selectedCount,
-                defaultValue: `${selectedCount} categories selected`,
-              })}
+              {t('backup.selectedCount', { count: selectedCount })}
             </span>
             <div className="flex gap-3">
               <Button variant="secondary" onClick={onClose} disabled={isExporting}>
-                {t('common.cancel', { defaultValue: 'Cancel' })}
+                {t('common.cancel')}
               </Button>
               <Button
                 onClick={handleExport}
@@ -328,12 +311,12 @@ export function BackupModal({ onClose, onExport }: BackupModalProps) {
                 {isExporting ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    {t('backup.exporting', { defaultValue: 'Exporting...' })}
+                    {t('backup.exporting')}
                   </>
                 ) : (
                   <>
                     <Download className="w-4 h-4 mr-2" />
-                    {t('backup.export', { defaultValue: 'Export' })}
+                    {t('backup.export')}
                   </>
                 )}
               </Button>

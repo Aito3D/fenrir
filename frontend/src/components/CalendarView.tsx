@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Archive } from '../api/client';
 import { api } from '../api/client';
@@ -18,14 +19,8 @@ function getFirstDayOfMonth(year: number, month: number): number {
   return new Date(year, month, 1).getDay();
 }
 
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'
-];
-
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
 export function CalendarView({ archives, onArchiveClick, highlightedArchiveId }: CalendarViewProps) {
+  const { t } = useTranslation();
   const today = new Date();
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
@@ -104,13 +99,13 @@ export function CalendarView({ archives, onArchiveClick, highlightedArchiveId }:
           </button>
           <div className="flex items-center gap-3">
             <h2 className="text-lg font-semibold text-white">
-              {MONTH_NAMES[currentMonth]} {currentYear}
+              {new Date(currentYear, currentMonth).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
             </h2>
             <button
               onClick={goToToday}
               className="px-2 py-1 text-xs bg-bambu-dark-tertiary hover:bg-bambu-green/20 text-bambu-gray hover:text-white rounded transition-colors"
             >
-              Today
+              {t('common.today')}
             </button>
           </div>
           <button
@@ -123,8 +118,8 @@ export function CalendarView({ archives, onArchiveClick, highlightedArchiveId }:
 
         {/* Day headers */}
         <div className="grid grid-cols-7 gap-1 mb-1">
-          {DAY_NAMES.map(day => (
-            <div key={day} className="text-center text-xs text-bambu-gray py-2">
+          {Array.from({ length: 7 }, (_, i) => new Date(2024, 0, 7 + i).toLocaleDateString(undefined, { weekday: 'short' })).map((day, i) => (
+            <div key={i} className="text-center text-xs text-bambu-gray py-2">
               {day}
             </div>
           ))}
@@ -189,7 +184,7 @@ export function CalendarView({ archives, onArchiveClick, highlightedArchiveId }:
                   return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
                 }).length}
               </div>
-              <div className="text-xs text-bambu-gray">Prints this month</div>
+              <div className="text-xs text-bambu-gray">{t('archives.calendar.printsThisMonth')}</div>
             </div>
             <div>
               <div className="text-2xl font-bold text-green-400">
@@ -198,7 +193,7 @@ export function CalendarView({ archives, onArchiveClick, highlightedArchiveId }:
                   return d.getMonth() === currentMonth && d.getFullYear() === currentYear && a.status === 'completed';
                 }).length}
               </div>
-              <div className="text-xs text-bambu-gray">Successful</div>
+              <div className="text-xs text-bambu-gray">{t('archives.calendar.successful')}</div>
             </div>
             <div>
               <div className="text-2xl font-bold text-red-400">
@@ -207,7 +202,7 @@ export function CalendarView({ archives, onArchiveClick, highlightedArchiveId }:
                   return d.getMonth() === currentMonth && d.getFullYear() === currentYear && a.status === 'failed';
                 }).length}
               </div>
-              <div className="text-xs text-bambu-gray">Failed</div>
+              <div className="text-xs text-bambu-gray">{t('archives.calendar.failed')}</div>
             </div>
           </div>
         </div>
@@ -258,7 +253,7 @@ export function CalendarView({ archives, onArchiveClick, highlightedArchiveId }:
                       </p>
                       <div className="flex items-center gap-2 text-xs">
                         <span className={archive.status === 'failed' ? 'text-red-400' : 'text-green-400'}>
-                          {archive.status === 'failed' ? 'Failed' : 'Completed'}
+                          {archive.status === 'failed' ? t('archives.calendar.failed') : t('archives.calendar.completed')}
                         </span>
                         {archive.filament_color && (
                           <div className="flex gap-0.5">
@@ -278,12 +273,12 @@ export function CalendarView({ archives, onArchiveClick, highlightedArchiveId }:
                 })}
               </div>
             ) : (
-              <p className="text-sm text-bambu-gray">No prints on this day</p>
+              <p className="text-sm text-bambu-gray">{t('archives.calendar.noPrints')}</p>
             )}
           </>
         ) : (
           <div className="text-center py-8">
-            <p className="text-sm text-bambu-gray">Select a day to see prints</p>
+            <p className="text-sm text-bambu-gray">{t('archives.calendar.selectDay')}</p>
           </div>
         )}
       </div>

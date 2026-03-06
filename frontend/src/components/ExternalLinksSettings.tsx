@@ -87,17 +87,17 @@ export function ExternalLinksSettings() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Link2 className="w-5 h-5 text-bambu-green" />
-              <h2 className="text-lg font-semibold text-white">Sidebar Links</h2>
+              <h2 className="text-lg font-semibold text-white">{t('externalLinks.title')}</h2>
             </div>
             <Button size="sm" onClick={() => setShowAddModal(true)}>
               <Plus className="w-4 h-4" />
-              Add Link
+              {t('externalLinks.addLink')}
             </Button>
           </div>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-bambu-gray mb-4">
-            Add external links to the sidebar navigation. Drag to reorder.
+            {t('externalLinks.description')}
           </p>
 
           {isLoading ? (

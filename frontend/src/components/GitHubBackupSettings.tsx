@@ -205,7 +205,7 @@ export function GitHubBackupSettings() {
           enabled,
         });
         setAccessToken(''); // Clear after save
-        showToast('Token updated');
+        showToast(t('githubBackup.toast.tokenUpdated'));
       } else {
         // Update without token
         await api.updateGitHubBackupConfig({
@@ -218,7 +218,7 @@ export function GitHubBackupSettings() {
           backup_settings: backupSettings,
           enabled,
         });
-        showToast('Settings saved');
+        showToast(t('githubBackup.toast.settingsSaved'));
       }
       queryClient.invalidateQueries({ queryKey: ['github-backup-config'] });
       queryClient.invalidateQueries({ queryKey: ['github-backup-status'] });
@@ -271,7 +271,7 @@ export function GitHubBackupSettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['github-backup-config'] });
       queryClient.invalidateQueries({ queryKey: ['github-backup-status'] });
-      showToast('GitHub backup enabled');
+      showToast(t('githubBackup.toast.enabled'));
       setAccessToken('');
       isInitializedRef.current = true;
     },
@@ -287,9 +287,9 @@ export function GitHubBackupSettings() {
       queryClient.invalidateQueries({ queryKey: ['github-backup-logs'] });
       if (result.success) {
         if (result.files_changed > 0) {
-          showToast(`Backup complete - ${result.files_changed} files updated`);
+          showToast(t('githubBackup.toast.backupComplete', { count: result.files_changed }));
         } else {
-          showToast('Backup skipped - no changes');
+          showToast(t('githubBackup.toast.backupSkipped'));
         }
       } else {
         showToast(`Backup failed: ${result.message}`, 'error');

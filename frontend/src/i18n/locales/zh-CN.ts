@@ -1,5 +1,4 @@
 export default {
-  // Navigation
   nav: {
     printers: '打印机',
     archives: '归档',
@@ -25,8 +24,6 @@ export default {
     smartSwitches: '智能开关',
     logout: '退出登录',
   },
-
-  // Common
   common: {
     save: '保存',
     saving: '保存中...',
@@ -111,9 +108,19 @@ export default {
     duplicate: '复制',
     left: '左',
     right: '右',
+    copy: '复制',
+    processing: '处理中...',
+    tags: '标签',
+    notes: '备注',
+    project: '项目',
+    justNow: '刚刚',
+    minutesAgo: '{{count}}分钟前',
+    hoursAgo: '{{count}}小时前',
+    daysAgo: '{{count}}天前',
+    successful: '成功',
+    failed: '失败',
+    completed: '已完成',
   },
-
-  // Printers page
   printers: {
     title: '打印机',
     addPrinter: '添加打印机',
@@ -149,7 +156,6 @@ export default {
     maintenanceWarning_plural: '{{count}} 个警告',
     maintenanceDue: '{{count}} 个到期',
     maintenanceDue_plural: '{{count}} 个到期',
-    // Sort options
     sort: {
       name: '名称',
       status: '状态',
@@ -158,20 +164,17 @@ export default {
       ascending: '升序排列',
       descending: '降序排列',
     },
-    // Card size
     cardSize: {
       small: '小卡片',
       medium: '中卡片',
       large: '大卡片',
       extraLarge: '超大卡片',
     },
-    // Controls
     hideOffline: '隐藏离线',
     nextAvailable: '下一个可用',
     powerOn: '开机',
     offlinePrintersWithPlugs: '带智能插座的离线打印机',
     noPrintersConfigured: '尚未配置打印机',
-    // Printer card
     readyToPrint: '准备打印',
     external: '外部',
     extL: '外置左',
@@ -187,7 +190,6 @@ export default {
     name: '名称',
     serialCannotBeChanged: '序列号无法更改',
     locationHelp: '用于分组打印机和筛选队列任务',
-    // WiFi signal strength
     wifiSignal: {
       veryWeak: '非常弱',
       weak: '弱',
@@ -195,21 +197,15 @@ export default {
       good: '良好',
       excellent: '优秀',
     },
-    // Maintenance
     maintenanceUpToDate: '所有维护均已完成 - 点击查看',
-    // Chamber light
     chamberLightOn: '打开腔室灯',
     chamberLightOff: '关闭腔室灯',
-    // Files
     files: '文件',
     browseFiles: '浏览打印机文件',
-    // Smart plug
     autoOffAfterPrint: '打印后自动关机',
     autoOffExecuted: '已执行自动关机 - 开启打印机以重置',
-    // HMS errors
     hmsErrors: 'HMS 错误',
     viewHmsErrors: '查看 {{count}} 个 HMS 错误',
-    // Actions
     resume: '继续',
     pause: '暂停',
     stop: '停止',
@@ -249,18 +245,15 @@ export default {
     nozzleFlow: '流量',
     nozzleHighFlow: '高流量',
     nozzleStandardFlow: '标准',
-    // Firmware
     firmwareUpdate: '固件更新',
     firmwareInstructions: '在打印机触摸屏上，前往',
     firmwareNav: '导航到',
     settings: '设置',
     firmware: '固件',
-    // Discovery
     discoverPrinters: '发现打印机',
     searching: '搜索中...',
     manualEntry: '手动输入',
     addFromCloud: '从云端添加',
-    // Toast messages
     toast: {
       printerDeleted: '打印机已删除',
       printerAdded: '打印机已添加',
@@ -296,23 +289,18 @@ export default {
       calibrationFailed: '校准失败',
       rfidRereadInitiated: '已发起 RFID 重新读取',
     },
-    // Connection status
     connection: {
       connected: '已连接',
       offline: '离线',
     },
-    // Queue info
     queue: {
       inQueue: '队列中有 {{count}} 个打印任务',
       inQueue_plural: '队列中有 {{count}} 个打印任务',
     },
-    // Controls section
     controls: '控制',
-    // RFID
     rfid: {
       reread: '重新读取 RFID',
     },
-    // Permissions
     permission: {
       noAdd: '您没有添加打印机的权限',
       noEdit: '您没有编辑打印机的权限',
@@ -323,7 +311,6 @@ export default {
       noSmartPlugControl: '您没有控制智能插座的权限',
       noCamera: '您没有查看摄像头的权限',
     },
-    // Add/Edit modal
     modal: {
       addTitle: '添加打印机',
       editTitle: '编辑打印机',
@@ -336,7 +323,6 @@ export default {
       modelOptional: '型号（可选）',
       saveChanges: '保存更改',
     },
-    // Skip objects
     skipObjects: {
       tooltip: '跳过对象',
       onlyWhilePrinting: '跳过对象（仅在打印时）',
@@ -356,7 +342,6 @@ export default {
       confirmTitle: '跳过对象？',
       confirmMessage: '确定要跳过"{{name}}"吗？此操作无法撤销。',
     },
-    // Confirm modals
     confirm: {
       deleteTitle: '删除打印机',
       deleteMessage: '确定要删除"{{name}}"吗？这将移除所有连接设置。',
@@ -379,7 +364,6 @@ export default {
       powerOffWarning: '警告："{{name}}"正在打印中！确定要关闭电源吗？这将中断打印并可能损坏打印机。',
       powerOffButton: '关机',
     },
-    // Discovery
     discovery: {
       title: '发现打印机',
       searching: '搜索中...',
@@ -404,16 +388,12 @@ export default {
       unknown: '未知',
       failedToStart: '启动发现失败',
     },
-    // Filaments section
     filaments: '耗材',
-    // Camera
     openCameraOverlay: '打开摄像头叠加层',
     openCameraWindow: '在新窗口中打开摄像头',
-    // Firmware
     firmwareUpdateAvailable: '固件更新可用：{{current}} → {{latest}}',
     firmwareUpToDate: '固件 {{version}} — 已是最新',
     firmwareUpdateButton: '更新',
-    // Plate detection
     plateDetection: {
       noPermission: '您没有更新打印机的权限',
       enabledClick: '打印板检查已启用 - 点击禁用',
@@ -435,17 +415,14 @@ export default {
       clickToEdit: '{{label}} - 点击编辑',
       clickToAddLabel: '点击添加标签',
     },
-    // Fans
     fans: {
       partCooling: '零件冷却风扇',
       auxiliary: '辅助风扇',
       chamber: '腔室风扇',
     },
-    // HMS errors
     clickToViewHmsErrors: '点击查看 HMS 错误',
     estimatedCompletion: '预计完成时间',
     slotOptions: '槽位选项',
-    // AMS hover popup
     amsPopup: {
       friendlyName: 'AMS 名称',
       friendlyNamePlaceholder: '例如 AMS 友好名称',
@@ -455,7 +432,6 @@ export default {
       clear: '清除',
       noEditPermission: '您没有重命名 AMS 单元的权限',
     },
-    // Firmware modal
     firmwareModal: {
       title: '固件更新',
       titleUpToDate: '固件信息',
@@ -477,7 +453,6 @@ export default {
       uploadedToast: '固件已上传！请在打印机屏幕上触发更新。',
     },
     accessCodePlaceholder: '留空以保持当前值',
-    // ROI editor
     roi: {
       title: '检测区域 (ROI)',
       xStart: 'X 起点',
@@ -493,8 +468,6 @@ export default {
     dropToPrint: '拖放以打印',
     cannotPrint: '打印机忙碌',
   },
-
-  // Archives page
   archives: {
     title: '打印归档',
     searchPlaceholder: '搜索归档...',
@@ -743,14 +716,32 @@ export default {
       cleared: '已清除 {{count}} 条日志',
       clearFailed: '清除打印日志失败',
     },
+    compare: {
+      title: '比较存档 ({{count}})',
+      loadFailed: '加载比较失败',
+      setting: '设置',
+      differencesFound: '发现 {{count}} 个差异',
+      vs: 'vs',
+      andMore: '...还有 {{count}} 个',
+      successAnalysis: '成功/失败分析',
+      successful: '{{count}} 个成功',
+      failed: '{{count}} 个失败',
+      noCorrelations: '未发现设置与成功/失败之间的明确关联',
+      needBoth: '需要成功和失败的打印记录来分析关联',
+    },
+    calendar: {
+      printsThisMonth: '本月打印',
+      successful: '成功',
+      failed: '失败',
+      noPrints: '这一天没有打印',
+      selectDay: '选择一天查看打印',
+      completed: '已完成',
+    },
   },
-
-  // Queue page
   queue: {
     title: '打印队列',
     subtitle: '排程和管理您的打印任务',
     addToQueue: '添加到队列',
-    // Print modal
     print: '打印',
     reprint: '重新打印',
     schedulePrint: '排程打印',
@@ -783,13 +774,11 @@ export default {
     clearPlateSuccess: '打印板已清理 — 准备进行下一个打印',
     plateReady: '打印板已清理 — 准备进行下一个打印',
     plateNumber: '板 {{index}}',
-    // Sections
     sections: {
       currentlyPrinting: '正在打印',
       queued: '排队中',
       history: '历史',
     },
-    // Status
     status: {
       pending: '等待中',
       waiting: '等待中',
@@ -800,7 +789,6 @@ export default {
       skipped: '已跳过',
       cancelled: '已取消',
     },
-    // Summary cards
     summary: {
       printing: '打印中',
       queued: '排队中',
@@ -808,7 +796,6 @@ export default {
       totalWeight: '总队列重量',
       history: '历史',
     },
-    // Filters
     filter: {
       allPrinters: '所有打印机',
       unassigned: '未分配',
@@ -816,7 +803,6 @@ export default {
       allLocations: '所有位置',
       any: '任意',
     },
-    // Sort
     sort: {
       byPosition: '按位置排序',
       byName: '按名称排序',
@@ -826,18 +812,15 @@ export default {
       ascendingOldest: '升序（最旧优先）',
       descendingNewest: '降序（最新优先）',
     },
-    // Badges
     badges: {
       staged: '已暂存',
       requiresPrevious: '需要前一个成功',
       autoPowerOff: '自动关机',
     },
-    // Empty state
     empty: {
       title: '没有排程的打印',
       description: '从归档页面使用右键菜单中的"排程"选项来排程打印，或拖放文件开始。',
     },
-    // Time
     time: {
       asap: '尽快',
       overdue: '已逾期',
@@ -846,13 +829,11 @@ export default {
       inMinutes: '{{count}} 分钟后',
       inHours: '{{count}} 小时后',
     },
-    // Actions
     actions: {
       stopPrint: '停止打印',
       startPrint: '开始打印',
       requeue: '重新排队',
     },
-    // Bulk edit
     bulkEdit: {
       title: '编辑 {{count}} 个项目',
       title_plural: '编辑 {{count}} 个项目',
@@ -877,7 +858,6 @@ export default {
       editSelected: '编辑所选',
       cancelSelected: '取消所选',
     },
-    // Confirmations
     confirm: {
       cancelTitle: '取消排程打印',
       cancelMessage: '确定要取消"{{name}}"吗？',
@@ -892,7 +872,6 @@ export default {
       thisPrint: '此打印',
       thisItem: '此项目',
     },
-    // Toast messages
     toast: {
       cancelled: '队列项目已取消',
       cancelFailed: '取消项目失败',
@@ -909,7 +888,6 @@ export default {
       bulkCancelled: '已取消 {{count}} 个项目',
       bulkCancelFailed: '批量取消项目失败',
     },
-    // Permissions
     permissions: {
       noStopPrint: '您没有停止打印的权限',
       noStartPrint: '您没有开始打印的权限',
@@ -922,7 +900,6 @@ export default {
       noCancelItems: '您没有取消队列项目的权限',
     },
   },
-
   backgroundDispatch: {
     unknownFile: '未知文件',
     unknownPrinter: '未知打印机',
@@ -949,8 +926,6 @@ export default {
       completeSuccess: '后台分发完成：{{completed}} 成功',
     },
   },
-
-  // Statistics page
   stats: {
     title: '仪表板',
     subtitle: '拖动小部件以重新排列。点击眼睛图标隐藏。',
@@ -975,7 +950,6 @@ export default {
     last30Days: '最近 30 天',
     last90Days: '最近 90 天',
     allTime: '全部时间',
-    // Widgets
     quickStats: '快速统计',
     printActivity: '打印活动',
     filamentTypes: '耗材类型',
@@ -994,7 +968,6 @@ export default {
     topFailureReasons: '主要失败原因',
     failedPrintsCount: '{{failed}} / {{total}} 次打印失败',
     lastWeekRate: '上周：{{rate}}%',
-    // Actions
     resetLayout: '重置布局',
     recalculateCosts: '重新计算成本',
     recalculateCostsHint: '使用当前耗材价格重新计算所有归档成本',
@@ -1002,15 +975,12 @@ export default {
     exportAsCsv: '导出为 CSV',
     exportAsExcel: '导出为 Excel',
     hiddenCount: '{{count}} 个已隐藏',
-    // Toast
     exportDownloaded: '导出已下载',
     exportFailed: '导出失败',
     layoutReset: '布局已重置',
     recalculatedCosts: '已为 {{count}} 个归档重新计算成本',
     recalculateFailed: '重新计算成本失败',
-    // Loading
     loadingStats: '加载统计数据中...',
-    // Permissions
     noPermissionResetLayout: '您没有重置布局的权限',
     noPermissionRecalculate: '您没有重新计算成本的权限',
     noPrintDataInRange: '所选范围内无打印数据',
@@ -1056,8 +1026,6 @@ export default {
       to: '到',
     },
   },
-
-  // Maintenance page
   maintenance: {
     title: '维护',
     overview: '概览',
@@ -1080,10 +1048,8 @@ export default {
     noHistory: '无维护历史',
     editPrintHours: '编辑打印时间',
     currentHours: '当前小时数',
-    // Tabs
     statusTab: '状态',
     settingsTab: '设置',
-    // Status
     overdueCount: '{{count}} 个逾期',
     dueSoonCount: '{{count}} 个即将到期',
     dueSoon: '即将到期',
@@ -1091,7 +1057,6 @@ export default {
     overdueBy: '逾期 {{duration}}',
     dueIn: '{{duration}} 后到期',
     timeLeft: '剩余 {{duration}}',
-    // Duration formats
     day: '1 天',
     days: '{{count}} 天',
     week: '1 周',
@@ -1099,7 +1064,6 @@ export default {
     month: '1 个月',
     months: '{{count}} 个月',
     year: '1 年',
-    // Settings
     maintenanceTypes: '维护类型',
     maintenanceTypesDescription: '系统类型和您的自定义维护任务',
     addCustomType: '添加自定义类型',
@@ -1117,16 +1081,13 @@ export default {
     exampleName: '例如：更换 HEPA 过滤器',
     viewDocumentation: '查看文档',
     timeBasedInterval: '基于时间的间隔',
-    // Interval overrides
     intervalOverrides: '间隔覆盖',
     intervalOverridesDescription: '为特定打印机自定义间隔',
-    // Printer assignment
     assignedToPrinters: '已分配给打印机：',
     noPrintersAssigned: '未分配打印机',
     addPrinterShort: '添加：',
     printersAssignedClick: '已分配 {{count}} 台打印机 - 点击管理',
     removeFromPrinter: '从此打印机移除',
-    // Types
     types: {
       lubricateCarbonRods: '润滑碳纤维杆',
       lubricateRails: '润滑线性导轨',
@@ -1143,7 +1104,6 @@ export default {
       replaceCarbonFilter: '更换活性炭过滤器',
       lubricateLeftNozzleRail: '润滑左喷嘴导轨',
     },
-    // Toast
     maintenanceComplete: '维护已标记为完成',
     typeUpdated: '维护类型已更新',
     typeDeleted: '维护类型已删除',
@@ -1151,11 +1111,9 @@ export default {
     printHoursUpdated: '打印小时数已更新',
     printerAssigned: '打印机已分配',
     printerRemoved: '打印机已移除',
-    // Confirmation
     deleteTypeConfirm: '删除"{{name}}"？',
     deleteSystemTypeTitle: '删除默认维护任务？',
     deleteSystemTypeMessage: '确定要删除默认维护任务"{{name}}"吗？',
-    // Permissions
     noPermissionUpdate: '您没有更新维护项目的权限',
     noPermissionPerform: '您没有执行维护的权限',
     noPermissionEditTypes: '您没有编辑维护类型的权限',
@@ -1164,15 +1122,11 @@ export default {
     noPermissionRemovePrinter: '您没有移除打印机分配的权限',
     noPermissionAssignPrinter: '您没有分配打印机的权限',
     noPermissionEditIntervals: '您没有编辑间隔的权限',
-    // Configure link
     configureSettings: '配置维护类型和间隔',
   },
-
-  // Settings page
   settings: {
     title: '设置',
     general: '通用',
-    // Tab names
     tabs: {
       general: '通用',
       smartPlugs: '智能插座',
@@ -1185,7 +1139,6 @@ export default {
       backup: '备份',
       emailAuth: '邮箱认证',
     },
-    // Email settings
     email: {
       smtpSettings: 'SMTP 配置',
       smtpHost: 'SMTP 服务器',
@@ -1213,7 +1166,6 @@ export default {
       feature2: '用户可以使用用户名或邮箱登录',
       feature3: '忘记密码功能可用',
       feature4: '管理员可以通过邮件重置用户密码',
-      // Error messages
       errors: {
         requiredFields: '请填写所有必填字段',
         usernameRequired: '启用认证时需要用户名',
@@ -1222,17 +1174,14 @@ export default {
         usernamePasswordRequired: '启用认证时需要用户名和密码',
         configureSmtpFirst: '请先配置并测试 SMTP 设置',
       },
-      // Success messages
       success: {
         settingsSaved: 'SMTP 设置保存成功',
       },
-      // Security options
       securityOptions: {
         starttls: 'STARTTLS（端口 587）',
         ssl: 'SSL/TLS（端口 465）',
         none: '无（端口 25）',
       },
-      // Authentication options
       authOptions: {
         enabled: '已启用',
         disabled: '已禁用',
@@ -1257,7 +1206,6 @@ export default {
     latestVersion: '最新版本',
     upToDate: '已是最新版本',
     updateAvailable: '有可用更新',
-    // Notifications
     notificationLanguage: '通知语言',
     notificationLanguageDescription: '推送通知的语言',
     bedCooledThreshold: '热床冷却阈值',
@@ -1287,7 +1235,6 @@ export default {
       maintenanceDue: '维护到期',
       maintenanceDueDescription: '需要维护时通知',
     },
-    // Smart Plugs
     smartPlug: {
       title: '智能插座',
       add: '添加智能插座',
@@ -1306,7 +1253,6 @@ export default {
       turnOn: '开启',
       turnOff: '关闭',
     },
-    // Filament Tracking Mode
     filamentTracking: '耗材追踪',
     filamentTrackingDesc: '选择如何追踪您的耗材。您可以使用内置库存或连接外部 Spoolman 服务器。',
     trackingModeBuiltIn: '内置库存',
@@ -1322,7 +1268,6 @@ export default {
     amsSyncing: '同步中...',
     amsSyncSuccess: '已同步 {{synced}} 个耗材，跳过 {{skipped}} 个',
     amsSyncError: '从 AMS 同步重量失败',
-    // Spoolman settings
     spoolmanUrl: 'Spoolman URL',
     spoolmanUrlHint: 'Spoolman 服务器的 URL（例如 http://localhost:7912）',
     spoolmanConnected: '已连接',
@@ -1344,69 +1289,51 @@ export default {
     syncAmsData: '同步 AMS 数据',
     syncAmsDataDesc: '手动将打印机 AMS 数据同步到 Spoolman',
     allPrinters: '所有打印机',
-    // Default printer
     noDefaultPrinter: '无默认（每次询问）',
-    // Sidebar
     sidebarOrder: '侧边栏顺序',
-    // Camera
     saveThumbnails: '保存缩略图',
     captureFinishPhoto: '拍摄完成照片',
     noPrintersConfigured: '未配置打印机',
-    // Archive settings
     archiveMode: {
       always: '始终创建归档条目',
       never: '从不创建归档条目',
       ask: '每次询问',
     },
-    // Updates
     checkForUpdatesLabel: '检查更新',
     checkPrinterFirmware: '检查打印机固件',
     includeBetaUpdates: '包含测试版本',
     includeBetaUpdatesDesc: '检查更新时通知测试版和预发布版本',
-    // Queue
     enableRetry: '启用重试',
-    // Home Assistant
     homeAssistantDescription: '通过 Home Assistant 控制智能插座',
     environmentManagedLabel: '（环境变量管理）',
     autoEnabledViaEnv: '通过环境变量自动启用',
     urlFromEnvReadOnly: '值由 HA_URL 环境变量设置（只读）',
     tokenFromEnvReadOnly: '值由 HA_TOKEN 环境变量设置（只读）',
-    // MQTT
     mqttConnectedTo: '已连接到',
-    // Prometheus
     prometheusDescription: '以 Prometheus 格式暴露打印机数据',
-    // Smart plugs empty state
     noSmartPlugsTitle: '未配置智能插座',
     noSmartPlugsDescription: '添加基于 Tasmota 的智能插座以追踪能耗并自动化电源控制。',
-    // Notifications empty state
     noProvidersTitle: '未配置提供商',
     noProvidersDescription: '添加提供商以接收警报。',
     noTemplatesAvailable: '无可用模板。重启后端以加载默认模板。',
-    // API permissions
     apiPermissionView: '查看打印机状态和队列',
     apiPermissionEdit: '添加和移除打印队列中的项目',
-    // API keys
     apiKeysEmptyTitle: '无 API 密钥',
     apiKeysEmptyDescription: '创建 API 密钥以与外部服务集成。',
-    // Users
     noUsersFound: '未找到用户',
     noGroupsFound: '未找到组',
     noGroupsAvailable: '无可用组',
     passwordsDoNotMatch: '密码不匹配',
     systemGroupWarning: '系统组名称不可更改',
-    // Auth disabled
     authDisabledTitle: '身份验证已禁用',
     authDisabledFeature1: '需要登录才能访问系统',
     authDisabledFeature2: '创建多个用户并基于组的权限管理',
     authDisabledFeature3: '使用 50+ 个细粒度权限控制访问',
-    // User deletion
     userHasCreated: '此用户已创建：',
     userItemsQuestion: '您想如何处理这些项目？',
     deleteUserConfirm: '确定要删除此用户吗？',
     actionCannotBeUndone: '此操作无法撤销。',
-    // Smart plugs
     addFirstSmartPlug: '添加您的第一个智能插座',
-    // Notifications
     providers: '提供商',
     log: '日志',
     testAll: '全部测试',
@@ -1415,7 +1342,6 @@ export default {
     testFailedCount: '{{count}} 个失败',
     messageTemplates: '消息模板',
     messageTemplatesDescription: '自定义每个事件的通知消息。',
-    // API Keys section
     apiKeys: 'API 密钥',
     apiKeysDescription: '创建 API 密钥用于外部集成和 Webhook。',
     createKey: '创建密钥',
@@ -1454,7 +1380,6 @@ export default {
     deleteApiKeyTitle: '删除 API 密钥',
     deleteApiKeyMessage: '确定要删除此 API 密钥吗？使用此密钥的所有集成将停止工作。',
     deleteKey: '删除密钥',
-    // Filament tab
     amsDisplayThresholds: 'AMS 显示阈值',
     amsThresholdsDescription: '配置 AMS 湿度和温度指示器的颜色阈值。',
     humidity: '湿度',
@@ -1470,7 +1395,6 @@ export default {
     printModal: '打印对话框',
     expandCustomMapping: '默认展开自定义映射',
     expandCustomMappingDescription: '打印到多台打印机时，默认展开显示每台打印机的 AMS 映射',
-    // User management
     authentication: '身份验证',
     authEnabledDescription: '您的实例已通过用户身份验证保护',
     authDisabledDescription: '启用以要求登录并管理用户访问',
@@ -1494,27 +1418,21 @@ export default {
     enterPassword: '输入密码（至少 6 个字符）',
     confirmPassword: '确认密码',
     confirmPasswordPlaceholder: '确认密码',
-    // Title tooltips
     viewReleaseOnGitHub: '在 GitHub 上查看发布',
     turnAllPlugsOn: '开启所有插座',
     turnAllPlugsOff: '关闭所有插座',
-    // Modal: Clear logs
     clearNotificationLogs: '清除通知日志',
     clearLogsMessage: '这将永久删除所有 30 天前的通知日志。此操作无法撤销。',
     clearLogs: '清除日志',
-    // Modal: Reset UI
     resetUiPreferences: '重置 UI 偏好',
     resetUiPreferencesMessage: '这将重置所有 UI 偏好为默认值：侧边栏顺序、主题、仪表板布局、视图模式和排序偏好。您的打印机、归档和服务器设置不会受到影响。清除后页面将重新加载。',
     resetPreferences: '重置偏好',
-    // Modal: Delete group
     deleteGroupTitle: '删除组',
     deleteGroupMessage: '确定要删除此组吗？此组中的用户将失去这些权限。',
     deleteGroup: '删除组',
-    // Modal: Disable auth
     disableAuthenticationTitle: '禁用身份验证',
     disableAuthenticationMessage: '确定要禁用身份验证吗？这将使您的 Bambuddy 实例无需登录即可访问。所有用户将保留在数据库中但身份验证将被禁用。',
     disableAuthentication: '禁用身份验证',
-    // Additional settings
     configureBambuddy: '配置 Bambuddy',
     systemDefault: '系统默认',
     archiveSettings: '归档设置',
@@ -1545,7 +1463,6 @@ export default {
     editUser: '编辑用户',
     deleteUserTitle: '删除用户',
     groupName: '组名称',
-    // Placeholders
     leaveEmptyForAnonymous: '留空为匿名',
     leaveEmptyForNoAuth: '留空为无认证',
     enterNewPassword: '输入新密码',
@@ -1655,8 +1572,6 @@ export default {
       importFailed: '导入失败：无效的 JSON 格式',
     },
   },
-
-  // Notifications (for push notifications)
   notification: {
     printStarted: {
       title: '打印已开始',
@@ -1695,8 +1610,6 @@ export default {
       body: '{{printer}}：{{items}} 需要关注',
     },
   },
-
-  // Errors
   errors: {
     generic: '出了点问题',
     networkError: '网络错误。请检查您的连接。',
@@ -1709,8 +1622,6 @@ export default {
     deleteFailed: '删除失败',
     loadFailed: '加载数据失败',
   },
-
-  // HMS Errors modal
   hmsErrors: {
     title: '错误 - {{name}}',
     noErrors: '无错误',
@@ -1720,8 +1631,6 @@ export default {
     clearSuccess: 'HMS 错误已清除',
     clearFailed: '清除 HMS 错误失败',
   },
-
-  // MQTT Debug modal
   mqttDebug: {
     title: 'MQTT 调试日志',
     searchPlaceholder: '搜索主题或负载...',
@@ -1741,8 +1650,6 @@ export default {
     direction: '方向',
     all: '全部',
   },
-
-  // Printer File Manager modal (printer internal storage)
   printerFiles: {
     title: '文件管理器',
     storageUsed: '已用：',
@@ -1760,15 +1667,11 @@ export default {
       deleteFailed: '删除失败：{{error}}',
     },
   },
-
-  // Confirmations
   confirm: {
     delete: '确定要删除吗？',
     unsavedChanges: '您有未保存的更改。确定要离开吗？',
     clearQueue: '确定要清空队列吗？',
   },
-
-  // Login page
   login: {
     title: 'Bambuddy 登录',
     subtitle: '登录您的账户',
@@ -1799,8 +1702,6 @@ export default {
     resetStep4: '使用新密码登录并在设置中修改密码',
     gotIt: '知道了',
   },
-
-  // Setup page
   setup: {
     title: 'Bambuddy 设置',
     subtitle: '为您的 Bambuddy 实例配置身份验证',
@@ -1825,8 +1726,6 @@ export default {
       passwordTooShort: '密码至少需要 6 个字符',
     },
   },
-
-  // Password change
   changePassword: {
     title: '修改密码',
     currentPassword: '当前密码',
@@ -1841,15 +1740,11 @@ export default {
     success: '密码修改成功',
     failed: '密码修改失败',
   },
-
-  // Plate detection alert
   plateAlert: {
     title: '打印已暂停！',
     message: '在构建板上检测到物体。打印已自动暂停。请清理打印板并继续打印。',
     understand: '我知道了',
   },
-
-  // Camera page
   camera: {
     title: '摄像头视图',
     invalidPrinterId: '无效的打印机 ID',
@@ -1878,8 +1773,6 @@ export default {
     stopRecording: '停止录制',
     chamberLight: '切换腔室灯',
   },
-
-  // Groups management
   groups: {
     title: '组管理',
     subtitle: '管理访问控制的权限组',
@@ -1929,8 +1822,6 @@ export default {
       noResults: '没有权限匹配您的搜索',
     },
   },
-
-  // Users management
   users: {
     title: '用户管理',
     subtitle: '管理用户及其对 Bambuddy 实例的访问',
@@ -1993,8 +1884,6 @@ export default {
       confirm: '删除用户',
     },
   },
-
-  // Stream overlay
   streamOverlay: {
     title: '流叠加层',
     invalidPrinterId: '无效的打印机 ID',
@@ -2012,8 +1901,6 @@ export default {
       unknown: '未知',
     },
   },
-
-  // Profiles
   profiles: {
     title: '配置文件',
     subtitle: '管理您的切片预设和压力推进校准',
@@ -2129,19 +2016,16 @@ export default {
       customizeSettings: '自定义新预设的设置',
       compareWithBase: '与基础预设比较',
       compare: '比较',
-      // CreatePresetModal - Basic Info
       basePreset: '基础预设',
       selectBasePreset: '选择基础预设...',
       presetName: '预设名称',
       myCustomPreset: '我的自定义预设',
       inheritsFrom: '继承自',
       dropJsonToImport: '拖放 JSON 以导入',
-      // CreatePresetModal - Tabs
       tabs: {
         common: '常用',
         allFields: '所有字段',
       },
-      // CreatePresetModal - All Fields Tab
       availableFields: '可用字段',
       searchFieldsPlaceholder: '搜索字段...',
       noMatchingFields: '没有匹配的字段',
@@ -2159,18 +2043,15 @@ export default {
       refresh: '刷新',
       newPreset: '新建预设',
       clearFilters: '清除筛选',
-      // Compare mode
       compareMode: '比较模式',
       selectAnotherPreset: '选择另一个 {{type}} 预设',
       clickTwoPresets: '点击两个相同类型的预设进行比较',
       selectFirst: '1. 选择第一个',
       selectSecond: '2. 选择第二个',
       compareNow: '立即比较',
-      // Status row
       lastSynced: '上次同步：',
       showingCount: '显示 {{showing}} / {{total}} 个预设',
       noPresetsFound: '未找到预设',
-      // Column headers
       columns: {
         filament: '耗材',
         process: '工艺',
@@ -2179,7 +2060,6 @@ export default {
       noFilamentPresets: '无耗材预设',
       noProcessPresets: '无工艺预设',
       noPrinterPresets: '无打印机预设',
-      // Filters
       filters: {
         type: '类型',
         owner: '所有者',
@@ -2192,7 +2072,6 @@ export default {
         builtIn: '内置',
         process: '工艺',
       },
-      // Permissions
       noTemplatesPermission: '您没有管理模板的权限',
       noRefreshPermission: '您没有刷新配置文件的权限',
       noCreatePermission: '您没有创建预设的权限',
@@ -2220,8 +2099,6 @@ export default {
       },
     },
   },
-
-  // Support/Debug
   support: {
     debugLoggingActive: '调试日志记录已激活',
     manageLogs: '管理',
@@ -2232,8 +2109,6 @@ export default {
     collectItem11: '数据库健康检查',
     collectItem12: 'Docker 环境详情',
   },
-
-  // File manager
   fileManager: {
     title: '文件管理器',
     subtitle: '组织和管理您的打印文件',
@@ -2356,8 +2231,6 @@ export default {
       failedToGenerateThumbnail: '生成缩略图失败：{{error}}',
     },
   },
-
-  // Projects
   projects: {
     title: '项目',
     subtitle: '组织和跟踪您的 3D 打印项目',
@@ -2381,7 +2254,6 @@ export default {
     addFiles: '添加文件',
     removeFile: '移除文件',
     viewDetails: '查看详情',
-    // Modal fields
     namePlaceholder: '例如：Voron 2.4 构建',
     descriptionPlaceholder: '可选描述...',
     color: '颜色',
@@ -2399,7 +2271,6 @@ export default {
     priorityNormal: '普通',
     priorityHigh: '高',
     priorityUrgent: '紧急',
-    // Status
     statusActive: '进行中',
     statusCompleted: '已完成',
     statusArchived: '已归档',
@@ -2408,23 +2279,19 @@ export default {
     failed: '失败',
     inQueue: '队列中',
     noPrintsYet: '暂无打印',
-    // Footer stats
     printJobs: '打印任务（板）',
     partsPrinted: '已打印零件',
     failedParts: '失败零件',
-    // Actions
     import: '导入',
     export: '导出',
     importProject: '导入项目',
     exportAll: '导出所有项目',
     loading: '加载项目中...',
-    // Permissions
     noEditPermission: '您没有编辑项目的权限',
     noDeletePermission: '您没有删除项目的权限',
     noCreatePermission: '您没有创建项目的权限',
     noImportPermission: '您没有导入项目的权限',
     noExportPermission: '您没有导出项目的权限',
-    // Toast
     toast: {
       created: '项目已创建',
       updated: '项目已更新',
@@ -2435,8 +2302,6 @@ export default {
       exported: '项目已导出（仅元数据）',
     },
   },
-
-  // Project detail page
   projectDetail: {
     notFound: '未找到项目',
     backToProjects: '返回项目',
@@ -2549,8 +2414,6 @@ export default {
       templateCreated: '模板已创建',
     },
   },
-
-  // System info
   system: {
     title: '系统信息',
     version: '版本',
@@ -2571,8 +2434,6 @@ export default {
     platform: '平台',
     architecture: '架构',
   },
-
-  // Library (K Profiles)
   library: {
     title: '耗材库',
     addFilament: '添加耗材',
@@ -2588,8 +2449,6 @@ export default {
     importFromPrinter: '从打印机导入',
     exportToFile: '导出到文件',
   },
-
-  // Spoolman
   spoolman: {
     title: 'Spoolman 集成',
     enabled: 'Spoolman 已启用',
@@ -2616,8 +2475,6 @@ export default {
     reportPartialUsage: '报告失败打印的部分用量',
     reportPartialUsageDesc: '当打印失败或被取消时，根据层进度报告估计的耗材使用量。',
   },
-
-  // Inventory
   inventory: {
     title: '耗材库存',
     addSpool: '添加耗材',
@@ -2681,16 +2538,13 @@ export default {
     deleteConfirm: '确定要删除此耗材吗？此操作无法撤销。',
     archiveConfirm: '确定要归档此耗材吗？',
     advancedSettings: '高级设置',
-    // Tabs
     filamentInfoTab: '耗材信息',
     paProfileTab: 'PA 配置',
     filamentInfo: '耗材',
     additional: '附加',
-    // Cloud
     loadingPresets: '加载云端预设中...',
     cloudConnected: '云端已连接',
     cloudNotConnected: '云端未连接（使用默认值）',
-    // Colors
     recentColors: '最近',
     searchColors: '搜索颜色...',
     searchResults: '搜索结果',
@@ -2700,7 +2554,6 @@ export default {
     showAll: '显示全部',
     noColorsFound: '没有颜色匹配您的搜索',
     noResults: '未找到匹配项',
-    // PA Profiles
     selectMaterialFirst: '请先在耗材信息选项卡中选择材料。',
     noPrintersConfigured: '未配置打印机。添加打印机以使用 PA 配置。',
     matchingFilter: '匹配',
@@ -2717,7 +2570,6 @@ export default {
     leftNozzle: '左喷嘴',
     rightNozzle: '右喷嘴',
     profilesSelected: '个校准配置已选择',
-    // Stats & enhanced table
     totalInventory: '总库存',
     totalConsumed: '总消耗',
     byMaterial: '按材料',
@@ -2748,11 +2600,9 @@ export default {
     table: '表格',
     cards: '卡片',
     net: '净重',
-    // Grouping
     groupSimilar: '分组',
     groupedSpools: '{{count}} 个相同耗材',
     groupedRows: '行',
-    // Column config
     columns: '列',
     configureColumns: '配置列',
     configureColumnsDesc: '拖动以重新排序列或使用箭头。使用眼睛图标切换可见性。',
@@ -2764,13 +2614,11 @@ export default {
     moveDown: '下移',
     hideColumn: '隐藏列',
     showColumn: '显示列',
-    // Tag linking
     linkToSpool: '链接到耗材',
     tagLinked: '标签已链接到耗材',
     tagLinkFailed: '链接标签失败',
     tagAlreadyLinked: '标签已链接到其他耗材',
     unknownTag: '检测到未知 RFID 标签',
-    // Usage history
     usageHistory: '使用历史',
     noUsageHistory: '暂无使用记录',
     printName: '打印名称',
@@ -2780,8 +2628,6 @@ export default {
     fillSourceLabel: '(库存)',
     lowStockThresholdError: '阈值必须在 0.1 到 99.9 之间',
   },
-
-  // Timelapse
   timelapse: {
     title: '延时摄影',
     create: '创建延时摄影',
@@ -2793,8 +2639,6 @@ export default {
     processing: '处理中...',
     noTimelapses: '无可用延时摄影',
   },
-
-  // AMS
   ams: {
     title: 'AMS',
     slot: '槽位',
@@ -2817,8 +2661,6 @@ export default {
     used: '已使用',
     remainingUnit: '剩余',
   },
-
-  // Print modal
   printModal: {
     title: '开始打印',
     selectPrinter: '选择打印机',
@@ -2850,9 +2692,8 @@ export default {
     originalFilament: '原始',
     overrideWith: '覆盖为',
     resetToOriginal: '恢复为原始',
+    printOptions: '打印选项',
   },
-
-  // Backup
   backup: {
     title: '备份与恢复',
     createBackup: '创建备份',
@@ -2872,9 +2713,46 @@ export default {
     backupFailed: '备份失败',
     restoreFailed: '恢复失败',
     restoreNote: '恢复期间虚拟打印机将停止',
+    exportTitle: '导出备份',
+    selectCategories: '选择要包含的数据',
+    requiresPrinters: '需要选择打印机',
+    zipWarning: '将创建 ZIP 文件。',
+    zipWarningDesc: '包括所有 3MF 文件、缩略图、延时摄影和照片。这可能需要一些时间并生成较大文件。',
+    includeAccessCodes: '包含访问码',
+    accessCodesDesc: '用于转移到其他设备',
+    accessCodesWarning: '访问码将以明文形式包含。请妥善保管此备份文件！',
+    selectedCount: '已选择 {{count}} 个类别',
+    exporting: '导出中...',
+    export: '导出',
+    categories: {
+      settings: '应用设置',
+      notifications: '通知提供商',
+      templates: '通知模板',
+      smartPlugs: '智能插头',
+      externalLinks: '外部链接',
+      printers: '打印机',
+      plateCalibration: '打印板检测',
+      filaments: '耗材库存',
+      maintenance: '维护类型',
+      archives: '打印存档',
+      projects: '项目',
+      pendingUploads: '待处理上传',
+      apiKeys: 'API 密钥',
+      settingsDesc: '语言、主题、更新偏好',
+      notificationsDesc: 'ntfy、Pushover、Discord 等',
+      templatesDesc: '自定义消息模板',
+      smartPlugsDesc: 'Tasmota 插头配置',
+      externalLinksDesc: '侧边栏外部服务链接',
+      printersDesc: '打印机信息（不含访问码）',
+      plateCalibrationDesc: '空打印板参考图像',
+      filamentsDesc: '耗材类型和成本',
+      maintenanceDesc: '自定义维护计划',
+      archivesDesc: '所有打印数据 + 文件（3MF、缩略图、照片）',
+      projectsDesc: '项目、BOM 项和附件',
+      pendingUploadsDesc: '虚拟打印机上传等待审核',
+      apiKeysDesc: 'Webhook API 密钥（导入时生成新密钥）',
+    },
   },
-
-  // Tags
   tags: {
     title: '标签',
     addTag: '添加标签',
@@ -2886,8 +2764,6 @@ export default {
     deleteConfirm: '确定要删除此标签吗？',
     manageTags: '管理标签',
   },
-
-  // Upload modal (archives)
   uploadModal: {
     title: '上传 3MF 文件',
     dragDrop: '将 .3mf 文件拖放到此处',
@@ -2900,9 +2776,6 @@ export default {
     upload: '上传',
     uploadFailed: '上传失败',
   },
-
-  // Edit archive modal
-  // Edit Archive Modal
   editArchive: {
     title: '编辑归档',
     name: '名称',
@@ -2931,7 +2804,6 @@ export default {
     photosHelp: '点击 + 添加打印成品照片',
     printResult: '打印成品',
     saving: '保存中...',
-    // Failure reasons
     failureReasons: {
       adhesionFailure: '附着力失败',
       spaghettiDetached: '拉丝 / 脱落',
@@ -2945,7 +2817,6 @@ export default {
       userCancelled: '用户取消',
       other: '其他',
     },
-    // Archive statuses
     statuses: {
       completed: '已完成',
       failed: '失败',
@@ -2953,8 +2824,6 @@ export default {
       printing: '打印中',
     },
   },
-
-  // K-Profiles
   kProfiles: {
     title: 'K 值配置',
     noPrintersConfigured: '未配置打印机',
@@ -2969,7 +2838,6 @@ export default {
     noKProfiles: '无 K 值配置',
     noKProfilesDesc: '未找到 {{diameter}}mm 喷嘴的压力推进配置',
     createFirstProfile: '创建第一个配置',
-    // Controls
     printer: '打印机',
     nozzle: '喷嘴',
     refresh: '刷新',
@@ -2979,7 +2847,6 @@ export default {
     select: '选择',
     selectAll: '全选',
     delete: '删除',
-    // Filters
     searchPlaceholder: '按名称或耗材搜索...',
     allExtruders: '所有挤出机',
     leftOnly: '仅左侧',
@@ -2990,10 +2857,8 @@ export default {
     sortName: '排序：名称',
     sortKValue: '排序：K 值',
     sortFilament: '排序：耗材',
-    // Dual extruder labels
     leftExtruder: '左挤出机',
     rightExtruder: '右挤出机',
-    // Modal
     modal: {
       addTitle: '添加 K 值配置',
       editTitle: '编辑 K 值配置',
@@ -3020,19 +2885,16 @@ export default {
       savingExtruder: '保存到挤出机 {{current}}/{{total}}...',
       pleaseWait: '请稍候',
     },
-    // Delete confirmation
     deleteConfirm: {
       title: '删除配置',
       cannotUndo: '此操作无法撤销',
       message: '确定要从打印机删除"{{name}}"吗？',
     },
-    // Bulk delete
     bulkDelete: {
       title: '删除配置',
       cannotUndo: '此操作无法撤销',
       message: '确定要从打印机删除 {{count}} 个选中的配置吗？',
     },
-    // Toast
     toast: {
       profileSaved: 'K 值配置已保存',
       profilesSaved: 'K 值配置已保存到 {{count}} 个挤出机',
@@ -3048,7 +2910,6 @@ export default {
       noteSaved: '备注已保存',
       failedToSaveNote: '保存备注失败',
     },
-    // Permissions
     permission: {
       noRead: '您没有刷新配置的权限',
       noCreate: '您没有添加配置的权限',
@@ -3058,8 +2919,6 @@ export default {
       noImport: '您没有导入配置的权限',
     },
   },
-
-  // Virtual Printer
   virtualPrinter: {
     title: '虚拟打印机',
     running: '运行中',
@@ -3176,8 +3035,6 @@ export default {
       message: '确定要删除"{{name}}"吗？这将停止此打印机的所有服务。',
     },
   },
-
-  // Model Viewer
   modelViewer: {
     openInSlicer: '在切片软件中打开',
     tabs: {
@@ -3208,8 +3065,6 @@ export default {
       unsupportedFormat: '不支持的文件格式',
     },
   },
-
-  // Maintenance type descriptions (built-in)
   maintenanceDescriptions: {
     lubricateCarbonRods: '在碳纤维杆上涂抹润滑剂以确保顺畅运动',
     lubricateRails: '在线性导轨上涂抹润滑剂以确保顺畅运动',
@@ -3226,8 +3081,6 @@ export default {
     replaceCarbonFilter: '更换活性炭过滤器',
     lubricateLeftNozzleRail: '润滑左喷嘴导轨（H2 系列）',
   },
-
-  // Smart Plugs
   smartPlugs: {
     offline: '离线',
     admin: '管理',
@@ -3237,22 +3090,22 @@ export default {
     turnOffSmartPlug: '关闭智能插座',
     turnOn: '开启',
     turnOff: '关闭',
-    addSmartPlug: {
-      scanningNetwork: '扫描网络中...',
-      chooseEntity: '选择实体...',
-      connectionFailed: '连接失败',
-      searchEntities: '搜索实体...',
-      searchPowerSensors: '搜索功率传感器...',
-      searchEnergySensors: '搜索能量传感器...',
-      placeholders: {
-        plugName: '客厅插座',
-        mqttStateOnValue: 'ON、true、1',
-        mqttSameAsPower: '与功率主题相同，或不同',
-      },
+    addSmartPlug: 'undefined',
+    mqtt: {
+      monitorOnly: '仅监控',
+      monitorOnlyDesc: 'MQTT 插头通过 MQTT 订阅接收数据。无法进行开关控制。',
+      powerMonitoring: '功率监控',
+      topic: '主题',
+      jsonPath: 'JSON 路径',
+      multiplier: '乘数',
+      energyMonitoring: '能耗监控',
+      stateMonitoring: '状态监控',
+      onValue: 'ON 值',
+      powerHelp: 'JSON 路径从 JSON 有效载荷中提取值。原始数值请留空。乘数：mW→W 用 0.001，kW→W 用 1000。',
+      energyHelp: 'JSON 路径从有效载荷中提取值。原始值留空。乘数：Wh→kWh 用 0.001，MWh→kWh 用 1000。',
+      stateHelp: 'JSON 路径从有效载荷中提取值。原始值留空。ON 值：表示"ON"的确切字符串。留空自动检测。',
     },
   },
-
-  // Rich Text Editor
   richTextEditor: {
     bold: '粗体',
     italic: '斜体',
@@ -3265,8 +3118,6 @@ export default {
     addLink: '添加链接',
     removeLink: '移除链接',
   },
-
-  // External Links
   externalLinks: {
     noLinksConfigured: '未配置外部链接',
     deleteLink: '删除链接',
@@ -3275,9 +3126,10 @@ export default {
     placeholders: {
       linkName: '我的链接',
     },
+    title: '侧边栏链接',
+    addLink: '添加链接',
+    description: '在侧边栏导航中添加外部服务链接。',
   },
-
-  // Keyboard Shortcuts Modal
   keyboardShortcuts: {
     title: '键盘快捷键',
     navigation: '导航',
@@ -3285,25 +3137,15 @@ export default {
     kProfilesSection: 'K 值配置',
     generalSection: '通用',
     shortcuts: {
-      goToPrinters: '前往打印机',
-      goToArchives: '前往归档',
-      goToQueue: '前往队列',
-      goToStats: '前往统计',
-      goToProfiles: '前往云端配置',
-      goToSettings: '前往设置',
-      focusSearch: '聚焦搜索',
-      openUploadModal: '打开上传对话框',
-      clearSelection: '清除选择 / 取消焦点',
-      contextMenu: '卡片右键菜单',
-      refreshProfiles: '刷新配置',
-      newProfile: '新建配置',
-      exitSelectionMode: '退出选择模式',
-      showHelp: '显示此帮助',
+      exitSelection: '退出选择模式',
+      openUpload: '打开上传对话框',
     },
     footer: '按 Esc 或点击外部关闭',
+    open: '打开 ',
+    goTo: '前往 ',
+    pressEsc: '按下',
+    orClickToClose: '或点击外部关闭',
   },
-
-  // Notification Log
   notificationLog: {
     title: '通知日志',
     events: {
@@ -3323,9 +3165,21 @@ export default {
       minutesAgo: '{{minutes}} 分钟前',
       hoursAgo: '{{hours}} 小时前',
     },
+    clearOld: '清除',
+    noLogs: '无通知日志',
+    noFailed: '无失败通知',
+    showFailedOnly: '仅显示失败',
+    period: {
+      last24h: '最近 24 小时',
+      last7d: '最近 7 天',
+      last30d: '最近 30 天',
+      last90d: '最近 90 天',
+    },
+    stats: {
+      sent: '已发送',
+      lastDays: '最近 {{count}} 天',
+    },
   },
-
-  // Restore/Backup Modal
   restoreBackup: {
     title: '恢复备份',
     restoring: '恢复中...',
@@ -3336,13 +3190,12 @@ export default {
     clickToSelect: '点击选择备份文件（.json 或 .zip）',
     howDuplicateHandling: '重复处理方式：',
     categories: {
-      printers: '打印机',
-      smartPlugs: '智能插座',
+      settings: '设置',
       notificationProviders: '通知提供商',
-      filaments: '耗材',
-      archives: '归档',
-      pendingUploads: '待处理上传',
-      settingsTemplates: '设置和模板',
+      notificationTemplates: '通知模板',
+      maintenanceTypes: '维护类型',
+      externalLinks: '外部链接',
+      apiKeys: 'API 密钥',
     },
     matchingInfo: {
       printers: '按序列号匹配',
@@ -3369,9 +3222,30 @@ export default {
     processingBackup: '处理备份文件中...',
     noDataFound: '备份文件中未找到可恢复的数据。',
     failedToRestore: '恢复备份失败。请检查文件格式。',
+    complete: '恢复完成',
+    failed: '恢复失败',
+    description: '从备份文件导入设置',
+    selectFile: '点击选择备份文件（.json 或 .zip）',
+    duplicateHandling: '重复处理方式：',
+    restore: '恢复',
+    processing: '正在处理备份文件...',
+    restoredLabel: '已恢复',
+    skippedLabel: '已跳过（已存在）',
+    andMore: '...还有 {{count}} 个',
+    newApiKeys: '已生成新的 API 密钥',
+    keysOnlyOnce: '这些密钥仅显示一次。请立即复制！',
+    noData: '在备份文件中未找到可恢复的数据。',
+    cautionMessage: '覆盖将用备份数据替换您当前的配置。出于安全原因，打印机访问码不会被覆盖。',
+    duplicates: {
+      printers: '按序列号匹配',
+      smartPlugs: '按 IP 地址匹配',
+      notificationProviders: '按名称匹配',
+      filaments: '按名称+类型+品牌匹配',
+      archives: '按内容哈希匹配（始终跳过）',
+      pendingUploads: '按文件名匹配',
+      settingsTemplates: '始终覆盖',
+    },
   },
-
-  // Backup Export Modal
   backupExport: {
     title: '导出备份',
     selectData: '选择要包含的数据',
@@ -3400,8 +3274,6 @@ export default {
     includeAccessCodesWarning: '访问码将以明文形式包含。请妥善保管此备份文件！',
     categoriesSelected: '已选择 {{selectedCount}} 个类别',
   },
-
-  // Pending Uploads Panel
   pendingUploads: {
     placeholders: {
       notes: '添加关于此打印的备注...',
@@ -3416,17 +3288,21 @@ export default {
       hoursAgo: '{{hours}} 小时前',
       daysAgo: '{{days}} 天前',
     },
+    archiveAll: '全部归档',
+    archiveAllTitle: '归档所有上传',
+    archiveAllMessage: '归档所有 {{count}} 个待处理上传？',
+    discardAll: '全部丢弃',
+    discardAllTitle: '丢弃所有上传',
+    discardAllMessage: '丢弃所有 {{count}} 个待处理上传？此操作不可撤销。',
+    discardTitle: '丢弃上传',
+    discardMessage: '丢弃"{{filename}}"？此操作不可撤销。',
   },
-
-  // API Browser
   apiBrowser: {
     placeholders: {
       requestBody: 'JSON 请求体...',
       searchEndpoints: '搜索端点...',
     },
   },
-
-  // Configure AMS Slot Modal
   configureAmsSlot: {
     title: '配置 AMS 槽位',
     slotConfigured: '槽位已配置！',
@@ -3460,87 +3336,151 @@ export default {
     configuring: '配置中...',
     configureSlot: '配置槽位',
   },
-
-  // GitHub Backup Settings
   githubBackup: {
     title: 'GitHub 备份',
     history: '历史',
     downloadBackup: '下载备份',
     restoreBackup: '恢复备份',
     noBackupsYet: '暂无备份',
+    description: '将您的配置文件自动同步到私有 GitHub 仓库以进行备份和版本历史记录。',
+    repoUrl: '仓库 URL',
+    accessToken: '个人访问令牌',
+    tokenSaved: '（已保存）',
+    tokenHelp: '具有内容读写权限的细粒度令牌',
+    branch: '分支',
+    autoBackup: '自动备份',
+    includeInBackup: '包含在备份中',
+    kProfiles: 'K 配置文件',
+    noPrintersConnected: '没有连接的打印机',
+    kProfilesDesc: '来自已连接打印机的压力提前校准',
+    cloudProfiles: '云配置文件',
+    cloudProfilesDesc: '来自 Bambu Cloud 的耗材、打印机和工艺预设',
+    appSettings: '应用设置',
+    appSettingsDesc: 'Bambuddy 配置（完整数据库）',
+    lastBackup: '上次备份：',
+    noBackups: '暂无备份',
+    startingBackup: '正在开始备份...',
+    backupNow: '立即备份',
+    test: '测试',
+    enableBackup: '启用备份',
+    testConnection: '测试连接',
+    cloudRequired: '需要 Bambu Cloud 登录。请在配置文件 → 云配置文件中登录以启用 GitHub 备份。',
+    localBackup: '本地备份',
+    localBackupDesc: '创建 Bambuddy 数据的完整备份，包括数据库、存档、上传和所有文件。',
+    downloadDesc: '完整备份：数据库 + 所有文件（ZIP）',
+    reloadNow: '立即重新加载',
+    restoreWarning: '恢复将替换所有数据。',
+    restoreWarningDesc: '您当前的数据库和文件将被完全替换。恢复后需要重新启动。',
+    confirmRestore: '恢复备份',
+    confirmRestoreMessage: '确定要从 "{{filename}}" 恢复吗？这将完全替换您当前的数据库和所有文件。恢复后需要重新启动应用程序。',
+    confirmRestoreText: '恢复备份',
+    creatingBackup: '正在创建备份',
+    restoringBackup: '正在恢复备份',
+    doNotClose: '请不要关闭此页面或导航到其他页面。大型备份的此操作可能需要几分钟。',
+    toast: {
+      tokenUpdated: '令牌已更新',
+      settingsSaved: '设置已保存',
+      enabled: 'GitHub 备份已启用',
+      backupComplete: '备份完成 - {{count}} 个文件已更新',
+      backupSkipped: '备份已跳过 - 无更改',
+      logsCleared: '已清除 {{count}} 条日志',
+      downloaded: '备份下载成功',
+      restored: '备份已恢复。请重启 Bambuddy。',
+    },
+    validation: {
+      repoUrlRequired: '请输入仓库 URL',
+      tokenRequired: '需要访问令牌',
+      repoAndTokenRequired: '请输入仓库 URL 和访问令牌',
+    },
+    schedule: {
+      manual: '仅手动',
+      hourly: '每小时',
+      daily: '每天',
+      weekly: '每周',
+    },
+    status: {
+      preparing: '正在准备备份...',
+      creating: '正在创建备份归档... 大型归档可能需要一些时间。',
+      downloading: '正在下载备份文件...',
+    },
+    table: {
+      commit: '提交',
+    },
   },
-
-  // Email Settings
   emailSettings: {
     placeholders: {
       fromName: 'BamBuddy',
     },
   },
-
-  // Tag Management Modal
   tagManagement: {
+    title: '管理标签',
     searchTags: '搜索标签...',
     renameTag: '重命名标签',
     deleteTag: '删除标签',
+    searchPlaceholder: '搜索标签...',
+    sortByCount: '最常用',
+    sortByName: '字母顺序',
+    tagCount: '{{count}} 个标签 · 共 {{usage}} 次使用',
+    noMatchingTags: '没有匹配的标签',
+    noTags: '未找到标签。标签在添加到存档时创建。',
+    deleteConfirm: '删除标签"{{name}}"？将从 {{count}} 个存档中移除。',
   },
-
-  // Notification Template Editor
   notificationTemplates: {
     placeholders: {
       title: '通知标题...',
       body: '通知正文...',
     },
-  },
-
-  // Batch Tag Modal
-  batchTag: {
-    placeholders: {
-      newTag: '输入新标签...',
+    titleLabel: '标题',
+    validation: {
+      titleRequired: '标题为必填项',
+      bodyRequired: '正文为必填项',
     },
   },
-
-  // Photo Gallery Modal
+  batchTag: {
+    addTitle: '添加标签',
+    removeTitle: '删除标签',
+    addDescription: '为 {{count}} 个选中的存档添加标签',
+    removeDescription: '从 {{count}} 个选中的存档删除标签',
+    addTags: '添加标签',
+    removeTags: '删除标签',
+    enterTag: '输入新标签...',
+    existingTags: '现有标签：',
+    tagsToAdd: '要添加的标签：',
+    tagsToRemove: '要删除的标签：',
+    toast: {
+      tagsAdded: '已为 {{count}} 个存档添加标签',
+      tagsRemoved: '已从 {{count}} 个存档删除标签',
+      failed: '更新标签失败',
+    },
+  },
   photoGallery: {
     deletePhoto: '删除照片',
+    photoOf: '照片 {{current}}/{{total}}',
   },
-
-  // Filament Hover Card
   filamentHoverCard: {
     copySpoolUuid: '复制耗材 UUID',
   },
-
-  // K Profiles View
   kProfilesView: {
     hasNote: '有备注',
     copyProfile: '复制配置',
   },
-
-  // Layout/Navigation
   layout: {
     openMenu: '打开菜单',
     noPermissionSystemInfo: '您没有查看系统信息的权限',
   },
-
-  // Dashboard
   dashboard: {
     dragToReorder: '拖动以重新排列',
     hideWidget: '隐藏小部件',
   },
-
-  // Notification Provider Card
   notificationProviderCard: {
     deleteNotificationProvider: '删除通知提供商',
   },
-
-  // File Manager Modal
   fileManagerModal: {
     closeFileManager: '关闭文件管理器',
     sortFiles: '排序文件',
     goToParentFolder: '返回上级文件夹',
     threeView: '3D 视图',
   },
-
-  // Embedded Camera Viewer
   embeddedCameraViewer: {
     refreshStream: '刷新流',
     close: '关闭',
@@ -3549,14 +3489,10 @@ export default {
     zoomIn: '放大',
     dragToResize: '拖动调整大小',
   },
-
-  // Timelapse Viewer
   timelapseViewer: {
     skipBack5s: '后退 5 秒',
     skipForward5s: '前进 5 秒',
   },
-
-  // Notification Providers
   notificationProviders: {
     descriptions: {
       email: 'SMTP 邮件通知',
@@ -3567,20 +3503,29 @@ export default {
       callmebot: '通过 CallMeBot 的免费 WhatsApp 通知',
       webhook: '通用 HTTP POST 到任意 URL',
     },
+    validation: {
+      nameRequired: '名称为必填项',
+      fieldRequired: '{{field}} 为必填项',
+    },
   },
-
-  // Log Viewer
   logViewer: {
     searchPlaceholder: '搜索消息或日志名称...',
     noLogEntries: '未找到日志条目',
+    liveStreaming: '直播中...',
   },
-
-  // Switchbar Popover
   switchbarPopover: {
     noSwitchesInSwitchbar: '切换栏中没有开关',
+    monitor: '监控',
+    waiting: '等待中',
+    offline: '离线',
+    title: '智能开关',
+    noSwitches: '开关栏中没有开关',
+    enableHint: '在设置 > 智能插头中启用"在开关栏中显示"',
+    confirmOn: '开启',
+    confirmOff: '关闭',
+    confirmTitle: '{{action}}智能插头',
+    confirmMessage: '确定要{{action}}"{{name}}"吗？',
   },
-
-  // Project Page Modal
   projectPageModal: {
     placeholders: {
       title: '标题',
@@ -3591,11 +3536,8 @@ export default {
       profileDescription: '配置描述...',
     },
   },
-
-  // Spoolman Settings
-  spoolmanSettings: {},
-
-  // Time
+  spoolmanSettings: {
+  },
   time: {
     unknown: '-',
     waiting: '等待中',
@@ -3608,8 +3550,6 @@ export default {
     daysAgo: '{{count}} 天前',
     inDays: '{{count}} 天后',
   },
-
-  // SpoolBuddy Kiosk
   spoolbuddy: {
     nav: {
       dashboard: '仪表板',
@@ -3708,12 +3648,10 @@ export default {
       addSpool: '添加耗材',
     },
     settings: {
-      // Tabs
       tabDevice: '设备',
       tabDisplay: '显示',
       tabScale: '秤',
       tabUpdates: '更新',
-      // Device tab
       nfcReader: 'NFC 读卡器',
       type: '类型',
       connection: '连接',
@@ -3721,14 +3659,12 @@ export default {
       deviceInfo: '设备信息',
       hostname: '主机',
       uptime: '运行时间',
-      // Display tab
       brightness: '亮度',
       saved: '已保存',
       noBacklight: '未检测到 DSI 背光。亮度控制需要 DSI 显示屏。',
       screenBlank: '屏幕熄灭超时',
       screenBlankDesc: '不活动后屏幕关闭。触摸唤醒。',
       displayNote: '亮度作为软件滤镜应用。',
-      // Scale tab
       scaleCalibration: '秤校准',
       currentWeight: '当前重量',
       tareOffset: '去皮',
@@ -3750,7 +3686,6 @@ export default {
       firmware: '固件',
       scale: '秤',
       noDevice: '未找到 SpoolBuddy 设备',
-      // Updates tab
       daemonVersion: '守护进程版本',
       currentVersion: '当前',
       versionPending: '等待守护进程...',
@@ -3793,7 +3728,6 @@ export default {
       createFailed: '创建耗材失败',
     },
   },
-
   bugReport: {
     title: '报告错误',
     description: '描述',
@@ -3819,5 +3753,19 @@ export default {
     viewIssue: '查看Issue',
     unexpectedError: '发生了意外错误',
     countdownSeconds: '{{seconds}}秒',
+  },
+  batchProject: {
+    title: '分配到项目',
+    description: '将 {{count}} 个选中的存档分配到项目',
+    removeFromProject: '从项目中移除',
+    clearAssignment: '清除选中存档的项目分配',
+    orAssignTo: '或分配到',
+    noProjects: '还没有项目。在项目页面创建一个。',
+    toast: {
+      added: '已将 {{count}} 个存档添加到项目',
+      assignFailed: '分配项目失败',
+      removed: '已从项目移除 {{count}} 个存档',
+      removeFailed: '从项目移除失败',
+    },
   },
 };
