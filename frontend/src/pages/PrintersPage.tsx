@@ -950,7 +950,7 @@ interface PrinterMaintenanceInfo {
 }
 
 // Status summary bar component - uses queryClient to read cached statuses
-function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
+function StatusSummaryBar({ printers, smartPlugs }: { printers: Printer[] | undefined; smartPlugs: SmartPlug[] | undefined }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
 
@@ -971,7 +971,7 @@ function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
     return () => unsubscribe();
   }, [queryClient]);
 
-  const { counts, nextFinish } = useMemo(() => {
+  const { counts, nextFinish, totalPowerW } = useMemo(() => {
     let printing = 0;
     let paused = 0;
     let finished = 0;
@@ -1033,12 +1033,24 @@ function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
       }
     });
 
+    // Sum power only from printer-associated smart plugs
+    const printerIds = new Set(printers?.map(p => p.id) ?? []);
+    let totalPowerW = 0;
+    smartPlugs?.forEach(plug => {
+      if (!plug.printer_id || !printerIds.has(plug.printer_id)) return;
+      const plugStatus = queryClient.getQueryData<SmartPlugStatus>(['smartPlugStatus', plug.id]);
+      if (plugStatus?.energy?.power != null) {
+        totalPowerW += plugStatus.energy.power;
+      }
+    });
+
     return {
       counts: { printing, paused, finished, idle, offline, loading, error, total: (printers?.length || 0) },
       nextFinish: nextPrinterName && nextRemainingMin ? { name: nextPrinterName, remainingMin: nextRemainingMin, progress: nextProgress } : null,
+      totalPowerW,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [printers, queryClient, cacheTick]);
+  }, [printers, smartPlugs, queryClient, cacheTick]);
 
   if (!printers?.length) return null;
 
@@ -1057,10 +1069,19 @@ function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
         <div key={label} className="flex items-center gap-1.5">
           <div className={`w-2 h-2 rounded-full ${dot}`} />
           <span className="text-bambu-gray">
-            <span className="text-white font-medium">{count}</span> {label}
+            {label} <span className="text-white font-medium">{count}</span>
           </span>
         </div>
       ))}
+      {totalPowerW > 0 && (
+        <>
+          <div className="w-px h-4 bg-bambu-dark-tertiary" />
+          <div className="flex items-center gap-1.5">
+            <Zap className="w-3.5 h-3.5 text-yellow-400" />
+            <span className="tabular-nums inline-block min-w-[3rem]"><span className="text-white font-medium">{Math.round(totalPowerW)}</span><span className="text-bambu-gray ml-0.5 text-xs">W</span></span>
+          </div>
+        </>
+      )}
       {nextFinish && (
         <>
           <div className="w-px h-4 bg-bambu-dark-tertiary" />
@@ -8523,7 +8544,7 @@ export function PrintersPage() {
             <PrinterIcon className="w-7 h-7 text-bambu-green" />
             {t('printers.title')}
           </h1>
-          <StatusSummaryBar printers={printers} />
+          <StatusSummaryBar printers={printers} smartPlugs={smartPlugs} />
         </div>
         <div ref={toolbarRef} className="relative flex items-center gap-2">
           {/* Only show search bar when printers exist */}
