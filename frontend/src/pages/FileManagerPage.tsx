@@ -736,7 +736,7 @@ interface FileCardProps {
   onPreview3d?: (file: LibraryFileListItem) => void;
   onRename?: (file: LibraryFileListItem) => void;
   onGenerateThumbnail?: (file: LibraryFileListItem) => void;
-  onTagClick?: (tagId: number) => void;
+  onManageTags?: (file: LibraryFileListItem) => void;
   thumbnailVersion?: number;
   hasPermission: (permission: Permission) => boolean;
   canModify: (resource: 'queue' | 'archives' | 'library', action: 'update' | 'delete' | 'reprint', createdById: number | null | undefined) => boolean;
@@ -744,7 +744,7 @@ interface FileCardProps {
   t: TFunction;
 }
 
-function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onPrint, onSlice, onRunPipeline, useSlicerApi, onPreview3d, onRename, onGenerateThumbnail, onTagClick, thumbnailVersion, hasPermission, canModify, authEnabled, t }: FileCardProps) {
+function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onAddToQueue, onPrint, onSlice, useSlicerApi, onPreview3d, onRename, onGenerateThumbnail, onManageTags, thumbnailVersion, hasPermission, canModify, authEnabled, t }: FileCardProps) {
   const [showActions, setShowActions] = useState(false);
 
   return (
@@ -812,18 +812,16 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
           </div>
         )}
         {(file.tags?.length ?? 0) > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
+          <div className="mt-2 flex flex-wrap gap-1">
             {file.tags!.map((tg) => (
-              <button
+              <span
                 key={tg.id}
-                type="button"
-                onClick={() => onTagClick?.(tg.id)}
-                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-bambu-green/10 text-bambu-green hover:bg-bambu-green/20 transition-colors max-w-full"
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-bambu-green/10 text-bambu-green max-w-full"
                 title={tg.name}
               >
                 <TagIcon className="w-2.5 h-2.5 flex-shrink-0" />
                 <span className="truncate">{tg.name}</span>
-              </button>
+              </span>
             ))}
           </div>
         )}
@@ -917,6 +915,19 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
                   {t('common.rename')}
                 </button>
               )}
+              {onManageTags && (
+                <button
+                  className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
+                    canModify('library', 'update', file.created_by_id) ? 'text-white hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
+                  }`}
+                  onClick={() => { if (canModify('library', 'update', file.created_by_id)) { onManageTags(file); setShowActions(false); } }}
+                  disabled={!canModify('library', 'update', file.created_by_id)}
+                  title={!canModify('library', 'update', file.created_by_id) ? t('fileManager.tags.noPermission') : undefined}
+                >
+                  <TagIcon className="w-3.5 h-3.5" />
+                  {t('fileManager.tags.title')}
+                </button>
+              )}
               {onGenerateThumbnail && file.file_type === 'stl' && (
                 <button
                   className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
@@ -989,6 +1000,7 @@ export function FileManagerPage() {
   // "every toy" works regardless of which folder is currently selected.
   const [showTagsModal, setShowTagsModal] = useState(false);
   const [showBulkTagsModal, setShowBulkTagsModal] = useState(false);
+  const [singleTagFile, setSingleTagFile] = useState<LibraryFileListItem | null>(null);
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
   const [linkFolder, setLinkFolder] = useState<LibraryFolderTree | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'folder' | 'bulk'; id: number; count?: number } | null>(null);
@@ -1241,7 +1253,8 @@ export function FileManagerPage() {
       result = result.filter(
         (f) =>
           f.filename.toLowerCase().includes(query) ||
-          (f.print_name && f.print_name.toLowerCase().includes(query))
+          (f.print_name && f.print_name.toLowerCase().includes(query)) ||
+          (f.tags ?? []).some((tg) => tg.name.toLowerCase().includes(query))
       );
     }
 
@@ -1945,42 +1958,6 @@ export function FileManagerPage() {
               chips are outlined and toggle ON when clicked. Clicking an active
               chip removes it from the filter. Hidden entirely when the
               catalog is empty so brand-new installs don't see a stray rail. */}
-          {tagCatalog.length > 0 && (
-            <div className="mb-3 flex flex-wrap items-center gap-2 p-2 sm:p-3 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary">
-              <span className="text-xs text-bambu-gray font-medium shrink-0">
-                {t('fileManager.tags.filterLabel')}
-              </span>
-              {tagCatalog.map((tg) => {
-                const active = selectedTagIds.includes(tg.id);
-                return (
-                  <button
-                    key={tg.id}
-                    type="button"
-                    onClick={() => toggleTagFilter(tg.id)}
-                    className={
-                      active
-                        ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-bambu-green/20 text-bambu-green border border-bambu-green/40 hover:bg-bambu-green/30 transition-colors'
-                        : 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-bambu-dark text-bambu-gray border border-bambu-dark-tertiary hover:text-white hover:border-bambu-green/40 transition-colors'
-                    }
-                    title={tg.name}
-                  >
-                    <TagIcon className="w-3 h-3" />
-                    <span>{tg.name}</span>
-                    {active && <X className="w-3 h-3" />}
-                  </button>
-                );
-              })}
-              {selectedTagIds.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedTagIds([])}
-                  className="ml-auto text-xs text-bambu-gray hover:text-white shrink-0"
-                >
-                  {t('fileManager.tags.clearAll')}
-                </button>
-              )}
-            </div>
-          )}
           {/* External folder info bar */}
           {selectedFolder?.is_external && (
             <div className="flex items-center gap-3 mb-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
@@ -2298,7 +2275,7 @@ export function FileManagerPage() {
                     }}
                     onRename={(f) => setRenameItem({ type: 'file', id: f.id, name: f.filename })}
                     onGenerateThumbnail={(f) => singleThumbnailMutation.mutate(f.id)}
-                    onTagClick={toggleTagFilter}
+                    onManageTags={(f) => setSingleTagFile(f)}
                     thumbnailVersion={thumbnailVersions[file.id]}
                     hasPermission={hasPermission}
                     canModify={canModify}
@@ -2621,6 +2598,14 @@ export function FileManagerPage() {
         open={showBulkTagsModal}
         fileIds={selectedFiles}
         onClose={() => setShowBulkTagsModal(false)}
+      />
+
+      <BulkTagsPickerModal
+        open={singleTagFile !== null}
+        fileIds={singleTagFile !== null ? [singleTagFile.id] : []}
+        initialTagIds={(singleTagFile?.tags ?? []).map((tg) => tg.id)}
+        singleMode
+        onClose={() => setSingleTagFile(null)}
       />
 
       {linkFolder && (

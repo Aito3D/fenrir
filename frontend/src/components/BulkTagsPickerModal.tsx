@@ -12,6 +12,10 @@ interface BulkTagsPickerModalProps {
   open: boolean;
   fileIds: number[];
   onClose: () => void;
+  /** Pre-select these tag IDs when the modal opens (used in single-file mode). */
+  initialTagIds?: number[];
+  /** Single-file mode: hides Add/Remove radio, uses replace semantics, cleans up labels. */
+  singleMode?: boolean;
 }
 
 type Action = 'add' | 'remove';
@@ -25,7 +29,7 @@ type Action = 'add' | 'remove';
  * would rarely want for arbitrary multi-selections. The API still exposes it
  * for callers that need it (e.g. a future bulk-edit screen).
  */
-export function BulkTagsPickerModal({ open, fileIds, onClose }: BulkTagsPickerModalProps) {
+export function BulkTagsPickerModal({ open, fileIds, onClose, initialTagIds, singleMode }: BulkTagsPickerModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -35,14 +39,15 @@ export function BulkTagsPickerModal({ open, fileIds, onClose }: BulkTagsPickerMo
   const [filter, setFilter] = useState('');
   const [newTagName, setNewTagName] = useState('');
 
-  // Reset state on close so re-opening the modal doesn't keep stale selection.
+  // Reset/initialise state each time the modal opens or closes.
   useEffect(() => {
-    if (!open) {
+    if (open) {
       setAction('add');
-      setSelected(new Set());
+      setSelected(new Set(initialTagIds ?? []));
       setFilter('');
       setNewTagName('');
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const { data: tags = [], isLoading } = useQuery({
@@ -83,7 +88,7 @@ export function BulkTagsPickerModal({ open, fileIds, onClose }: BulkTagsPickerMo
 
   const applyMutation = useMutation({
     mutationFn: () =>
-      api.bulkAssignLibraryTags(fileIds, Array.from(selected), action),
+      api.bulkAssignLibraryTags(fileIds, Array.from(selected), singleMode ? 'replace' : action),
     onSuccess: (result) => {
       showToast(
         action === 'add'
@@ -138,7 +143,7 @@ export function BulkTagsPickerModal({ open, fileIds, onClose }: BulkTagsPickerMo
         <div className="flex items-center justify-between gap-4 px-5 py-4 border-b border-bambu-dark-tertiary">
           <h3 id={titleId} className="text-base font-semibold text-white flex items-center gap-2">
             <Tag className="w-4 h-4 text-bambu-green" />
-            {t('fileManager.tags.bulkTitle', { count: fileIds.length })}
+            {singleMode ? t('fileManager.tags.title') : t('fileManager.tags.bulkTitle', { count: fileIds.length })}
           </h3>
           <button
             type="button"
@@ -150,28 +155,30 @@ export function BulkTagsPickerModal({ open, fileIds, onClose }: BulkTagsPickerMo
           </button>
         </div>
 
-        <div className="px-5 py-3 border-b border-bambu-dark-tertiary flex gap-4 text-sm">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="radio"
-              name="bulk-action"
-              checked={action === 'add'}
-              onChange={() => setAction('add')}
-              className="accent-bambu-green"
-            />
-            <span className="text-white">{t('fileManager.tags.actionAdd')}</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="radio"
-              name="bulk-action"
-              checked={action === 'remove'}
-              onChange={() => setAction('remove')}
-              className="accent-bambu-green"
-            />
-            <span className="text-white">{t('fileManager.tags.actionRemove')}</span>
-          </label>
-        </div>
+        {!singleMode && (
+          <div className="px-5 py-3 border-b border-bambu-dark-tertiary flex gap-4 text-sm">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="bulk-action"
+                checked={action === 'add'}
+                onChange={() => setAction('add')}
+                className="accent-bambu-green"
+              />
+              <span className="text-white">{t('fileManager.tags.actionAdd')}</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="bulk-action"
+                checked={action === 'remove'}
+                onChange={() => setAction('remove')}
+                className="accent-bambu-green"
+              />
+              <span className="text-white">{t('fileManager.tags.actionRemove')}</span>
+            </label>
+          </div>
+        )}
 
         <div className="px-5 py-3 border-b border-bambu-dark-tertiary">
           <input
@@ -248,10 +255,10 @@ export function BulkTagsPickerModal({ open, fileIds, onClose }: BulkTagsPickerMo
           <Button
             type="button"
             onClick={() => applyMutation.mutate()}
-            disabled={selected.size === 0 || applyMutation.isPending || fileIds.length === 0}
+            disabled={(selected.size === 0 && !singleMode) || applyMutation.isPending || fileIds.length === 0}
           >
             {applyMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-            {action === 'add' ? t('fileManager.tags.applyAdd') : t('fileManager.tags.applyRemove')}
+            {singleMode ? t('common.save') : action === 'add' ? t('fileManager.tags.applyAdd') : t('fileManager.tags.applyRemove')}
           </Button>
         </div>
       </div>
