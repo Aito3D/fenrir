@@ -479,7 +479,7 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
                               <img
                                 src={plate.thumbnail_url}
                                 alt={`Plate ${plate.index}`}
-                                className={`${splitFullscreen ? 'w-8 h-8' : 'w-10 h-10'} rounded object-cover bg-bambu-dark-tertiary`}
+                                className={`${splitFullscreen ? 'w-8 h-8' : 'w-10 h-10'} rounded object-cover bg-bambu-dark-tertiary brightness-125 contrast-110`}
                               />
                             ) : (
                               <div className={`rounded bg-bambu-dark-tertiary flex items-center justify-center ${

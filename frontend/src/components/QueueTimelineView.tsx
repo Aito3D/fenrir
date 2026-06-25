@@ -432,7 +432,7 @@ export function QueueTimelineView({
                             <img
                               src={thumbnailUrl}
                               alt=""
-                              className="w-7 h-7 rounded object-cover shrink-0 bg-bambu-dark"
+                              className="w-7 h-7 rounded object-cover shrink-0 bg-bambu-dark brightness-125 contrast-110"
                             />
                           )}
                           <div className="min-w-0 flex-1">

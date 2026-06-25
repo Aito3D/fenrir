@@ -79,7 +79,7 @@ export function PlateSelector({
                 <img
                   src={withStreamToken(plate.thumbnail_url)}
                   alt={`Plate ${plate.index}`}
-                  className="w-10 h-10 rounded object-cover bg-bambu-dark-tertiary"
+                  className="w-10 h-10 rounded object-cover bg-bambu-dark-tertiary brightness-125 contrast-110"
                 />
               ) : (
                 <div className="w-10 h-10 rounded bg-bambu-dark-tertiary flex items-center justify-center">

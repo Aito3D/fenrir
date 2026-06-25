@@ -49,7 +49,7 @@ export function PlatePickerModal({ plates, onSelect, onClose }: PlatePickerModal
                   <img
                     src={withStreamToken(plate.thumbnail_url)}
                     alt={`Plate ${plate.index}`}
-                    className="w-12 h-12 rounded object-cover bg-bambu-dark-tertiary flex-shrink-0"
+                    className="w-12 h-12 rounded object-cover bg-bambu-dark-tertiary flex-shrink-0 brightness-125 contrast-110"
                   />
                 ) : (
                   <div className="w-12 h-12 rounded bg-bambu-dark-tertiary flex items-center justify-center flex-shrink-0">

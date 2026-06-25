@@ -139,7 +139,7 @@ function ArchiveGrid({ archives, t }: { archives: Archive[]; t: TFunction }) {
             <img
               src={api.getArchiveThumbnail(archive.id)}
               alt={archive.print_name || 'Print'}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover brightness-125 contrast-110"
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-bambu-gray">
@@ -932,7 +932,7 @@ export function ProjectDetailPage() {
                                   <img
                                     src={api.getLibraryFileThumbnailUrl(file.id)}
                                     alt={file.print_name || file.filename}
-                                    className="w-full h-full object-cover"
+                                    className="w-full h-full object-cover brightness-125 contrast-110"
                                   />
                                 ) : (
                                   <FileBox className="w-5 h-5 text-bambu-gray/40" />

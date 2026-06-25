@@ -727,7 +727,7 @@ function ArchiveCard({
                 : api.getArchiveThumbnail(archive.id)
             }
             alt={archive.print_name || archive.filename}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover brightness-125 contrast-110"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
@@ -2089,7 +2089,7 @@ function ArchiveListRow({
             <img
               src={api.getArchiveThumbnail(archive.id)}
               alt=""
-              className="w-10 h-10 object-cover rounded"
+              className="w-10 h-10 object-cover rounded brightness-125 contrast-110"
             />
           ) : (
             <div className="w-10 h-10 bg-bambu-dark rounded flex items-center justify-center">
@@ -3901,7 +3901,7 @@ export function ArchivesPage() {
                                 <img
                                   src={api.getPrintLogThumbnail(entry.id)}
                                   alt=""
-                                  className="w-8 h-8 rounded object-cover flex-shrink-0"
+                                  className="w-8 h-8 rounded object-cover flex-shrink-0 brightness-125 contrast-110"
                                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                                 />
                               )}

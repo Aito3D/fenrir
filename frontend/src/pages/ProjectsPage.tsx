@@ -793,7 +793,7 @@ function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission, t }: P
                     <img
                       src={api.getArchiveThumbnail(archive.id)}
                       alt={archive.print_name || ''}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover brightness-125 contrast-110"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-bambu-gray/50">

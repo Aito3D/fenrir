@@ -79,7 +79,7 @@ export function CompactHistoryRow({
         <div className="relative shrink-0 history-thumb-hover">
           <div className="w-8 h-8 bg-bambu-dark rounded overflow-hidden">
             {thumbnailUrl ? (
-              <img src={thumbnailUrl} alt="" className="w-full h-full object-cover" />
+              <img src={thumbnailUrl} alt="" className="w-full h-full object-cover brightness-125 contrast-110" />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-bambu-gray">
                 <Layers className="w-4 h-4" />
@@ -95,7 +95,7 @@ export function CompactHistoryRow({
               <img
                 src={thumbnailUrl}
                 alt=""
-                className="w-full h-full object-cover rounded-lg shadow-2xl border-2 border-bambu-dark-tertiary bg-bambu-dark"
+                className="w-full h-full object-cover rounded-lg shadow-2xl border-2 border-bambu-dark-tertiary bg-bambu-dark brightness-125 contrast-110"
               />
             </div>
           )}

@@ -757,12 +757,12 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
       onClick={() => onSelect(file.id)}
     >
       {/* Thumbnail */}
-      <div className="aspect-square bg-bambu-dark flex items-center justify-center overflow-hidden">
+      <div className="aspect-square bg-bambu-dark-tertiary flex items-center justify-center overflow-hidden">
         {file.thumbnail_path ? (
           <img
             src={`${api.getLibraryFileThumbnailUrl(file.id)}${thumbnailVersion ? ((api.getLibraryFileThumbnailUrl(file.id).includes('?') ? '&' : '?') + `v=${thumbnailVersion}`) : ''}`}
             alt={file.filename}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover brightness-125 contrast-110"
           />
         ) : (
           <FileBox className="w-12 h-12 text-bambu-gray/30" />
@@ -819,7 +819,6 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
                 className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-bambu-green/10 text-bambu-green max-w-full"
                 title={tg.name}
               >
-                <TagIcon className="w-2.5 h-2.5 flex-shrink-0" />
                 <span className="truncate">{tg.name}</span>
               </span>
             ))}
@@ -2333,7 +2332,7 @@ export function FileManagerPage() {
                             <img
                               src={`${api.getLibraryFileThumbnailUrl(file.id)}${thumbnailVersions[file.id] ? ((api.getLibraryFileThumbnailUrl(file.id).includes('?') ? '&' : '?') + `v=${thumbnailVersions[file.id]}`) : ''}`}
                               alt=""
-                              className="w-full h-full object-cover"
+                              className="w-full h-full object-cover brightness-125 contrast-110"
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center">
@@ -2348,7 +2347,7 @@ export function FileManagerPage() {
                               <img
                                 src={`${api.getLibraryFileThumbnailUrl(file.id)}${thumbnailVersions[file.id] ? ((api.getLibraryFileThumbnailUrl(file.id).includes('?') ? '&' : '?') + `v=${thumbnailVersions[file.id]}`) : ''}`}
                                 alt={file.filename}
-                                className="w-full h-full object-contain"
+                                className="w-full h-full object-contain brightness-125 contrast-110"
                               />
                             </div>
                           </div>
