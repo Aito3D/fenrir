@@ -6098,6 +6098,11 @@ export const api = {
     }
     return response.json();
   },
+  checkFileDuplicates: (hashes: string[]) =>
+    request<CheckDuplicatesResponse>('/library/files/check-duplicates', {
+      method: 'POST',
+      body: JSON.stringify({ hashes }),
+    }),
   extractZipFile: async (
     file: File,
     folderId?: number | null,
@@ -6833,6 +6838,17 @@ export interface LibraryFileUploadResponse {
   thumbnail_path: string | null;
   duplicate_of: number | null;
   metadata: Record<string, unknown> | null;
+}
+
+export interface DuplicateCheckItem {
+  id: number;
+  filename: string;
+  folder_id: number | null;
+  folder_name: string | null;
+}
+
+export interface CheckDuplicatesResponse {
+  duplicates: Record<string, DuplicateCheckItem>;
 }
 
 export interface LibraryStats {

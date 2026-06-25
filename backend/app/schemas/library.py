@@ -290,6 +290,27 @@ class FileUploadResponse(BaseModel):
     metadata: dict | None = None
 
 
+class DuplicateCheckItem(BaseModel):
+    """Info about an existing file that matches an uploaded file's hash."""
+
+    id: int
+    filename: str
+    folder_id: int | None
+    folder_name: str | None
+
+
+class CheckDuplicatesRequest(BaseModel):
+    """Request body for the duplicate-check endpoint."""
+
+    hashes: list[str] = Field(default_factory=list, max_length=100)
+
+
+class CheckDuplicatesResponse(BaseModel):
+    """Maps each submitted hash to the first matching library file, if any."""
+
+    duplicates: dict[str, DuplicateCheckItem]
+
+
 # ============ Bulk Operations ============
 
 

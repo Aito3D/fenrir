@@ -10,18 +10,29 @@ import {
   Archive as ArchiveIcon,
   Printer,
   Image,
+  AlertTriangle,
 } from 'lucide-react';
 import { api } from '../api/client';
-import type { LibraryFileUploadResponse } from '../api/client';
+import type { DuplicateCheckItem, LibraryFileUploadResponse } from '../api/client';
 import { Button } from './Button';
+
+async function computeSha256(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 interface UploadFile {
   file: File;
-  status: 'pending' | 'uploading' | 'success' | 'error';
+  status: 'pending' | 'checking' | 'uploading' | 'success' | 'error' | 'skipped';
   error?: string;
   isZip?: boolean;
   is3mf?: boolean;
   extractedCount?: number;
+  hash?: string;
+  duplicateInfo?: DuplicateCheckItem;
+  uploadAnyway?: boolean;
 }
 
 interface FileUploadModalProps {
@@ -45,6 +56,7 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
   const [preserveZipStructure, setPreserveZipStructure] = useState(true);
   const [createFolderFromZip, setCreateFolderFromZip] = useState(false);
   const [generateStlThumbnails, setGenerateStlThumbnails] = useState(true);
@@ -83,6 +95,12 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
     for (const uf of filesToUpload) {
       if (uf.status !== 'pending') continue;
 
+      // Skip duplicates unless the user explicitly opted in for this file
+      if (uf.duplicateInfo && !uf.uploadAnyway) {
+        updateFileStatus(uf.file, { status: 'skipped' });
+        continue;
+      }
+
       updateFileStatus(uf.file, { status: 'uploading' });
 
       try {
@@ -114,10 +132,6 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
 
     setIsUploading(false);
     onUploadComplete();
-    // #1401: don't auto-close if any file ended with an error — the user
-    // needs to see the rejection message (e.g. "raw .gcode upload"), not
-    // have the modal vanish before they can read it. Closing happens via
-    // the X / Close button instead, after the user has seen what failed.
     setFiles((prev) => {
       const anyFailed = prev.some((f) => f.status === 'error');
       if (!anyFailed) {
@@ -125,6 +139,72 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
       }
       return prev;
     });
+  };
+
+  const checkDuplicates = async (newFiles: UploadFile[]): Promise<UploadFile[]> => {
+    // ZIP files are extracted server-side — hashing them individually doesn't
+    // map to their extracted contents, so skip duplicate-check for ZIPs.
+    const checkable = newFiles.filter((f) => !f.isZip);
+
+    // Always add files to state immediately so they appear in the list.
+    // Non-ZIP files start in 'checking' status while hashes are computed.
+    setFiles((prev) => [
+      ...prev,
+      ...newFiles.map((f) => ({
+        ...f,
+        status: (f.isZip || checkable.length === 0) ? ('pending' as const) : ('checking' as const),
+      })),
+    ]);
+
+    if (checkable.length === 0) return newFiles;
+
+    setIsChecking(true);
+
+    // Compute hashes for all non-zip files in parallel
+    const withHashes = await Promise.all(
+      checkable.map(async (uf) => {
+        try {
+          const hash = await computeSha256(uf.file);
+          return { ...uf, hash };
+        } catch {
+          return uf;
+        }
+      }),
+    );
+
+    // Check hashes against backend
+    const hashes = withHashes.map((f) => f.hash).filter((h): h is string => !!h);
+    let duplicateMap: Record<string, DuplicateCheckItem> = {};
+    if (hashes.length > 0) {
+      try {
+        const resp = await api.checkFileDuplicates(hashes);
+        duplicateMap = resp.duplicates;
+      } catch {
+        // If the check fails, proceed without duplicate detection
+      }
+    }
+
+    // Build fully-annotated result in original file order
+    const result: UploadFile[] = newFiles.map((orig) => {
+      if (orig.isZip) return orig;
+      const withHash = withHashes.find((a) => a.file === orig.file);
+      if (!withHash) return orig;
+      return {
+        ...withHash,
+        status: 'pending' as const,
+        duplicateInfo: withHash.hash ? duplicateMap[withHash.hash] : undefined,
+      };
+    });
+
+    setIsChecking(false);
+
+    // Atomically replace 'checking' entries with fully-annotated ones
+    setFiles((prev) => {
+      const newFileSet = new Set(newFiles.map((f) => f.file));
+      return [...prev.filter((f) => !newFileSet.has(f.file)), ...result];
+    });
+
+    return result;
   };
 
   const addFiles = (newFiles: File[]) => {
@@ -138,16 +218,17 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
         }
       }
     }
-    const toUpload: UploadFile[] = newFiles.map((file) => ({
+    const toAdd: UploadFile[] = newFiles.map((file) => ({
       file,
       status: 'pending' as const,
       isZip: file.name.toLowerCase().endsWith('.zip'),
       is3mf: file.name.toLowerCase().endsWith('.3mf'),
     }));
-    setFiles((prev) => [...prev, ...toUpload]);
 
     if (autoUpload && newFiles.length > 0) {
-      uploadFiles(toUpload);
+      checkDuplicates(toAdd).then((annotated) => uploadFiles(annotated));
+    } else {
+      checkDuplicates(toAdd);
     }
   };
 
@@ -155,9 +236,13 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const toggleUploadAnyway = (file: File) => {
+    setFiles((prev) =>
+      prev.map((f) => (f.file === file ? { ...f, uploadAnyway: !f.uploadAnyway } : f)),
+    );
+  };
+
   // Seed once on mount when the parent passed initialFiles (page-wide drop).
-  // The ref/list shape means a subsequent re-render with the same files won't
-  // double-add — only the first non-empty initialFiles arg ever flows through.
   const seededInitialRef = useRef(false);
   useEffect(() => {
     if (seededInitialRef.current) return;
@@ -171,7 +256,9 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
   const hasStlFiles = files.some((f) => f.file.name.toLowerCase().endsWith('.stl') && f.status === 'pending');
   const has3mfFiles = files.some((f) => f.is3mf && f.status === 'pending');
   const pendingCount = files.filter((f) => f.status === 'pending').length;
-  const allDone = files.length > 0 && pendingCount === 0 && !isUploading;
+  const duplicateCount = files.filter((f) => f.duplicateInfo && !f.uploadAnyway && f.status === 'pending').length;
+  const uploadableCount = pendingCount - duplicateCount;
+  const allDone = files.length > 0 && pendingCount === 0 && !isUploading && !isChecking;
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -287,6 +374,18 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
             </div>
           )}
 
+          {/* Duplicate summary banner */}
+          {duplicateCount > 0 && (
+            <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0" />
+                <p className="text-sm text-yellow-300">
+                  {t('fileManager.duplicatesWillBeSkipped', '{{count}} duplicate file(s) detected — will be skipped', { count: duplicateCount })}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* File List */}
           {files.length > 0 && (
             <div className="max-h-48 overflow-y-auto space-y-2">
@@ -298,7 +397,7 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
                   {uploadFile.isZip ? (
                     <ArchiveIcon className="w-4 h-4 text-blue-400 flex-shrink-0" />
                   ) : (
-                    <File className="w-4 h-4 text-bambu-gray flex-shrink-0" />
+                    <File className={`w-4 h-4 flex-shrink-0 ${uploadFile.duplicateInfo && !uploadFile.uploadAnyway ? 'text-yellow-400' : 'text-bambu-gray'}`} />
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-white truncate">{uploadFile.file.name}</p>
@@ -311,12 +410,39 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
                         <span className="text-green-400 ml-2">• {t('fileManager.filesExtracted', { count: uploadFile.extractedCount })}</span>
                       )}
                     </p>
-                    {/* #1401: errors render inline rather than as a hover-only
-                        title. The backend's rejection messages explain the
-                        actual fix (re-export as .gcode.3mf) — useless if the
-                        user can't read them. */}
+                    {/* Duplicate warning */}
+                    {uploadFile.duplicateInfo && uploadFile.status === 'pending' && (
+                      <p className="text-xs text-yellow-400 mt-0.5">
+                        {t('fileManager.alreadyInLibrary', 'Already in library')}
+                        {uploadFile.duplicateInfo.folder_name
+                          ? ` ${t('fileManager.duplicateIn', 'in {{folder}}', { folder: uploadFile.duplicateInfo.folder_name })}`
+                          : null}
+                        {!uploadFile.uploadAnyway && (
+                          <button
+                            onClick={() => toggleUploadAnyway(uploadFile.file)}
+                            className="ml-2 underline hover:text-yellow-300"
+                          >
+                            {t('fileManager.uploadAnyway', 'Upload anyway')}
+                          </button>
+                        )}
+                        {uploadFile.uploadAnyway && (
+                          <button
+                            onClick={() => toggleUploadAnyway(uploadFile.file)}
+                            className="ml-2 underline hover:text-yellow-300"
+                          >
+                            {t('fileManager.skipDuplicate', 'Skip')}
+                          </button>
+                        )}
+                      </p>
+                    )}
+                    {/* Upload errors */}
                     {uploadFile.status === 'error' && uploadFile.error && (
                       <p className="text-xs text-red-400 mt-1 break-words">{uploadFile.error}</p>
+                    )}
+                    {uploadFile.status === 'skipped' && (
+                      <p className="text-xs text-bambu-gray mt-0.5">
+                        {t('fileManager.skippedDuplicate', 'Skipped (already in library)')}
+                      </p>
                     )}
                   </div>
                   {uploadFile.status === 'pending' && (
@@ -327,11 +453,17 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
                       <X className="w-4 h-4 text-bambu-gray" />
                     </button>
                   )}
+                  {uploadFile.status === 'checking' && (
+                    <Loader2 className="w-4 h-4 text-bambu-gray animate-spin" />
+                  )}
                   {uploadFile.status === 'uploading' && (
                     <Loader2 className="w-4 h-4 text-bambu-green animate-spin" />
                   )}
                   {uploadFile.status === 'success' && (
                     <CheckCircle className="w-4 h-4 text-green-500" />
+                  )}
+                  {uploadFile.status === 'skipped' && (
+                    <AlertTriangle className="w-4 h-4 text-yellow-500" />
                   )}
                   {uploadFile.status === 'error' && (
                     <span title={uploadFile.error}>
@@ -361,9 +493,14 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
           {!allDone && (
             <Button
               onClick={() => uploadFiles(files)}
-              disabled={pendingCount === 0 || isUploading}
+              disabled={pendingCount === 0 || isUploading || isChecking}
             >
-              {isUploading ? (
+              {isChecking ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {t('fileManager.checkingDuplicates', 'Checking...')}
+                </>
+              ) : isUploading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   {t('fileManager.uploading')}
@@ -371,7 +508,7 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
               ) : (
                 <>
                   <Upload className="w-4 h-4 mr-2" />
-                  {t('common.upload')} {pendingCount > 0 ? `(${pendingCount})` : ''}
+                  {t('common.upload')} {uploadableCount > 0 ? `(${uploadableCount})` : pendingCount > 0 ? `(${pendingCount})` : ''}
                 </>
               )}
             </Button>

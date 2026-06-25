@@ -38,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.auth import require_ownership_permission, require_permission_if_auth_enabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
-from backend.app.models.library import LibraryFile, LibraryFileTag, LibraryTag
+from backend.app.models.library import LibraryFile, LibraryFileTag, LibraryTag, prune_empty_library_tags
 from backend.app.models.user import User
 from backend.app.schemas.library import (
     TagBulkAssignRequest,
@@ -292,6 +292,8 @@ async def bulk_assign(
             )
             added = len(file_ids) * len(tag_ids)
 
+    if payload.action in ("remove", "replace"):
+        await prune_empty_library_tags(db)
     await db.commit()
     return TagBulkAssignResponse(
         files_updated=len(file_ids),

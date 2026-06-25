@@ -31,7 +31,7 @@ from backend.app.core.database import async_session, get_db
 from backend.app.core.permissions import Permission
 from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
-from backend.app.models.library import LibraryFile, LibraryFileTag, LibraryFolder
+from backend.app.models.library import LibraryFile, LibraryFileTag, LibraryFolder, prune_empty_library_tags
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
 from backend.app.models.user import User
@@ -45,6 +45,9 @@ from backend.app.schemas.library import (
     BatchThumbnailResult,
     BulkDeleteRequest,
     BulkDeleteResponse,
+    CheckDuplicatesRequest,
+    CheckDuplicatesResponse,
+    DuplicateCheckItem,
     ExternalFolderCreate,
     FileDuplicate,
     FileListResponse,
@@ -1263,6 +1266,7 @@ async def delete_folder(
 
     # Delete folder (cascade will handle files and subfolders)
     await db.delete(folder)
+    await prune_empty_library_tags(db)
     await db.commit()
 
     return {"status": "success", "message": "Folder deleted"}
@@ -1928,6 +1932,50 @@ async def list_files(
         )
 
     return file_list
+
+
+@router.post("/files/check-duplicates", response_model=CheckDuplicatesResponse)
+async def check_file_duplicates(
+    data: CheckDuplicatesRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ_OWN)),
+):
+    """Return existing library files whose hash matches any of the submitted hashes.
+
+    Called by the upload modal before the user confirms an upload so duplicates
+    can be flagged client-side without wasting bandwidth uploading identical files.
+    Only the first matching active (non-trashed) file per hash is returned.
+    """
+    if not data.hashes:
+        return CheckDuplicatesResponse(duplicates={})
+
+    result = await db.execute(
+        select(LibraryFile.file_hash, LibraryFile.id, LibraryFile.filename, LibraryFile.folder_id).where(
+            LibraryFile.file_hash.in_(data.hashes),
+            LibraryFile.deleted_at.is_(None),
+        )
+    )
+    rows = result.all()
+
+    folder_ids = {row[3] for row in rows if row[3] is not None}
+    folder_names: dict[int, str] = {}
+    if folder_ids:
+        folder_result = await db.execute(
+            select(LibraryFolder.id, LibraryFolder.name).where(LibraryFolder.id.in_(folder_ids))
+        )
+        folder_names = dict(folder_result.all())
+
+    duplicates: dict[str, DuplicateCheckItem] = {}
+    for hash_val, file_id, filename, folder_id in rows:
+        if hash_val not in duplicates:
+            duplicates[hash_val] = DuplicateCheckItem(
+                id=file_id,
+                filename=filename,
+                folder_id=folder_id,
+                folder_name=folder_names.get(folder_id) if folder_id else None,
+            )
+
+    return CheckDuplicatesResponse(duplicates=duplicates)
 
 
 @router.post("/files", response_model=FileUploadResponse)
@@ -4379,11 +4427,13 @@ async def delete_file(
             except OSError as e:
                 logger.warning("Failed to delete thumbnail from disk: %s", e)
         await db.delete(file)
+        await prune_empty_library_tags(db)
         await db.commit()
         return {"status": "success", "message": "File deleted", "trashed": False}
 
     # Managed file: soft-delete. Sweeper removes bytes + thumbnail after retention.
     file.deleted_at = datetime.now(timezone.utc)
+    await prune_empty_library_tags(db)
     await db.commit()
     return {"status": "success", "message": "File moved to trash", "trashed": True}
 
@@ -4728,6 +4778,7 @@ async def bulk_delete(
             await db.delete(folder)
             deleted_folders += 1
 
+    await prune_empty_library_tags(db)
     await db.commit()
 
     return BulkDeleteResponse(deleted_files=deleted_files, deleted_folders=deleted_folders)

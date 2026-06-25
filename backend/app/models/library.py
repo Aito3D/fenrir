@@ -2,7 +2,8 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, Select, String, Text, func, select
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, Select, String, Text, delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -165,6 +166,22 @@ class LibraryFileTag(Base):
     file_id: Mapped[int] = mapped_column(ForeignKey("library_files.id", ondelete="CASCADE"), primary_key=True)
     tag_id: Mapped[int] = mapped_column(ForeignKey("library_tags.id", ondelete="CASCADE"), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+async def prune_empty_library_tags(db: AsyncSession) -> None:
+    """Delete tags with no active (non-trashed) file associations.
+
+    Called after any operation that can leave a tag with file_count=0:
+    file deletion (soft or hard), bulk-delete, folder delete, tag bulk-assign
+    remove/replace, and the trash sweeper.
+    """
+    active_tag_ids = (
+        select(LibraryFileTag.tag_id)
+        .join(LibraryFile, LibraryFile.id == LibraryFileTag.file_id)
+        .where(LibraryFile.deleted_at.is_(None))
+        .distinct()
+    )
+    await db.execute(delete(LibraryTag).where(LibraryTag.id.not_in(active_tag_ids)))
 
 
 from backend.app.models.archive import PrintArchive  # noqa: E402, F811
