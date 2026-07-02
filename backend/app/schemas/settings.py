@@ -1,4 +1,5 @@
 import json
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -219,6 +220,17 @@ class AppSettings(BaseModel):
     camera_view_mode: str = Field(
         default="window",
         description="Camera view mode: 'window' opens in new browser window, 'embedded' shows overlay on main screen",
+    )
+    camera_quality: str = Field(
+        default="auto",
+        description="Camera quality preset: 'auto', 'low', 'medium', or 'high' — controls ffmpeg fps/quality/scale for grid and single streams",
+    )
+    camera_gpu_accel: bool = Field(
+        default=True,
+        description="Enable GPU hardware acceleration for ffmpeg camera decoding (-hwaccel auto)",
+    )
+    camera_engine: Literal["ffmpeg", "go2rtc"] = Field(
+        default="ffmpeg", description="Camera streaming engine: 'ffmpeg' or 'go2rtc'"
     )
 
     # Preferred slicer application (server-side / API sidecar slicer)
@@ -533,6 +545,9 @@ class AppSettingsUpdate(BaseModel):
     library_archive_mode: str | None = None
     library_disk_warning_gb: float | None = None
     camera_view_mode: str | None = None
+    camera_quality: str | None = None
+    camera_gpu_accel: bool | None = None
+    camera_engine: str | None = None
     preferred_slicer: str | None = None
     open_in_slicer: str | None = None
     use_slicer_api: bool | None = None

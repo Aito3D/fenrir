@@ -1,13 +1,15 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X, RefreshCw, AlertTriangle, Maximize2, Minimize2, GripVertical, WifiOff, ZoomIn, ZoomOut, Fullscreen, Minimize, Stethoscope } from 'lucide-react';
-import { api, getAuthToken, withStreamToken } from '../api/client';
-import { useToast } from '../contexts/ToastContext';
-import { useAuth } from '../contexts/AuthContext';
+import { X, RefreshCw, AlertTriangle, Maximize2, Minimize2, GripVertical, WifiOff, ZoomIn, ZoomOut, Fullscreen, Minimize } from 'lucide-react';
+import { api } from '../api/client';
+import { useCameraControls } from '../hooks/useCameraControls';
+import { useCameraStopHint } from '../hooks/useCameraStopHint';
 import { ChamberLight } from './icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from './SkipObjectsModal';
-import { CameraDiagnoseModal } from './CameraDiagnoseModal';
+import { useMjpegStream } from '../hooks/useMjpegStream';
+import { useStreamReconnect } from '../hooks/useStreamReconnect';
+import { useZoomPan } from '../hooks/useZoomPan';
 
 interface EmbeddedCameraViewerProps {
   printerId: number;
@@ -16,31 +18,22 @@ interface EmbeddedCameraViewerProps {
   onClose: () => void;
 }
 
+import { getDefaultState, type CameraState } from './cameraDefaults';
+
 const STORAGE_KEY_PREFIX = 'embeddedCameraState_';
-const MAX_RECONNECT_ATTEMPTS = 5;
-const INITIAL_RECONNECT_DELAY = 2000;
-const MAX_RECONNECT_DELAY = 30000;
-const STALL_CHECK_INTERVAL = 5000;
-
-interface CameraState {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-const DEFAULT_STATE: CameraState = {
-  x: window.innerWidth - 420,
-  y: 20,
-  width: 400,
-  height: 300,
-};
 
 export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, onClose }: EmbeddedCameraViewerProps) {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const { showToast } = useToast();
-  const { hasPermission } = useAuth();
+
+  const {
+    status,
+    chamberLightMutation,
+    isPrintingWithObjects,
+    showSkipObjectsModal,
+    setShowSkipObjectsModal,
+    checkStalled,
+    hasControlPermission,
+  } = useCameraControls({ printerId });
 
   // Printer-specific storage key
   const storageKey = `${STORAGE_KEY_PREFIX}${printerId}`;
@@ -64,45 +57,36 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     }
     // Offset new viewers so they don't stack exactly on top of each other
     const offset = viewerIndex * 30;
+    const defaults = getDefaultState();
     return {
-      ...DEFAULT_STATE,
-      x: Math.max(0, DEFAULT_STATE.x - offset),
-      y: Math.max(0, DEFAULT_STATE.y + offset),
+      ...defaults,
+      x: Math.max(0, defaults.x - offset),
+      y: Math.max(0, defaults.y + offset),
     };
   };
 
   const [state, setState] = useState<CameraState>(loadState);
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
   const [isMinimized, setIsMinimized] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(1);
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
-  const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
-  const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
-  const [lastTouchCenter, setLastTouchCenter] = useState<{ x: number; y: number } | null>(null);
 
-  // Stream state
   const [streamError, setStreamError] = useState(false);
-  const [streamLoading, setStreamLoading] = useState(true);
-  const [imageKey, setImageKey] = useState(Date.now());
-  const [reconnectAttempts, setReconnectAttempts] = useState(0);
-  const [isReconnecting, setIsReconnecting] = useState(false);
-  const [reconnectCountdown, setReconnectCountdown] = useState(0);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
-  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const stallCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const mjpegRestartRef = useRef<() => void>(() => {});
 
-  const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
-  // Modal opens from the error-state "Diagnose" button when the user
-  // hits "Camera unavailable" — saves a round trip through "open a
-  // ticket → wait for response → check setting". See #1395 follow-up.
-  const [showDiagnoseModal, setShowDiagnoseModal] = useState(false);
+  const {
+    zoomLevel,
+    handleZoomIn, handleZoomOut, handleWheel,
+    handleMouseDown: handleCanvasMouseDown,
+    handleMouseMove: handleImageMouseMove,
+    handleMouseUp: handleImageMouseUp,
+    handleTouchStart, handleTouchMove, handleTouchEnd,
+    resetZoom, panOffset, isPanning,
+  } = useZoomPan({ containerRef, defaultMaxPan: { x: 200, y: 150 } });
 
   // Fetch printer info
   const { data: printer } = useQuery({
@@ -111,38 +95,27 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     enabled: printerId > 0,
   });
 
-  // Fetch printer status for light toggle and skip objects
-  const { data: status } = useQuery({
-    queryKey: ['printerStatus', printerId],
-    queryFn: () => api.getPrinterStatus(printerId),
-    refetchInterval: 30000,
-    enabled: printerId > 0,
+  // Reconnect logic
+  const reconnect = useStreamReconnect({
+    onReconnect: () => mjpegRestartRef.current(),
+    onGiveUp: () => setStreamError(true),
+    stallPaused: isMinimized,
+    checkStalled,
   });
 
-  // Chamber light mutation with optimistic update
-  const chamberLightMutation = useMutation({
-    mutationFn: (on: boolean) => api.setChamberLight(printerId, on),
-    onMutate: async (on) => {
-      await queryClient.cancelQueries({ queryKey: ['printerStatus', printerId] });
-      const previousStatus = queryClient.getQueryData(['printerStatus', printerId]);
-      queryClient.setQueryData(['printerStatus', printerId], (old: typeof status) => ({
-        ...old,
-        chamber_light: on,
-      }));
-      return { previousStatus };
+  // Stream URL — quality preset is resolved server-side from settings
+  const streamUrl = `/printers/${printerId}/camera/stream`;
+  const mjpeg = useMjpegStream({
+    url: streamUrl,
+    canvasRef,
+    enabled: !isMinimized,
+    onFirstFrame: () => {
+      setStreamError(false);
+      reconnect.handleStreamSuccess();
     },
-    onSuccess: (_, on) => {
-      showToast(`Chamber light ${on ? 'on' : 'off'}`);
-    },
-    onError: (error: Error, _, context) => {
-      if (context?.previousStatus) {
-        queryClient.setQueryData(['printerStatus', printerId], context.previousStatus);
-      }
-      showToast(error.message || t('printers.toast.failedToControlChamberLight'), 'error');
-    },
+    onError: () => reconnect.handleStreamError(),
   });
-
-  const isPrintingWithObjects = (status?.state === 'RUNNING' || status?.state === 'PAUSE') && (status?.printable_objects_count ?? 0) >= 2;
+  mjpegRestartRef.current = mjpeg.restart;
 
   // Save state to localStorage (printer-specific)
   useEffect(() => {
@@ -152,127 +125,21 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     return () => clearTimeout(saveTimeout);
   }, [state, storageKey]);
 
-  // Cleanup on unmount
-  const stopSentRef = useRef(false);
-  useEffect(() => {
-    stopSentRef.current = false;
-    const stopUrl = `/api/v1/printers/${printerId}/camera/stop`;
-
-    const sendStopOnce = () => {
-      if (printerId > 0 && !stopSentRef.current) {
-        stopSentRef.current = true;
-        const headers: Record<string, string> = {};
-        const token = getAuthToken();
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-        fetch(stopUrl, { method: 'POST', keepalive: true, headers }).catch(() => {});
-      }
-    };
-
-    const imgElement = imgRef.current;
-
-    return () => {
-      if (imgElement) {
-        imgElement.src = '';
-      }
-      sendStopOnce();
-      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-      if (stallCheckIntervalRef.current) clearInterval(stallCheckIntervalRef.current);
-    };
-  }, [printerId]);
-
-  // Auto-hide loading after timeout
-  useEffect(() => {
-    if (streamLoading) {
-      const timer = setTimeout(() => setStreamLoading(false), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [streamLoading, imageKey]);
-
-  // Auto-reconnect logic
-  const attemptReconnect = useCallback(() => {
-    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      setIsReconnecting(false);
-      setStreamError(true);
-      return;
-    }
-
-    const delay = Math.min(
-      INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectAttempts),
-      MAX_RECONNECT_DELAY
-    );
-
-    setIsReconnecting(true);
-    setReconnectCountdown(Math.ceil(delay / 1000));
-
-    countdownIntervalRef.current = setInterval(() => {
-      setReconnectCountdown((prev) => {
-        if (prev <= 1) {
-          if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    reconnectTimerRef.current = setTimeout(() => {
-      setReconnectAttempts((prev) => prev + 1);
-      setIsReconnecting(false);
-      setStreamLoading(true);
-      setStreamError(false);
-      if (imgRef.current) imgRef.current.src = '';
-      setImageKey(Date.now());
-    }, delay);
-  }, [reconnectAttempts]);
-
-  // Stall detection
-  useEffect(() => {
-    if (streamLoading || isReconnecting || isMinimized) {
-      if (stallCheckIntervalRef.current) {
-        clearInterval(stallCheckIntervalRef.current);
-        stallCheckIntervalRef.current = null;
-      }
-      return;
-    }
-
-    stallCheckIntervalRef.current = setInterval(async () => {
-      try {
-        const status = await api.getCameraStatus(printerId);
-        if (status.stalled || (!status.active && !streamError)) {
-          if (stallCheckIntervalRef.current) {
-            clearInterval(stallCheckIntervalRef.current);
-            stallCheckIntervalRef.current = null;
-          }
-          setStreamLoading(false);
-          attemptReconnect();
-        }
-      } catch {
-        // Ignore errors
-      }
-    }, STALL_CHECK_INTERVAL);
-
-    return () => {
-      if (stallCheckIntervalRef.current) {
-        clearInterval(stallCheckIntervalRef.current);
-        stallCheckIntervalRef.current = null;
-      }
-    };
-  }, [streamLoading, streamError, isReconnecting, isMinimized, printerId, attemptReconnect]);
+  // Cleanup on unmount — send stop hint
+  useCameraStopHint(printerId);
 
   // Fullscreen change listener
   useEffect(() => {
     const handleFullscreenChange = () => {
       const nowFullscreen = !!document.fullscreenElement;
       setIsFullscreen(nowFullscreen);
-      // Reset zoom and pan when exiting fullscreen
       if (!nowFullscreen) {
-        setZoomLevel(1);
-        setPanOffset({ x: 0, y: 0 });
+        resetZoom();
       }
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, []);
+  }, [resetZoom]);
 
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
@@ -283,206 +150,33 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     }
   };
 
-  const handleZoomIn = () => {
-    setZoomLevel(prev => Math.min(prev + 0.5, 4));
-  };
-
-  const handleZoomOut = () => {
-    setZoomLevel(prev => {
-      const newZoom = Math.max(prev - 0.5, 1);
-      if (newZoom === 1) setPanOffset({ x: 0, y: 0 });
-      return newZoom;
-    });
-  };
-
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    if (e.deltaY < 0) {
-      handleZoomIn();
-    } else {
-      handleZoomOut();
-    }
-  };
-
-  const handleImageMouseDown = (e: React.MouseEvent) => {
-    if (zoomLevel > 1) {
-      e.preventDefault();
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
-    }
-  };
-
-  // Calculate max pan based on container size and zoom level
-  const getMaxPan = useCallback(() => {
-    if (!containerRef.current || !imgRef.current) {
-      return { x: 200, y: 150 };
-    }
-    const container = containerRef.current.getBoundingClientRect();
-    // Allow panning up to half the zoomed overflow in each direction
-    const maxX = (container.width * (zoomLevel - 1)) / 2;
-    const maxY = (container.height * (zoomLevel - 1)) / 2;
-    return { x: Math.max(50, maxX), y: Math.max(50, maxY) };
-  }, [zoomLevel]);
-
-  const handleImageMouseMove = (e: React.MouseEvent) => {
-    if (isPanning && zoomLevel > 1) {
-      const newX = e.clientX - panStart.x;
-      const newY = e.clientY - panStart.y;
-      const maxPan = getMaxPan();
-      setPanOffset({
-        x: Math.max(-maxPan.x, Math.min(maxPan.x, newX)),
-        y: Math.max(-maxPan.y, Math.min(maxPan.y, newY)),
-      });
-    }
-  };
-
-  const handleImageMouseUp = () => {
-    setIsPanning(false);
-  };
-
-  // Touch event handlers for mobile
-  const getTouchDistance = (touches: React.TouchList) => {
-    if (touches.length < 2) return 0;
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  };
-
-  const getTouchCenter = (touches: React.TouchList) => {
-    if (touches.length < 2) {
-      return { x: touches[0].clientX, y: touches[0].clientY };
-    }
-    return {
-      x: (touches[0].clientX + touches[1].clientX) / 2,
-      y: (touches[0].clientY + touches[1].clientY) / 2,
-    };
-  };
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 2) {
-      // Pinch gesture start
-      e.preventDefault();
-      setLastTouchDistance(getTouchDistance(e.touches));
-      setLastTouchCenter(getTouchCenter(e.touches));
-    } else if (e.touches.length === 1 && zoomLevel > 1) {
-      // Single touch pan start
-      e.preventDefault();
-      setIsPanning(true);
-      setPanStart({
-        x: e.touches[0].clientX - panOffset.x,
-        y: e.touches[0].clientY - panOffset.y,
-      });
-    }
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (e.touches.length === 2 && lastTouchDistance !== null) {
-      // Pinch gesture
-      e.preventDefault();
-      const newDistance = getTouchDistance(e.touches);
-      const scale = newDistance / lastTouchDistance;
-
-      setZoomLevel(prev => {
-        const newZoom = Math.max(1, Math.min(4, prev * scale));
-        if (newZoom === 1) {
-          setPanOffset({ x: 0, y: 0 });
-        }
-        return newZoom;
-      });
-
-      setLastTouchDistance(newDistance);
-
-      // Also handle pan during pinch
-      const newCenter = getTouchCenter(e.touches);
-      if (lastTouchCenter) {
-        const maxPan = getMaxPan();
-        setPanOffset(prev => ({
-          x: Math.max(-maxPan.x, Math.min(maxPan.x, prev.x + (newCenter.x - lastTouchCenter.x))),
-          y: Math.max(-maxPan.y, Math.min(maxPan.y, prev.y + (newCenter.y - lastTouchCenter.y))),
-        }));
-      }
-      setLastTouchCenter(newCenter);
-    } else if (e.touches.length === 1 && isPanning && zoomLevel > 1) {
-      // Single touch pan
-      e.preventDefault();
-      const newX = e.touches[0].clientX - panStart.x;
-      const newY = e.touches[0].clientY - panStart.y;
-      const maxPan = getMaxPan();
-      setPanOffset({
-        x: Math.max(-maxPan.x, Math.min(maxPan.x, newX)),
-        y: Math.max(-maxPan.y, Math.min(maxPan.y, newY)),
-      });
-    }
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (e.touches.length < 2) {
-      setLastTouchDistance(null);
-      setLastTouchCenter(null);
-    }
-    if (e.touches.length === 0) {
-      setIsPanning(false);
-    }
-  };
-
-  const resetZoom = () => {
-    setZoomLevel(1);
-    setPanOffset({ x: 0, y: 0 });
-  };
-
-  const handleStreamError = () => {
-    setStreamLoading(false);
-    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-      attemptReconnect();
-    } else {
-      setStreamError(true);
-    }
-  };
-
-  const handleStreamLoad = () => {
-    setStreamLoading(false);
-    setStreamError(false);
-    setReconnectAttempts(0);
-    setIsReconnecting(false);
-    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-  };
-
   const refresh = () => {
-    setStreamLoading(true);
     setStreamError(false);
-    setReconnectAttempts(0);
-    setIsReconnecting(false);
-    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+    reconnect.reset();
 
-    const stopHeaders: Record<string, string> = {};
-    const stopToken = getAuthToken();
-    if (stopToken) stopHeaders['Authorization'] = `Bearer ${stopToken}`;
-    fetch(`/api/v1/printers/${printerId}/camera/stop`, { method: 'POST', headers: stopHeaders }).catch(() => {});
+    api.stopCameraStream(printerId).catch(() => {});
 
-    if (imgRef.current) imgRef.current.src = '';
-    setTimeout(() => setImageKey(Date.now()), 100);
+    setTimeout(() => mjpeg.restart(), 100);
   };
 
   // Drag handlers
   const handleMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('.no-drag')) return;
     setIsDragging(true);
-    setDragOffset({
+    dragOffsetRef.current = {
       x: e.clientX - state.x,
       y: e.clientY - state.y,
-    });
+    };
   };
 
   const handleDragTouchStart = (e: React.TouchEvent) => {
     if ((e.target as HTMLElement).closest('.no-drag')) return;
     const touch = e.touches[0];
     setIsDragging(true);
-    setDragOffset({
+    dragOffsetRef.current = {
       x: touch.clientX - state.x,
       y: touch.clientY - state.y,
-    });
+    };
   };
 
   // Resize handlers
@@ -497,21 +191,27 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   };
 
   useEffect(() => {
+    let rafId = 0;
     const handleMouseMove = (e: MouseEvent) => {
-      if (isDragging) {
-        setState((prev) => ({
-          ...prev,
-          x: Math.max(0, Math.min(e.clientX - dragOffset.x, window.innerWidth - prev.width)),
-          y: Math.max(0, Math.min(e.clientY - dragOffset.y, window.innerHeight - prev.height)),
-        }));
-      } else if (isResizing && containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        setState((prev) => ({
-          ...prev,
-          width: Math.max(200, Math.min(e.clientX - rect.left, window.innerWidth - prev.x - 10)),
-          height: Math.max(150, Math.min(e.clientY - rect.top, window.innerHeight - prev.y - 10)),
-        }));
-      }
+      if (rafId) return; // Already scheduled
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        if (isDragging) {
+          const offset = dragOffsetRef.current;
+          setState((prev) => ({
+            ...prev,
+            x: Math.max(0, Math.min(e.clientX - offset.x, window.innerWidth - prev.width)),
+            y: Math.max(0, Math.min(e.clientY - offset.y, window.innerHeight - prev.height)),
+          }));
+        } else if (isResizing && containerRef.current) {
+          const rect = containerRef.current.getBoundingClientRect();
+          setState((prev) => ({
+            ...prev,
+            width: Math.max(200, Math.min(e.clientX - rect.left, window.innerWidth - prev.x - 10)),
+            height: Math.max(150, Math.min(e.clientY - rect.top, window.innerHeight - prev.y - 10)),
+          }));
+        }
+      });
     };
 
     const handleTouchMove = (e: TouchEvent) => {
@@ -521,8 +221,8 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
       if (isDragging) {
         setState((prev) => ({
           ...prev,
-          x: Math.max(0, Math.min(touch.clientX - dragOffset.x, window.innerWidth - prev.width)),
-          y: Math.max(0, Math.min(touch.clientY - dragOffset.y, window.innerHeight - prev.height)),
+          x: Math.max(0, Math.min(touch.clientX - dragOffsetRef.current.x, window.innerWidth - prev.width)),
+          y: Math.max(0, Math.min(touch.clientY - dragOffsetRef.current.y, window.innerHeight - prev.height)),
         }));
       } else if (isResizing && containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
@@ -553,9 +253,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
         document.removeEventListener('touchcancel', handleMouseUp);
       };
     }
-  }, [isDragging, isResizing, dragOffset]);
-
-  const streamUrl = withStreamToken(`/api/v1/printers/${printerId}/camera/stream?fps=15&t=${imageKey}`);
+  }, [isDragging, isResizing]);
 
   return (
     <div
@@ -582,18 +280,18 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
         <div className="flex items-center gap-1 no-drag">
           <button
             onClick={() => chamberLightMutation.mutate(!status?.chamber_light)}
-            disabled={!status?.connected || chamberLightMutation.isPending || !hasPermission('printers:control')}
+            disabled={!status?.connected || chamberLightMutation.isPending || !hasControlPermission}
             className={`p-1 rounded disabled:opacity-50 ${status?.chamber_light ? 'bg-yellow-500/20 hover:bg-yellow-500/30' : 'hover:bg-bambu-dark-tertiary'}`}
-            title={!hasPermission('printers:control') ? t('printers.permission.noControl') : t('camera.chamberLight')}
+            title={!hasControlPermission ? t('printers.permission.noControl') : t('camera.chamberLight')}
           >
             <ChamberLight on={status?.chamber_light ?? false} className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => setShowSkipObjectsModal(true)}
-            disabled={!isPrintingWithObjects || !hasPermission('printers:control')}
-            className={`p-1 rounded disabled:opacity-50 ${isPrintingWithObjects && hasPermission('printers:control') ? 'hover:bg-bambu-dark-tertiary' : ''}`}
+            disabled={!isPrintingWithObjects || !hasControlPermission}
+            className={`p-1 rounded disabled:opacity-50 ${isPrintingWithObjects && hasControlPermission ? 'hover:bg-bambu-dark-tertiary' : ''}`}
             title={
-              !hasPermission('printers:control')
+              !hasControlPermission
                 ? t('printers.permission.noControl')
                 : !isPrintingWithObjects
                   ? t('printers.skipObjects.onlyWhilePrinting')
@@ -604,23 +302,16 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
           </button>
           <button
             onClick={refresh}
-            disabled={streamLoading || isReconnecting}
+            disabled={mjpeg.isLoading || reconnect.isReconnecting}
             className="p-1 hover:bg-bambu-dark-tertiary rounded disabled:opacity-50"
-            title="Refresh stream"
+            title={t('camera.refreshStream')}
           >
-            <RefreshCw className={`w-3.5 h-3.5 text-bambu-gray ${streamLoading ? 'animate-spin' : ''}`} />
-          </button>
-          <button
-            onClick={() => setShowDiagnoseModal(true)}
-            className="p-1 hover:bg-bambu-dark-tertiary rounded"
-            title={t('camera.diagnose.button')}
-          >
-            <Stethoscope className="w-3.5 h-3.5 text-bambu-gray" />
+            <RefreshCw className={`w-3.5 h-3.5 text-bambu-gray ${mjpeg.isLoading ? 'animate-spin' : ''}`} />
           </button>
           <button
             onClick={toggleFullscreen}
             className="p-1 hover:bg-bambu-dark-tertiary rounded"
-            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            title={isFullscreen ? t('camera.exitFullscreen') : t('camera.fullscreen')}
           >
             {isFullscreen ? (
               <Minimize className="w-3.5 h-3.5 text-bambu-gray" />
@@ -631,7 +322,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
           <button
             onClick={() => setIsMinimized(!isMinimized)}
             className="p-1 hover:bg-bambu-dark-tertiary rounded"
-            title={isMinimized ? 'Expand' : 'Minimize'}
+            title={isMinimized ? t('camera.expand') : t('camera.minimize')}
           >
             {isMinimized ? (
               <Maximize2 className="w-3.5 h-3.5 text-bambu-gray" />
@@ -642,7 +333,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
           <button
             onClick={onClose}
             className="p-1 hover:bg-red-500/20 rounded"
-            title="Close"
+            title={t('common.close')}
           >
             <X className="w-3.5 h-3.5 text-bambu-gray hover:text-red-400" />
           </button>
@@ -652,7 +343,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
       {/* Video area */}
       {!isMinimized && (
         <div
-          className={`relative w-full bg-black flex items-center justify-center overflow-hidden ${isFullscreen ? 'h-[calc(100%-40px)]' : 'h-[calc(100%-40px)]'}`}
+          className="relative w-full bg-black flex items-center justify-center overflow-hidden h-[calc(100%-40px)]"
           onWheel={handleWheel}
           onMouseMove={handleImageMouseMove}
           onMouseUp={handleImageMouseUp}
@@ -662,58 +353,44 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
           onTouchEnd={handleTouchEnd}
           style={{ touchAction: 'none' }}
         >
-          {streamLoading && !isReconnecting && (
+          {mjpeg.isLoading && !reconnect.isReconnecting && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
               <RefreshCw className="w-6 h-6 text-bambu-gray animate-spin" />
             </div>
           )}
-          {isReconnecting && (
+          {reconnect.isReconnecting && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-10">
               <div className="text-center p-2">
                 <WifiOff className="w-6 h-6 text-orange-400 mx-auto mb-2" />
                 <p className="text-xs text-bambu-gray">
-                  Reconnecting in {reconnectCountdown}s...
+                  {t('camera.reconnectingIn', { countdown: reconnect.reconnectCountdown })}
                 </p>
               </div>
             </div>
           )}
-          {streamError && !isReconnecting && (
+          {streamError && !reconnect.isReconnecting && (
             <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
               <div className="text-center p-2">
                 <AlertTriangle className="w-6 h-6 text-orange-400 mx-auto mb-2" />
-                <p className="text-xs text-bambu-gray mb-2">{t('camera.unavailable')}</p>
-                <div className="flex gap-2 justify-center">
-                  <button
-                    onClick={refresh}
-                    className="px-2 py-1 text-xs bg-bambu-green text-white rounded hover:bg-bambu-green/80"
-                  >
-                    {t('camera.retry')}
-                  </button>
-                  <button
-                    onClick={() => setShowDiagnoseModal(true)}
-                    className="px-2 py-1 text-xs bg-bambu-dark border border-bambu-dark-tertiary text-bambu-gray hover:text-white rounded transition-colors"
-                  >
-                    {t('camera.diagnose.button')}
-                  </button>
-                </div>
+                <p className="text-xs text-bambu-gray mb-2">{t('printers.cameraGrid.cameraUnavailable')}</p>
+                <button
+                  onClick={refresh}
+                  className="px-2 py-1 text-xs bg-bambu-green text-white rounded hover:bg-bambu-green/80"
+                >
+                  {t('camera.retry')}
+                </button>
               </div>
             </div>
           )}
-          <img
-            ref={imgRef}
-            key={imageKey}
-            src={streamUrl}
-            alt="Camera stream"
+          <canvas
+            ref={canvasRef}
             className="max-w-full max-h-full object-contain select-none"
             style={{
               transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px) rotate(${printer?.camera_rotation || 0}deg)`,
               ...(printer?.camera_rotation === 90 || printer?.camera_rotation === 270 ? { maxWidth: '100%', maxHeight: '100%' } : {}),
               cursor: zoomLevel > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default',
             }}
-            onError={handleStreamError}
-            onLoad={handleStreamLoad}
-            onMouseDown={handleImageMouseDown}
-            draggable={false}
+            onMouseDown={handleCanvasMouseDown}
           />
 
           {/* Zoom controls */}
@@ -722,14 +399,14 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
               onClick={handleZoomOut}
               disabled={zoomLevel <= 1}
               className="p-1 hover:bg-white/10 rounded disabled:opacity-30"
-              title="Zoom out"
+              title={t('camera.zoomOut')}
             >
               <ZoomOut className="w-3.5 h-3.5 text-white" />
             </button>
             <button
               onClick={resetZoom}
               className="px-1.5 py-0.5 text-xs text-white hover:bg-white/10 rounded min-w-[32px]"
-              title="Reset zoom"
+              title={t('camera.resetZoom')}
             >
               {Math.round(zoomLevel * 100)}%
             </button>
@@ -737,7 +414,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
               onClick={handleZoomIn}
               disabled={zoomLevel >= 4}
               className="p-1 hover:bg-white/10 rounded disabled:opacity-30"
-              title="Zoom in"
+              title={t('camera.zoomIn')}
             >
               <ZoomIn className="w-3.5 h-3.5 text-white" />
             </button>
@@ -749,7 +426,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
               className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize no-drag hover:bg-white/10 rounded-tl transition-colors"
               onMouseDown={handleResizeMouseDown}
               onTouchStart={handleResizeTouchStart}
-              title="Drag to resize"
+              title={t('camera.resize')}
             >
               <svg
                 className="w-6 h-6 text-bambu-gray/70 hover:text-bambu-gray"
@@ -768,14 +445,6 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
         isOpen={showSkipObjectsModal}
         onClose={() => setShowSkipObjectsModal(false)}
       />
-      {/* Camera diagnostic modal — opens from the error-state Diagnose button (#1395 follow-up) */}
-      {showDiagnoseModal && (
-        <CameraDiagnoseModal
-          printerId={printerId}
-          printerName={printer?.name || null}
-          onClose={() => setShowDiagnoseModal(false)}
-        />
-      )}
     </div>
   );
 }

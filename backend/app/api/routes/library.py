@@ -2248,6 +2248,10 @@ async def extract_zip_file(
             ]
 
             for zip_path in file_list:
+                # Reject path traversal in ZIP entries
+                if ".." in zip_path.split("/") or zip_path.startswith("/"):
+                    logger.warning("Skipping ZIP entry with suspicious path: %s", zip_path)
+                    continue
                 try:
                     # Determine target folder (use zip_folder_id as base if create_folder_from_zip was used)
                     target_folder_id = zip_folder_id

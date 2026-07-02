@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { ReactNode, MouseEvent, HTMLAttributes } from 'react';
+import type { ReactNode, MouseEvent, HTMLAttributes, Ref } from 'react';
 
 type CardDensity = 'normal' | 'dense';
 
@@ -14,6 +14,7 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
   className?: string;
   onClick?: (e: MouseEvent) => void;
   onContextMenu?: (e: MouseEvent) => void;
+  ref?: Ref<HTMLDivElement>;
 }
 
 interface CardSectionProps {

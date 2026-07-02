@@ -43,6 +43,14 @@ RUN curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg \
     && apt-get update && apt-get install -y --no-install-recommends tailscale \
     && rm -rf /var/lib/apt/lists/*
 
+# Install go2rtc (optional camera engine for WebRTC streaming)
+# Pin to specific version for reproducible builds
+ARG GO2RTC_VERSION=1.9.14
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -fsSL "https://github.com/AlexxIT/go2rtc/releases/download/v${GO2RTC_VERSION}/go2rtc_linux_${ARCH}" \
+    -o /usr/local/bin/go2rtc && \
+    chmod +x /usr/local/bin/go2rtc
+
 # Allow binding to privileged ports (e.g. 990/FTPS) as non-root user.
 # File capabilities are more reliable than Docker cap_add with user: directive,
 # which depends on ambient capability support in the container runtime.
@@ -138,7 +146,9 @@ EXPOSE 3000
 EXPOSE 3002
 EXPOSE 6000
 EXPOSE 8000
+EXPOSE 8555
 EXPOSE 8883
+EXPOSE 9990
 EXPOSE 50000-50100
 
 # Health check (uses PORT env var via shell)

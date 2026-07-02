@@ -1245,9 +1245,8 @@ async def get_api_key(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="API key has expired",
                     )
-            # Update last_used timestamp
+            # Update last_used timestamp (committed by get_db session teardown)
             api_key.last_used = datetime.now(timezone.utc)
-            await db.commit()
             return api_key
 
     raise HTTPException(

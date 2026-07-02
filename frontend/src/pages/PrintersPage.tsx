@@ -96,7 +96,9 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { BulkPrinterToolbar, type PrinterState } from '../components/BulkPrinterToolbar';
 import { FileManagerModal } from '../components/FileManagerModal';
 import { EmbeddedCameraViewer } from '../components/EmbeddedCameraViewer';
-import { CameraWall } from '../components/CameraWall';
+import { CameraGrid } from '../components/CameraGrid';
+import { type GridLayout, GRID_LAYOUT_ICONS } from '../components/cameraGridLayout';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { MQTTDebugModal } from '../components/MQTTDebugModal';
 import { HMSErrorModal, filterKnownHMSErrors } from '../components/HMSErrorModal';
 import { PrinterQueueWidget } from '../components/PrinterQueueWidget';
@@ -7640,23 +7642,10 @@ export function PrintersPage() {
   const [pageView, setPageView] = useState<'cards' | 'camwall'>(() => {
     return localStorage.getItem('printerPageView') === 'camwall' ? 'camwall' : 'cards';
   });
-  // Cam-wall settings — per-user, no backend write (a Pi 4 install caps the
-  // live count lower than a NUC; default 4 is the documented Pi 4 ceiling).
-  const [camWallMaxLive, setCamWallMaxLive] = useState<number>(() => {
-    const saved = parseInt(localStorage.getItem('camWallMaxLive') || '', 10);
-    return Number.isFinite(saved) && saved > 0 ? saved : 4;
-  });
-  const [camWallSnapshotSec, setCamWallSnapshotSec] = useState<number>(() => {
-    const saved = parseInt(localStorage.getItem('camWallSnapshotSec') || '', 10);
-    return Number.isFinite(saved) && saved > 0 ? saved : 8;
-  });
-  // 'off' hides the printer-state overlay; 'compact' shows only a state chip;
-  // 'full' adds progress, layer, and time-left on printing/paused tiles.
-  // Defaulting to 'full' because the cards already show this info — users who
-  // pick cam-wall view still want to glance the same details without flipping.
-  const [camWallStatusMode, setCamWallStatusMode] = useState<'off' | 'compact' | 'full'>(() => {
-    const saved = localStorage.getItem('camWallStatusMode');
-    return saved === 'off' || saved === 'compact' || saved === 'full' ? saved : 'full';
+  // Camera grid tile size — per-user preference, no backend write
+  const [cameraGridLayout, setCameraGridLayout] = useState<GridLayout>(() => {
+    const saved = localStorage.getItem('cameraGrid.layout');
+    return (saved === 'compact' || saved === 'default' || saved === 'large') ? saved : 'default';
   });
   // Derive viewMode from cardSize: S=compact, M/L/XL=expanded
   const viewMode: ViewMode = cardSize === 1 ? 'compact' : 'expanded';
@@ -8262,6 +8251,29 @@ export function PrintersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- classifyPrinterStatus & filterKnownHMSErrors are stable module-level functions, not reactive deps; statusCacheVersion forces recompute on WebSocket status updates
   }, [sortBy, sortedPrinters, queryClient, statusCacheVersion]);
 
+  // Stable reference for CameraGrid — prevents internal useMemo recalculations
+  const cameraGridPrinters = useMemo(() =>
+    sortedPrinters.map(printer => {
+      const status = queryClient.getQueryData<{ connected: boolean; state: string; progress: number; remaining_time: number | null; layer_num: number | null; total_layers: number | null; plate_cleared?: boolean; hms_errors?: HMSError[] }>(['printerStatus', printer.id]);
+      return {
+        id: printer.id,
+        name: printer.name,
+        model: printer.model,
+        connected: status?.connected ?? false,
+        state: status?.state ?? null,
+        progress: status?.progress ?? 0,
+        remainingTime: status?.remaining_time ?? null,
+        layerNum: status?.layer_num ?? null,
+        totalLayers: status?.total_layers ?? null,
+        plateCleared: status?.plate_cleared ?? true,
+        hmsErrors: status?.hms_errors,
+        supports_rtsp: (printer as unknown as Record<string, unknown>).supports_rtsp as boolean | undefined,
+      };
+    }).filter(p => !hideDisconnected || p.connected),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- statusCacheVersion forces recompute on WebSocket status updates
+    [sortedPrinters, hideDisconnected, queryClient, statusCacheVersion]
+  );
+
   const toolbarRef = useRef<HTMLDivElement>(null);
   const expandedToolbarControlsRef = useRef<HTMLDivElement>(null);
   const expandedToolbarWidthRef = useRef(0);
@@ -8422,8 +8434,37 @@ export function PrintersPage() {
         </button>
       </div>
 
-      {/* Card size selector */}
-      <div className={`flex h-8 items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary ${pageView === 'camwall' ? 'opacity-40 pointer-events-none' : ''} ${inMenu ? 'w-full' : ''}`}>
+      {/* Size selector — card sizes in cards view, grid tile sizes in cam-wall view */}
+      {pageView === 'camwall' ? (
+      <div className={`flex h-8 items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary ${inMenu ? 'w-full' : ''}`}>
+        {(['compact', 'default', 'large'] as GridLayout[]).map((l, index) => {
+          const Icon = GRID_LAYOUT_ICONS[l];
+          const isSelected = cameraGridLayout === l;
+          return (
+            <button
+              key={l}
+              onClick={() => {
+                setCameraGridLayout(l);
+                localStorage.setItem('cameraGrid.layout', l);
+              }}
+              className={`flex h-full items-center px-2 transition-colors ${inMenu ? 'flex-1 justify-center' : ''} ${
+                index === 0 ? 'rounded-l-lg' : ''
+              } ${
+                index === 2 ? 'rounded-r-lg' : ''
+              } ${
+                isSelected
+                  ? 'bg-bambu-green text-white'
+                  : 'text-white hover:bg-bambu-dark-tertiary'
+              }`}
+              title={t(`printers.cameraGrid.layout.${l}`)}
+            >
+              <Icon className="w-4 h-4" />
+            </button>
+          );
+        })}
+      </div>
+      ) : (
+      <div className={`flex h-8 items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary ${inMenu ? 'w-full' : ''}`}>
         {cardSizeLabels.map((label, index) => {
           const size = index + 1;
           const isSelected = cardSize === size;
@@ -8451,6 +8492,7 @@ export function PrintersPage() {
           );
         })}
       </div>
+      )}
     </>
   );
 
@@ -8628,41 +8670,14 @@ export function PrintersPage() {
           </CardContent>
         </Card>
       ) : pageView === 'camwall' ? (
-        <CameraWall
-          printers={sortedPrinters}
-          maxLive={camWallMaxLive}
-          snapshotIntervalSec={camWallSnapshotSec}
-          onTileClick={(id, name) => {
-            const cameraMode = settings?.camera_view_mode || 'window';
-            if (cameraMode === 'embedded') {
-              setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }));
-            } else {
-              const saved = localStorage.getItem('cameraWindowState');
-              const state = saved ? JSON.parse(saved) : { width: 640, height: 400 };
-              const features = [
-                `width=${state.width}`,
-                `height=${state.height}`,
-                state.left !== undefined ? `left=${state.left}` : '',
-                state.top !== undefined ? `top=${state.top}` : '',
-                'menubar=no,toolbar=no,location=no,status=no',
-              ].filter(Boolean).join(',');
-              window.open(`/camera/${id}`, `camera-${id}`, features);
-            }
-          }}
-          statusMode={camWallStatusMode}
-          onChangeMaxLive={(next) => {
-            setCamWallMaxLive(next);
-            localStorage.setItem('camWallMaxLive', String(next));
-          }}
-          onChangeSnapshotIntervalSec={(next) => {
-            setCamWallSnapshotSec(next);
-            localStorage.setItem('camWallSnapshotSec', String(next));
-          }}
-          onChangeStatusMode={(next) => {
-            setCamWallStatusMode(next);
-            localStorage.setItem('camWallStatusMode', next);
-          }}
-        />
+        /* Camera grid view — single multiplexed connection for all cameras */
+        <ErrorBoundary fallback={<div className="text-center py-8 text-red-400">{t('printers.cameraGridError')}</div>}>
+          <CameraGrid
+            layout={cameraGridLayout}
+            timeFormat={settings?.time_format || 'system'}
+            printers={cameraGridPrinters}
+          />
+        </ErrorBoundary>
       ) : groupedPrinters ? (
         /* Grouped view (location, status, or model) */
         <div className="space-y-6">

@@ -294,9 +294,14 @@ body {
   min-height: 100vh;
 }
 
-/* Override text-white to be theme-aware */
+/* Override text-white to be theme-aware, except on dark camera backgrounds */
 .text-white {
   color: var(--text-primary);
+}
+.bg-black .text-white,
+.bg-black\/50 .text-white,
+.bg-black\/80 .text-white {
+  color: #ffffff;
 }
 
 /* Smooth transitions for theme changes */
@@ -461,6 +466,11 @@ body {
 
 .animate-slide-down {
   animation: slide-down 0.25s ease-out;
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 /* Card shadows - uses theme-specific shadow */

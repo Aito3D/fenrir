@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class TestCameraAPI:
@@ -18,16 +19,12 @@ class TestCameraAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_stop_camera_stream_get(self, async_client: AsyncClient, printer_factory):
-        """Verify camera stop endpoint works with GET method."""
+    async def test_stop_camera_stream_get_rejected(self, async_client: AsyncClient, printer_factory):
+        """Verify camera stop endpoint rejects GET (CSRF prevention)."""
         printer = await printer_factory()
 
         response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/stop")
-
-        assert response.status_code == 200
-        result = response.json()
-        assert "stopped" in result
-        assert isinstance(result["stopped"], int)
+        assert response.status_code in (404, 405)
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -66,7 +63,13 @@ class TestCameraAPI:
         mock_process.terminate = MagicMock()
         mock_process.wait = AsyncMock()
 
-        with patch("backend.app.api.routes.camera._active_streams", {f"{printer.id}-abc123": mock_process}):
+        mock_hub = MagicMock()
+        mock_hub.is_active.return_value = False
+
+        with (
+            patch("backend.app.api.routes.camera._state.active_streams", {f"{printer.id}-abc123": mock_process}),
+            patch("backend.app.api.routes.camera._hub", mock_hub),
+        ):
             response = await async_client.post(f"/api/v1/printers/{printer.id}/camera/stop")
 
         assert response.status_code == 200
@@ -98,7 +101,13 @@ class TestCameraAPI:
             f"{printer2.id}-def456": mock_process2,
         }
 
-        with patch("backend.app.api.routes.camera._active_streams", active_streams):
+        mock_hub = MagicMock()
+        mock_hub.is_active.return_value = False
+
+        with (
+            patch("backend.app.api.routes.camera._state.active_streams", active_streams),
+            patch("backend.app.api.routes.camera._hub", mock_hub),
+        ):
             response = await async_client.post(f"/api/v1/printers/{printer1.id}/camera/stop")
 
         assert response.status_code == 200
@@ -121,8 +130,11 @@ class TestCameraAPI:
         mock_process.terminate = MagicMock()
         mock_process.wait = AsyncMock()
 
-        with patch(
-            "backend.app.api.routes.camera._active_streams",
+        from backend.app.api.routes import camera as camera_routes
+
+        with patch.object(
+            camera_routes._state,
+            "active_streams",
             {f"{printer.id}-fanout": mock_process},
         ):
             response = await async_client.post(f"/api/v1/printers/{printer.id}/camera/stop")
@@ -130,55 +142,6 @@ class TestCameraAPI:
         assert response.status_code == 200
         assert response.json()["stopped"] == 1
         mock_process.terminate.assert_called_once()
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_stop_camera_stream_invokes_broadcaster_shutdown(self, async_client: AsyncClient, printer_factory):
-        """Stop must call ``shutdown_broadcaster`` so subscribers wake up via
-        the upstream-gone sentinel rather than stalling on the queue (#1089)."""
-        printer = await printer_factory()
-
-        with patch(
-            "backend.app.api.routes.camera.shutdown_broadcaster",
-            AsyncMock(return_value=False),
-        ) as mock_shutdown:
-            response = await async_client.post(f"/api/v1/printers/{printer.id}/camera/stop")
-
-        assert response.status_code == 200
-        mock_shutdown.assert_awaited_once_with(f"printer-{printer.id}")
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_stop_camera_stream_skips_shutdown_when_subscribers_remain(
-        self, async_client: AsyncClient, printer_factory
-    ):
-        """Reference-count guard: when other viewers are still subscribed to the
-        broadcaster, /camera/stop must NOT force-shutdown — otherwise closing
-        the embedded viewer kills the cam-wall tile of the same printer.
-        Natural cleanup tears it down when the last HTTP connection closes.
-        """
-        printer = await printer_factory()
-
-        mock_shutdown = AsyncMock(return_value=True)
-        mock_process = MagicMock()
-        mock_process.returncode = None
-        mock_process.pid = 88888
-        mock_process.terminate = MagicMock()
-        mock_process.wait = AsyncMock()
-
-        with (
-            patch("backend.app.api.routes.camera.get_subscriber_count", return_value=2),
-            patch("backend.app.api.routes.camera.shutdown_broadcaster", mock_shutdown),
-            patch("backend.app.api.routes.camera._active_streams", {f"{printer.id}-abc": mock_process}),
-        ):
-            response = await async_client.post(f"/api/v1/printers/{printer.id}/camera/stop")
-
-        assert response.status_code == 200
-        result = response.json()
-        assert result["stopped"] == 0
-        assert result.get("skipped") is True
-        mock_shutdown.assert_not_awaited()
-        mock_process.terminate.assert_not_called()
 
     # ========================================================================
     # Camera Test Endpoint
@@ -297,15 +260,17 @@ class TestCameraAPI:
         with patch("backend.app.api.routes.camera.capture_camera_frame", new_callable=AsyncMock) as mock_capture:
             mock_capture.return_value = True
 
-            # Mock the file read
-            with patch("builtins.open", create=True) as mock_open:
-                mock_open.return_value.__enter__.return_value.read.return_value = fake_jpeg
+            # Mock the file read (uses Path.read_bytes via asyncio.to_thread)
+            with (
+                patch("pathlib.Path.read_bytes", return_value=fake_jpeg),
+                patch("pathlib.Path.exists", return_value=True),
+                patch("pathlib.Path.unlink"),
+            ):
+                response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/snapshot")
 
-                with patch("pathlib.Path.exists", return_value=True), patch("pathlib.Path.unlink"):
-                    _response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/snapshot")
-
-        # Note: The actual test might fail due to file operations, but this tests the endpoint structure
-        # In production tests, we'd mock more comprehensively
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/jpeg"
+        assert response.content == fake_jpeg
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -335,13 +300,14 @@ class TestCameraAPI:
         printer = await printer_factory()
         fake_jpeg = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
 
-        # Simulate a running broadcaster: one active stream entry + buffered frame.
+        from backend.app.api.routes import camera as camera_routes
+
+        # Simulate a running producer: one active stream entry + hub-buffered frame.
         active_streams = {f"{printer.id}-fanout": MagicMock()}
-        last_frames = {printer.id: fake_jpeg}
 
         with (
-            patch("backend.app.api.routes.camera._active_streams", active_streams),
-            patch("backend.app.api.routes.camera._last_frames", last_frames),
+            patch.object(camera_routes._state, "active_streams", active_streams),
+            patch.object(camera_routes._hub, "get_last_frame", return_value=fake_jpeg),
             patch("backend.app.api.routes.camera.capture_camera_frame", new_callable=AsyncMock) as mock_capture,
         ):
             response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/snapshot")
@@ -409,21 +375,15 @@ class TestCameraAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_camera_stream_fps_validation(self, async_client: AsyncClient, printer_factory):
-        """Verify FPS parameter is validated and clamped."""
+        """Verify FPS parameter is validated via Query bounds (ge=1, le=30)."""
         printer = await printer_factory()
 
-        # FPS should be clamped between 1 and 30
-        # Testing that the endpoint accepts various FPS values without error
-        # (actual streaming would require mocking ffmpeg)
-
-        with patch("backend.app.api.routes.camera.get_ffmpeg_path", return_value=None):
-            # With no ffmpeg, stream should return error message but not crash
-            response = await async_client.get(
-                f"/api/v1/printers/{printer.id}/camera/stream",
-                params={"fps": 100},  # Should be clamped to 30
-            )
-            # Response will be a streaming response with error
-            assert response.status_code == 200
+        # FPS out of range should be rejected by FastAPI Query validation
+        response = await async_client.get(
+            f"/api/v1/printers/{printer.id}/camera/stream",
+            params={"fps": 100},  # Exceeds le=30
+        )
+        assert response.status_code == 422
 
     # ========================================================================
     # Plate Detection Endpoints
@@ -743,7 +703,7 @@ class TestCameraAPI:
     async def test_update_reference_label_printer_not_found(self, async_client: AsyncClient):
         """Verify 404 when updating reference label for non-existent printer."""
         response = await async_client.put(
-            "/api/v1/printers/99999/camera/plate-detection/references/0", params={"label": "New Label"}
+            "/api/v1/printers/99999/camera/plate-detection/references/0", json={"label": "New Label"}
         )
 
         assert response.status_code == 404
@@ -811,3 +771,211 @@ class TestCameraAPI:
         assert response.status_code == 200
         result = response.json()
         assert result["cameras"] == []
+
+
+class TestCameraGridStreamValidation:
+    """Tests for /api/v1/printers/camera/grid-stream input validation."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rejects_nan_scale(self, async_client: AsyncClient):
+        response = await async_client.get("/api/v1/printers/camera/grid-stream", params={"ids": "1", "scale": "NaN"})
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rejects_inf_scale(self, async_client: AsyncClient):
+        response = await async_client.get(
+            "/api/v1/printers/camera/grid-stream", params={"ids": "1", "scale": "Infinity"}
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rejects_non_integer_ids(self, async_client: AsyncClient):
+        response = await async_client.get(
+            "/api/v1/printers/camera/grid-stream", params={"ids": "abc,def", "scale": "0.5"}
+        )
+        assert response.status_code == 400
+        assert "integers" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rejects_empty_ids(self, async_client: AsyncClient):
+        response = await async_client.get("/api/v1/printers/camera/grid-stream", params={"ids": "", "scale": "0.5"})
+        assert response.status_code == 400
+        assert "no printer" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rejects_more_than_30_unique_ids(self, async_client: AsyncClient):
+        ids = ",".join(str(i) for i in range(1, 32))  # 31 unique IDs
+        response = await async_client.get("/api/v1/printers/camera/grid-stream", params={"ids": ids, "scale": "0.5"})
+        assert response.status_code == 400
+        assert "30" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_deduplicates_ids(self, async_client: AsyncClient):
+        """Verify duplicate IDs are deduplicated before reaching get_existing_batch."""
+        captured_ids = []
+
+        async def mock_batch(printer_ids):
+            captured_ids.extend(printer_ids)
+            return {}, printer_ids  # All missing
+
+        with patch("backend.app.api.routes.camera._hub.get_existing_batch", side_effect=mock_batch):
+            await async_client.get("/api/v1/printers/camera/grid-stream", params={"ids": "1,2,1,2,1", "scale": "0.5"})
+
+        assert captured_ids == [1, 2]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_dedup_before_limit_check(self, async_client: AsyncClient):
+        """35 IDs with only 25 unique should pass the 30-ID limit check."""
+        base_ids = list(range(1, 26))  # 25 unique
+        ids_with_dupes = base_ids + base_ids[:10]  # 35 total, 25 unique
+        ids_str = ",".join(str(i) for i in ids_with_dupes)
+
+        captured_ids = []
+
+        async def mock_batch(printer_ids):
+            captured_ids.extend(printer_ids)
+            return {}, printer_ids
+
+        with patch("backend.app.api.routes.camera._hub.get_existing_batch", side_effect=mock_batch):
+            response = await async_client.get(
+                "/api/v1/printers/camera/grid-stream", params={"ids": ids_str, "scale": "0.5"}
+            )
+
+        # Should NOT get 400 "Maximum 30" — dedup happened first
+        assert response.status_code != 400
+
+
+class TestCameraStreamValidation:
+    """Tests for single-stream scale validation at /{id}/camera/stream."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rejects_nan_scale(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory()
+        response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/stream", params={"scale": "NaN"})
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rejects_inf_scale(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory()
+        response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/stream", params={"scale": "Infinity"})
+        assert response.status_code == 422
+
+
+class TestCameraEndpointAuth:
+    """Tests that snapshot and thumbnail endpoints have auth dependencies."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_snapshot_has_auth_dependency(self, async_client: AsyncClient, printer_factory):
+        """With auth disabled (default test config), snapshot should work (503 from mock, not 401)."""
+        printer = await printer_factory()
+        with patch("backend.app.api.routes.camera.capture_camera_frame", new_callable=AsyncMock) as mock_capture:
+            mock_capture.return_value = False
+            with patch("pathlib.Path.exists", return_value=False), patch("pathlib.Path.unlink"):
+                response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/snapshot")
+        # 503 means we got past auth (it would be 401/403 if auth blocked us)
+        assert response.status_code == 503
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_thumbnail_has_auth_dependency(self, async_client: AsyncClient, printer_factory):
+        """With auth disabled, thumbnail should work (404 from missing reference, not 401)."""
+        printer = await printer_factory()
+        with patch("backend.app.services.plate_detection.is_plate_detection_available", return_value=True):
+            response = await async_client.get(
+                f"/api/v1/printers/{printer.id}/camera/plate-detection/references/0/thumbnail"
+            )
+        # 404 means we got past auth
+        assert response.status_code == 404
+
+
+class TestCameraEndpointAuthEnabled:
+    """Tests that camera endpoints enforce auth when auth is enabled."""
+
+    @pytest.fixture
+    async def _enable_auth(self, async_client: AsyncClient):
+        """Enable auth and create an admin user. Returns auth token."""
+        response = await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "camtest",
+                "admin_password": "TestPass1!",
+            },
+        )
+        assert response.status_code == 200
+        # Login to get token
+        login = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "camtest", "password": "TestPass1!"},
+        )
+        return login.json().get("access_token")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_grid_stream_unauthenticated(self, async_client: AsyncClient, _enable_auth):
+        """Verify unauthenticated GET /camera/grid-stream returns 401/403."""
+        response = await async_client.get("/api/v1/printers/camera/grid-stream", params={"ids": "1"})
+        assert response.status_code in (401, 403)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_stream_unauthenticated(self, async_client: AsyncClient, printer_factory, _enable_auth):
+        """Verify unauthenticated GET /{id}/camera/stream returns 401/403."""
+        printer = await printer_factory()
+        response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/stream")
+        assert response.status_code in (401, 403)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_snapshot_unauthenticated(self, async_client: AsyncClient, printer_factory, _enable_auth):
+        """Verify unauthenticated GET /{id}/camera/snapshot returns 401/403."""
+        printer = await printer_factory()
+        response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/snapshot")
+        assert response.status_code in (401, 403)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_grid_stream_authenticated(self, async_client: AsyncClient, _enable_auth):
+        """Verify authenticated GET /camera/grid-stream passes auth (returns 400 for missing printers, not 401)."""
+        token = _enable_auth
+        response = await async_client.get(
+            "/api/v1/printers/camera/grid-stream",
+            params={"ids": "99999"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        # Should pass auth — expect 400 (no printer IDs found) or similar, not 401
+        assert response.status_code not in (401, 403)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_snapshot_authenticated(self, async_client: AsyncClient, printer_factory, _enable_auth):
+        """Verify authenticated snapshot request passes auth via camera stream token."""
+        token = _enable_auth
+        printer = await printer_factory()
+        # The snapshot endpoint requires a camera stream token (?token=xxx), not a Bearer JWT.
+        # Obtain one using the regular Bearer token first.
+        stream_token_resp = await async_client.post(
+            "/api/v1/printers/camera/stream-token",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert stream_token_resp.status_code == 200
+        stream_token = stream_token_resp.json()["token"]
+        with patch("backend.app.api.routes.camera.capture_camera_frame", new_callable=AsyncMock) as mock_capture:
+            mock_capture.return_value = False
+            with patch("pathlib.Path.exists", return_value=False), patch("pathlib.Path.unlink"):
+                response = await async_client.get(
+                    f"/api/v1/printers/{printer.id}/camera/snapshot",
+                    params={"token": stream_token},
+                )
+        # 503 means we got past auth
+        assert response.status_code == 503

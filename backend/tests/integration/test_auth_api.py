@@ -200,6 +200,22 @@ class TestAuthMeAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_me_without_token_auth_enabled(self, async_client: AsyncClient):
+        """Verify /me fails without token when auth is enabled."""
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "menotoken",
+                "admin_password": "mepassword123",
+            },
+        )
+
+        response = await async_client.get("/api/v1/auth/me")
+        assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_me_with_valid_token(self, async_client: AsyncClient):
         """Verify /me returns user info with valid token."""
         # Setup and login
@@ -237,6 +253,12 @@ class TestAuthMeAPI:
         from backend.app.core.auth import generate_api_key
         from backend.app.models.api_key import APIKey
 
+        # Enable auth so the endpoint doesn't short-circuit
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={"auth_enabled": True, "admin_username": "apibearertest", "admin_password": "TestPass1!"},
+        )
+
         # Create an API key directly in the database
         full_key, key_hash, key_prefix = generate_api_key()
         api_key = APIKey(name="test-kiosk", key_hash=key_hash, key_prefix=key_prefix, enabled=True)
@@ -265,6 +287,12 @@ class TestAuthMeAPI:
         from backend.app.core.auth import generate_api_key
         from backend.app.models.api_key import APIKey
 
+        # Enable auth so the endpoint doesn't short-circuit
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={"auth_enabled": True, "admin_username": "apiheadertest", "admin_password": "TestPass1!"},
+        )
+
         full_key, key_hash, key_prefix = generate_api_key()
         api_key = APIKey(name="test-kiosk-header", key_hash=key_hash, key_prefix=key_prefix, enabled=True)
         db_session.add(api_key)
@@ -285,6 +313,12 @@ class TestAuthMeAPI:
     @pytest.mark.integration
     async def test_me_with_invalid_api_key(self, async_client: AsyncClient):
         """Verify /me rejects invalid API key."""
+        # Enable auth so the endpoint doesn't short-circuit
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={"auth_enabled": True, "admin_username": "invalidkeytest", "admin_password": "TestPass1!"},
+        )
+
         response = await async_client.get(
             "/api/v1/auth/me",
             headers={"Authorization": "Bearer bb_invalid_key_value"},

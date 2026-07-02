@@ -161,14 +161,15 @@ class TestCleanupExcludesCapturePids:
     @pytest.mark.asyncio
     async def test_cleanup_skips_capture_pids(self):
         """A PID in _active_capture_pids must not be killed by cleanup."""
+        from backend.app.api.routes import camera as camera_routes
         from backend.app.api.routes.camera import cleanup_orphaned_streams
 
         _active_capture_pids.add(42000)
 
         with (
             patch("backend.app.api.routes.camera._scan_bambu_ffmpeg_pids", return_value=[42000]),
-            patch("backend.app.api.routes.camera._active_streams", {}),
-            patch("backend.app.api.routes.camera._spawned_ffmpeg_pids", {}),
+            patch.object(camera_routes._state, "active_streams", {}),
+            patch.object(camera_routes._state, "spawned_ffmpeg_pids", {}),
             patch("os.kill") as mock_kill,
         ):
             await cleanup_orphaned_streams()
@@ -183,6 +184,7 @@ class TestCleanupExcludesCapturePids:
         """PIDs NOT in _active_capture_pids should still be killed."""
         import signal
 
+        from backend.app.api.routes import camera as camera_routes
         from backend.app.api.routes.camera import cleanup_orphaned_streams
 
         # 42000 is a capture PID, 43000 is truly orphaned
@@ -190,8 +192,8 @@ class TestCleanupExcludesCapturePids:
 
         with (
             patch("backend.app.api.routes.camera._scan_bambu_ffmpeg_pids", return_value=[42000, 43000]),
-            patch("backend.app.api.routes.camera._active_streams", {}),
-            patch("backend.app.api.routes.camera._spawned_ffmpeg_pids", {}),
+            patch.object(camera_routes._state, "active_streams", {}),
+            patch.object(camera_routes._state, "spawned_ffmpeg_pids", {}),
             patch("os.kill") as mock_kill,
         ):
             await cleanup_orphaned_streams()

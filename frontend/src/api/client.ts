@@ -1091,6 +1091,10 @@ export interface APIKeyUpdate {
   expires_at?: string | null;
 }
 
+// Camera quality types — preset values are managed server-side only
+export type CameraQuality = 'auto' | 'low' | 'medium' | 'high';
+export type CameraEngine = 'ffmpeg' | 'go2rtc';
+
 // Settings types
 export interface AppSettings {
   auto_archive: boolean;
@@ -1178,6 +1182,9 @@ export interface AppSettings {
   library_disk_warning_gb: number;
   // Camera view settings
   camera_view_mode: 'window' | 'embedded';
+  camera_quality: CameraQuality;
+  camera_gpu_accel: boolean;
+  camera_engine: CameraEngine;
   // Preferred slicer (server-side API / sidecar)
   preferred_slicer: 'bambu_studio' | 'orcaslicer';
   // Desktop "Open in Slicer" override (#1329). Null inherits from
@@ -3730,8 +3737,8 @@ export const api = {
     }),
   testExternalCamera: (printerId: number, url: string, cameraType: string) =>
     request<{ success: boolean; error?: string; resolution?: string }>(
-      `/printers/${printerId}/camera/external/test?url=${encodeURIComponent(url)}&camera_type=${encodeURIComponent(cameraType)}`,
-      { method: 'POST' }
+      `/printers/${printerId}/camera/external/test`,
+      { method: 'POST', body: JSON.stringify({ url, camera_type: cameraType }) }
     ),
 
   // Print Control
@@ -4713,7 +4720,14 @@ export const api = {
     }>;
   },
   checkFfmpeg: () =>
-    request<{ installed: boolean; path: string | null }>('/settings/check-ffmpeg'),
+    request<{ installed: boolean; path: string | null; gpu_available: boolean; gpu_backends: string[]; auto_resolved_quality: string; auto_resolved_single: string; auto_resolved_grid: string }>('/settings/check-ffmpeg'),
+  checkGo2rtc: () =>
+    request<{ installed: boolean; path: string | null }>('/settings/check-go2rtc'),
+  webrtcOffer: (printerId: number, sdp: string) =>
+    request<{ sdp: string; type: string }>(`/printers/${printerId}/camera/webrtc`, {
+      method: 'POST',
+      body: JSON.stringify({ sdp, type: 'offer' }),
+    }),
   getNetworkInterfaces: () =>
     request<{ interfaces: NetworkInterface[] }>('/settings/network-interfaces'),
 
@@ -5671,6 +5685,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  stopCameraStream: (printerId: number) =>
+    request<void>(`/printers/${printerId}/camera/stop`, { method: 'POST' }),
 
   // Plate Detection - Multi-reference calibration (stores up to 5 references per printer)
   checkPlateEmpty: (printerId: number, options?: { useExternal?: boolean; includeDebugImage?: boolean }) => {
@@ -5717,11 +5733,13 @@ export const api = {
   getPlateReferenceThumbnailUrl: (printerId: number, index: number) =>
     withStreamToken(`${API_BASE}/printers/${printerId}/camera/plate-detection/references/${index}/thumbnail`),
   updatePlateReferenceLabel: (printerId: number, index: number, label: string) => {
-    const params = new URLSearchParams();
-    params.set('label', label);
     return request<{ success: boolean; index: number; label: string }>(
-      `/printers/${printerId}/camera/plate-detection/references/${index}?${params.toString()}`,
-      { method: 'PUT' }
+      `/printers/${printerId}/camera/plate-detection/references/${index}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label }),
+      }
     );
   },
   deletePlateReference: (printerId: number, index: number) => {

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Layers, Clock, Timer, Printer } from 'lucide-react';
-import { api, withStreamToken } from '../api/client';
+import { api, getAuthToken } from '../api/client';
 import type { PrinterStatus } from '../api/client';
+import { useMjpegStream } from '../hooks/useMjpegStream';
 import { formatDuration, formatETA, type TimeFormat } from '../utils/date';
 
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
@@ -112,7 +113,7 @@ export function StreamOverlayPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const id = parseInt(printerId || '0', 10);
-  const [imageKey, setImageKey] = useState(Date.now());
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const config = useMemo(() => parseConfig(searchParams), [searchParams]);
   const sizes = getSizeClasses(config.size);
@@ -144,51 +145,48 @@ export function StreamOverlayPage() {
   useEffect(() => {
     if (!id) return;
 
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let wsUrl = `${protocol}//${window.location.host}/api/v1/ws`;
+    const authToken = getAuthToken();
+    if (authToken) {
+      wsUrl += `?token=${encodeURIComponent(authToken)}`;
+    }
     let ws: WebSocket | null = null;
-    let cancelled = false;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let alive = true;
 
-    // GHSA-r2qv follow-up: mint a ws-token before connecting. Uses
-    // api.getWebSocketToken so the JWT Authorization header rides along
-    // (raw fetch+credentials:'include' would miss it — Bambuddy uses
-    // Bearer tokens, not cookies, for JWT auth). Auth-disabled deployments
-    // succeed even without a token.
-    (async () => {
-      let token: string | undefined;
-      try {
-        const resp = await api.getWebSocketToken();
-        token = resp.token;
-      } catch {
-        // Token mint failed — auth disabled, no JWT yet, or transient
-        // network error. Fall through; auth-disabled deployments still
-        // succeed, auth-enabled ones close with 4401 and the page's
-        // polling fallback continues to refresh the status.
-      }
-      if (cancelled) return;
-
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
-      const wsUrl = `${protocol}//${window.location.host}/api/v1/ws${tokenParam}`;
+    function connect() {
+      if (!alive) return;
       ws = new WebSocket(wsUrl);
 
       ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'printer_status' && data.printer_id === id) {
-          queryClient.setQueryData(['printerStatus', id], data.status);
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'printer_status' && data.printer_id === id) {
+            queryClient.setQueryData(['printerStatus', id], data.data);
+          }
+        } catch {
+          // Ignore parse errors
         }
-      } catch {
-        // Ignore parse errors
-      }
-    };
+      };
 
       ws.onerror = () => {
         // WebSocket error - polling will continue as fallback
       };
-    })();
+
+      ws.onclose = () => {
+        if (alive) {
+          reconnectTimeout = setTimeout(connect, 3000);
+        }
+      };
+    }
+
+    connect();
 
     return () => {
-      cancelled = true;
-      if (ws) ws.close();
+      alive = false;
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      ws?.close();
     };
   }, [id, queryClient]);
 
@@ -200,12 +198,13 @@ export function StreamOverlayPage() {
     };
   }, [printer, t]);
 
-  // Refresh stream on error
-  const handleStreamError = () => {
-    setTimeout(() => {
-      setImageKey(Date.now());
-    }, 3000);
-  };
+  const streamUrl = `/printers/${id}/camera/stream?fps=${config.fps}`;
+
+  useMjpegStream({
+    url: streamUrl,
+    canvasRef,
+    enabled: config.showCamera && id > 0,
+  });
 
   if (!id) {
     return (
@@ -225,19 +224,15 @@ export function StreamOverlayPage() {
 
   const isPrinting = status.state === 'RUNNING' || status.state === 'PAUSE';
   const progress = status.progress || 0;
-  const streamUrl = withStreamToken(`/api/v1/printers/${id}/camera/stream?fps=${config.fps}&t=${imageKey}`);
 
   return (
     <div className="min-h-screen bg-black relative overflow-hidden">
       {/* Camera feed - fullscreen background (optional) */}
       {config.showCamera && (
-        <img
-          key={imageKey}
-          src={streamUrl}
-          alt={t('streamOverlay.cameraStream')}
+        <canvas
+          ref={canvasRef}
           className="absolute inset-0 w-full h-full object-contain"
           style={printer?.camera_rotation ? { transform: `rotate(${printer.camera_rotation}deg)` } : undefined}
-          onError={handleStreamError}
         />
       )}
 

@@ -1,6 +1,7 @@
 from datetime import datetime
+from urllib.parse import urlparse, urlunparse
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
 
 class PrinterBase(BaseModel):
@@ -51,8 +52,8 @@ class PlateDetectionROI(BaseModel):
 
     x: float = Field(..., ge=0.0, le=1.0)  # X start %
     y: float = Field(..., ge=0.0, le=1.0)  # Y start %
-    w: float = Field(..., ge=0.0, le=1.0)  # Width %
-    h: float = Field(..., ge=0.0, le=1.0)  # Height %
+    w: float = Field(..., gt=0.0, le=1.0)  # Width %
+    h: float = Field(..., gt=0.0, le=1.0)  # Height %
 
 
 class PrinterUpdate(BaseModel):
@@ -77,6 +78,23 @@ class PrinterUpdate(BaseModel):
     plate_detection_roi: PlateDetectionROI | None = None
 
 
+def _sanitize_url_credentials(url: str | None) -> str | None:
+    """Mask userinfo (username:password) in a URL with ***:***."""
+    if not url:
+        return url
+    try:
+        parsed = urlparse(url)
+        if parsed.username:
+            host = parsed.hostname or ""
+            if parsed.port:
+                host = f"{host}:{parsed.port}"
+            sanitized = parsed._replace(netloc=f"***:***@{host}")
+            return urlunparse(sanitized)
+    except Exception:
+        pass
+    return url
+
+
 class PrinterResponse(PrinterBase):
     id: int
     is_active: bool
@@ -94,6 +112,20 @@ class PrinterResponse(PrinterBase):
 
     class Config:
         from_attributes = True
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def supports_rtsp(self) -> bool:
+        """Whether this printer model supports RTSP streaming (computed server-side)."""
+        from backend.app.services.camera import supports_rtsp
+
+        return supports_rtsp(self.model)
+
+    @model_validator(mode="after")
+    def sanitize_camera_url(self) -> "PrinterResponse":
+        """Strip credentials from external camera URLs in API responses."""
+        self.external_camera_url = _sanitize_url_credentials(self.external_camera_url)
+        return self
 
     @classmethod
     def from_orm_with_roi(cls, printer) -> "PrinterResponse":

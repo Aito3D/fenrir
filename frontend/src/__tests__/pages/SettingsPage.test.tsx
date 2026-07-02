@@ -35,6 +35,9 @@ const mockSettings = {
   check_updates: false,
   check_printer_firmware: false,
   bed_cooled_threshold: 35,
+  camera_quality: 'auto',
+  camera_gpu_accel: true,
+  camera_view_mode: 'window',
 };
 
 describe('SettingsPage', () => {

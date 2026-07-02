@@ -394,6 +394,14 @@ _notified_hms_errors: dict[int, set[str]] = {}
 _hms_last_seen: dict[int, float] = {}
 _HMS_CLEAR_GRACE_SECONDS = 30.0
 
+# HMS error codes that should not trigger notifications.
+# These are infrastructure/auth issues, not actionable print errors.
+_HMS_NOTIFICATION_SUPPRESS = {
+    "0500_0007",  # MQTT command verification failed (auth/bind issue, not a print error)
+    "0500_4001",  # Failed to connect to Bambu Cloud (network issue)
+    "0500_400E",  # Printing was cancelled (user action, not an error)
+}
+
 # Track timelapse file baselines at print start: {printer_id: set of video filenames}
 # Used for snapshot-diff detection at print completion
 _timelapse_baselines: dict[int, set[str]] = {}
@@ -2097,13 +2105,19 @@ async def _capture_snapshot_for_notification(printer_id: int, printer, logger) -
                 return _apply_camera_rotation(frame_data, printer, logger)
 
         # Try buffered frame from active stream
-        from backend.app.api.routes.camera import _active_chamber_streams, _active_streams, get_buffered_frame
+        from backend.app.api.routes.camera import (
+            _active_chamber_streams,
+            _active_streams,
+            _hub,
+            get_buffered_frame,
+        )
 
         active_for_printer = [k for k in _active_streams if k.startswith(f"{printer_id}-")]
         active_chamber = [k for k in _active_chamber_streams if k.startswith(f"{printer_id}-")]
+        hub_active = _hub.is_active(printer_id)
         buffered_frame = get_buffered_frame(printer_id)
 
-        if (active_for_printer or active_chamber) and buffered_frame:
+        if (active_for_printer or active_chamber or hub_active) and buffered_frame:
             logger.info("[SNAPSHOT] Using buffered frame for printer %s: %s bytes", printer_id, len(buffered_frame))
             if len(buffered_frame) <= 2_500_000:
                 return _apply_camera_rotation(buffered_frame, printer, logger)
@@ -4781,6 +4795,7 @@ async def on_print_complete(printer_id: int, data: dict):
                 from backend.app.api.routes.settings import get_setting
 
                 capture_enabled = await get_setting(db, "capture_finish_photo")
+                gpu_accel = (await get_setting(db, "camera_gpu_accel") or "true").lower() == "true"
 
                 if capture_enabled is None or capture_enabled.lower() == "true":
                     from backend.app.models.printer import Printer
@@ -4912,6 +4927,7 @@ async def on_print_complete(printer_id: int, data: dict):
                                             access_code=printer.access_code,
                                             model=printer.model,
                                             archive_dir=archive_dir,
+                                            gpu_accel=gpu_accel,
                                         )
 
                             if photo_filename:
@@ -6241,15 +6257,29 @@ async def lifespan(app: FastAPI):
     # Start printer runtime tracking
     start_runtime_tracking()
 
+    # Start periodic camera frame buffer cleanup
+    from backend.app.api.routes.camera import start_frame_buffer_cleanup
+
+    start_frame_buffer_cleanup()
+
     # Start SpoolBuddy device watchdog
     start_spoolbuddy_watchdog()
 
     # Start camera stream orphan cleanup
     start_camera_cleanup()
 
-    # Start expected-print TTL eviction (prevents memory leak when prints are
-    # registered but on_print_start never fires)
-    start_expected_prints_cleanup()
+    # Start go2rtc if camera_engine is set to 'go2rtc'
+    try:
+        async with async_session() as _go2rtc_db:
+            from backend.app.api.routes.settings import get_setting
+
+            camera_engine = await get_setting(_go2rtc_db, "camera_engine")
+            if camera_engine == "go2rtc":
+                from backend.app.services.go2rtc import go2rtc_service
+
+                await go2rtc_service.start()
+    except Exception as e:
+        logging.warning("Failed to start go2rtc: %s", e)
 
     # L-2: Start periodic auth cleanup (stale TOTP + expired revoked JTIs)
     start_auth_cleanup()
@@ -6285,6 +6315,9 @@ async def lifespan(app: FastAPI):
     stop_ams_history_recording()
     stop_printer_sensor_history_recording()
     stop_runtime_tracking()
+    from backend.app.api.routes.camera import stop_frame_buffer_cleanup
+
+    stop_frame_buffer_cleanup()
     stop_spoolbuddy_watchdog()
     stop_camera_cleanup()
     from backend.app.services.loop_watchdog import stop_loop_watchdog
@@ -6298,6 +6331,15 @@ async def lifespan(app: FastAPI):
         await shutdown_all_broadcasters()
     except Exception as e:
         logging.warning("Failed to shut down camera broadcasters: %s", e)
+
+    # Stop go2rtc
+    try:
+        from backend.app.services.go2rtc import go2rtc_service
+
+        await go2rtc_service.stop()
+    except Exception:
+        pass
+
     stop_expected_prints_cleanup()
     stop_auth_cleanup()
     printer_manager.disconnect_all()
@@ -6379,8 +6421,8 @@ PUBLIC_API_PREFIXES = [
 ]
 
 # Route patterns that are public (read-only display data)
-# These are checked with "in path" - needed because browsers load images/videos
-# via <img src> and <video src> which don't include Authorization headers
+# These are checked at path-segment boundaries - needed because browsers load
+# images/videos via <img src> and <video src> which don't include Authorization headers
 PUBLIC_API_PATTERNS = [
     # Thumbnails
     "/thumbnail",  # /archives/{id}/thumbnail, /library/files/{id}/thumbnail
@@ -6392,8 +6434,9 @@ PUBLIC_API_PATTERNS = [
     "/timelapse",  # /archives/{id}/timelapse (video)
     "/cover",  # /printers/{id}/cover
     "/icon",  # /external-links/{id}/icon
-    # Camera (streams loaded via <img> tag)
-    "/camera/stream",  # /printers/{id}/camera/stream
+    # Camera streams & snapshots — browsers load these via <img src> / fetch without auth headers.
+    # External integrations (OBS, Home Assistant) also rely on unauthenticated access.
+    "/camera/stream",  # /printers/{id}/camera/stream (grid-stream does NOT match — it requires CAMERA_VIEW permission)
     "/camera/snapshot",  # /printers/{id}/camera/snapshot
     # Slicer token-authenticated downloads — protocol handlers (bambustudioopen://,
     # orcaslicer://) cannot send auth headers. These endpoints validate a short-lived
@@ -6471,6 +6514,15 @@ def _frame_ancestors(default_value: str) -> str:
     if _TRUSTED_FRAME_ORIGINS:
         return "frame-ancestors 'self' " + " ".join(_TRUSTED_FRAME_ORIGINS) + ";"
     return f"frame-ancestors {default_value};"
+
+
+def _matches_public_pattern(path: str, pattern: str) -> bool:
+    """Check if pattern appears in path at a path-segment boundary."""
+    idx = path.find(pattern)
+    if idx == -1:
+        return False
+    end = idx + len(pattern)
+    return end == len(path) or path[end] == "/"
 
 
 @app.middleware("http")
@@ -6579,7 +6631,7 @@ async def auth_middleware(request, call_next):
 
     # Allow public patterns (read-only display data like thumbnails)
     for pattern in PUBLIC_API_PATTERNS:
-        if pattern in path:
+        if _matches_public_pattern(path, pattern):
             return await call_next(request)
 
     # Check if auth is enabled. Fail CLOSED on any exception during the
@@ -6737,6 +6789,9 @@ app.include_router(mfa.router, prefix=app_settings.api_prefix)
 app.include_router(bug_report.router, prefix=app_settings.api_prefix)
 app.include_router(users.router, prefix=app_settings.api_prefix)
 app.include_router(groups.router, prefix=app_settings.api_prefix)
+app.include_router(
+    camera.router, prefix=app_settings.api_prefix
+)  # Before printers — /printers/camera/* must match before /{printer_id}
 app.include_router(printers.router, prefix=app_settings.api_prefix)
 app.include_router(archives.router, prefix=app_settings.api_prefix)
 app.include_router(filaments.router, prefix=app_settings.api_prefix)
@@ -6758,7 +6813,6 @@ app.include_router(spoolman_inventory.router, prefix=app_settings.api_prefix)
 app.include_router(updates.router, prefix=app_settings.api_prefix)
 app.include_router(sponsor_prompt.router, prefix=app_settings.api_prefix)
 app.include_router(maintenance.router, prefix=app_settings.api_prefix)
-app.include_router(camera.router, prefix=app_settings.api_prefix)
 app.include_router(external_links.router, prefix=app_settings.api_prefix)
 app.include_router(projects.router, prefix=app_settings.api_prefix)
 app.include_router(library.router, prefix=app_settings.api_prefix)

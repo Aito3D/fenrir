@@ -123,6 +123,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "mqtt_use_tls",
             "ha_enabled",
             "per_printer_mapping_expanded",
+            "camera_gpu_accel",
             "prometheus_enabled",
             "user_notifications_enabled",
             "queue_drying_enabled",
@@ -286,6 +287,31 @@ async def update_settings(
         except Exception:
             pass  # Don't fail the settings update if MQTT reconfiguration fails
 
+    # Restart camera streams if camera settings changed
+    camera_keys = {"camera_quality", "camera_gpu_accel", "camera_engine"}
+    if camera_keys & set(update_data.keys()):
+        try:
+            from backend.app.api.routes.camera import _hub
+
+            stopped = await _hub.stop_all()
+            if stopped:
+                logger.info("Stopped %d camera stream(s) after camera settings change", stopped)
+        except Exception:
+            pass  # Don't fail settings update if camera restart fails
+
+    # Start/stop go2rtc if camera_engine changed
+    if "camera_engine" in update_data:
+        try:
+            from backend.app.services.go2rtc import go2rtc_service
+
+            new_engine = update_data["camera_engine"]
+            if new_engine == "go2rtc" and not go2rtc_service.running:
+                await go2rtc_service.start()
+            elif new_engine != "go2rtc" and go2rtc_service.running:
+                await go2rtc_service.stop()
+        except Exception:
+            pass  # Don't fail settings update if go2rtc management fails
+
     # Return updated settings (never scrub secrets on PUT — caller has SETTINGS_UPDATE permission)
     return await _build_settings_response(db, is_api_key=False)
 
@@ -412,6 +438,7 @@ async def get_ui_preferences(db: AsyncSession = Depends(get_db)):
 
 @router.get("/check-ffmpeg")
 async def check_ffmpeg(
+    db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
 ):
     """Check if ffmpeg is installed and available.
@@ -422,12 +449,49 @@ async def check_ffmpeg(
     auth is disabled (in which case there's no privacy boundary to
     enforce); otherwise it raises 401/403 before we get here.
     """
-    from backend.app.services.camera import get_ffmpeg_path
+    from backend.app.models.printer import Printer
+    from backend.app.services.camera import detect_gpu_hwaccels, get_ffmpeg_path, resolve_camera_quality
 
     ffmpeg_path = get_ffmpeg_path()
+
+    gpu_hwaccels: list[str] = []
+    if ffmpeg_path:
+        gpu_hwaccels = await detect_gpu_hwaccels()
+
+    printer_count = len((await db.execute(select(Printer.id).where(Printer.is_active == True))).scalars().all())  # noqa: E712
+    resolved_single = await resolve_camera_quality("auto", 1)
+    resolved_grid = await resolve_camera_quality("auto", max(printer_count, 1))
+
     return {
         "installed": ffmpeg_path is not None,
         "path": ffmpeg_path,
+        "gpu_available": len(gpu_hwaccels) > 0,
+        "gpu_backends": gpu_hwaccels,
+        "auto_resolved_quality": resolved_single,  # backward compat
+        "auto_resolved_single": resolved_single,
+        "auto_resolved_grid": resolved_grid,
+    }
+
+
+@router.get("/check-go2rtc")
+async def check_go2rtc(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
+    """Check if go2rtc is installed and available."""
+    import shutil
+
+    go2rtc_path = shutil.which("go2rtc")
+    if not go2rtc_path:
+        # Check common installation paths
+        common_paths = ["/usr/local/bin/go2rtc", "/usr/bin/go2rtc"]
+        for path in common_paths:
+            if Path(path).is_file():
+                go2rtc_path = path
+                break
+
+    return {
+        "installed": go2rtc_path is not None,
+        "path": go2rtc_path,
     }
 
 

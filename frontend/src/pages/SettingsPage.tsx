@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Workflow } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Workflow, Cable } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -459,6 +459,11 @@ export function SettingsPage() {
   const { data: ffmpegStatus } = useQuery({
     queryKey: ['ffmpeg-status'],
     queryFn: api.checkFfmpeg,
+  });
+
+  const { data: go2rtcStatus } = useQuery({
+    queryKey: ['go2rtc-status'],
+    queryFn: api.checkGo2rtc,
   });
 
   const { data: versionInfo } = useQuery({
@@ -995,6 +1000,9 @@ export function SettingsPage() {
       (settings.library_archive_mode ?? 'ask') !== (localSettings.library_archive_mode ?? 'ask') ||
       Number(settings.library_disk_warning_gb ?? 5) !== Number(localSettings.library_disk_warning_gb ?? 5) ||
       (settings.camera_view_mode ?? 'window') !== (localSettings.camera_view_mode ?? 'window') ||
+      (settings.camera_quality ?? 'auto') !== (localSettings.camera_quality ?? 'auto') ||
+      (settings.camera_gpu_accel ?? false) !== (localSettings.camera_gpu_accel ?? false) ||
+      (settings.camera_engine ?? 'ffmpeg') !== (localSettings.camera_engine ?? 'ffmpeg') ||
       (settings.preferred_slicer ?? 'bambu_studio') !== (localSettings.preferred_slicer ?? 'bambu_studio') ||
       (settings.open_in_slicer ?? null) !== (localSettings.open_in_slicer ?? null) ||
       (settings.use_slicer_api ?? false) !== (localSettings.use_slicer_api ?? false) ||
@@ -1093,6 +1101,9 @@ export function SettingsPage() {
         library_archive_mode: localSettings.library_archive_mode,
         library_disk_warning_gb: localSettings.library_disk_warning_gb,
         camera_view_mode: localSettings.camera_view_mode,
+        camera_quality: localSettings.camera_quality,
+        camera_gpu_accel: localSettings.camera_gpu_accel,
+        camera_engine: localSettings.camera_engine,
         preferred_slicer: localSettings.preferred_slicer,
         open_in_slicer: localSettings.open_in_slicer,
         use_slicer_api: localSettings.use_slicer_api,
@@ -1960,20 +1971,110 @@ export function SettingsPage() {
                 </p>
               </div>
 
+              <div>
+                <label className="block text-sm text-bambu-gray mb-1">
+                  {t('settings.cameraEngine')}
+                </label>
+                <select
+                  value={localSettings.camera_engine ?? 'ffmpeg'}
+                  onChange={(e) => updateSetting('camera_engine', e.target.value as 'ffmpeg' | 'go2rtc')}
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                >
+                  <option value="ffmpeg">{t('settings.cameraEngineFFmpeg')}</option>
+                  <option value="go2rtc" disabled={!go2rtcStatus?.installed}>{t('settings.cameraEngineGo2rtc')}{!go2rtcStatus?.installed ? ` (${t('settings.notInstalled')})` : ''}</option>
+                </select>
+                <p className="text-xs text-bambu-gray mt-1">
+                  {(localSettings.camera_engine ?? 'ffmpeg') === 'go2rtc'
+                    ? t('settings.cameraEngineGo2rtcDescription')
+                    : t('settings.cameraEngineFFmpegDescription')}
+                </p>
+              </div>
+
+              {(localSettings.camera_engine ?? 'ffmpeg') === 'ffmpeg' && (<>
+              <div>
+                <label className="block text-sm text-bambu-gray mb-1">
+                  {t('settings.cameraQuality')}
+                </label>
+                <select
+                  value={localSettings.camera_quality ?? 'auto'}
+                  onChange={(e) => updateSetting('camera_quality', e.target.value as 'auto' | 'low' | 'medium' | 'high')}
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                >
+                  <option value="auto">{ffmpegStatus?.auto_resolved_single
+                    ? t('settings.cameraQualityAutoWithResolved', { resolved: t(`settings.cameraQuality${ffmpegStatus.auto_resolved_single.charAt(0).toUpperCase() + ffmpegStatus.auto_resolved_single.slice(1)}`) })
+                    : t('settings.cameraQualityAuto')}</option>
+                  <option value="low">{t('settings.cameraQualityLow')}</option>
+                  <option value="medium">{t('settings.cameraQualityMedium')}</option>
+                  <option value="high">{t('settings.cameraQualityHigh')}</option>
+                </select>
+                <p className="text-xs text-bambu-gray mt-1">
+                  {localSettings.camera_quality === 'auto' && ffmpegStatus?.auto_resolved_single
+                    ? ffmpegStatus.auto_resolved_single !== ffmpegStatus.auto_resolved_grid
+                      ? t('settings.cameraQualityAutoResolvedDual', {
+                          single: t(`settings.cameraQuality${ffmpegStatus.auto_resolved_single.charAt(0).toUpperCase() + ffmpegStatus.auto_resolved_single.slice(1)}`),
+                          grid: t(`settings.cameraQuality${ffmpegStatus.auto_resolved_grid.charAt(0).toUpperCase() + ffmpegStatus.auto_resolved_grid.slice(1)}`)
+                        })
+                      : t('settings.cameraQualityAutoResolved', {
+                          resolved: t(`settings.cameraQuality${ffmpegStatus.auto_resolved_single.charAt(0).toUpperCase() + ffmpegStatus.auto_resolved_single.slice(1)}`)
+                        })
+                    : t('settings.cameraQualityDescription')}
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className={`text-sm ${ffmpegStatus?.gpu_available ? 'text-white' : 'text-bambu-gray'}`}>{t('settings.cameraGpuAccel')}</p>
+                  <p className="text-sm text-bambu-gray">
+                    {ffmpegStatus?.gpu_available
+                      ? t('settings.cameraGpuAccelDescription')
+                      : t('settings.cameraGpuAccelUnavailable')}
+                  </p>
+                  {localSettings.camera_gpu_accel && ffmpegStatus?.gpu_available && ffmpegStatus.gpu_backends.length > 0 && (
+                    <p className="text-xs text-bambu-green mt-1 inline-flex items-center gap-1 bg-bambu-green/10 px-3 py-1.5 rounded-md">
+                      {t('settings.cameraGpuAccelBackends', { backends: ffmpegStatus.gpu_backends.join(', ') })}
+                    </p>
+                  )}
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.camera_gpu_accel ?? false}
+                    onChange={(e) => updateSetting('camera_gpu_accel', e.target.checked)}
+                    disabled={!ffmpegStatus?.gpu_available}
+                    className="sr-only peer"
+                  />
+                  <div className={`w-11 h-6 ${!ffmpegStatus?.gpu_available ? 'opacity-50 cursor-not-allowed' : ''} bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green`}></div>
+                </label>
+              </div>
+              </>)}
+
               {/* External Cameras Section */}
-              <div className="border-t border-bambu-dark-tertiary pt-4 mt-4">
-                <h3 className="text-sm font-medium text-white mb-2">{t('settings.externalCameras')}</h3>
-                <p className="text-xs text-bambu-gray mb-3">
+              <div className="rounded-lg bg-bambu-dark/60 p-4 mt-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <Cable className="w-4 h-4 text-bambu-green" />
+                  <h3 className="text-sm font-medium text-white">{t('settings.externalCameras')}</h3>
+                </div>
+                <p className="text-xs text-bambu-gray mb-4 ml-6">
                   {t('settings.externalCamerasDescription')}
                 </p>
 
                 {printers && printers.length > 0 ? (
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {printers.map(printer => (
-                      <div key={printer.id} className="p-3 bg-bambu-dark rounded-lg">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-white font-medium text-sm">{printer.name}</span>
-                          <label className="relative inline-flex items-center cursor-pointer">
+                      <div
+                        key={printer.id}
+                        className={`rounded-lg border transition-colors ${
+                          printer.external_camera_enabled
+                            ? 'border-bambu-green/30 bg-bambu-green/5'
+                            : 'border-bambu-dark-tertiary bg-bambu-dark-secondary'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between px-3 py-2.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${printer.external_camera_enabled ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'}`} />
+                            <span className="text-sm font-medium text-white truncate">{printer.name}</span>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer flex-shrink-0 ml-3">
                             <input
                               type="checkbox"
                               checked={printer.external_camera_enabled}
@@ -1985,19 +2086,21 @@ export function SettingsPage() {
                         </div>
 
                         {printer.external_camera_enabled && (
-                          <div className="space-y-2 mt-2">
-                            <input
-                              type="text"
-                              placeholder={printer.external_camera_type === 'usb' ? t('settings.cameraPlaceholderUsb') : t('settings.cameraPlaceholderUrl')}
-                              value={localCameraUrls[printer.id] ?? printer.external_camera_url ?? ''}
-                              onChange={(e) => handleCameraUrlChange(printer.id, e.target.value)}
-                              className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
-                            />
+                          <div className="px-3 pb-3 pt-0 space-y-2 border-t border-bambu-dark-tertiary/50">
+                            <div className="pt-2.5">
+                              <input
+                                type="text"
+                                placeholder={printer.external_camera_type === 'usb' ? t('settings.cameraPlaceholderUsb') : t('settings.cameraPlaceholderUrl')}
+                                value={localCameraUrls[printer.id] ?? printer.external_camera_url ?? ''}
+                                onChange={(e) => handleCameraUrlChange(printer.id, e.target.value)}
+                                className="w-full px-3 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray-dark focus:border-bambu-green focus:outline-none transition-colors"
+                              />
+                            </div>
                             <div className="flex gap-2">
                               <select
                                 value={printer.external_camera_type || 'mjpeg'}
                                 onChange={(e) => handleUpdatePrinterCamera(printer.id, { type: e.target.value })}
-                                className="flex-1 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
+                                className="flex-1 px-3 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none transition-colors"
                               >
                                 <option value="mjpeg">{t('settings.cameraTypeMjpeg')}</option>
                                 <option value="rtsp">{t('settings.cameraTypeRtsp')}</option>
@@ -2018,16 +2121,20 @@ export function SettingsPage() {
                               </Button>
                             </div>
                             {extCameraTestResults[printer.id] && (
-                              <div className={`text-xs flex items-center gap-1 ${extCameraTestResults[printer.id]?.success ? 'text-green-500' : 'text-red-500'}`}>
+                              <div className={`text-xs flex items-center gap-1.5 px-2 py-1 rounded ${
+                                extCameraTestResults[printer.id]?.success
+                                  ? 'text-green-400 bg-green-400/10'
+                                  : 'text-red-400 bg-red-400/10'
+                              }`}>
                                 {extCameraTestResults[printer.id]?.success ? (
                                   <>
-                                    <CheckCircle className="w-3 h-3" />
-                                    {t('settings.connected')}{extCameraTestResults[printer.id]?.resolution && ` (${extCameraTestResults[printer.id]?.resolution})`}
+                                    <CheckCircle className="w-3 h-3 flex-shrink-0" />
+                                    <span>{t('settings.connected')}{extCameraTestResults[printer.id]?.resolution && ` (${extCameraTestResults[printer.id]?.resolution})`}</span>
                                   </>
                                 ) : (
                                   <>
-                                    <XCircle className="w-3 h-3" />
-                                    {extCameraTestResults[printer.id]?.error || t('settings.toast.connectionFailed')}
+                                    <XCircle className="w-3 h-3 flex-shrink-0" />
+                                    <span>{extCameraTestResults[printer.id]?.error || t('settings.toast.connectionFailed')}</span>
                                   </>
                                 )}
                               </div>
@@ -2080,7 +2187,7 @@ export function SettingsPage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-bambu-gray italic">{t('settings.noPrintersConfigured')}</p>
+                  <p className="text-xs text-bambu-gray italic ml-6">{t('settings.noPrintersConfigured')}</p>
                 )}
               </div>
             </CardContent>

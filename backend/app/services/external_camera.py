@@ -8,14 +8,20 @@ to ensure they are well-formed before use.
 """
 
 import asyncio
+import ipaddress
 import logging
 import re
 import shutil
+import subprocess
+import sys
+import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from urllib.parse import urlparse
 
 import aiohttp
+
+from backend.app.services.camera import get_ffmpeg_path, get_rtsp_semaphore
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +57,7 @@ def _sanitize_camera_url(url: str, allowed_schemes: tuple[str, ...] = ("http", "
         # Block cloud metadata service endpoints (SSRF mitigation)
         # These are dangerous destinations that should never be accessed
         hostname = parsed.hostname or ""
-        hostname_lower = hostname.lower()
+        hostname_lower = hostname.lower().rstrip(".")
         blocked_hosts = (
             "169.254.169.254",  # AWS/GCP/Azure metadata
             "metadata.google.internal",  # GCP metadata
@@ -65,36 +71,80 @@ def _sanitize_camera_url(url: str, allowed_schemes: tuple[str, ...] = ("http", "
             logger.warning("Blocked camera URL targeting restricted host: %s", hostname)
             return None
 
-        # Block link-local addresses (169.254.x.x)
+        # Block link-local addresses (169.254.x.x and fe80::/10)
         if hostname.startswith("169.254."):
             logger.warning("Blocked camera URL targeting link-local address: %s", hostname)
             return None
+        if hostname_lower.startswith("fe80:"):
+            logger.warning("Blocked camera URL targeting IPv6 link-local: %s", hostname)
+            return None
+
+        # Resolve IP literals and check for restricted ranges (blocks hex/decimal/IPv6-mapped bypasses)
+        try:
+            addr = ipaddress.ip_address(hostname)
+            if addr.is_loopback or addr.is_link_local or addr.is_unspecified:
+                logger.warning("Blocked camera URL targeting restricted IP: %s", hostname)
+                return None
+            if hasattr(addr, "ipv4_mapped") and addr.ipv4_mapped:
+                mapped = addr.ipv4_mapped
+                if mapped.is_loopback or mapped.is_link_local or mapped.is_unspecified:
+                    logger.warning("Blocked camera URL targeting restricted mapped IP: %s", hostname)
+                    return None
+        except ValueError:
+            # Not an IP literal — resolve hostname to check the actual IP
+            import socket
+
+            try:
+                resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+                resolved_ip = None
+                for _family, _type, _proto, _canonname, sockaddr in resolved:
+                    ip_str = sockaddr[0]
+                    addr = ipaddress.ip_address(ip_str)
+                    if addr.is_loopback or addr.is_link_local or addr.is_unspecified:
+                        logger.warning("Blocked camera URL: hostname %s resolves to restricted IP %s", hostname, ip_str)
+                        return None
+                    if hasattr(addr, "ipv4_mapped") and addr.ipv4_mapped:
+                        mapped = addr.ipv4_mapped
+                        if mapped.is_loopback or mapped.is_link_local or mapped.is_unspecified:
+                            logger.warning(
+                                "Blocked camera URL: hostname %s resolves to restricted mapped IP %s", hostname, ip_str
+                            )
+                            return None
+                    if resolved_ip is None:
+                        resolved_ip = ip_str
+                # Use resolved IP in the URL to prevent DNS rebinding
+                if resolved_ip is not None:
+                    hostname = resolved_ip
+            except socket.gaierror:
+                logger.warning("Blocked camera URL: hostname %s cannot be resolved", hostname)
+                return None
 
         # Reconstruct URL from validated components to break taint chain
-        # This creates a new string from validated parts
+        # Preserve credentials for RTSP/RTSPS (cameras legitimately embed auth in URL)
         port_str = f":{parsed.port}" if parsed.port else ""
         path = parsed.path or ""
         query = f"?{parsed.query}" if parsed.query else ""
         fragment = f"#{parsed.fragment}" if parsed.fragment else ""
 
-        # Build sanitized URL from validated components
-        sanitized = f"{scheme}://{hostname}{port_str}{path}{query}{fragment}"
+        userinfo = ""
+        if scheme in ("rtsp", "rtsps") and parsed.username:
+            userinfo = parsed.username
+            if parsed.password:
+                userinfo += f":{parsed.password}"
+            userinfo += "@"
+
+        # Build sanitized URL from validated components (hostname replaced with resolved IP when applicable)
+        sanitized = f"{scheme}://{userinfo}{hostname}{port_str}{path}{query}{fragment}"
         return sanitized
     except ValueError:
         return None
 
 
-def _validate_camera_url(url: str, allowed_schemes: tuple[str, ...] = ("http", "https", "rtsp")) -> bool:
-    """Validate camera URL format (legacy wrapper).
-
-    Args:
-        url: URL to validate
-        allowed_schemes: Tuple of allowed URL schemes
-
-    Returns:
-        True if URL is valid, False otherwise
-    """
-    return _sanitize_camera_url(url, allowed_schemes) is not None
+async def _sanitize_camera_url_async(
+    url: str, allowed_schemes: tuple[str, ...] = ("http", "https", "rtsp")
+) -> str | None:
+    """Async wrapper for _sanitize_camera_url that runs DNS resolution off the event loop."""
+    return await asyncio.get_running_loop().run_in_executor(None, _sanitize_camera_url, url, allowed_schemes)
 
 
 def list_usb_cameras() -> list[dict]:
@@ -113,8 +163,6 @@ def list_usb_cameras() -> list[dict]:
         # Try to get device info via v4l2-ctl
         v4l2_ctl = shutil.which("v4l2-ctl")
         if v4l2_ctl:
-            import subprocess
-
             try:
                 result = subprocess.run(
                     [v4l2_ctl, "-d", device_path, "--info"],
@@ -160,17 +208,27 @@ def list_usb_cameras() -> list[dict]:
     return cameras
 
 
-def get_ffmpeg_path() -> str | None:
-    """Get the path to ffmpeg executable."""
-    # Try shutil.which first
-    path = shutil.which("ffmpeg")
-    if path:
-        return path
-    # Check common locations (systemd services may have limited PATH)
-    for common_path in ["/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/opt/homebrew/bin/ffmpeg"]:
-        if Path(common_path).exists():
-            return common_path
-    return None
+def _validate_usb_device(device: str) -> str | None:
+    """Validate USB device path is /dev/videoN (N=0-99) and exists.
+
+    Returns the safe device path string, or None if invalid.
+    """
+    device_match = re.match(r"^/dev/video(\d{1,2})$", device)
+    if not device_match:
+        logger.error("Invalid USB device path format: %s", device)
+        return None
+
+    device_num = int(device_match.group(1))
+    if device_num > 99:
+        logger.error("USB device number out of range: %s", device_num)
+        return None
+
+    safe_device_path = Path(f"/dev/video{device_num}")
+    if not safe_device_path.exists():
+        logger.error("USB device does not exist: %s", safe_device_path)
+        return None
+
+    return str(safe_device_path)
 
 
 async def capture_frame(
@@ -218,31 +276,10 @@ async def _capture_usb_frame(device: str, timeout: int) -> bytes | None:
         logger.error("ffmpeg not found - required for USB camera capture")
         return None
 
-    # Validate device path - must be /dev/videoN format where N is 0-99
-    # This prevents path traversal by using a strict allowlist approach
-    import re as regex_module
-
-    device_match = regex_module.match(r"^/dev/video(\d{1,2})$", device)
-    if not device_match:
-        logger.error("Invalid USB device path format: %s", device)
+    safe_device = _validate_usb_device(device)
+    if not safe_device:
         return None
-
-    # Convert to integer to break taint chain - integers cannot contain path traversal
-    # lgtm[py/path-injection] - device_num is validated integer 0-99
-    device_num = int(device_match.group(1))  # Safe: regex guarantees 1-2 digits
-    if device_num > 99:
-        logger.error("USB device number out of range: %s", device_num)
-        return None
-
-    # Construct safe path from validated integer (completely untainted)
-    safe_device_path = Path(f"/dev/video{device_num}")  # lgtm[py/path-injection]
-
-    if not safe_device_path.exists():
-        logger.error("USB device does not exist: %s", safe_device_path)
-        return None
-
-    # Use the safe path for ffmpeg - this is a hardcoded /dev/videoN path
-    device = str(safe_device_path)  # lgtm[py/path-injection]
+    device = safe_device
 
     # Use ffmpeg to grab a single frame from USB camera
     cmd = [
@@ -262,6 +299,7 @@ async def _capture_usb_frame(device: str, timeout: int) -> bytes | None:
         "-",
     ]
 
+    process = None
     try:
         logger.debug("Running USB capture: %s", " ".join(cmd))
         process = await asyncio.create_subprocess_exec(
@@ -286,6 +324,7 @@ async def _capture_usb_frame(device: str, timeout: int) -> bytes | None:
         logger.warning("USB frame capture timed out after %ss", timeout)
         if process:
             process.kill()
+            await process.wait()
         return None
     except OSError as e:
         logger.error("USB frame capture failed: %s", e)
@@ -309,7 +348,8 @@ async def _capture_mjpeg_frame(url: str, timeout: int) -> bytes | None:
     External camera support requires connecting to user-specified camera
     endpoints. URL is sanitized and dangerous destinations are blocked.
     """
-    safe_url = _sanitize_camera_url(url, ("http", "https"))
+    # Sanitize URL - returns reconstructed URL from validated components
+    safe_url = await _sanitize_camera_url_async(url, ("http", "https"))
     if not safe_url:
         logger.error("Invalid MJPEG URL format: %s...", url[:50])
         return None
@@ -322,7 +362,7 @@ async def _capture_mjpeg_frame(url: str, timeout: int) -> bytes | None:
     try:
         async with (
             aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session,
-            session.get(safe_url) as response,
+            session.get(safe_url, allow_redirects=False) as response,
         ):
             if response.status != 200:
                 logger.error("MJPEG stream returned status %s", response.status)
@@ -370,10 +410,13 @@ async def _capture_mjpeg_frame(url: str, timeout: int) -> bytes | None:
 
 
 async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
-    """Capture frame from RTSP using ffmpeg.
+    """Capture frame from RTSP using ffmpeg."""
+    safe_url = await _sanitize_camera_url_async(url, ("rtsp", "rtsps"))
+    if not safe_url:
+        logger.error("Invalid RTSP URL rejected: %s...", url[:50])
+        return None
+    url = safe_url
 
-    For rtsps:// URLs, a local TLS proxy is used to avoid GnuTLS issues.
-    """
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
         logger.error("ffmpeg not found - required for RTSP capture")
@@ -421,8 +464,9 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
         "-",
     ]
 
+    process = None
     try:
-        logger.debug("Running ffmpeg RTSP capture...")
+        logger.debug("Running ffmpeg command: %s...", " ".join(cmd[:6]))
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -438,7 +482,7 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
         )
 
         if process.returncode != 0:
-            logger.error("ffmpeg RTSP capture failed: %s", stderr.decode()[:200])
+            logger.error("ffmpeg RTSP capture failed: %s", re.sub(r"://[^@]+@", "://***@", stderr.decode()[:200]))
             return None
 
         if not stdout or len(stdout) < 100:
@@ -451,6 +495,7 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
         logger.warning("RTSP frame capture timed out after %ss", timeout)
         if process:
             process.kill()
+            await process.wait()
         return None
     except OSError as e:
         logger.error("RTSP frame capture failed: %s", e)
@@ -461,36 +506,47 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
             await proxy_server.wait_closed()
 
 
-async def _capture_snapshot(url: str, timeout: int) -> bytes | None:
+async def _capture_snapshot(url: str, timeout: int, *, session: aiohttp.ClientSession | None = None) -> bytes | None:
     """Fetch snapshot from HTTP URL.
 
     Note: This function intentionally makes requests to user-configured URLs.
     External camera support requires connecting to user-specified camera endpoints.
     URL is sanitized and dangerous destinations are blocked.
+
+    Args:
+        session: Optional reusable session for connection pooling in polling loops.
     """
     # Sanitize URL - returns reconstructed URL from validated components
-    safe_url = _sanitize_camera_url(url, ("http", "https"))
+    safe_url = await _sanitize_camera_url_async(url, ("http", "https"))
     if not safe_url:
         logger.error("Invalid snapshot URL format: %s...", url[:50])
         return None
 
     try:
-        async with (
-            aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session,
-            session.get(safe_url) as response,
-        ):
-            if response.status != 200:
-                logger.error("Snapshot URL returned status %s", response.status)
-                return None
+        if session is not None:
+            async with session.get(
+                safe_url, allow_redirects=False, timeout=aiohttp.ClientTimeout(total=timeout)
+            ) as response:
+                if response.status != 200:
+                    logger.error("Snapshot URL returned status %s", response.status)
+                    return None
+                data = await response.content.read(5 * 1024 * 1024)
+        else:
+            async with (
+                aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as sess,
+                sess.get(safe_url, allow_redirects=False) as response,
+            ):
+                if response.status != 200:
+                    logger.error("Snapshot URL returned status %s", response.status)
+                    return None
+                data = await response.content.read(5 * 1024 * 1024)
 
-            data = await response.read()
+        # Validate it looks like JPEG
+        if not data.startswith(b"\xff\xd8"):
+            logger.warning("Snapshot does not appear to be JPEG")
+            # Still return it - might be valid with different header
 
-            # Validate it looks like JPEG
-            if not data.startswith(b"\xff\xd8"):
-                logger.warning("Snapshot does not appear to be JPEG")
-                # Still return it - might be valid with different header
-
-            return data
+        return data
 
     except TimeoutError:
         logger.warning("Snapshot capture timed out after %ss", timeout)
@@ -539,13 +595,23 @@ async def test_connection(url: str, camera_type: str) -> dict:
         return {"success": False, "error": f"Connection failed: {error_type}"}
 
 
-async def generate_mjpeg_stream(url: str, camera_type: str, fps: int = 10) -> AsyncGenerator[bytes, None]:
+async def generate_mjpeg_stream(
+    url: str,
+    camera_type: str,
+    fps: int = 10,
+    gpu_accel: bool = False,
+    quality: int = 5,
+    threads: int = 0,
+) -> AsyncGenerator[bytes, None]:
     """Generator yielding MJPEG frames for streaming.
 
     Args:
         url: Camera URL or USB device path
         camera_type: "mjpeg", "rtsp", "snapshot", or "usb"
         fps: Target frames per second
+        gpu_accel: Enable hardware-accelerated decoding (RTSP only)
+        quality: MJPEG quality (lower = better, 2-31)
+        threads: FFmpeg thread count (0 = auto)
 
     Yields:
         MJPEG frame data with HTTP multipart boundaries
@@ -560,10 +626,12 @@ async def generate_mjpeg_stream(url: str, camera_type: str, fps: int = 10) -> As
             frame_yielded = False
             async for frame in _stream_mjpeg(url):
                 frame_yielded = True
-                current_time = asyncio.get_event_loop().time()
+                current_time = time.monotonic()
                 if current_time - last_frame_time >= frame_interval:
                     last_frame_time = current_time
-                    yield _format_mjpeg_frame(frame)
+                    yield _format_mjpeg_header(len(frame))
+                    yield frame
+                    yield b"\r\n"
             if not frame_yielded or attempt == max_retries:
                 break
             logger.warning(
@@ -578,9 +646,11 @@ async def generate_mjpeg_stream(url: str, camera_type: str, fps: int = 10) -> As
         max_retries = 3
         for attempt in range(max_retries + 1):
             frame_yielded = False
-            async for frame in _stream_rtsp(url, fps):
+            async for frame in _stream_rtsp(url, fps, gpu_accel=gpu_accel, quality=quality, threads=threads):
                 frame_yielded = True
-                yield _format_mjpeg_frame(frame)
+                yield _format_mjpeg_header(len(frame))
+                yield frame
+                yield b"\r\n"
             if not frame_yielded or attempt == max_retries:
                 break
             logger.warning(
@@ -592,32 +662,32 @@ async def generate_mjpeg_stream(url: str, camera_type: str, fps: int = 10) -> As
 
     elif camera_type == "usb":
         # Use ffmpeg to stream from USB camera
-        async for frame in _stream_usb(url, fps):
-            yield _format_mjpeg_frame(frame)
+        async for frame in _stream_usb(url, fps, quality=quality, threads=threads):
+            yield _format_mjpeg_header(len(frame))
+            yield frame
+            yield b"\r\n"
 
     elif camera_type == "snapshot":
-        # Poll snapshot URL at interval
-        while True:
-            try:
-                frame = await _capture_snapshot(url, timeout=10)
-                if frame:
-                    yield _format_mjpeg_frame(frame)
-                await asyncio.sleep(frame_interval)
-            except asyncio.CancelledError:
-                break
-            except (aiohttp.ClientError, OSError) as e:
-                logger.warning("Snapshot poll failed: %s", e)
-                await asyncio.sleep(frame_interval)
+        # Poll snapshot URL at interval — reuse a single session for connection pooling
+        async with aiohttp.ClientSession() as session:
+            while True:
+                try:
+                    frame = await _capture_snapshot(url, timeout=10, session=session)
+                    if frame:
+                        yield _format_mjpeg_header(len(frame))
+                        yield frame
+                        yield b"\r\n"
+                    await asyncio.sleep(frame_interval)
+                except asyncio.CancelledError:
+                    break
+                except (aiohttp.ClientError, OSError) as e:
+                    logger.warning("Snapshot poll failed: %s", e)
+                    await asyncio.sleep(frame_interval)
 
 
-def _format_mjpeg_frame(frame: bytes) -> bytes:
-    """Format frame for MJPEG HTTP response."""
-    return (
-        b"--frame\r\n"
-        b"Content-Type: image/jpeg\r\n"
-        b"Content-Length: " + str(len(frame)).encode() + b"\r\n"
-        b"\r\n" + frame + b"\r\n"
-    )
+def _format_mjpeg_header(frame_len: int) -> bytes:
+    """Format the MJPEG boundary header (without frame data)."""
+    return b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " + str(frame_len).encode() + b"\r\n\r\n"
 
 
 async def _stream_mjpeg(url: str) -> AsyncGenerator[bytes, None]:
@@ -628,41 +698,45 @@ async def _stream_mjpeg(url: str) -> AsyncGenerator[bytes, None]:
     URL is sanitized and dangerous destinations are blocked.
     """
     # Sanitize URL - returns reconstructed URL from validated components
-    safe_url = _sanitize_camera_url(url, ("http", "https"))
+    safe_url = await _sanitize_camera_url_async(url, ("http", "https"))
     if not safe_url:
         logger.error("Invalid MJPEG stream URL: %s...", url[:50])
         return
 
     try:
         timeout = aiohttp.ClientTimeout(total=None, sock_read=30)
-        async with aiohttp.ClientSession(timeout=timeout) as session, session.get(safe_url) as response:
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.get(safe_url, allow_redirects=False) as response,
+        ):
             if response.status != 200:
                 logger.error("MJPEG stream returned status %s", response.status)
                 return
 
-            buffer = b""
+            buffer = bytearray()
             jpeg_start = b"\xff\xd8"
             jpeg_end = b"\xff\xd9"
 
             async for chunk in response.content.iter_chunked(8192):
-                buffer += chunk
+                buffer.extend(chunk)
 
                 # Extract complete frames from buffer
                 while True:
                     start_idx = buffer.find(jpeg_start)
                     if start_idx == -1:
-                        buffer = buffer[-2:] if len(buffer) > 2 else buffer
+                        if len(buffer) > 2:
+                            del buffer[: len(buffer) - 2]
                         break
 
                     if start_idx > 0:
-                        buffer = buffer[start_idx:]
+                        del buffer[:start_idx]
 
                     end_idx = buffer.find(jpeg_end, 2)
                     if end_idx == -1:
                         break
 
-                    frame = buffer[: end_idx + 2]
-                    buffer = buffer[end_idx + 2 :]
+                    frame = bytes(buffer[: end_idx + 2])
+                    del buffer[: end_idx + 2]
                     yield frame
 
     except asyncio.CancelledError:
@@ -671,13 +745,16 @@ async def _stream_mjpeg(url: str) -> AsyncGenerator[bytes, None]:
         logger.error("MJPEG stream error: %s", e)
 
 
-async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
-    """Stream frames from RTSP URL via ffmpeg.
+async def _stream_rtsp(
+    url: str, fps: int, *, gpu_accel: bool = False, quality: int = 5, threads: int = 0
+) -> AsyncGenerator[bytes, None]:
+    """Stream frames from RTSP URL via ffmpeg."""
+    safe_url = await _sanitize_camera_url_async(url, ("rtsp", "rtsps"))
+    if not safe_url:
+        logger.error("Invalid RTSP URL rejected: %s...", url[:50])
+        return
+    url = safe_url
 
-    For rtsps:// URLs, a local TLS proxy (Python OpenSSL) is used instead
-    of relying on ffmpeg's GnuTLS backend, which has compatibility issues
-    with some printer firmwares.
-    """
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
         logger.error("ffmpeg not found - required for RTSP streaming")
@@ -697,7 +774,7 @@ async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
             parsed = urlparse(url)
             target_port = parsed.port or 322
             proxy_port, proxy_server = await create_tls_proxy(parsed.hostname, target_port)
-            # Rewrite URL: rtsps://user:pass@host:port/path → rtsp://user:pass@127.0.0.1:proxy/path
+            # Rewrite URL: rtsps://user:pass@host:port/path -> rtsp://user:pass@127.0.0.1:proxy/path
             userinfo = ""
             if parsed.username:
                 userinfo = parsed.username
@@ -711,84 +788,108 @@ async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
             logger.warning("Failed to create TLS proxy for RTSP, falling back to direct: %s", e)
             effective_url = url
 
-    cmd = [
-        ffmpeg,
-        "-rtsp_transport",
-        "tcp",
-        "-rtsp_flags",
-        "prefer_tcp",
-        # Socket I/O timeout name varies by ffmpeg version (#1504); see
-        # `rtsp_socket_timeout_flag()` in services.camera.
-        f"-{rtsp_socket_timeout_flag()}",
-        "30000000",
-        "-buffer_size",
-        "1024000",
-        "-max_delay",
-        "500000",
-        "-probesize",
-        "32",
-        "-analyzeduration",
-        "0",
-        "-fflags",
-        "nobuffer",
-        "-flags",
-        "low_delay",
-        "-i",
-        effective_url,
-        "-f",
-        "mjpeg",
-        "-q:v",
-        "5",
-        "-r",
-        str(fps),
-        "-an",
-        "-",
-    ]
+    cmd = [ffmpeg]
+    if gpu_accel:
+        cmd.extend(["-hwaccel", "auto"])
+    cmd.extend(
+        [
+            "-rtsp_transport",
+            "tcp",
+            "-rtsp_flags",
+            "prefer_tcp",
+            # Socket I/O timeout name varies by ffmpeg version (#1504); see
+            # `rtsp_socket_timeout_flag()` in services.camera.
+            f"-{rtsp_socket_timeout_flag()}",
+            "30000000",
+            "-buffer_size",
+            "1024000",
+            "-max_delay",
+            "500000",
+            "-probesize",
+            "32",
+            "-analyzeduration",
+            "0",
+            "-fflags",
+            "nobuffer",
+            "-flags",
+            "low_delay",
+            "-i",
+            effective_url,
+            "-f",
+            "mjpeg",
+            "-q:v",
+            str(quality),
+            "-r",
+            str(fps),
+            "-an",
+        ]
+    )
+    if threads > 0:
+        cmd.extend(["-threads", str(threads)])
+    cmd.append("-")
 
+    semaphore = get_rtsp_semaphore()
     process = None
-    try:
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
 
-        # Brief check for immediate startup failures
-        await asyncio.sleep(0.1)
-        if process.returncode is not None:
-            stderr = await process.stderr.read()
-            logger.error("ffmpeg RTSP stream failed immediately: %s", stderr.decode()[:300])
+    # Acquire semaphore only for process creation + liveness check
+    logger.debug("External RTSP: waiting for semaphore")
+    async with semaphore:
+        logger.debug("External RTSP: acquired semaphore")
+        try:
+            kwargs: dict = {}
+            if sys.platform == "win32":
+                kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                **kwargs,
+            )
+
+            # Give ffmpeg a moment to start and check for immediate failures
+            await asyncio.sleep(0.5)
+            if process.returncode is not None:
+                stderr = await process.stderr.read()
+                logger.error(
+                    "ffmpeg RTSP stream failed immediately: %s", re.sub(r"://[^@]+@", "://***@", stderr.decode()[:300])
+                )
+                return
+        except OSError as e:
+            logger.error("RTSP stream error: %s", e)
             return
 
-        buffer = b""
+    # Semaphore released — streaming loop runs without holding it
+    try:
+        buffer = bytearray()
         jpeg_start = b"\xff\xd8"
         jpeg_end = b"\xff\xd9"
 
         while True:
             try:
-                chunk = await asyncio.wait_for(process.stdout.read(8192), timeout=30.0)
+                chunk = await asyncio.wait_for(process.stdout.read(65536), timeout=30.0)
 
                 if not chunk:
                     break
 
-                buffer += chunk
+                buffer.extend(chunk)
 
                 # Extract complete frames
                 while True:
                     start_idx = buffer.find(jpeg_start)
                     if start_idx == -1:
-                        buffer = buffer[-2:] if len(buffer) > 2 else buffer
+                        if len(buffer) > 2:
+                            del buffer[: len(buffer) - 2]
                         break
 
                     if start_idx > 0:
-                        buffer = buffer[start_idx:]
+                        del buffer[:start_idx]
 
                     end_idx = buffer.find(jpeg_end, 2)
                     if end_idx == -1:
                         break
 
-                    frame = buffer[: end_idx + 2]
-                    buffer = buffer[end_idx + 2 :]
+                    frame = bytes(buffer[: end_idx + 2])
+                    del buffer[: end_idx + 2]
                     yield frame
 
             except TimeoutError:
@@ -812,21 +913,17 @@ async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
             await proxy_server.wait_closed()
 
 
-async def _stream_usb(device: str, fps: int) -> AsyncGenerator[bytes, None]:
+async def _stream_usb(device: str, fps: int, *, quality: int = 5, threads: int = 0) -> AsyncGenerator[bytes, None]:
     """Stream frames from USB camera via ffmpeg."""
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
         logger.error("ffmpeg not found - required for USB camera streaming")
         return
 
-    # Validate device path
-    if not device.startswith("/dev/video"):
-        logger.error("Invalid USB device path: %s", device)
+    safe_device = _validate_usb_device(device)
+    if not safe_device:
         return
-
-    if not Path(device).exists():
-        logger.error("USB device does not exist: %s", device)
-        return
+    device = safe_device
 
     # ffmpeg command to stream from USB camera (v4l2)
     cmd = [
@@ -840,19 +937,25 @@ async def _stream_usb(device: str, fps: int) -> AsyncGenerator[bytes, None]:
         "-f",
         "mjpeg",
         "-q:v",
-        "5",
+        str(quality),
         "-r",
         str(fps),
-        "-",
     ]
+    if threads > 0:
+        cmd.extend(["-threads", str(threads)])
+    cmd.append("-")
 
     process = None
     try:
         logger.info("Starting USB camera stream from %s at %s fps", device, fps)
+        kwargs: dict = {}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            **kwargs,
         )
 
         # Give ffmpeg a moment to start and check for immediate failures
@@ -862,35 +965,36 @@ async def _stream_usb(device: str, fps: int) -> AsyncGenerator[bytes, None]:
             logger.error("ffmpeg USB stream failed immediately: %s", stderr.decode()[:300])
             return
 
-        buffer = b""
+        buffer = bytearray()
         jpeg_start = b"\xff\xd8"
         jpeg_end = b"\xff\xd9"
 
         while True:
             try:
-                chunk = await asyncio.wait_for(process.stdout.read(8192), timeout=30.0)
+                chunk = await asyncio.wait_for(process.stdout.read(65536), timeout=30.0)
 
                 if not chunk:
                     break
 
-                buffer += chunk
+                buffer.extend(chunk)
 
                 # Extract complete frames
                 while True:
                     start_idx = buffer.find(jpeg_start)
                     if start_idx == -1:
-                        buffer = buffer[-2:] if len(buffer) > 2 else buffer
+                        if len(buffer) > 2:
+                            del buffer[: len(buffer) - 2]
                         break
 
                     if start_idx > 0:
-                        buffer = buffer[start_idx:]
+                        del buffer[:start_idx]
 
                     end_idx = buffer.find(jpeg_end, 2)
                     if end_idx == -1:
                         break
 
-                    frame = buffer[: end_idx + 2]
-                    buffer = buffer[end_idx + 2 :]
+                    frame = bytes(buffer[: end_idx + 2])
+                    del buffer[: end_idx + 2]
                     yield frame
 
             except TimeoutError:

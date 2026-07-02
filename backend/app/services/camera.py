@@ -7,14 +7,20 @@ Supports two camera protocols:
 
 import asyncio
 import logging
+import math
 import os
+import platform
 import shutil
 import ssl
 import struct
 import subprocess
+import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
+
+import psutil
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +37,38 @@ _rtsp_socket_timeout_flag: str | None = None
 # Track PIDs of ffmpeg processes spawned for one-shot frame capture (snapshot).
 # The cleanup task in routes/camera.py checks this set to avoid killing active captures.
 _active_capture_pids: set[int] = set()
+
+# Cache GPU hardware acceleration backends
+_gpu_hwaccels: list[str] | None = None
+_gpu_hwaccels_lock: asyncio.Lock | None = None
+
+# Cache VAAPI capability detection
+_vaapi_info: dict | None = None
+
+
+def _get_gpu_lock() -> asyncio.Lock:
+    """Return (lazy-init) the lock guarding GPU hwaccel detection."""
+    global _gpu_hwaccels_lock
+    if _gpu_hwaccels_lock is None:
+        _gpu_hwaccels_lock = asyncio.Lock()
+    return _gpu_hwaccels_lock
+
+
+# ---------------------------------------------------------------------------
+# Global semaphore limiting concurrent RTSP ffmpeg processes
+# Lazily initialised to avoid creating an asyncio.Semaphore before the event
+# loop is running (raises RuntimeError on Python 3.12+).
+# ---------------------------------------------------------------------------
+_MAX_RTSP_FFMPEG: int = 20
+_rtsp_semaphore: asyncio.Semaphore | None = None
+
+
+def get_rtsp_semaphore() -> asyncio.Semaphore:
+    """Return the global RTSP ffmpeg semaphore (lazy-init on first call)."""
+    global _rtsp_semaphore
+    if _rtsp_semaphore is None:
+        _rtsp_semaphore = asyncio.Semaphore(_MAX_RTSP_FFMPEG)
+    return _rtsp_semaphore
 
 
 def get_ffmpeg_path() -> str | None:
@@ -131,6 +169,244 @@ def rtsp_socket_timeout_flag() -> str:
     _rtsp_socket_timeout_flag = chosen
     logger.info("RTSP socket I/O timeout flag: -%s", chosen)
     return chosen
+
+
+async def detect_gpu_hwaccels() -> list[str]:
+    """Detect available GPU hardware acceleration backends via ffmpeg.
+
+    Runs ``ffmpeg -hwaccels``, parses the output, and caches the result.
+    Returns an empty list when ffmpeg is not installed or no backends found.
+    Uses a lock to prevent duplicate subprocess spawns on concurrent calls.
+    """
+    global _gpu_hwaccels
+
+    if _gpu_hwaccels is not None:
+        return _gpu_hwaccels
+
+    async with _get_gpu_lock():
+        # Re-check after acquiring lock (another coroutine may have populated it)
+        if _gpu_hwaccels is not None:
+            return _gpu_hwaccels
+
+        ffmpeg = get_ffmpeg_path()
+        if not ffmpeg:
+            _gpu_hwaccels = []
+            return _gpu_hwaccels
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                ffmpeg,
+                "-hwaccels",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(process.communicate(), timeout=10)
+            lines = stdout.decode().strip().splitlines()
+            # First line is typically "Hardware acceleration methods:" — skip it
+            backends = [line.strip() for line in lines[1:] if line.strip() and line.strip().lower() != "none"]
+            _gpu_hwaccels = backends
+            if backends:
+                logger.info("GPU hwaccel backends detected: %s", ", ".join(backends))
+            else:
+                logger.info("No GPU hwaccel backends detected")
+        except Exception as e:
+            logger.warning("Failed to detect GPU hwaccels: %s", e)
+            _gpu_hwaccels = []
+
+        return _gpu_hwaccels
+
+
+_VAAPI_NOT_AVAILABLE: dict = {"available": False, "device": "", "has_mjpeg_encode": False}
+
+
+async def detect_vaapi_support() -> dict:
+    """Detect VAAPI hardware acceleration capability.
+
+    Checks for the VAAPI backend in ffmpeg hwaccels, a usable DRI render
+    device, and ``mjpeg_vaapi`` encoder support.  Results are cached after
+    the first call.
+
+    Returns a dict with:
+        available (bool): True if VAAPI decode is usable.
+        device (str): Render device path (e.g. ``/dev/dri/renderD128``).
+        has_mjpeg_encode (bool): True if ``mjpeg_vaapi`` encoder is listed.
+    """
+    global _vaapi_info
+
+    if _vaapi_info is not None:
+        return _vaapi_info
+
+    async with _get_gpu_lock():
+        if _vaapi_info is not None:
+            return _vaapi_info
+
+        # VAAPI is Linux-only
+        if sys.platform != "linux":
+            _vaapi_info = _VAAPI_NOT_AVAILABLE
+            return _vaapi_info
+
+        # Check DRI render device
+        device = "/dev/dri/renderD128"
+        if not os.path.exists(device):
+            logger.info("VAAPI: render device %s not found", device)
+            _vaapi_info = _VAAPI_NOT_AVAILABLE
+            return _vaapi_info
+
+        # Check vaapi in hwaccels
+        hwaccels = await detect_gpu_hwaccels()
+        if "vaapi" not in {h.lower() for h in hwaccels}:
+            logger.info("VAAPI: backend not listed in ffmpeg hwaccels")
+            _vaapi_info = _VAAPI_NOT_AVAILABLE
+            return _vaapi_info
+
+        # Check for mjpeg_vaapi encoder
+        has_mjpeg = False
+        ffmpeg = get_ffmpeg_path()
+        if ffmpeg:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    ffmpeg,
+                    "-encoders",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+                has_mjpeg = "mjpeg_vaapi" in stdout.decode()
+            except Exception:
+                logger.debug("VAAPI: failed to probe encoders", exc_info=True)
+
+        _vaapi_info = {"available": True, "device": device, "has_mjpeg_encode": has_mjpeg}
+        logger.info(
+            "VAAPI support detected: device=%s, mjpeg_encode=%s",
+            device,
+            has_mjpeg,
+        )
+        return _vaapi_info
+
+
+# ---------------------------------------------------------------------------
+# Hardware capability cache for auto quality resolution
+# ---------------------------------------------------------------------------
+_system_hw_info: dict | None = None
+_system_hw_lock: asyncio.Lock | None = None
+
+
+def _get_hw_lock() -> asyncio.Lock:
+    """Return (lazy-init) the lock guarding system HW info detection."""
+    global _system_hw_lock
+    if _system_hw_lock is None:
+        _system_hw_lock = asyncio.Lock()
+    return _system_hw_lock
+
+
+async def _get_system_hw_info() -> dict:
+    """Probe system hardware once and cache the result.
+
+    Returns a dict with cpu_score, ram_score, gpu_score, gpu_penalty_factor,
+    and base_score used by resolve_camera_quality().
+    Uses a lock to prevent duplicate probing on concurrent calls.
+    """
+    global _system_hw_info
+
+    if _system_hw_info is not None:
+        return _system_hw_info
+
+    async with _get_hw_lock():
+        # Re-check after acquiring lock
+        if _system_hw_info is not None:
+            return _system_hw_info
+
+        cpu_count = os.cpu_count() or 2
+
+        # Platform awareness
+        is_darwin = sys.platform == "darwin"
+        is_arm = platform.machine().lower() in ("arm64", "aarch64")
+        is_apple_silicon = is_darwin and is_arm
+
+        if is_apple_silicon:
+            core_efficiency = 1.3
+        elif is_arm:
+            core_efficiency = 0.5  # Raspberry Pi, etc.
+        else:
+            core_efficiency = 1.0  # x86_64
+
+        cpu_score = math.sqrt(cpu_count) * core_efficiency
+
+        # RAM consideration
+        ram_gb = psutil.virtual_memory().total / (1024**3)
+        ram_score = min(math.log2(max(ram_gb, 1)), 3.0)
+
+        # GPU scoring by backend type
+        gpu_backends = await detect_gpu_hwaccels()
+        backend_set = {b.lower() for b in gpu_backends}
+
+        gpu_score = 0.0
+        gpu_penalty_factor = 1.0
+
+        if "videotoolbox" in backend_set and is_apple_silicon:
+            gpu_score, gpu_penalty_factor = 4.0, 0.25
+        elif "videotoolbox" in backend_set:
+            gpu_score, gpu_penalty_factor = 3.0, 0.4
+        elif "cuda" in backend_set:
+            gpu_score, gpu_penalty_factor = 3.0, 0.35
+        elif "qsv" in backend_set:
+            gpu_score, gpu_penalty_factor = 2.5, 0.4
+        elif "vaapi" in backend_set:
+            gpu_score, gpu_penalty_factor = 2.0, 0.5
+        elif gpu_backends:
+            gpu_score, gpu_penalty_factor = 1.0, 0.7
+
+        base_score = (cpu_score + ram_score + gpu_score) * 2
+
+        _system_hw_info = {
+            "cpu_count": cpu_count,
+            "cpu_score": cpu_score,
+            "ram_gb": ram_gb,
+            "ram_score": ram_score,
+            "gpu_backends": gpu_backends,
+            "gpu_score": gpu_score,
+            "gpu_penalty_factor": gpu_penalty_factor,
+            "base_score": base_score,
+        }
+
+        return _system_hw_info
+
+
+def _reset_system_hw_cache() -> None:
+    """Clear the cached hardware info (for testing)."""
+    global _system_hw_info
+    _system_hw_info = None
+
+
+async def resolve_camera_quality(preset_name: str, stream_count: int = 1) -> str:
+    """Resolve 'auto' to a concrete preset based on hardware capability and stream count.
+
+    Uses a hardware capability score (CPU cores scaled by architecture efficiency,
+    RAM, and GPU backend type) divided by a sqrt-based stream penalty that accounts
+    for how much the GPU offloads work from the CPU.
+    """
+    if preset_name != "auto":
+        return preset_name
+
+    hw = await _get_system_hw_info()
+    base_score = hw["base_score"]
+    gpu_penalty_factor = hw["gpu_penalty_factor"]
+
+    sc = max(stream_count, 1)
+    penalty = 1 + (math.sqrt(sc) - 1) * gpu_penalty_factor
+    effective = base_score / penalty
+
+    if effective >= 12.0:
+        return "high"
+    elif effective >= 7.0:
+        return "medium"
+    else:
+        return "low"
+
+
+def get_gpu_hwaccels() -> list[str]:
+    """Return cached GPU hwaccel backends (empty list if not yet detected)."""
+    return _gpu_hwaccels or []
 
 
 def supports_rtsp(model: str | None) -> bool:
@@ -307,7 +583,7 @@ def is_chamber_image_model(model: str | None) -> bool:
 def build_camera_url(ip_address: str, access_code: str, model: str | None) -> str:
     """Build the RTSPS URL for the printer camera (RTSP models only)."""
     port = get_camera_port(model)
-    return f"rtsps://bblp:{access_code}@{ip_address}:{port}/streaming/live/1"
+    return f"rtsps://bblp:{quote(access_code, safe='')}@{ip_address}:{port}/streaming/live/1"
 
 
 def _create_chamber_auth_payload(access_code: str) -> bytes:
@@ -430,11 +706,10 @@ async def read_chamber_image_frame(
 async def generate_chamber_image_stream(
     ip_address: str,
     access_code: str,
-    fps: int = 5,
-) -> asyncio.StreamReader | None:
+) -> tuple[asyncio.StreamReader, asyncio.StreamWriter] | None:
     """Create a persistent connection for streaming chamber images.
 
-    Returns a connected reader or None if connection failed.
+    Returns a connected (reader, writer) tuple or None if connection failed.
     """
     port = 6000
     ssl_context = _create_ssl_context()
@@ -458,8 +733,16 @@ async def generate_chamber_image_stream(
         return None
 
 
+class ChamberConnectionClosed(Exception):
+    """Raised when the chamber image connection is closed by the printer."""
+
+
 async def read_next_chamber_frame(reader: asyncio.StreamReader, timeout: float = 10.0) -> bytes | None:
-    """Read the next JPEG frame from an established chamber image connection."""
+    """Read the next JPEG frame from an established chamber image connection.
+
+    Returns JPEG bytes on success, None on timeout (caller can retry).
+    Raises ChamberConnectionClosed if the TCP connection is broken (caller should stop).
+    """
     try:
         # Read the 16-byte header
         header = await asyncio.wait_for(reader.readexactly(16), timeout=timeout)
@@ -469,7 +752,7 @@ async def read_next_chamber_frame(reader: asyncio.StreamReader, timeout: float =
 
         if payload_size == 0 or payload_size > 10_000_000:
             logger.error("Chamber image: invalid payload size %s", payload_size)
-            return None
+            raise ChamberConnectionClosed(f"invalid payload size {payload_size}")
 
         # Read the JPEG data
         jpeg_data = await asyncio.wait_for(
@@ -481,13 +764,15 @@ async def read_next_chamber_frame(reader: asyncio.StreamReader, timeout: float =
 
     except asyncio.IncompleteReadError:
         logger.warning("Chamber image: connection closed by printer")
-        return None
+        raise ChamberConnectionClosed("connection closed by printer")
     except TimeoutError:
         logger.warning("Chamber image: read timeout")
         return None
+    except ChamberConnectionClosed:
+        raise  # Don't catch our own exception in the generic handler
     except Exception as e:
         logger.error("Chamber image: error reading frame: %s", e)
-        return None
+        raise ChamberConnectionClosed(str(e))
 
 
 async def capture_camera_frame(
@@ -496,6 +781,7 @@ async def capture_camera_frame(
     model: str | None,
     output_path: Path,
     timeout: int = 30,
+    gpu_accel: bool = False,
 ) -> bool:
     """Capture a single frame from the printer's camera stream and save to disk.
 
@@ -514,7 +800,7 @@ async def capture_camera_frame(
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    jpeg_data = await capture_camera_frame_bytes(ip_address, access_code, model, timeout)
+    jpeg_data = await capture_camera_frame_bytes(ip_address, access_code, model, timeout, gpu_accel=gpu_accel)
     if jpeg_data:
         try:
             with open(output_path, "wb") as f:
@@ -532,6 +818,7 @@ async def capture_camera_frame_bytes(
     access_code: str,
     model: str | None,
     timeout: int = 15,
+    gpu_accel: bool = False,
 ) -> bytes | None:
     """Capture a single frame and return as JPEG bytes (no disk write).
 
@@ -565,25 +852,28 @@ async def capture_camera_frame_bytes(
         logger.error("ffmpeg not found for camera frame capture")
         return None
 
-    cmd = [
-        ffmpeg,
-        "-y",
-        "-rtsp_transport",
-        "tcp",
-        "-rtsp_flags",
-        "prefer_tcp",
-        "-i",
-        camera_url,
-        "-frames:v",
-        "1",
-        "-f",
-        "image2pipe",
-        "-vcodec",
-        "mjpeg",
-        "-q:v",
-        "2",
-        "-",
-    ]
+    cmd = [ffmpeg, "-y"]
+    if gpu_accel:
+        cmd.extend(["-hwaccel", "auto"])
+    cmd.extend(
+        [
+            "-rtsp_transport",
+            "tcp",
+            "-rtsp_flags",
+            "prefer_tcp",
+            "-i",
+            camera_url,
+            "-frames:v",
+            "1",
+            "-f",
+            "image2pipe",
+            "-vcodec",
+            "mjpeg",
+            "-q:v",
+            "2",
+            "-",
+        ]
+    )
 
     logger.info("Capturing camera frame bytes from %s using RTSP (model: %s)", ip_address, model)
 
@@ -709,6 +999,7 @@ async def capture_finish_photo(
     access_code: str,
     model: str | None,
     archive_dir: Path,
+    gpu_accel: bool = False,
 ) -> str | None:
     """Capture a finish photo and save it to the archive's photos folder.
 
@@ -739,6 +1030,7 @@ async def capture_finish_photo(
         model=model,
         output_path=output_path,
         timeout=30,
+        gpu_accel=gpu_accel,
     )
 
     if success:
