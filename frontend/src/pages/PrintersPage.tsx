@@ -8258,7 +8258,8 @@ export function PrintersPage() {
   // Stable reference for CameraGrid — prevents internal useMemo recalculations
   const cameraGridPrinters = useMemo(() =>
     sortedPrinters.map(printer => {
-      const status = queryClient.getQueryData<{ connected: boolean; state: string; progress: number; remaining_time: number | null; layer_num: number | null; total_layers: number | null; plate_cleared?: boolean; hms_errors?: HMSError[] }>(['printerStatus', printer.id]);
+      const status = queryClient.getQueryData<{ connected: boolean; state: string; progress: number; remaining_time: number | null; layer_num: number | null; total_layers: number | null; plate_cleared?: boolean; hms_errors?: HMSError[]; subtask_name?: string | null; current_print?: string | null; gcode_file?: string | null; temperatures?: { nozzle?: number; bed?: number } | null }>(['printerStatus', printer.id]);
+      const isActive = status?.state === 'RUNNING' || status?.state === 'PAUSE';
       return {
         id: printer.id,
         name: printer.name,
@@ -8271,6 +8272,11 @@ export function PrintersPage() {
         totalLayers: status?.total_layers ?? null,
         plateCleared: status?.plate_cleared ?? true,
         hmsErrors: status?.hms_errors,
+        jobName: isActive
+          ? formatPrintName(status?.subtask_name || status?.current_print || null, status?.gcode_file, t) || undefined
+          : undefined,
+        nozzleTemp: status?.temperatures?.nozzle ?? null,
+        bedTemp: status?.temperatures?.bed ?? null,
         supports_rtsp: (printer as unknown as Record<string, unknown>).supports_rtsp as boolean | undefined,
       };
     }).filter(p => !hideDisconnected || p.connected),
@@ -8698,6 +8704,25 @@ export function PrintersPage() {
             layout={cameraGridLayout}
             timeFormat={settings?.time_format || 'system'}
             printers={cameraGridPrinters}
+            onExpand={(id, name) => {
+              if ((settings?.camera_view_mode || 'window') === 'embedded') {
+                setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }));
+              } else {
+                // Use saved window state or defaults
+                const saved = localStorage.getItem('cameraWindowState');
+                const state = saved ? JSON.parse(saved) : { width: 640, height: 400 };
+                const features = [
+                  `width=${state.width}`,
+                  `height=${state.height}`,
+                  state.left !== undefined ? `left=${state.left}` : '',
+                  state.top !== undefined ? `top=${state.top}` : '',
+                  // No `noopener`: same-origin popup needs opener so the browser
+                  // copies sessionStorage (auth token) into the new window.
+                  'menubar=no,toolbar=no,location=no,status=no',
+                ].filter(Boolean).join(',');
+                window.open(`/camera/${id}`, `camera-${id}`, features);
+              }
+            }}
           />
         </ErrorBoundary>
       ) : groupedPrinters ? (

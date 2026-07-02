@@ -317,6 +317,11 @@ export default {
       expand: '展开',
       refresh: '刷新摄像头',
       retry: '重试',
+      stats: {
+        live: '实时摄像头',
+        bandwidth: '带宽',
+        uptime: '串流时长',
+      },
       layout: {
         compact: '紧凑',
         default: '默认',

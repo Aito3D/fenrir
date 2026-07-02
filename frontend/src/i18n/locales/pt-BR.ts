@@ -317,6 +317,11 @@ export default {
       expand: 'Expandir',
       refresh: 'Atualizar câmeras',
       retry: 'Tentar novamente',
+      stats: {
+        live: 'Câmeras ao vivo',
+        bandwidth: 'Largura de banda',
+        uptime: 'Tempo de transmissão',
+      },
       layout: {
         compact: 'Compacto',
         default: 'Padrão',

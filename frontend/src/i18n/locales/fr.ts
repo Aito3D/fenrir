@@ -317,6 +317,11 @@ export default {
       expand: 'Agrandir',
       refresh: 'Rafraîchir les caméras',
       retry: 'Réessayer',
+      stats: {
+        live: 'Caméras en direct',
+        bandwidth: 'Bande passante',
+        uptime: 'Durée du flux',
+      },
       layout: {
         compact: 'Compact',
         default: 'Normal',

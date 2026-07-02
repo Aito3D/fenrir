@@ -188,6 +188,9 @@ class Go2RTCService:
             resp = await self._client.put(
                 "/api/streams",
                 params={"name": stream_name, "src": rtsp_url},
+                # go2rtc probes the RTSP source during registration, which can
+                # exceed the shared client's default 5s timeout on slow printers.
+                timeout=15.0,
             )
             if resp.status_code in (200, 201):
                 logger.debug("go2rtc stream registered: %s", stream_name)

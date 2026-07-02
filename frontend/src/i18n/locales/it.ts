@@ -317,6 +317,11 @@ export default {
       expand: 'Espandi',
       refresh: 'Aggiorna telecamere',
       retry: 'Riprova',
+      stats: {
+        live: 'Telecamere in diretta',
+        bandwidth: 'Larghezza di banda',
+        uptime: 'Durata dello stream',
+      },
       layout: {
         compact: 'Compatto',
         default: 'Predefinito',

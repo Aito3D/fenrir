@@ -320,6 +320,11 @@ export default {
       expand: 'Expand',
       refresh: 'Refresh cameras',
       retry: 'Retry',
+      stats: {
+        live: 'Live cameras',
+        bandwidth: 'Bandwidth',
+        uptime: 'Stream uptime',
+      },
       layout: {
         compact: 'Compact',
         default: 'Default',

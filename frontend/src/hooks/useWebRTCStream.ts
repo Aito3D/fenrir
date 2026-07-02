@@ -37,6 +37,7 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
   const [isConnected, setIsConnected] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [reconnectCountdown, setReconnectCountdown] = useState(0);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [stale, setStale] = useState(false);
   const [degraded, setDegraded] = useState(false);
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -119,6 +120,7 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
       setStale(false);
       setDegraded(false);
       reconnectAttemptRef.current = 0;
+      setReconnectAttempt(0);
     };
 
     if (hasRVFC) {
@@ -233,11 +235,14 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
         }
       }, 1000);
 
-      // Handle ICE failure — reconnect with backoff
+      // Handle ICE failure — reconnect with backoff. 'disconnected' is
+      // intentionally NOT treated as fatal: it is often transient and
+      // self-heals; the frame monitor's stale/degraded/error thresholds
+      // catch genuinely dead streams.
       pc.oniceconnectionstatechange = () => {
         if (!mountedRef.current) return;
         const state = pc.iceConnectionState;
-        if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+        if (state === 'failed' || state === 'closed') {
           setIsConnected(false);
           setHasError(true);
           setIsLoading(false);
@@ -284,6 +289,7 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
     reconnectScheduledRef.current = true;
 
     const attempt = reconnectAttemptRef.current++;
+    setReconnectAttempt(reconnectAttemptRef.current);
     const delay = Math.min(RECONNECT_BASE_DELAY_MS * Math.pow(2, attempt), RECONNECT_MAX_DELAY_MS);
     setIsReconnecting(true);
 
@@ -303,6 +309,7 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
 
   const restart = useCallback(() => {
     reconnectAttemptRef.current = 0;
+    setReconnectAttempt(0);
     restartKeyRef.current++;
     reconnectScheduledRef.current = false;
     setIsReconnecting(false);
@@ -341,7 +348,7 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
     isConnected,
     isReconnecting,
     reconnectCountdown,
-    reconnectAttempt: reconnectAttemptRef.current,
+    reconnectAttempt,
     stale,
     degraded,
     restart,

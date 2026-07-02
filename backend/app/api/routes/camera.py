@@ -1,6 +1,7 @@
 """Camera streaming API endpoints for Bambu Lab printers."""
 
 import asyncio
+import contextlib
 import dataclasses
 import logging
 import math
@@ -398,6 +399,14 @@ def try_get_active_buffered_frame(printer_id: int) -> bytes | None:
     if not is_stream_active(printer_id):
         return None
     return _hub.get_last_frame(printer_id)
+
+
+def _has_other_stream(printer_id: int) -> bool:
+    """Return True if any RTSP or chamber stream is still registered for this printer."""
+    prefix = f"{printer_id}-"
+    return any(sid.startswith(prefix) for sid in _state.active_streams) or any(
+        sid.startswith(prefix) for sid in _state.active_chamber_streams
+    )
 
 
 async def get_printer_or_404(printer_id: int, db: AsyncSession) -> Printer:
@@ -908,13 +917,9 @@ async def generate_chamber_mjpeg_stream(
             del _state.active_chamber_streams[stream_id]
 
         # Only clean up timestamps if no other active stream exists for this printer
-        if printer_id is not None:
-            has_other_stream = any(sid.startswith(f"{printer_id}-") for sid in _state.active_streams) or any(
-                sid.startswith(f"{printer_id}-") for sid in _state.active_chamber_streams
-            )
-            if not has_other_stream:
-                _state.last_frame_times.pop(printer_id, None)
-                _state.stream_start_times.pop(printer_id, None)
+        if printer_id is not None and not _has_other_stream(printer_id):
+            _state.last_frame_times.pop(printer_id, None)
+            _state.stream_start_times.pop(printer_id, None)
 
         # Close the connection
         try:
@@ -964,38 +969,6 @@ def _summarize_ffmpeg_stderr(raw: str | None) -> str:
         line for line in raw.splitlines() if line.strip() and not any(line.startswith(p) for p in _BANNER_PREFIXES)
     ]
     return "\n".join(lines[-10:])
-
-
-async def _read_ffmpeg_stderr(process: asyncio.subprocess.Process) -> str | None:
-    """Read whatever ffmpeg has written to stderr so far (best-effort).
-
-    ffmpeg's stderr must be drained *incrementally*. A stalled-but-still-alive
-    ffmpeg — the typical P2S RTSP failure, where it connects but never produces
-    a frame — never closes stderr, so a plain ``stderr.read()`` (read-to-EOF)
-    blocks until the wait_for timeout and returns nothing, discarding the
-    banner + stream-analysis lines ffmpeg already printed. Reading in bounded
-    chunks returns the buffered output promptly whether or not ffmpeg has
-    exited. Returns the content with ffmpeg's boilerplate banner stripped.
-    """
-    if not process or not process.stderr:
-        return None
-    chunks: list[bytes] = []
-    total = 0
-    cap = 65536
-    try:
-        while total < cap:
-            chunk = await asyncio.wait_for(process.stderr.read(8192), timeout=2.0)
-            if not chunk:
-                break  # EOF — ffmpeg has exited
-            chunks.append(chunk)
-            total += len(chunk)
-    except Exception:
-        # Timed out waiting for more data — ffmpeg is alive but quiet now.
-        # Fall through and return whatever it already printed.
-        pass
-    if not chunks:
-        return None
-    return _summarize_ffmpeg_stderr(b"".join(chunks).decode(errors="replace")) or None
 
 
 _STDERR_ERROR_KEYWORDS = (
@@ -1097,6 +1070,14 @@ async def generate_rtsp_mjpeg_stream(
             yield (b"--frame\r\nContent-Type: text/plain\r\n\r\nError: ffmpeg not installed\r\n")
         return
 
+    if not math.isfinite(quality) or not math.isfinite(scale) or not math.isfinite(fps):
+        logger.warning("Non-finite stream parameter: fps=%s quality=%s scale=%s", fps, quality, scale)
+        if not raw:
+            yield (b"--frame\r\nContent-Type: text/plain\r\n\r\nError: invalid parameters\r\n")
+        return
+    quality = max(2, min(quality, 31))
+    scale = max(0.1, min(scale, 1.0))
+
     port = get_camera_port(model)
 
     # Use a local TLS proxy so Python's OpenSSL handles TLS instead of
@@ -1105,6 +1086,19 @@ async def generate_rtsp_mjpeg_stream(
     # hardened Debian defaults rejecting TLS renegotiation.
     proxy_port, proxy_server = await create_tls_proxy(ip_address, port)
     camera_url = f"rtsp://bblp:{access_code}@127.0.0.1:{proxy_port}/streaming/live/1"
+
+    async def _abort_stream_cleanup() -> None:
+        """Release resources on early-return paths that never reach the main finally block.
+
+        Any `return` added between here and the streaming loop's try/finally
+        MUST call this first, or the TLS proxy socket and disconnect-event
+        registration leak (the grid restart loop retries failed cameras
+        forever, so leaks here compound quickly).
+        """
+        if stream_id:
+            _disconnect_events.pop(stream_id, None)
+        proxy_server.close()
+        await proxy_server.wait_closed()
 
     # ffmpeg command to output MJPEG stream to stdout
     # -rtsp_transport tcp: Use TCP for reliability
@@ -1116,13 +1110,6 @@ async def generate_rtsp_mjpeg_stream(
     # -q:v: Quality (2=best, 31=worst). Default 5 for full view, 15+ for grid thumbnails
     # -r: Output framerate
     # -vf scale: Downscale for grid view to save bandwidth
-    if not math.isfinite(quality) or not math.isfinite(scale) or not math.isfinite(fps):
-        logger.warning("Non-finite stream parameter: fps=%s quality=%s scale=%s", fps, quality, scale)
-        if not raw:
-            yield (b"--frame\r\nContent-Type: text/plain\r\n\r\nError: invalid parameters\r\n")
-        return
-    quality = max(2, min(quality, 31))
-    scale = max(0.1, min(scale, 1.0))
 
     # Detect VAAPI capability (cached after first call)
     use_vaapi = False
@@ -1150,6 +1137,10 @@ async def generate_rtsp_mjpeg_stream(
         vf_filters.append(f"fps={fps}")
         if scale < 1.0:
             vf_filters.append(f"scale=iw*{scale}:ih*{scale}")
+
+    # First call probes ffmpeg with a sync subprocess.run (cached afterwards) —
+    # run in a thread so the event loop isn't blocked for up to 5s after boot.
+    socket_timeout_flag = await asyncio.to_thread(rtsp_socket_timeout_flag)
 
     cmd = [ffmpeg]
     if sys.platform != "win32":
@@ -1180,7 +1171,7 @@ async def generate_rtsp_mjpeg_stream(
             # Socket I/O timeout name varies by ffmpeg version (#1504); see
             # rtsp_socket_timeout_flag(). The 30s value is microseconds for
             # both names.
-            f"-{rtsp_socket_timeout_flag()}",
+            f"-{socket_timeout_flag}",
             "30000000",
             "-buffer_size",
             "1024000",  # 1MB buffer
@@ -1304,6 +1295,7 @@ async def generate_rtsp_mjpeg_stream(
                 _state.ffmpeg_cpu_samples[process.pid] = (time.monotonic(), 0.0)
         except FileNotFoundError:
             logger.error("ffmpeg not found - camera streaming requires ffmpeg")
+            await _abort_stream_cleanup()
             if not raw:
                 yield (b"--frame\r\nContent-Type: text/plain\r\n\r\nError: ffmpeg not installed\r\n")
             return
@@ -1316,6 +1308,7 @@ async def generate_rtsp_mjpeg_stream(
         if stream_id:
             _state.active_streams.pop(stream_id, None)
             _state.spawned_ffmpeg_pids.pop(process.pid, None)
+        await _abort_stream_cleanup()
         if not raw:
             yield (
                 b"--frame\r\n"
@@ -1422,8 +1415,11 @@ async def generate_rtsp_mjpeg_stream(
     except Exception as e:
         logger.exception("Camera stream error: %s", e)
     finally:
-        # Stop stderr drain before process termination
+        # Stop stderr drain before process termination — await the cancel so
+        # the task's outcome is retrieved (avoids "Task was destroyed" noise)
         stderr_drain_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await stderr_drain_task
 
         # Remove from active streams
         if stream_id and stream_id in _state.active_streams:
@@ -1432,11 +1428,9 @@ async def generate_rtsp_mjpeg_stream(
             _disconnect_events.pop(stream_id, None)
 
         # Only clean up timestamps if no other active stream exists for this printer
-        if printer_id is not None:
-            has_other_stream = any(sid.startswith(f"{printer_id}-") for sid in _state.active_streams)
-            if not has_other_stream:
-                _state.last_frame_times.pop(printer_id, None)
-                _state.stream_start_times.pop(printer_id, None)
+        if printer_id is not None and not _has_other_stream(printer_id):
+            _state.last_frame_times.pop(printer_id, None)
+            _state.stream_start_times.pop(printer_id, None)
 
         if process and process.returncode is None:
             logger.info("Terminating ffmpeg process for stream %s", stream_id)

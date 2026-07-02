@@ -13,6 +13,10 @@ import {
   AlertTriangle,
   AlertCircle,
   Layers,
+  Maximize2,
+  Video,
+  Flame,
+  Thermometer,
 } from 'lucide-react';
 
 import { api } from '../api/client';
@@ -28,11 +32,13 @@ import type { GridStreamStats } from '../hooks/useGridStream';
 import { useWebRTCStream } from '../hooks/useWebRTCStream';
 import type { WebRTCPrinterStats } from '../hooks/useWebRTCStream';
 import { formatFileSize } from '../utils/file';
-// supports_rtsp is now provided by the API via printer.supports_rtsp
 import type { GridLayout } from './cameraGridLayout';
 import { GRID_LAYOUT_COLS } from './cameraGridLayout';
 export type { GridLayout } from './cameraGridLayout';
 export { GRID_LAYOUT_COLS, GRID_LAYOUT_ICONS } from './cameraGridLayout';
+
+/** How long the tab must stay hidden before camera streams are suspended. */
+const HIDDEN_SUSPEND_DELAY_MS = 15_000;
 
 /** Printer info consumed by the camera grid, derived from printer + live status. */
 export interface GridPrinter {
@@ -47,6 +53,9 @@ export interface GridPrinter {
   totalLayers: number | null;
   plateCleared: boolean;
   hmsErrors?: HMSError[];
+  jobName?: string;
+  nozzleTemp?: number | null;
+  bedTemp?: number | null;
   supports_rtsp?: boolean;
 }
 
@@ -61,6 +70,9 @@ interface GridCardBaseProps {
   layerNum: number | null;
   totalLayers: number | null;
   plateCleared: boolean;
+  jobName?: string;
+  nozzleTemp?: number | null;
+  bedTemp?: number | null;
   clearPlateLoading?: boolean;
   layout: GridLayout;
   timeFormat?: 'system' | '12h' | '24h';
@@ -73,6 +85,7 @@ interface GridCardBaseProps {
   onResume?: (id: number, name: string) => void;
   onClearPlate?: (id: number) => void;
   onDismissError?: (id: number, description: string) => void;
+  onExpand?: (id: number, name: string) => void;
 }
 
 interface CameraGridCardProps extends GridCardBaseProps {
@@ -118,6 +131,9 @@ const CameraGridCard = memo(function CameraGridCard({
   onClearPlate,
   onRestart,
   plateCleared,
+  jobName,
+  nozzleTemp,
+  bedTemp,
   clearPlateLoading,
   layout,
   timeFormat,
@@ -128,6 +144,7 @@ const CameraGridCard = memo(function CameraGridCard({
   hasQueuedJobs,
   dismissedErrorDesc,
   onDismissError,
+  onExpand,
 }: CameraGridCardProps) {
   const { t } = useTranslation();
   const cardRef = useRef<HTMLDivElement>(null);
@@ -144,7 +161,7 @@ const CameraGridCard = memo(function CameraGridCard({
   }, [printerId, onVisibilityChange]);
 
   const stateKey = !connected ? 'offline' : state === 'RUNNING' ? 'printing' : state === 'PAUSE' ? 'paused' : state === 'FINISH' ? 'finished' : state === 'FAILED' ? 'failed' : 'idle';
-  const stateColor = !connected ? 'text-bambu-gray/60' : state === 'RUNNING' ? 'text-bambu-green' : state === 'PAUSE' ? 'text-yellow-400' : state === 'FAILED' ? 'text-red-400' : 'text-bambu-green/60';
+  const stateColor = !connected ? 'text-bambu-gray/60' : state === 'RUNNING' ? 'text-bambu-green' : state === 'PAUSE' ? 'text-yellow-400' : state === 'FAILED' ? 'text-red-400' : state === 'FINISH' ? 'text-bambu-green' : 'text-bambu-green/60';
   const isRunning = state === 'RUNNING';
   const isPaused = state === 'PAUSE';
   const textSm = layout === 'compact' ? 'text-[10px]' : 'text-sm';
@@ -157,7 +174,15 @@ const CameraGridCard = memo(function CameraGridCard({
 
   return (
     <Card className={`relative group transition-[border-color,box-shadow] duration-500 ${isRunning ? '!border-bambu-green !shadow-[0_0_10px_1px_color-mix(in_srgb,var(--accent)_35%,transparent)]' : '!border-transparent'}`} ref={cardRef}>
-      <div className="relative w-full aspect-video bg-black overflow-hidden rounded-xl">
+      <div
+        className="relative w-full aspect-video bg-black overflow-hidden rounded-xl"
+        onDoubleClick={connected && onExpand ? (e) => {
+          // Ignore double-clicks on overlay buttons (pause/stop/dismiss) —
+          // they bubble up from inside this container
+          if ((e.target as HTMLElement).closest('button')) return;
+          onExpand(printerId, printerName);
+        } : undefined}
+      >
         {videoRef ? (
           <video
             ref={videoRef}
@@ -231,49 +256,59 @@ const CameraGridCard = memo(function CameraGridCard({
             {degraded && <span title={t('printers.cameraGrid.connectionLost')}><Signal className={`${iconSm} text-yellow-400 animate-pulse`} /></span>}
           </span>
           <div className="flex items-center gap-1">
-            {(isRunning || isPaused) ? (
-              <>
-                {isRunning && onPause && (
-                  <button
-                    onClick={() => onPause(printerId, printerName)}
-                    disabled={!!controlLoading}
-                    className="p-1 rounded bg-white/10 hover:bg-white/40 transition-colors disabled:opacity-40"
-                    title={t('printers.pause')}
-                    aria-label={t('printers.pause')}
-                  >
-                    {controlLoading === 'pause'
-                      ? <Loader2 className={`${iconCtrl} text-white animate-spin`} />
-                      : <Pause className={`${iconCtrl} text-white/60 hover:text-white transition-colors`} />}
-                  </button>
-                )}
-                {isPaused && onResume && (
-                  <button
-                    onClick={() => onResume(printerId, printerName)}
-                    disabled={!!controlLoading}
-                    className="p-1 rounded bg-white/10 hover:bg-white/40 transition-colors disabled:opacity-40"
-                    title={t('printers.resume')}
-                    aria-label={t('printers.resume')}
-                  >
-                    {controlLoading === 'resume'
-                      ? <Loader2 className={`${iconCtrl} text-white animate-spin`} />
-                      : <Play className={`${iconCtrl} text-white/60 hover:text-white transition-colors`} />}
-                  </button>
-                )}
-                {onStop && (
-                  <button
-                    onClick={() => onStop(printerId, printerName)}
-                    disabled={!!controlLoading}
-                    className="p-1 rounded bg-white/10 hover:bg-red-500/60 transition-colors disabled:opacity-40"
-                    title={t('printers.stop')}
-                    aria-label={t('printers.stop')}
-                  >
-                    {controlLoading === 'stop'
-                      ? <Loader2 className={`${iconCtrl} text-white animate-spin`} />
-                      : <Square className={`${iconCtrl} text-white/60 hover:text-white transition-colors`} />}
-                  </button>
-                )}
-              </>
-            ) : state !== 'FINISH' && (
+            {/* Action buttons fade in on hover; always visible on touch devices */}
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-opacity">
+              {connected && onExpand && (
+                <button
+                  onClick={() => onExpand(printerId, printerName)}
+                  className="p-1 rounded bg-white/10 hover:bg-white/40 transition-colors"
+                  title={t('printers.cameraGrid.expand')}
+                  aria-label={t('printers.cameraGrid.expand')}
+                >
+                  <Maximize2 className={`${iconCtrl} text-white/60 hover:text-white transition-colors`} />
+                </button>
+              )}
+              {isRunning && onPause && (
+                <button
+                  onClick={() => onPause(printerId, printerName)}
+                  disabled={!!controlLoading}
+                  className="p-1 rounded bg-white/10 hover:bg-white/40 transition-colors disabled:opacity-40"
+                  title={t('printers.pause')}
+                  aria-label={t('printers.pause')}
+                >
+                  {controlLoading === 'pause'
+                    ? <Loader2 className={`${iconCtrl} text-white animate-spin`} />
+                    : <Pause className={`${iconCtrl} text-white/60 hover:text-white transition-colors`} />}
+                </button>
+              )}
+              {isPaused && onResume && (
+                <button
+                  onClick={() => onResume(printerId, printerName)}
+                  disabled={!!controlLoading}
+                  className="p-1 rounded bg-white/10 hover:bg-white/40 transition-colors disabled:opacity-40"
+                  title={t('printers.resume')}
+                  aria-label={t('printers.resume')}
+                >
+                  {controlLoading === 'resume'
+                    ? <Loader2 className={`${iconCtrl} text-white animate-spin`} />
+                    : <Play className={`${iconCtrl} text-white/60 hover:text-white transition-colors`} />}
+                </button>
+              )}
+              {(isRunning || isPaused) && onStop && (
+                <button
+                  onClick={() => onStop(printerId, printerName)}
+                  disabled={!!controlLoading}
+                  className="p-1 rounded bg-white/10 hover:bg-red-500/60 transition-colors disabled:opacity-40"
+                  title={t('printers.stop')}
+                  aria-label={t('printers.stop')}
+                >
+                  {controlLoading === 'stop'
+                    ? <Loader2 className={`${iconCtrl} text-white animate-spin`} />
+                    : <Square className={`${iconCtrl} text-white/60 hover:text-white transition-colors`} />}
+                </button>
+              )}
+            </div>
+            {!isRunning && !isPaused && (
               <span className={`${textXs} font-medium drop-shadow-sm uppercase ${stateColor} ${state === 'FAILED' ? 'animate-pulse' : ''}`}>{t(`printers.status.${stateKey}`)}</span>
             )}
           </div>
@@ -296,8 +331,27 @@ const CameraGridCard = memo(function CameraGridCard({
       </div>
       {/* Progress bar + details — bottom (outside overflow-hidden so tooltip can escape) */}
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 rounded-b-xl">
+        {connected && layout !== 'compact' && (nozzleTemp != null || bedTemp != null) && (
+          <div className={`flex items-center gap-2 ${textXs} text-white/70 mb-0.5 tabular-nums`}>
+            {nozzleTemp != null && (
+              <span className="flex items-center gap-0.5 cursor-default" title={t('printers.temperatures.nozzle')}>
+                <Flame className={`${iconSm} text-orange-400`} />
+                {Math.round(nozzleTemp)}°
+              </span>
+            )}
+            {bedTemp != null && (
+              <span className="flex items-center gap-0.5 cursor-default" title={t('printers.temperatures.bed')}>
+                <Thermometer className={`${iconSm} text-blue-400`} />
+                {Math.round(bedTemp)}°
+              </span>
+            )}
+          </div>
+        )}
         {(state === 'RUNNING' || state === 'PAUSE') && (
           <>
+            {jobName && layout !== 'compact' && (
+              <div className={`${textXs} text-white/70 truncate mb-0.5`} title={jobName}>{jobName}</div>
+            )}
             <div className={`flex items-center justify-between ${textXs} text-white/80 mb-1 tabular-nums`}>
               <div className="flex items-center gap-2">
                 {remainingTime != null && (
@@ -351,11 +405,23 @@ function StatsDisplay({ subscribeStats, getStatsSnapshot }: {
   subscribeStats: (cb: () => void) => () => void;
   getStatsSnapshot: () => GridStreamStats;
 }) {
+  const { t } = useTranslation();
   const stats = useSyncExternalStore(subscribeStats, getStatsSnapshot);
   return (
     <>
-      <span className="text-xs text-bambu-gray/60 w-20 text-right ml-auto">{stats.bw || '--'}</span>
-      <span className="text-xs text-bambu-gray/60 w-12 text-right">{stats.uptime || '--'}</span>
+      <span
+        className="flex items-center gap-1 text-xs text-bambu-gray/60 ml-auto cursor-default"
+        title={t('printers.cameraGrid.stats.live')}
+      >
+        <Video className="w-3 h-3" />
+        {stats.total > 0 ? `${stats.active}/${stats.total}` : '--'}
+      </span>
+      <span className="text-xs text-bambu-gray/60 w-20 text-right cursor-default" title={t('printers.cameraGrid.stats.bandwidth')}>
+        {stats.bw || '--'}
+      </span>
+      <span className="text-xs text-bambu-gray/60 w-12 text-right cursor-default" title={t('printers.cameraGrid.stats.uptime')}>
+        {stats.uptime || '--'}
+      </span>
     </>
   );
 }
@@ -363,13 +429,15 @@ function StatsDisplay({ subscribeStats, getStatsSnapshot }: {
 interface WebRTCGridCardProps extends GridCardBaseProps {
   onStats?: (id: number, stats: WebRTCPrinterStats) => void;
   restartKey?: number;
+  /** Tab hidden — tear down the WebRTC connection to save CPU/bandwidth. */
+  suspended?: boolean;
 }
 
 /**
  * WebRTCGridCard — wraps CameraGridCard with an individual useWebRTCStream connection.
  * Used for RTSP-capable printers when camera_engine is 'go2rtc'.
  */
-const WebRTCGridCard = memo(function WebRTCGridCard({ onStats, restartKey, ...cardProps }: WebRTCGridCardProps) {
+const WebRTCGridCard = memo(function WebRTCGridCard({ onStats, restartKey, suspended, ...cardProps }: WebRTCGridCardProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const {
     isLoading,
@@ -382,7 +450,7 @@ const WebRTCGridCard = memo(function WebRTCGridCard({ onStats, restartKey, ...ca
     restart,
   } = useWebRTCStream({
     printerId: cardProps.printerId,
-    enabled: cardProps.connected,
+    enabled: cardProps.connected && !suspended,
     videoRef,
     onStats,
     restartKey,
@@ -425,10 +493,12 @@ export function CameraGrid({
   printers,
   layout,
   timeFormat,
+  onExpand,
 }: {
   printers: GridPrinter[];
   layout: GridLayout;
   timeFormat?: 'system' | '12h' | '24h';
+  onExpand?: (id: number, name: string) => void;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -519,14 +589,41 @@ export function CameraGrid({
   const gridParamsKey = cameraSettings?.camera_quality ?? 'auto';
   const cameraEngine = cameraSettings?.camera_engine ?? 'ffmpeg';
 
-  // When go2rtc is active, split printers: RTSP models → WebRTC, chamber models → MJPEG grid
+  // Suspend all streams when the tab has been hidden for a while — backend
+  // producers auto-stop 30s after their last viewer, dropping ffmpeg CPU and
+  // bandwidth to zero for backgrounded tabs. Resume is instant on return
+  // (the '' → non-empty ids fast path below skips the debounce).
+  const [suspended, setSuspended] = useState(false);
+  useEffect(() => {
+    let hideTimer: ReturnType<typeof setTimeout> | null = null;
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        hideTimer = setTimeout(() => setSuspended(true), HIDDEN_SUSPEND_DELAY_MS);
+      } else {
+        if (hideTimer !== null) {
+          clearTimeout(hideTimer);
+          hideTimer = null;
+        }
+        setSuspended(false);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      if (hideTimer !== null) clearTimeout(hideTimer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, []);
+
+  // When go2rtc is active, split printers: RTSP models → WebRTC, chamber models → MJPEG grid.
+  // Stable-sort connected printers first so offline tiles sink to the end of the wall.
   const { mjpegPrinters, webrtcPrinters } = useMemo(() => {
+    const sorted = [...printers].sort((a, b) => Number(b.connected) - Number(a.connected));
     if (cameraEngine !== 'go2rtc') {
-      return { mjpegPrinters: printers, webrtcPrinters: [] as GridPrinter[] };
+      return { mjpegPrinters: sorted, webrtcPrinters: [] as GridPrinter[] };
     }
     const mjpeg: GridPrinter[] = [];
     const webrtc: GridPrinter[] = [];
-    for (const p of printers) {
+    for (const p of sorted) {
       if (p.supports_rtsp) {
         webrtc.push(p);
       } else {
@@ -540,11 +637,13 @@ export function CameraGrid({
   // against unreachable printers and slow-retry them forever. Offline cards
   // still render (with the offline overlay); they join the stream once the
   // printer reconnects and the debounced ids key updates.
-  const rawPrinterIdsKey = mjpegPrinters
-    .filter(p => p.connected)
-    .map(p => p.id)
-    .sort((a, b) => a - b)
-    .join(',');
+  const rawPrinterIdsKey = suspended
+    ? ''
+    : mjpegPrinters
+        .filter(p => p.connected)
+        .map(p => p.id)
+        .sort((a, b) => a - b)
+        .join(',');
 
   // Debounce printerIdsKey so transient printer list changes don't tear down the stream
   const [printerIdsKey, setPrinterIdsKey] = useState(rawPrinterIdsKey);
@@ -612,6 +711,7 @@ export function CameraGrid({
   // Combined stats interval — merge MJPEG + WebRTC every 1s
   useEffect(() => {
     const interval = setInterval(() => {
+      if (suspended) return;
       const mjpeg = getMjpegStatsSnapshot();
       const now = performance.now();
       const FRESHNESS = 3000;
@@ -647,7 +747,7 @@ export function CameraGrid({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [getMjpegStatsSnapshot, mjpegPrinters.length, webrtcPrinters.length]);
+  }, [getMjpegStatsSnapshot, mjpegPrinters.length, webrtcPrinters.length, suspended]);
 
   const getControlLoading = useCallback((id: number) =>
     (pauseMutation.isPending && pauseMutation.variables === id) ? 'pause' as const
@@ -655,6 +755,15 @@ export function CameraGrid({
     : (resumeMutation.isPending && resumeMutation.variables === id) ? 'resume' as const
     : null
   , [pauseMutation.isPending, pauseMutation.variables, stopMutation.isPending, stopMutation.variables, resumeMutation.isPending, resumeMutation.variables]);
+
+  if (printers.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 py-16 text-bambu-gray/60">
+        <WifiOff className="w-8 h-8" />
+        <p className="text-sm">{t('printers.camWall.noPrinters')}</p>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -688,6 +797,9 @@ export function CameraGrid({
             controlLoading={getControlLoading(p.id)}
             onClearPlate={canClearPlate ? handleClearPlate : undefined}
             plateCleared={p.plateCleared}
+            jobName={p.jobName}
+            nozzleTemp={p.nozzleTemp}
+            bedTemp={p.bedTemp}
             clearPlateLoading={clearPlateMutation.isPending && clearPlateMutation.variables === p.id}
             layout={layout}
             timeFormat={timeFormat}
@@ -695,8 +807,10 @@ export function CameraGrid({
             dismissedErrorDesc={dismissedErrors.get(p.id)}
             hasQueuedJobs={printersWithQueue.has(p.id)}
             onDismissError={handleDismissError}
+            onExpand={onExpand}
             onStats={handleWebRTCStats}
             restartKey={restartKey}
+            suspended={suspended}
           />
         ))}
         {/* MJPEG cards — multiplexed grid stream (all printers in ffmpeg mode, chamber-only in go2rtc mode) */}
@@ -724,6 +838,9 @@ export function CameraGrid({
             onVisibilityChange={handleVisibilityChange}
             onClearPlate={canClearPlate ? handleClearPlate : undefined}
             plateCleared={p.plateCleared}
+            jobName={p.jobName}
+            nozzleTemp={p.nozzleTemp}
+            bedTemp={p.bedTemp}
             clearPlateLoading={clearPlateMutation.isPending && clearPlateMutation.variables === p.id}
             layout={layout}
             timeFormat={timeFormat}
@@ -733,6 +850,7 @@ export function CameraGrid({
             dismissedErrorDesc={dismissedErrors.get(p.id)}
             hasQueuedJobs={printersWithQueue.has(p.id)}
             onDismissError={handleDismissError}
+            onExpand={onExpand}
           />
         ))}
       </div>

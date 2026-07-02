@@ -788,6 +788,10 @@ async def _stream_rtsp(
             logger.warning("Failed to create TLS proxy for RTSP, falling back to direct: %s", e)
             effective_url = url
 
+    # First call probes ffmpeg with a sync subprocess.run (cached afterwards) —
+    # run in a thread so the event loop isn't blocked for up to 5s after boot.
+    socket_timeout_flag = await asyncio.to_thread(rtsp_socket_timeout_flag)
+
     cmd = [ffmpeg]
     if gpu_accel:
         cmd.extend(["-hwaccel", "auto"])
@@ -799,7 +803,7 @@ async def _stream_rtsp(
             "prefer_tcp",
             # Socket I/O timeout name varies by ffmpeg version (#1504); see
             # `rtsp_socket_timeout_flag()` in services.camera.
-            f"-{rtsp_socket_timeout_flag()}",
+            f"-{socket_timeout_flag}",
             "30000000",
             "-buffer_size",
             "1024000",

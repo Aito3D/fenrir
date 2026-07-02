@@ -317,6 +317,11 @@ export default {
       expand: 'Genişlet',
       refresh: 'Kameraları yenile',
       retry: 'Yeniden dene',
+      stats: {
+        live: 'Canlı kameralar',
+        bandwidth: 'Bant genişliği',
+        uptime: 'Yayın süresi',
+      },
       layout: {
         compact: 'Kompakt',
         default: 'Varsayılan',

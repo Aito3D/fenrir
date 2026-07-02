@@ -317,6 +317,11 @@ export default {
       expand: '展開',
       refresh: '重新整理相機',
       retry: '重試',
+      stats: {
+        live: '即時攝影機',
+        bandwidth: '頻寬',
+        uptime: '串流時長',
+      },
       layout: {
         compact: '緊湊',
         default: '預設',

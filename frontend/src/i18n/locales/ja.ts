@@ -316,6 +316,11 @@ export default {
       expand: '拡大',
       refresh: 'カメラを更新',
       retry: '再試行',
+      stats: {
+        live: 'ライブカメラ',
+        bandwidth: '帯域幅',
+        uptime: 'ストリーム稼働時間',
+      },
       layout: {
         compact: 'コンパクト',
         default: '標準',

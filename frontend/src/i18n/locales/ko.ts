@@ -295,6 +295,11 @@ export default {
       expand: '확대',
       refresh: '카메라 새로고침',
       retry: '재시도',
+      stats: {
+        live: '라이브 카메라',
+        bandwidth: '대역폭',
+        uptime: '스트림 가동 시간',
+      },
       layout: {
         compact: '컴팩트',
         default: '기본',
