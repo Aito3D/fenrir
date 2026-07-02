@@ -205,6 +205,8 @@ export default {
       cards: 'Karten',
       camWall: 'Kamera-Wand',
     },
+    fullscreen: 'Vollbild',
+    exitFullscreen: 'Vollbild beenden',
     camWall: {
       noPrinters: 'Keine Drucker anzuzeigen',
       noSignal: 'Kein Signal',

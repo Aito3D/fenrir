@@ -205,6 +205,8 @@ export default {
       cards: 'Kartlar',
       camWall: 'Kamera duvarı',
     },
+    fullscreen: 'Tam ekran',
+    exitFullscreen: 'Tam ekrandan çık',
     camWall: {
       noPrinters: 'Gösterilecek yazıcı yok',
       noSignal: 'Sinyal yok',

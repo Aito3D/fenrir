@@ -31,6 +31,7 @@ import { ToastProvider } from './contexts/ToastContext';
 import { SliceJobTrackerProvider } from './contexts/SliceJobTrackerContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ColorCatalogProvider } from './contexts/ColorCatalogContext';
+import { FullscreenProvider } from './contexts/FullscreenContext';
 import { SpoolBuddyLayout } from './components/spoolbuddy/SpoolBuddyLayout';
 import { SpoolBuddyDashboard } from './pages/spoolbuddy/SpoolBuddyDashboard';
 import { SpoolBuddyAmsPage } from './pages/spoolbuddy/SpoolBuddyAmsPage';
@@ -167,6 +168,7 @@ function App() {
             <ThemeProvider>
             <ColorCatalogProvider>
             <SliceJobTrackerProvider>
+            <FullscreenProvider>
             <StreamTokenSync />
             <BrowserRouter>
               <Routes>
@@ -223,6 +225,7 @@ function App() {
                 </Route>
               </Routes>
             </BrowserRouter>
+            </FullscreenProvider>
             </SliceJobTrackerProvider>
             </ColorCatalogProvider>
             </ThemeProvider>

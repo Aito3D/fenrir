@@ -205,6 +205,8 @@ export default {
       cards: 'Cards',
       camWall: 'Cam wall',
     },
+    fullscreen: 'Fullscreen',
+    exitFullscreen: 'Exit fullscreen',
     camWall: {
       noPrinters: 'No printers to show',
       noSignal: 'No signal',

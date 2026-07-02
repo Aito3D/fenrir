@@ -205,6 +205,8 @@ export default {
       cards: 'Schede',
       camWall: 'Muro telecamere',
     },
+    fullscreen: 'Schermo intero',
+    exitFullscreen: 'Esci da schermo intero',
     camWall: {
       noPrinters: 'Nessuna stampante da mostrare',
       noSignal: 'Nessun segnale',

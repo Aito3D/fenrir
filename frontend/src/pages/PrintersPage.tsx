@@ -23,6 +23,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useFullscreen } from '../contexts/FullscreenContext';
 import {
   Plus,
   Link,
@@ -84,6 +85,8 @@ import {
   LineChart as LineChartIcon,
   LayoutGrid,
   MonitorPlay,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
@@ -7611,6 +7614,7 @@ function PowerDropdownItem({
 
 export function PrintersPage() {
   const { t } = useTranslation();
+  const { fullscreen, toggleFullscreen } = useFullscreen();
   const { resolvedMode, darkAccent, lightAccent } = useTheme();
   const activeAccent = resolvedMode === 'dark' ? darkAccent : lightAccent;
   const accentButtonClass = {
@@ -8582,10 +8586,12 @@ export function PrintersPage() {
     <div className="p-4 md:p-8">
       <div className="space-y-3 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <PrinterIcon className="w-7 h-7 text-bambu-green" />
-            {t('printers.title')}
-          </h1>
+          {!fullscreen && (
+            <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+              <PrinterIcon className="w-7 h-7 text-bambu-green" />
+              {t('printers.title')}
+            </h1>
+          )}
           <StatusSummaryBar printers={printers} smartPlugs={smartPlugs} />
         </div>
         <div ref={toolbarRef} className="relative flex items-center gap-2">
@@ -8644,6 +8650,22 @@ export function PrintersPage() {
               </ToolbarMenu>
             </div>
           )}
+
+          {/* Fullscreen toggle — hides nav chrome, banners, title, and bug report bubble */}
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            className={`h-8 w-8 flex items-center justify-center rounded-lg border transition-colors shrink-0 ${
+              fullscreen
+                ? 'bg-bambu-green border-bambu-green text-white'
+                : 'bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary'
+            }`}
+            title={fullscreen ? t('printers.exitFullscreen') : t('printers.fullscreen')}
+            aria-label={fullscreen ? t('printers.exitFullscreen') : t('printers.fullscreen')}
+            aria-pressed={fullscreen}
+          >
+            {fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
         </div>
       </div>
 

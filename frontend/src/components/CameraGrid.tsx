@@ -156,7 +156,7 @@ const CameraGridCard = memo(function CameraGridCard({
   const topError = rawTopError && dismissedErrorDesc === rawTopError.description ? null : rawTopError;
 
   return (
-    <Card className={`relative group ${isRunning ? '!border-bambu-green/50' : '!border-transparent'}`} ref={cardRef}>
+    <Card className={`relative group transition-[border-color,box-shadow] duration-500 ${isRunning ? '!border-bambu-green !shadow-[0_0_10px_1px_color-mix(in_srgb,var(--accent)_35%,transparent)]' : '!border-transparent'}`} ref={cardRef}>
       <div className="relative w-full aspect-video bg-black overflow-hidden rounded-xl">
         {videoRef ? (
           <video

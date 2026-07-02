@@ -192,6 +192,8 @@ export default {
       cards: '카드',
       camWall: '카메라 월'
     },
+    fullscreen: '전체 화면',
+    exitFullscreen: '전체 화면 종료',
     camWall: {
       noPrinters: '표시할 프린터가 없습니다',
       noSignal: '신호 없음',

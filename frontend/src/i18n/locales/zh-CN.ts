@@ -205,6 +205,8 @@ export default {
       cards: '卡片',
       camWall: '摄像头墙',
     },
+    fullscreen: '全屏',
+    exitFullscreen: '退出全屏',
     camWall: {
       noPrinters: '没有可显示的打印机',
       noSignal: '无信号',

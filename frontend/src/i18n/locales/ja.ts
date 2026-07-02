@@ -204,6 +204,8 @@ export default {
       cards: 'カード',
       camWall: 'カメラウォール',
     },
+    fullscreen: '全画面表示',
+    exitFullscreen: '全画面表示を終了',
     camWall: {
       noPrinters: '表示するプリンターがありません',
       noSignal: '信号なし',

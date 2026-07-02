@@ -205,6 +205,8 @@ export default {
       cards: 'Cartões',
       camWall: 'Mural de câmeras',
     },
+    fullscreen: 'Tela cheia',
+    exitFullscreen: 'Sair da tela cheia',
     camWall: {
       noPrinters: 'Nenhuma impressora para exibir',
       noSignal: 'Sem sinal',

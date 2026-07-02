@@ -11,11 +11,11 @@ import { api, supportApi, pendingUploadsApi, type Permission } from '../api/clie
 import { getIconByName } from './IconPicker';
 import { useIsSidebarCompact } from '../hooks/useIsSidebarCompact';
 import { useColorCatalogVersion } from '../hooks/useColorCatalogVersion';
-import { useSponsorPrompt } from '../hooks/useSponsorPrompt';
 import { useUnknownTagPrompt } from '../hooks/useUnknownTagPrompt';
 import { UnknownSpoolModal } from './UnknownSpoolModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useFullscreen } from '../contexts/FullscreenContext';
 import { Card, CardHeader, CardContent } from './Card';
 import { parseUTCDate } from '../utils/date';
 import { Button } from './Button';
@@ -79,6 +79,7 @@ export function Layout() {
   useColorCatalogVersion();
   const { user, authEnabled, logout, hasPermission } = useAuth();
   const { showToast } = useToast();
+  const { fullscreen, setFullscreen } = useFullscreen();
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [changePasswordData, setChangePasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [changePasswordLoading, setChangePasswordLoading] = useState(false);
@@ -114,9 +115,6 @@ export function Layout() {
     queryFn: api.getSettings,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
-
-  // Sponsor-prompt toast — fires once per session post-auth if a milestone is eligible.
-  useSponsorPrompt(settings?.currency ?? 'EUR');
 
   // Unknown-spool prompt — surfaces a confirmation modal when the AMS reports a
   // tag with no inventory match (only when `auto_add_unknown_rfid` is off).
@@ -397,6 +395,11 @@ export function Layout() {
     }
   }, [location.pathname, isSidebarCompact]);
 
+  // Exit fullscreen on navigation — other pages have no toggle to restore the chrome
+  useEffect(() => {
+    setFullscreen(false);
+  }, [location.pathname, setFullscreen]);
+
   // Listen for plate detection warnings (objects on plate, print paused)
   // Only show to users with printers:control permission
   useEffect(() => {
@@ -470,7 +473,7 @@ export function Layout() {
   return (
     <div className="flex min-h-screen">
       {/* Compact Header */}
-      {isSidebarCompact && (
+      {isSidebarCompact && !fullscreen && (
         <header className="fixed top-0 left-0 right-0 z-40 h-14 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary flex items-center px-4">
           <button
             onClick={() => setMobileDrawerOpen(true)}
@@ -488,7 +491,7 @@ export function Layout() {
       )}
 
       {/* Compact Drawer Backdrop */}
-      {isSidebarCompact && mobileDrawerOpen && (
+      {isSidebarCompact && mobileDrawerOpen && !fullscreen && (
         <div
           className="fixed inset-0 bg-black/60 z-40 transition-opacity"
           onClick={() => setMobileDrawerOpen(false)}
@@ -496,6 +499,7 @@ export function Layout() {
       )}
 
       {/* Sidebar / Mobile Drawer */}
+      {!fullscreen && (
       <aside
         className={`bg-bambu-dark-secondary border-r border-bambu-dark-tertiary flex flex-col transition-all duration-300 ${
           isSidebarCompact
@@ -826,13 +830,14 @@ export function Layout() {
           )}
         </div>
       </aside>
+      )}
 
       {/* Main content */}
       <main className={`flex-1 bg-bambu-dark overflow-auto transition-all duration-300 ${
-        isSidebarCompact ? 'mt-14' : sidebarExpanded ? 'ml-64' : 'ml-16'
+        fullscreen ? '' : isSidebarCompact ? 'mt-14' : sidebarExpanded ? 'ml-64' : 'ml-16'
       }`}>
         {/* Debug logging indicator */}
-        {debugLoggingState?.enabled && (
+        {!fullscreen && debugLoggingState?.enabled && (
           <div className="bg-amber-500/20 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm">
               <Bug className="w-4 h-4 text-amber-500 animate-pulse" />
@@ -853,7 +858,7 @@ export function Layout() {
             </div>
           </div>
         )}
-        {devModeWarnings && devModeWarnings.length > 0 && (
+        {!fullscreen && devModeWarnings && devModeWarnings.length > 0 && (
           <div className="bg-orange-500/20 border-b border-orange-500/30 px-4 py-2 flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm">
               <ShieldAlert className="w-4 h-4 text-orange-500" />
@@ -872,7 +877,7 @@ export function Layout() {
           </div>
         )}
         {/* Persistent update banner */}
-        {showUpdateBanner && (
+        {!fullscreen && showUpdateBanner && (
           <div className="bg-bambu-green/20 border-b border-bambu-green/30 px-4 py-2 flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm">
               <ArrowUpCircle className="w-4 h-4 text-bambu-green" />
@@ -1098,7 +1103,7 @@ export function Layout() {
           </Card>
         </div>
       )}
-      <BugReportBubble />
+      {!fullscreen && <BugReportBubble />}
     </div>
   );
 }
