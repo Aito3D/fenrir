@@ -164,9 +164,9 @@ async def _cleanup_stale_frame_buffers() -> None:
         _state.stream_start_times.pop(pid, None)
         _state.per_printer_cooldown.pop(pid, None)
         _state.watchdog_killed_printers.discard(pid)
-        # Clean stderr tracking keyed by stream_id (format: "printer_{pid}_...")
+        # Clean stderr tracking keyed by stream_id (format: "{printer_id}-{uuid}")
         for key in list(_state.stderr_error_counts):
-            if key.startswith(f"printer_{pid}_"):
+            if key.startswith(f"{pid}-"):
                 _state.stderr_error_counts.pop(key, None)
                 _state.stderr_error_details.pop(key, None)
                 _state.stderr_recent_errors.pop(key, None)

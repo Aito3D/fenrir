@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import CameraGridDecoderWorker from '../workers/cameraGridDecoder.worker?worker';
 import { getAuthToken } from '../api/client';
 import { formatFileSize } from '../utils/file';
+import { formatUptime } from '../utils/date';
 import { GrowingBuffer } from '../utils/streamBuffer';
 import { STREAM_STALE_MS, STREAM_DEGRADED_MS, STREAM_ERROR_MS } from '../utils/streamConstants';
 import { useGridReconnect } from './useGridReconnect';
@@ -276,14 +277,12 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
       const bytes = bytesRef.current;
       bytesRef.current = 0;
       const elapsed = Math.floor((performance.now() - t0) / 1000);
-      const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
-      const ss = String(elapsed % 60).padStart(2, '0');
 
       statsRef.current = {
         bw: `${formatFileSize(bytes)}/s`,
         active: activeCamsRef.current.size,
         total: ids.length,
-        uptime: `${mm}:${ss}`,
+        uptime: formatUptime(elapsed),
         rawBytesPerSecond: bytes,
       };
       statsSubscribers.current.forEach(cb => cb());
@@ -461,26 +460,25 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
           // Parse binary frames using extracted parser
           const { frames: parsedFrames, bytesConsumed } = parseGridFrames(gbuf.buffer, gbuf.byteOffset, gbuf.length);
 
+          // Deliver frames parsed before any corruption point — they're intact
+          for (const frame of parsedFrames) {
+            lastFrameTime.set(frame.printerId, performance.now());
+            pipeline.framesParsed++;
+            pipeline.framesSentToWorker++;
+            pipeline.lastParseTime = performance.now();
+            workerRef.current!.postMessage(
+              { type: 'frame', printerId: frame.printerId, jpeg: frame.jpeg },
+              [frame.jpeg],
+            );
+          }
+
           if (bytesConsumed === -1) {
             console.error('Grid stream: corrupt frame header, resetting buffer');
             gbuf.reset();
-          } else {
-            for (const frame of parsedFrames) {
-              lastFrameTime.set(frame.printerId, performance.now());
-              pipeline.framesParsed++;
-              pipeline.framesSentToWorker++;
-              pipeline.lastParseTime = performance.now();
-              workerRef.current!.postMessage(
-                { type: 'frame', printerId: frame.printerId, jpeg: frame.jpeg },
-                [frame.jpeg],
-              );
-            }
-
+          } else if (bytesConsumed > 0) {
             // Compact: shift remaining bytes to front, release oversized buffers
-            if (bytesConsumed > 0) {
-              gbuf.compact(bytesConsumed);
-              gbuf.shrinkIfSparse();
-            }
+            gbuf.compact(bytesConsumed);
+            gbuf.shrinkIfSparse();
           }
         }
 

@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 import { api } from '../api/client';
-import { formatDuration, formatETA } from '../utils/date';
+import { formatDuration, formatETA, formatUptime } from '../utils/date';
 import type { HMSError } from '../api/client';
 import { Card } from './Card';
 import { ConfirmModal } from './ConfirmModal';
@@ -33,6 +33,61 @@ import type { GridLayout } from './cameraGridLayout';
 import { GRID_LAYOUT_COLS } from './cameraGridLayout';
 export type { GridLayout } from './cameraGridLayout';
 export { GRID_LAYOUT_COLS, GRID_LAYOUT_ICONS } from './cameraGridLayout';
+
+/** Printer info consumed by the camera grid, derived from printer + live status. */
+export interface GridPrinter {
+  id: number;
+  name: string;
+  model: string | null;
+  connected: boolean;
+  state: string | null;
+  progress: number;
+  remainingTime: number | null;
+  layerNum: number | null;
+  totalLayers: number | null;
+  plateCleared: boolean;
+  hmsErrors?: HMSError[];
+  supports_rtsp?: boolean;
+}
+
+/** Props shared by both the MJPEG and WebRTC grid cards. */
+interface GridCardBaseProps {
+  printerId: number;
+  printerName: string;
+  connected: boolean;
+  state: string | null;
+  progress: number;
+  remainingTime: number | null;
+  layerNum: number | null;
+  totalLayers: number | null;
+  plateCleared: boolean;
+  clearPlateLoading?: boolean;
+  layout: GridLayout;
+  timeFormat?: 'system' | '12h' | '24h';
+  controlLoading?: 'pause' | 'stop' | 'resume' | null;
+  hmsErrors?: HMSError[];
+  hasQueuedJobs?: boolean;
+  dismissedErrorDesc?: string;
+  onPause?: (id: number, name: string) => void;
+  onStop?: (id: number, name: string) => void;
+  onResume?: (id: number, name: string) => void;
+  onClearPlate?: (id: number) => void;
+  onDismissError?: (id: number, description: string) => void;
+}
+
+interface CameraGridCardProps extends GridCardBaseProps {
+  canvasRef?: React.RefObject<HTMLCanvasElement | null>;
+  videoRef?: React.RefObject<HTMLVideoElement | null>;
+  loading: boolean;
+  error: boolean;
+  reconnecting: boolean;
+  reconnectCountdown: number;
+  reconnectAttempt: number;
+  degraded?: boolean;
+  stale?: boolean;
+  onVisibilityChange?: (printerId: number, visible: boolean) => void;
+  onRestart?: () => void;
+}
 
 /**
  * CameraGridCard — pure display component.
@@ -73,40 +128,7 @@ const CameraGridCard = memo(function CameraGridCard({
   hasQueuedJobs,
   dismissedErrorDesc,
   onDismissError,
-}: {
-  printerId: number;
-  printerName: string;
-  connected: boolean;
-  state: string | null;
-  progress: number;
-  remainingTime: number | null;
-  layerNum: number | null;
-  totalLayers: number | null;
-  canvasRef?: React.RefObject<HTMLCanvasElement | null>;
-  videoRef?: React.RefObject<HTMLVideoElement | null>;
-  loading: boolean;
-  error: boolean;
-  reconnecting: boolean;
-  reconnectCountdown: number;
-  reconnectAttempt: number;
-  onPause?: (id: number, name: string) => void;
-  onStop?: (id: number, name: string) => void;
-  onResume?: (id: number, name: string) => void;
-  onVisibilityChange?: (printerId: number, visible: boolean) => void;
-  onClearPlate?: (id: number) => void;
-  onRestart?: () => void;
-  plateCleared: boolean;
-  clearPlateLoading?: boolean;
-  layout: 'compact' | 'default' | 'large';
-  timeFormat?: 'system' | '12h' | '24h';
-  controlLoading?: 'pause' | 'stop' | 'resume' | null;
-  degraded?: boolean;
-  stale?: boolean;
-  hmsErrors?: HMSError[];
-  hasQueuedJobs?: boolean;
-  dismissedErrorDesc?: string;
-  onDismissError?: (id: number, description: string) => void;
-}) {
+}: CameraGridCardProps) {
   const { t } = useTranslation();
   const cardRef = useRef<HTMLDivElement>(null);
   // IntersectionObserver for visibility tracking
@@ -217,6 +239,7 @@ const CameraGridCard = memo(function CameraGridCard({
                     disabled={!!controlLoading}
                     className="p-1 rounded bg-white/10 hover:bg-white/40 transition-colors disabled:opacity-40"
                     title={t('printers.pause')}
+                    aria-label={t('printers.pause')}
                   >
                     {controlLoading === 'pause'
                       ? <Loader2 className={`${iconCtrl} text-white animate-spin`} />
@@ -229,6 +252,7 @@ const CameraGridCard = memo(function CameraGridCard({
                     disabled={!!controlLoading}
                     className="p-1 rounded bg-white/10 hover:bg-white/40 transition-colors disabled:opacity-40"
                     title={t('printers.resume')}
+                    aria-label={t('printers.resume')}
                   >
                     {controlLoading === 'resume'
                       ? <Loader2 className={`${iconCtrl} text-white animate-spin`} />
@@ -241,6 +265,7 @@ const CameraGridCard = memo(function CameraGridCard({
                     disabled={!!controlLoading}
                     className="p-1 rounded bg-white/10 hover:bg-red-500/60 transition-colors disabled:opacity-40"
                     title={t('printers.stop')}
+                    aria-label={t('printers.stop')}
                   >
                     {controlLoading === 'stop'
                       ? <Loader2 className={`${iconCtrl} text-white animate-spin`} />
@@ -335,36 +360,16 @@ function StatsDisplay({ subscribeStats, getStatsSnapshot }: {
   );
 }
 
+interface WebRTCGridCardProps extends GridCardBaseProps {
+  onStats?: (id: number, stats: WebRTCPrinterStats) => void;
+  restartKey?: number;
+}
+
 /**
  * WebRTCGridCard — wraps CameraGridCard with an individual useWebRTCStream connection.
  * Used for RTSP-capable printers when camera_engine is 'go2rtc'.
  */
-const WebRTCGridCard = memo(function WebRTCGridCard(props: {
-  printerId: number;
-  printerName: string;
-  connected: boolean;
-  state: string | null;
-  progress: number;
-  remainingTime: number | null;
-  layerNum: number | null;
-  totalLayers: number | null;
-  plateCleared: boolean;
-  hmsErrors?: HMSError[];
-  onPause?: (id: number, name: string) => void;
-  onStop?: (id: number, name: string) => void;
-  onResume?: (id: number, name: string) => void;
-  onVisibilityChange?: (printerId: number, visible: boolean) => void;
-  onClearPlate?: (id: number) => void;
-  clearPlateLoading?: boolean;
-  layout: 'compact' | 'default' | 'large';
-  timeFormat?: 'system' | '12h' | '24h';
-  controlLoading?: 'pause' | 'stop' | 'resume' | null;
-  hasQueuedJobs?: boolean;
-  dismissedErrorDesc?: string;
-  onDismissError?: (id: number, description: string) => void;
-  onStats?: (id: number, stats: WebRTCPrinterStats) => void;
-  restartKey?: number;
-}) {
+const WebRTCGridCard = memo(function WebRTCGridCard({ onStats, restartKey, ...cardProps }: WebRTCGridCardProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const {
     isLoading,
@@ -376,46 +381,25 @@ const WebRTCGridCard = memo(function WebRTCGridCard(props: {
     degraded,
     restart,
   } = useWebRTCStream({
-    printerId: props.printerId,
-    enabled: props.connected,
-    videoRef: videoRef as React.RefObject<HTMLVideoElement | null>,
-    onStats: props.onStats,
-    restartKey: props.restartKey,
+    printerId: cardProps.printerId,
+    enabled: cardProps.connected,
+    videoRef,
+    onStats,
+    restartKey,
   });
 
   return (
     <CameraGridCard
-      printerId={props.printerId}
-      printerName={props.printerName}
-      connected={props.connected}
-      state={props.state}
-      progress={props.progress}
-      remainingTime={props.remainingTime}
-      layerNum={props.layerNum}
-      totalLayers={props.totalLayers}
-      videoRef={videoRef as React.RefObject<HTMLVideoElement | null>}
+      {...cardProps}
+      videoRef={videoRef}
       loading={isLoading}
       error={hasError}
       reconnecting={isReconnecting}
       reconnectCountdown={reconnectCountdown}
       reconnectAttempt={reconnectAttempt}
-      onPause={props.onPause}
-      onStop={props.onStop}
-      onResume={props.onResume}
-      onVisibilityChange={props.onVisibilityChange}
-      onClearPlate={props.onClearPlate}
-      onRestart={restart}
-      plateCleared={props.plateCleared}
-      clearPlateLoading={props.clearPlateLoading}
-      layout={props.layout}
-      timeFormat={props.timeFormat}
-      controlLoading={props.controlLoading}
       degraded={degraded}
       stale={stale}
-      hmsErrors={props.hmsErrors}
-      hasQueuedJobs={props.hasQueuedJobs}
-      dismissedErrorDesc={props.dismissedErrorDesc}
-      onDismissError={props.onDismissError}
+      onRestart={restart}
     />
   );
 });
@@ -423,8 +407,9 @@ const WebRTCGridCard = memo(function WebRTCGridCard(props: {
 /**
  * CameraGrid — manages a SINGLE multiplexed HTTP connection for all cameras.
  *
- * Uses `GET /camera/grid-stream?ids=1,2,3&fps=5&quality=15&scale=0.5` which
- * returns binary-framed JPEG data:  [4B printer_id LE][4B length LE][jpeg]
+ * Uses `GET /camera/grid-stream?ids=1,2,3` (quality preset resolved
+ * server-side from settings), which returns binary-framed JPEG data:
+ * [4B printer_id LE][4B length LE][jpeg]
  *
  * When camera_engine is 'go2rtc', RTSP-capable printers (X1/H2/P2) use
  * individual WebRTC connections via go2rtc for zero-transcode streaming.
@@ -441,7 +426,7 @@ export function CameraGrid({
   layout,
   timeFormat,
 }: {
-  printers: { id: number; name: string; model: string | null; connected: boolean; state: string | null; progress: number; remainingTime: number | null; layerNum: number | null; totalLayers: number | null; plateCleared: boolean; hmsErrors?: HMSError[]; supports_rtsp?: boolean }[];
+  printers: GridPrinter[];
   layout: GridLayout;
   timeFormat?: 'system' | '12h' | '24h';
 }) {
@@ -537,10 +522,10 @@ export function CameraGrid({
   // When go2rtc is active, split printers: RTSP models → WebRTC, chamber models → MJPEG grid
   const { mjpegPrinters, webrtcPrinters } = useMemo(() => {
     if (cameraEngine !== 'go2rtc') {
-      return { mjpegPrinters: printers, webrtcPrinters: [] as typeof printers };
+      return { mjpegPrinters: printers, webrtcPrinters: [] as GridPrinter[] };
     }
-    const mjpeg: typeof printers = [];
-    const webrtc: typeof printers = [];
+    const mjpeg: GridPrinter[] = [];
+    const webrtc: GridPrinter[] = [];
     for (const p of printers) {
       if (p.supports_rtsp) {
         webrtc.push(p);
@@ -551,7 +536,15 @@ export function CameraGrid({
     return { mjpegPrinters: mjpeg, webrtcPrinters: webrtc };
   }, [printers, cameraEngine]);
 
-  const rawPrinterIdsKey = mjpegPrinters.map(p => p.id).sort((a, b) => a - b).join(',');
+  // Only stream connected printers — the backend would otherwise spawn ffmpeg
+  // against unreachable printers and slow-retry them forever. Offline cards
+  // still render (with the offline overlay); they join the stream once the
+  // printer reconnects and the debounced ids key updates.
+  const rawPrinterIdsKey = mjpegPrinters
+    .filter(p => p.connected)
+    .map(p => p.id)
+    .sort((a, b) => a - b)
+    .join(',');
 
   // Debounce printerIdsKey so transient printer list changes don't tear down the stream
   const [printerIdsKey, setPrinterIdsKey] = useState(rawPrinterIdsKey);
@@ -640,10 +633,7 @@ export function CameraGrid({
       // Uptime: prefer MJPEG uptime if stream exists, else compute from WebRTC start
       let uptime = mjpeg.uptime;
       if (!hasMjpeg && hasWebrtc && webrtcStartRef.current > 0) {
-        const elapsed = Math.floor((now - webrtcStartRef.current) / 1000);
-        const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
-        const ss = String(elapsed % 60).padStart(2, '0');
-        uptime = `${mm}:${ss}`;
+        uptime = formatUptime(Math.floor((now - webrtcStartRef.current) / 1000));
       }
 
       combinedStatsRef.current = {
@@ -673,6 +663,7 @@ export function CameraGrid({
           onClick={() => setRestartKey(k => k + 1)}
           className="text-bambu-gray/60 hover:text-white transition-colors"
           title={t('printers.cameraGrid.refresh')}
+          aria-label={t('printers.cameraGrid.refresh')}
         >
           <RefreshCw className="w-3.5 h-3.5" />
         </button>
@@ -695,7 +686,6 @@ export function CameraGrid({
             onStop={canControl ? handleStop : undefined}
             onResume={canControl ? handleResume : undefined}
             controlLoading={getControlLoading(p.id)}
-            onVisibilityChange={handleVisibilityChange}
             onClearPlate={canClearPlate ? handleClearPlate : undefined}
             plateCleared={p.plateCleared}
             clearPlateLoading={clearPlateMutation.isPending && clearPlateMutation.variables === p.id}
@@ -710,8 +700,7 @@ export function CameraGrid({
           />
         ))}
         {/* MJPEG cards — multiplexed grid stream (all printers in ffmpeg mode, chamber-only in go2rtc mode) */}
-        {mjpegPrinters.map(p => {
-          return (
+        {mjpegPrinters.map(p => (
           <CameraGridCard
             key={p.id}
             printerId={p.id}
@@ -722,7 +711,7 @@ export function CameraGrid({
             remainingTime={p.remainingTime}
             layerNum={p.layerNum}
             totalLayers={p.totalLayers}
-            canvasRef={canvasRefs.current.get(p.id)!}
+            canvasRef={canvasRefs.current.get(p.id)}
             loading={loadingSet.has(p.id)}
             error={errorSet.has(p.id)}
             reconnecting={reconnectingSet.has(p.id)}
@@ -745,8 +734,7 @@ export function CameraGrid({
             hasQueuedJobs={printersWithQueue.has(p.id)}
             onDismissError={handleDismissError}
           />
-          );
-        })}
+        ))}
       </div>
 
       {/* Print control confirmation modal */}

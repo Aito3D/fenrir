@@ -5,6 +5,7 @@
  */
 import { useState, useRef, useCallback } from 'react';
 import { RECONNECT_BASE_DELAY_MS, RECONNECT_MAX_DELAY_MS } from '../utils/streamConstants';
+import { startCountdown } from '../utils/countdown';
 
 interface UseGridReconnectReturn {
   reconnectingSet: Set<number>;
@@ -25,13 +26,11 @@ export function useGridReconnect(): UseGridReconnectReturn {
   const [reconnectCountdown, setReconnectCountdown] = useState(0);
   const reconnectAttemptsRef = useRef(0);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
-  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cancelCountdownRef = useRef<(() => void) | null>(null);
 
   const cleanupReconnect = useCallback(() => {
-    if (countdownIntervalRef.current) {
-      clearInterval(countdownIntervalRef.current);
-      countdownIntervalRef.current = null;
-    }
+    cancelCountdownRef.current?.();
+    cancelCountdownRef.current = null;
   }, []);
 
   const resetReconnect = useCallback(() => {
@@ -53,19 +52,8 @@ export function useGridReconnect(): UseGridReconnectReturn {
     setReconnectingSet(new Set(printerIds));
 
     // Countdown timer
-    let remaining = Math.ceil(delay / 1000);
-    setReconnectCountdown(remaining);
     cleanupReconnect();
-    countdownIntervalRef.current = setInterval(() => {
-      remaining -= 1;
-      if (remaining <= 0) {
-        if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-        countdownIntervalRef.current = null;
-        setReconnectCountdown(0);
-      } else {
-        setReconnectCountdown(remaining);
-      }
-    }, 1000);
+    cancelCountdownRef.current = startCountdown(delay, setReconnectCountdown);
 
     // Wait then continue
     await new Promise(resolve => setTimeout(resolve, delay));

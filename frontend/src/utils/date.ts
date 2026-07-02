@@ -432,6 +432,18 @@ export function formatMediaTime(seconds: number): string {
 }
 
 /**
+ * Format elapsed seconds as a zero-padded mm:ss counter.
+ *
+ * @param seconds - Total elapsed seconds
+ * @returns Formatted string (e.g., "02:05", "00:30")
+ */
+export function formatUptime(seconds: number): string {
+  const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
+  const ss = String(Math.floor(seconds % 60)).padStart(2, '0');
+  return `${mm}:${ss}`;
+}
+
+/**
  * Format a duration given in hours to a human-readable string.
  *
  * @param hours - Duration in hours (e.g., 2.5)

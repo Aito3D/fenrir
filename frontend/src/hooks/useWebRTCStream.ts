@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { api } from '../api/client';
 import { STREAM_STALE_MS, STREAM_DEGRADED_MS, STREAM_ERROR_MS, RECONNECT_BASE_DELAY_MS, RECONNECT_MAX_DELAY_MS } from '../utils/streamConstants';
+import { startCountdown } from '../utils/countdown';
 
 export interface WebRTCPrinterStats {
   bytesPerSecond: number;
@@ -41,7 +42,7 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cancelCountdownRef = useRef<(() => void) | null>(null);
   const statsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevBytesRef = useRef(0);
   const mountedRef = useRef(true);
@@ -57,10 +58,8 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
   const reconnectScheduledRef = useRef(false);
 
   const cleanupCountdown = useCallback(() => {
-    if (countdownIntervalRef.current) {
-      clearInterval(countdownIntervalRef.current);
-      countdownIntervalRef.current = null;
-    }
+    cancelCountdownRef.current?.();
+    cancelCountdownRef.current = null;
   }, []);
 
   const stopFrameMonitor = useCallback(() => {
@@ -289,19 +288,8 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
     setIsReconnecting(true);
 
     // Countdown timer
-    let remaining = Math.ceil(delay / 1000);
-    setReconnectCountdown(remaining);
     cleanupCountdown();
-    countdownIntervalRef.current = setInterval(() => {
-      remaining -= 1;
-      if (remaining <= 0) {
-        if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-        countdownIntervalRef.current = null;
-        setReconnectCountdown(0);
-      } else {
-        setReconnectCountdown(remaining);
-      }
-    }, 1000);
+    cancelCountdownRef.current = startCountdown(delay, setReconnectCountdown);
 
     reconnectTimerRef.current = setTimeout(() => {
       if (mountedRef.current && enabled) {

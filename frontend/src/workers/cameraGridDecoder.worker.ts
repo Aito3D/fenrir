@@ -79,6 +79,9 @@ self.onmessage = (e: MessageEvent) => {
           visibleSet.add(msg.printerId);
         } else {
           visibleSet.delete(msg.printerId);
+          // Drop the stale pending frame — it would otherwise sit in memory
+          // (and decode late) once the card scrolls back into view.
+          pendingFrame.delete(msg.printerId);
         }
         break;
       }
