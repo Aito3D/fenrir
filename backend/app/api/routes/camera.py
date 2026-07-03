@@ -1088,12 +1088,12 @@ async def generate_rtsp_mjpeg_stream(
     camera_url = f"rtsp://bblp:{access_code}@127.0.0.1:{proxy_port}/streaming/live/1"
 
     async def _abort_stream_cleanup() -> None:
-        """Release resources on early-return paths that never reach the main finally block.
+        """Release the TLS proxy and disconnect-event registration (idempotent).
 
-        Any `return` added between here and the streaming loop's try/finally
-        MUST call this first, or the TLS proxy socket and disconnect-event
-        registration leak (the grid restart loop retries failed cameras
-        forever, so leaks here compound quickly).
+        Called by the streaming loop's finally block AND by every early-return
+        path before it. Any `return` added between proxy creation and the
+        streaming loop MUST call this first, or the proxy socket leaks (the
+        grid restart loop retries failed cameras forever, so leaks compound).
         """
         if stream_id:
             _disconnect_events.pop(stream_id, None)
@@ -1424,8 +1424,6 @@ async def generate_rtsp_mjpeg_stream(
         # Remove from active streams
         if stream_id and stream_id in _state.active_streams:
             del _state.active_streams[stream_id]
-        if stream_id:
-            _disconnect_events.pop(stream_id, None)
 
         # Only clean up timestamps if no other active stream exists for this printer
         if printer_id is not None and not _has_other_stream(printer_id):
@@ -1452,8 +1450,9 @@ async def generate_rtsp_mjpeg_stream(
         if process:
             _state.spawned_ffmpeg_pids.pop(process.pid, None)
 
-        proxy_server.close()
-        await proxy_server.wait_closed()
+        # Shared with the early-return paths: pops the disconnect event and
+        # closes the TLS proxy
+        await _abort_stream_cleanup()
         logger.info("Camera stream stopped for %s (stream_id=%s)", ip_address, stream_id)
 
 

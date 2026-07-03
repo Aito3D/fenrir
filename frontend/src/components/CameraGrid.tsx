@@ -40,6 +40,16 @@ export { GRID_LAYOUT_COLS, GRID_LAYOUT_ICONS } from './cameraGridLayout';
 /** How long the tab must stay hidden before camera streams are suspended. */
 const HIDDEN_SUSPEND_DELAY_MS = 15_000;
 
+/** State label color, keyed by the same stateKey used for the i18n label. */
+const STATE_COLORS = {
+  offline: 'text-bambu-gray/60',
+  printing: 'text-bambu-green',
+  paused: 'text-yellow-400',
+  failed: 'text-red-400',
+  finished: 'text-bambu-green',
+  idle: 'text-bambu-green/60',
+} as const;
+
 /** Printer info consumed by the camera grid, derived from printer + live status. */
 export interface GridPrinter {
   id: number;
@@ -161,10 +171,10 @@ const CameraGridCard = memo(function CameraGridCard({
   }, [printerId, onVisibilityChange]);
 
   const stateKey = !connected ? 'offline' : state === 'RUNNING' ? 'printing' : state === 'PAUSE' ? 'paused' : state === 'FINISH' ? 'finished' : state === 'FAILED' ? 'failed' : 'idle';
-  const stateColor = !connected ? 'text-bambu-gray/60' : state === 'RUNNING' ? 'text-bambu-green' : state === 'PAUSE' ? 'text-yellow-400' : state === 'FAILED' ? 'text-red-400' : state === 'FINISH' ? 'text-bambu-green' : 'text-bambu-green/60';
+  const stateColor = STATE_COLORS[stateKey];
   const isRunning = state === 'RUNNING';
   const isPaused = state === 'PAUSE';
-  const textSm = layout === 'compact' ? 'text-[10px]' : 'text-sm';
+  const textName = layout === 'compact' ? 'text-[11px]' : 'text-base';
   const textXs = layout === 'compact' ? 'text-[9px]' : 'text-[11px]';
   const iconSm = layout === 'compact' ? 'w-2.5 h-2.5' : 'w-3 h-3';
   const iconCtrl = layout === 'compact' ? 'w-3 h-3' : 'w-3.5 h-3.5';
@@ -249,12 +259,30 @@ const CameraGridCard = memo(function CameraGridCard({
             <span className={`relative ${layout === 'compact' ? 'text-xl' : 'text-3xl'} font-bold text-yellow-400 uppercase tracking-widest drop-shadow-lg`}>{t('printers.status.paused')}</span>
           </div>
         )}
-        {/* Printer name (top left) + controls/state (top right) */}
-        <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/70 to-transparent px-3 py-1.5 flex items-center justify-between">
-          <span className={`${textSm} text-white font-medium drop-shadow-sm flex items-center gap-1`}>
-            {printerName}
-            {degraded && <span title={t('printers.cameraGrid.connectionLost')}><Signal className={`${iconSm} text-yellow-400 animate-pulse`} /></span>}
-          </span>
+        {/* Printer name + temps (top left) + controls/state (top right) */}
+        <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/70 to-transparent px-3 py-1.5 flex items-start justify-between">
+          <div className="flex flex-col min-w-0">
+            <span className={`${textName} text-white font-medium drop-shadow-sm flex items-center gap-1`}>
+              {printerName}
+              {degraded && <span title={t('printers.cameraGrid.connectionLost')}><Signal className={`${iconSm} text-yellow-400 animate-pulse`} /></span>}
+            </span>
+            {connected && layout !== 'compact' && (nozzleTemp != null || bedTemp != null) && (
+              <div className="flex items-center gap-2 text-[10px] text-white/70 tabular-nums drop-shadow-sm">
+                {nozzleTemp != null && (
+                  <span className="flex items-center gap-0.5 cursor-default" title={t('printers.temperatures.nozzle')}>
+                    <Flame className={`${iconSm} text-orange-400`} />
+                    {Math.round(nozzleTemp)}°
+                  </span>
+                )}
+                {bedTemp != null && (
+                  <span className="flex items-center gap-0.5 cursor-default" title={t('printers.temperatures.bed')}>
+                    <Thermometer className={`${iconSm} text-blue-400`} />
+                    {Math.round(bedTemp)}°
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
           <div className="flex items-center gap-1">
             {/* Action buttons fade in on hover; always visible on touch devices */}
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-opacity">
@@ -317,7 +345,7 @@ const CameraGridCard = memo(function CameraGridCard({
         {topError && (
           <button
             onClick={() => onDismissError?.(printerId, topError.description)}
-            className={`absolute left-2 right-2 ${layout === 'compact' ? 'top-7' : 'top-8'} z-20 flex items-start gap-1.5 px-2 py-1.5 rounded-md shadow-lg border backdrop-blur-sm cursor-pointer hover:opacity-80 transition-opacity text-left ${
+            className={`absolute left-2 right-2 ${layout === 'compact' ? 'top-7' : 'top-11'} z-20 flex items-start gap-1.5 px-2 py-1.5 rounded-md shadow-lg border backdrop-blur-sm cursor-pointer hover:opacity-80 transition-opacity text-left ${
               topError.severity <= 2
                 ? 'bg-red-900/90 border-red-500/50 text-red-100'
                 : 'bg-red-900/80 border-red-500/40 text-red-200'
@@ -331,22 +359,6 @@ const CameraGridCard = memo(function CameraGridCard({
       </div>
       {/* Progress bar + details — bottom (outside overflow-hidden so tooltip can escape) */}
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 rounded-b-xl">
-        {connected && layout !== 'compact' && (nozzleTemp != null || bedTemp != null) && (
-          <div className={`flex items-center gap-2 ${textXs} text-white/70 mb-0.5 tabular-nums`}>
-            {nozzleTemp != null && (
-              <span className="flex items-center gap-0.5 cursor-default" title={t('printers.temperatures.nozzle')}>
-                <Flame className={`${iconSm} text-orange-400`} />
-                {Math.round(nozzleTemp)}°
-              </span>
-            )}
-            {bedTemp != null && (
-              <span className="flex items-center gap-0.5 cursor-default" title={t('printers.temperatures.bed')}>
-                <Thermometer className={`${iconSm} text-blue-400`} />
-                {Math.round(bedTemp)}°
-              </span>
-            )}
-          </div>
-        )}
         {(state === 'RUNNING' || state === 'PAUSE') && (
           <>
             {jobName && layout !== 'compact' && (

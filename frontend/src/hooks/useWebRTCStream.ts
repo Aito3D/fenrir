@@ -42,6 +42,12 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
   const [degraded, setDegraded] = useState(false);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const reconnectAttemptRef = useRef(0);
+  // Ref mirrors state so timers/callbacks read the current value without
+  // stale closures; always write both through setAttempt.
+  const setAttempt = useCallback((n: number) => {
+    reconnectAttemptRef.current = n;
+    setReconnectAttempt(n);
+  }, []);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelCountdownRef = useRef<(() => void) | null>(null);
   const statsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -119,8 +125,7 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
       setIsLoading(false);
       setStale(false);
       setDegraded(false);
-      reconnectAttemptRef.current = 0;
-      setReconnectAttempt(0);
+      setAttempt(0);
     };
 
     if (hasRVFC) {
@@ -171,7 +176,7 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
         setDegraded(false);
       }
     }, FRAME_CHECK_INTERVAL);
-  }, [videoRef, stopFrameMonitor]);
+  }, [videoRef, stopFrameMonitor, setAttempt]);
 
   const connect = useCallback(async () => {
     if (!mountedRef.current || !enabled) return;
@@ -288,8 +293,8 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
     if (reconnectScheduledRef.current) return; // Guard against double scheduling
     reconnectScheduledRef.current = true;
 
-    const attempt = reconnectAttemptRef.current++;
-    setReconnectAttempt(reconnectAttemptRef.current);
+    const attempt = reconnectAttemptRef.current;
+    setAttempt(attempt + 1);
     const delay = Math.min(RECONNECT_BASE_DELAY_MS * Math.pow(2, attempt), RECONNECT_MAX_DELAY_MS);
     setIsReconnecting(true);
 
@@ -302,14 +307,13 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
         connect();
       }
     }, delay);
-  }, [enabled, connect, cleanupCountdown]);
+  }, [enabled, connect, cleanupCountdown, setAttempt]);
 
   // Keep the ref in sync with the latest scheduleReconnect
   scheduleReconnectRef.current = scheduleReconnect;
 
   const restart = useCallback(() => {
-    reconnectAttemptRef.current = 0;
-    setReconnectAttempt(0);
+    setAttempt(0);
     restartKeyRef.current++;
     reconnectScheduledRef.current = false;
     setIsReconnecting(false);
@@ -318,7 +322,7 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
     setDegraded(false);
     cleanupCountdown();
     connect();
-  }, [connect, cleanupCountdown]);
+  }, [connect, cleanupCountdown, setAttempt]);
 
   useEffect(() => {
     mountedRef.current = true;

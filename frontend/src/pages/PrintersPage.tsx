@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } fr
 import { createPortal } from 'react-dom';
 import { compareFwVersions } from '../utils/firmwareVersion';
 import { formatPrintName } from '../utils/printName';
+import { openCameraWindow } from '../utils/cameraWindow';
 import { computePopoverPosition } from '../utils/popoverPosition';
 import {
   BED_TEMP_DEFAULTS,
@@ -5622,19 +5623,7 @@ function PrinterCard({
                     if (cameraViewMode === 'embedded' && onOpenEmbeddedCamera) {
                       onOpenEmbeddedCamera(printer.id, printer.name);
                     } else {
-                      // Use saved window state or defaults
-                      const saved = localStorage.getItem('cameraWindowState');
-                      const state = saved ? JSON.parse(saved) : { width: 640, height: 400 };
-                      const features = [
-                        `width=${state.width}`,
-                        `height=${state.height}`,
-                        state.left !== undefined ? `left=${state.left}` : '',
-                        state.top !== undefined ? `top=${state.top}` : '',
-                        // No `noopener`: same-origin popup needs opener so the browser
-                        // copies sessionStorage (auth token) into the new window.
-                        'menubar=no,toolbar=no,location=no,status=no',
-                      ].filter(Boolean).join(',');
-                      window.open(`/camera/${printer.id}`, `camera-${printer.id}`, features);
+                      openCameraWindow(printer.id);
                     }
                   }}
                   disabled={!status?.connected || !hasPermission('camera:view')}
@@ -8255,10 +8244,20 @@ export function PrintersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- classifyPrinterStatus & filterKnownHMSErrors are stable module-level functions, not reactive deps; statusCacheVersion forces recompute on WebSocket status updates
   }, [sortBy, sortedPrinters, queryClient, statusCacheVersion]);
 
+  // Expand a camera-grid tile — respects the camera view mode setting.
+  // Stable callback so it doesn't break CameraGridCard memoization.
+  const handleGridExpand = useCallback((id: number, name: string) => {
+    if ((settings?.camera_view_mode || 'window') === 'embedded') {
+      setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }));
+    } else {
+      openCameraWindow(id);
+    }
+  }, [settings?.camera_view_mode]);
+
   // Stable reference for CameraGrid — prevents internal useMemo recalculations
   const cameraGridPrinters = useMemo(() =>
     sortedPrinters.map(printer => {
-      const status = queryClient.getQueryData<{ connected: boolean; state: string; progress: number; remaining_time: number | null; layer_num: number | null; total_layers: number | null; plate_cleared?: boolean; hms_errors?: HMSError[]; subtask_name?: string | null; current_print?: string | null; gcode_file?: string | null; temperatures?: { nozzle?: number; bed?: number } | null }>(['printerStatus', printer.id]);
+      const status = queryClient.getQueryData<PrinterStatus>(['printerStatus', printer.id]);
       const isActive = status?.state === 'RUNNING' || status?.state === 'PAUSE';
       return {
         id: printer.id,
@@ -8270,7 +8269,9 @@ export function PrintersPage() {
         remainingTime: status?.remaining_time ?? null,
         layerNum: status?.layer_num ?? null,
         totalLayers: status?.total_layers ?? null,
-        plateCleared: status?.plate_cleared ?? true,
+        // The status payload has no `plate_cleared` — the previous inline cast
+        // read a nonexistent field, so the grid's Clear Plate button never showed
+        plateCleared: status?.awaiting_plate_clear !== true,
         hmsErrors: status?.hms_errors,
         jobName: isActive
           ? formatPrintName(status?.subtask_name || status?.current_print || null, status?.gcode_file, t) || undefined
@@ -8704,25 +8705,7 @@ export function PrintersPage() {
             layout={cameraGridLayout}
             timeFormat={settings?.time_format || 'system'}
             printers={cameraGridPrinters}
-            onExpand={(id, name) => {
-              if ((settings?.camera_view_mode || 'window') === 'embedded') {
-                setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }));
-              } else {
-                // Use saved window state or defaults
-                const saved = localStorage.getItem('cameraWindowState');
-                const state = saved ? JSON.parse(saved) : { width: 640, height: 400 };
-                const features = [
-                  `width=${state.width}`,
-                  `height=${state.height}`,
-                  state.left !== undefined ? `left=${state.left}` : '',
-                  state.top !== undefined ? `top=${state.top}` : '',
-                  // No `noopener`: same-origin popup needs opener so the browser
-                  // copies sessionStorage (auth token) into the new window.
-                  'menubar=no,toolbar=no,location=no,status=no',
-                ].filter(Boolean).join(',');
-                window.open(`/camera/${id}`, `camera-${id}`, features);
-              }
-            }}
+            onExpand={hasPermission('camera:view') ? handleGridExpand : undefined}
           />
         </ErrorBoundary>
       ) : groupedPrinters ? (

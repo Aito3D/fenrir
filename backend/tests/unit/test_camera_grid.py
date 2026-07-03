@@ -1000,3 +1000,97 @@ class TestStderrCategorization:
         finally:
             cam._state.stderr_recent_errors.clear()
             cam._state.stderr_recent_errors.update(old_recent)
+
+
+# ---------------------------------------------------------------------------
+# TestAbortStreamCleanup
+# ---------------------------------------------------------------------------
+
+
+class TestAbortStreamCleanup:
+    """Early-return paths in generate_rtsp_mjpeg_stream must release the TLS
+    proxy and disconnect-event registration (regression: leaked one listening
+    socket per failed grid retry — and the retry loop runs forever)."""
+
+    @pytest.mark.asyncio
+    async def test_ffmpeg_not_found_releases_proxy_and_event(self):
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+
+        import backend.app.api.routes.camera as cam
+
+        fake_proxy_server = AsyncMock()
+        fake_proxy_server.close = MagicMock()
+        disconnect_event = asyncio.Event()
+
+        with (
+            patch("backend.app.api.routes.camera.get_ffmpeg_path", return_value="/usr/bin/ffmpeg"),
+            patch("backend.app.api.routes.camera.get_camera_port", return_value=322),
+            patch("backend.app.api.routes.camera.create_tls_proxy", return_value=(12345, fake_proxy_server)),
+            patch("backend.app.api.routes.camera.rtsp_socket_timeout_flag", return_value="timeout"),
+            patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError),
+        ):
+            frames = [
+                chunk
+                async for chunk in cam.generate_rtsp_mjpeg_stream(
+                    "192.168.1.1",
+                    "code",
+                    "X1C",
+                    fps=5,
+                    stream_id="1-aborttest",
+                    printer_id=1,
+                    disconnect_event=disconnect_event,
+                )
+            ]
+
+        assert any(b"ffmpeg not installed" in f for f in frames)
+        fake_proxy_server.close.assert_called_once()
+        fake_proxy_server.wait_closed.assert_awaited()
+        assert "1-aborttest" not in cam._disconnect_events
+
+    @pytest.mark.asyncio
+    async def test_immediate_ffmpeg_failure_releases_proxy_and_state(self):
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+
+        import backend.app.api.routes.camera as cam
+
+        fake_proxy_server = AsyncMock()
+        fake_proxy_server.close = MagicMock()
+        disconnect_event = asyncio.Event()
+
+        class _FakeStderr:
+            async def read(self, n=-1):
+                return b"Error opening input: Connection refused"
+
+        class _FakeProcess:
+            pid = 999_991
+            returncode = 1
+            stderr = _FakeStderr()
+
+        with (
+            patch("backend.app.api.routes.camera.get_ffmpeg_path", return_value="/usr/bin/ffmpeg"),
+            patch("backend.app.api.routes.camera.get_camera_port", return_value=322),
+            patch("backend.app.api.routes.camera.create_tls_proxy", return_value=(12345, fake_proxy_server)),
+            patch("backend.app.api.routes.camera.rtsp_socket_timeout_flag", return_value="timeout"),
+            patch("asyncio.create_subprocess_exec", return_value=_FakeProcess()),
+        ):
+            frames = [
+                chunk
+                async for chunk in cam.generate_rtsp_mjpeg_stream(
+                    "192.168.1.1",
+                    "code",
+                    "X1C",
+                    fps=5,
+                    stream_id="1-aborttest2",
+                    printer_id=1,
+                    disconnect_event=disconnect_event,
+                )
+            ]
+
+        assert any(b"Camera connection failed" in f for f in frames)
+        fake_proxy_server.close.assert_called_once()
+        fake_proxy_server.wait_closed.assert_awaited()
+        assert "1-aborttest2" not in cam._disconnect_events
+        assert "1-aborttest2" not in cam._state.active_streams
+        assert 999_991 not in cam._state.spawned_ffmpeg_pids
