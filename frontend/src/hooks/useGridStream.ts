@@ -50,9 +50,11 @@ export interface GridStreamStats {
   total: number;
   uptime: string;
   rawBytesPerSecond: number;
+  /** Frames the decode worker replaced before decoding (decoder fell behind). */
+  droppedFrames: number;
 }
 
-const EMPTY_STATS: GridStreamStats = { bw: '', active: 0, total: 0, uptime: '', rawBytesPerSecond: 0 };
+const EMPTY_STATS: GridStreamStats = { bw: '', active: 0, total: 0, uptime: '', rawBytesPerSecond: 0, droppedFrames: 0 };
 
 interface UseGridStreamOptions {
   printerIdsKey: string;
@@ -117,6 +119,7 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
     framesFromWorker: 0,
     framesDrawn: 0,
     workerDecodeErrors: 0,
+    workerDroppedFrames: 0,
     lastChunkTime: 0,
     lastWorkerFrameTime: 0,
     lastParseTime: 0,
@@ -194,8 +197,9 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
 
       if (type === 'pong') {
         pipeline.stallPingPending = false;
+        pipeline.workerDroppedFrames = e.data.totalDroppedFrames ?? pipeline.workerDroppedFrames;
         console.debug(
-          `[grid] Worker pong: visible=${e.data.visibleCount} pending=${e.data.pendingCount} decoding=${e.data.decodingCount} errors=${e.data.totalDecodeErrors} success=${e.data.totalDecodeSuccess}`,
+          `[grid] Worker pong: visible=${e.data.visibleCount} pending=${e.data.pendingCount} decoding=${e.data.decodingCount} errors=${e.data.totalDecodeErrors} success=${e.data.totalDecodeSuccess} dropped=${e.data.totalDroppedFrames}`,
         );
         return;
       }
@@ -284,6 +288,7 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
         total: ids.length,
         uptime: formatUptime(elapsed),
         rawBytesPerSecond: bytes,
+        droppedFrames: pipeline.workerDroppedFrames,
       };
       statsSubscribers.current.forEach(cb => cb());
 
@@ -325,11 +330,14 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
       });
     }, 1000);
 
-    // Pipeline stats logging — directly every 10s
+    // Pipeline stats logging — directly every 10s.  The routine ping keeps
+    // worker-side counters (dropped frames) flowing back via pong; any pong
+    // also proves the worker is alive to the stall detector.
     const pipelineStatsInterval = setInterval(() => {
       if (!active) return;
+      workerRef.current?.postMessage({ type: 'ping' });
       console.debug(
-        `[grid] Pipeline: chunks=${pipeline.chunksReceived} parsed=${pipeline.framesParsed} →worker=${pipeline.framesSentToWorker} ←worker=${pipeline.framesFromWorker} drawn=${pipeline.framesDrawn} errors=${pipeline.workerDecodeErrors} restarts=${pipeline.workerRestarts}`,
+        `[grid] Pipeline: chunks=${pipeline.chunksReceived} parsed=${pipeline.framesParsed} →worker=${pipeline.framesSentToWorker} ←worker=${pipeline.framesFromWorker} drawn=${pipeline.framesDrawn} dropped=${pipeline.workerDroppedFrames} errors=${pipeline.workerDecodeErrors} restarts=${pipeline.workerRestarts}`,
       );
     }, 10_000);
 

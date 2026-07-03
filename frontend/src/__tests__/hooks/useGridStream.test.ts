@@ -14,12 +14,20 @@ import type { GridStreamStats } from '../../hooks/useGridStream';
 
 describe('GridStreamStats type', () => {
   it('has the expected shape', () => {
-    const stats: GridStreamStats = { bw: '1.2 MB/s', active: 3, total: 5, uptime: '02:30', rawBytesPerSecond: 1258291 };
+    const stats: GridStreamStats = {
+      bw: '1.2 MB/s',
+      active: 3,
+      total: 5,
+      uptime: '02:30',
+      rawBytesPerSecond: 1258291,
+      droppedFrames: 0,
+    };
     expect(stats.bw).toBe('1.2 MB/s');
     expect(stats.active).toBe(3);
     expect(stats.total).toBe(5);
     expect(stats.uptime).toBe('02:30');
     expect(stats.rawBytesPerSecond).toBe(1258291);
+    expect(stats.droppedFrames).toBe(0);
   });
 });
 

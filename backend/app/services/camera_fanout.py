@@ -16,9 +16,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 
 logger = logging.getLogger(__name__)
+
+# How often the pump logs a summary of frames dropped for slow subscribers.
+_DROP_LOG_INTERVAL = 60.0
 
 # How long to keep the upstream pump alive after the last subscriber leaves.
 # A short grace window absorbs page refreshes and "open camera in new tab"
@@ -164,6 +168,8 @@ class MjpegBroadcaster:
 
     async def _pump(self) -> None:
         """Drive the upstream generator and broadcast each chunk."""
+        dropped_since_log = 0
+        last_drop_log = time.monotonic()
         try:
             async for chunk in self._factory(self._upstream_disconnect):
                 # Snapshot subscribers under lock so we don't iterate a list
@@ -177,7 +183,18 @@ class MjpegBroadcaster:
                         # Slow viewer — drop this frame for them. They'll catch
                         # up on the next frame. Don't unsubscribe: a brief
                         # browser stall shouldn't end the stream.
-                        pass
+                        dropped_since_log += 1
+                now = time.monotonic()
+                if dropped_since_log and now - last_drop_log >= _DROP_LOG_INTERVAL:
+                    logger.info(
+                        "Camera fan-out %s: dropped %d frame(s) for slow subscribers in last %.0fs (subscribers=%d)",
+                        self._key,
+                        dropped_since_log,
+                        now - last_drop_log,
+                        len(targets),
+                    )
+                    dropped_since_log = 0
+                    last_drop_log = now
         except asyncio.CancelledError:
             raise
         except Exception:

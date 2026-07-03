@@ -760,6 +760,13 @@ async def read_next_chamber_frame(reader: asyncio.StreamReader, timeout: float =
             timeout=timeout,
         )
 
+        # Validate JPEG structure (SOI/EOI markers) — a corrupted payload is
+        # skipped like a timeout instead of propagated to every viewer of the
+        # shared stream.
+        if not (jpeg_data.startswith(b"\xff\xd8") and jpeg_data.endswith(b"\xff\xd9")):
+            logger.warning("Chamber image: discarding invalid JPEG payload (%d bytes)", len(jpeg_data))
+            return None
+
         return jpeg_data
 
     except asyncio.IncompleteReadError:

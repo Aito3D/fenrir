@@ -78,6 +78,13 @@ _GRID_RESTART_BASE_DELAY = 1.5  # seconds
 _GRID_RESTART_MAX_DELAY = 20.0  # cap on exponential backoff (also used for slow retry cadence)
 _GRID_MAX_CONCURRENT_RESTARTS = 4  # max cameras restarted per loop iteration (prevents resource spikes)
 _GRID_SPAWN_STAGGER_DELAY = 0.15  # seconds between initial producer spawns
+_GRID_RECOVERY_SECS = 60.0  # producer must deliver frames this long before its restart backoff resets
+
+# Chamber image in-place reconnect: delays between attempts after a broken
+# connection.  Keeps the shared producer (and all its viewers) alive through
+# brief network hiccups instead of tearing the whole stream down and paying
+# the grid restart backoff (5-20s of black card).
+_CHAMBER_RECONNECT_DELAYS = (1.0, 2.0, 4.0)
 
 # Immutable constants
 _FRAME_BUFFER_MAX_AGE = 300.0  # Max age for stale frame buffer entries (5 minutes)
@@ -780,6 +787,11 @@ class SharedStreamHub:
         entry = self._streams.get(printer_id)
         return entry is not None and entry.alive
 
+    def viewer_count(self, printer_id: int) -> int:
+        """Number of viewers currently attached to a printer's shared stream."""
+        entry = self._streams.get(printer_id)
+        return entry.viewer_count if entry is not None else 0
+
     def get_last_frame(self, printer_id: int) -> bytes | None:
         """Return the current frame from the shared producer, or None."""
         entry = self._streams.get(printer_id)
@@ -837,10 +849,13 @@ async def generate_chamber_mjpeg_stream(
     stream_id: str | None = None,
     printer_id: int | None = None,
     raw: bool = False,
+    disconnect_event: asyncio.Event | None = None,
 ) -> AsyncGenerator[bytes, None]:
     """Generate MJPEG stream from A1/P1 printer using chamber image protocol.
 
     This connects to port 6000 and reads JPEG frames using the Bambu binary protocol.
+    On a broken connection it reconnects in place (bounded attempts) so the shared
+    producer and all its viewers survive brief network hiccups.
     """
     logger.info("Starting chamber image stream for %s (stream_id=%s)", ip_address, stream_id)
 
@@ -857,9 +872,22 @@ async def generate_chamber_mjpeg_stream(
 
     reader, writer = connection
 
-    # Track active connection for cleanup
+    # Track active connection for cleanup; register disconnect event so the
+    # stop endpoint / stale-stream janitor can signal us (mirrors RTSP path)
     if stream_id:
         _state.active_chamber_streams[stream_id] = (reader, writer)
+        if disconnect_event:
+            _disconnect_events[stream_id] = disconnect_event
+
+    def _stop_requested() -> bool:
+        return disconnect_event is not None and disconnect_event.is_set()
+
+    async def _close_connection() -> None:
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except OSError:
+            pass  # Connection already closed or broken; cleanup is best-effort
 
     try:
         frame_interval = 1.0 / fps if fps > 0 else 0.2
@@ -867,20 +895,56 @@ async def generate_chamber_mjpeg_stream(
         consecutive_timeouts = 0
 
         while True:
+            if _stop_requested():
+                logger.info("Chamber image stream disconnect requested (stream_id=%s)", stream_id)
+                break
+
             # Read next frame
+            frame = None
+            broken_reason: str | None = None
             try:
                 frame = await read_next_chamber_frame(reader, timeout=30.0)
             except ChamberConnectionClosed as e:
-                logger.warning("Chamber image stream broken for %s: %s", stream_id, e)
-                break
+                broken_reason = str(e)
 
-            if frame is None:
-                # Timeout — retry a few times before giving up
+            if broken_reason is None and frame is None:
+                # Timeout — retry a few times before treating the connection as broken
                 consecutive_timeouts += 1
                 if consecutive_timeouts >= 3:
-                    logger.warning("Chamber image stream stalled for %s (%d timeouts)", stream_id, consecutive_timeouts)
+                    broken_reason = f"stalled ({consecutive_timeouts} timeouts)"
+                else:
+                    continue
+
+            if broken_reason is not None:
+                if _stop_requested():
                     break
+                logger.warning("Chamber image stream broken for %s: %s", stream_id, broken_reason)
+                # Printer allows a single camera connection — close ours before dialing again
+                await _close_connection()
+                new_connection = None
+                for attempt, delay in enumerate(_CHAMBER_RECONNECT_DELAYS, start=1):
+                    await asyncio.sleep(delay)
+                    if _stop_requested():
+                        break
+                    logger.info(
+                        "Chamber image reconnect attempt %d/%d for %s",
+                        attempt,
+                        len(_CHAMBER_RECONNECT_DELAYS),
+                        stream_id,
+                    )
+                    new_connection = await generate_chamber_image_stream(ip_address, access_code)
+                    if new_connection is not None:
+                        break
+                if new_connection is None:
+                    logger.warning("Chamber image reconnect failed for %s, stopping stream", stream_id)
+                    break
+                reader, writer = new_connection
+                if stream_id:
+                    _state.active_chamber_streams[stream_id] = (reader, writer)
+                consecutive_timeouts = 0
+                logger.info("Chamber image stream reconnected for %s", stream_id)
                 continue
+
             consecutive_timeouts = 0
 
             # Track timestamp for stall detection; frame is served via hub for snapshots
@@ -913,20 +977,16 @@ async def generate_chamber_mjpeg_stream(
         logger.exception("Chamber image stream error: %s", e)
     finally:
         # Remove from active streams
-        if stream_id and stream_id in _state.active_chamber_streams:
-            del _state.active_chamber_streams[stream_id]
+        if stream_id:
+            _state.active_chamber_streams.pop(stream_id, None)
+            _disconnect_events.pop(stream_id, None)
 
         # Only clean up timestamps if no other active stream exists for this printer
         if printer_id is not None and not _has_other_stream(printer_id):
             _state.last_frame_times.pop(printer_id, None)
             _state.stream_start_times.pop(printer_id, None)
 
-        # Close the connection
-        try:
-            writer.close()
-            await writer.wait_closed()
-        except OSError:
-            pass  # Connection already closed or broken; cleanup is best-effort
+        await _close_connection()
         logger.info("Chamber image stream stopped for %s (stream_id=%s)", ip_address, stream_id)
 
 
@@ -1085,20 +1145,69 @@ async def generate_rtsp_mjpeg_stream(
     # dropping the RTSP session after a few seconds due to GnuTLS's
     # hardened Debian defaults rejecting TLS renegotiation.
     proxy_port, proxy_server = await create_tls_proxy(ip_address, port)
-    camera_url = f"rtsp://bblp:{access_code}@127.0.0.1:{proxy_port}/streaming/live/1"
 
-    async def _abort_stream_cleanup() -> None:
-        """Release the TLS proxy and disconnect-event registration (idempotent).
+    # Register disconnect event so the stop endpoint can signal us
+    if stream_id and disconnect_event:
+        _disconnect_events[stream_id] = disconnect_event
 
-        Called by the streaming loop's finally block AND by every early-return
-        path before it. Any `return` added between proxy creation and the
-        streaming loop MUST call this first, or the proxy socket leaks (the
-        grid restart loop retries failed cameras forever, so leaks compound).
-        """
+    inner = _rtsp_mjpeg_frames(
+        ffmpeg=ffmpeg,
+        ip_address=ip_address,
+        access_code=access_code,
+        model=model,
+        fps=fps,
+        stream_id=stream_id,
+        printer_id=printer_id,
+        raw=raw,
+        quality=quality,
+        scale=scale,
+        threads=threads,
+        gpu_accel=gpu_accel,
+        skip_frames=skip_frames,
+        read_timeout=read_timeout,
+        disconnect_event=disconnect_event,
+        proxy_port=proxy_port,
+    )
+    try:
+        async for chunk in inner:
+            yield chunk
+    finally:
+        # Structural cleanup on every exit path — early spawn failure,
+        # watchdog break, client disconnect — so the inner generator never
+        # has to release the proxy or the event registration itself.
+        with contextlib.suppress(Exception):
+            await inner.aclose()
         if stream_id:
             _disconnect_events.pop(stream_id, None)
         proxy_server.close()
         await proxy_server.wait_closed()
+
+
+async def _rtsp_mjpeg_frames(
+    ffmpeg: str,
+    ip_address: str,
+    access_code: str,
+    model: str | None,
+    fps: int,
+    stream_id: str | None,
+    printer_id: int | None,
+    raw: bool,
+    quality: int,
+    scale: float,
+    threads: int,
+    gpu_accel: bool,
+    skip_frames: bool,
+    read_timeout: float,
+    disconnect_event: asyncio.Event | None,
+    proxy_port: int,
+) -> AsyncGenerator[bytes, None]:
+    """Inner RTSP/ffmpeg streaming loop.
+
+    The caller (generate_rtsp_mjpeg_stream) owns the TLS proxy and the
+    disconnect-event registration and releases both when this generator
+    exits — no early-return path here needs manual cleanup.
+    """
+    camera_url = f"rtsp://bblp:{access_code}@127.0.0.1:{proxy_port}/streaming/live/1"
 
     # ffmpeg command to output MJPEG stream to stdout
     # -rtsp_transport tcp: Use TCP for reliability
@@ -1249,10 +1358,6 @@ async def generate_rtsp_mjpeg_stream(
     output_args.append("-")  # Output to stdout
     cmd.extend(output_args)
 
-    # Register disconnect event so stop endpoint can signal us
-    if stream_id and disconnect_event:
-        _disconnect_events[stream_id] = disconnect_event
-
     logger.info(
         "Starting RTSP camera stream for %s (stream_id=%s, model=%s, fps=%s, q:v=%s, scale=%s, threads=%s, gpu_accel=%s, skip_frames=%s)",
         ip_address,
@@ -1295,7 +1400,6 @@ async def generate_rtsp_mjpeg_stream(
                 _state.ffmpeg_cpu_samples[process.pid] = (time.monotonic(), 0.0)
         except FileNotFoundError:
             logger.error("ffmpeg not found - camera streaming requires ffmpeg")
-            await _abort_stream_cleanup()
             if not raw:
                 yield (b"--frame\r\nContent-Type: text/plain\r\n\r\nError: ffmpeg not installed\r\n")
             return
@@ -1308,7 +1412,6 @@ async def generate_rtsp_mjpeg_stream(
         if stream_id:
             _state.active_streams.pop(stream_id, None)
             _state.spawned_ffmpeg_pids.pop(process.pid, None)
-        await _abort_stream_cleanup()
         if not raw:
             yield (
                 b"--frame\r\n"
@@ -1450,9 +1553,6 @@ async def generate_rtsp_mjpeg_stream(
         if process:
             _state.spawned_ffmpeg_pids.pop(process.pid, None)
 
-        # Shared with the early-return paths: pops the disconnect event and
-        # closes the TLS proxy
-        await _abort_stream_cleanup()
         logger.info("Camera stream stopped for %s (stream_id=%s)", ip_address, stream_id)
 
 
@@ -1558,6 +1658,9 @@ async def _ensure_producer(
         "stream_id": stream_id,
         "printer_id": printer_id,
         "raw": True,
+        # Registered under stream_id by the generator so the stop endpoint and
+        # the stale-stream janitor can signal a prompt, reconnect-free shutdown.
+        "disconnect_event": asyncio.Event(),
     }
     if stream_generator is generate_rtsp_mjpeg_stream:
         gen_kwargs["model"] = printer.model
@@ -1717,6 +1820,24 @@ async def camera_grid_stream(
 
         # Per-camera restart tracking: pid -> (attempt_count, next_retry_monotonic)
         pending_restarts: dict[int, tuple[int, float]] = {}
+        # pid -> (attempts_so_far, restart_time) for producers restarted by this
+        # loop.  A restart only counts as recovered once the producer has
+        # delivered frames for _GRID_RECOVERY_SECS — otherwise a printer that
+        # dies right after spawn would reset its backoff every cycle and
+        # crash-loop at the base delay forever.
+        restart_history: dict[int, tuple[int, float]] = {}
+
+        def _restart_attempts(pid: int, entry: _SharedStream, base: int, now: float) -> int:
+            """Initial attempt count for a new restart cycle, escalating across
+            cycles until the producer genuinely recovered."""
+            prev = restart_history.get(pid)
+            if prev is None:
+                return base
+            prev_attempts, restarted_at = prev
+            if entry.frame_seq == 0 or now - restarted_at < _GRID_RECOVERY_SECS:
+                return max(base, prev_attempts)
+            restart_history.pop(pid, None)  # genuine recovery — reset backoff
+            return base
 
         # Register as viewer on all entries (keyed by printer_id for clean replacement on restart)
         registered_entries: dict[int, _SharedStream] = {}
@@ -1753,6 +1874,7 @@ async def camera_grid_stream(
                             # to accelerate backoff and avoid immediate respawn
                             initial_attempts = 2 if pid in _state.watchdog_killed_printers else 0
                             _state.watchdog_killed_printers.discard(pid)
+                            initial_attempts = _restart_attempts(pid, entry, initial_attempts, now)
                             pending_restarts[pid] = (initial_attempts, now + _GRID_RESTART_BASE_DELAY)
                             logger.warning(
                                 "Grid producer died for printer %d, scheduling restart (attempts=%d)",
@@ -1773,7 +1895,7 @@ async def camera_grid_stream(
                             entry.task.cancel()
                         entries.pop(pid, None)
                         if pid not in pending_restarts:
-                            pending_restarts[pid] = (0, now + _GRID_RESTART_BASE_DELAY)
+                            pending_restarts[pid] = (_restart_attempts(pid, entry, 0, now), now + _GRID_RESTART_BASE_DELAY)
                         continue
 
                     # Touch last_accessed so the producer stays alive
@@ -1923,6 +2045,8 @@ async def camera_grid_stream(
                             registered_entries[pid] = entry
                             seen_seqs[pid] = 0
                             del pending_restarts[pid]
+                            # Remember the cycle until the producer proves recovery
+                            restart_history[pid] = (attempts + 1, now)
                             restarts_this_cycle += 1
                             logger.info("Grid producer restarted for printer %d (attempt %d)", pid, attempts + 1)
                         else:
@@ -2137,12 +2261,13 @@ async def stop_camera_stream(
 ):
     """Hint that a single viewer has disconnected.
 
-    The shared producer (SharedStreamHub) is NOT stopped here — it auto-stops
-    after 30 s with no active viewers.  Killing the shared producer would
-    break other viewers (grid on another computer, embedded viewer, etc.).
+    The shared producer (SharedStreamHub) is NOT stopped here while other
+    viewers remain — it auto-stops after 30 s with no active viewers.
+    Killing the shared producer would break other viewers (grid on another
+    computer, embedded viewer, etc.).
 
-    Only non-shared resources (chamber image TCP connections) are cleaned up
-    explicitly.
+    Non-shared streams and viewer-less chamber connections are stopped
+    immediately (the chamber protocol holds the printer's only camera slot).
 
     POST only (sendBeacon compatibility).
     """
@@ -2180,13 +2305,18 @@ async def stop_camera_stream(
     for stream_id in to_remove:
         _state.active_streams.pop(stream_id, None)
 
-    # Stop chamber image streams
-    # Clean up chamber image TCP connections (these are per-client, not shared)
+    # Stop chamber image streams.  Like the RTSP path above, hub-owned
+    # connections with viewers still attached are left alone — closing the
+    # shared connection would break those viewers.  With no viewers left we
+    # stop immediately so the printer's single camera slot frees up right
+    # away instead of after the hub's 30s idle timeout.
     to_remove_chamber = []
     for stream_id, (_reader, writer) in list(_state.active_chamber_streams.items()):
         if stream_id.startswith(f"{printer_id}-"):
+            if hub_owns_printer and _hub.viewer_count(printer_id) > 0:
+                continue
             to_remove_chamber.append(stream_id)
-            # Signal the generator to stop
+            # Signal the generator to stop (prevents in-place reconnect)
             event = _disconnect_events.get(stream_id)
             if event:
                 event.set()

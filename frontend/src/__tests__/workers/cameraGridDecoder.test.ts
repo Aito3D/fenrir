@@ -143,4 +143,43 @@ describe('cameraGridDecoder worker', () => {
     expect(pong.totalDecodeErrors).toBe(0);
     expect(pong.totalDecodeSuccess).toBe(0);
   });
+
+  it('counts frames dropped while a decode is in flight', async () => {
+    // Decode never resolves — frames pile up in pendingFrame and get replaced
+    vi.stubGlobal('createImageBitmap', vi.fn().mockReturnValue(new Promise(() => {})));
+    vi.resetModules();
+    await import('../../workers/cameraGridDecoder.worker');
+    handler = (self as unknown as { onmessage: typeof handler }).onmessage;
+    posted = [];
+
+    send({ type: 'visibility', printerId: 1, visible: true });
+    send({ type: 'frame', printerId: 1, jpeg: new ArrayBuffer(10) }); // starts decoding
+    send({ type: 'frame', printerId: 1, jpeg: new ArrayBuffer(10) }); // becomes pending
+    send({ type: 'frame', printerId: 1, jpeg: new ArrayBuffer(10) }); // replaces pending → dropped
+    send({ type: 'frame', printerId: 1, jpeg: new ArrayBuffer(10) }); // replaces pending → dropped
+    send({ type: 'ping' });
+
+    const pong = posted[posted.length - 1].msg as { type: string; totalDroppedFrames: number };
+    expect(pong.type).toBe('pong');
+    expect(pong.totalDroppedFrames).toBe(2);
+  });
+
+  it('clear resets dropped-frame counter', async () => {
+    vi.stubGlobal('createImageBitmap', vi.fn().mockReturnValue(new Promise(() => {})));
+    vi.resetModules();
+    await import('../../workers/cameraGridDecoder.worker');
+    handler = (self as unknown as { onmessage: typeof handler }).onmessage;
+    posted = [];
+
+    send({ type: 'visibility', printerId: 1, visible: true });
+    send({ type: 'frame', printerId: 1, jpeg: new ArrayBuffer(10) });
+    send({ type: 'frame', printerId: 1, jpeg: new ArrayBuffer(10) });
+    send({ type: 'frame', printerId: 1, jpeg: new ArrayBuffer(10) });
+
+    send({ type: 'clear' });
+    send({ type: 'ping' });
+
+    const pong = posted[posted.length - 1].msg as { type: string; totalDroppedFrames: number };
+    expect(pong.totalDroppedFrames).toBe(0);
+  });
 });

@@ -28,6 +28,7 @@ import { getTopHMSError } from './HMSErrorModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useGridStream } from '../hooks/useGridStream';
+import { useFlipReorder } from '../hooks/useFlipReorder';
 import type { GridStreamStats } from '../hooks/useGridStream';
 import { useWebRTCStream } from '../hooks/useWebRTCStream';
 import type { WebRTCPrinterStats } from '../hooks/useWebRTCStream';
@@ -183,7 +184,7 @@ const CameraGridCard = memo(function CameraGridCard({
   const topError = rawTopError && dismissedErrorDesc === rawTopError.description ? null : rawTopError;
 
   return (
-    <Card className={`relative group transition-[border-color,box-shadow] duration-500 ${isRunning ? '!border-bambu-green !shadow-[0_0_10px_1px_color-mix(in_srgb,var(--accent)_35%,transparent)]' : '!border-transparent'}`} ref={cardRef}>
+    <Card data-flip-key={printerId} className={`relative group transition-[border-color,box-shadow] duration-500 ${isRunning ? '!border-bambu-green !shadow-[0_0_10px_1px_color-mix(in_srgb,var(--accent)_35%,transparent)]' : '!border-transparent'}`} ref={cardRef}>
       <div
         className="relative w-full aspect-video bg-black overflow-hidden rounded-xl"
         onDoubleClick={connected && onExpand ? (e) => {
@@ -199,19 +200,19 @@ const CameraGridCard = memo(function CameraGridCard({
             autoPlay
             playsInline
             muted
-            className={`w-full h-full object-cover ${loading || error || reconnecting || !connected ? 'invisible' : ''}`}
+            className={`w-full h-full object-cover ${loading || error || reconnecting || !connected ? 'opacity-0' : 'opacity-100'}`}
             style={{
               filter: connected && stale && !loading && !error && !reconnecting ? 'blur(3px)' : 'none',
-              transition: 'filter 0.6s ease-in-out',
+              transition: 'filter 0.6s ease-in-out, opacity 0.5s ease-in-out',
             }}
           />
         ) : (
           <canvas
             ref={canvasRef}
-            className={`w-full h-full object-cover ${loading || error || reconnecting || !connected ? 'invisible' : ''}`}
+            className={`w-full h-full object-cover ${loading || error || reconnecting || !connected ? 'opacity-0' : 'opacity-100'}`}
             style={{
               filter: connected && stale && !loading && !error && !reconnecting ? 'blur(3px)' : 'none',
-              transition: 'filter 0.6s ease-in-out',
+              transition: 'filter 0.6s ease-in-out, opacity 0.5s ease-in-out',
             }}
           />
         )}
@@ -254,35 +255,17 @@ const CameraGridCard = memo(function CameraGridCard({
         )}
         {/* State overlay — paused only */}
         {isPaused && (
-          <div className="absolute inset-0 flex items-center justify-center transition-opacity duration-[2000ms] opacity-100">
+          <div className="absolute inset-0 flex items-center justify-center animate-grid-fade-in">
             <div className="absolute inset-0 bg-black/50" />
             <span className={`relative ${layout === 'compact' ? 'text-xl' : 'text-3xl'} font-bold text-yellow-400 uppercase tracking-widest drop-shadow-lg`}>{t('printers.status.paused')}</span>
           </div>
         )}
-        {/* Printer name + temps (top left) + controls/state (top right) */}
-        <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/70 to-transparent px-3 py-1.5 flex items-start justify-between">
-          <div className="flex flex-col min-w-0">
-            <span className={`${textName} text-white font-medium drop-shadow-sm flex items-center gap-1`}>
-              {printerName}
-              {degraded && <span title={t('printers.cameraGrid.connectionLost')}><Signal className={`${iconSm} text-yellow-400 animate-pulse`} /></span>}
-            </span>
-            {connected && layout !== 'compact' && (nozzleTemp != null || bedTemp != null) && (
-              <div className="flex items-center gap-2 text-[10px] text-white/70 tabular-nums drop-shadow-sm">
-                {nozzleTemp != null && (
-                  <span className="flex items-center gap-0.5 cursor-default" title={t('printers.temperatures.nozzle')}>
-                    <Flame className={`${iconSm} text-orange-400`} />
-                    {Math.round(nozzleTemp)}°
-                  </span>
-                )}
-                {bedTemp != null && (
-                  <span className="flex items-center gap-0.5 cursor-default" title={t('printers.temperatures.bed')}>
-                    <Thermometer className={`${iconSm} text-blue-400`} />
-                    {Math.round(bedTemp)}°
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
+        {/* Printer name (top left) + temps while printing / status + controls (top right) */}
+        <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/70 to-transparent px-3 py-1.5 flex items-center justify-between">
+          <span className={`${textName} text-white font-medium drop-shadow-sm flex items-center gap-1 min-w-0`}>
+            {printerName}
+            {degraded && <span title={t('printers.cameraGrid.connectionLost')}><Signal className={`${iconSm} text-yellow-400 animate-pulse`} /></span>}
+          </span>
           <div className="flex items-center gap-1">
             {/* Action buttons fade in on hover; always visible on touch devices */}
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-opacity">
@@ -336,7 +319,24 @@ const CameraGridCard = memo(function CameraGridCard({
                 </button>
               )}
             </div>
-            {!isRunning && !isPaused && (
+            {(isRunning || isPaused) ? (
+              connected && layout !== 'compact' && (nozzleTemp != null || bedTemp != null) && (
+                <div className="flex items-center gap-2 text-[10px] text-white/70 tabular-nums drop-shadow-sm">
+                  {nozzleTemp != null && (
+                    <span className="flex items-center gap-0.5 cursor-default" title={t('printers.temperatures.nozzle')}>
+                      <Flame className={`${iconSm} text-orange-400`} />
+                      {Math.round(nozzleTemp)}°
+                    </span>
+                  )}
+                  {bedTemp != null && (
+                    <span className="flex items-center gap-0.5 cursor-default" title={t('printers.temperatures.bed')}>
+                      <Thermometer className={`${iconSm} text-blue-400`} />
+                      {Math.round(bedTemp)}°
+                    </span>
+                  )}
+                </div>
+              )
+            ) : (
               <span className={`${textXs} font-medium drop-shadow-sm uppercase ${stateColor} ${state === 'FAILED' ? 'animate-pulse' : ''}`}>{t(`printers.status.${stateKey}`)}</span>
             )}
           </div>
@@ -345,7 +345,7 @@ const CameraGridCard = memo(function CameraGridCard({
         {topError && (
           <button
             onClick={() => onDismissError?.(printerId, topError.description)}
-            className={`absolute left-2 right-2 ${layout === 'compact' ? 'top-7' : 'top-11'} z-20 flex items-start gap-1.5 px-2 py-1.5 rounded-md shadow-lg border backdrop-blur-sm cursor-pointer hover:opacity-80 transition-opacity text-left ${
+            className={`absolute left-2 right-2 ${layout === 'compact' ? 'top-7' : 'top-8'} z-20 flex items-start gap-1.5 px-2 py-1.5 rounded-md shadow-lg border backdrop-blur-sm cursor-pointer hover:opacity-80 transition-opacity text-left animate-grid-slide-in-top ${
               topError.severity <= 2
                 ? 'bg-red-900/90 border-red-500/50 text-red-100'
                 : 'bg-red-900/80 border-red-500/40 text-red-200'
@@ -399,7 +399,7 @@ const CameraGridCard = memo(function CameraGridCard({
           <button
             onClick={() => onClearPlate(printerId)}
             disabled={clearPlateLoading}
-            className="w-full py-1.5 rounded-lg bg-bambu-green text-white text-xs font-semibold hover:bg-bambu-green/80 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+            className="w-full py-1.5 rounded-lg bg-bambu-green text-white text-xs font-semibold hover:bg-bambu-green/80 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 animate-grid-slide-in-bottom"
           >
             {clearPlateLoading ? (
               <Loader2 className={`${iconSm} animate-spin`} />
@@ -702,7 +702,7 @@ export function CameraGrid({
   }, [webrtcPrinterIdsKey]);
 
   // Combined stats (MJPEG + WebRTC) via ref + subscriber pattern
-  const combinedStatsRef = useRef<GridStreamStats>({ bw: '', active: 0, total: 0, uptime: '', rawBytesPerSecond: 0 });
+  const combinedStatsRef = useRef<GridStreamStats>({ bw: '', active: 0, total: 0, uptime: '', rawBytesPerSecond: 0, droppedFrames: 0 });
   const combinedSubscribers = useRef(new Set<() => void>());
   const subscribeCombinedStats = useCallback((cb: () => void) => {
     combinedSubscribers.current.add(cb);
@@ -754,12 +754,19 @@ export function CameraGrid({
         total: mjpegPrinters.length + webrtcPrinters.length,
         uptime,
         rawBytesPerSecond: totalBytes,
+        droppedFrames: mjpeg.droppedFrames,
       };
       combinedSubscribers.current.forEach(cb => cb());
     }, 1000);
 
     return () => clearInterval(interval);
   }, [getMjpegStatsSnapshot, mjpegPrinters.length, webrtcPrinters.length, suspended]);
+
+  // Slide tiles to their new slots when the sort order changes (ETA sort
+  // reorders live as statuses update)
+  const gridRef = useRef<HTMLDivElement>(null);
+  const orderKey = [...webrtcPrinters, ...mjpegPrinters].map(p => p.id).join(',');
+  useFlipReorder(gridRef, orderKey);
 
   const getControlLoading = useCallback((id: number) =>
     (pauseMutation.isPending && pauseMutation.variables === id) ? 'pause' as const
@@ -790,7 +797,7 @@ export function CameraGrid({
         </button>
         <StatsDisplay subscribeStats={subscribeCombinedStats} getStatsSnapshot={getCombinedStatsSnapshot} />
       </div>
-      <div className={`grid ${layout === 'compact' ? 'gap-2' : 'gap-4'} ${GRID_LAYOUT_COLS[layout]}`}>
+      <div ref={gridRef} className={`grid ${layout === 'compact' ? 'gap-2' : 'gap-4'} ${GRID_LAYOUT_COLS[layout]}`}>
         {/* WebRTC cards — individual go2rtc connections for RTSP printers */}
         {webrtcPrinters.map(p => (
           <WebRTCGridCard

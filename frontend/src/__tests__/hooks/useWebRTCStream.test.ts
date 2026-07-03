@@ -21,6 +21,7 @@ class FakePeerConnection {
   ontrack: ((e: unknown) => void) | null = null;
   oniceconnectionstatechange: (() => void) | null = null;
   constructor() {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- capture the instance for test assertions
     lastPc = this;
   }
   addTransceiver() {}

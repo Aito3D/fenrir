@@ -28,6 +28,9 @@ const decoding = new Map<number, boolean>();          // whether decode is in-fl
 
 let totalDecodeErrors = 0;
 let totalDecodeSuccess = 0;
+// Frames replaced while a decode was still in flight — the decoder fell
+// behind the incoming rate (slow CPU or too many visible cameras).
+let totalDroppedFrames = 0;
 let lastErrorReportTime = 0;
 
 function tryDecode(printerId: number): void {
@@ -92,6 +95,7 @@ self.onmessage = (e: MessageEvent) => {
         decoding.clear();
         totalDecodeErrors = 0;
         totalDecodeSuccess = 0;
+        totalDroppedFrames = 0;
         break;
       }
 
@@ -103,6 +107,7 @@ self.onmessage = (e: MessageEvent) => {
           decodingCount: [...decoding.values()].filter(Boolean).length,
           totalDecodeErrors,
           totalDecodeSuccess,
+          totalDroppedFrames,
         });
         break;
       }
@@ -114,6 +119,7 @@ self.onmessage = (e: MessageEvent) => {
         if (!visibleSet.has(printerId)) break;
 
         // Store latest frame (replaces any previous pending frame)
+        if (pendingFrame.has(printerId)) totalDroppedFrames++;
         pendingFrame.set(printerId, jpeg);
         tryDecode(printerId);
         break;

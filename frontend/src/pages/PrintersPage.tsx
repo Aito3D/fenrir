@@ -8168,7 +8168,8 @@ export function PrintersPage() {
     }
 
     return sorted;
-  }, [filteredPrinters, sortBy, sortAsc, queryClient]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- statusCacheVersion forces re-sort on WebSocket status updates; without it the 'eta'/'status' sorts go stale when no filter is active (filteredPrinters keeps the same reference)
+  }, [filteredPrinters, sortBy, sortAsc, queryClient, statusCacheVersion]);
 
   const selectAll = useCallback(() => {
     setSelectedPrinterIds(new Set(sortedPrinters.map(p => p.id)));
