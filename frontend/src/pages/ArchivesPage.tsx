@@ -2971,6 +2971,25 @@ export function ArchivesPage() {
     archives?.flatMap(a => a.tags?.split(',').map(t => t.trim()) || []).filter(Boolean) || []
   )].sort();
 
+  // When sorting by date, a duplicate group surfaces at its MOST RECENT
+  // member's position. Without this, a fresh reprint of an identical file
+  // sorts by the original's old date (or is hidden entirely with "Hide
+  // duplicates" on) and looks like it was never archived.
+  const groupLatestTime = new Map<number, number>();
+  for (const a of archives || []) {
+    if (a.duplicate_count > 0) {
+      const key = (a.duplicate_sequence ?? 0) > 0 && a.original_archive_id ? a.original_archive_id : a.id;
+      const t = parseUTCDate(a.created_at)?.getTime() || 0;
+      groupLatestTime.set(key, Math.max(groupLatestTime.get(key) ?? 0, t));
+    }
+  }
+  const dateSortTime = (a: NonNullable<typeof archives>[number]) => {
+    const own = parseUTCDate(a.created_at)?.getTime() || 0;
+    if (a.duplicate_count === 0) return own;
+    const key = (a.duplicate_sequence ?? 0) > 0 && a.original_archive_id ? a.original_archive_id : a.id;
+    return Math.max(groupLatestTime.get(key) ?? 0, own);
+  };
+
   const filteredArchives = archives
     ?.filter((a) => {
       // Collection filter
@@ -3043,10 +3062,18 @@ export function ArchivesPage() {
     })
     .sort((a, b) => {
       switch (sortBy) {
-        case 'date-desc':
+        case 'date-desc': {
+          // Group-aware date: members of a duplicate group share the group's
+          // newest time and cluster together; tiebreak by own date.
+          const diff = dateSortTime(b) - dateSortTime(a);
+          if (diff !== 0) return diff;
           return (parseUTCDate(b.created_at)?.getTime() || 0) - (parseUTCDate(a.created_at)?.getTime() || 0);
-        case 'date-asc':
+        }
+        case 'date-asc': {
+          const diff = dateSortTime(a) - dateSortTime(b);
+          if (diff !== 0) return diff;
           return (parseUTCDate(a.created_at)?.getTime() || 0) - (parseUTCDate(b.created_at)?.getTime() || 0);
+        }
         case 'name-asc':
           return (a.print_name || a.filename).localeCompare(b.print_name || b.filename);
         case 'name-desc':

@@ -34,7 +34,7 @@ import { useWebRTCStream } from '../hooks/useWebRTCStream';
 import type { WebRTCPrinterStats } from '../hooks/useWebRTCStream';
 import { formatFileSize } from '../utils/file';
 import type { GridLayout } from './cameraGridLayout';
-import { GRID_LAYOUT_COLS } from './cameraGridLayout';
+import { GRID_LAYOUT_COLS, gridBlinkSyncStyle, gridCardHighlightClass } from './cameraGridLayout';
 export type { GridLayout } from './cameraGridLayout';
 export { GRID_LAYOUT_COLS, GRID_LAYOUT_ICONS } from './cameraGridLayout';
 
@@ -47,7 +47,9 @@ const STATE_COLORS = {
   printing: 'text-bambu-green',
   paused: 'text-yellow-400',
   failed: 'text-red-400',
-  finished: 'text-bambu-green',
+  // Blue matches the PrintersPage status legend and the pickup-ready border —
+  // green is reserved for printing
+  finished: 'text-blue-400',
   idle: 'text-bambu-green/60',
 } as const;
 
@@ -66,6 +68,8 @@ export interface GridPrinter {
   hmsErrors?: HMSError[];
   jobName?: string;
   nozzleTemp?: number | null;
+  /** Dual-nozzle printers: which nozzle the shown temp belongs to. */
+  activeNozzle?: 'L' | 'R';
   bedTemp?: number | null;
   supports_rtsp?: boolean;
 }
@@ -83,6 +87,7 @@ interface GridCardBaseProps {
   plateCleared: boolean;
   jobName?: string;
   nozzleTemp?: number | null;
+  activeNozzle?: 'L' | 'R';
   bedTemp?: number | null;
   clearPlateLoading?: boolean;
   layout: GridLayout;
@@ -144,6 +149,7 @@ const CameraGridCard = memo(function CameraGridCard({
   plateCleared,
   jobName,
   nozzleTemp,
+  activeNozzle,
   bedTemp,
   clearPlateLoading,
   layout,
@@ -183,18 +189,28 @@ const CameraGridCard = memo(function CameraGridCard({
   const rawTopError = hmsErrors?.length ? getTopHMSError(hmsErrors) : null;
   const topError = rawTopError && dismissedErrorDesc === rawTopError.description ? null : rawTopError;
 
+  // Border/glow per state (blinking border = operator action needed: paused,
+  // pickup ready, failed); blink phase synced across all cards via epoch clock
+  const highlightClass = gridCardHighlightClass({
+    connected,
+    state,
+    plateCleared,
+    hasQueuedJobs: hasQueuedJobs ?? false,
+  });
+  // Compute the epoch-sync delay once per blink stretch: writing a new
+  // animation-delay to a running animation re-phases it, so a fresh
+  // Date.now() on every status re-render would make the border jump.
+  const isBlinking = highlightClass.includes('animate-grid-border-blink');
+  const blinkSyncStyle = useMemo(
+    () => (isBlinking ? gridBlinkSyncStyle('animate-grid-border-blink') : undefined),
+    [isBlinking],
+  );
+
   return (
     <Card
       data-flip-key={printerId}
-      // Paused uses a keyframe animation for the border, so its branch must not
-      // carry an !border-* class — !important declarations beat CSS animations
-      className={`relative group transition-[border-color,box-shadow] duration-500 ${
-        isRunning
-          ? '!border-bambu-green !shadow-[0_0_10px_1px_color-mix(in_srgb,var(--accent)_35%,transparent)]'
-          : isPaused
-            ? 'animate-grid-border-blink'
-            : '!border-transparent'
-      }`}
+      className={`relative group transition-[border-color,box-shadow] duration-500 ${highlightClass}`}
+      style={blinkSyncStyle}
       ref={cardRef}
     >
       <div
@@ -335,8 +351,12 @@ const CameraGridCard = memo(function CameraGridCard({
               connected && layout !== 'compact' && (nozzleTemp != null || bedTemp != null) && (
                 <div className="flex items-center gap-2 text-[10px] text-white/70 tabular-nums drop-shadow-sm">
                   {nozzleTemp != null && (
-                    <span className="flex items-center gap-0.5 cursor-default" title={t('printers.temperatures.nozzle')}>
+                    <span
+                      className="flex items-center gap-0.5 cursor-default"
+                      title={activeNozzle ? `${t('printers.temperatures.nozzle')} (${activeNozzle})` : t('printers.temperatures.nozzle')}
+                    >
                       <Flame className={`${iconSm} text-orange-400`} />
+                      {activeNozzle && <span className="text-white/50">{activeNozzle}</span>}
                       {Math.round(nozzleTemp)}°
                     </span>
                   )}
@@ -349,7 +369,7 @@ const CameraGridCard = memo(function CameraGridCard({
                 </div>
               )
             ) : (
-              <span className={`${textXs} font-medium drop-shadow-sm uppercase ${stateColor} ${state === 'FAILED' ? 'animate-pulse' : ''}`}>{t(`printers.status.${stateKey}`)}</span>
+              <span className={`${textXs} font-medium drop-shadow-sm uppercase ${stateColor} ${state === 'FAILED' ? 'animate-grid-opacity-blink' : ''}`} style={state === 'FAILED' ? blinkSyncStyle : undefined}>{t(`printers.status.${stateKey}`)}</span>
             )}
           </div>
         </div>
@@ -863,6 +883,7 @@ export function CameraGrid({
             plateCleared: p.plateCleared,
             jobName: p.jobName,
             nozzleTemp: p.nozzleTemp,
+            activeNozzle: p.activeNozzle,
             bedTemp: p.bedTemp,
             clearPlateLoading: clearPlateMutation.isPending && clearPlateMutation.variables === p.id,
             layout,

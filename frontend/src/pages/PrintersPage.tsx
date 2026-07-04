@@ -8145,8 +8145,11 @@ export function PrintersPage() {
 
           const tier = (s: typeof statusA) => {
             if (!s?.connected) return 3; // offline last
-            if (s.state === 'RUNNING' && s.remaining_time != null && s.remaining_time > 0) return 0; // printing with ETA
-            if (s.state === 'RUNNING') return 1; // printing without ETA
+            // Paused jobs still have a print in progress with remaining time —
+            // they sort by ETA alongside running jobs, not with the idle tier
+            const active = s.state === 'RUNNING' || s.state === 'PAUSE';
+            if (active && s.remaining_time != null && s.remaining_time > 0) return 0; // active with ETA
+            if (active) return 1; // active without ETA
             return 2; // idle
           };
 
@@ -8277,7 +8280,15 @@ export function PrintersPage() {
         jobName: isActive
           ? formatPrintName(status?.subtask_name || status?.current_print || null, status?.gcode_file, t) || undefined
           : undefined,
-        nozzleTemp: status?.temperatures?.nozzle ?? null,
+        // Dual nozzle (H2 series): show the ACTIVE nozzle's temp.
+        // temperatures.nozzle = LEFT (extruder 1), nozzle_2 = RIGHT (extruder 0);
+        // active_extruder: 0 = right, 1 = left (see bambu_mqtt.py)
+        nozzleTemp: status?.temperatures?.nozzle_2 !== undefined && status?.active_extruder === 0
+          ? status?.temperatures?.nozzle_2 ?? null
+          : status?.temperatures?.nozzle ?? null,
+        activeNozzle: status?.temperatures?.nozzle_2 !== undefined
+          ? (status?.active_extruder === 1 ? 'L' as const : 'R' as const)
+          : undefined,
         bedTemp: status?.temperatures?.bed ?? null,
         supports_rtsp: (printer as unknown as Record<string, unknown>).supports_rtsp as boolean | undefined,
       };

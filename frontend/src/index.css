@@ -501,14 +501,30 @@ body {
   animation: grid-slide-in-bottom 0.3s ease-out;
 }
 
-/* Paused tile — slow yellow border blink (yellow-400) */
+/* Grid tile attention blink — slow border pulse meaning "operator action
+   needed". Color set per state via --blink-color (paused yellow default,
+   finished blue, failed red). Duration must match GRID_BLINK_PERIOD_MS in
+   cameraGridLayout.ts — cards sync their phase to a shared epoch clock via
+   negative animation-delay. */
 @keyframes grid-border-blink {
-  0%, 100% { border-color: rgb(250 204 21); }
-  50% { border-color: rgb(250 204 21 / 0.15); }
+  0%, 100% { border-color: var(--blink-color, rgb(250 204 21)); }
+  50% { border-color: color-mix(in srgb, var(--blink-color, rgb(250 204 21)) 15%, transparent); }
 }
 
 .animate-grid-border-blink {
   animation: grid-border-blink 2.5s ease-in-out infinite;
+}
+
+/* Companion text pulse for blinking tiles (FAILED status label) — same
+   duration as grid-border-blink so label and border stay in phase when
+   both carry the shared epoch-synced animation-delay. */
+@keyframes grid-opacity-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.animate-grid-opacity-blink {
+  animation: grid-opacity-blink 2.5s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -521,7 +537,12 @@ body {
   /* Steady border instead of blinking */
   .animate-grid-border-blink {
     animation: none;
-    border-color: rgb(250 204 21);
+    border-color: var(--blink-color, rgb(250 204 21));
+  }
+
+  /* Steady label instead of pulsing */
+  .animate-grid-opacity-blink {
+    animation: none;
   }
 }
 

@@ -3283,10 +3283,12 @@ class BambuMQTTClient:
             )
         elif running_first_observed and self.on_print_running_observed:
             # Restart-recovery hook (#1485 follow-up): Bambuddy started mid-
-            # print, so the #1304 first-push guard suppressed on_print_start,
-            # but we still need main.py to capture a fresh timelapse baseline
-            # before the printer uploads the in-flight MP4. Same payload
-            # shape as on_print_start so the consumer can reuse fields.
+            # print, so the #1304 first-push guard suppressed on_print_start.
+            # main.py still needs to capture a fresh timelapse baseline before
+            # the printer uploads the in-flight MP4, and to reattach/create
+            # the print's archive (a print started while Bambuddy was down
+            # would otherwise never be archived). Same payload shape as
+            # on_print_start so the consumer can reuse fields.
             logger.info(
                 f"[{self.serial_number}] RUNNING observed without PRINT START "
                 f"(restart-recovery) - file: {current_file}, subtask: {self.state.subtask_name}"
