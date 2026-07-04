@@ -501,11 +501,27 @@ body {
   animation: grid-slide-in-bottom 0.3s ease-out;
 }
 
+/* Paused tile — slow yellow border blink (yellow-400) */
+@keyframes grid-border-blink {
+  0%, 100% { border-color: rgb(250 204 21); }
+  50% { border-color: rgb(250 204 21 / 0.15); }
+}
+
+.animate-grid-border-blink {
+  animation: grid-border-blink 2.5s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-grid-fade-in,
   .animate-grid-slide-in-top,
   .animate-grid-slide-in-bottom {
     animation: none;
+  }
+
+  /* Steady border instead of blinking */
+  .animate-grid-border-blink {
+    animation: none;
+    border-color: rgb(250 204 21);
   }
 }
 

@@ -308,6 +308,7 @@ export default {
     cameraGridError: 'Kameraraster konnte nicht geladen werden. Bitte Seite neu laden.',
     cameraGrid: {
       quality: 'Qualität',
+      auto: 'Auto',
       low: 'Niedrig',
       medium: 'Mittel',
       high: 'Hoch',

@@ -308,6 +308,7 @@ export default {
     cameraGridError: '摄像头网格加载失败。请刷新页面。',
     cameraGrid: {
       quality: '画质',
+      auto: '自动',
       low: '低',
       medium: '中',
       high: '高',

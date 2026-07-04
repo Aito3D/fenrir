@@ -311,6 +311,7 @@ export default {
     cameraGridError: 'Camera grid failed to load. Please refresh the page.',
     cameraGrid: {
       quality: 'Quality',
+      auto: 'Auto',
       low: 'Low',
       medium: 'Med',
       high: 'High',

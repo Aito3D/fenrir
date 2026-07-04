@@ -21,7 +21,7 @@ import {
 
 import { api } from '../api/client';
 import { formatDuration, formatETA, formatUptime } from '../utils/date';
-import type { HMSError } from '../api/client';
+import type { HMSError, CameraQuality } from '../api/client';
 import { Card } from './Card';
 import { ConfirmModal } from './ConfirmModal';
 import { getTopHMSError } from './HMSErrorModal';
@@ -184,7 +184,19 @@ const CameraGridCard = memo(function CameraGridCard({
   const topError = rawTopError && dismissedErrorDesc === rawTopError.description ? null : rawTopError;
 
   return (
-    <Card data-flip-key={printerId} className={`relative group transition-[border-color,box-shadow] duration-500 ${isRunning ? '!border-bambu-green !shadow-[0_0_10px_1px_color-mix(in_srgb,var(--accent)_35%,transparent)]' : '!border-transparent'}`} ref={cardRef}>
+    <Card
+      data-flip-key={printerId}
+      // Paused uses a keyframe animation for the border, so its branch must not
+      // carry an !border-* class — !important declarations beat CSS animations
+      className={`relative group transition-[border-color,box-shadow] duration-500 ${
+        isRunning
+          ? '!border-bambu-green !shadow-[0_0_10px_1px_color-mix(in_srgb,var(--accent)_35%,transparent)]'
+          : isPaused
+            ? 'animate-grid-border-blink'
+            : '!border-transparent'
+      }`}
+      ref={cardRef}
+    >
       <div
         className="relative w-full aspect-video bg-black overflow-hidden rounded-xl"
         onDoubleClick={connected && onExpand ? (e) => {
@@ -601,6 +613,15 @@ export function CameraGrid({
   const gridParamsKey = cameraSettings?.camera_quality ?? 'auto';
   const cameraEngine = cameraSettings?.camera_engine ?? 'ffmpeg';
 
+  // Quality preset picker — persists the global setting; the backend stops all
+  // producers on change and the gridParamsKey change restarts our stream
+  const canChangeQuality = hasPermission('settings:update');
+  const qualityMutation = useMutation({
+    mutationFn: (value: CameraQuality) => api.updateSettings({ camera_quality: value }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings'] }),
+    onError: (err: Error) => showToast(err.message, 'error'),
+  });
+
   // Suspend all streams when the tab has been hidden for a while — backend
   // producers auto-stop 30s after their last viewer, dropping ffmpeg CPU and
   // bandwidth to zero for backgrounded tabs. Resume is instant on return
@@ -628,10 +649,12 @@ export function CameraGrid({
 
   // When go2rtc is active, split printers: RTSP models → WebRTC, chamber models → MJPEG grid.
   // Stable-sort connected printers first so offline tiles sink to the end of the wall.
-  const { mjpegPrinters, webrtcPrinters } = useMemo(() => {
+  // gridPrinters keeps the full sorted list for rendering — tiles interleave both
+  // stream types so the ETA sort stays correct across mixed fleets.
+  const { gridPrinters, mjpegPrinters, webrtcPrinters } = useMemo(() => {
     const sorted = [...printers].sort((a, b) => Number(b.connected) - Number(a.connected));
     if (cameraEngine !== 'go2rtc') {
-      return { mjpegPrinters: sorted, webrtcPrinters: [] as GridPrinter[] };
+      return { gridPrinters: sorted, mjpegPrinters: sorted, webrtcPrinters: [] as GridPrinter[] };
     }
     const mjpeg: GridPrinter[] = [];
     const webrtc: GridPrinter[] = [];
@@ -642,7 +665,7 @@ export function CameraGrid({
         mjpeg.push(p);
       }
     }
-    return { mjpegPrinters: mjpeg, webrtcPrinters: webrtc };
+    return { gridPrinters: sorted, mjpegPrinters: mjpeg, webrtcPrinters: webrtc };
   }, [printers, cameraEngine]);
 
   // Only stream connected printers — the backend would otherwise spawn ffmpeg
@@ -765,7 +788,7 @@ export function CameraGrid({
   // Slide tiles to their new slots when the sort order changes (ETA sort
   // reorders live as statuses update)
   const gridRef = useRef<HTMLDivElement>(null);
-  const orderKey = [...webrtcPrinters, ...mjpegPrinters].map(p => p.id).join(',');
+  const orderKey = gridPrinters.map(p => p.id).join(',');
   useFlipReorder(gridRef, orderKey);
 
   const getControlLoading = useCallback((id: number) =>
@@ -787,6 +810,28 @@ export function CameraGrid({
   return (
     <div>
       <div className="flex items-center justify-end gap-3 mb-2 tabular-nums">
+        {canChangeQuality && (
+          <div className="flex h-6 items-center bg-bambu-dark rounded-md border border-bambu-dark-tertiary overflow-hidden" role="group" aria-label={t('printers.cameraGrid.quality')}>
+            {(['auto', 'low', 'medium', 'high'] as const).map(q => {
+              const label = t(`printers.cameraGrid.${q}`);
+              const isActive = gridParamsKey === q;
+              return (
+                <button
+                  key={q}
+                  onClick={() => !isActive && qualityMutation.mutate(q)}
+                  disabled={qualityMutation.isPending}
+                  className={`h-full px-1.5 text-[10px] font-medium transition-colors disabled:opacity-50 ${
+                    isActive ? 'bg-bambu-green text-white' : 'text-bambu-gray/60 hover:text-white hover:bg-bambu-dark-tertiary'
+                  }`}
+                  title={`${t('printers.cameraGrid.quality')}: ${label}`}
+                  aria-pressed={isActive}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <button
           onClick={() => setRestartKey(k => k + 1)}
           className="text-bambu-gray/60 hover:text-white transition-colors"
@@ -798,80 +843,60 @@ export function CameraGrid({
         <StatsDisplay subscribeStats={subscribeCombinedStats} getStatsSnapshot={getCombinedStatsSnapshot} />
       </div>
       <div ref={gridRef} className={`grid ${layout === 'compact' ? 'gap-2' : 'gap-4'} ${GRID_LAYOUT_COLS[layout]}`}>
-        {/* WebRTC cards — individual go2rtc connections for RTSP printers */}
-        {webrtcPrinters.map(p => (
-          <WebRTCGridCard
-            key={p.id}
-            printerId={p.id}
-            printerName={p.name}
-            connected={p.connected}
-            state={p.state}
-            progress={p.progress}
-            remainingTime={p.remainingTime}
-            layerNum={p.layerNum}
-            totalLayers={p.totalLayers}
-            onPause={canControl ? handlePause : undefined}
-            onStop={canControl ? handleStop : undefined}
-            onResume={canControl ? handleResume : undefined}
-            controlLoading={getControlLoading(p.id)}
-            onClearPlate={canClearPlate ? handleClearPlate : undefined}
-            plateCleared={p.plateCleared}
-            jobName={p.jobName}
-            nozzleTemp={p.nozzleTemp}
-            bedTemp={p.bedTemp}
-            clearPlateLoading={clearPlateMutation.isPending && clearPlateMutation.variables === p.id}
-            layout={layout}
-            timeFormat={timeFormat}
-            hmsErrors={p.hmsErrors}
-            dismissedErrorDesc={dismissedErrors.get(p.id)}
-            hasQueuedJobs={printersWithQueue.has(p.id)}
-            onDismissError={handleDismissError}
-            onExpand={onExpand}
-            onStats={handleWebRTCStats}
-            restartKey={restartKey}
-            suspended={suspended}
-          />
-        ))}
-        {/* MJPEG cards — multiplexed grid stream (all printers in ffmpeg mode, chamber-only in go2rtc mode) */}
-        {mjpegPrinters.map(p => (
-          <CameraGridCard
-            key={p.id}
-            printerId={p.id}
-            printerName={p.name}
-            connected={p.connected}
-            state={p.state}
-            progress={p.progress}
-            remainingTime={p.remainingTime}
-            layerNum={p.layerNum}
-            totalLayers={p.totalLayers}
-            canvasRef={canvasRefs.current.get(p.id)}
-            loading={loadingSet.has(p.id)}
-            error={errorSet.has(p.id)}
-            reconnecting={reconnectingSet.has(p.id)}
-            reconnectCountdown={reconnectingSet.has(p.id) ? reconnectCountdown : 0}
-            reconnectAttempt={reconnectingSet.has(p.id) ? reconnectAttempt : 0}
-            onPause={canControl ? handlePause : undefined}
-            onStop={canControl ? handleStop : undefined}
-            onResume={canControl ? handleResume : undefined}
-            controlLoading={getControlLoading(p.id)}
-            onVisibilityChange={handleVisibilityChange}
-            onClearPlate={canClearPlate ? handleClearPlate : undefined}
-            plateCleared={p.plateCleared}
-            jobName={p.jobName}
-            nozzleTemp={p.nozzleTemp}
-            bedTemp={p.bedTemp}
-            clearPlateLoading={clearPlateMutation.isPending && clearPlateMutation.variables === p.id}
-            layout={layout}
-            timeFormat={timeFormat}
-            degraded={degradedSet.has(p.id)}
-            stale={staleSet.has(p.id)}
-            hmsErrors={p.hmsErrors}
-            dismissedErrorDesc={dismissedErrors.get(p.id)}
-            hasQueuedJobs={printersWithQueue.has(p.id)}
-            onDismissError={handleDismissError}
-            onExpand={onExpand}
-          />
-        ))}
+        {/* One interleaved list in sort order — each tile picks its stream type
+            (go2rtc: RTSP models via WebRTC, chamber models via the MJPEG grid) */}
+        {gridPrinters.map(p => {
+          const shared = {
+            printerId: p.id,
+            printerName: p.name,
+            connected: p.connected,
+            state: p.state,
+            progress: p.progress,
+            remainingTime: p.remainingTime,
+            layerNum: p.layerNum,
+            totalLayers: p.totalLayers,
+            onPause: canControl ? handlePause : undefined,
+            onStop: canControl ? handleStop : undefined,
+            onResume: canControl ? handleResume : undefined,
+            controlLoading: getControlLoading(p.id),
+            onClearPlate: canClearPlate ? handleClearPlate : undefined,
+            plateCleared: p.plateCleared,
+            jobName: p.jobName,
+            nozzleTemp: p.nozzleTemp,
+            bedTemp: p.bedTemp,
+            clearPlateLoading: clearPlateMutation.isPending && clearPlateMutation.variables === p.id,
+            layout,
+            timeFormat,
+            hmsErrors: p.hmsErrors,
+            dismissedErrorDesc: dismissedErrors.get(p.id),
+            hasQueuedJobs: printersWithQueue.has(p.id),
+            onDismissError: handleDismissError,
+            onExpand,
+          };
+          return cameraEngine === 'go2rtc' && p.supports_rtsp ? (
+            <WebRTCGridCard
+              key={p.id}
+              {...shared}
+              onStats={handleWebRTCStats}
+              restartKey={restartKey}
+              suspended={suspended}
+            />
+          ) : (
+            <CameraGridCard
+              key={p.id}
+              {...shared}
+              canvasRef={canvasRefs.current.get(p.id)}
+              loading={loadingSet.has(p.id)}
+              error={errorSet.has(p.id)}
+              reconnecting={reconnectingSet.has(p.id)}
+              reconnectCountdown={reconnectingSet.has(p.id) ? reconnectCountdown : 0}
+              reconnectAttempt={reconnectingSet.has(p.id) ? reconnectAttempt : 0}
+              onVisibilityChange={handleVisibilityChange}
+              degraded={degradedSet.has(p.id)}
+              stale={staleSet.has(p.id)}
+            />
+          );
+        })}
       </div>
 
       {/* Print control confirmation modal */}

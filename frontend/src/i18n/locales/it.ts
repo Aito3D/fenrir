@@ -308,6 +308,7 @@ export default {
     cameraGridError: 'Impossibile caricare la griglia telecamere. Aggiorna la pagina.',
     cameraGrid: {
       quality: 'Qualità',
+      auto: 'Auto',
       low: 'Bassa',
       medium: 'Media',
       high: 'Alta',

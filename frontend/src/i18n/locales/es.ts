@@ -308,6 +308,7 @@ export default {
     cameraGridError: 'No se pudo cargar la cuadrícula de cámaras. Actualiza la página.',
     cameraGrid: {
       quality: 'Calidad',
+      auto: 'Auto',
       low: 'Baja',
       medium: 'Media',
       high: 'Alta',

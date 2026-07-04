@@ -308,6 +308,7 @@ export default {
     cameraGridError: '相機格狀檢視載入失敗，請重新整理頁面。',
     cameraGrid: {
       quality: '畫質',
+      auto: '自動',
       low: '低',
       medium: '中',
       high: '高',
