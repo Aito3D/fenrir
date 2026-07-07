@@ -164,7 +164,13 @@ class LibraryFileTag(Base):
     __tablename__ = "library_file_tags"
 
     file_id: Mapped[int] = mapped_column(ForeignKey("library_files.id", ondelete="CASCADE"), primary_key=True)
-    tag_id: Mapped[int] = mapped_column(ForeignKey("library_tags.id", ondelete="CASCADE"), primary_key=True)
+    # Standalone index on tag_id: the composite PK leads on file_id, so
+    # per-tag scans (file_count projection, prune, bulk-remove) can't use it.
+    # Existing installs get the index via run_migrations (create_all only
+    # builds it for brand-new tables).
+    tag_id: Mapped[int] = mapped_column(
+        ForeignKey("library_tags.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 

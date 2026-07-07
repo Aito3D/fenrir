@@ -1011,9 +1011,12 @@ describe('PrintModal', () => {
       const submitButton = document.querySelector('button[type="submit"]') as HTMLElement;
       await user.click(submitButton);
 
+      // Generous timeout: the submit fires one sequential POST per plate and
+      // this assertion has flaked at waitFor's 1s default under parallel
+      // full-suite CPU load (heavy neighbor files starve this worker).
       await waitFor(() => {
         expect(queueRequests.length).toBe(2);
-      });
+      }, { timeout: 5000 });
 
       expect((queueRequests[0] as { plate_id: number }).plate_id).toBe(1);
       expect((queueRequests[1] as { plate_id: number }).plate_id).toBe(3);
@@ -1056,9 +1059,10 @@ describe('PrintModal', () => {
       const submitButton = document.querySelector('button[type="submit"]') as HTMLElement;
       await user.click(submitButton);
 
+      // Same load-flake guard as the subset-of-plates test above.
       await waitFor(() => {
         expect(queueRequests.length).toBe(3);
-      });
+      }, { timeout: 5000 });
 
       // Verify each request has the correct plate_id
       expect((queueRequests[0] as { plate_id: number }).plate_id).toBe(1);

@@ -3296,6 +3296,15 @@ async def run_migrations(conn):
     # names by appending " Email" (#1792). See ``_migrate_rename_user_print_template_names``.
     await _migrate_rename_user_print_template_names(conn)
 
+    # Migration: standalone index on library_file_tags.tag_id (#1268 follow-up).
+    # The composite PK (file_id, tag_id) leads on file_id, so per-tag scans
+    # (tag file_count projection, prune_empty_library_tags, bulk-remove) full-scan
+    # the association table without this. New installs get it from the model's
+    # index=True; create_all doesn't alter existing tables, hence this statement.
+    await _safe_execute(
+        conn, "CREATE INDEX IF NOT EXISTS ix_library_file_tags_tag_id ON library_file_tags (tag_id)"
+    )
+
 
 _USER_PRINT_TEMPLATE_RENAMES: tuple[tuple[str, str, str], ...] = (
     ("user_print_start", "User Print Started", "User Print Started Email"),

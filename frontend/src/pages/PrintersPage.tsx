@@ -20,7 +20,7 @@ import {
 // original bug at #1447).
 const DRYING_POPOVER_WIDTH = 240;
 const DRYING_POPOVER_ESTIMATED_HEIGHT = 320;
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -93,7 +93,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi, withStreamToken, ApiError } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
-import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, SmartPlugStatus, PrinterDiagnosticResult } from '../api/client';
+import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -977,6 +977,22 @@ function StatusSummaryBar({ printers, smartPlugs }: { printers: Printer[] | unde
     return () => unsubscribe();
   }, [queryClient]);
 
+  // Fetch plug statuses for printer-associated plugs directly. Printer cards
+  // fetch the same query keys (deduped by React Query), but in camera-grid
+  // mode no cards are mounted, so the summary bar must own the subscription
+  // for the total power readout to stay populated.
+  const printerPlugs = useMemo(() => {
+    const printerIds = new Set(printers?.map(p => p.id) ?? []);
+    return (smartPlugs ?? []).filter(plug => plug.printer_id != null && printerIds.has(plug.printer_id));
+  }, [printers, smartPlugs]);
+  const plugStatusQueries = useQueries({
+    queries: printerPlugs.map(plug => ({
+      queryKey: ['smartPlugStatus', plug.id],
+      queryFn: () => api.getSmartPlugStatus(plug.id),
+      refetchInterval: 10000,
+    })),
+  });
+
   const { counts, nextFinish, totalPowerW } = useMemo(() => {
     let printing = 0;
     let paused = 0;
@@ -1039,14 +1055,11 @@ function StatusSummaryBar({ printers, smartPlugs }: { printers: Printer[] | unde
       }
     });
 
-    // Sum power only from printer-associated smart plugs
-    const printerIds = new Set(printers?.map(p => p.id) ?? []);
+    // Sum power from the plug status queries (printer-associated plugs only)
     let totalPowerW = 0;
-    smartPlugs?.forEach(plug => {
-      if (!plug.printer_id || !printerIds.has(plug.printer_id)) return;
-      const plugStatus = queryClient.getQueryData<SmartPlugStatus>(['smartPlugStatus', plug.id]);
-      if (plugStatus?.energy?.power != null) {
-        totalPowerW += plugStatus.energy.power;
+    plugStatusQueries.forEach(({ data }) => {
+      if (data?.energy?.power != null) {
+        totalPowerW += data.energy.power;
       }
     });
 

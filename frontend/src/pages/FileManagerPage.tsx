@@ -65,6 +65,8 @@ import { FileUploadModal } from '../components/FileUploadModal';
 import { FolderReadmePanel } from '../components/FolderReadmePanel';
 import { LibraryTagsModal } from '../components/LibraryTagsModal';
 import { PurgeOldFilesModal } from '../components/PurgeOldFilesModal';
+import { TagFilterRail } from '../components/TagFilterRail';
+import { libraryTagsQueryKey } from '../utils/libraryTagsQuery';
 import { useToast } from '../contexts/ToastContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { usePageFileDrop } from '../hooks/usePageFileDrop';
@@ -737,6 +739,7 @@ interface FileCardProps {
   onRename?: (file: LibraryFileListItem) => void;
   onGenerateThumbnail?: (file: LibraryFileListItem) => void;
   onManageTags?: (file: LibraryFileListItem) => void;
+  onTagClick?: (tagId: number) => void;
   thumbnailVersion?: number;
   hasPermission: (permission: Permission) => boolean;
   canModify: (resource: 'queue' | 'archives' | 'library', action: 'update' | 'delete' | 'reprint', createdById: number | null | undefined) => boolean;
@@ -744,7 +747,7 @@ interface FileCardProps {
   t: TFunction;
 }
 
-function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onRunPipeline, onPrint, onSlice, useSlicerApi, onPreview3d, onRename, onGenerateThumbnail, onManageTags, thumbnailVersion, hasPermission, canModify, authEnabled, t }: FileCardProps) {
+function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onRunPipeline, onPrint, onSlice, useSlicerApi, onPreview3d, onRename, onGenerateThumbnail, onManageTags, onTagClick, thumbnailVersion, hasPermission, canModify, authEnabled, t }: FileCardProps) {
   const [showActions, setShowActions] = useState(false);
 
   return (
@@ -813,14 +816,22 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
         )}
         {(file.tags?.length ?? 0) > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
+            {/* Clickable like the list-view chips — pushes the tag into the
+                active filter. stopPropagation so the card's select doesn't
+                also fire. */}
             {file.tags!.map((tg) => (
-              <span
+              <button
                 key={tg.id}
-                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-bambu-green/10 text-bambu-green max-w-full"
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onTagClick?.(tg.id);
+                }}
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-bambu-green/10 text-bambu-green hover:bg-bambu-green/20 transition-colors max-w-full"
                 title={tg.name}
               >
                 <span className="truncate">{tg.name}</span>
-              </span>
+              </button>
             ))}
           </div>
         )}
@@ -1000,7 +1011,18 @@ export function FileManagerPage() {
   const [showTagsModal, setShowTagsModal] = useState(false);
   const [showBulkTagsModal, setShowBulkTagsModal] = useState(false);
   const [singleTagFile, setSingleTagFile] = useState<LibraryFileListItem | null>(null);
-  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  // Persisted per-browser like the Archives filters (archiveFilterTag et al.)
+  // so a tag-scoped view survives a reload. Stale ids are pruned against the
+  // catalog by the effect below once the catalog query settles.
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>(() => {
+    try {
+      const raw = localStorage.getItem('libraryFilterTagIds');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter((v) => typeof v === 'number') : [];
+    } catch {
+      return [];
+    }
+  });
   const [linkFolder, setLinkFolder] = useState<LibraryFolderTree | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'folder' | 'bulk'; id: number; count?: number } | null>(null);
   const [printFile, setPrintFile] = useState<LibraryFileListItem | null>(null);
@@ -1178,7 +1200,7 @@ export function FileManagerPage() {
   // Cheap query, shared with LibraryTagsModal / BulkTagsPickerModal via the
   // same queryKey so they all invalidate together on tag CRUD.
   const { data: tagCatalog = [] } = useQuery({
-    queryKey: ['library-tags'],
+    queryKey: libraryTagsQueryKey,
     queryFn: api.getLibraryTags,
   });
   const tagsById = useMemo(() => {
@@ -1203,6 +1225,16 @@ export function FileManagerPage() {
       prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId],
     );
   }, []);
+
+  const clearTagFilter = useCallback(() => setSelectedTagIds([]), []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('libraryFilterTagIds', JSON.stringify(selectedTagIds));
+    } catch {
+      /* ignore quota/private-mode failures */
+    }
+  }, [selectedTagIds]);
 
   const { data: files, isLoading: filesLoading } = useQuery({
     queryKey: ['library-files', selectedFolderId, topLevelView, searchExpandsSubfolders, tagFilterKey],
@@ -1952,11 +1984,12 @@ export function FileManagerPage() {
           {/* Markdown description panel (#1268) — auto-hides if the folder
               has no README/description.md so non-users pay no UI cost. */}
           {selectedFolderId !== null && <FolderReadmePanel folderId={selectedFolderId} />}
-          {/* Tag filter rail (#1268). Lists every catalog tag as a togglable
-              chip — active chips are filled green and show an X, inactive
-              chips are outlined and toggle ON when clicked. Clicking an active
-              chip removes it from the filter. Hidden entirely when the
-              catalog is empty so brand-new installs don't see a stray rail. */}
+          <TagFilterRail
+            tags={tagCatalog}
+            selectedTagIds={selectedTagIds}
+            onToggle={toggleTagFilter}
+            onClearAll={clearTagFilter}
+          />
           {/* External folder info bar */}
           {selectedFolder?.is_external && (
             <div className="flex items-center gap-3 mb-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
@@ -2275,6 +2308,7 @@ export function FileManagerPage() {
                     onRename={(f) => setRenameItem({ type: 'file', id: f.id, name: f.filename })}
                     onGenerateThumbnail={(f) => singleThumbnailMutation.mutate(f.id)}
                     onManageTags={(f) => setSingleTagFile(f)}
+                    onTagClick={toggleTagFilter}
                     thumbnailVersion={thumbnailVersions[file.id]}
                     hasPermission={hasPermission}
                     canModify={canModify}

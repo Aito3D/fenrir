@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # ============ Folder Schemas ============
 
@@ -236,16 +236,29 @@ class TagResponse(BaseModel):
         from_attributes = True
 
 
+def _validate_tag_name(v: str) -> str:
+    # min_length runs on the RAW string, so "   " would pass and end up
+    # stored as name="" / name_key="" — strip here and reject empties.
+    v = v.strip()
+    if not v:
+        raise ValueError("Tag name cannot be empty or whitespace-only")
+    return v
+
+
 class TagCreate(BaseModel):
     """Create a new tag (catalog row)."""
 
     name: str = Field(..., min_length=1, max_length=64)
+
+    _strip_name = field_validator("name")(_validate_tag_name)
 
 
 class TagUpdate(BaseModel):
     """Rename a tag. ``name`` is required — there's nothing else to update."""
 
     name: str = Field(..., min_length=1, max_length=64)
+
+    _strip_name = field_validator("name")(_validate_tag_name)
 
 
 class TagBulkAssignRequest(BaseModel):
@@ -256,10 +269,14 @@ class TagBulkAssignRequest(BaseModel):
     ``action='replace'``  → REPLACE the tag set on every listed file with the
                             exact set in ``tag_ids`` (omitting tag_ids clears
                             them all).
+
+    List sizes are capped so a buggy or malicious client can't build an
+    unbounded cross-product in memory (files × tags pairs are generated
+    server-side for the insert).
     """
 
-    file_ids: list[int] = Field(..., min_length=1)
-    tag_ids: list[int] = Field(default_factory=list)
+    file_ids: list[int] = Field(..., min_length=1, max_length=1000)
+    tag_ids: list[int] = Field(default_factory=list, max_length=100)
     action: str = Field("add", pattern="^(add|remove|replace)$")
 
 

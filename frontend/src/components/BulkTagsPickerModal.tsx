@@ -36,12 +36,19 @@ export function BulkTagsPickerModal({ open, fileIds, onClose, initialTagIds, sin
   const [action, setAction] = useState<Action>('add');
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState('');
+  // Keyboard navigation: the highlighted row in the tag list. Tracked by tag
+  // id (not index) so the highlight survives filtering. null = no highlight.
+  const [highlightedTagId, setHighlightedTagId] = useState<number | null>(null);
+  // Sort seed frozen at open time — see filteredTags below.
+  const [openSelectedSeed, setOpenSelectedSeed] = useState<Set<number>>(new Set());
   // Reset/initialise state each time the modal opens.
   useEffect(() => {
     if (open) {
       setAction('add');
       setSelected(new Set(initialTagIds ?? []));
+      setOpenSelectedSeed(new Set(initialTagIds ?? []));
       setFilter('');
+      setHighlightedTagId(null);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -58,16 +65,19 @@ export function BulkTagsPickerModal({ open, fileIds, onClose, initialTagIds, sin
     [tags, selected],
   );
 
-  // Filtered + selected-first sorted list.
+  // Filtered list, pre-selected-first. The order is frozen per open (seeded
+  // from initialTagIds) instead of live-resorting on every toggle — live
+  // resort made rows jump out from under the keyboard highlight and mouse
+  // cursor the moment a checkbox changed.
   const filteredTags = useMemo<LibraryTag[]>(() => {
     const q = filter.trim().toLowerCase();
     const visible = q ? tags.filter((tg) => tg.name.toLowerCase().includes(q)) : tags;
     return [...visible].sort((a, b) => {
-      const aSelected = selected.has(a.id) ? 0 : 1;
-      const bSelected = selected.has(b.id) ? 0 : 1;
-      return aSelected - bSelected || a.name.localeCompare(b.name);
+      const aSeed = openSelectedSeed.has(a.id) ? 0 : 1;
+      const bSeed = openSelectedSeed.has(b.id) ? 0 : 1;
+      return aSeed - bSeed || a.name.localeCompare(b.name);
     });
-  }, [tags, filter, selected]);
+  }, [tags, filter, openSelectedSeed]);
 
   const toggleTag = (id: number) => {
     setSelected((prev) => {
@@ -133,9 +143,57 @@ export function BulkTagsPickerModal({ open, fileIds, onClose, initialTagIds, sin
     ? tags.find((tg) => tg.name.toLowerCase() === trimmed.toLowerCase())
     : undefined;
 
+  // The highlight only counts when its tag is actually visible in the
+  // filtered list (typing clears it, but this is the safety net so Space /
+  // Enter can never toggle an off-screen row).
+  const highlightVisible = highlightedTagId !== null && filteredTags.some((tg) => tg.id === highlightedTagId);
+
+  const moveHighlight = (delta: 1 | -1) => {
+    if (filteredTags.length === 0) return;
+    const idx = highlightVisible ? filteredTags.findIndex((tg) => tg.id === highlightedTagId) : -1;
+    const next =
+      idx === -1
+        ? delta === 1
+          ? 0
+          : filteredTags.length - 1
+        : Math.min(filteredTags.length - 1, Math.max(0, idx + delta));
+    const id = filteredTags[next].id;
+    setHighlightedTagId(id);
+    // Keep the highlighted row in view inside the scrollable list.
+    document.getElementById(`bulk-tag-option-${id}`)?.scrollIntoView({ block: 'nearest' });
+  };
+
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Arrow keys walk the checkbox list without leaving the input; Space or
+    // Enter toggles the highlighted tag. Escape backs out of navigation
+    // first, then (via the document listener) closes the modal.
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      moveHighlight(1);
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      moveHighlight(-1);
+      return;
+    }
+    if (e.key === ' ' && highlightVisible) {
+      e.preventDefault();
+      toggleTag(highlightedTagId!);
+      return;
+    }
+    if (e.key === 'Escape' && highlightVisible) {
+      e.preventDefault();
+      e.stopPropagation();
+      setHighlightedTagId(null);
+      return;
+    }
     if (e.key !== 'Enter' || createTagMutation.isPending) return;
     e.preventDefault();
+    if (highlightVisible) {
+      toggleTag(highlightedTagId!);
+      return;
+    }
     if (!trimmed) {
       // Empty input → submit
       if (!applyMutation.isPending && (selected.size > 0 || singleMode) && fileIds.length > 0) {
@@ -215,19 +273,25 @@ export function BulkTagsPickerModal({ open, fileIds, onClose, initialTagIds, sin
             autoFocus
             type="text"
             value={filter}
-            onChange={(e) => setFilter(normalizeTagInput(e.target.value))}
+            onChange={(e) => {
+              setFilter(normalizeTagInput(e.target.value));
+              // Typing changes the visible list — drop the highlight so a
+              // later Space/Enter can't toggle a row the user isn't seeing.
+              setHighlightedTagId(null);
+            }}
             onKeyDown={handleInputKeyDown}
             placeholder={t('fileManager.tags.searchPlaceholder')}
+            aria-activedescendant={highlightVisible ? `bulk-tag-option-${highlightedTagId}` : undefined}
             className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
           />
           {trimmed && (
             <p className="mt-1.5 text-xs text-bambu-gray">
               {createTagMutation.isPending ? (
-                <span className="flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Creating…</span>
+                <span className="flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> {t('fileManager.tags.creating')}</span>
               ) : exactMatch ? (
-                <span>↵ to {selected.has(exactMatch.id) ? 'deselect' : 'select'} <strong className="text-white">"{exactMatch.name}"</strong></span>
+                <span>{selected.has(exactMatch.id) ? t('fileManager.tags.hintDeselect') : t('fileManager.tags.hintSelect')} <strong className="text-white">"{exactMatch.name}"</strong></span>
               ) : (
-                <span>↵ to create <strong className="text-white">"{trimmed}"</strong></span>
+                <span>{t('fileManager.tags.hintCreate')} <strong className="text-white">"{trimmed}"</strong></span>
               )}
             </p>
           )}
@@ -247,8 +311,14 @@ export function BulkTagsPickerModal({ open, fileIds, onClose, initialTagIds, sin
           ) : (
             <ul className="divide-y divide-bambu-dark-tertiary/40">
               {filteredTags.map((tg) => (
-                <li key={tg.id}>
-                  <label className="flex items-center gap-3 px-5 py-2 hover:bg-bambu-dark-tertiary/30 cursor-pointer">
+                <li key={tg.id} id={`bulk-tag-option-${tg.id}`}>
+                  <label
+                    className={`flex items-center gap-3 px-5 py-2 cursor-pointer ${
+                      highlightVisible && highlightedTagId === tg.id
+                        ? 'bg-bambu-dark-tertiary/60 ring-1 ring-inset ring-bambu-green/40'
+                        : 'hover:bg-bambu-dark-tertiary/30'
+                    }`}
+                  >
                     <input
                       type="checkbox"
                       checked={selected.has(tg.id)}

@@ -286,3 +286,67 @@ class TestLibraryTagFilter:
         r = await async_client.get("/api/v1/library/files?include_root=false")
         item = next(x for x in r.json() if x["id"] == f.id)
         assert item["tags"] == [{"id": tag["id"], "name": "petg"}]
+
+
+class TestTagValidation:
+    """Schema-level guards (#1268 follow-up): whitespace-only names and
+    unbounded bulk payloads used to slip through."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_whitespace_only_name_422(self, async_client: AsyncClient):
+        """min_length=1 runs on the RAW string, so '   ' used to pass and get
+        stored as name='' / name_key='' — the validator must reject it."""
+        for bad in ("   ", "\t", " \n "):
+            r = await async_client.post("/api/v1/library/tags", json={"name": bad})
+            assert r.status_code == 422, repr(bad)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_whitespace_only_rename_422(self, async_client: AsyncClient):
+        tag = (await async_client.post("/api/v1/library/tags", json={"name": "real"})).json()
+        r = await async_client.patch(f"/api/v1/library/tags/{tag['id']}", json={"name": "   "})
+        assert r.status_code == 422
+        # Original name untouched.
+        r = await async_client.get("/api/v1/library/tags")
+        assert [t["name"] for t in r.json() if t["id"] == tag["id"]] == ["real"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_assign_size_caps_422(self, async_client: AsyncClient):
+        """file_ids capped at 1000, tag_ids at 100 — the server builds the
+        files × tags cross-product in memory for the insert."""
+        r = await async_client.post(
+            "/api/v1/library/tags/bulk-assign",
+            json={"file_ids": list(range(1, 1002)), "tag_ids": [1], "action": "add"},
+        )
+        assert r.status_code == 422
+        r = await async_client.post(
+            "/api/v1/library/tags/bulk-assign",
+            json={"file_ids": [1], "tag_ids": list(range(1, 102)), "action": "add"},
+        )
+        assert r.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_replace_reports_exact_counts(self, async_client: AsyncClient, file_factory):
+        """`associations_added` from replace is an exact insert count, not an
+        estimate — both id lists are unique after SELECT ... IN resolution."""
+        f1 = await file_factory()
+        f2 = await file_factory()
+        a = (await async_client.post("/api/v1/library/tags", json={"name": "a"})).json()
+        b = (await async_client.post("/api/v1/library/tags", json={"name": "b"})).json()
+        # Seed one association so replace has something to remove.
+        await async_client.post(
+            "/api/v1/library/tags/bulk-assign",
+            json={"file_ids": [f1.id], "tag_ids": [a["id"]], "action": "add"},
+        )
+        r = await async_client.post(
+            "/api/v1/library/tags/bulk-assign",
+            json={"file_ids": [f1.id, f2.id], "tag_ids": [a["id"], b["id"]], "action": "replace"},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["files_updated"] == 2
+        assert body["associations_removed"] == 1
+        assert body["associations_added"] == 4  # 2 files × 2 tags, all fresh

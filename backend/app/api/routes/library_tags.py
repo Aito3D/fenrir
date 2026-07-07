@@ -57,11 +57,24 @@ def _name_key(name: str) -> str:
     """Case-insensitive uniqueness key — LOWER(TRIM(name)).
 
     Mirrors the same convention used by Locations (#1505) so the catalog
-    can't end up with "Toys" + "toys" + " TOYS " as separate rows. Empty
-    string after stripping is rejected by Pydantic min_length, so this
-    helper trusts its input.
+    can't end up with "Toys" + "toys" + " TOYS " as separate rows. Input is
+    already stripped and non-empty — TagCreate/TagUpdate validate that
+    (schemas/library.py:_validate_tag_name), so this helper trusts it.
     """
     return name.strip().lower()
+
+
+async def _commit_or_409(db: AsyncSession) -> None:
+    """Commit; translate a ``name_key`` unique violation into a clean 409.
+
+    The unique constraint is the single source of truth for duplicates —
+    it also covers the concurrent-create race a SELECT pre-check can't.
+    """
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Tag with this name already exists") from None
 
 
 @router.get("", response_model=list[TagResponse])
@@ -129,16 +142,9 @@ async def create_tag(
 ) -> TagResponse:
     """Create a tag. Case-insensitive dup → 409."""
     key = _name_key(payload.name)
-    tag = LibraryTag(name=payload.name.strip(), name_key=key)
+    tag = LibraryTag(name=payload.name, name_key=key)
     db.add(tag)
-    try:
-        await db.commit()
-    except IntegrityError:
-        # Race condition or actual dup — re-fetch the existing row so the
-        # caller can recover by reading the id from the 409 detail string
-        # if they want to. The body is consistent regardless of cause.
-        await db.rollback()
-        raise HTTPException(status_code=409, detail="Tag with this name already exists") from None
+    await _commit_or_409(db)
     await db.refresh(tag)
     return TagResponse(id=tag.id, name=tag.name, file_count=0, created_at=tag.created_at, updated_at=tag.updated_at)
 
@@ -155,21 +161,9 @@ async def update_tag(
     if tag is None:
         raise HTTPException(status_code=404, detail="Tag not found")
 
-    new_key = _name_key(payload.name)
-    if new_key != tag.name_key:
-        # Pre-check so the user gets a clean 409 instead of an IntegrityError
-        # that we'd then have to translate. The post-commit IntegrityError
-        # branch still catches the concurrent-create race.
-        existing = (await db.execute(select(LibraryTag).where(LibraryTag.name_key == new_key))).scalar_one_or_none()
-        if existing is not None and existing.id != tag.id:
-            raise HTTPException(status_code=409, detail="Tag with this name already exists")
-    tag.name = payload.name.strip()
-    tag.name_key = new_key
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(status_code=409, detail="Tag with this name already exists") from None
+    tag.name = payload.name
+    tag.name_key = _name_key(payload.name)
+    await _commit_or_409(db)
     await db.refresh(tag)
 
     # Re-count files for the projection so the caller's modal shows the
@@ -248,9 +242,7 @@ async def bulk_assign(
     added = 0
     removed = 0
 
-    if payload.action == "add":
-        if not tag_ids:
-            return TagBulkAssignResponse(files_updated=0, associations_added=0, associations_removed=0)
+    async def _add_missing_pairs() -> int:
         # Insert (file_id, tag_id) for every pair that doesn't already exist.
         # We could use INSERT ... ON CONFLICT DO NOTHING for Postgres + SQLite
         # 3.24+ but the explicit pre-check keeps the SQLAlchemy core dialect
@@ -270,7 +262,21 @@ async def bulk_assign(
         ]
         if to_insert:
             await db.execute(LibraryFileTag.__table__.insert(), to_insert)
-            added = len(to_insert)
+        return len(to_insert)
+
+    if payload.action == "add":
+        if not tag_ids:
+            return TagBulkAssignResponse(files_updated=0, associations_added=0, associations_removed=0)
+        try:
+            added = await _add_missing_pairs()
+            await db.commit()
+        except IntegrityError:
+            # Concurrent add of the same (file, tag) pair between our
+            # existence check and COMMIT. Retry once — the second pass sees
+            # the winner's rows in `existing` and skips them.
+            await db.rollback()
+            added = await _add_missing_pairs()
+            await db.commit()
     elif payload.action == "remove":
         if not tag_ids:
             return TagBulkAssignResponse(files_updated=0, associations_added=0, associations_removed=0)
@@ -281,8 +287,12 @@ async def bulk_assign(
             )
         )
         removed = int(result.rowcount or 0)
+        await prune_empty_library_tags(db)
+        await db.commit()
     elif payload.action == "replace":
         # Strip everything currently on these files, then INSERT the new set.
+        # `added` is exact — every pair is freshly inserted, and both id
+        # lists are unique (each comes from a SELECT ... IN resolution).
         del_result = await db.execute(delete(LibraryFileTag).where(LibraryFileTag.file_id.in_(file_ids)))
         removed = int(del_result.rowcount or 0)
         if tag_ids:
@@ -291,10 +301,8 @@ async def bulk_assign(
                 [{"file_id": fid, "tag_id": tid} for fid in file_ids for tid in tag_ids],
             )
             added = len(file_ids) * len(tag_ids)
-
-    if payload.action in ("remove", "replace"):
         await prune_empty_library_tags(db)
-    await db.commit()
+        await db.commit()
     return TagBulkAssignResponse(
         files_updated=len(file_ids),
         associations_added=added,
