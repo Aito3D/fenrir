@@ -98,6 +98,7 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
     # working (they need the UI-language setting via API key).
     Permission.SETTINGS_READ: "can_read_status",
     Permission.MAKERWORLD_VIEW: "can_read_status",
+    Permission.CALCULATOR_READ: "can_read_status",
     Permission.WEBSOCKET_CONNECT: "can_read_status",
     # can_queue — queue write ops + reprint (which enqueues an existing archive)
     Permission.QUEUE_CREATE: "can_queue",
@@ -243,6 +244,9 @@ _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
         Permission.PIPELINES_READ,
         Permission.PIPELINES_WRITE,
         Permission.PIPELINES_RUN,
+        # Pricing calculator — catalog/config mutation (filaments, printers,
+        # defaults), same trust dimension as FILAMENTS_UPDATE / SETTINGS_UPDATE.
+        Permission.CALCULATOR_UPDATE,
     }
 )
 

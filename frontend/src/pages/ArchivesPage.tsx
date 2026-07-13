@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -7,6 +7,7 @@ import {
   Trash2,
   Clock,
   Package,
+  Calculator,
   Coins,
   Layers,
   Search,
@@ -66,7 +67,9 @@ import { getCurrencySymbol } from '../utils/currency';
 import { getBedTypeInfo } from '../utils/bedType';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { usePageFileDrop } from '../hooks/usePageFileDrop';
-import type { Archive, PrintLogEntry, ProjectListItem } from '../api/client';
+import type { Archive, CalculatorDefaults, CalculatorFilament, CalculatorPrinter, PrintLogEntry, ProjectListItem } from '../api/client';
+import { estimateArchiveSalePrice } from '../utils/archivePricing';
+import { formatMoney } from '../utils/pricing';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { PrintModal } from '../components/PrintModal';
@@ -143,6 +146,39 @@ async function openInSlicerWithToken(
   }
 }
 
+/** Calculator configuration loaded once at page level; null when the user
+ *  lacks calculator access or the calculator isn't configured yet. */
+interface CalcConfig {
+  filaments: CalculatorFilament[];
+  printers: CalculatorPrinter[];
+  defaults: CalculatorDefaults;
+}
+
+/** Query-param URL that opens the calculator prefilled from an archive.
+ *  Only passes filamentId/printerId when a real name-match was found — a
+ *  fallback pick shouldn't silently override the user's saved choice. */
+function calculatorPrefillUrl(archive: Archive, calcConfig: CalcConfig | null, printerName?: string): string {
+  const timeH = (archive.actual_time_seconds || archive.print_time_seconds || 0) / 3600;
+  const params = new URLSearchParams({
+    weight: (archive.filament_used_grams ?? 0).toFixed(1),
+    time: timeH.toFixed(2),
+    quantity: '1',
+  });
+  // Real measured energy beats the calculator's watts × hours estimate.
+  if (archive.energy_kwh != null && archive.energy_kwh > 0) {
+    params.set('energyKwh', String(archive.energy_kwh));
+  }
+  const estimate = calcConfig
+    ? estimateArchiveSalePrice(archive, calcConfig.filaments, calcConfig.printers, calcConfig.defaults, [
+        printerName,
+        archive.sliced_for_model,
+      ])
+    : null;
+  if (estimate?.filamentMatched) params.set('filamentId', String(estimate.filamentId));
+  if (estimate?.printerMatched) params.set('printerId', String(estimate.printerId));
+  return `/calculator?${params.toString()}`;
+}
+
 function ArchiveCard({
   archive,
   printerName,
@@ -155,6 +191,8 @@ function ArchiveCard({
   preferredSlicer = 'bambu_studio',
   useSlicerApi = false,
   currency,
+  currencyCode = 'USD',
+  calcConfig,
   t,
   onNavigateToArchive,
 }: {
@@ -169,6 +207,8 @@ function ArchiveCard({
   preferredSlicer?: SlicerType;
   useSlicerApi?: boolean;
   currency: string;
+  currencyCode?: string;
+  calcConfig?: CalcConfig | null;
   t: TFunction;
   onNavigateToArchive?: (archiveId: number) => void;
 }) {
@@ -228,6 +268,19 @@ function ArchiveCard({
   // Use pre-computed duplicate sequence and original archive ID from list response
   const duplicateSequence = archive.duplicate_sequence ?? 0;
   const originalArchiveId = archive.original_archive_id ?? null;
+
+  // Suggested sale price from the calculator (machine cost only, no labor),
+  // computed with the calculator printer matching this archive's printer.
+  const priceEstimate = useMemo(
+    () =>
+      calcConfig
+        ? estimateArchiveSalePrice(archive, calcConfig.filaments, calcConfig.printers, calcConfig.defaults, [
+            printerName,
+            archive.sliced_for_model,
+          ])
+        : null,
+    [archive, calcConfig, printerName],
+  );
 
   const plates = platesData?.plates ?? [];
   const isMultiPlate = platesData?.is_multi_plate ?? false;
@@ -676,6 +729,15 @@ function ArchiveCard({
       })(),
     },
     {
+      label: t('archives.menu.openInCalculator'),
+      icon: <Calculator className="w-4 h-4" />,
+      onClick: () => navigate(calculatorPrefillUrl(archive, calcConfig ?? null, printerName)),
+      disabled:
+        !hasPermission('calculator:read') ||
+        !archive.filament_used_grams ||
+        !(archive.actual_time_seconds || archive.print_time_seconds),
+    },
+    {
       label: isSelected ? t('archives.menu.deselect') : t('archives.menu.select'),
       icon: isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />,
       onClick: () => onSelect(archive.id),
@@ -1053,20 +1115,54 @@ function ArchiveCard({
               {archive.filament_used_grams.toFixed(1)}g
             </div>
           )}
-          {(archive.cost != null || archive.energy_cost != null) && (
+          {priceEstimate ? (
+            // Calculator-configured: show the calculator's machine cost and
+            // energy line for this print instead of the stored archive costs.
             <div className="flex items-center gap-3 text-bambu-gray">
-              {archive.cost != null && (
-                <div className="flex items-center gap-1.5">
-                  <Coins className="w-3 h-3" />
-                  {currency}{archive.cost.toFixed(2)}
-                </div>
-              )}
+              <div className="flex items-center gap-1.5" title={t('calculator.machineCost')}>
+                <Coins className="w-3 h-3" />
+                {formatMoney(priceEstimate.machineCost, currencyCode)}
+              </div>
+              <div
+                className="flex items-center gap-1.5"
+                title={
+                  archive.energy_kwh != null
+                    ? `${t('calculator.costEnergy')} · ${t('stats.energyUsed')}: ${archive.energy_kwh.toFixed(3)} kWh`
+                    : t('calculator.costEnergy')
+                }
+              >
+                <Zap className="w-3 h-3" />
+                {formatMoney(priceEstimate.energyCost, currencyCode)}
+              </div>
+            </div>
+          ) : (
+            (archive.cost != null || archive.energy_cost != null) && (
+              <div className="flex items-center gap-3 text-bambu-gray">
+                {archive.cost != null && (
+                  <div className="flex items-center gap-1.5">
+                    <Coins className="w-3 h-3" />
+                    {currency}{archive.cost.toFixed(2)}
+                  </div>
+                )}
                 {archive.energy_cost != null && (
                   <div className="flex items-center gap-1.5" title={`${t('stats.energyUsed')}: ${archive.energy_kwh?.toFixed(3) || 'N/A'} kWh`}>
                     <Zap className="w-3 h-3" />
                     {currency}{archive.energy_cost.toFixed(2)}
                   </div>
                 )}
+              </div>
+            )
+          )}
+          {priceEstimate && (
+            <div
+              className="flex items-center gap-1.5 text-bambu-gray"
+              title={t('archives.card.suggestedPriceTooltip', {
+                filament: priceEstimate.filamentName,
+                printer: priceEstimate.printerName,
+              })}
+            >
+              <Calculator className="w-3 h-3" />
+              {formatMoney(priceEstimate.totalTtc, currencyCode)}
             </div>
           )}
           {(archive.layer_height || archive.total_layers) && (
@@ -1571,6 +1667,7 @@ function ArchiveListRow({
   isHighlighted,
   preferredSlicer = 'bambu_studio',
   useSlicerApi = false,
+  calcConfig,
   t,
   onNavigateToArchive,
 }: {
@@ -1583,6 +1680,7 @@ function ArchiveListRow({
   isHighlighted?: boolean;
   preferredSlicer?: SlicerType;
   useSlicerApi?: boolean;
+  calcConfig?: CalcConfig | null;
   t: TFunction;
   onNavigateToArchive?: (archiveId: number) => void;
 }) {
@@ -2048,6 +2146,15 @@ function ArchiveListRow({
         }
         return items;
       })(),
+    },
+    {
+      label: t('archives.menu.openInCalculator'),
+      icon: <Calculator className="w-4 h-4" />,
+      onClick: () => navigate(calculatorPrefillUrl(archive, calcConfig ?? null, printerName)),
+      disabled:
+        !hasPermission('calculator:read') ||
+        !archive.filament_used_grams ||
+        !(archive.actual_time_seconds || archive.print_time_seconds),
     },
     {
       label: isSelected ? t('archives.menu.deselect') : t('archives.menu.select'),
@@ -2764,6 +2871,39 @@ export function ArchivesPage() {
     queryFn: api.getUsers,
     enabled: viewMode === 'log',
   });
+
+  // Calculator configuration for the suggested-price display. Shares query
+  // keys (and cache) with CalculatorPage; hidden entirely when the user lacks
+  // calculator access or the calculator has no filaments/printers yet.
+  const canUseCalculator = hasPermission('calculator:read');
+  const { data: calcFilaments } = useQuery({
+    queryKey: ['calculatorFilaments'],
+    queryFn: api.getCalculatorFilaments,
+    enabled: canUseCalculator,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const { data: calcPrinters } = useQuery({
+    queryKey: ['calculatorPrinters'],
+    queryFn: api.getCalculatorPrinters,
+    enabled: canUseCalculator,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const { data: calcDefaults } = useQuery({
+    queryKey: ['calculatorDefaults'],
+    queryFn: api.getCalculatorDefaults,
+    enabled: canUseCalculator,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const calcConfig = useMemo<CalcConfig | null>(
+    () =>
+      calcFilaments?.length && calcPrinters?.length && calcDefaults
+        ? { filaments: calcFilaments, printers: calcPrinters, defaults: calcDefaults }
+        : null,
+    [calcFilaments, calcPrinters, calcDefaults],
+  );
 
   const { data: printLogData, isLoading: isLogLoading } = useQuery({
     queryKey: ['print-log', filterPrinter, logFilterUser, logFilterStatus, logFilterDateFrom, logFilterDateTo, search, logOffset, logPageSize],
@@ -3746,6 +3886,8 @@ export function ArchivesPage() {
                 preferredSlicer={preferredSlicer}
                 useSlicerApi={useSlicerApi}
                 currency={currency}
+                currencyCode={settings?.currency || 'USD'}
+                calcConfig={calcConfig}
                 t={t}
                 onNavigateToArchive={handleNavigateToArchive}
               />
@@ -3787,6 +3929,7 @@ export function ArchivesPage() {
                   isHighlighted={archive.id === highlightedArchiveId}
                   preferredSlicer={preferredSlicer}
                   useSlicerApi={useSlicerApi}
+                  calcConfig={calcConfig}
                   t={t}
                   onNavigateToArchive={handleNavigateToArchive}
                 />

@@ -59,6 +59,8 @@ const mockFiles = [
     thumbnail_path: '/thumbnails/1.png',
     print_name: 'Benchy',
     print_time_seconds: 3600,
+    filament_type: 'PLA, PETG',
+    filament_used_grams: 12.3,
     print_count: 5,
     duplicate_count: 0,
     created_at: '2024-01-01T00:00:00Z',
@@ -183,6 +185,15 @@ describe('FileManagerPage', () => {
   });
 
   describe('stats display', () => {
+    it('shows filament type and weight on file cards', async () => {
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('PLA, PETG')).toBeInTheDocument();
+        expect(screen.getByText('12.3g')).toBeInTheDocument();
+      });
+    });
+
     it('shows file count', async () => {
       render(<FileManagerPage />);
 

@@ -79,6 +79,14 @@ html {
   --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   --glow-color: transparent;
 
+  /* Data-viz categorical series (CVD-validated, fixed order) */
+  --viz-1: #2a78d6;
+  --viz-2: #1baf7a;
+  --viz-3: #eda100;
+  --viz-4: #008300;
+  --viz-5: #4a3aa7;
+  --viz-6: #e34948;
+
   font-family: 'Inter', system-ui, sans-serif;
   line-height: 1.5;
   font-weight: 400;
@@ -99,6 +107,14 @@ html {
   --text-tertiary: #4a4a4a;
   --border-color: #3d3d3d;
   --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+
+  /* Data-viz series stepped for the dark surface */
+  --viz-1: #3987e5;
+  --viz-2: #199e70;
+  --viz-3: #c98500;
+  --viz-4: #008300;
+  --viz-5: #9085e9;
+  --viz-6: #e66767;
 }
 
 /* ============================================
@@ -544,6 +560,93 @@ body {
   .animate-grid-opacity-blink {
     animation: none;
   }
+}
+
+/* Modal entrance — referenced by SpoolBuddy modals and the calculator
+   settings modal. Tailwind v4 does not load tailwind.config.js (no @config
+   directive), so these utilities must live here. */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.15s ease-out;
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.2s ease-out;
+}
+
+/* Calculator page micro-animations */
+@keyframes calc-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* `backwards` fill keeps staggered cards hidden during their delay */
+.animate-calc-rise {
+  animation: calc-rise 0.25s ease-out backwards;
+}
+
+/* Opacity-only so recomputing numbers never shift layout */
+@keyframes value-tick {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
+}
+
+.animate-value-tick {
+  animation: value-tick 0.35s ease-out;
+}
+
+/* Calculator tables: rows carry a SOLID background so the sticky first
+   column can `bg-inherit` it — translucent hover tints on the row would let
+   scrolled columns bleed through the sticky cell. */
+.calc-table-row {
+  background-color: var(--color-bambu-dark-secondary);
+}
+tbody .calc-table-row:hover {
+  background-color: color-mix(in srgb, var(--color-bambu-dark-tertiary) 40%, var(--color-bambu-dark-secondary));
+}
+.calc-table-row-accent {
+  background-color: color-mix(in srgb, var(--color-bambu-green) 6%, var(--color-bambu-dark-secondary));
+}
+
+@keyframes dropdown-in {
+  from { opacity: 0; transform: translateY(-4px) scaleY(0.98); }
+  to { opacity: 1; transform: translateY(0) scaleY(1); }
+}
+
+.animate-dropdown-in {
+  animation: dropdown-in 0.12s ease-out;
+  transform-origin: top;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-slide-up,
+  .animate-calc-rise,
+  .animate-value-tick,
+  .animate-dropdown-in {
+    animation: none;
+  }
+}
+
+/* Hide number-input spin buttons; inputMode="decimal" keeps mobile keypads */
+.no-spinner::-webkit-outer-spin-button,
+.no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.no-spinner {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 /* Card shadows - uses theme-specific shadow */

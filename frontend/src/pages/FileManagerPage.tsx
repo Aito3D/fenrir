@@ -34,6 +34,7 @@ import {
   Cog,
   Play,
   Printer,
+  Package,
   Pencil,
   Image,
   User,
@@ -796,11 +797,23 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
               {formatDuration(file.print_time_seconds)}
             </span>
           )}
+          {file.filament_used_grams != null && file.filament_used_grams > 0 && (
+            <span className="flex items-center gap-1">
+              <Package className="w-3 h-3" />
+              {file.filament_used_grams.toFixed(1)}g
+            </span>
+          )}
         </div>
-        {file.sliced_for_model && (
-          <div className="mt-1 text-xs text-bambu-gray flex items-center gap-1">
-            <Printer className="w-3 h-3" />
-            {file.sliced_for_model}
+        {(file.sliced_for_model || file.filament_type) && (
+          <div className="mt-1 text-xs text-bambu-gray flex items-center gap-1 min-w-0">
+            {file.sliced_for_model && (
+              <>
+                <Printer className="w-3 h-3 flex-shrink-0" />
+                <span className="truncate">{file.sliced_for_model}</span>
+              </>
+            )}
+            {file.sliced_for_model && file.filament_type && <span className="text-bambu-gray/50">·</span>}
+            {file.filament_type && <span className="truncate" title={file.filament_type}>{file.filament_type}</span>}
           </div>
         )}
         {file.print_count > 0 && (
@@ -2389,6 +2402,18 @@ export function FileManagerPage() {
                       </div>
                       <div className="min-w-0">
                         <div className="text-sm text-white truncate">{file.print_name || file.filename}</div>
+                        {(file.filament_type || (file.filament_used_grams != null && file.filament_used_grams > 0)) && (
+                          <div className="text-xs text-bambu-gray truncate flex items-center gap-1">
+                            <Package className="w-3 h-3 flex-shrink-0" />
+                            {file.filament_type && <span className="truncate" title={file.filament_type}>{file.filament_type}</span>}
+                            {file.filament_type && file.filament_used_grams != null && file.filament_used_grams > 0 && (
+                              <span className="text-bambu-gray/50">·</span>
+                            )}
+                            {file.filament_used_grams != null && file.filament_used_grams > 0 && (
+                              <span>{file.filament_used_grams.toFixed(1)}g</span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                     {/* Uploaded By - only show when auth is enabled */}

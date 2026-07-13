@@ -8,6 +8,8 @@ import { render } from '../utils';
 import { ArchivesPage } from '../../pages/ArchivesPage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import { estimateArchiveSalePrice } from '../../utils/archivePricing';
+import { formatMoney } from '../../utils/pricing';
 
 const mockArchives = [
   {
@@ -425,6 +427,129 @@ describe('ArchivesPage', () => {
         expect(screen.getByText('WasFailed')).toBeInTheDocument();
         expect(screen.getByText('WasCancelled')).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('suggested price from the calculator', () => {
+    const calcFilaments = [
+      { id: 1, name: 'PLA basique', brand: '', material: 'PLA basique', cost_per_kg: 3731, sale_price_per_kg: 5597, difficulty_pct: 150 },
+    ];
+    const calcPrinters = [
+      {
+        id: 1,
+        name: 'H2S',
+        purchase_price: 347000,
+        lifetime_years: 2,
+        daily_usage_hours: 5,
+        power_watts: 400,
+        repair_rate_pct: 30,
+      },
+    ];
+    const calcDefaults = {
+      id: 1,
+      electricity_tariff: 120,
+      labor_rate_per_hour: 3000,
+      consumables_packaging_flat: 30,
+      failure_rate_pct: 30,
+      prototype_rate_pct: 30,
+      ads_rate_pct: 5,
+      filament_markup_pct: 5,
+      global_markup_pct: 50,
+      tax_pct: 13,
+      default_difficulty_pct: 100,
+      default_margin_over_cost_pct: 50,
+      stuff_markup_pct: 20,
+    };
+
+    it('shows the estimated price on cards when the calculator is configured', async () => {
+      server.use(
+        http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(calcFilaments)),
+        http.get('/api/v1/calculator/printers/', () => HttpResponse.json(calcPrinters)),
+        http.get('/api/v1/calculator/defaults', () => HttpResponse.json(calcDefaults)),
+      );
+
+      render(<ArchivesPage />);
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      });
+
+      // Testing-library normalizes the thin-space/NBSP separators formatMoney
+      // emits down to plain spaces, so normalize the expectations the same way.
+      // The global settings mock configures USD as the app currency.
+      const estimate = estimateArchiveSalePrice(
+        { filament_used_grams: 15.5, print_time_seconds: 3600, actual_time_seconds: null, filament_type: null },
+        calcFilaments,
+        calcPrinters,
+        calcDefaults,
+      )!;
+      const asText = (value: number) => formatMoney(value, 'USD').replace(/\s/g, ' ');
+      // Three calculator queries must resolve before the estimate renders —
+      // under full-suite CPU load that can exceed waitFor's 1s default.
+      await waitFor(() => {
+        expect(screen.getByText(asText(estimate.totalTtc))).toBeInTheDocument();
+      }, { timeout: 5000 });
+      // Coins and Zap stats show the calculator's machine cost and energy line
+      expect(screen.getByText(asText(estimate.machineCost))).toBeInTheDocument();
+      expect(screen.getByText(asText(estimate.energyCost))).toBeInTheDocument();
+    });
+
+    it('prices with the calculator printer matching the archive printer, not the first profile', async () => {
+      // The archive was printed on "X1 Carbon"; a matching profile exists
+      // alongside the default-first H2S profile and must win the estimate.
+      const x1c = {
+        id: 2,
+        name: 'X1 Carbon',
+        purchase_price: 120000,
+        lifetime_years: 2,
+        daily_usage_hours: 5,
+        power_watts: 350,
+        repair_rate_pct: 30,
+      };
+      server.use(
+        http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(calcFilaments)),
+        http.get('/api/v1/calculator/printers/', () => HttpResponse.json([...calcPrinters, x1c])),
+        http.get('/api/v1/calculator/defaults', () => HttpResponse.json(calcDefaults)),
+      );
+
+      render(<ArchivesPage />);
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      });
+
+      const estimate = estimateArchiveSalePrice(
+        { filament_used_grams: 15.5, print_time_seconds: 3600, actual_time_seconds: null, filament_type: null },
+        calcFilaments,
+        [...calcPrinters, x1c],
+        calcDefaults,
+        ['X1 Carbon'],
+      )!;
+      expect(estimate.printerMatched).toBe(true);
+      expect(estimate.printerId).toBe(2);
+      const asText = (value: number) => formatMoney(value, 'USD').replace(/\s/g, ' ');
+      await waitFor(() => {
+        expect(screen.getByText(asText(estimate.totalTtc))).toBeInTheDocument();
+      }, { timeout: 5000 });
+    });
+
+    it('shows nothing when the calculator endpoints are unavailable', async () => {
+      server.use(
+        http.get('/api/v1/calculator/filaments/', () => new HttpResponse(null, { status: 403 })),
+        http.get('/api/v1/calculator/printers/', () => new HttpResponse(null, { status: 403 })),
+        http.get('/api/v1/calculator/defaults', () => new HttpResponse(null, { status: 403 })),
+      );
+
+      render(<ArchivesPage />);
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      });
+
+      const estimate = estimateArchiveSalePrice(
+        { filament_used_grams: 15.5, print_time_seconds: 3600, actual_time_seconds: null, filament_type: null },
+        calcFilaments,
+        calcPrinters,
+        calcDefaults,
+      )!;
+      expect(screen.queryByText(formatMoney(estimate.totalTtc, 'USD').replace(/\s/g, ' '))).not.toBeInTheDocument();
     });
   });
 });

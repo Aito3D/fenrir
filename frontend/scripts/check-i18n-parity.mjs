@@ -186,6 +186,8 @@ const FR_COGNATES = [
   'Token', 'Server', 'Port', 'Plate', 'Layer', 'Active', 'Total', 'Avatar',
   'Job', 'Modal', 'Pin', 'Pro', 'Mini', 'Studio', 'Excellent', 'Description',
   'Pipeline', 'Pipelines', 'Filament {{n}}',  // #1425 — Slicer Pipelines (FR)
+  // Pricing calculator — the English copy borrows these French business terms
+  'Informations', 'Total HT', 'Total TTC', 'Marge', 'Prototype', 'Machine', 'Provisions',
   'Copies', '{{n}} copies', 'max {{n}}',  // #1425 PR C — French uses these forms verbatim
   'round robin',  // borrowed English term used as-is in French tech contexts
   'Action', 'Actions', 'Date', 'Type', 'Cache', 'Service', 'Configuration',
@@ -228,6 +230,7 @@ const IT_COGNATES = [
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Email',  // common loanword in Italian, used verbatim in UI labels
   'Pipeline', 'slicing',  // #1425 — Slicer Pipelines (cognate in IT)
+  'Slicing (min)',  // pricing calculator — "slicing" is the standard IT loanword
   'max {{n}}',  // #1425 PR C — same form in Italian (max + number)
   'round robin',  // borrowed English term used as-is in Italian tech contexts
   'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Filament',

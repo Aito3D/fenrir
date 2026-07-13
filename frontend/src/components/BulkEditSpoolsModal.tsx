@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { X, Loader2, ChevronDown } from 'lucide-react';
+import { X, Loader2 } from 'lucide-react';
 import { api } from '../api/client';
 import type { InventorySpool } from '../api/client';
 import { Button } from './Button';
+import { SearchableSelect, type SearchableSelectOption as Option } from './SearchableSelect';
 import { MATERIALS, DEFAULT_BRANDS, KNOWN_VARIANTS } from './spool-form/constants';
 import { buildFilamentOptions } from './spool-form/utils';
 
@@ -76,126 +77,6 @@ export interface BulkEditSpoolsModalProps {
   availableSlicerFilamentNames: string[];
   onClose: () => void;
   onApply: (patch: Partial<Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>>) => void;
-}
-
-interface Option {
-  value: string;
-  label: string;
-}
-
-interface SearchableSelectProps {
-  value: string;
-  onChange: (next: string) => void;
-  options: Option[];
-  /** When true the user can also type a value not present in the option list. */
-  allowCustom: boolean;
-  placeholderKey?: string;
-  disabled?: boolean;
-}
-
-/** Lightweight searchable dropdown matching the per-spool form's pattern —
- *  text input + chevron + filtered list of buttons, click-outside closes.
- *  Native `<select>` is intentionally avoided per the project's UI conventions. */
-function SearchableSelect({ value, onChange, options, allowCustom, placeholderKey, disabled }: SearchableSelectProps) {
-  const { t } = useTranslation();
-  const ref = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState('');
-
-  useEffect(() => {
-    if (!open) return;
-    const onDocClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-        setSearch('');
-      }
-    };
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setOpen(false);
-        setSearch('');
-      }
-    };
-    document.addEventListener('mousedown', onDocClick);
-    document.addEventListener('keydown', onEsc);
-    return () => {
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onEsc);
-    };
-  }, [open]);
-
-  const displayValue = (() => {
-    if (open) return search;
-    const match = options.find((o) => o.value === value);
-    return match?.label ?? value;
-  })();
-
-  const filteredOptions = useMemo(() => {
-    if (!open) return options;
-    const q = search.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter((o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q));
-  }, [open, search, options]);
-
-  const noOptionMatch = open && search.trim() && !options.some((o) => o.value.toLowerCase() === search.trim().toLowerCase());
-
-  return (
-    <div className="relative" ref={ref}>
-      <input
-        type="text"
-        disabled={disabled}
-        value={displayValue}
-        onChange={(e) => {
-          setSearch(e.target.value);
-          setOpen(true);
-          if (allowCustom) onChange(e.target.value);
-        }}
-        onFocus={() => {
-          setOpen(true);
-          setSearch('');
-        }}
-        placeholder={placeholderKey ? t(placeholderKey) : undefined}
-        className="w-full px-3 py-2 pr-9 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray/50 focus:border-bambu-green focus:outline-none"
-      />
-      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray/50 pointer-events-none" />
-      {open && (
-        <div className="absolute z-50 left-0 right-0 mt-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg max-h-64 overflow-y-auto">
-          {filteredOptions.length === 0 && !allowCustom && (
-            <div className="px-3 py-2 text-sm text-bambu-gray">{t('inventory.noResults')}</div>
-          )}
-          {filteredOptions.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              className={`w-full px-3 py-2 text-left text-sm hover:bg-bambu-dark-tertiary ${
-                value === opt.value ? 'bg-bambu-green/10 text-bambu-green' : 'text-white'
-              }`}
-              onClick={() => {
-                onChange(opt.value);
-                setOpen(false);
-                setSearch('');
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
-          {allowCustom && noOptionMatch && (
-            <button
-              type="button"
-              className="w-full px-3 py-2 text-left text-sm hover:bg-bambu-dark-tertiary text-bambu-green border-t border-bambu-dark-tertiary"
-              onClick={() => {
-                onChange(search.trim());
-                setOpen(false);
-                setSearch('');
-              }}
-            >
-              {t('inventory.bulk.useCustom', { value: search.trim() })}
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
 }
 
 function combineUnique(...lists: string[][]): string[] {

@@ -3128,6 +3128,72 @@ export interface ExternalLinkUpdate {
   open_in_new_tab?: boolean;
 }
 
+// Pricing Calculator
+export interface CalculatorFilament {
+  id: number;
+  /** Derived display label: "<brand> <material>" (computed server-side). */
+  name: string;
+  brand: string;
+  material: string;
+  cost_per_kg: number;
+  sale_price_per_kg: number;
+  difficulty_pct: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CalculatorFilamentCreate {
+  brand: string;
+  material: string;
+  cost_per_kg: number;
+  sale_price_per_kg: number;
+  difficulty_pct: number;
+}
+
+export type CalculatorFilamentUpdate = Partial<CalculatorFilamentCreate>;
+
+export interface CalculatorPrinter {
+  id: number;
+  name: string;
+  purchase_price: number;
+  lifetime_years: number;
+  daily_usage_hours: number;
+  power_watts: number;
+  repair_rate_pct: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CalculatorPrinterCreate {
+  name: string;
+  purchase_price: number;
+  lifetime_years: number;
+  daily_usage_hours: number;
+  power_watts: number;
+  repair_rate_pct: number;
+}
+
+export type CalculatorPrinterUpdate = Partial<CalculatorPrinterCreate>;
+
+export interface CalculatorDefaults {
+  id: number;
+  electricity_tariff: number;
+  labor_rate_per_hour: number;
+  consumables_packaging_flat: number;
+  failure_rate_pct: number;
+  prototype_rate_pct: number;
+  ads_rate_pct: number;
+  filament_markup_pct: number;
+  global_markup_pct: number;
+  tax_pct: number;
+  default_difficulty_pct: number;
+  default_margin_over_cost_pct: number;
+  stuff_markup_pct: number;
+  updated_at: string;
+}
+
+export type CalculatorDefaultsUpdate = Partial<Omit<CalculatorDefaults, 'id' | 'updated_at'>>;
+
 // Permission type - all available permissions
 export type Permission =
   | 'printers:read' | 'printers:create' | 'printers:update' | 'printers:delete' | 'printers:control' | 'printers:files' | 'printers:ams_rfid' | 'printers:clear_plate'
@@ -3164,6 +3230,7 @@ export type Permission =
   | 'users:read' | 'users:create' | 'users:update' | 'users:delete'
   | 'groups:read' | 'groups:create' | 'groups:update' | 'groups:delete'
   | 'pipelines:read' | 'pipelines:write' | 'pipelines:run'
+  | 'calculator:read' | 'calculator:update'
   | 'websocket:connect';
 
 // Group types
@@ -5791,6 +5858,40 @@ export const api = {
     request<ExternalLink>(`/external-links/${id}/icon`, { method: 'DELETE' }),
   getExternalLinkIconUrl: (id: number) => withStreamToken(`${API_BASE}/external-links/${id}/icon`),
 
+  // Pricing Calculator
+  getCalculatorFilaments: () => request<CalculatorFilament[]>('/calculator/filaments/'),
+  createCalculatorFilament: (data: CalculatorFilamentCreate) =>
+    request<CalculatorFilament>('/calculator/filaments/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateCalculatorFilament: (id: number, data: CalculatorFilamentUpdate) =>
+    request<CalculatorFilament>(`/calculator/filaments/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteCalculatorFilament: (id: number) =>
+    request<{ message: string }>(`/calculator/filaments/${id}`, { method: 'DELETE' }),
+  getCalculatorPrinters: () => request<CalculatorPrinter[]>('/calculator/printers/'),
+  createCalculatorPrinter: (data: CalculatorPrinterCreate) =>
+    request<CalculatorPrinter>('/calculator/printers/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateCalculatorPrinter: (id: number, data: CalculatorPrinterUpdate) =>
+    request<CalculatorPrinter>(`/calculator/printers/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteCalculatorPrinter: (id: number) =>
+    request<{ message: string }>(`/calculator/printers/${id}`, { method: 'DELETE' }),
+  getCalculatorDefaults: () => request<CalculatorDefaults>('/calculator/defaults'),
+  updateCalculatorDefaults: (data: CalculatorDefaultsUpdate) =>
+    request<CalculatorDefaults>('/calculator/defaults', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
   // Projects
   getProjects: (status?: string) => {
     const params = new URLSearchParams();
@@ -6742,6 +6843,7 @@ export interface LibraryFile {
   print_name: string | null;
   print_time_seconds: number | null;
   filament_used_grams: number | null;
+  filament_type: string | null;
   sliced_for_model: string | null;
 }
 
@@ -6767,6 +6869,7 @@ export interface LibraryFileListItem {
   print_name: string | null;
   print_time_seconds: number | null;
   filament_used_grams: number | null;
+  filament_type: string | null;
   sliced_for_model: string | null;
   // Tags assigned to this file (#1268). The backend always emits an empty
   // array when a file has no tags, but the field is typed optional so any

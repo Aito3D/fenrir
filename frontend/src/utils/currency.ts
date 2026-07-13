@@ -30,6 +30,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   ILS: '₪',
   UAH: '₴',
   IDR: 'Rp',
+  XPF: 'FCFP',
 };
 
 export function getCurrencySymbol(currencyCode: string): string {

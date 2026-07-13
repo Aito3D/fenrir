@@ -61,7 +61,12 @@ describe('SUPPORTED_CURRENCIES', () => {
     expect(SUPPORTED_CURRENCIES.find((c) => c.code === 'IDR')).toBeDefined();
   });
 
-  it('has 31 entries', () => {
-    expect(SUPPORTED_CURRENCIES).toHaveLength(31);
+  it('contains XPF', () => {
+    expect(SUPPORTED_CURRENCIES.find((c) => c.code === 'XPF')).toBeDefined();
+    expect(getCurrencySymbol('XPF')).toBe('FCFP');
+  });
+
+  it('has 32 entries', () => {
+    expect(SUPPORTED_CURRENCIES).toHaveLength(32);
   });
 });

@@ -121,6 +121,7 @@ async def test_engine():
         api_key,
         archive,
         auth_ephemeral,
+        calculator,
         color_catalog,
         external_link,
         filament,

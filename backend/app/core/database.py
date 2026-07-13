@@ -172,6 +172,7 @@ async def init_db():
         archive,
         auth_ephemeral,
         bug_report,
+        calculator,
         color_catalog,
         external_link,
         filament,
@@ -240,6 +241,9 @@ async def init_db():
     # Seed default catalog entries
     await seed_spool_catalog()
     await seed_color_catalog()
+
+    # Seed pricing calculator defaults and examples
+    await seed_calculator_defaults()
 
 
 # B2: Module-level counter exposing the number of rows skipped during the last
@@ -3301,9 +3305,31 @@ async def run_migrations(conn):
     # (tag file_count projection, prune_empty_library_tags, bulk-remove) full-scan
     # the association table without this. New installs get it from the model's
     # index=True; create_all doesn't alter existing tables, hence this statement.
+    await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_library_file_tags_tag_id ON library_file_tags (tag_id)")
+
+    # Migration: difficulty factor moved from a calculator-page input onto the
+    # filament profile (100 = no surcharge).
+    await _safe_execute(conn, "ALTER TABLE calculator_filaments ADD COLUMN difficulty_pct FLOAT DEFAULT 100.0")
+
+    # Migration: default margin over cost, used to prefill new calculator filaments.
     await _safe_execute(
-        conn, "CREATE INDEX IF NOT EXISTS ix_library_file_tags_tag_id ON library_file_tags (tag_id)"
+        conn, "ALTER TABLE calculator_defaults ADD COLUMN default_margin_over_cost_pct FLOAT DEFAULT 50.0"
     )
+
+    # Migration: calculator filament profiles split the single free-text name
+    # into brand + material (searchable dropdowns in the UI); name stays as the
+    # derived display label. Backfill copies the legacy name into material so
+    # existing profiles keep their label and satisfy the schema's non-empty
+    # material requirement.
+    await _safe_execute(conn, "ALTER TABLE calculator_filaments ADD COLUMN brand VARCHAR(100) DEFAULT ''")
+    await _safe_execute(conn, "ALTER TABLE calculator_filaments ADD COLUMN material VARCHAR(100) DEFAULT ''")
+    async with conn.begin_nested():
+        await conn.execute(
+            text(
+                "UPDATE calculator_filaments SET material = name "
+                "WHERE (material IS NULL OR material = '') AND name IS NOT NULL AND name != ''"
+            )
+        )
 
 
 _USER_PRINT_TEMPLATE_RENAMES: tuple[tuple[str, str, str], ...] = (
@@ -3729,3 +3755,50 @@ async def seed_color_catalog():
             )
         await session.commit()
         logger.info("Seeded %d default color catalog entries", len(DEFAULT_COLOR_CATALOG))
+
+
+async def seed_calculator_defaults():
+    """Seed pricing calculator defaults plus example filament/printer if empty."""
+    import logging
+
+    from sqlalchemy import func, select
+
+    from backend.app.models.calculator import CalculatorDefaults, CalculatorFilament, CalculatorPrinter
+
+    logger = logging.getLogger(__name__)
+
+    async with async_session() as session:
+        count = (await session.execute(select(func.count()).select_from(CalculatorDefaults))).scalar() or 0
+        if count == 0:
+            session.add(CalculatorDefaults())
+            logger.info("Seeded calculator defaults")
+
+        count = (await session.execute(select(func.count()).select_from(CalculatorFilament))).scalar() or 0
+        if count == 0:
+            session.add(
+                CalculatorFilament(
+                    name="SUNLU PA6-CF",
+                    brand="SUNLU",
+                    material="PA6-CF",
+                    cost_per_kg=3731.0,
+                    sale_price_per_kg=5597.0,
+                    difficulty_pct=150.0,
+                )
+            )
+            logger.info("Seeded example calculator filament")
+
+        count = (await session.execute(select(func.count()).select_from(CalculatorPrinter))).scalar() or 0
+        if count == 0:
+            session.add(
+                CalculatorPrinter(
+                    name="H2S",
+                    purchase_price=347000.0,
+                    lifetime_years=2.0,
+                    daily_usage_hours=5.0,
+                    power_watts=400.0,
+                    repair_rate_pct=30.0,
+                )
+            )
+            logger.info("Seeded example calculator printer")
+
+        await session.commit()

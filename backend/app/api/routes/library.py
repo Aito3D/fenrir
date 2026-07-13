@@ -1902,11 +1902,13 @@ async def list_files(
         print_name = None
         print_time = None
         filament_grams = None
+        filament_type = None
         sliced_for_model = None
         if f.file_metadata:
             print_name = f.file_metadata.get("print_name")
             print_time = f.file_metadata.get("print_time_seconds")
             filament_grams = f.file_metadata.get("filament_used_grams")
+            filament_type = f.file_metadata.get("filament_type")
             sliced_for_model = f.file_metadata.get("sliced_for_model")
 
         file_list.append(
@@ -1926,6 +1928,7 @@ async def list_files(
                 print_name=print_name,
                 print_time_seconds=print_time,
                 filament_used_grams=filament_grams,
+                filament_type=filament_type,
                 sliced_for_model=sliced_for_model,
                 tags=[TagSummary(id=t.id, name=t.name) for t in f.tags],
             )
@@ -4283,11 +4286,13 @@ async def get_file(
     print_name = None
     print_time = None
     filament_grams = None
+    filament_type = None
     sliced_for_model = None
     if file.file_metadata:
         print_name = file.file_metadata.get("print_name")
         print_time = file.file_metadata.get("print_time_seconds")
         filament_grams = file.file_metadata.get("filament_used_grams")
+        filament_type = file.file_metadata.get("filament_type")
         sliced_for_model = file.file_metadata.get("sliced_for_model")
 
     return FileResponseSchema(
@@ -4315,6 +4320,7 @@ async def get_file(
         print_name=print_name,
         print_time_seconds=print_time,
         filament_used_grams=filament_grams,
+        filament_type=filament_type,
         sliced_for_model=sliced_for_model,
     )
 

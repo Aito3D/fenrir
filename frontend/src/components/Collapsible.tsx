@@ -12,6 +12,9 @@ interface CollapsibleProps {
   open?: boolean;
   /** Called when the user clicks the toggle. Use with `open` for controlled mode. */
   onToggle?: (open: boolean) => void;
+  /** Animate open/close. Keeps children mounted while closed (inert + hidden),
+   *  so leave off when children rely on mount/unmount effects. */
+  animated?: boolean;
 }
 
 /**
@@ -32,6 +35,7 @@ export function Collapsible({
   summaryClassName = '',
   open: controlledOpen,
   onToggle,
+  animated = false,
 }: CollapsibleProps) {
   const [internalOpen, setInternalOpen] = useState(defaultOpen);
   const isControlled = controlledOpen !== undefined;
@@ -55,10 +59,24 @@ export function Collapsible({
       >
         <div className="flex-1 min-w-0">{summary}</div>
         <ChevronDown
-          className={`w-4 h-4 text-bambu-gray flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          className={`w-4 h-4 text-bambu-gray flex-shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
         />
       </div>
-      {isOpen && <div className="mt-3">{children}</div>}
+      {animated ? (
+        <div
+          className={`grid transition-[grid-template-rows] duration-200 ease-out ${
+            isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+          }`}
+        >
+          <div className="overflow-hidden min-h-0">
+            <div className="mt-3" inert={!isOpen || undefined} aria-hidden={!isOpen}>
+              {children}
+            </div>
+          </div>
+        </div>
+      ) : (
+        isOpen && <div className="mt-3">{children}</div>
+      )}
     </div>
   );
 }

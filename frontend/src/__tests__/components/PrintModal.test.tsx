@@ -1020,7 +1020,9 @@ describe('PrintModal', () => {
 
       expect((queueRequests[0] as { plate_id: number }).plate_id).toBe(1);
       expect((queueRequests[1] as { plate_id: number }).plate_id).toBe(3);
-    });
+      // 15s test budget: the 5s waitFor guard above cannot fit inside
+      // vitest's 5s default testTimeout once render + clicks are counted.
+    }, 15000);
 
     it('creates one queue item per plate when submitting with select-all', async () => {
       const queueRequests: unknown[] = [];
@@ -1068,7 +1070,8 @@ describe('PrintModal', () => {
       expect((queueRequests[0] as { plate_id: number }).plate_id).toBe(1);
       expect((queueRequests[1] as { plate_id: number }).plate_id).toBe(2);
       expect((queueRequests[2] as { plate_id: number }).plate_id).toBe(3);
-    });
+      // Same 15s budget as the subset test — see comment there.
+    }, 15000);
   });
 
   describe('batch quantity', () => {

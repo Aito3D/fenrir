@@ -183,6 +183,10 @@ class Permission(StrEnum):
     PIPELINES_WRITE = "pipelines:write"  # Create / edit / delete pipeline definitions
     PIPELINES_RUN = "pipelines:run"  # Kick off a pipeline run (PR C); separate because spending filament is a different trust dimension than authoring the recipe
 
+    # Pricing Calculator
+    CALCULATOR_READ = "calculator:read"
+    CALCULATOR_UPDATE = "calculator:update"  # Manage calculator filaments, printers, and defaults
+
     # WebSocket connection
     WEBSOCKET_CONNECT = "websocket:connect"
 
@@ -347,6 +351,10 @@ PERMISSION_CATEGORIES = {
         Permission.PIPELINES_WRITE,
         Permission.PIPELINES_RUN,
     ],
+    "Calculator": [
+        Permission.CALCULATOR_READ,
+        Permission.CALCULATOR_UPDATE,
+    ],
     "WebSocket": [
         Permission.WEBSOCKET_CONNECT,
     ],
@@ -466,6 +474,9 @@ DEFAULT_GROUPS = {
             Permission.PIPELINES_READ.value,
             Permission.PIPELINES_WRITE.value,
             Permission.PIPELINES_RUN.value,
+            # Calculator - full access
+            Permission.CALCULATOR_READ.value,
+            Permission.CALCULATOR_UPDATE.value,
             # WebSocket
             Permission.WEBSOCKET_CONNECT.value,
         ],
@@ -499,6 +510,8 @@ DEFAULT_GROUPS = {
             Permission.SETTINGS_READ.value,
             # Slicer Pipelines - read only
             Permission.PIPELINES_READ.value,
+            # Calculator - read only
+            Permission.CALCULATOR_READ.value,
             Permission.WEBSOCKET_CONNECT.value,
             # MakerWorld browsing only (no import — that writes to library)
             Permission.MAKERWORLD_VIEW.value,
