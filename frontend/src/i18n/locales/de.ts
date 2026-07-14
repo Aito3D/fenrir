@@ -1426,6 +1426,7 @@ export default {
     totalFilament: 'Gesamtverbrauch Filament',
     filamentUsed: 'Filamentverbrauch',
     filamentCost: 'Filamentkosten',
+    filamentCostFromCalculator: 'Berechnet aus den Filamentpreisen des Preisrechners',
     totalCost: 'Gesamtkosten',
     energyUsed: 'Energieverbrauch',
     energyCost: 'Energiekosten',

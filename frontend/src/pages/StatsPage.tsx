@@ -42,6 +42,7 @@ import { Dashboard, type DashboardWidget } from '../components/Dashboard';
 import { getCurrencySymbol } from '../utils/currency';
 import { formatWeight } from '../utils/weight';
 import { parseUTCDate, formatDuration } from '../utils/date';
+import { estimateFilamentCost } from '../utils/archivePricing';
 import { MetricToggle, type Metric } from '../components/MetricToggle';
 
 // Timeframe types and helpers
@@ -121,6 +122,7 @@ const RECHARTS_TOOLTIP_STYLE = {
 function QuickStatsWidget({
   stats,
   currency,
+  filamentCostOverride,
 }: {
   stats: {
     total_prints: number;
@@ -134,17 +136,29 @@ function QuickStatsWidget({
     energy_data_warming_up?: boolean;
   } | undefined;
   currency: string;
+  /** Calculator-priced filament total (quote filament line summed over the
+   *  timeframe's prints); when undefined the stored spool-based total_cost
+   *  is shown as before. */
+  filamentCostOverride?: number;
 }) {
   const { t } = useTranslation();
 
   const warmingUp = stats?.energy_data_warming_up === true;
   const warmingUpTooltip = warmingUp ? t('stats.energyWarmingUpTooltip') : undefined;
 
+  const filamentCost = filamentCostOverride ?? stats?.total_cost;
+
   const items = [
     { icon: Package, color: 'text-bambu-green', label: t('stats.totalPrints'), value: `${stats?.total_prints || 0}` },
     { icon: Clock, color: 'text-blue-400', label: t('stats.printTime'), value: `${stats?.total_print_time_hours?.toFixed(1) ?? '0'}h` },
     { icon: Package, color: 'text-orange-400', label: t('stats.filamentUsed'), value: formatWeight(stats?.total_filament_grams || 0) },
-    { icon: DollarSign, color: 'text-green-400', label: t('stats.filamentCost'), value: `${currency} ${stats?.total_cost?.toFixed(2) ?? '0.00'}` },
+    {
+      icon: DollarSign,
+      color: 'text-green-400',
+      label: t('stats.filamentCost'),
+      value: `${currency} ${filamentCost?.toFixed(2) ?? '0.00'}`,
+      tooltip: filamentCostOverride !== undefined ? t('stats.filamentCostFromCalculator') : undefined,
+    },
     {
       icon: Zap,
       color: 'text-yellow-400',
@@ -1057,6 +1071,36 @@ export function StatsPage() {
     enabled: canFilterByUser,
   });
 
+  // Calculator configuration for the Filament Cost tile — shares query keys
+  // (and cache) with CalculatorPage/ArchivesPage. Printers aren't needed: the
+  // tile only uses the calculator's filament line.
+  const canUseCalculator = hasPermission('calculator:read');
+  const { data: calcFilaments } = useQuery({
+    queryKey: ['calculatorFilaments'],
+    queryFn: api.getCalculatorFilaments,
+    enabled: canUseCalculator,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const { data: calcDefaults } = useQuery({
+    queryKey: ['calculatorDefaults'],
+    queryFn: api.getCalculatorDefaults,
+    enabled: canUseCalculator,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Calculator-priced filament total over the same entries the stats query
+  // counts; per-entry fallback to the stored spool-based cost. Undefined when
+  // the calculator is unconfigured — the tile then shows stats.total_cost.
+  const calculatorFilamentCost = useMemo(() => {
+    if (!archives || !calcFilaments?.length || !calcDefaults) return undefined;
+    return archives.reduce(
+      (sum, entry) => sum + (estimateFilamentCost(entry, calcFilaments, calcDefaults) ?? entry.cost ?? 0),
+      0,
+    );
+  }, [archives, calcFilaments, calcDefaults]);
+
   const selectedUserLabel = useMemo(() => {
     if (selectedUserId === null) return t('stats.allUsers', 'All Users');
     if (selectedUserId === -1) return t('stats.noUser', 'No User (System)');
@@ -1116,7 +1160,7 @@ export function StatsPage() {
     {
       id: 'quick-stats',
       title: t('stats.quickStats'),
-      component: <QuickStatsWidget stats={stats} currency={currency} />,
+      component: <QuickStatsWidget stats={stats} currency={currency} filamentCostOverride={calculatorFilamentCost} />,
       defaultSize: 2,
     },
     {

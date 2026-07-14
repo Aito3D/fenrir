@@ -98,13 +98,20 @@ export const printerRepairsPerHour = (p: PricingPrinter): number => {
   return hours > 0 ? (p.purchase_price * (p.repair_rate_pct / 100)) / hours : 0;
 };
 
+/** The quote's filament line: sale price embeds the filament margin, then the
+ *  per-filament difficulty factor and the global filament markup apply. */
+export const filamentLineCost = (weightG: number, filament: PricingFilament, defaults: PricingDefaults): number =>
+  (weightG / 1000) *
+  filament.sale_price_per_kg *
+  (filament.difficulty_pct / 100) *
+  (1 + defaults.filament_markup_pct / 100);
+
 export function computePricing(
   inputs: PricingInputs,
   filament: PricingFilament,
   printer: PricingPrinter,
   defaults: PricingDefaults,
 ): PricingResult {
-  const w = inputs.weight_g / 1000; // kg
   const t = inputs.printing_time_h;
   const d = filament.difficulty_pct / 100; // per-filament, e.g. 1.5
   const quantity = Math.max(1, Math.floor(inputs.quantity || 1));
@@ -112,8 +119,7 @@ export function computePricing(
   // 1. Filament — the sale price already embeds the filament margin, and the
   // difficulty factor is applied consistently as cost × d (the source
   // spreadsheet was inconsistent between sections; see tests).
-  const filament_sale = w * filament.sale_price_per_kg;
-  const filament_cost = filament_sale * d * (1 + defaults.filament_markup_pct / 100);
+  const filament_cost = filamentLineCost(inputs.weight_g, filament, defaults);
 
   // 2. Printer depreciation (no difficulty)
   const depreciation_cost = printerDepreciationPerHour(printer) * t;

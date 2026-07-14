@@ -259,6 +259,62 @@ describe('StatsPage', () => {
       });
     });
 
+    it('shows the stored total_cost when the calculator is unavailable', async () => {
+      server.use(
+        http.get('/api/v1/calculator/filaments/', () => new HttpResponse(null, { status: 403 })),
+        http.get('/api/v1/calculator/defaults', () => new HttpResponse(null, { status: 403 })),
+      );
+
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('$ 125.50')).toBeInTheDocument();
+      });
+    });
+
+    it('sums the calculator filament line over slim entries when configured', async () => {
+      const calcFilaments = [
+        { id: 1, name: 'PLA basic', material: 'PLA', cost_per_kg: 15, sale_price_per_kg: 20, difficulty_pct: 100 },
+        { id: 2, name: 'PETG basic', material: 'PETG', cost_per_kg: 22, sale_price_per_kg: 30, difficulty_pct: 100 },
+      ];
+      const calcDefaults = {
+        id: 1,
+        electricity_tariff: 120,
+        labor_rate_per_hour: 3000,
+        consumables_packaging_flat: 30,
+        failure_rate_pct: 30,
+        prototype_rate_pct: 30,
+        ads_rate_pct: 5,
+        filament_markup_pct: 5,
+        global_markup_pct: 50,
+        tax_pct: 13,
+        default_difficulty_pct: 100,
+        default_margin_over_cost_pct: 50,
+        stuff_markup_pct: 20,
+      };
+      server.use(
+        http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(calcFilaments)),
+        http.get('/api/v1/calculator/defaults', () => HttpResponse.json(calcDefaults)),
+        http.get('/api/v1/archives/slim', () =>
+          HttpResponse.json([
+            ...mockArchives,
+            // No grams recorded — falls back to the stored per-print cost.
+            { ...mockArchives[0], id: 5, print_name: 'Untracked', filament_used_grams: null, cost: 2.0 },
+          ])
+        ),
+      );
+
+      render(<StatsPage />);
+
+      // PLA 25 g → 0.025×20×1.05 = 0.525; PETG 180 g → 0.18×30×1.05 = 5.67;
+      // ABS 10 g (no profile, first-filament fallback) → 0.01×20×1.05 = 0.21;
+      // PLA 45 g → 0.045×20×1.05 = 0.945; untracked → stored 2.00. Σ = 9.35.
+      await waitFor(() => {
+        expect(screen.getByText('$ 9.35')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('$ 125.50')).not.toBeInTheDocument();
+    });
+
     it('shows energy cost', async () => {
       render(<StatsPage />);
 

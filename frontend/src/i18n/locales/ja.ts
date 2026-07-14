@@ -1425,6 +1425,7 @@ export default {
     totalFilament: '総フィラメント使用量',
     filamentUsed: 'フィラメント使用量',
     filamentCost: 'フィラメントコスト',
+    filamentCostFromCalculator: '料金計算機のフィラメント価格から算出',
     totalCost: '総コスト',
     energyUsed: 'エネルギー使用量',
     energyCost: 'エネルギーコスト',

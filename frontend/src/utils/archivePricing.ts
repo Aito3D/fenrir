@@ -2,7 +2,13 @@
 // sale price for a completed print from the calculator's configuration.
 // Pure module — no React, no API calls (mirrors pricing.ts).
 
-import { computePricing, type PricingDefaults, type PricingFilament, type PricingPrinter } from './pricing';
+import {
+  computePricing,
+  filamentLineCost,
+  type PricingDefaults,
+  type PricingFilament,
+  type PricingPrinter,
+} from './pricing';
 
 export interface NamedCalculatorFilament extends PricingFilament {
   id: number;
@@ -91,6 +97,24 @@ export function matchCalculatorPrinter(
     if (match) return { printer: match, matched: true };
   }
   return { printer: printers[0], matched: false };
+}
+
+/** The calculator's filament line only — grams × sale price × difficulty ×
+ *  filament markup — for a print, with no printer/energy/margin components.
+ *  Used by the Statistics "Filament Cost" tile. Returns null when the
+ *  calculator configuration or the print's weight is missing so callers can
+ *  fall back to the stored spool-based cost. */
+export function estimateFilamentCost(
+  source: { filament_used_grams: number | null; filament_type: string | null },
+  filaments: NamedCalculatorFilament[],
+  defaults: PricingDefaults | undefined,
+): number | null {
+  if (!defaults) return null;
+  const weightG = source.filament_used_grams ?? 0;
+  if (weightG <= 0) return null;
+  const matched = matchCalculatorFilament(source.filament_type, filaments);
+  if (!matched) return null;
+  return filamentLineCost(weightG, matched.filament, defaults);
 }
 
 /** Suggested sale price for an archived print: the calculator's machine-cost

@@ -1426,6 +1426,7 @@ export default {
     totalFilament: '總耗材用量',
     filamentUsed: '耗材用量',
     filamentCost: '耗材成本',
+    filamentCostFromCalculator: '根據價格計算器的耗材價格計算',
     totalCost: '總成本',
     energyUsed: '能耗',
     energyCost: '能源成本',

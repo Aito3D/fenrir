@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   estimateArchiveSalePrice,
+  estimateFilamentCost,
   matchCalculatorFilament,
   matchCalculatorPrinter,
   type ArchivePricingSource,
@@ -243,5 +244,41 @@ describe('estimateArchiveSalePrice', () => {
     expect(estimateArchiveSalePrice(archive, [], printers, defaults)).toBeNull();
     expect(estimateArchiveSalePrice(archive, filaments, [], defaults)).toBeNull();
     expect(estimateArchiveSalePrice(archive, filaments, printers, undefined)).toBeNull();
+  });
+});
+
+describe('estimateFilamentCost', () => {
+  it('computes grams × sale price × difficulty × filament markup', () => {
+    const simple: NamedCalculatorFilament[] = [
+      { id: 9, name: 'PLA', cost_per_kg: 15, sale_price_per_kg: 20, difficulty_pct: 150 },
+    ];
+    // 0.5 kg × 20 × 1.5 × 1.05 = 15.75
+    expect(
+      estimateFilamentCost({ filament_used_grams: 500, filament_type: 'PLA' }, simple, defaults),
+    ).toBeCloseTo(15.75, 10);
+  });
+
+  it('matches the archive filament type against calculator profiles', () => {
+    // PETG profile: 0.1 kg × 6300 × 1.75 × 1.05 = 1157.625
+    expect(
+      estimateFilamentCost({ filament_used_grams: 100, filament_type: 'PETG HF' }, filaments, defaults),
+    ).toBeCloseTo(1157.625, 6);
+    // Material-based match picks the PLA profile, not the first (PETG) one.
+    expect(
+      estimateFilamentCost({ filament_used_grams: 100, filament_type: 'PLA' }, filamentsWithMaterial, defaults),
+    ).toBeCloseTo(0.1 * 5597 * 1.5 * 1.05, 6);
+  });
+
+  it('prices unmatched types with the fallback (first) filament profile', () => {
+    expect(
+      estimateFilamentCost({ filament_used_grams: 100, filament_type: 'TPU' }, filaments, defaults),
+    ).toBeCloseTo(0.1 * 5597 * 1.5 * 1.05, 6);
+  });
+
+  it('returns null without weight, filaments or defaults', () => {
+    expect(estimateFilamentCost({ filament_used_grams: 0, filament_type: 'PLA' }, filaments, defaults)).toBeNull();
+    expect(estimateFilamentCost({ filament_used_grams: null, filament_type: 'PLA' }, filaments, defaults)).toBeNull();
+    expect(estimateFilamentCost({ filament_used_grams: 100, filament_type: 'PLA' }, [], defaults)).toBeNull();
+    expect(estimateFilamentCost({ filament_used_grams: 100, filament_type: 'PLA' }, filaments, undefined)).toBeNull();
   });
 });

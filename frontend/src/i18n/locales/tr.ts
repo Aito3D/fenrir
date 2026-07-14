@@ -1427,6 +1427,7 @@ export default {
     totalFilament: 'Toplam Kullanılan Filament',
     filamentUsed: 'Kullanılan Filament',
     filamentCost: 'Filament Maliyeti',
+    filamentCostFromCalculator: 'Fiyat hesaplayıcının filament fiyatlarından hesaplanır',
     totalCost: 'Toplam Maliyet',
     energyUsed: 'Kullanılan Enerji',
     energyCost: 'Enerji Maliyeti',

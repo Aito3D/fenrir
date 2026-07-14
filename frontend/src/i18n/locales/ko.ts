@@ -1361,6 +1361,7 @@ export default {
     totalFilament: '총 사용 필라멘트',
     filamentUsed: '사용된 필라멘트',
     filamentCost: '필라멘트 비용',
+    filamentCostFromCalculator: '가격 계산기의 필라멘트 가격으로 계산됨',
     totalCost: '총 비용',
     energyUsed: '사용된 에너지',
     energyCost: '에너지 비용',
