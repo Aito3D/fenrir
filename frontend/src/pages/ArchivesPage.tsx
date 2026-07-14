@@ -2685,9 +2685,9 @@ type SortOption = 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc' | 'size-de
 type ViewMode = 'grid' | 'list' | 'calendar' | 'log';
 type Collection = 'all' | 'recent' | 'this-week' | 'this-month' | 'favorites' | 'not-printed' | 'printed' | 'failed' | 'duplicates';
 
-// status values that indicate a print attempt has finished (regardless of outcome).
-// `archived` is the only status that means "uploaded but never sent to a printer."
-const PRINTED_STATUSES = ['completed', 'failed', 'aborted', 'cancelled', 'stopped'] as const;
+// status values that indicate a print attempt was sent to a printer, including one
+// still running. `archived` is the only status that means "uploaded but never printed."
+const PRINTED_STATUSES = ['printing', 'completed', 'failed', 'aborted', 'cancelled', 'stopped'] as const;
 
 const collections: { id: Collection; label: string; icon: React.ReactNode }[] = [
   { id: 'all', label: 'All Archives', icon: <FolderOpen className="w-4 h-4" /> },
@@ -3112,22 +3112,27 @@ export function ArchivesPage() {
   )].sort();
 
   // When sorting by date, a duplicate group surfaces at its MOST RECENT
-  // member's position. Without this, a fresh reprint of an identical file
-  // sorts by the original's old date (or is hidden entirely with "Hide
-  // duplicates" on) and looks like it was never archived.
-  const groupLatestTime = new Map<number, number>();
+  // member's position — and "Hide duplicates" shows that newest member.
+  // Without this, a fresh reprint of an identical file sorts by the
+  // original's old date (or is hidden entirely with "Hide duplicates" on)
+  // and looks like it was never archived.
+  const dupGroupKey = (a: NonNullable<typeof archives>[number]) =>
+    (a.duplicate_sequence ?? 0) > 0 && a.original_archive_id ? a.original_archive_id : a.id;
+  const groupLatest = new Map<number, { t: number; id: number }>();
   for (const a of archives || []) {
     if (a.duplicate_count > 0) {
-      const key = (a.duplicate_sequence ?? 0) > 0 && a.original_archive_id ? a.original_archive_id : a.id;
+      const key = dupGroupKey(a);
       const t = parseUTCDate(a.created_at)?.getTime() || 0;
-      groupLatestTime.set(key, Math.max(groupLatestTime.get(key) ?? 0, t));
+      const prev = groupLatest.get(key);
+      if (!prev || t >= prev.t) {
+        groupLatest.set(key, { t, id: a.id });
+      }
     }
   }
   const dateSortTime = (a: NonNullable<typeof archives>[number]) => {
     const own = parseUTCDate(a.created_at)?.getTime() || 0;
     if (a.duplicate_count === 0) return own;
-    const key = (a.duplicate_sequence ?? 0) > 0 && a.original_archive_id ? a.original_archive_id : a.id;
-    return Math.max(groupLatestTime.get(key) ?? 0, own);
+    return Math.max(groupLatest.get(dupGroupKey(a))?.t ?? 0, own);
   };
 
   const filteredArchives = archives
@@ -3184,9 +3189,13 @@ export function ArchivesPage() {
       // Hide failed filter (don't apply when viewing failed collection)
       const matchesHideFailed = collection === 'failed' || !hideFailed || (a.status !== 'failed' && a.status !== 'aborted');
 
-      // Hide duplicates filter (don't apply when viewing duplicates collection)
+      // Hide duplicates filter (don't apply when viewing duplicates collection).
+      // Surface the NEWEST member of each group, not the sequence-0 original —
+      // otherwise a fresh reprint of an identical file is hidden forever and
+      // looks like it was never archived.
       const matchesHideDuplicates =
-        collection === 'duplicates' || !hideDuplicates || a.duplicate_count === 0 || a.duplicate_sequence === 0;
+        collection === 'duplicates' || !hideDuplicates || a.duplicate_count === 0 ||
+        a.id === groupLatest.get(dupGroupKey(a))?.id;
 
       // Tag filter
       const archiveTags = a.tags?.split(',').map(t => t.trim()) || [];

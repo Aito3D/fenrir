@@ -411,6 +411,31 @@ describe('ArchivesPage', () => {
       });
     });
 
+    it('keeps in-progress prints visible when "Printed" is selected', async () => {
+      server.use(
+        http.get('/api/v1/archives/', () =>
+          HttpResponse.json([
+            ...mixedStatusArchives,
+            { ...mockArchives[0], id: 104, print_name: 'NowPrinting', status: 'printing', completed_at: null },
+          ])
+        )
+      );
+
+      render(<ArchivesPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('NowPrinting')).toBeInTheDocument();
+      });
+
+      const collectionSelect = screen.getByDisplayValue('All Archives');
+      fireEvent.change(collectionSelect, { target: { value: 'printed' } });
+
+      await waitFor(() => {
+        expect(screen.getByText('NowPrinting')).toBeInTheDocument();
+        expect(screen.queryByText('NeverPrinted')).not.toBeInTheDocument();
+      });
+    });
+
     it('shows only print-attempted entries (any final status) when "Printed" is selected', async () => {
       render(<ArchivesPage />);
 
@@ -426,6 +451,65 @@ describe('ArchivesPage', () => {
         expect(screen.getByText('WasPrinted')).toBeInTheDocument();
         expect(screen.getByText('WasFailed')).toBeInTheDocument();
         expect(screen.getByText('WasCancelled')).toBeInTheDocument();
+      });
+    });
+  });
+
+  // A print farm reprints the same files constantly: with "Hide duplicates" on,
+  // the visible member of a duplicate group must be the NEWEST print, otherwise
+  // every fresh slicer reprint is hidden and looks like it was never archived.
+  describe('hide duplicates shows newest reprint', () => {
+    const duplicateGroupArchives = [
+      {
+        ...mockArchives[0],
+        id: 200,
+        print_name: 'OldOriginal',
+        created_at: '2024-01-01T09:00:00Z',
+        duplicate_count: 1,
+        duplicate_sequence: 0,
+        original_archive_id: null,
+      },
+      {
+        ...mockArchives[0],
+        id: 201,
+        print_name: 'FreshReprint',
+        status: 'printing',
+        completed_at: null,
+        created_at: '2024-06-01T09:00:00Z',
+        duplicate_count: 1,
+        duplicate_sequence: 1,
+        original_archive_id: 200,
+      },
+    ];
+
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/archives/', () => HttpResponse.json(duplicateGroupArchives))
+      );
+    });
+
+    it('surfaces the newest member of a duplicate group, hiding the older original', async () => {
+      render(<ArchivesPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('FreshReprint')).toBeInTheDocument();
+        expect(screen.getByText('OldOriginal')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTitle('Hide Duplicates'));
+
+      await waitFor(() => {
+        expect(screen.getByText('FreshReprint')).toBeInTheDocument();
+        expect(screen.queryByText('OldOriginal')).not.toBeInTheDocument();
+      });
+    });
+
+    it('shows all group members when hide duplicates is off', async () => {
+      render(<ArchivesPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('FreshReprint')).toBeInTheDocument();
+        expect(screen.getByText('OldOriginal')).toBeInTheDocument();
       });
     });
   });
