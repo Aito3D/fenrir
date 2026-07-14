@@ -2174,6 +2174,11 @@ async def run_migrations(conn):
         await _safe_execute(conn, "ALTER TABLE api_keys ALTER COLUMN key_hash TYPE VARCHAR(255)")
         await _safe_execute(conn, "ALTER TABLE api_keys ALTER COLUMN key_prefix TYPE VARCHAR(20)")
         await _safe_execute(conn, "ALTER TABLE print_archives ALTER COLUMN filament_color TYPE VARCHAR(200)")
+        # print_log_entries mirrors print_archives.filament_color (comma-joined
+        # multi-color lists exceed 50 chars); must be widened BEFORE the Step 3
+        # print-log backfill copies archive values into it, or Postgres aborts
+        # startup with "value too long for type character varying(50)".
+        await _safe_execute(conn, "ALTER TABLE print_log_entries ALTER COLUMN filament_color TYPE VARCHAR(200)")
 
     # Migration: Create GIN index for full-text search on PostgreSQL
     # (SQLite uses FTS5 virtual table instead, set up above)
@@ -3093,6 +3098,62 @@ async def run_migrations(conn):
             """)
         )
 
+    # Step 3: create the missing log entries themselves. Older builds of the
+    # external-print completion path dropped write_log_entry for hundreds of
+    # slicer-started prints (571 finished archives with no entry on the
+    # reporter's DB, concentrated pre-June), so every statistics surface —
+    # which aggregates PrintLogEntry, not PrintArchive — undercounts them.
+    # Insert one entry per finished archive that has none, dated at the
+    # print's own completion time so date-ranged stats bucket it in the
+    # correct week/month. Soft-deleted archives are included on purpose:
+    # soft-deleting an archive keeps its stats (only ?purge_stats=true
+    # removes them). Copying cost/energy directly matches Step 2's "single
+    # latest-run carrier" convention since these archives have no entries.
+    #
+    # One-shot, gated by a settings marker: DELETE /print-log/ clears entries
+    # without touching archives, so re-running this on every startup would
+    # resurrect entries the user deliberately cleared. Runs after Step 1 so
+    # name-linkable entries are already attached and can't be duplicated.
+    marker_row = await conn.execute(_text("SELECT value FROM settings WHERE key = 'print_log_missing_runs_backfilled'"))
+    if marker_row.scalar_one_or_none() is None:
+        if is_sqlite():
+            duration_expr = (
+                "CASE WHEN a.started_at IS NOT NULL AND a.completed_at IS NOT NULL "
+                "THEN CAST((julianday(a.completed_at) - julianday(a.started_at)) * 86400 AS INTEGER) END"
+            )
+            marker_sql = "INSERT OR IGNORE INTO settings (key, value) VALUES (:key, :value)"
+        else:
+            duration_expr = (
+                "CASE WHEN a.started_at IS NOT NULL AND a.completed_at IS NOT NULL "
+                "THEN CAST(EXTRACT(EPOCH FROM (a.completed_at - a.started_at)) AS INTEGER) END"
+            )
+            marker_sql = "INSERT INTO settings (key, value) VALUES (:key, :value) ON CONFLICT (key) DO NOTHING"
+        async with conn.begin_nested():
+            backfill_result = await conn.execute(
+                _text(f"""
+                INSERT INTO print_log_entries
+                    (archive_id, print_name, printer_name, printer_id, status, started_at, completed_at,
+                     duration_seconds, filament_type, filament_color, filament_used_grams, cost,
+                     energy_kwh, energy_cost, failure_reason, thumbnail_path, created_by_id,
+                     created_by_username, created_at)
+                SELECT a.id, a.print_name, p.name, a.printer_id, a.status, a.started_at, a.completed_at,
+                       {duration_expr}, a.filament_type, a.filament_color, a.filament_used_grams, a.cost,
+                       a.energy_kwh, a.energy_cost, a.failure_reason, a.thumbnail_path, a.created_by_id,
+                       u.username, COALESCE(a.completed_at, a.started_at, a.created_at)
+                FROM print_archives a
+                LEFT JOIN printers p ON p.id = a.printer_id
+                LEFT JOIN users u ON u.id = a.created_by_id
+                WHERE a.status IN ('completed', 'failed', 'aborted', 'cancelled', 'stopped')
+                  AND NOT EXISTS (SELECT 1 FROM print_log_entries l WHERE l.archive_id = a.id)
+                """)
+            )
+            await conn.execute(_text(marker_sql), {"key": "print_log_missing_runs_backfilled", "value": "1"})
+        if backfill_result.rowcount:
+            logger.info(
+                "Print-log backfill: created %d entries for finished archives that had none",
+                backfill_result.rowcount,
+            )
+
     # Migration: smart_plugs gets per-plug auto-off-after-drying toggle and
     # delay (#1349). Fires whenever any AMS attached to the linked printer
     # finishes a dry cycle. Plain ANSI ALTER TABLE works on both SQLite and
@@ -3673,6 +3734,28 @@ async def seed_default_groups():
                 logger.info("Added pipelines:read to group '%s' (backfill)", group.name)
             if changed:
                 group.permissions = perms
+        await session.commit()
+
+        # Backfill calculator permissions for non-admin system groups.
+        # Administrators is handled by the ALL_PERMISSIONS sync above.
+        # Matches fresh-install DEFAULT_GROUPS: Operators get read + update,
+        # Viewers get read only.
+        for group_name, calc_perms in (
+            ("Operators", ("calculator:read", "calculator:update")),
+            ("Viewers", ("calculator:read",)),
+        ):
+            grp = (await session.execute(select(Group).where(Group.name == group_name))).scalar_one_or_none()
+            if grp is None or grp.permissions is None:
+                continue
+            perms = list(grp.permissions)
+            changed = False
+            for new_perm in calc_perms:
+                if new_perm not in perms:
+                    perms.append(new_perm)
+                    changed = True
+                    logger.info("Added %s to %s group (backfill)", new_perm, group_name)
+            if changed:
+                grp.permissions = perms
         await session.commit()
 
         # Migrate existing users to groups if they're not already in any group

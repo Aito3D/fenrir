@@ -291,3 +291,59 @@ class TestReadPermissionMigration:
 
         perms = await _get_perms("Viewers")
         assert "orca_cloud:auth" not in perms
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operators_calculator_backfill(self, async_client: AsyncClient):
+        """Existing Operators groups gain calculator:read + calculator:update
+        (matching fresh-install DEFAULT_GROUPS). Note the backfill is not
+        one-shot: like the other seed_default_groups backfills it re-adds the
+        permissions on every startup, so a manual revoke does not survive a
+        restart — a deliberate, documented trade-off of this pattern."""
+        await seed_default_groups()
+        async with _database_module.async_session() as session:
+            grp = (await session.execute(select(Group).where(Group.name == "Operators"))).scalar_one()
+            grp.permissions = [p for p in (grp.permissions or []) if not p.startswith("calculator:")]
+            await session.commit()
+
+        await seed_default_groups()
+
+        perms = await _get_perms("Operators")
+        assert "calculator:read" in perms
+        assert "calculator:update" in perms
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_viewers_calculator_backfill_is_read_only(self, async_client: AsyncClient):
+        """Viewers gain only calculator:read — never calculator:update."""
+        await seed_default_groups()
+        async with _database_module.async_session() as session:
+            grp = (await session.execute(select(Group).where(Group.name == "Viewers"))).scalar_one()
+            grp.permissions = [p for p in (grp.permissions or []) if not p.startswith("calculator:")]
+            await session.commit()
+
+        await seed_default_groups()
+
+        perms = await _get_perms("Viewers")
+        assert "calculator:read" in perms
+        assert "calculator:update" not in perms
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_calculator_backfill_preserves_custom_permissions(self, async_client: AsyncClient):
+        """The calculator backfill is additive-only — custom permissions on the
+        group survive, and custom groups are never touched."""
+        await seed_default_groups()
+        async with _database_module.async_session() as session:
+            grp = (await session.execute(select(Group).where(Group.name == "Operators"))).scalar_one()
+            grp.permissions = [
+                *(p for p in (grp.permissions or []) if not p.startswith("calculator:")),
+                "custom:plugin_permission",
+            ]
+            await session.commit()
+
+        await seed_default_groups()
+
+        perms = await _get_perms("Operators")
+        assert "custom:plugin_permission" in perms
+        assert "calculator:read" in perms

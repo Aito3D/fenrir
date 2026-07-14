@@ -32,7 +32,7 @@ class PrintLogEntry(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
     duration_seconds: Mapped[int | None] = mapped_column(Integer)
     filament_type: Mapped[str | None] = mapped_column(String(50))
-    filament_color: Mapped[str | None] = mapped_column(String(50))
+    filament_color: Mapped[str | None] = mapped_column(String(200))
     filament_used_grams: Mapped[float | None] = mapped_column(Float)
     cost: Mapped[float | None] = mapped_column(Float)
     energy_kwh: Mapped[float | None] = mapped_column(Float)
