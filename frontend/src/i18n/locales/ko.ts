@@ -2025,6 +2025,8 @@ export default {
     ambientDryingEnabledDescription: '대기 중인 인쇄가 없어도 습도가 임계값을 초과하면 유휴 프린터에서 자동으로 필라멘트 건조',
     printDryingEnabled: '인쇄 중 건조 계속',
     printDryingEnabledDescription: '지원되는 하드웨어(H2D, H2C, H2S, P2S, H2D Pro, X2D, X1C, A2L 최신 펌웨어)에서 인쇄 중에도 자동 건조를 계속 실행합니다. 스풀 보호를 위해 건조 온도가 유휴 프리셋보다 자동으로 5°C 낮게 제한됩니다.',
+    dryingNoAutoStop: '건조 자동 중지 안 함',
+    dryingNoAutoStopDescription: '자동 건조는 건조를 시작만 하고 중지하지 않습니다. 건조는 AMS 건조 타이머가 만료되거나 수동으로 중지할 때만 종료됩니다. AMS 습도가 임계값 아래인데도 필라멘트가 습한 경우에 유용합니다. 참고: 대기열의 인쇄는 건조가 끝날 때까지 대기하지만, 지원되는 하드웨어에서 "인쇄 중 건조 계속"이 활성화된 경우 건조가 계속되는 동안 인쇄가 시작됩니다.',
     dryingPresets: '건조 프리셋',
     dryingPresetsDescription: '필라멘트 유형별 온도 및 시간. AMS 2 Pro는 낮은 온도, AMS-HT는 높은 온도를 지원합니다.',
     dryingFilament: '필라멘트',

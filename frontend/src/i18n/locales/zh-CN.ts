@@ -2145,6 +2145,8 @@ export default {
     ambientDryingEnabledDescription: '当空闲打印机的湿度超过阈值时自动干燥耗材，无需排队打印。',
     printDryingEnabled: '打印时继续干燥',
     printDryingEnabledDescription: '允许自动干燥在支持的硬件（H2D、H2C、H2S、P2S、H2D Pro、X2D、X1C、A2L 最新固件）打印过程中继续运行。为保护料盘，干燥温度会自动比空闲时预设低 5°C。',
+    dryingNoAutoStop: '永不自动停止干燥',
+    dryingNoAutoStopDescription: '自动干燥只会启动干燥，绝不会停止它。干燥仅在 AMS 干燥计时器到期或手动停止时结束。当 AMS 湿度低于阈值但耗材仍然潮湿时很有用。注意：队列中的打印将等待干燥完成；但如果在支持的硬件上启用了"打印时继续干燥"，打印将在干燥继续的同时开始。',
     dryingPresets: '干燥预设',
     dryingPresetsDescription: '每种耗材类型的温度和时长。AMS 2 Pro使用较低温度，AMS-HT支持较高温度。',
     dryingFilament: '耗材',

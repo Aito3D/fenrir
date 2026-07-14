@@ -2100,6 +2100,8 @@ export default {
     ambientDryingEnabledDescription: 'Sécher automatiquement le filament sur les imprimantes inactives lorsque l\'humidité dépasse le seuil, même sans impressions en file.',
     printDryingEnabled: 'Séchage pendant l\'impression',
     printDryingEnabledDescription: 'Autorise le séchage automatique à continuer pendant une impression sur le matériel pris en charge (H2D, H2C, H2S, P2S, H2D Pro, X2D, X1C, A2L avec firmware récent). La température de séchage est automatiquement limitée à 5°C sous le préréglage en attente pour protéger les bobines.',
+    dryingNoAutoStop: 'Ne jamais arrêter le séchage automatiquement',
+    dryingNoAutoStopDescription: 'Le séchage automatique ne fait que démarrer le séchage — il ne l\'arrête jamais. Le séchage se termine uniquement à l\'expiration du minuteur de séchage de l\'AMS ou par un arrêt manuel. Utile lorsque le filament est humide alors que l\'humidité de l\'AMS est sous le seuil. Remarque : les impressions en file d\'attente attendent la fin du séchage, sauf si « Séchage pendant l\'impression » est activé sur du matériel compatible — les impressions démarrent alors pendant que le séchage continue.',
     dryingPresets: 'Préréglages de séchage',
     dryingPresetsDescription: 'Température et durée par type de filament. AMS 2 Pro utilise des températures plus basses, AMS-HT supporte des températures plus élevées.',
     dryingFilament: 'Filament',

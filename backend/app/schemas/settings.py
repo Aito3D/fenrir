@@ -103,6 +103,16 @@ class AppSettings(BaseModel):
             "(floor 40 degC) to protect spools during print."
         ),
     )
+    drying_no_auto_stop: bool = Field(
+        default=False,
+        description=(
+            "Never auto-stop drying: the scheduler only starts drying sessions; "
+            "drying ends only when the AMS drying timer expires or it is stopped manually. "
+            "Queued prints wait for drying to finish instead of stopping it, unless "
+            "print_drying_enabled is on and the hardware supports Print While Drying — "
+            "then prints dispatch while drying continues."
+        ),
+    )
     drying_presets: str = Field(
         default="",
         description="JSON blob of drying presets per filament type (empty = use built-in defaults)",
@@ -510,6 +520,7 @@ class AppSettingsUpdate(BaseModel):
     queue_drying_block: bool | None = None
     ambient_drying_enabled: bool | None = None
     print_drying_enabled: bool | None = None
+    drying_no_auto_stop: bool | None = None
     drying_presets: str | None = None
     ams_humidity_thresholds: str | None = None
     per_printer_mapping_expanded: bool | None = None

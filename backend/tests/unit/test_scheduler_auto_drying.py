@@ -1007,6 +1007,324 @@ class TestGetHumidityThresholds:
         assert result == {"default": 60, "PLA": 50, "ASA": 30}
 
 
+class TestDryingNoAutoStop(_DryingTestBase):
+    """Tests for drying_no_auto_stop — the scheduler only starts drying, never stops it.
+
+    With the flag on, drying ends only when the AMS drying timer expires or the
+    user stops it manually. Covers all scheduler stop paths: humidity-based stop,
+    feature-disabled stop, and queue-mode stops.
+    """
+
+    @pytest.fixture
+    def scheduler(self):
+        s = PrintScheduler()
+        s._min_drying_seconds = 1800
+        return s
+
+    @staticmethod
+    def _drying_ams_state(humidity: str = "18"):
+        state = MagicMock()
+        state.raw_data = {
+            "ams": [
+                {
+                    "id": 0,
+                    "module_type": "n3f",
+                    "dry_time": 600,
+                    "humidity_raw": humidity,
+                    "dry_sf_reason": [],
+                    "tray": [{"tray_type": "PLA"}],
+                }
+            ]
+        }
+        state.firmware_version = "01.09.00.00"
+        return state
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_no_humidity_stop_when_flag_on(self, mock_sd, mock_pm, scheduler):
+        """Humidity below threshold after minimum time should NOT stop drying."""
+        # Drying started 35 minutes ago — past the minimum drying time
+        scheduler._drying_in_progress = {1: time.monotonic() - 2100}
+
+        mock_pm.get_status.return_value = self._drying_ams_state(humidity="18")
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+        db = AsyncMock()
+
+        settings_returns = {
+            "queue_drying_enabled": self._make_setting("true"),
+            "ams_humidity_fair": self._make_setting("21"),
+            "queue_drying_block": self._make_setting("false"),
+            "drying_no_auto_stop": self._make_setting("true"),
+            "drying_presets": None,
+        }
+        db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns))
+
+        item = MagicMock()
+        item.printer_id = 1
+        item.scheduled_time = MagicMock()
+        item.manual_start = False
+
+        await scheduler._check_auto_drying(db, [item], set())
+
+        mock_pm.send_drying_command.assert_not_called()
+        assert 1 in scheduler._drying_in_progress
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    async def test_no_stop_when_feature_disabled_and_flag_on(self, mock_pm, scheduler):
+        """Disabling both drying features should NOT stop active drying with flag on."""
+        scheduler._drying_in_progress = {1: time.monotonic()}
+
+        mock_pm.get_status.return_value = self._drying_ams_state()
+
+        db = AsyncMock()
+        settings_returns = {
+            "queue_drying_enabled": self._make_setting("false"),
+            "ambient_drying_enabled": self._make_setting("false"),
+            "drying_no_auto_stop": self._make_setting("true"),
+        }
+        db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns))
+
+        await scheduler._check_auto_drying(db, [], set())
+
+        mock_pm.send_drying_command.assert_not_called()
+        assert 1 in scheduler._drying_in_progress
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    async def test_no_stop_when_no_scheduled_items_and_flag_on(self, mock_pm, scheduler):
+        """Queue-only mode with an empty queue should NOT stop drying with flag on."""
+        scheduler._drying_in_progress = {1: time.monotonic()}
+
+        mock_pm.get_status.return_value = self._drying_ams_state()
+
+        db = AsyncMock()
+        settings_returns = {
+            "queue_drying_enabled": self._make_setting("true"),
+            "ambient_drying_enabled": self._make_setting("false"),
+            "drying_no_auto_stop": self._make_setting("true"),
+        }
+        db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns))
+
+        await scheduler._check_auto_drying(db, [], set())
+
+        mock_pm.send_drying_command.assert_not_called()
+        assert 1 in scheduler._drying_in_progress
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    async def test_no_per_printer_stop_when_flag_on(self, mock_pm, scheduler):
+        """Queue-only mode: a drying printer without scheduled prints keeps drying with flag on."""
+        scheduler._drying_in_progress = {1: time.monotonic()}
+
+        mock_pm.get_status.return_value = self._drying_ams_state()
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+        db = AsyncMock()
+
+        settings_returns = {
+            "queue_drying_enabled": self._make_setting("true"),
+            "ambient_drying_enabled": self._make_setting("false"),
+            "ams_humidity_fair": self._make_setting("60"),
+            "queue_drying_block": self._make_setting("false"),
+            "drying_no_auto_stop": self._make_setting("true"),
+            "drying_presets": None,
+        }
+        db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns))
+
+        # Scheduled item on ANOTHER printer keeps queue mode active, but printer 1
+        # has no scheduled prints — the per-printer stop path would normally fire.
+        item = MagicMock()
+        item.printer_id = 2
+        item.scheduled_time = MagicMock()
+        item.manual_start = False
+
+        await scheduler._check_auto_drying(db, [item], set())
+
+        mock_pm.send_drying_command.assert_not_called()
+        assert 1 in scheduler._drying_in_progress
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_start_still_works_with_flag_on(self, mock_sd, mock_pm, scheduler):
+        """The flag must not affect the start path — high humidity still starts drying."""
+        state = MagicMock()
+        state.raw_data = {
+            "ams": [
+                {
+                    "id": 0,
+                    "module_type": "n3f",
+                    "dry_time": 0,
+                    "humidity_raw": "75",
+                    "dry_sf_reason": [],
+                    "tray": [{"tray_type": "PLA"}],
+                }
+            ]
+        }
+        state.firmware_version = "01.09.00.00"
+        mock_pm.get_status.return_value = state
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        mock_pm.send_drying_command.return_value = True
+
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+        db = AsyncMock()
+
+        settings_returns = {
+            "queue_drying_enabled": self._make_setting("false"),
+            "ambient_drying_enabled": self._make_setting("true"),
+            "ams_humidity_fair": self._make_setting("60"),
+            "queue_drying_block": self._make_setting("false"),
+            "drying_no_auto_stop": self._make_setting("true"),
+            "drying_presets": None,
+        }
+        db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns))
+
+        await scheduler._check_auto_drying(db, [], set())
+
+        mock_pm.send_drying_command.assert_called_once_with(1, 0, 45, 12, mode=1, filament="PLA")
+        assert 1 in scheduler._drying_in_progress
+
+
+class TestPrintPriorityRespectsNoAutoStop:
+    """check_queue: a due print on a drying printer must NOT stop drying with the flag on."""
+
+    @staticmethod
+    async def _make_db(settings: dict[str, str]):
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+        import backend.app.models  # noqa: F401
+        from backend.app.core.database import Base
+        from backend.app.models.print_queue import PrintQueueItem
+        from backend.app.models.printer import Printer
+        from backend.app.models.settings import Settings
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+        async with session_maker() as db:
+            db.add(Printer(id=1, name="P1", serial_number="S1", ip_address="1.1.1.1", access_code="x"))
+            db.add(PrintQueueItem(id=1, printer_id=1, archive_id=None, status="pending", position=0))
+            for key, value in settings.items():
+                db.add(Settings(key=key, value=value))
+            await db.commit()
+
+        return engine, session_maker
+
+    async def _run_check_queue(
+        self,
+        settings: dict[str, str],
+        *,
+        model: str = "X1C",
+        firmware: str | None = None,
+        awaiting_plate_clear: bool = False,
+        job_active: bool = False,
+    ):
+        scheduler = PrintScheduler()
+        scheduler._drying_in_progress = {1: time.monotonic()}
+        scheduler._stop_drying = AsyncMock()
+        scheduler._start_print = AsyncMock()
+        scheduler._compute_ams_mapping_for_printer = AsyncMock(return_value=None)
+        scheduler._block_on_filament_deficit = AsyncMock(return_value=False)
+        # Printer is drying, hence not idle
+        scheduler._is_printer_idle = MagicMock(return_value=False)
+
+        engine, session_maker = await self._make_db({"queue_drying_block": "false", **settings})
+        try:
+            with (
+                patch("backend.app.services.print_scheduler.async_session", session_maker),
+                patch("backend.app.services.print_scheduler.printer_manager") as mock_pm,
+            ):
+                mock_pm.is_connected.return_value = True
+                if firmware is None:
+                    mock_pm.get_status.return_value = None
+                else:
+                    state = MagicMock()
+                    state.firmware_version = firmware
+                    # A drying-only session carries no job telemetry; a real
+                    # print (slicer-started or with mid-print drying) does.
+                    state.progress = 42.0 if job_active else 0.0
+                    state.total_layers = 120 if job_active else 0
+                    state.remaining_time = 90 if job_active else 0
+                    mock_pm.get_status.return_value = state
+                mock_pm.get_model.return_value = model
+                mock_pm.is_awaiting_plate_clear.return_value = awaiting_plate_clear
+                await scheduler.check_queue()
+        finally:
+            await engine.dispose()
+        return scheduler
+
+    @pytest.mark.asyncio
+    async def test_flag_on_defers_print_instead_of_stopping_drying(self):
+        scheduler = await self._run_check_queue({"drying_no_auto_stop": "true"})
+        scheduler._stop_drying.assert_not_called()
+        scheduler._start_print.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_flag_off_stops_drying_for_print(self):
+        scheduler = await self._run_check_queue({"drying_no_auto_stop": "false"})
+        # The print-priority path stops drying (later stop paths may also fire
+        # because the mocked _stop_drying does not clear tracking).
+        scheduler._stop_drying.assert_any_call(1)
+
+    @pytest.mark.asyncio
+    async def test_flag_on_dispatches_print_while_drying_on_capable_hardware(self):
+        """Print While Drying: flag on + print_drying on + capable hardware → dispatch without stopping."""
+        scheduler = await self._run_check_queue(
+            {"drying_no_auto_stop": "true", "print_drying_enabled": "true"},
+            model="H2D",
+            firmware="01.03.00.00",
+        )
+        scheduler._stop_drying.assert_not_called()
+        scheduler._start_print.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_flag_on_waits_when_hardware_not_capable(self):
+        """Old firmware without Print While Drying: the print waits for the drying timer."""
+        scheduler = await self._run_check_queue(
+            {"drying_no_auto_stop": "true", "print_drying_enabled": "true"},
+            model="H2D",
+            firmware="01.02.00.00",
+        )
+        scheduler._stop_drying.assert_not_called()
+        scheduler._start_print.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_flag_on_never_dispatches_onto_running_print(self):
+        """A printer with mid-print drying (or a slicer print started during a
+        drying session) is in _drying_in_progress while a REAL print runs —
+        job telemetry on the state must block the forced dispatch (#double-dispatch)."""
+        scheduler = await self._run_check_queue(
+            {"drying_no_auto_stop": "true", "print_drying_enabled": "true"},
+            model="H2D",
+            firmware="01.03.00.00",
+            job_active=True,
+        )
+        scheduler._stop_drying.assert_not_called()
+        scheduler._start_print.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_flag_on_waits_when_awaiting_plate_clear(self):
+        """Plate-clear gate still applies to the Print While Drying dispatch path."""
+        scheduler = await self._run_check_queue(
+            {"drying_no_auto_stop": "true", "print_drying_enabled": "true"},
+            model="H2D",
+            firmware="01.03.00.00",
+            awaiting_plate_clear=True,
+        )
+        scheduler._stop_drying.assert_not_called()
+        scheduler._start_print.assert_not_called()
+
+
 class TestMidPrintDrying(_DryingTestBase):
     """Tests for the print_drying_enabled path — drying that runs CONCURRENTLY
     with an active print on capable hardware (H2D / H2C / H2S / P2S / X2D / X1C /

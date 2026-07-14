@@ -2143,6 +2143,8 @@ export default {
     ambientDryingEnabledDescription: 'キューに関係なく、アイドル状態のプリンターで湿度がしきい値を超えた場合に自動的にフィラメントを乾燥。',
     printDryingEnabled: '印刷中も乾燥を継続',
     printDryingEnabledDescription: '対応ハードウェア（H2D、H2C、H2S、P2S、H2D Pro、X2D、X1C、A2L、最新ファームウェア）で印刷中も自動乾燥を継続します。スプール保護のため、乾燥温度はアイドル時のプリセットより自動的に5°C低く制限されます。',
+    dryingNoAutoStop: '乾燥を自動停止しない',
+    dryingNoAutoStopDescription: '自動乾燥は乾燥の開始のみを行い、停止することはありません。乾燥はAMSの乾燥タイマーが終了するか、手動で停止した場合にのみ終了します。AMSの湿度がしきい値未満でもフィラメントが湿っている場合に便利です。注意：キュー内の印刷は乾燥が終わるまで待機しますが、対応ハードウェアで「印刷中も乾燥を継続」が有効な場合は、乾燥を続けたまま印刷が開始されます。',
     dryingPresets: '乾燥プリセット',
     dryingPresetsDescription: 'フィラメントタイプごとの温度と時間。AMS 2 Proは低温、AMS-HTは高温に対応。',
     dryingFilament: 'フィラメント',

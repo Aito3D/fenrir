@@ -2100,6 +2100,8 @@ export default {
     ambientDryingEnabledDescription: 'Asciuga automaticamente il filamento sulle stampanti inattive quando l\'umidità supera la soglia, anche senza stampe in coda.',
     printDryingEnabled: 'Asciugatura durante la stampa',
     printDryingEnabledDescription: 'Consente all\'asciugatura automatica di continuare durante una stampa su hardware supportato (H2D, H2C, H2S, P2S, H2D Pro, X2D, X1C, A2L con firmware recente). La temperatura di asciugatura viene automaticamente limitata a 5°C sotto il preset di riposo per proteggere le bobine.',
+    dryingNoAutoStop: 'Non interrompere mai automaticamente l\'asciugatura',
+    dryingNoAutoStopDescription: 'L\'asciugatura automatica avvia soltanto l\'asciugatura — non la interrompe mai. L\'asciugatura termina solo allo scadere del timer di asciugatura dell\'AMS o con un arresto manuale. Utile quando il filamento è umido anche se l\'umidità dell\'AMS è sotto la soglia. Nota: le stampe in coda attendono la fine dell\'asciugatura, a meno che "Asciugatura durante la stampa" sia attiva su hardware supportato — in tal caso le stampe partono mentre l\'asciugatura continua.',
     dryingPresets: 'Preset di asciugatura',
     dryingPresetsDescription: 'Temperatura e durata per tipo di filamento. AMS 2 Pro usa temperature più basse, AMS-HT supporta temperature più alte.',
     dryingFilament: 'Filamento',

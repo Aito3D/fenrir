@@ -2147,6 +2147,8 @@ export default {
     ambientDryingEnabledDescription: 'Secar automáticamente el filamento en impresoras inactivas cuando la humedad supera el umbral, incluso sin impresiones en cola.',
     printDryingEnabled: 'Continuar secado durante la impresión',
     printDryingEnabledDescription: 'Permite que el secado automático siga funcionando durante una impresión en hardware compatible (H2D, H2C, H2S, P2S, H2D Pro, X2D, X1C, A2L con firmware reciente). La temperatura de secado se limita automáticamente 5°C por debajo del preajuste en reposo para proteger las bobinas.',
+    dryingNoAutoStop: 'Nunca detener el secado automáticamente',
+    dryingNoAutoStopDescription: 'El secado automático solo inicia el secado — nunca lo detiene. El secado termina únicamente cuando expira el temporizador de secado del AMS o al detenerlo manualmente. Útil cuando el filamento está húmedo aunque la humedad del AMS esté por debajo del umbral. Nota: las impresiones en cola esperan a que termine el secado, salvo que "Continuar secado durante la impresión" esté activado en hardware compatible — entonces las impresiones comienzan mientras el secado continúa.',
     dryingPresets: 'Preajustes de secado',
     dryingPresetsDescription: 'Temperatura y duración por tipo de filamento. El AMS 2 Pro usa temperaturas más bajas; el AMS-HT admite temperaturas más altas.',
     dryingFilament: 'Filamento',

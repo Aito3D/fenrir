@@ -2163,6 +2163,8 @@ export default {
     ambientDryingEnabledDescription: 'Automatically dry filament on idle printers when humidity exceeds threshold, even without queued prints.',
     printDryingEnabled: 'Continue drying while printing',
     printDryingEnabledDescription: 'Allow auto-drying to keep running during a print on supported hardware (H2D, H2C, H2S, P2S, H2D Pro, X2D, X1C, A2L on recent firmware). Drying temperature is automatically capped 5°C below the idle preset to protect spools.',
+    dryingNoAutoStop: 'Never auto-stop drying',
+    dryingNoAutoStopDescription: 'Auto-drying only starts drying — it never stops it. Drying ends only when the AMS drying timer expires or you stop it manually. Useful when filament is wet even though AMS humidity reads below the threshold. Note: queued prints wait for drying to finish, unless "Continue drying while printing" is enabled on supported hardware — then prints start while drying continues.',
     dryingPresets: 'Drying Presets',
     dryingPresetsDescription: 'Temperature and duration per filament type. AMS 2 Pro uses lower temps, AMS-HT supports higher temps.',
     dryingFilament: 'Filament',

@@ -2148,6 +2148,8 @@ export default {
     ambientDryingEnabledDescription: 'Kuyrukta baskı olmasa bile, nem eşiği aştığında boşta yazıcılarda filamenti otomatik olarak kurut.',
     printDryingEnabled: 'Baskı sırasında kurutmaya devam et',
     printDryingEnabledDescription: 'Desteklenen donanımda (H2D, H2C, H2S, P2S, H2D Pro, X2D, X1C, A2L güncel firmware ile) baskı sırasında otomatik kurutmanın çalışmaya devam etmesine izin verir. Makara koruması için kurutma sıcaklığı otomatik olarak boştaki ön ayarın 5°C altına sınırlandırılır.',
+    dryingNoAutoStop: 'Kurutmayı asla otomatik durdurma',
+    dryingNoAutoStopDescription: 'Otomatik kurutma yalnızca kurutmayı başlatır — asla durdurmaz. Kurutma yalnızca AMS kurutma zamanlayıcısı dolduğunda veya elle durdurulduğunda sona erer. AMS nem değeri eşiğin altında görünse de filament ıslakken kullanışlıdır. Not: Kuyruktaki baskılar kurutma bitene kadar bekler; ancak desteklenen donanımda "Baskı sırasında kurutmaya devam et" etkinse, kurutma sürerken baskılar başlar.',
     dryingPresets: 'Kurutma Ön Ayarları',
     dryingPresetsDescription: 'Filament türü başına sıcaklık ve süre. AMS 2 Pro daha düşük sıcaklıklar kullanır, AMS-HT daha yüksek sıcaklıkları destekler.',
     dryingFilament: 'Filament',

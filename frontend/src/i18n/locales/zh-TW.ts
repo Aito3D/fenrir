@@ -2145,6 +2145,8 @@ export default {
     ambientDryingEnabledDescription: '當空閒印表機的濕度超過閾值時自動乾燥耗材，無需佇列列印。',
     printDryingEnabled: '列印時繼續乾燥',
     printDryingEnabledDescription: '允許自動乾燥在支援的硬體（H2D、H2C、H2S、P2S、H2D Pro、X2D、X1C、A2L 最新韌體）列印過程中繼續執行。為保護料盤，乾燥溫度會自動比閒置時的預設低 5°C。',
+    dryingNoAutoStop: '永不自動停止乾燥',
+    dryingNoAutoStopDescription: '自動乾燥只會啟動乾燥，絕不會停止它。乾燥僅在 AMS 乾燥計時器到期或手動停止時結束。當 AMS 濕度低於閾值但線材仍然潮濕時很有用。注意：佇列中的列印將等待乾燥完成；但若在支援的硬體上啟用「列印時繼續乾燥」，列印將在乾燥繼續的同時開始。',
     dryingPresets: '乾燥預設',
     dryingPresetsDescription: '每種耗材類型的溫度和時長。AMS 2 Pro使用較低溫度，AMS-HT支援較高溫度。',
     dryingFilament: '耗材',

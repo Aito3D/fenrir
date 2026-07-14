@@ -235,8 +235,12 @@ class PrintScheduler:
                 )
             items = list(result.scalars().all())
 
-            # Read plate-clear setting once per queue check
+            # Read dispatch-relevant settings once per queue check — a consistent
+            # snapshot for the whole pass instead of per-item re-reads mid-loop.
             require_plate_clear = await self._get_bool_setting(db, "require_plate_clear", default=True)
+            block_for_drying = await self._get_bool_setting(db, "queue_drying_block")
+            no_auto_stop = await self._get_bool_setting(db, "drying_no_auto_stop")
+            print_drying_enabled = await self._get_bool_setting(db, "print_drying_enabled")
 
             if not items:
                 # No pending items — still check auto-drying on idle printers
@@ -337,11 +341,50 @@ class PrintScheduler:
                     if not printer_idle:
                         # If printer is drying (not truly busy), handle based on queue_drying_block
                         if self._drying_in_progress.get(item.printer_id):
-                            block_for_drying = await self._get_bool_setting(db, "queue_drying_block")
                             if block_for_drying:
                                 # Drying blocks queue — skip this printer
                                 busy_printers.add(item.printer_id)
                                 continue
+                            if no_auto_stop:
+                                # Never-auto-stop mode: dispatch WITHOUT stopping drying when
+                                # the hardware supports Print While Drying and the toggle is on;
+                                # otherwise the print waits for the drying timer to expire.
+                                state = printer_manager.get_status(item.printer_id)
+                                firmware = state.firmware_version if state else None
+                                model = printer_manager.get_model(item.printer_id)
+                                plate_blocked = require_plate_clear and printer_manager.is_awaiting_plate_clear(
+                                    item.printer_id
+                                )
+                                # A printer can be in _drying_in_progress while an ACTUAL print
+                                # runs (mid-print drying, or a slicer-started print during a
+                                # drying session) — busy_printers only knows queue-dispatched
+                                # prints. Any evidence of an active job (layers/progress/
+                                # remaining time; a drying session has none) must block the
+                                # forced dispatch or we double-dispatch onto a busy printer.
+                                job_active = bool(
+                                    state
+                                    and (
+                                        (state.progress or 0) > 0
+                                        or (state.total_layers or 0) > 0
+                                        or (state.remaining_time or 0) > 0
+                                    )
+                                )
+                                if (
+                                    print_drying_enabled
+                                    and not plate_blocked
+                                    and not job_active
+                                    and supports_drying_while_printing(model, firmware)
+                                ):
+                                    logger.info(
+                                        "Queue item %s: printer %d is drying — dispatching print "
+                                        "while drying continues (Print While Drying)",
+                                        item.id,
+                                        item.printer_id,
+                                    )
+                                    printer_idle = True
+                                else:
+                                    busy_printers.add(item.printer_id)
+                                    continue
                             else:
                                 # Print takes priority — stop drying
                                 await self._stop_drying(item.printer_id)
@@ -1692,9 +1735,12 @@ class PrintScheduler:
         queue_drying_enabled = await self._get_bool_setting(db, "queue_drying_enabled")
         ambient_drying_enabled = await self._get_bool_setting(db, "ambient_drying_enabled")
         print_drying_enabled = await self._get_bool_setting(db, "print_drying_enabled")
+        # Never auto-stop mode: the scheduler only starts drying; sessions end
+        # only via the AMS drying timer or a manual stop.
+        no_auto_stop = await self._get_bool_setting(db, "drying_no_auto_stop")
         if not queue_drying_enabled and not ambient_drying_enabled:
             # Stop active drying on all printers if both features disabled
-            if self._drying_in_progress:
+            if self._drying_in_progress and not no_auto_stop:
                 for pid in list(self._drying_in_progress):
                     logger.info("Auto-drying: printer %d — stopping, auto-drying disabled", pid)
                     await self._stop_drying(pid)
@@ -1716,9 +1762,10 @@ class PrintScheduler:
         # (but skip this short-circuit when print_drying_enabled is on — busy printers
         # may still be eligible for mid-print drying regardless of queue state).
         if not ambient_drying_enabled and not printers_with_scheduled and not print_drying_enabled:
-            for pid in list(self._drying_in_progress):
-                logger.info("Auto-drying: printer %d — stopping, no scheduled prints in queue", pid)
-                await self._stop_drying(pid)
+            if not no_auto_stop:
+                for pid in list(self._drying_in_progress):
+                    logger.info("Auto-drying: printer %d — stopping, no scheduled prints in queue", pid)
+                    await self._stop_drying(pid)
             return
 
         # Get humidity threshold (global fallback)
@@ -1761,7 +1808,7 @@ class PrintScheduler:
             if not mid_print:
                 # In queue-only mode, only dry printers that have scheduled prints
                 if not ambient_drying_enabled and pid not in printers_with_scheduled:
-                    if self._drying_in_progress.get(pid):
+                    if self._drying_in_progress.get(pid) and not no_auto_stop:
                         logger.info("Auto-drying: printer %d — stopping, no scheduled prints for this printer", pid)
                         await self._stop_drying(pid)
                     logger.debug("Auto-drying: printer %d skipped — no scheduled prints", pid)
@@ -1827,7 +1874,12 @@ class PrintScheduler:
                         self._drying_in_progress[pid] = time.monotonic()
                     started_at = self._drying_in_progress[pid]
                     elapsed = time.monotonic() - started_at
-                    if humidity is not None and humidity <= humidity_threshold and elapsed >= self._min_drying_seconds:
+                    if (
+                        not no_auto_stop
+                        and humidity is not None
+                        and humidity <= humidity_threshold
+                        and elapsed >= self._min_drying_seconds
+                    ):
                         logger.info(
                             "Auto-drying: printer %d AMS %d — humidity %d%% <= threshold %d%% after %dm, stopping drying",
                             pid,

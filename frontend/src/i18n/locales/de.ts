@@ -2144,6 +2144,8 @@ export default {
     ambientDryingEnabledDescription: 'Filament auf inaktiven Druckern automatisch trocknen, wenn die Luftfeuchtigkeit den Schwellenwert überschreitet — auch ohne Warteschlange.',
     printDryingEnabled: 'Trocknen während des Drucks',
     printDryingEnabledDescription: 'Automatische Trocknung auch während eines laufenden Drucks auf unterstützter Hardware (H2D, H2C, H2S, P2S, H2D Pro, X2D, X1C, A2L mit aktueller Firmware). Die Trocknungstemperatur wird zum Schutz der Spulen automatisch um 5°C unter dem Leerlaufwert begrenzt.',
+    dryingNoAutoStop: 'Trocknung nie automatisch stoppen',
+    dryingNoAutoStopDescription: 'Die automatische Trocknung startet Trocknungsvorgänge nur — sie stoppt sie nie. Die Trocknung endet nur, wenn der AMS-Trocknungstimer abläuft oder sie manuell gestoppt wird. Nützlich, wenn das Filament feucht ist, obwohl die AMS-Luftfeuchtigkeit unter dem Schwellenwert liegt. Hinweis: Drucke in der Warteschlange warten, bis die Trocknung abgeschlossen ist — außer „Trocknen während des Drucks" ist auf unterstützter Hardware aktiviert, dann starten Drucke, während die Trocknung weiterläuft.',
     dryingPresets: 'Trocknungsvoreinstellungen',
     dryingPresetsDescription: 'Temperatur und Dauer pro Filamenttyp. AMS 2 Pro verwendet niedrigere Temperaturen, AMS-HT unterstützt höhere.',
     dryingFilament: 'Filament',

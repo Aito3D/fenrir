@@ -1124,6 +1124,7 @@ export interface AppSettings {
   queue_drying_block: boolean;  // Block queue until drying completes
   ambient_drying_enabled: boolean;  // Auto-dry idle printers based on humidity regardless of queue
   print_drying_enabled: boolean;  // Continue drying while a print is running on capable hardware
+  drying_no_auto_stop: boolean;  // Never auto-stop drying — only the AMS timer or a manual stop ends it
   drying_presets: string;  // JSON blob of drying presets per filament type
   ams_humidity_thresholds: string;  // JSON blob of per-filament humidity thresholds (#1605)
   gcode_snippets: string;  // JSON: per-model G-code injection snippets
