@@ -4855,10 +4855,9 @@ async def on_print_complete(printer_id: int, data: dict):
                     )
                     return
 
-                from backend.app.api.routes.settings import get_setting
+                from backend.app.api.routes.settings import get_energy_cost_per_kwh
 
-                energy_cost_per_kwh = await get_setting(db, "energy_cost_per_kwh")
-                cost_per_kwh = float(energy_cost_per_kwh) if energy_cost_per_kwh else 0.15
+                cost_per_kwh = await get_energy_cost_per_kwh(db)
                 energy_cost_value = round(energy_used * cost_per_kwh, 3)
 
                 # First-run-only overwrite of archive.energy_kwh / energy_cost so a

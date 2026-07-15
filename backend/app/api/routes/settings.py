@@ -68,6 +68,12 @@ async def get_setting(db: AsyncSession, key: str) -> str | None:
     return setting.value if setting else None
 
 
+async def get_energy_cost_per_kwh(db: AsyncSession) -> float:
+    """Electricity tariff for energy cost calculations (default matches SettingsResponse)."""
+    value = await get_setting(db, "energy_cost_per_kwh")
+    return float(value) if value else 0.15
+
+
 async def get_external_login_url(db: AsyncSession) -> str:
     """Get the external URL for the login page.
 

@@ -12,12 +12,8 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { api } from '../../api/client';
-
-const TOOLTIP_STYLE = {
-  backgroundColor: '#2d2d2d',
-  border: '1px solid #3d3d3d',
-  borderRadius: '8px',
-};
+import { parseLocalDateKey } from '../../utils/date';
+import { CHART_TOOLTIP_STYLE } from './chartTheme';
 
 /** Energy consumption over the selected timeframe, from the hourly
  *  smart-plug snapshot history (kWh/day area chart + headline stats). */
@@ -42,10 +38,7 @@ export function EnergyWidget({
   const chartData = useMemo(
     () =>
       (data?.buckets ?? []).map((b) => ({
-        label: (() => {
-          const [y, m, d] = b.period.slice(0, 10).split('-').map(Number);
-          return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-        })(),
+        label: parseLocalDateKey(b.period).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
         kwh: b.kwh,
       })),
     [data],
@@ -67,8 +60,8 @@ export function EnergyWidget({
   }
 
   const daysWithData = data.buckets.filter((b) => b.kwh > 0).length;
-  const stats = [
-    { label: t('stats.energyTotalLabel'), value: `${data.total_kwh.toFixed(2)} kWh` },
+  const stats: { label: string; value: string; warning?: boolean }[] = [
+    { label: t('stats.energyTotalLabel'), value: `${data.total_kwh.toFixed(2)} kWh`, warning: data.warming_up },
     { label: t('stats.energyCostLabel'), value: `${currency} ${data.total_cost.toFixed(2)}` },
     {
       label: t('stats.energyAvgPerDay'),
@@ -86,7 +79,7 @@ export function EnergyWidget({
           <div key={s.label}>
             <p className="text-xs text-bambu-gray flex items-center gap-1">
               {s.label}
-              {data.warming_up && (
+              {s.warning && (
                 <AlertTriangle
                   className="w-3 h-3 text-yellow-400"
                   aria-label={t('stats.energyWarmingUpTooltip')}
@@ -110,7 +103,7 @@ export function EnergyWidget({
           <XAxis dataKey="label" stroke="#9ca3af" tick={{ fontSize: 11 }} />
           <YAxis stroke="#9ca3af" tick={{ fontSize: 11 }} unit=" kWh" width={70} />
           <Tooltip
-            contentStyle={TOOLTIP_STYLE}
+            contentStyle={CHART_TOOLTIP_STYLE}
             labelStyle={{ color: '#fff' }}
             formatter={(v: number | undefined) => [`${Number(v ?? 0).toFixed(3)} kWh`, t('stats.energyUsed')]}
           />

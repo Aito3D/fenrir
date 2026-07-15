@@ -1,5 +1,5 @@
 import type { ArchiveSlim } from '../../api/client';
-import { parseUTCDate } from '../../utils/date';
+import { parseUTCDate, parseLocalDateKey } from '../../utils/date';
 
 export interface PrinterUtilization {
   printerId: string;
@@ -35,11 +35,6 @@ export function computeUtilization(
   dateTo?: string,
   now: number = Date.now(),
 ): PrinterUtilization[] {
-  const parseLocalDay = (s: string) => {
-    const [y, m, d] = s.split('-').map(Number);
-    return new Date(y, m - 1, d);
-  };
-
   // Collect print intervals per printer
   const perPrinter = new Map<string, Array<[number, number]>>();
   let earliestStart = Infinity;
@@ -61,9 +56,9 @@ export function computeUtilization(
   if (perPrinter.size === 0) return [];
 
   // Window: selected local days, clamped to now; all-time = first print → now
-  const windowStart = dateFrom ? parseLocalDay(dateFrom).getTime() : earliestStart;
+  const windowStart = dateFrom ? parseLocalDateKey(dateFrom).getTime() : earliestStart;
   const windowEnd = Math.min(
-    dateTo ? parseLocalDay(dateTo).getTime() + 86400000 : now,
+    dateTo ? parseLocalDateKey(dateTo).getTime() + 86400000 : now,
     now,
   );
   const windowMs = windowEnd - windowStart;

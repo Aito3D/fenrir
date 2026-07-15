@@ -207,8 +207,8 @@ export function computeSkuForecasts(
       if (delta !== null) { dailyRateG = delta; rateTier = 'delta'; }
     }
 
-    const σ = dailyRateStdDev ?? (dailyRateG !== null ? dailyRateG * 0.2 : 0);
-    const statisticalSafetyStockG = Z_95 * σ * Math.sqrt(effectiveLeadTimeDays);
+    const sigma = dailyRateStdDev ?? (dailyRateG !== null ? dailyRateG * 0.2 : 0);
+    const statisticalSafetyStockG = Z_95 * sigma * Math.sqrt(effectiveLeadTimeDays);
     // safety margin: user-defined buffer on top of statistical safety stock
     const safetyMarginG = marginUnit === 'g'
       ? marginValue

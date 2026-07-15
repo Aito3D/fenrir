@@ -475,3 +475,14 @@ export function localDateKey(input: string | Date): string {
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
+
+/**
+ * Inverse of `localDateKey`: parse a "YYYY-MM-DD" key as local midnight.
+ *
+ * `new Date("YYYY-MM-DD")` would parse as UTC midnight and shift the day in
+ * negative-UTC-offset regions, so the components are passed explicitly.
+ */
+export function parseLocalDateKey(key: string): Date {
+  const [y, m, d] = key.slice(0, 10).split('-').map(Number);
+  return new Date(y, m - 1, d);
+}

@@ -1174,11 +1174,10 @@ async def get_archive_stats(
         accuracy_by_printer[printer_key] = round(sum(accs) / len(accs), 1)
 
     # Energy totals - check which mode to use
-    from backend.app.api.routes.settings import get_setting
+    from backend.app.api.routes.settings import get_energy_cost_per_kwh, get_setting
 
     energy_tracking_mode = await get_setting(db, "energy_tracking_mode") or "total"
-    energy_cost_per_kwh_str = await get_setting(db, "energy_cost_per_kwh")
-    energy_cost_per_kwh = float(energy_cost_per_kwh_str) if energy_cost_per_kwh_str else 0.15
+    energy_cost_per_kwh = await get_energy_cost_per_kwh(db)
 
     total_energy_kwh: float = 0.0
     total_energy_cost: float = 0.0

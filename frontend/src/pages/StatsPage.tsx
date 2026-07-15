@@ -41,9 +41,10 @@ import { FilamentTrends } from '../components/FilamentTrends';
 import { Dashboard, type DashboardWidget } from '../components/Dashboard';
 import { getCurrencySymbol } from '../utils/currency';
 import { formatWeight } from '../utils/weight';
-import { parseUTCDate, formatDuration } from '../utils/date';
+import { parseUTCDate, formatDuration, localDateKey, parseLocalDateKey } from '../utils/date';
 import { estimateFilamentCost } from '../utils/archivePricing';
 import { MetricToggle, type Metric } from '../components/MetricToggle';
+import { CHART_TOOLTIP_STYLE } from '../components/stats/chartTheme';
 import { computeDelta } from '../components/stats/deltas';
 import { DeltaBadge } from '../components/stats/DeltaBadge';
 import { PrinterUtilizationWidget } from '../components/stats/PrinterUtilizationWidget';
@@ -66,9 +67,7 @@ function computeDateRange(preset: TimeframePreset): { dateFrom?: string; dateTo?
   // browser's UTC offset alongside so the backend can build the UTC window.
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
-  const fmt = (dt: Date) =>
-    `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
-  const todayStr = fmt(now);
+  const todayStr = localDateKey(now);
 
   switch (preset) {
     case 'today':
@@ -76,18 +75,18 @@ function computeDateRange(preset: TimeframePreset): { dateFrom?: string; dateTo?
     case 'this-week': {
       const day = now.getDay();
       const start = new Date(y, m, d - (day === 0 ? 6 : day - 1));
-      return { dateFrom: fmt(start), dateTo: todayStr };
+      return { dateFrom: localDateKey(start), dateTo: todayStr };
     }
     case 'this-month':
-      return { dateFrom: fmt(new Date(y, m, 1)), dateTo: todayStr };
+      return { dateFrom: localDateKey(new Date(y, m, 1)), dateTo: todayStr };
     case 'last-7':
-      return { dateFrom: fmt(new Date(y, m, d - 6)), dateTo: todayStr };
+      return { dateFrom: localDateKey(new Date(y, m, d - 6)), dateTo: todayStr };
     case 'last-30':
-      return { dateFrom: fmt(new Date(y, m, d - 29)), dateTo: todayStr };
+      return { dateFrom: localDateKey(new Date(y, m, d - 29)), dateTo: todayStr };
     case 'last-90':
-      return { dateFrom: fmt(new Date(y, m, d - 89)), dateTo: todayStr };
+      return { dateFrom: localDateKey(new Date(y, m, d - 89)), dateTo: todayStr };
     case 'this-year':
-      return { dateFrom: fmt(new Date(y, 0, 1)), dateTo: todayStr };
+      return { dateFrom: localDateKey(new Date(y, 0, 1)), dateTo: todayStr };
     case 'all-time':
       return { dateFrom: undefined, dateTo: undefined };
     case 'custom':
@@ -122,11 +121,6 @@ const DURATION_BUCKETS = [
   { key: '24h+', max: Infinity },
 ];
 
-const RECHARTS_TOOLTIP_STYLE = {
-  backgroundColor: '#2d2d2d',
-  border: '1px solid #3d3d3d',
-  borderRadius: '8px',
-};
 
 // Widget Components
 interface QuickStatsData {
@@ -722,7 +716,7 @@ function PrinterStatsWidget({
               <XAxis type="number" stroke="#9ca3af" tick={{ fontSize: 11 }} unit={ps.unit} />
               <YAxis type="category" dataKey="name" stroke="#9ca3af" tick={{ fontSize: 11 }} width={100} />
               <Tooltip
-                contentStyle={RECHARTS_TOOLTIP_STYLE}
+                contentStyle={CHART_TOOLTIP_STYLE}
                 formatter={(v: number | undefined) => [
                   printerMetric === 'weight' ? formatWeight(Number(v ?? 0)) : `${v ?? 0}${ps.unit}`,
                   pLabel,
@@ -746,7 +740,7 @@ function PrinterStatsWidget({
                 <CartesianGrid strokeDasharray="3 3" stroke="#3d3d3d" />
                 <XAxis dataKey="name" stroke="#9ca3af" tick={{ fontSize: 11 }} />
                 <YAxis stroke="#9ca3af" tick={{ fontSize: 11 }} allowDecimals={false} />
-                <Tooltip contentStyle={RECHARTS_TOOLTIP_STYLE} />
+                <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
                 <Bar dataKey="count" name={t('common.prints')} fill="#00ae42" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -767,7 +761,7 @@ function PrinterStatsWidget({
                 <CartesianGrid strokeDasharray="3 3" stroke="#3d3d3d" />
                 <XAxis dataKey="name" stroke="#9ca3af" tick={{ fontSize: 11 }} />
                 <YAxis stroke="#9ca3af" tick={{ fontSize: 11 }} unit={hs.unit} />
-                <Tooltip contentStyle={RECHARTS_TOOLTIP_STYLE} formatter={(v: number | undefined) => [`${v ?? 0}${hs.unit}`, hLabel]} />
+                <Tooltip contentStyle={CHART_TOOLTIP_STYLE} formatter={(v: number | undefined) => [`${v ?? 0}${hs.unit}`, hLabel]} />
                 <Bar dataKey="avg" fill={hs.color} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -785,7 +779,7 @@ function PrinterStatsWidget({
                 <CartesianGrid strokeDasharray="3 3" stroke="#3d3d3d" />
                 <XAxis dataKey="label" stroke="#9ca3af" tick={{ fontSize: 10 }} interval={5} />
                 <YAxis stroke="#9ca3af" tick={{ fontSize: 11 }} allowDecimals={false} />
-                <Tooltip contentStyle={RECHARTS_TOOLTIP_STYLE} />
+                <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
                 <Bar dataKey="total" name={t('stats.totalPrints')} fill="#00ae42" radius={[2, 2, 0, 0]} />
                 <Bar dataKey="failures" name={t('stats.failed')} fill="#ef4444" radius={[2, 2, 0, 0]} />
               </BarChart>
@@ -1016,7 +1010,7 @@ function RecordsWidget({ archives, currency }: { archives: ArchiveSlim[]; curren
         iconColor: 'text-purple-400',
         label: t('stats.busiestDay'),
         value: `${busiestCount} ${t('common.prints')}`,
-        detail: (() => { const [y, m, d] = busiestDay.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); })(),
+        detail: parseLocalDateKey(busiestDay).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }),
       });
     }
 
@@ -1108,21 +1102,15 @@ export function StatsPage() {
   const previousRange = useMemo(() => {
     const { dateFrom, dateTo } = effectiveDateRange;
     if (!dateFrom || !dateTo) return null;
-    const parse = (s: string) => {
-      const [y, m, d] = s.split('-').map(Number);
-      return new Date(y, m - 1, d);
-    };
-    const fmtLocal = (dt: Date) =>
-      `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
-    const from = parse(dateFrom);
-    const to = parse(dateTo);
+    const from = parseLocalDateKey(dateFrom);
+    const to = parseLocalDateKey(dateTo);
     const spanDays = Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
     if (spanDays < 1) return null;
     const prevTo = new Date(from);
     prevTo.setDate(from.getDate() - 1);
     const prevFrom = new Date(from);
     prevFrom.setDate(from.getDate() - spanDays);
-    return { dateFrom: fmtLocal(prevFrom), dateTo: fmtLocal(prevTo), spanDays };
+    return { dateFrom: localDateKey(prevFrom), dateTo: localDateKey(prevTo), spanDays };
   }, [effectiveDateRange]);
 
   // Only pass createdById when a user is actually selected (not "All Users")
@@ -1249,7 +1237,9 @@ export function StatsPage() {
   const isRefetching = (isStatsFetching || isArchivesFetching) && !isLoading;
 
   const currency = getCurrencySymbol(settings?.currency || 'USD');
-  const printerMap = new Map(printers?.map((p) => [String(p.id), p.name]) || []);
+  // Stable identity matters: the map is a useMemo dependency in the
+  // utilization and cost-breakdown widgets, which recompute over all archives.
+  const printerMap = useMemo(() => new Map(printers?.map((p) => [String(p.id), p.name]) || []), [printers]);
   const deltaTitle = previousRange ? t('stats.deltaVsPrevious', { days: previousRange.spanDays }) : undefined;
   const printDates = useMemo(() => archives?.map((a) => a.created_at) || [], [archives]);
 

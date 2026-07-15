@@ -9,12 +9,13 @@ hourly, sub-hour usage smears into the neighbouring bucket; that's accepted,
 matching the /archives/stats snapshot-delta behaviour.
 """
 
+from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.routes.settings import get_setting
+from backend.app.api.routes.settings import get_energy_cost_per_kwh
 from backend.app.models.smart_plug import SmartPlug
 from backend.app.models.smart_plug_energy_snapshot import SmartPlugEnergySnapshot
 from backend.app.schemas.smart_plug import (
@@ -65,11 +66,45 @@ async def get_energy_history(
         date_from = date_to - timedelta(days=DEFAULT_WINDOW_DAYS - 1)
     dt_from, dt_to = local_day_bounds(date_from, date_to, tz_offset_minutes)
 
-    cost_per_kwh_str = await get_setting(db, "energy_cost_per_kwh")
-    cost_per_kwh = float(cost_per_kwh_str) if cost_per_kwh_str else 0.15
+    cost_per_kwh = await get_energy_cost_per_kwh(db)
 
     plugs_result = await db.execute(select(SmartPlug.id, SmartPlug.name, SmartPlug.printer_id))
     plugs = plugs_result.all()
+
+    # Latest snapshot at/before the window start, per plug (single query)
+    ranked = (
+        select(
+            SmartPlugEnergySnapshot.plug_id,
+            SmartPlugEnergySnapshot.lifetime_kwh,
+            func.row_number()
+            .over(
+                partition_by=SmartPlugEnergySnapshot.plug_id,
+                order_by=SmartPlugEnergySnapshot.recorded_at.desc(),
+            )
+            .label("rn"),
+        )
+        .where(SmartPlugEnergySnapshot.recorded_at <= dt_from)
+        .subquery()
+    )
+    baselines_result = await db.execute(select(ranked.c.plug_id, ranked.c.lifetime_kwh).where(ranked.c.rn == 1))
+    baselines: dict[int, float] = dict(baselines_result.all())
+
+    # All in-window snapshots for all plugs (single query), grouped per plug
+    rows_result = await db.execute(
+        select(
+            SmartPlugEnergySnapshot.plug_id,
+            SmartPlugEnergySnapshot.recorded_at,
+            SmartPlugEnergySnapshot.lifetime_kwh,
+        )
+        .where(
+            SmartPlugEnergySnapshot.recorded_at > dt_from,
+            SmartPlugEnergySnapshot.recorded_at <= dt_to,
+        )
+        .order_by(SmartPlugEnergySnapshot.recorded_at.asc())
+    )
+    rows_by_plug: dict[int, list[tuple[datetime, float]]] = defaultdict(list)
+    for row_plug_id, recorded_at, lifetime_kwh in rows_result.all():
+        rows_by_plug[row_plug_id].append((recorded_at, lifetime_kwh))
 
     combined: dict[str, float] = dict.fromkeys(_zero_filled_keys(date_from, date_to, bucket), 0.0)
     plug_series: list[EnergyHistoryPlugSeries] = []
@@ -77,36 +112,16 @@ async def get_energy_history(
     total_kwh = 0.0
 
     for plug_id, plug_name, printer_id in plugs:
-        baseline_q = await db.execute(
-            select(SmartPlugEnergySnapshot.lifetime_kwh)
-            .where(
-                SmartPlugEnergySnapshot.plug_id == plug_id,
-                SmartPlugEnergySnapshot.recorded_at <= dt_from,
-            )
-            .order_by(SmartPlugEnergySnapshot.recorded_at.desc())
-            .limit(1)
-        )
-        baseline = baseline_q.scalar()
+        baseline = baselines.get(plug_id)
         if baseline is None:
             # No snapshot before the window start (fresh install/upgrade or a
             # plug added mid-window) — the window's beginning is undercounted.
             warming_up = True
 
-        rows_result = await db.execute(
-            select(SmartPlugEnergySnapshot.recorded_at, SmartPlugEnergySnapshot.lifetime_kwh)
-            .where(
-                SmartPlugEnergySnapshot.plug_id == plug_id,
-                SmartPlugEnergySnapshot.recorded_at > dt_from,
-                SmartPlugEnergySnapshot.recorded_at <= dt_to,
-            )
-            .order_by(SmartPlugEnergySnapshot.recorded_at.asc())
-        )
-        rows = rows_result.all()
-
         per_bucket: dict[str, float] = {}
         prev = baseline
         plug_total = 0.0
-        for recorded_at, lifetime_kwh in rows:
+        for recorded_at, lifetime_kwh in rows_by_plug.get(plug_id, []):
             if prev is not None:
                 delta = max(0.0, lifetime_kwh - prev)
                 if delta > 0:

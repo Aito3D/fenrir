@@ -4,18 +4,13 @@ import { useTranslation } from 'react-i18next';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { api, type ArchiveSlim } from '../../api/client';
 import { estimateArchiveSalePrice } from '../../utils/archivePricing';
+import { CHART_TOOLTIP_STYLE } from './chartTheme';
 
 const SEGMENT_COLORS = {
   filament: '#00ae42',
   energy: '#eab308',
   machine: '#60a5fa',
 } as const;
-
-const TOOLTIP_STYLE = {
-  backgroundColor: '#2d2d2d',
-  border: '1px solid #3d3d3d',
-  borderRadius: '8px',
-};
 
 /** Production-cost breakdown over the timeframe, priced by the calculator:
  *  filament line, energy line, and the rest of the machine cost
@@ -81,11 +76,12 @@ export function CostBreakdownWidget({
     return <p className="text-bambu-gray text-center py-4">{t('stats.costNoData')}</p>;
   }
 
-  const segments = [
+  const allSegments: { key: keyof typeof SEGMENT_COLORS; name: string; value: number }[] = [
     { key: 'filament', name: t('stats.costFilament'), value: breakdown.filament },
     { key: 'energy', name: t('stats.costEnergy'), value: breakdown.energy },
     { key: 'machine', name: t('stats.costMachine'), value: breakdown.machine },
-  ].filter((s) => s.value > 0);
+  ];
+  const segments = allSegments.filter((s) => s.value > 0);
 
   const fmt = (v: number) => `${currency} ${v.toFixed(2)}`;
 
@@ -104,10 +100,10 @@ export function CostBreakdownWidget({
               strokeWidth={0}
             >
               {segments.map((s) => (
-                <Cell key={s.key} fill={SEGMENT_COLORS[s.key as keyof typeof SEGMENT_COLORS]} />
+                <Cell key={s.key} fill={SEGMENT_COLORS[s.key]} />
               ))}
             </Pie>
-            <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number | undefined) => fmt(Number(v ?? 0))} />
+            <Tooltip contentStyle={CHART_TOOLTIP_STYLE} formatter={(v: number | undefined) => fmt(Number(v ?? 0))} />
           </PieChart>
         </ResponsiveContainer>
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -120,7 +116,7 @@ export function CostBreakdownWidget({
           <div key={s.key} className="flex items-center gap-2 text-sm">
             <span
               className="w-3 h-3 rounded-sm flex-shrink-0"
-              style={{ backgroundColor: SEGMENT_COLORS[s.key as keyof typeof SEGMENT_COLORS] }}
+              style={{ backgroundColor: SEGMENT_COLORS[s.key] }}
             />
             <span className="text-bambu-gray flex-1">{s.name}</span>
             <span className="text-white font-medium">{fmt(s.value)}</span>

@@ -14,6 +14,7 @@ import {
 } from 'recharts';
 import type { ArchiveSlim } from '../api/client';
 import { MetricToggle, type Metric } from './MetricToggle';
+import { CHART_TOOLTIP_STYLE } from './stats/chartTheme';
 import { parseUTCDate } from '../utils/date';
 import { formatWeight } from '../utils/weight';
 
@@ -298,11 +299,7 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
                 tickFormatter={(value) => `${value}g`}
               />
               <Tooltip
-                contentStyle={{
-                  backgroundColor: '#2d2d2d',
-                  border: '1px solid #3d3d3d',
-                  borderRadius: '8px',
-                }}
+                contentStyle={CHART_TOOLTIP_STYLE}
                 labelStyle={{ color: '#fff' }}
                 formatter={(value) => [`${Number(value ?? 0).toFixed(0)}g`, 'Filament']}
               />
@@ -349,11 +346,7 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
                     ))}
                   </Pie>
                   <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#2d2d2d',
-                      border: '1px solid #3d3d3d',
-                      borderRadius: '8px',
-                    }}
+                    contentStyle={CHART_TOOLTIP_STYLE}
                     formatter={(value) => [
                       filamentTypeMetric === 'weight' ? formatWeight(Number(value ?? 0)) :
                       filamentTypeMetric === 'time' ? `${Number(value ?? 0)}h` :
@@ -450,11 +443,7 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
                         ))}
                       </Pie>
                       <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#2d2d2d',
-                          border: '1px solid #3d3d3d',
-                          borderRadius: '8px',
-                        }}
+                        contentStyle={CHART_TOOLTIP_STYLE}
                         formatter={(value) => [
                           colorMetric === 'weight' ? formatWeight(Number(value ?? 0)) : `${value ?? 0}`,
                           colorMetric === 'weight' ? t('stats.filamentByWeight') : t('stats.filamentByPrints'),
