@@ -44,6 +44,13 @@ import { formatWeight } from '../utils/weight';
 import { parseUTCDate, formatDuration } from '../utils/date';
 import { estimateFilamentCost } from '../utils/archivePricing';
 import { MetricToggle, type Metric } from '../components/MetricToggle';
+import { computeDelta } from '../components/stats/deltas';
+import { DeltaBadge } from '../components/stats/DeltaBadge';
+import { PrinterUtilizationWidget } from '../components/stats/PrinterUtilizationWidget';
+import { CostBreakdownWidget } from '../components/stats/CostBreakdownWidget';
+import { FilamentForecastWidget } from '../components/stats/FilamentForecastWidget';
+import { MaintenanceReliabilityWidget } from '../components/stats/MaintenanceReliabilityWidget';
+import { EnergyWidget } from '../components/stats/EnergyWidget';
 
 // Timeframe types and helpers
 type TimeframePreset = 'today' | 'this-week' | 'this-month' | 'last-7' | 'last-30' | 'last-90' | 'this-year' | 'all-time' | 'custom';
@@ -55,29 +62,32 @@ interface TimeframeState {
 }
 
 function computeDateRange(preset: TimeframePreset): { dateFrom?: string; dateTo?: string } {
+  // Ranges are the user's local calendar days; the API client sends the
+  // browser's UTC offset alongside so the backend can build the UTC window.
   const now = new Date();
-  const y = now.getUTCFullYear(), m = now.getUTCMonth(), d = now.getUTCDate();
-  const fmt = (dt: Date) => dt.toISOString().split('T')[0];
+  const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+  const fmt = (dt: Date) =>
+    `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
   const todayStr = fmt(now);
 
   switch (preset) {
     case 'today':
       return { dateFrom: todayStr, dateTo: todayStr };
     case 'this-week': {
-      const day = now.getUTCDay();
-      const start = new Date(Date.UTC(y, m, d - (day === 0 ? 6 : day - 1)));
+      const day = now.getDay();
+      const start = new Date(y, m, d - (day === 0 ? 6 : day - 1));
       return { dateFrom: fmt(start), dateTo: todayStr };
     }
     case 'this-month':
-      return { dateFrom: fmt(new Date(Date.UTC(y, m, 1))), dateTo: todayStr };
+      return { dateFrom: fmt(new Date(y, m, 1)), dateTo: todayStr };
     case 'last-7':
-      return { dateFrom: fmt(new Date(Date.UTC(y, m, d - 6))), dateTo: todayStr };
+      return { dateFrom: fmt(new Date(y, m, d - 6)), dateTo: todayStr };
     case 'last-30':
-      return { dateFrom: fmt(new Date(Date.UTC(y, m, d - 29))), dateTo: todayStr };
+      return { dateFrom: fmt(new Date(y, m, d - 29)), dateTo: todayStr };
     case 'last-90':
-      return { dateFrom: fmt(new Date(Date.UTC(y, m, d - 89))), dateTo: todayStr };
+      return { dateFrom: fmt(new Date(y, m, d - 89)), dateTo: todayStr };
     case 'this-year':
-      return { dateFrom: fmt(new Date(Date.UTC(y, 0, 1))), dateTo: todayStr };
+      return { dateFrom: fmt(new Date(y, 0, 1)), dateTo: todayStr };
     case 'all-time':
       return { dateFrom: undefined, dateTo: undefined };
     case 'custom':
@@ -119,22 +129,29 @@ const RECHARTS_TOOLTIP_STYLE = {
 };
 
 // Widget Components
+interface QuickStatsData {
+  total_prints: number;
+  successful_prints: number;
+  failed_prints: number;
+  total_print_time_hours: number;
+  total_filament_grams: number;
+  total_cost: number;
+  total_energy_kwh: number;
+  total_energy_cost: number;
+  energy_data_warming_up?: boolean;
+}
+
 function QuickStatsWidget({
   stats,
+  previousStats,
+  deltaTitle,
   currency,
   filamentCostOverride,
 }: {
-  stats: {
-    total_prints: number;
-    successful_prints: number;
-    failed_prints: number;
-    total_print_time_hours: number;
-    total_filament_grams: number;
-    total_cost: number;
-    total_energy_kwh: number;
-    total_energy_cost: number;
-    energy_data_warming_up?: boolean;
-  } | undefined;
+  stats: QuickStatsData | undefined;
+  /** Stats for the preceding window of equal length; enables change badges. */
+  previousStats?: QuickStatsData;
+  deltaTitle?: string;
   currency: string;
   /** Calculator-priced filament total (quote filament line summed over the
    *  timeframe's prints); when undefined the stored spool-based total_cost
@@ -149,15 +166,38 @@ function QuickStatsWidget({
   const filamentCost = filamentCostOverride ?? stats?.total_cost;
 
   const items = [
-    { icon: Package, color: 'text-bambu-green', label: t('stats.totalPrints'), value: `${stats?.total_prints || 0}` },
-    { icon: Clock, color: 'text-blue-400', label: t('stats.printTime'), value: `${stats?.total_print_time_hours?.toFixed(1) ?? '0'}h` },
-    { icon: Package, color: 'text-orange-400', label: t('stats.filamentUsed'), value: formatWeight(stats?.total_filament_grams || 0) },
+    {
+      icon: Package,
+      color: 'text-bambu-green',
+      label: t('stats.totalPrints'),
+      value: `${stats?.total_prints || 0}`,
+      delta: computeDelta(stats?.total_prints || 0, previousStats?.total_prints, 'more-is-good'),
+    },
+    {
+      icon: Clock,
+      color: 'text-blue-400',
+      label: t('stats.printTime'),
+      value: `${stats?.total_print_time_hours?.toFixed(1) ?? '0'}h`,
+      delta: computeDelta(stats?.total_print_time_hours || 0, previousStats?.total_print_time_hours, 'more-is-good'),
+    },
+    {
+      icon: Package,
+      color: 'text-orange-400',
+      label: t('stats.filamentUsed'),
+      value: formatWeight(stats?.total_filament_grams || 0),
+      delta: computeDelta(stats?.total_filament_grams || 0, previousStats?.total_filament_grams, 'neutral'),
+    },
     {
       icon: DollarSign,
       color: 'text-green-400',
       label: t('stats.filamentCost'),
       value: `${currency} ${filamentCost?.toFixed(2) ?? '0.00'}`,
       tooltip: filamentCostOverride !== undefined ? t('stats.filamentCostFromCalculator') : undefined,
+      // No delta when the calculator override is active — the previous
+      // window's stored total_cost isn't the same pricing basis.
+      delta: filamentCostOverride === undefined
+        ? computeDelta(stats?.total_cost || 0, previousStats?.total_cost, 'more-is-bad')
+        : null,
     },
     {
       icon: Zap,
@@ -166,6 +206,7 @@ function QuickStatsWidget({
       value: `${stats?.total_energy_kwh?.toFixed(3) ?? '0.000'} kWh`,
       warning: warmingUp,
       tooltip: warmingUpTooltip,
+      delta: computeDelta(stats?.total_energy_kwh || 0, previousStats?.total_energy_kwh, 'more-is-bad'),
     },
     {
       icon: DollarSign,
@@ -174,6 +215,7 @@ function QuickStatsWidget({
       value: `${currency} ${stats?.total_energy_cost?.toFixed(2) ?? '0.00'}`,
       warning: warmingUp,
       tooltip: warmingUpTooltip,
+      delta: computeDelta(stats?.total_energy_cost || 0, previousStats?.total_energy_cost, 'more-is-bad'),
     },
   ];
 
@@ -189,7 +231,10 @@ function QuickStatsWidget({
               {item.label}
               {item.warning && <AlertTriangle className="w-3 h-3 text-yellow-400" aria-label={item.tooltip} />}
             </p>
-            <p className="text-xl font-bold text-white">{item.value}</p>
+            <p className="text-xl font-bold text-white flex items-baseline gap-2">
+              {item.value}
+              <DeltaBadge delta={item.delta} title={deltaTitle} />
+            </p>
           </div>
         </div>
       ))}
@@ -199,6 +244,8 @@ function QuickStatsWidget({
 
 function SuccessRateWidget({
   stats,
+  previousStats,
+  deltaTitle,
   printerMap,
   size = 1,
 }: {
@@ -209,6 +256,8 @@ function SuccessRateWidget({
     cancelled_prints?: number;
     prints_by_printer: Record<string, number>;
   } | undefined;
+  previousStats?: { successful_prints: number; failed_prints: number };
+  deltaTitle?: string;
   printerMap: Map<string, string>;
   size?: 1 | 2 | 4;
 }) {
@@ -221,6 +270,12 @@ function SuccessRateWidget({
   const successRate = outcomePrints
     ? Math.round(((stats?.successful_prints || 0) / outcomePrints) * 100)
     : 0;
+
+  // Percentage-point change vs the previous window (only when both have outcomes)
+  const prevOutcomes = (previousStats?.successful_prints || 0) + (previousStats?.failed_prints || 0);
+  const ratePtDelta = outcomePrints && prevOutcomes
+    ? successRate - Math.round(((previousStats?.successful_prints || 0) / prevOutcomes) * 100)
+    : null;
 
   // Scale gauge size based on widget size
   const gaugeSize = size === 1 ? 112 : size === 2 ? 128 : 144;
@@ -250,8 +305,16 @@ function SuccessRateWidget({
             strokeDasharray={`${(successRate / 100) * circumference} ${circumference}`}
           />
         </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className={`font-bold text-white ${size >= 2 ? 'text-2xl' : 'text-xl'}`}>{successRate}%</span>
+          {ratePtDelta !== null && ratePtDelta !== 0 && (
+            <span
+              className={`text-xs font-medium ${ratePtDelta > 0 ? 'text-status-ok' : 'text-status-error'}`}
+              title={deltaTitle}
+            >
+              {ratePtDelta > 0 ? '+' : ''}{ratePtDelta} pt
+            </span>
+          )}
         </div>
       </div>
       <div className="flex-1 min-w-0">
@@ -788,6 +851,27 @@ function FailureAnalysisWidget({ size = 1, dateFrom, dateTo, createdById }: {
   const topReasons = allReasons.slice(0, maxReasons);
   const hasMore = allReasons.length > maxReasons;
 
+  // Extra breakdowns (backend keys failures_by_printer by printer name already)
+  const sortDesc = (rec: Record<string, number> | undefined) =>
+    Object.entries(rec ?? {}).sort(([, a], [, b]) => b - a).slice(0, 6);
+  const byFilament = sortDesc(analysis.failures_by_filament);
+  const byPrinter = sortDesc(analysis.failures_by_printer);
+
+  const breakdownList = (title: string, entries: [string, number][]) =>
+    entries.length > 0 && (
+      <div className="flex-1 border-l border-bambu-dark-tertiary pl-8">
+        <p className="text-xs text-bambu-gray font-medium mb-2">{title}</p>
+        <div className="space-y-1">
+          {entries.map(([name, count]) => (
+            <div key={name} className="flex items-center justify-between text-sm">
+              <span className="text-white truncate max-w-[160px]">{name}</span>
+              <span className="text-bambu-gray ml-2">{count}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+
   return (
     <div className={`${size >= 2 ? 'flex gap-8' : 'space-y-4'}`}>
       {/* Summary */}
@@ -843,6 +927,12 @@ function FailureAnalysisWidget({ size = 1, dateFrom, dateTo, createdById }: {
           )}
         </div>
       )}
+
+      {/* Extra breakdowns when expanded — answers "is it the material or the machine?"
+          (No by-hour chart here: Printer Stats "Print Time of Day" already
+          plots failures per hour alongside totals.) */}
+      {size >= 2 && breakdownList(t('stats.failuresByFilament'), byFilament)}
+      {size >= 2 && breakdownList(t('stats.failuresByPrinter'), byPrinter)}
     </div>
   );
 }
@@ -985,7 +1075,6 @@ export function StatsPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [dashboardKey, setDashboardKey] = useState(0);
-  const [hiddenCount, setHiddenCount] = useState(0);
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [showUserPicker, setShowUserPicker] = useState(false);
@@ -1014,29 +1103,27 @@ export function StatsPage() {
     return computeDateRange(timeframe.preset);
   }, [timeframe]);
 
-  // Read hidden count from localStorage
-  useEffect(() => {
-    const updateHiddenCount = () => {
-      try {
-        const saved = localStorage.getItem('bambusy-dashboard-layout-v2');
-        if (saved) {
-          const layout = JSON.parse(saved);
-          setHiddenCount(layout.hidden?.length || 0);
-        }
-      } catch {
-        setHiddenCount(0);
-      }
+  // Preceding window of equal length for period-over-period deltas.
+  // Null (no comparison) for all-time or half-open custom ranges.
+  const previousRange = useMemo(() => {
+    const { dateFrom, dateTo } = effectiveDateRange;
+    if (!dateFrom || !dateTo) return null;
+    const parse = (s: string) => {
+      const [y, m, d] = s.split('-').map(Number);
+      return new Date(y, m - 1, d);
     };
-    updateHiddenCount();
-    // Listen for storage changes
-    window.addEventListener('storage', updateHiddenCount);
-    // Also poll for changes (since storage event doesn't fire for same-tab changes)
-    const interval = setInterval(updateHiddenCount, 2000);
-    return () => {
-      window.removeEventListener('storage', updateHiddenCount);
-      clearInterval(interval);
-    };
-  }, [dashboardKey]);
+    const fmtLocal = (dt: Date) =>
+      `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    const from = parse(dateFrom);
+    const to = parse(dateTo);
+    const spanDays = Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
+    if (spanDays < 1) return null;
+    const prevTo = new Date(from);
+    prevTo.setDate(from.getDate() - 1);
+    const prevFrom = new Date(from);
+    prevFrom.setDate(from.getDate() - spanDays);
+    return { dateFrom: fmtLocal(prevFrom), dateTo: fmtLocal(prevTo), spanDays };
+  }, [effectiveDateRange]);
 
   // Only pass createdById when a user is actually selected (not "All Users")
   const createdByIdParam = selectedUserId !== null ? selectedUserId : undefined;
@@ -1048,6 +1135,18 @@ export function StatsPage() {
       dateTo: effectiveDateRange.dateTo,
       createdById: createdByIdParam,
     }),
+  });
+
+  // Previous-window stats for the delta badges; skipped for all-time.
+  const { data: previousStats } = useQuery({
+    queryKey: ['archiveStatsPrev', previousRange?.dateFrom, previousRange?.dateTo, createdByIdParam ?? 'all'],
+    queryFn: () => api.getArchiveStats({
+      dateFrom: previousRange?.dateFrom,
+      dateTo: previousRange?.dateTo,
+      createdById: createdByIdParam,
+    }),
+    enabled: previousRange !== null,
+    staleTime: 60_000,
   });
 
   const { data: printers } = useQuery({
@@ -1111,7 +1210,15 @@ export function StatsPage() {
     setShowExportMenu(false);
     setIsExporting(true);
     try {
-      const { blob, filename } = await api.exportStats({ format, days: 90, createdById: createdByIdParam });
+      // Export the same window the page is showing; all-time has no date
+      // bounds, so send a large `days` (the backend defaults to 30 otherwise).
+      const { blob, filename } = await api.exportStats({
+        format,
+        ...(effectiveDateRange.dateFrom || effectiveDateRange.dateTo
+          ? { dateFrom: effectiveDateRange.dateFrom, dateTo: effectiveDateRange.dateTo }
+          : { days: 3650 }),
+        createdById: createdByIdParam,
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -1143,6 +1250,7 @@ export function StatsPage() {
 
   const currency = getCurrencySymbol(settings?.currency || 'USD');
   const printerMap = new Map(printers?.map((p) => [String(p.id), p.name]) || []);
+  const deltaTitle = previousRange ? t('stats.deltaVsPrevious', { days: previousRange.spanDays }) : undefined;
   const printDates = useMemo(() => archives?.map((a) => a.created_at) || [], [archives]);
 
   if (isLoading) {
@@ -1160,13 +1268,29 @@ export function StatsPage() {
     {
       id: 'quick-stats',
       title: t('stats.quickStats'),
-      component: <QuickStatsWidget stats={stats} currency={currency} filamentCostOverride={calculatorFilamentCost} />,
+      component: (
+        <QuickStatsWidget
+          stats={stats}
+          previousStats={previousRange ? previousStats : undefined}
+          deltaTitle={deltaTitle}
+          currency={currency}
+          filamentCostOverride={calculatorFilamentCost}
+        />
+      ),
       defaultSize: 2,
     },
     {
       id: 'success-rate',
       title: t('stats.successRate'),
-      component: (size) => <SuccessRateWidget stats={stats} printerMap={printerMap} size={size} />,
+      component: (size) => (
+        <SuccessRateWidget
+          stats={stats}
+          previousStats={previousRange ? previousStats : undefined}
+          deltaTitle={deltaTitle}
+          printerMap={printerMap}
+          size={size}
+        />
+      ),
       defaultSize: 1,
     },
     {
@@ -1193,6 +1317,58 @@ export function StatsPage() {
       component: <RecordsWidget archives={archives || []} currency={currency} />,
       defaultSize: 1,
     },
+    {
+      id: 'energy',
+      title: t('stats.energyWidgetTitle'),
+      component: (
+        <EnergyWidget
+          dateFrom={effectiveDateRange.dateFrom}
+          dateTo={effectiveDateRange.dateTo}
+          currency={currency}
+          totalPrints={stats?.total_prints || 0}
+        />
+      ),
+      defaultSize: 2,
+    },
+    {
+      id: 'printer-utilization',
+      title: t('stats.printerUtilization'),
+      component: (
+        <PrinterUtilizationWidget
+          archives={archives || []}
+          printerMap={printerMap}
+          dateFrom={effectiveDateRange.dateFrom}
+          dateTo={effectiveDateRange.dateTo}
+        />
+      ),
+      defaultSize: 2,
+    },
+    ...(canUseCalculator
+      ? [{
+          id: 'cost-breakdown',
+          title: t('stats.costBreakdown'),
+          component: (
+            <CostBreakdownWidget archives={archives || []} printerMap={printerMap} currency={currency} />
+          ),
+          defaultSize: 2 as const,
+        }]
+      : []),
+    ...(hasPermission('inventory:forecast_read')
+      ? [{
+          id: 'filament-forecast',
+          title: t('stats.filamentForecast'),
+          component: <FilamentForecastWidget />,
+          defaultSize: 1 as const,
+        }]
+      : []),
+    ...(hasPermission('maintenance:read')
+      ? [{
+          id: 'maintenance-reliability',
+          title: t('stats.maintenanceReliability'),
+          component: <MaintenanceReliabilityWidget archives={archives || []} />,
+          defaultSize: 1 as const,
+        }]
+      : []),
     {
       id: 'printer-stats',
       title: t('stats.printerStats'),
@@ -1221,19 +1397,6 @@ export function StatsPage() {
           <p className="text-bambu-gray mt-1">{t('stats.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Hidden widgets button - toggles panel in Dashboard */}
-          {hiddenCount > 0 && (
-            <Button
-              variant="secondary"
-              onClick={() => {
-                // Toggle the hidden panel in Dashboard by triggering a custom event
-                window.dispatchEvent(new CustomEvent('toggle-hidden-panel'));
-              }}
-            >
-              <Eye className="w-4 h-4" />
-              {t('stats.hiddenCount', { count: hiddenCount })}
-            </Button>
-          )}
           {/* Reset Layout */}
           <Button
             variant="secondary"
@@ -1445,6 +1608,16 @@ export function StatsPage() {
         storageKey="bambusy-dashboard-layout-v2"
         stackBelow={640}
         hideControls
+        renderControls={({ hiddenCount, showHiddenPanel, setShowHiddenPanel }) =>
+          hiddenCount > 0 ? (
+            <div className="flex justify-end">
+              <Button variant="secondary" size="sm" onClick={() => setShowHiddenPanel(!showHiddenPanel)}>
+                <Eye className="w-4 h-4" />
+                {t('stats.hiddenCount', { count: hiddenCount })}
+              </Button>
+            </div>
+          ) : null
+        }
       />
     </div>
   );

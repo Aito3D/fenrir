@@ -1,9 +1,10 @@
 """API routes for smart plug management."""
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from typing import Literal
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +18,7 @@ from backend.app.models.printer import Printer
 from backend.app.models.smart_plug import SmartPlug
 from backend.app.models.user import User
 from backend.app.schemas.smart_plug import (
+    EnergyHistoryResponse,
     HAEntity,
     HASensorEntity,
     HATestConnectionRequest,
@@ -32,6 +34,7 @@ from backend.app.schemas.smart_plug import (
     SmartPlugUpdate,
 )
 from backend.app.services.discovery import tasmota_scanner
+from backend.app.services.energy_history import get_energy_history
 from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.mqtt_relay import mqtt_relay
 from backend.app.services.mqtt_smart_plug import subscribe_plug_to_mqtt
@@ -388,6 +391,29 @@ async def list_ha_sensor_entities(
 
     sensors = await homeassistant_service.list_sensor_entities(ha_url, ha_token)
     return [HASensorEntity(**s) for s in sensors]
+
+
+@router.get("/energy/history", response_model=EnergyHistoryResponse)
+async def get_energy_history_route(
+    date_from: date | None = Query(None, description="Start date (inclusive), YYYY-MM-DD; default: last 30 days"),
+    date_to: date | None = Query(None, description="End date (inclusive), YYYY-MM-DD; default: today"),
+    tz_offset_minutes: int = Query(0, ge=-840, le=840, description="Client UTC offset in minutes east of UTC"),
+    bucket: Literal["day", "hour"] = Query("day"),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.STATS_READ),
+):
+    """Energy usage time series from hourly smart-plug snapshots.
+
+    NOTE: must stay registered before GET /{plug_id} or "energy" would be
+    parsed as a plug id and 422.
+    """
+    return await get_energy_history(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        tz_offset_minutes=tz_offset_minutes,
+        bucket=bucket,
+    )
 
 
 @router.get("/{plug_id}", response_model=SmartPlugResponse)

@@ -37,6 +37,8 @@ export interface ArchivePriceEstimate {
   totalTtc: number;
   /** Machine cost (filament + depreciation + energy + repairs), no provisions/labor. */
   machineCost: number;
+  /** Filament cost line (grams × sale price × difficulty × markup). */
+  filamentCost: number;
   /** Energy cost line (time × printer watts × tariff × difficulty). */
   energyCost: number;
   filamentId: number;
@@ -163,6 +165,7 @@ export function estimateArchiveSalePrice(
   return {
     totalTtc: result.total_ttc,
     machineCost: result.machine_cost,
+    filamentCost: result.filament_cost,
     energyCost: result.energy_cost,
     filamentId: matched.filament.id,
     filamentName: matched.filament.name,

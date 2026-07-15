@@ -206,13 +206,6 @@ export function Dashboard({ widgets, storageKey, columns = 4, stackBelow, hideCo
 
   const effectiveColumns = stackBelow && isStacked ? 1 : columns;
 
-  // Listen for toggle-hidden-panel event from parent
-  useEffect(() => {
-    const handleToggle = () => setShowHiddenPanel(prev => !prev);
-    window.addEventListener('toggle-hidden-panel', handleToggle);
-    return () => window.removeEventListener('toggle-hidden-panel', handleToggle);
-  }, []);
-
   // Save layout to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem(storageKey, JSON.stringify(layout));

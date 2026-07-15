@@ -270,3 +270,34 @@ class RESTTestConnectionResponse(BaseModel):
 
     success: bool
     error: str | None = None
+
+
+class EnergyHistoryBucket(BaseModel):
+    """One time bucket of energy usage. `period` is a client-local key:
+    "YYYY-MM-DD" for day buckets, "YYYY-MM-DDTHH:00" for hour buckets."""
+
+    period: str
+    kwh: float
+
+
+class EnergyHistoryPlugSeries(BaseModel):
+    """Per-plug series; buckets omit empty periods (frontend merges by key)."""
+
+    plug_id: int
+    plug_name: str
+    printer_id: int | None = None
+    total_kwh: float
+    buckets: list[EnergyHistoryBucket]
+
+
+class EnergyHistoryResponse(BaseModel):
+    bucket: Literal["day", "hour"]
+    total_kwh: float
+    total_cost: float
+    cost_per_kwh: float
+    # Combined across plugs, zero-filled over the whole window (chronological)
+    buckets: list[EnergyHistoryBucket]
+    plugs: list[EnergyHistoryPlugSeries]
+    # True when any plug lacks a snapshot baseline before the window start —
+    # the beginning of the range is undercounted (fresh install/new plug).
+    warming_up: bool = False

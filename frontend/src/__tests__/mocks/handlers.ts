@@ -479,6 +479,17 @@ export const handlers = [
   http.get('/api/v1/printers/:id/slot-presets', () => HttpResponse.json([])),
   http.get('/api/v1/smart-plugs/by-printer/:id', () => HttpResponse.json([])),
   http.get('/api/v1/smart-plugs/by-printer/:id/scripts', () => HttpResponse.json([])),
+  http.get('/api/v1/smart-plugs/energy/history', () =>
+    HttpResponse.json({
+      bucket: 'day',
+      total_kwh: 0,
+      total_cost: 0,
+      cost_per_kwh: 0.15,
+      buckets: [],
+      plugs: [],
+      warming_up: false,
+    }),
+  ),
   http.get('/api/v1/spoolbuddy/devices', () => HttpResponse.json([])),
   http.get('/api/v1/spoolman/inventory/filaments', () => HttpResponse.json([])),
   http.get('/api/v1/spoolman/spools/linked', () => HttpResponse.json([])),
