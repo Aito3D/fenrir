@@ -6629,10 +6629,19 @@ def _frame_ancestors(default_value: str) -> str:
 
 
 def _matches_public_pattern(path: str, pattern: str) -> bool:
-    """Check if pattern appears in path at a path-segment boundary."""
+    """Check if pattern appears in path at a path-segment boundary.
+
+    Patterns ending in "/" (e.g. "/photos/", "/obico/cached-frame/") carry
+    their own boundary — what follows is the dynamic segment (filename,
+    nonce, token), so any continuation is valid. Requiring another "/" after
+    them 401'd every such route when auth was enabled (photos, plate
+    thumbnails, slicer /dl/ downloads, Obico cached frames).
+    """
     idx = path.find(pattern)
     if idx == -1:
         return False
+    if pattern.endswith("/"):
+        return True
     end = idx + len(pattern)
     return end == len(path) or path[end] == "/"
 
