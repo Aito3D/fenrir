@@ -1099,6 +1099,60 @@ class TestArchivesSlimAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_slim_date_filtering_respects_client_timezone(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """date_from/date_to are the client's local calendar days when
+        tz_offset_minutes is sent. A print at 01:00 UTC belongs to the
+        previous local day for a UTC-10 client — 'Today' on the stats page
+        must include it (previously it was dropped, undercounting the day)."""
+        from datetime import datetime, timezone
+
+        printer = await printer_factory()
+        await archive_factory(
+            printer.id,
+            print_name="Evening Print",
+            created_at=datetime(2024, 6, 15, 1, 0, 0, tzinfo=timezone.utc),  # Jun 14, 3pm UTC-10
+        )
+
+        # UTC-10 client asking for local Jun 14 → window Jun 14 10:00 - Jun 15 09:59 UTC
+        response = await async_client.get(
+            "/api/v1/archives/slim?date_from=2024-06-14&date_to=2024-06-14&tz_offset_minutes=-600"
+        )
+        assert response.status_code == 200
+        assert [a["print_name"] for a in response.json()] == ["Evening Print"]
+
+        # Without an offset the same dates mean the UTC day and exclude it
+        response = await async_client.get("/api/v1/archives/slim?date_from=2024-06-14&date_to=2024-06-14")
+        assert response.status_code == 200
+        assert response.json() == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_stats_date_filtering_respects_client_timezone(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """/archives/stats applies the same local-day window as /archives/slim."""
+        from datetime import datetime, timezone
+
+        printer = await printer_factory()
+        await archive_factory(
+            printer.id,
+            created_at=datetime(2024, 6, 15, 1, 0, 0, tzinfo=timezone.utc),  # Jun 14, 3pm UTC-10
+        )
+
+        response = await async_client.get(
+            "/api/v1/archives/stats?date_from=2024-06-14&date_to=2024-06-14&tz_offset_minutes=-600"
+        )
+        assert response.status_code == 200
+        assert response.json()["total_prints"] == 1
+
+        response = await async_client.get("/api/v1/archives/stats?date_from=2024-06-14&date_to=2024-06-14")
+        assert response.status_code == 200
+        assert response.json()["total_prints"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_slim_pagination(self, async_client: AsyncClient, archive_factory, printer_factory, db_session):
         """Verify limit and offset work."""
         printer = await printer_factory()

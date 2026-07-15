@@ -1,6 +1,6 @@
 import csv
 import io
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -161,6 +161,9 @@ class ExportService:
         self,
         format: str = "csv",
         days: int = 30,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        tz_offset_minutes: int = 0,
         printer_id: int | None = None,
         project_id: int | None = None,
         created_by_id: int | None = None,
@@ -169,7 +172,10 @@ class ExportService:
 
         Args:
             format: Export format ('csv' or 'xlsx')
-            days: Number of days to include in stats
+            days: Number of days to include in stats (used when no dates given)
+            date_from: Start date (inclusive, client-local); takes priority over days
+            date_to: End date (inclusive, client-local)
+            tz_offset_minutes: Client UTC offset in minutes east of UTC
             printer_id: Filter by printer
             project_id: Filter by project
             created_by_id: Filter by user who created the print (-1 for no user)
@@ -183,6 +189,9 @@ class ExportService:
         analysis_service = FailureAnalysisService(self.db)
         analysis = await analysis_service.analyze_failures(
             days=days,
+            date_from=date_from,
+            date_to=date_to,
+            tz_offset_minutes=tz_offset_minutes,
             printer_id=printer_id,
             project_id=project_id,
             created_by_id=created_by_id,

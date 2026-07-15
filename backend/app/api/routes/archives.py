@@ -4,7 +4,7 @@ import logging
 import re as _re
 import zipfile
 from collections import defaultdict
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
@@ -29,6 +29,7 @@ from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveSta
 from backend.app.schemas.print_log import PrintLogResponse
 from backend.app.schemas.slicer import SliceRequest
 from backend.app.services.archive import ArchiveService
+from backend.app.utils.dates import local_day_bounds
 from backend.app.utils.http import build_content_disposition
 from backend.app.utils.safe_path import safe_join_under
 from backend.app.utils.threemf_tools import (
@@ -516,6 +517,7 @@ async def no_3mf_warning(
 async def list_archives_slim(
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
+    tz_offset_minutes: int = Query(0, ge=-840, le=840, description="Client UTC offset in minutes east of UTC"),
     created_by_id: int | None = Query(None, description="Filter by user who created the print (-1 for no user)"),
     limit: int = Query(default=10000, le=50000),
     offset: int = 0,
@@ -549,11 +551,10 @@ async def list_archives_slim(
     if current_user is not None and not can_read_all:
         created_by_id = current_user.id
     filters = []
-    if date_from:
-        dt_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc)
+    dt_from, dt_to = local_day_bounds(date_from, date_to, tz_offset_minutes)
+    if dt_from:
         filters.append(PrintLogEntry.created_at >= dt_from)
-    if date_to:
-        dt_to = datetime.combine(date_to, time.max, tzinfo=timezone.utc)
+    if dt_to:
         filters.append(PrintLogEntry.created_at <= dt_to)
     _apply_run_user_filter(filters, created_by_id)
 
@@ -794,6 +795,7 @@ async def analyze_failures(
     days: int | None = None,
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
+    tz_offset_minutes: int = Query(0, ge=-840, le=840, description="Client UTC offset in minutes east of UTC"),
     printer_id: int | None = None,
     project_id: int | None = None,
     created_by_id: int | None = Query(None, description="Filter by user who created the print (-1 for no user)"),
@@ -827,6 +829,7 @@ async def analyze_failures(
         days=days,
         date_from=date_from,
         date_to=date_to,
+        tz_offset_minutes=tz_offset_minutes,
         printer_id=printer_id,
         project_id=project_id,
         created_by_id=created_by_id,
@@ -968,6 +971,9 @@ async def export_archives(
 async def export_stats(
     format: str = Query("csv", description="Export format: csv or xlsx"),
     days: int = 30,
+    date_from: date | None = Query(None, description="Start date (inclusive), YYYY-MM-DD; takes priority over days"),
+    date_to: date | None = Query(None, description="End date (inclusive), YYYY-MM-DD"),
+    tz_offset_minutes: int = Query(0, ge=-840, le=840, description="Client UTC offset in minutes east of UTC"),
     printer_id: int | None = None,
     project_id: int | None = None,
     created_by_id: int | None = Query(None, description="Filter by user who created the print (-1 for no user)"),
@@ -989,6 +995,9 @@ async def export_stats(
         file_bytes, filename, content_type = await service.export_stats(
             format=format,
             days=days,
+            date_from=date_from,
+            date_to=date_to,
+            tz_offset_minutes=tz_offset_minutes,
             printer_id=printer_id,
             project_id=project_id,
             created_by_id=created_by_id,
@@ -1007,6 +1016,7 @@ async def export_stats(
 async def get_archive_stats(
     date_from: date | None = Query(None, description="Start date (inclusive), YYYY-MM-DD"),
     date_to: date | None = Query(None, description="End date (inclusive), YYYY-MM-DD"),
+    tz_offset_minutes: int = Query(0, ge=-840, le=840, description="Client UTC offset in minutes east of UTC"),
     created_by_id: int | None = Query(None, description="Filter by user who created the print (-1 for no user)"),
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.STATS_READ),
@@ -1023,12 +1033,12 @@ async def get_archive_stats(
     _validate_user_filter_permission(current_user, created_by_id)
 
     # Build date filter conditions scoped to PrintLogEntry (event-time).
+    # date_from/date_to are calendar days in the client's timezone (#local-day).
     base_conditions = []
-    if date_from:
-        dt_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc)
+    dt_from, dt_to = local_day_bounds(date_from, date_to, tz_offset_minutes)
+    if dt_from:
         base_conditions.append(PrintLogEntry.created_at >= dt_from)
-    if date_to:
-        dt_to = datetime.combine(date_to, time.max, tzinfo=timezone.utc)
+    if dt_to:
         base_conditions.append(PrintLogEntry.created_at <= dt_to)
     _apply_run_user_filter(base_conditions, created_by_id)
 
@@ -1183,8 +1193,8 @@ async def get_archive_stats(
         # to compute per-plug (endpoint - baseline) deltas.
         total_energy_kwh, energy_data_warming_up = await _sum_snapshot_deltas(
             db,
-            dt_from=(datetime.combine(date_from, time.min, tzinfo=timezone.utc) if date_from else None),
-            dt_to=(datetime.combine(date_to, time.max, tzinfo=timezone.utc) if date_to else None),
+            dt_from=dt_from,
+            dt_to=dt_to,
         )
         total_energy_cost = total_energy_kwh * energy_cost_per_kwh
     else:

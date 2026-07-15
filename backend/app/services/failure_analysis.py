@@ -1,11 +1,12 @@
 from collections import defaultdict
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.printer import Printer
+from backend.app.utils.dates import local_day_bounds
 
 
 class FailureAnalysisService:
@@ -26,23 +27,30 @@ class FailureAnalysisService:
         days: int | None = None,
         date_from: date | None = None,
         date_to: date | None = None,
+        tz_offset_minutes: int = 0,
         printer_id: int | None = None,
         project_id: int | None = None,
         created_by_id: int | None = None,
     ) -> dict:
-        """Analyze failure patterns across logged print events."""
+        """Analyze failure patterns across logged print events.
+
+        date_from/date_to are calendar days in the client's timezone
+        (tz_offset_minutes east of UTC), converted here to a UTC window.
+        """
         # Build base query — separate date vs non-date filters for trend reuse
         base_filter = []
         non_date_filter = []
         if date_from or date_to:
-            if date_from:
-                dt_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc)
+            dt_from, dt_to = local_day_bounds(date_from, date_to, tz_offset_minutes)
+            if dt_from:
                 base_filter.append(PrintLogEntry.created_at >= dt_from)
-            if date_to:
-                dt_to = datetime.combine(date_to, time.max, tzinfo=timezone.utc)
+            if dt_to:
                 base_filter.append(PrintLogEntry.created_at <= dt_to)
-            range_start = dt_from if date_from else datetime.now(timezone.utc) - timedelta(days=365)
-            range_end = dt_to if date_to else datetime.now(timezone.utc)
+            # local_day_bounds returns naive UTC — keep the fallbacks naive too
+            # so the subtraction below doesn't mix naive and aware datetimes.
+            utc_now = datetime.now(timezone.utc).replace(tzinfo=None)
+            range_start = dt_from if dt_from else utc_now - timedelta(days=365)
+            range_end = dt_to if dt_to else utc_now
             effective_days = max((range_end - range_start).days, 1)
         else:
             effective_days = days if days is not None else 30
