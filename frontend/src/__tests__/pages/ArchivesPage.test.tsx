@@ -514,6 +514,33 @@ describe('ArchivesPage', () => {
     });
   });
 
+  // #2104: a print-start download matched by filename alone can be a stale
+  // same-name file. Such archives carry content_verified=false and must be
+  // visibly flagged; verified (true) and legacy (null) archives are not.
+  describe('content verification badge', () => {
+    it('flags only archives whose file was matched by name alone', async () => {
+      server.use(
+        http.get('/api/v1/archives/', () =>
+          HttpResponse.json([
+            { ...mockArchives[0], id: 300, print_name: 'SuspectFile', content_verified: false },
+            { ...mockArchives[0], id: 301, print_name: 'VerifiedFile', content_verified: true },
+            { ...mockArchives[0], id: 302, print_name: 'LegacyFile', content_verified: null },
+          ])
+        )
+      );
+
+      render(<ArchivesPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('SuspectFile')).toBeInTheDocument();
+        expect(screen.getByText('VerifiedFile')).toBeInTheDocument();
+        expect(screen.getByText('LegacyFile')).toBeInTheDocument();
+      });
+
+      expect(screen.getAllByText('Unverified')).toHaveLength(1);
+    });
+  });
+
   describe('suggested price from the calculator', () => {
     const calcFilaments = [
       { id: 1, name: 'PLA basique', brand: '', material: 'PLA basique', cost_per_kg: 3731, sale_price_per_kg: 5597, difficulty_pct: 150 },

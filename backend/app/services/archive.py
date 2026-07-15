@@ -99,6 +99,105 @@ def peek_plate_index_in_3mf(file_path: Path) -> int | None:
     return None
 
 
+def peek_plate_prediction_in_3mf(file_path: Path, plate_index: int | None = None) -> int | None:
+    """Return the slicer's predicted duration (seconds) for one plate, or None.
+
+    Like :func:`peek_plate_index_in_3mf`, reads only
+    ``Metadata/slice_info.config``. When ``plate_index`` is given, the plate
+    with that index is used; otherwise the value is only returned for
+    single-plate exports (a whole-file sum would not be comparable to the
+    printer's remaining time for one plate).
+    """
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            if "Metadata/slice_info.config" not in zf.namelist():
+                return None
+            content = zf.read("Metadata/slice_info.config").decode()
+            root = ET.fromstring(content)
+            plates = root.findall(".//plate")
+            if not plates:
+                return None
+            for plate in plates:
+                index = prediction = None
+                for meta in plate.findall("metadata"):
+                    key = meta.get("key")
+                    value = meta.get("value")
+                    if key == "index" and value:
+                        try:
+                            index = int(value)
+                        except ValueError:
+                            pass
+                    elif key == "prediction" and value:
+                        try:
+                            prediction = int(value)
+                        except ValueError:
+                            pass
+                if plate_index is not None:
+                    if index == plate_index:
+                        return prediction
+                elif len(plates) == 1:
+                    return prediction
+    except Exception:
+        return None
+    return None
+
+
+def compute_file_md5(file_path: Path) -> str:
+    """MD5 of a file, for comparison against the slicer's project_file md5."""
+    # Not used for security — the slicer's print command publishes an MD5 of
+    # the uploaded 3MF and this is the only digest we can compare against.
+    md5 = hashlib.md5(usedforsecurity=False)
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            md5.update(chunk)
+    return md5.hexdigest()
+
+
+def verify_3mf_candidate(
+    file_path: Path,
+    expected_md5: str | None,
+    plate_index: int | None,
+    reported_remaining_seconds: int | float | None,
+) -> tuple[str, str]:
+    """Judge whether a downloaded 3MF is the file the printer is printing.
+
+    Returns ``(verdict, detail)`` where verdict is one of:
+
+    - ``"verified"`` — content proven (md5) or strongly consistent (plate
+      prediction vs the printer's reported remaining time).
+    - ``"rejected"`` — definitively or overwhelmingly the wrong file; the
+      caller should discard it and try the next FTP candidate.
+    - ``"unverified"`` — nothing to compare against; caller keeps today's
+      first-hit behavior but records the archive as unverified.
+
+    The md5 comes from the intercepted ``project_file`` command (slicer sends
+    only — touchscreen reprints produce no command, and Bambuddy's own
+    dispatch sends an empty md5). The prediction fallback is deliberately
+    lax: a false reject would replace the *correct* file with a no-3MF
+    fallback archive, so only gross mismatches (>2x AND >15 min apart) are
+    rejected — exactly the class of error where a months-old same-name file
+    is picked up in place of the real job (#2104).
+    """
+    if expected_md5:
+        actual = compute_file_md5(file_path)
+        if actual == expected_md5.strip().lower():
+            return "verified", "md5 match"
+        return "rejected", f"md5 mismatch: file={actual}, print command={expected_md5}"
+
+    if reported_remaining_seconds and reported_remaining_seconds > 0:
+        prediction = peek_plate_prediction_in_3mf(file_path, plate_index)
+        if prediction and prediction > 0:
+            longer, shorter = max(prediction, reported_remaining_seconds), min(prediction, reported_remaining_seconds)
+            if longer > shorter * 2 and longer - shorter > 900:
+                return (
+                    "rejected",
+                    f"plate prediction {prediction}s vs printer remaining {int(reported_remaining_seconds)}s",
+                )
+            return "verified", f"plate prediction {prediction}s ≈ printer remaining {int(reported_remaining_seconds)}s"
+
+    return "unverified", "no md5 in print command and no comparable duration"
+
+
 _PLATE_SUFFIX_RE = re.compile(r"^(.*?)(\s*-\s*Plate\s+|_plate_)(\d+)$", re.IGNORECASE)
 
 
@@ -1129,6 +1228,7 @@ class ArchiveService:
         project_id: int | None = None,
         subtask_id: str | None = None,
         prefer_filename_for_name: bool = False,
+        content_verified: bool | None = None,
     ) -> PrintArchive | None:
         """Archive a 3MF file with metadata.
 
@@ -1149,6 +1249,10 @@ class ArchiveService:
                 metadata. Used by virtual-printer flows so users who rename a job in
                 BambuStudio's "send to printer" dialog see that name instead of the
                 creator-baked title (#1152).
+            content_verified: Whether the source file was verified to be the job
+                the printer is actually printing (see verify_3mf_candidate).
+                None for flows where the file's identity is not in question
+                (uploads, virtual printer).
         """
         # Verify printer exists if specified
         if printer_id is not None:
@@ -1301,6 +1405,7 @@ class ArchiveService:
             created_by_id=created_by_id,
             project_id=project_id,
             subtask_id=subtask_id,
+            content_verified=content_verified,
         )
 
         self.db.add(archive)

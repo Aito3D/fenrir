@@ -81,7 +81,12 @@ from backend.app.core.database import async_session, engine, init_db
 from backend.app.core.tasks import spawn_background_task
 from backend.app.core.websocket import ws_manager
 from backend.app.models.smart_plug import SmartPlug
-from backend.app.services.archive import ArchiveService, peek_plate_index_in_3mf, swap_plate_suffix
+from backend.app.services.archive import (
+    ArchiveService,
+    peek_plate_index_in_3mf,
+    swap_plate_suffix,
+    verify_3mf_candidate,
+)
 from backend.app.services.archive_purge import archive_purge_service
 from backend.app.services.bambu_ftp import (
     FileNotOnPrinterError,
@@ -2893,6 +2898,29 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
         temp_path = None
         downloaded_filename = None
 
+        # Content verification inputs (#2104): filename search alone can land
+        # on a months-old same-name file elsewhere on the printer's storage
+        # (e.g. stale copy at / while the fresh slicer upload sits in /cache).
+        # Every accepted candidate below is judged by verify_3mf_candidate —
+        # md5 from the intercepted print command when available, otherwise a
+        # plate-prediction plausibility check; "rejected" candidates are
+        # discarded and the search continues with the next path.
+        _expected_md5 = (data.get("print_md5") or "").strip().lower() or None
+        _verify_plate = parse_plate_id(filename)
+        _reported_remaining = data.get("remaining_time")
+        content_verdict: str | None = None
+        candidate_rejected = False
+
+        def _judge_candidate(candidate_path, source: str) -> str:
+            nonlocal candidate_rejected
+            verdict, detail = verify_3mf_candidate(candidate_path, _expected_md5, _verify_plate, _reported_remaining)
+            if verdict == "rejected":
+                candidate_rejected = True
+                logger.warning("[CALLBACK] Rejected 3MF candidate %s (%s): %s", candidate_path, source, detail)
+            else:
+                logger.info("[CALLBACK] 3MF candidate %s (%s): %s — %s", candidate_path, source, verdict, detail)
+            return verdict
+
         # Cache check: cover endpoint may have already pulled this 3MF during
         # the print (frontend opens the card and shows the thumbnail) — reuse
         # that file instead of re-downloading 36MB over the same FTP link that
@@ -2903,7 +2931,11 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                 continue
             cached = get_cached_3mf(printer_id, try_filename)
             if cached:
+                verdict = _judge_candidate(cached, "cache reuse")
+                if verdict == "rejected":
+                    continue  # Stale cached copy of a different job — go to FTP
                 logger.info("Reusing cached 3MF from %s (avoided duplicate FTP)", cached)
+                content_verdict = verdict
                 temp_path = cached
                 downloaded_filename = try_filename
                 break
@@ -2959,6 +2991,17 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                             printer_model=printer.model,
                         )
                     if downloaded:
+                        verdict = _judge_candidate(temp_path, remote_path)
+                        if verdict == "rejected":
+                            # Same-name impostor (e.g. stale copy at / while
+                            # the real upload sits in /cache) — discard and
+                            # keep walking the remaining paths.
+                            try:
+                                temp_path.unlink(missing_ok=True)
+                            except OSError:
+                                pass
+                            continue
+                        content_verdict = verdict
                         downloaded_filename = try_filename
                         logger.info("Downloaded: %s", remote_path)
                         # Populate shared cache so the cover endpoint (if it
@@ -3030,6 +3073,14 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                                     printer_model=printer.model,
                                 )
                             if downloaded:
+                                verdict = _judge_candidate(temp_path, posixpath.join(search_dir, fname))
+                                if verdict == "rejected":
+                                    try:
+                                        temp_path.unlink(missing_ok=True)
+                                    except OSError:
+                                        pass
+                                    continue
+                                content_verdict = verdict
                                 downloaded_filename = fname
                                 logger.info("Found and downloaded from %s: %s", search_dir, fname)
                                 cache_3mf_download(printer_id, fname, temp_path)
@@ -3094,7 +3145,15 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                                         socket_timeout=ftp_timeout,
                                         printer_model=printer.model,
                                     )
-                                if downloaded and peek_plate_index_in_3mf(retry_temp_path) == expected_plate:
+                                if (
+                                    downloaded
+                                    and peek_plate_index_in_3mf(retry_temp_path) == expected_plate
+                                    and (
+                                        retry_verdict := _judge_candidate(retry_temp_path, f"plate-retry {remote_path}")
+                                    )
+                                    != "rejected"
+                                ):
+                                    content_verdict = retry_verdict
                                     logger.info(
                                         "[CALLBACK] Re-download succeeded with corrected name %s "
                                         "(plate %s) — replacing wrong file",
@@ -3192,7 +3251,15 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                     subtask_id=subtask_id,
                     filament_type=mqtt_filament_meta.get("filament_type"),
                     filament_color=mqtt_filament_meta.get("filament_color"),
-                    extra_data={"no_3mf_available": True, "original_subtask": subtask_name, "_print_data": data},
+                    extra_data={
+                        "no_3mf_available": True,
+                        "original_subtask": subtask_name,
+                        "_print_data": data,
+                        # True when same-name candidates were found but all
+                        # failed content verification — better no file than a
+                        # wrong file polluting stats and duplicate groups.
+                        **({"content_rejected": True} if candidate_rejected else {}),
+                    },
                 )
 
                 db.add(fallback_archive)
@@ -3269,6 +3336,9 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                 source_file=temp_path,
                 print_data={**data, "status": "printing"},
                 subtask_id=subtask_id,
+                # "verified" → True, "unverified" → False (accepted on
+                # filename alone). Rejected candidates never reach this call.
+                content_verified=content_verdict == "verified" if content_verdict else None,
             )
 
             if archive:

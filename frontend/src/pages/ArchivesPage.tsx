@@ -1054,6 +1054,17 @@ function ArchiveCard({
               {archive.content_hash.slice(0, 8).toUpperCase()}
             </span>
           )}
+          {/* Unverified content badge — file was matched by name only and may
+              not be the job that actually printed (#2104) */}
+          {archive.content_verified === false && (
+            <span
+              className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium bg-amber-500/20 text-amber-400"
+              title={t('archives.card.unverifiedFileTooltip')}
+            >
+              <AlertCircle className="w-3 h-3" />
+              {t('archives.card.unverifiedFile')}
+            </span>
+          )}
           {archive.project_name && (
             <span
               className="text-xs px-1.5 py-0.5 rounded-full truncate max-w-[120px]"

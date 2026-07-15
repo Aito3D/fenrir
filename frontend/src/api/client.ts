@@ -100,6 +100,17 @@ function buildSlicerUrlFilename(filename: string): string {
   return safe.toLowerCase().endsWith('.3mf') ? safe : `${safe}.3mf`;
 }
 
+/**
+ * date_from/date_to query params are local calendar days; send the browser's
+ * UTC offset (minutes east of UTC — JS getTimezoneOffset is west, so negate)
+ * so the backend can convert them to the right UTC window.
+ */
+function setTzOffsetParam(params: URLSearchParams, dateFrom?: string, dateTo?: string): void {
+  if (dateFrom || dateTo) {
+    params.set('tz_offset_minutes', String(-new Date().getTimezoneOffset()));
+  }
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -610,6 +621,7 @@ export interface Archive {
   file_path: string;
   file_size: number;
   content_hash: string | null;
+  content_verified: boolean | null;
   thumbnail_path: string | null;
   timelapse_path: string | null;
   source_3mf_path: string | null;
@@ -2043,6 +2055,33 @@ export interface SmartPlugTestResult {
   success: boolean;
   state: string | null;
   device_name: string | null;
+}
+
+// Energy history (snapshot-based time series)
+export interface EnergyHistoryBucket {
+  /** "YYYY-MM-DD" (day) or "YYYY-MM-DDTHH:00" (hour), client-local. */
+  period: string;
+  kwh: number;
+}
+
+export interface EnergyHistoryPlugSeries {
+  plug_id: number;
+  plug_name: string;
+  printer_id: number | null;
+  total_kwh: number;
+  /** Sparse — empty periods are omitted; merge by period key. */
+  buckets: EnergyHistoryBucket[];
+}
+
+export interface EnergyHistory {
+  bucket: 'day' | 'hour';
+  total_kwh: number;
+  total_cost: number;
+  cost_per_kwh: number;
+  /** Combined across plugs, zero-filled over the whole window. */
+  buckets: EnergyHistoryBucket[];
+  plugs: EnergyHistoryPlugSeries[];
+  warming_up: boolean;
 }
 
 // Tasmota Discovery types
@@ -4093,6 +4132,7 @@ export const api = {
     const params = new URLSearchParams();
     if (dateFrom) params.set('date_from', dateFrom);
     if (dateTo) params.set('date_to', dateTo);
+    setTzOffsetParam(params, dateFrom, dateTo);
     if (createdById !== undefined) params.set('created_by_id', String(createdById));
     const qs = params.toString();
     return request<ArchiveSlim[]>(`/archives/slim${qs ? `?${qs}` : ''}`);
@@ -4178,6 +4218,7 @@ export const api = {
     const params = new URLSearchParams();
     if (options?.dateFrom) params.set('date_from', options.dateFrom);
     if (options?.dateTo) params.set('date_to', options.dateTo);
+    setTzOffsetParam(params, options?.dateFrom, options?.dateTo);
     if (options?.createdById !== undefined) params.set('created_by_id', String(options.createdById));
     const qs = params.toString();
     return request<ArchiveStats>(`/archives/stats${qs ? `?${qs}` : ''}`);
@@ -4200,6 +4241,7 @@ export const api = {
     if (options?.days) params.set('days', String(options.days));
     if (options?.dateFrom) params.set('date_from', options.dateFrom);
     if (options?.dateTo) params.set('date_to', options.dateTo);
+    setTzOffsetParam(params, options?.dateFrom, options?.dateTo);
     if (options?.printerId) params.set('printer_id', String(options.printerId));
     if (options?.projectId) params.set('project_id', String(options.projectId));
     if (options?.createdById !== undefined) params.set('created_by_id', String(options.createdById));
@@ -4253,6 +4295,8 @@ export const api = {
   exportStats: async (options?: {
     format?: 'csv' | 'xlsx';
     days?: number;
+    dateFrom?: string;
+    dateTo?: string;
     printerId?: number;
     projectId?: number;
     createdById?: number;
@@ -4260,6 +4304,9 @@ export const api = {
     const params = new URLSearchParams();
     if (options?.format) params.set('format', options.format);
     if (options?.days) params.set('days', String(options.days));
+    if (options?.dateFrom) params.set('date_from', options.dateFrom);
+    if (options?.dateTo) params.set('date_to', options.dateTo);
+    setTzOffsetParam(params, options?.dateFrom, options?.dateTo);
     if (options?.printerId) params.set('printer_id', String(options.printerId));
     if (options?.projectId) params.set('project_id', String(options.projectId));
     if (options?.createdById !== undefined) params.set('created_by_id', String(options.createdById));
@@ -4948,6 +4995,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ ip_address, username, password }),
     }),
+  getEnergyHistory: (options?: { dateFrom?: string; dateTo?: string; bucket?: 'day' | 'hour' }) => {
+    const params = new URLSearchParams();
+    if (options?.dateFrom) params.set('date_from', options.dateFrom);
+    if (options?.dateTo) params.set('date_to', options.dateTo);
+    // Buckets are local calendar days/hours, so the offset matters even for
+    // the default (last-30-days) window — always send it.
+    params.set('tz_offset_minutes', String(-new Date().getTimezoneOffset()));
+    if (options?.bucket) params.set('bucket', options.bucket);
+    return request<EnergyHistory>(`/smart-plugs/energy/history?${params}`);
+  },
 
   // Tasmota Discovery (auto-detects network)
   startTasmotaScan: () =>

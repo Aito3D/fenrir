@@ -2288,6 +2288,10 @@ async def run_migrations(conn):
         f"ALTER TABLE print_archives ADD COLUMN bambuddy_forced_timelapse BOOLEAN DEFAULT {_bool_false_literal}",
     )
 
+    # Migration: content verification of print-start downloads (#2104 wrong-file
+    # fix). NULL = legacy/not applicable, TRUE = verified, FALSE = unverified.
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN content_verified BOOLEAN")
+
     # Migration: Create smart_plug_energy_snapshots table (#941)
     # Hourly snapshots of each plug's lifetime counter, so date-range queries in
     # "total consumption" energy mode can compute (last - first) deltas.

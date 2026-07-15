@@ -585,6 +585,13 @@ class BambuMQTTClient:
         # Intercepts slicer/Bambuddy print commands to get the slot-to-tray mapping
         self._captured_ams_mapping: list[int] | None = None
 
+        # Captured md5 of the 3MF from the same project_file command. Slicer
+        # sends populate it; Bambuddy's own dispatch sends "" (see print_3mf).
+        # Consumed by on_print_start to verify the FTP-downloaded 3MF is the
+        # file actually being printed — a stale same-name file elsewhere on
+        # the printer's storage otherwise gets archived in its place (#2104).
+        self._captured_print_md5: str | None = None
+
         # Request topic subscription tracking
         # Some printer MQTT brokers (e.g. P1S, A1) reject subscriptions to the request
         # topic by killing the TCP connection. We detect this and gracefully degrade.
@@ -970,6 +977,14 @@ class BambuMQTTClient:
             return
         command = print_data.get("command", "")
         if command == "project_file":
+            md5_value = print_data.get("md5")
+            if isinstance(md5_value, str) and md5_value.strip():
+                self._captured_print_md5 = md5_value.strip().lower()
+                logger.info(
+                    "[%s] Captured 3MF md5 from print command: %s",
+                    self.serial_number,
+                    self._captured_print_md5,
+                )
             if "ams_mapping" in print_data:
                 self._captured_ams_mapping = print_data["ams_mapping"]
                 logger.info(
@@ -3279,8 +3294,14 @@ class BambuMQTTClient:
                     else None,  # Convert minutes to seconds
                     "raw_data": data,
                     "ams_mapping": self._captured_ams_mapping,
+                    "print_md5": self._captured_print_md5,
                 }
             )
+            # One print command → one print start. Clearing here keeps a
+            # cancelled command's md5 from leaking into a later touchscreen
+            # print, which would definitively (and wrongly) reject every
+            # download candidate for it.
+            self._captured_print_md5 = None
         elif running_first_observed and self.on_print_running_observed:
             # Restart-recovery hook (#1485 follow-up): Bambuddy started mid-
             # print, so the #1304 first-push guard suppressed on_print_start.
@@ -3300,8 +3321,10 @@ class BambuMQTTClient:
                     "remaining_time": self.state.remaining_time * 60 if self.state.remaining_time > 0 else None,
                     "raw_data": data,
                     "ams_mapping": self._captured_ams_mapping,
+                    "print_md5": self._captured_print_md5,
                 }
             )
+            self._captured_print_md5 = None
 
         # Detect print completion (FINISH = success, FAILED = error, IDLE = aborted)
         # Use _was_running flag in addition to _previous_gcode_state for more robust detection
@@ -3407,6 +3430,7 @@ class BambuMQTTClient:
                 }
             )
             self._captured_ams_mapping = None
+            self._captured_print_md5 = None
 
         self._previous_gcode_state = self.state.state
         if current_file:

@@ -18,6 +18,11 @@ class PrintArchive(Base):
     file_path: Mapped[str] = mapped_column(String(500))
     file_size: Mapped[int] = mapped_column(Integer)
     content_hash: Mapped[str | None] = mapped_column(String(64))  # SHA256 hash for duplicate detection
+    # Whether the archived 3MF was verified to be the job the printer actually
+    # ran (md5 from the print command, or plate-prediction consistency).
+    # False = accepted on filename alone and may be a same-name impostor
+    # (#2104); None = not applicable (uploads, virtual printer, legacy rows).
+    content_verified: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     thumbnail_path: Mapped[str | None] = mapped_column(String(500))
     timelapse_path: Mapped[str | None] = mapped_column(String(500))
     # True when Bambuddy forced timelapse recording on for this print so the

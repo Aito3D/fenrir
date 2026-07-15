@@ -40,6 +40,9 @@ class ArchiveResponse(BaseModel):
     file_path: str
     file_size: int
     content_hash: str | None
+    # True = archived file proven/consistent with the running job; False =
+    # accepted on filename alone (may be a same-name impostor); None = n/a.
+    content_verified: bool | None = None
     thumbnail_path: str | None
     timelapse_path: str | None
     source_3mf_path: str | None = None  # Original project 3MF from slicer

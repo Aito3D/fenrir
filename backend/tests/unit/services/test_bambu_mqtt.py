@@ -5845,7 +5845,8 @@ class TestPrintRunningObservedCallback:
     def test_payload_shape_matches_print_start(self, mqtt_client):
         """The payload shape must mirror on_print_start so main.py's
         consumer can reuse the same dict fields (filename / subtask_name /
-        remaining_time / raw_data / ams_mapping). Test pins the keys."""
+        remaining_time / raw_data / ams_mapping / print_md5). Test pins
+        the keys."""
         running_observed_calls: list[dict] = []
         mqtt_client.on_print_running_observed = lambda data: running_observed_calls.append(data)
         mqtt_client._was_running = False
@@ -5870,6 +5871,7 @@ class TestPrintRunningObservedCallback:
             "remaining_time",
             "raw_data",
             "ams_mapping",
+            "print_md5",
         }
 
 
