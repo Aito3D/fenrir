@@ -26,6 +26,8 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@Praxeis](https://github.com/Praxeis)
 - [@jmclaren7](https://github.com/jmclaren7)
 - [@RoBoT24-web](https://github.com/RoBoT24-web)
+- [@Rayvenhaus](https://github.com/Rayvenhaus)
+- [@TheUltimateC0der](https://github.com/TheUltimateC0der)
 
 ## Supporters ($15/mo+)
 
@@ -34,6 +36,7 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@sixfootseven](https://github.com/sixfootseven)
 - [@MethodicalMartian](https://github.com/MethodicalMartian)
 - [@brianharwell](https://github.com/brianharwell)
+- [@shosier01](https://github.com/shosier01)
 
 ## Backers ($5/mo+)
 
@@ -57,6 +60,12 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@boernie](https://github.com/boernie)
 - [@qoatzelcoat](https://github.com/qoatzelcoat)
 - [@Sanaki](https://github.com/Sanaki)
+- [@jlofshult](https://github.com/jlofshult)
+- [@TriadX1](https://github.com/TriadX1)
+- [@hazzardr](https://github.com/hazzardr)
+- [@Shihchiun](https://github.com/Shihchiun)
+- [@kycrna](https://github.com/kycrna)
+
 ---
 
 ## One-time and historical supporters

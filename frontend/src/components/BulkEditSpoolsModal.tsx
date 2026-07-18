@@ -298,7 +298,7 @@ export function BulkEditSpoolsModal({
             />
           </div>
           {isInvalid && (
-            <p className="mt-1 text-xs text-red-400">{t('inventory.bulk.invalidHex')}</p>
+            <p className="mt-1 text-xs text-red-600 dark:text-red-400">{t('inventory.bulk.invalidHex')}</p>
           )}
         </div>
       );

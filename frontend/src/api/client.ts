@@ -1061,6 +1061,8 @@ export interface APIKey {
   can_manage_library: boolean;
   can_manage_inventory: boolean;
   can_manage_maintenance: boolean;
+  can_manage_archives: boolean;
+  can_manage_projects: boolean;
   can_access_cloud: boolean;
   can_update_energy_cost: boolean;
   printer_ids: number[] | null;
@@ -1078,6 +1080,8 @@ export interface APIKeyCreate {
   can_manage_library?: boolean;
   can_manage_inventory?: boolean;
   can_manage_maintenance?: boolean;
+  can_manage_archives?: boolean;
+  can_manage_projects?: boolean;
   can_access_cloud?: boolean;
   can_update_energy_cost?: boolean;
   printer_ids?: number[] | null;
@@ -1096,6 +1100,8 @@ export interface APIKeyUpdate {
   can_manage_library?: boolean;
   can_manage_inventory?: boolean;
   can_manage_maintenance?: boolean;
+  can_manage_archives?: boolean;
+  can_manage_projects?: boolean;
   can_access_cloud?: boolean;
   can_update_energy_cost?: boolean;
   printer_ids?: number[] | null;
@@ -5484,7 +5490,7 @@ export const api = {
   // ── Spool label printing (#809) ──────────────────────────────────────────
   // Both endpoints return application/pdf. Frontend opens the resulting Blob
   // in a new tab so the user can print or save from the browser's PDF viewer.
-  printSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate }): Promise<Blob> => {
+  printSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate; monochrome?: boolean }): Promise<Blob> => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
     const response = await fetch(`${API_BASE}/inventory/labels`, {
@@ -5498,7 +5504,7 @@ export const api = {
     }
     return response.blob();
   },
-  printSpoolmanSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate }): Promise<Blob> => {
+  printSpoolmanSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate; monochrome?: boolean }): Promise<Blob> => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
     const response = await fetch(`${API_BASE}/spoolman/labels`, {

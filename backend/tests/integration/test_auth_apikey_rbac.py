@@ -158,6 +158,15 @@ class TestApiKeyDenylistIntegrity:
             Permission.PRINTERS_READ,
             Permission.PRINTERS_CONTROL,
             Permission.ARCHIVES_READ,
+            # #1888: archive delete/update moved off the denylist to the
+            # can_manage_archives allowlist scope; must not be denied.
+            Permission.ARCHIVES_DELETE_ALL,
+            Permission.ARCHIVES_UPDATE_ALL,
+            # #1893: project CRUD moved off the denylist to the
+            # can_manage_projects allowlist scope; must not be denied.
+            Permission.PROJECTS_CREATE,
+            Permission.PROJECTS_UPDATE,
+            Permission.PROJECTS_DELETE,
             # SpoolBuddy kiosk reads settings (e.g. language) via API key — must stay allowed.
             Permission.SETTINGS_READ,
         }
@@ -216,6 +225,8 @@ class TestApiKeyScopeAllowlist:
             "can_manage_library",
             "can_manage_inventory",
             "can_manage_maintenance",
+            "can_manage_archives",
+            "can_manage_projects",
             "can_access_cloud",
         }
         used_flags = set(_APIKEY_SCOPE_BY_PERMISSION.values())
@@ -243,6 +254,8 @@ class TestApiKeyScopeAllowlist:
             "can_manage_library",
             "can_manage_inventory",
             "can_manage_maintenance",
+            "can_manage_archives",
+            "can_manage_projects",
             "can_access_cloud",
         ],
     )
@@ -271,6 +284,8 @@ class _FakeApiKey:
         can_manage_library=False,
         can_manage_inventory=False,
         can_manage_maintenance=False,
+        can_manage_archives=False,
+        can_manage_projects=False,
     ):
         self.can_read_status = can_read_status
         self.can_queue = can_queue
@@ -278,6 +293,8 @@ class _FakeApiKey:
         self.can_manage_library = can_manage_library
         self.can_manage_inventory = can_manage_inventory
         self.can_manage_maintenance = can_manage_maintenance
+        self.can_manage_archives = can_manage_archives
+        self.can_manage_projects = can_manage_projects
 
 
 class TestCheckApiKeyPermissionsMatrix:
@@ -324,6 +341,22 @@ class TestCheckApiKeyPermissionsMatrix:
         ("MAINTENANCE_CREATE", "can_manage_maintenance", "assign maintenance type to printer"),
         ("MAINTENANCE_UPDATE", "can_manage_maintenance", "log maintenance / edit interval"),
         ("MAINTENANCE_DELETE", "can_manage_maintenance", "remove custom maintenance item"),
+        # can_manage_archives (#1888) — prune print history via API key. OWN and
+        # ALL ownership variants both fold into the same scope (API keys have no
+        # per-row ownership identity), matching the can_manage_library shape.
+        # ARCHIVES_PURGE stays admin-only (see _ADMIN_CASES).
+        ("ARCHIVES_CREATE", "can_manage_archives", "create an archive"),
+        ("ARCHIVES_UPDATE_OWN", "can_manage_archives", "edit own archive"),
+        ("ARCHIVES_UPDATE_ALL", "can_manage_archives", "edit any archive"),
+        ("ARCHIVES_DELETE_OWN", "can_manage_archives", "delete own archive"),
+        ("ARCHIVES_DELETE_ALL", "can_manage_archives", "delete any archive"),
+        # can_manage_projects (#1893) — project CRUD + membership via API key.
+        # Projects gate on plain PROJECTS_* (no OWN/ALL split), so the three
+        # permissions map directly to the one scope. PROJECTS_READ stays under
+        # can_read_status. Membership edits (add-archives) gate on PROJECTS_UPDATE.
+        ("PROJECTS_CREATE", "can_manage_projects", "create a project"),
+        ("PROJECTS_UPDATE", "can_manage_projects", "update a project / add archives"),
+        ("PROJECTS_DELETE", "can_manage_projects", "delete a project"),
     ]
 
     _ADMIN_CASES = [
@@ -339,6 +372,10 @@ class TestCheckApiKeyPermissionsMatrix:
         # LIBRARY_DELETE_ALL / LIBRARY_UPDATE_ALL moved to can_manage_library
         # under #1832 — covered by the _SCOPE_CASES matrix above.
         "LIBRARY_PURGE",
+        # ARCHIVES_PURGE stays admin-only even though the rest of archive
+        # management moved to can_manage_archives under #1888 — it drops the
+        # print's stats contribution, mirroring LIBRARY_PURGE.
+        "ARCHIVES_PURGE",
         "DISCOVERY_SCAN",
     ]
 
@@ -370,6 +407,8 @@ class TestCheckApiKeyPermissionsMatrix:
                 "can_manage_library",
                 "can_manage_inventory",
                 "can_manage_maintenance",
+                "can_manage_archives",
+                "can_manage_projects",
             )
             if f != required_flag
         }

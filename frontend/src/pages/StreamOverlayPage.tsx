@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Layers, Clock, Timer, Printer } from 'lucide-react';
-import { api, getAuthToken } from '../api/client';
+import { api, ApiError } from '../api/client';
 import type { PrinterStatus } from '../api/client';
 import { useMjpegStream } from '../hooks/useMjpegStream';
 import { formatDuration, formatETA, type TimeFormat } from '../utils/date';
@@ -145,18 +145,35 @@ export function StreamOverlayPage() {
   useEffect(() => {
     if (!id) return;
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let wsUrl = `${protocol}//${window.location.host}/api/v1/ws`;
-    const authToken = getAuthToken();
-    if (authToken) {
-      wsUrl += `?token=${encodeURIComponent(authToken)}`;
-    }
     let ws: WebSocket | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-    let alive = true;
+    let cancelled = false;
 
-    function connect() {
-      if (!alive) return;
+    // GHSA-r2qv follow-up: mint a ws-token before connecting. Uses
+    // api.getWebSocketToken so the JWT Authorization header rides along
+    // (raw fetch+credentials:'include' would miss it — Bambuddy uses
+    // Bearer tokens, not cookies, for JWT auth). Auth-disabled deployments
+    // succeed even without a token. Each reconnect attempt re-runs the whole
+    // mint+connect flow so it never retries with a stale token, and a
+    // 401/403 stops the loop entirely (auth decision — a tokenless socket
+    // would just be closed 4401; REST polling keeps the overlay fresh).
+    async function connect() {
+      if (cancelled) return;
+      let token: string | undefined;
+      try {
+        const resp = await api.getWebSocketToken();
+        token = resp.token;
+      } catch (err) {
+        // A network/5xx error is not auth: fall through and try anyway
+        // (auth-disabled deployments land here with no token and connect fine).
+        const status = err instanceof ApiError ? err.status : 0;
+        if (status === 401 || status === 403) return;
+      }
+      if (cancelled) return;
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+      const wsUrl = `${protocol}//${window.location.host}/api/v1/ws${tokenParam}`;
       ws = new WebSocket(wsUrl);
 
       ws.onmessage = (event) => {
@@ -175,7 +192,7 @@ export function StreamOverlayPage() {
       };
 
       ws.onclose = () => {
-        if (alive) {
+        if (!cancelled) {
           reconnectTimeout = setTimeout(connect, 3000);
         }
       };
@@ -184,7 +201,7 @@ export function StreamOverlayPage() {
     connect();
 
     return () => {
-      alive = false;
+      cancelled = true;
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       ws?.close();
     };

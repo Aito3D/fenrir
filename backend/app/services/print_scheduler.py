@@ -165,7 +165,6 @@ class PrintScheduler:
         self._check_interval = 30  # seconds
         self._power_on_wait_time = 180  # seconds to wait for printer after power on (3 min)
         self._power_on_check_interval = 10  # seconds between connection checks
-        self._min_drying_seconds = 1800  # 30 minutes minimum before humidity re-check can stop drying
         # Track which printers are currently auto-drying (printer_id -> start timestamp)
         self._drying_in_progress: dict[int, float] = {}
         # Defensive in-memory dispatch hold (#1157): a printer that just received
@@ -237,7 +236,13 @@ class PrintScheduler:
 
             # Read dispatch-relevant settings once per queue check — a consistent
             # snapshot for the whole pass instead of per-item re-reads mid-loop.
-            require_plate_clear = await self._get_bool_setting(db, "require_plate_clear", default=True)
+            # require_plate_clear default MUST be False to match the schema
+            # (SettingsSchema.require_plate_clear defaults False) and the frontend
+            # (toggle + card badge both treat a missing value as off). When no
+            # settings row exists, a True default here re-enabled the plate-clear
+            # gate the UI showed as disabled, blocking dispatch to FINISH-state
+            # printers forever with no UI path to clear it (#1865).
+            require_plate_clear = await self._get_bool_setting(db, "require_plate_clear", default=False)
             block_for_drying = await self._get_bool_setting(db, "queue_drying_block")
             no_auto_stop = await self._get_bool_setting(db, "drying_no_auto_stop")
             print_drying_enabled = await self._get_bool_setting(db, "print_drying_enabled")
@@ -928,6 +933,14 @@ class PrintScheduler:
             logger.warning("Cannot compute AMS mapping: printer %s status unavailable", printer_id)
             return None
 
+        # Filament Track Switch (FTS): when installed it routes any AMS slot to
+        # either extruder, so the per-nozzle hard filter below must NOT apply.
+        # Otherwise a print on one nozzle can't use a spool physically loaded in
+        # an AMS on the *other* nozzle, and the matcher falls through to a
+        # same-type wrong-colour spool on the target nozzle — the H2C + FTS
+        # wrong-filament bug (#2186). Mirrors the frontend skip added for #1162.
+        fts_installed = bool(getattr(getattr(status, "fila_switch", None), "installed", False))
+
         # Get filament requirements from source file
         filament_reqs = await self._get_filament_requirements(db, item)
         if not filament_reqs:
@@ -1002,7 +1015,7 @@ class PrintScheduler:
 
         # Compute mapping: match required filaments to available slots
         return self._match_filaments_to_slots(
-            filament_reqs, loaded_filaments, prefer_lowest, inventory_remain_overrides
+            filament_reqs, loaded_filaments, prefer_lowest, inventory_remain_overrides, fts_installed
         )
 
     def _build_override_direct_mapping(self, force_overrides: list[dict], status) -> list[int] | None:
@@ -1312,6 +1325,7 @@ class PrintScheduler:
         loaded: list[dict],
         prefer_lowest: bool = False,
         inventory_remain_overrides: dict[int, float] | None = None,
+        fts_installed: bool = False,
     ) -> list[int] | None:
         """Match required filaments to loaded filaments and build AMS mapping.
 
@@ -1354,8 +1368,11 @@ class PrintScheduler:
             # Nozzle-aware filtering: restrict to trays on the correct nozzle.
             # Hard filter — cross-nozzle assignment causes print failures
             # ("position of left hotend is abnormal"), so never fall back.
+            # Skipped when an FTS is installed: it routes any AMS slot to either
+            # extruder, so restricting to one nozzle would wrongly exclude the
+            # correct spool sitting in the other nozzle's AMS (#2186).
             req_nozzle_id = req.get("nozzle_id")
-            if req_nozzle_id is not None:
+            if req_nozzle_id is not None and not fts_installed:
                 available = [f for f in available if f.get("extruder_id") == req_nozzle_id]
 
             # Sort by remaining filament (ascending) so lowest-remain spool wins .find().
@@ -1867,38 +1884,30 @@ class PrintScheduler:
                             humidity = int(h_idx)
                         except (ValueError, TypeError):
                             pass
-                # Already drying — check if humidity dropped below threshold (with minimum drying time)
+                # Already drying — let it run to its configured duration (#1892).
+                #
+                # We deliberately do NOT stop drying from a humidity re-check here.
+                # Relative humidity drops steeply in heated air, so the AMS sensor
+                # reads ~15-20% within minutes of the dryer starting even while the
+                # filament is still saturated. A humidity-based early-stop therefore
+                # always fires at the minimum-time floor, truncating both user-started
+                # manual cycles and Bambuddy's own preset-duration dries to ~30 min
+                # (#1892). The firmware stops when the configured duration elapses;
+                # scheduling stops (print takes priority, queue no longer needs
+                # drying) are handled separately via _stop_drying() and gated by the
+                # drying_no_auto_stop (never-auto-stop) setting.
                 if dry_time > 0:
                     if pid not in self._drying_in_progress:
-                        # Drying we didn't start (manual or from before restart) — track but don't stop
+                        # Drying we didn't start (manual or from before restart) —
+                        # track it so scheduling stops still apply; never auto-stop it.
                         self._drying_in_progress[pid] = time.monotonic()
-                    started_at = self._drying_in_progress[pid]
-                    elapsed = time.monotonic() - started_at
-                    if (
-                        not no_auto_stop
-                        and humidity is not None
-                        and humidity <= humidity_threshold
-                        and elapsed >= self._min_drying_seconds
-                    ):
-                        logger.info(
-                            "Auto-drying: printer %d AMS %d — humidity %d%% <= threshold %d%% after %dm, stopping drying",
-                            pid,
-                            ams_id,
-                            humidity,
-                            humidity_threshold,
-                            int(elapsed / 60),
-                        )
-                        printer_manager.send_drying_command(pid, ams_id, temp=0, duration=0, mode=0)
-                    else:
-                        logger.debug(
-                            "Auto-drying: printer %d AMS %d — drying (%dm left, humidity %s%%, elapsed %dm/%dm min)",
-                            pid,
-                            ams_id,
-                            dry_time,
-                            humidity,
-                            int(elapsed / 60),
-                            self._min_drying_seconds // 60,
-                        )
+                    logger.debug(
+                        "Auto-drying: printer %d AMS %d — drying (%dm left, humidity %s%%), letting it run",
+                        pid,
+                        ams_id,
+                        dry_time,
+                        humidity,
+                    )
                     continue
 
                 # Humidity below threshold — no need to start drying
@@ -2381,30 +2390,20 @@ class PrintScheduler:
         return prev_item.status in ("completed", "cancelled")
 
     async def _power_off_if_needed(self, db: AsyncSession, item: PrintQueueItem):
-        """Power off printer if auto_off_after is enabled (waits for cooldown)."""
+        """Schedule power-off if the queue item enabled auto_off_after.
+
+        Delegates to the smart-plug manager so the off honours each plug's
+        configured strategy (time delay or temperature threshold), is cancelled
+        if the printer starts printing again, and never cuts power on a loaded
+        print (#1890). Previously this hardcoded a 50°C / 600s cooldown wait and
+        powered off on the timeout regardless of print state.
+        """
         if not item.auto_off_after:
             return
-
-        plugs = await self._get_smart_plugs(db, item.printer_id)
-        plug_ids = [p.id for p in plugs if p.enabled]
-        if plug_ids:
-            logger.info("Auto-off: Waiting for printer %s to cool down before power off...", item.printer_id)
-            # Wait for cooldown (up to 10 minutes)
-            await printer_manager.wait_for_cooldown(item.printer_id, target_temp=50.0, timeout=600)
-            # Re-fetch plugs in a fresh session after the long cooldown wait
-            async with async_session() as new_db:
-                for plug_id in plug_ids:
-                    try:
-                        result = await new_db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
-                        plug = result.scalar_one_or_none()
-                        if plug and plug.enabled:
-                            logger.info("Auto-off: Powering off plug '%s' for printer %s", plug.name, item.printer_id)
-                            service = await smart_plug_manager.get_service_for_plug(plug, new_db)
-                            await service.turn_off(plug)
-                    except Exception as e:
-                        logger.warning(
-                            "Auto-off: Failed to power off plug %s for printer %s: %s", plug_id, item.printer_id, e
-                        )
+        try:
+            await smart_plug_manager.schedule_off_after_queue_job(item.printer_id, db)
+        except Exception as e:
+            logger.warning("Auto-off: Failed to schedule power-off for printer %s: %s", item.printer_id, e)
 
     async def _get_job_name(self, db: AsyncSession, item: PrintQueueItem) -> str:
         """Get a human-readable name for a queue item."""

@@ -335,7 +335,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
             className="p-1 hover:bg-red-500/20 rounded"
             title={t('common.close')}
           >
-            <X className="w-3.5 h-3.5 text-bambu-gray hover:text-red-400" />
+            <X className="w-3.5 h-3.5 text-bambu-gray hover:text-red-600 dark:hover:text-red-400" />
           </button>
         </div>
       </div>
