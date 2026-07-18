@@ -16,7 +16,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse as FastAPIFileResponse
-from sqlalchemy import distinct, func, select
+from sqlalchemy import distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -32,6 +32,7 @@ from backend.app.core.permissions import Permission
 from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFileTag, LibraryFolder, prune_empty_library_tags
+from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
 from backend.app.models.user import User
@@ -50,6 +51,8 @@ from backend.app.schemas.library import (
     DuplicateCheckItem,
     ExternalFolderCreate,
     FileDuplicate,
+    FileHistoryEvent,
+    FileHistoryResponse,
     FileListResponse,
     FileMoveRequest,
     FileResponse as FileResponseSchema,
@@ -4322,6 +4325,151 @@ async def get_file(
         filament_used_grams=filament_grams,
         filament_type=filament_type,
         sliced_for_model=sliced_for_model,
+    )
+
+
+@router.get("/files/{file_id}/history", response_model=FileHistoryResponse)
+async def get_file_history(
+    file_id: int,
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
+):
+    """History timeline for a library file: provenance plus every known print run.
+
+    Runs are matched through content hashes — every archive whose ``content_hash``
+    equals the file's ``file_hash`` is a print of this file, and the print-log
+    entries hanging off those archives are the individual runs. Archives with no
+    log entries (pre-print-log data, or after the user cleared the log) fall back
+    to one event built from the archive itself so the timeline stays complete.
+    Pending/printing queue items referencing the file appear as "queued" events.
+
+    Visibility is gated on the file (same ownership rules as GET /files/{id}):
+    the history is an attribute of the file, so whoever can see the file can see
+    when it was printed.
+    """
+    user, can_read_all = auth_result
+    result = await db.execute(
+        LibraryFile.active().options(selectinload(LibraryFile.created_by)).where(LibraryFile.id == file_id)
+    )
+    file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
+
+    events: list[FileHistoryEvent] = []
+    live_archive_ids: set[int] = set()
+
+    if file.file_hash:
+        arch_result = await db.execute(
+            select(PrintArchive)
+            .options(selectinload(PrintArchive.printer), selectinload(PrintArchive.created_by))
+            .where(PrintArchive.content_hash == file.file_hash)
+        )
+        archives = arch_result.scalars().all()
+        # Trashed archives still prove a run happened; they just must not
+        # produce dead-end links in the UI, so their archive_id is nulled.
+        live_archive_ids = {a.id for a in archives if a.deleted_at is None}
+        logged_archive_ids: set[int] = set()
+        if archives:
+            log_result = await db.execute(
+                select(PrintLogEntry).where(PrintLogEntry.archive_id.in_([a.id for a in archives]))
+            )
+            for entry in log_result.scalars().all():
+                if entry.archive_id is not None:
+                    logged_archive_ids.add(entry.archive_id)
+                events.append(
+                    FileHistoryEvent(
+                        type="print",
+                        status=entry.status,
+                        archive_id=entry.archive_id if entry.archive_id in live_archive_ids else None,
+                        printer_name=entry.printer_name,
+                        started_at=entry.started_at,
+                        completed_at=entry.completed_at,
+                        duration_seconds=entry.duration_seconds,
+                        filament_used_grams=entry.filament_used_grams,
+                        cost=entry.cost,
+                        failure_reason=entry.failure_reason,
+                        created_by_username=entry.created_by_username,
+                        event_at=entry.completed_at or entry.started_at or entry.created_at,
+                    )
+                )
+        for archive in archives:
+            if archive.id in logged_archive_ids or archive.deleted_at is not None:
+                continue
+            events.append(
+                FileHistoryEvent(
+                    type="print",
+                    status=archive.status,
+                    archive_id=archive.id,
+                    printer_name=archive.printer.name if archive.printer else None,
+                    started_at=archive.started_at,
+                    completed_at=archive.completed_at,
+                    duration_seconds=archive.print_time_seconds,
+                    filament_used_grams=archive.filament_used_grams,
+                    cost=archive.cost,
+                    failure_reason=archive.failure_reason,
+                    created_by_username=archive.created_by.username if archive.created_by else None,
+                    event_at=archive.completed_at or archive.started_at or archive.created_at,
+                )
+            )
+
+    # Upcoming runs: queue items pointing at this file directly, or reprints of
+    # one of its (live) archives.
+    queue_link = [PrintQueueItem.library_file_id == file_id]
+    if live_archive_ids:
+        queue_link.append(PrintQueueItem.archive_id.in_(live_archive_ids))
+    queue_result = await db.execute(
+        select(PrintQueueItem)
+        .options(selectinload(PrintQueueItem.printer), selectinload(PrintQueueItem.created_by))
+        .where(PrintQueueItem.status.in_(["pending", "printing"]), or_(*queue_link))
+    )
+    for item in queue_result.scalars().all():
+        events.append(
+            FileHistoryEvent(
+                type="queued",
+                status=item.status,
+                archive_id=None,
+                printer_name=item.printer.name if item.printer else None,
+                started_at=None,
+                completed_at=None,
+                duration_seconds=item.print_time_seconds,
+                filament_used_grams=None,
+                cost=None,
+                failure_reason=None,
+                created_by_username=item.created_by.username if item.created_by else None,
+                event_at=item.scheduled_time or item.created_at,
+            )
+        )
+
+    # Queued events first (printing above pending), then prints newest-first.
+    _queue_rank = {"printing": 0, "pending": 1}
+    events.sort(
+        key=lambda e: (
+            0 if e.type == "queued" else 1,
+            _queue_rank.get(e.status, 2) if e.type == "queued" else 0,
+            -(e.event_at.timestamp() if e.event_at else 0.0),
+        )
+    )
+
+    prints = [e for e in events if e.type == "print"]
+    filament_values = [e.filament_used_grams for e in prints if e.filament_used_grams is not None]
+    completed_times = [e.event_at for e in prints if e.status == "completed" and e.event_at is not None]
+
+    return FileHistoryResponse(
+        file_id=file.id,
+        filename=file.filename,
+        added_at=file.created_at,
+        added_by_username=file.created_by.username if file.created_by else None,
+        source_type=file.source_type,
+        source_url=file.source_url,
+        history_available=file.file_hash is not None,
+        total_prints=len(prints),
+        success_count=sum(1 for e in prints if e.status == "completed"),
+        total_filament_grams=round(sum(filament_values), 1) if filament_values else None,
+        last_printed_at=max(completed_times) if completed_times else file.last_printed_at,
+        events=events,
     )
 
 

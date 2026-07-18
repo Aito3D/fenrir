@@ -6250,6 +6250,7 @@ export const api = {
       body: JSON.stringify({ file_ids: fileIds, tag_ids: tagIds, action }),
     }),
   getLibraryFile: (id: number) => request<LibraryFile>(`/library/files/${id}`),
+  getLibraryFileHistory: (id: number) => request<LibraryFileHistory>(`/library/files/${id}/history`),
   uploadLibraryFile: async (
     file: File,
     folderId?: number | null,
@@ -6934,6 +6935,37 @@ export interface LibraryFileListItem {
   // legacy code path (or mock) that constructs a LibraryFileListItem without
   // it doesn't crash the renderer. Read sites use `file.tags ?? []`.
   tags?: LibraryTagSummary[];
+}
+
+// File history timeline (library file provenance + print runs)
+export interface LibraryFileHistoryEvent {
+  type: 'print' | 'queued';
+  status: string;
+  archive_id: number | null;
+  printer_name: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_seconds: number | null;
+  filament_used_grams: number | null;
+  cost: number | null;
+  failure_reason: string | null;
+  created_by_username: string | null;
+  event_at: string | null;
+}
+
+export interface LibraryFileHistory {
+  file_id: number;
+  filename: string;
+  added_at: string;
+  added_by_username: string | null;
+  source_type: string | null;
+  source_url: string | null;
+  history_available: boolean;
+  total_prints: number;
+  success_count: number;
+  total_filament_grams: number | null;
+  last_printed_at: string | null;
+  events: LibraryFileHistoryEvent[];
 }
 
 // Library tag catalog (#1268)

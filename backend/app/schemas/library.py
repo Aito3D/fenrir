@@ -433,3 +433,47 @@ class BatchThumbnailResponse(BaseModel):
     succeeded: int
     failed: int
     results: list[BatchThumbnailResult]
+
+
+# ============ File History (#file-history) ============
+
+
+class FileHistoryEvent(BaseModel):
+    """One row in a library file's history timeline.
+
+    ``type`` is "print" for finished runs (from the print log, falling back to
+    the archive itself when no log entry exists) and "queued" for pending or
+    currently-printing queue items referencing the file.
+    """
+
+    type: str  # "print" | "queued"
+    status: str  # print: completed/failed/stopped/cancelled/skipped — queued: pending/printing
+    archive_id: int | None = None  # None when the archive is gone/trashed (no dead-end links)
+    printer_name: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    duration_seconds: int | None = None
+    filament_used_grams: float | None = None
+    cost: float | None = None
+    failure_reason: str | None = None
+    created_by_username: str | None = None
+    event_at: datetime | None = None  # timestamp used for ordering/display
+
+
+class FileHistoryResponse(BaseModel):
+    """Full history of a library file: provenance plus every known print run."""
+
+    file_id: int
+    filename: str
+    added_at: datetime
+    added_by_username: str | None = None
+    source_type: str | None = None
+    source_url: str | None = None
+    # False when the file has no content hash (external files) — print
+    # matching is impossible, only the "added" provenance is meaningful.
+    history_available: bool
+    total_prints: int
+    success_count: int
+    total_filament_grams: float | None = None
+    last_printed_at: datetime | None = None
+    events: list[FileHistoryEvent]  # newest first; queued entries first

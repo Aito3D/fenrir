@@ -43,6 +43,7 @@ import {
   Lock,
   FolderSymlink,
   Tag as TagIcon,
+  History,
 } from 'lucide-react';
 import { api } from '../api/client';
 import type {
@@ -65,6 +66,7 @@ import { BulkTagsPickerModal } from '../components/BulkTagsPickerModal';
 import { FileUploadModal } from '../components/FileUploadModal';
 import { FolderReadmePanel } from '../components/FolderReadmePanel';
 import { LibraryTagsModal } from '../components/LibraryTagsModal';
+import { FileHistoryModal } from '../components/FileHistoryModal';
 import { PurgeOldFilesModal } from '../components/PurgeOldFilesModal';
 import { TagFilterRail } from '../components/TagFilterRail';
 import { libraryTagsQueryKey } from '../utils/libraryTagsQuery';
@@ -741,6 +743,7 @@ interface FileCardProps {
   onGenerateThumbnail?: (file: LibraryFileListItem) => void;
   onManageTags?: (file: LibraryFileListItem) => void;
   onTagClick?: (tagId: number) => void;
+  onHistory?: (file: LibraryFileListItem) => void;
   thumbnailVersion?: number;
   hasPermission: (permission: Permission) => boolean;
   canModify: (resource: 'queue' | 'archives' | 'library', action: 'update' | 'delete' | 'reprint', createdById: number | null | undefined) => boolean;
@@ -748,7 +751,7 @@ interface FileCardProps {
   t: TFunction;
 }
 
-function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onRunPipeline, onPrint, onSlice, useSlicerApi, onPreview3d, onRename, onGenerateThumbnail, onManageTags, onTagClick, thumbnailVersion, hasPermission, canModify, authEnabled, t }: FileCardProps) {
+function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onRunPipeline, onPrint, onSlice, useSlicerApi, onPreview3d, onRename, onGenerateThumbnail, onManageTags, onTagClick, onHistory, thumbnailVersion, hasPermission, canModify, authEnabled, t }: FileCardProps) {
   const [showActions, setShowActions] = useState(false);
 
   return (
@@ -818,7 +821,21 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
         )}
         {file.print_count > 0 && (
           <div className="mt-1 text-xs text-bambu-green">
-            {t('fileManager.printedCount', { count: file.print_count })}
+            {/* Second entry point into the history timeline — the label is the
+                collapsed version of exactly what the modal expands. */}
+            {onHistory && hasPermission('library:read') ? (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onHistory(file); }}
+                className="hover:underline"
+                aria-label={t('fileManager.fileHistory.viewHistoryAria')}
+                title={t('fileManager.fileHistory.viewHistoryAria')}
+              >
+                {t('fileManager.printedCount', { count: file.print_count })}
+              </button>
+            ) : (
+              t('fileManager.printedCount', { count: file.print_count })
+            )}
           </div>
         )}
         {authEnabled && file.created_by_username && (
@@ -912,6 +929,19 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
                 >
                   <Box className="w-3.5 h-3.5" />
                   3D Preview
+                </button>
+              )}
+              {onHistory && (
+                <button
+                  className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
+                    hasPermission('library:read') ? 'text-white hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
+                  }`}
+                  onClick={() => { if (hasPermission('library:read')) { onHistory(file); setShowActions(false); } }}
+                  disabled={!hasPermission('library:read')}
+                  title={!hasPermission('library:read') ? t('fileManager.fileHistory.noPermission') : undefined}
+                >
+                  <History className="w-3.5 h-3.5" />
+                  {t('fileManager.fileHistory.menuLabel')}
                 </button>
               )}
               <button
@@ -1045,6 +1075,7 @@ export function FileManagerPage() {
   const [renameItem, setRenameItem] = useState<{ type: 'file' | 'folder'; id: number; name: string } | null>(null);
   const [thumbnailVersions, setThumbnailVersions] = useState<Record<number, number>>({});
   const [viewerFile, setViewerFile] = useState<LibraryFileListItem | null>(null);
+  const [historyFile, setHistoryFile] = useState<LibraryFileListItem | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
     return (localStorage.getItem('library-view-mode') as 'grid' | 'list') || 'grid';
   });
@@ -2322,6 +2353,7 @@ export function FileManagerPage() {
                     onGenerateThumbnail={(f) => singleThumbnailMutation.mutate(f.id)}
                     onManageTags={(f) => setSingleTagFile(f)}
                     onTagClick={toggleTagFilter}
+                    onHistory={setHistoryFile}
                     thumbnailVersion={thumbnailVersions[file.id]}
                     hasPermission={hasPermission}
                     canModify={canModify}
@@ -2442,8 +2474,26 @@ export function FileManagerPage() {
                     </div>
                     {/* Size */}
                     <div className="text-sm text-bambu-gray">{formatFileSize(file.file_size)}</div>
-                    {/* Prints */}
-                    <div className="text-sm text-bambu-gray">{file.print_count > 0 ? `${file.print_count}x` : '-'}</div>
+                    {/* Prints — clickable to open the file's history timeline
+                        (the list-view icon strip is at capacity, so the count
+                        itself is the entry point here). */}
+                    <div className="text-sm text-bambu-gray" onClick={(e) => e.stopPropagation()}>
+                      {file.print_count > 0 && hasPermission('library:read') ? (
+                        <button
+                          type="button"
+                          onClick={() => setHistoryFile(file)}
+                          className="text-bambu-green hover:underline"
+                          aria-label={t('fileManager.fileHistory.viewHistoryAria')}
+                          title={t('fileManager.fileHistory.viewHistoryAria')}
+                        >
+                          {file.print_count}x
+                        </button>
+                      ) : file.print_count > 0 ? (
+                        `${file.print_count}x`
+                      ) : (
+                        '-'
+                      )}
+                    </div>
                     {/* Tags (#1268) — clickable chips push into the active
                         filter; minmax(0,200px) on the column lets the cell
                         shrink/wrap on narrow viewports without pushing the
@@ -2728,6 +2778,14 @@ export function FileManagerPage() {
         <RunWithPipelineModal
           source={{ kind: 'libraryFile', id: runPipelineFile.id, filename: runPipelineFile.filename }}
           onClose={() => setRunPipelineFile(null)}
+        />
+      )}
+
+      {historyFile && (
+        <FileHistoryModal
+          fileId={historyFile.id}
+          filename={historyFile.filename}
+          onClose={() => setHistoryFile(null)}
         />
       )}
 
