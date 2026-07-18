@@ -6975,6 +6975,8 @@ export default {
     costsSoFar: '累计成本',
     totalHT: '合计（不含税）',
     totalTTC: '合计（含税）',
+    byPrinter: '按打印机比价',
+    byPrinterHint: '使用 {{name}} 的价格 — 点击选择该打印机',
     marge: '利润',
     marginPct: '利润率',
     perUnit: '每件',

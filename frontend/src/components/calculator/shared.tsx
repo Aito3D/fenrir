@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatMoney, formatPct } from '../../utils/pricing';
+import { computeDelta, type StatDelta } from '../stats/deltas';
 
 export const thCls =
   'px-3 py-2 text-right text-[11px] uppercase tracking-wide font-medium text-bambu-gray whitespace-nowrap';
@@ -75,6 +76,75 @@ export function SegmentLegend({ segments, total }: { segments: Segment[]; total?
           )}
         </span>
       ))}
+    </div>
+  );
+}
+
+// ---- Per-printer price comparison chips -----------------------------------
+
+export interface PrinterComparisonEntry {
+  id: number;
+  name: string;
+  total: number;
+}
+
+// Same good/bad/neutral → theme-token mapping DeltaBadge uses; kept local
+// because the chip label format differs (signed %, not arrows).
+const DELTA_TONE_CLASS = {
+  good: 'text-status-ok',
+  bad: 'text-status-error',
+  neutral: 'text-bambu-gray',
+} as const;
+
+/** "+12%" / "−3.4%" below 10%, "±0%" when flat. */
+function signedDeltaLabel(delta: StatDelta): string {
+  if (delta.direction === 'flat') return '±0%';
+  const abs = Math.abs(delta.pct);
+  return `${delta.pct > 0 ? '+' : '−'}${abs >= 10 ? Math.round(abs) : abs.toFixed(1)}%`;
+}
+
+/**
+ * The same job priced on every other configured printer, so the operator sees
+ * the machine cost delta at a glance. The selected printer is omitted (its
+ * price IS the total shown right below); each chip shows that machine's price
+ * plus the % delta vs the current selection — green when cheaper, red when
+ * pricier. Clicking a chip re-prices with that printer.
+ */
+export function PrinterComparisonChips({
+  comparison,
+  selectedPrinterId,
+  baseTotal,
+  currency,
+  onSelect,
+}: {
+  comparison: PrinterComparisonEntry[];
+  selectedPrinterId: number | null;
+  baseTotal: number;
+  currency: string;
+  onSelect: (id: number) => void;
+}) {
+  const { t } = useTranslation();
+  const others = comparison.filter((p) => p.id !== selectedPrinterId);
+  if (comparison.length < 2 || others.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={t('calculator.byPrinter')}>
+      {others.map((p) => {
+        // Cheaper is good, pricier is bad — the operator is picking a machine.
+        const delta = computeDelta(p.total, baseTotal, 'more-is-bad');
+        return (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => onSelect(p.id)}
+            title={t('calculator.byPrinterHint', { name: p.name })}
+            className="inline-flex items-baseline gap-1.5 px-2 py-0.5 rounded-full border text-xs border-bambu-dark-tertiary hover:border-bambu-green/50 transition-colors"
+          >
+            <span className="text-bambu-gray truncate max-w-[9rem]">{p.name}</span>
+            <Money currency={currency} value={p.total} className="text-white" />
+            {delta && <span className={`tabular-nums ${DELTA_TONE_CLASS[delta.tone]}`}>{signedDeltaLabel(delta)}</span>}
+          </button>
+        );
+      })}
     </div>
   );
 }

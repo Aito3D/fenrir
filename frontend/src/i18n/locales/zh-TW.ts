@@ -6975,6 +6975,8 @@ export default {
     costsSoFar: '累計成本',
     totalHT: '合計（未稅）',
     totalTTC: '合計（含稅）',
+    byPrinter: '依印表機比價',
+    byPrinterHint: '使用 {{name}} 的價格 — 點擊選擇此印表機',
     marge: '利潤',
     marginPct: '利潤率',
     perUnit: '每件',

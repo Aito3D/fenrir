@@ -6917,6 +6917,8 @@ export default {
     costsSoFar: 'Toplam maliyet',
     totalHT: 'Toplam (vergisiz)',
     totalTTC: 'Toplam (vergili)',
+    byPrinter: 'Yazıcıya göre fiyat',
+    byPrinterHint: '{{name}} ile fiyat — bu yazıcıyı seçmek için tıklayın',
     marge: 'Marj',
     marginPct: 'Marj oranı',
     perUnit: 'adet başına',

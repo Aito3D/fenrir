@@ -6976,6 +6976,8 @@ export default {
     costsSoFar: 'Costi cumulati',
     totalHT: 'Totale (IVA esclusa)',
     totalTTC: 'Totale (IVA inclusa)',
+    byPrinter: 'Prezzo per stampante',
+    byPrinterHint: 'Prezzo con {{name}} — clicca per selezionare questa stampante',
     marge: 'Margine',
     marginPct: 'Margine in %',
     perUnit: 'per unità',

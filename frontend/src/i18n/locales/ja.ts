@@ -6988,6 +6988,8 @@ export default {
     costsSoFar: '累計コスト',
     totalHT: '合計（税抜）',
     totalTTC: '合計（税込）',
+    byPrinter: 'プリンター別価格',
+    byPrinterHint: '{{name}} での価格 — クリックでこのプリンターを選択',
     marge: 'マージン',
     marginPct: '利益率',
     perUnit: '1個あたり',

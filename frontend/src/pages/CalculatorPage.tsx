@@ -112,6 +112,18 @@ export function CalculatorPage() {
     return computePricing(inputs, filament, printer, defaults);
   }, [inputs, filament, printer, defaults]);
 
+  // Per-printer totals for the comparison chips above the total price — the
+  // same inputs priced against every configured printer, so the operator can
+  // see at a glance which machine is cheaper for this job.
+  const printerComparison = useMemo(() => {
+    if (!inputs || !filament || !defaults || printers.length < 2) return [];
+    return printers.map((p) => ({
+      id: p.id,
+      name: p.name,
+      total: computePricing(inputs, filament, p, defaults).total_ttc,
+    }));
+  }, [inputs, filament, printers, defaults]);
+
   const segments: Segment[] = useMemo(() => {
     if (!result) return [];
     return [
@@ -338,6 +350,9 @@ export function CalculatorPage() {
                         targetPrice={state.targetPrice}
                         onTargetPriceChange={(v) => set({ targetPrice: v })}
                         targetPriceError={errors.targetPrice}
+                        printerComparison={printerComparison}
+                        selectedPrinterId={printer?.id ?? null}
+                        onSelectPrinter={(id) => set({ printerId: id })}
                       />
                       {!easy && <CalculatorBreakdownCard result={result} segments={segments} currency={currency} />}
                       <CalculatorDiscountTable result={result} currency={currency} easy={easy} />

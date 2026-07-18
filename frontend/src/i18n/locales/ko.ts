@@ -6612,6 +6612,8 @@ export default {
     costsSoFar: '누적 비용',
     totalHT: '합계 (세전)',
     totalTTC: '합계 (세후)',
+    byPrinter: '프린터별 가격',
+    byPrinterHint: '{{name}} 가격 — 클릭하여 이 프린터 선택',
     marge: '마진',
     marginPct: '마진율',
     perUnit: '개당',

@@ -7032,6 +7032,8 @@ export default {
     costsSoFar: 'Total cost',
     totalHT: 'Total excl. tax',
     totalTTC: 'Total incl. tax',
+    byPrinter: 'Price by printer',
+    byPrinterHint: 'Price with {{name}} — click to select this printer',
     marge: 'Margin',
     marginPct: 'Margin %',
     perUnit: 'per unit',

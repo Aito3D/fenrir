@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { CalculatorPage } from '../../pages/CalculatorPage';
@@ -93,6 +93,58 @@ describe('CalculatorPage', () => {
     // Difficulty comes from the filament profile and is shown read-only
     expect(screen.getByText('150%')).toBeInTheDocument();
     expect(screen.queryByLabelText('Difficulty factor (%)')).not.toBeInTheDocument();
+  });
+
+  it('shows a per-printer price comparison above the total and switches printer on click', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+    useCalculatorHandlers({
+      printers: [
+        ...mockPrinters,
+        // Cheaper machine: lower depreciation, energy and repair inputs.
+        {
+          ...mockPrinters[0],
+          id: 2,
+          name: 'Cheapo',
+          purchase_price: 100000,
+          power_watts: 100,
+          repair_rate_pct: 10,
+        },
+      ],
+    });
+
+    render(<CalculatorPage />);
+    await screen.findByText('2 211 FCFP');
+
+    // The selected printer (H2S) is hidden — only the alternative shows,
+    // with its price and a signed % delta vs the current selection.
+    const group = screen.getByRole('group', { name: 'Price by printer' });
+    let chips = within(group).getAllByRole('button');
+    expect(chips).toHaveLength(1);
+    expect(within(group).getByText('Cheapo')).toBeInTheDocument();
+    expect(within(group).queryByText('H2S')).not.toBeInTheDocument();
+    // Cheapo is cheaper → negative delta.
+    expect(chips[0].textContent).toMatch(/−\d+(\.\d+)?%/);
+
+    // Clicking the chip re-prices with that printer; the roles flip.
+    await userEvent.click(chips[0]);
+    await waitFor(() => expect(within(group).getByText('H2S')).toBeInTheDocument());
+    expect(within(group).queryByText('Cheapo')).not.toBeInTheDocument();
+    chips = within(group).getAllByRole('button');
+    // H2S is now the pricier alternative → positive delta.
+    expect(chips[0].textContent).toMatch(/\+\d+(\.\d+)?%/);
+  });
+
+  it('hides the printer comparison when only one printer is configured', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+
+    render(<CalculatorPage />);
+    await screen.findByText('2 211 FCFP');
+
+    expect(screen.queryByRole('group', { name: 'Price by printer' })).not.toBeInTheDocument();
   });
 
   it('migrates a saved legacy decimal-hours value into hours + minutes fields', async () => {

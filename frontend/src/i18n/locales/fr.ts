@@ -6976,6 +6976,8 @@ export default {
     costsSoFar: 'Coûts cumulés',
     totalHT: 'Total HT',
     totalTTC: 'Total TTC',
+    byPrinter: 'Prix par imprimante',
+    byPrinterHint: 'Prix avec {{name}} — cliquez pour sélectionner cette imprimante',
     marge: 'Marge',
     marginPct: 'Marge',
     perUnit: 'par unité',

@@ -5,7 +5,7 @@ import { Button } from '../Button';
 import { Collapsible } from '../Collapsible';
 import { NumberField } from '../NumberField';
 import { useToast } from '../../contexts/ToastContext';
-import { CostSplitBar, Money, SegmentLegend, type Segment } from './shared';
+import { CostSplitBar, Money, PrinterComparisonChips, SegmentLegend, type PrinterComparisonEntry, type Segment } from './shared';
 import { formatPct, targetPriceProfit, type PricingResult } from '../../utils/pricing';
 import { num } from '../../hooks/useCalculatorState';
 
@@ -19,6 +19,9 @@ export function CalculatorTotalsCard({
   targetPrice,
   onTargetPriceChange,
   targetPriceError,
+  printerComparison = [],
+  selectedPrinterId = null,
+  onSelectPrinter,
 }: {
   result: PricingResult;
   segments: Segment[];
@@ -29,6 +32,9 @@ export function CalculatorTotalsCard({
   targetPrice: string;
   onTargetPriceChange: (v: string) => void;
   targetPriceError?: string;
+  printerComparison?: PrinterComparisonEntry[];
+  selectedPrinterId?: number | null;
+  onSelectPrinter?: (id: number) => void;
 }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -64,20 +70,31 @@ export function CalculatorTotalsCard({
         </span>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="rounded-lg bg-bambu-green/5 border border-bambu-green/20 px-4 py-3 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <div className="text-sm text-bambu-gray">
-              {t('calculator.totalTTC')}
-              {quantity > 1 ? ` · ${t('calculator.perUnit')}` : ''}
-            </div>
-            <Money currency={currency} value={result.total_ttc} className="text-4xl font-bold tracking-tight text-bambu-green" />
-          </div>
-          {quantity > 1 && (
-            <div className="text-right">
-              <div className="text-sm text-bambu-gray">{t('calculator.forQuantity', { count: quantity })}</div>
-              <Money currency={currency} value={result.total_ttc_qty} className="text-xl font-semibold text-white" />
-            </div>
+        <div className="rounded-lg bg-bambu-green/5 border border-bambu-green/20 px-4 py-3 space-y-2">
+          {onSelectPrinter && (
+            <PrinterComparisonChips
+              comparison={printerComparison}
+              selectedPrinterId={selectedPrinterId}
+              baseTotal={result.total_ttc}
+              currency={currency}
+              onSelect={onSelectPrinter}
+            />
           )}
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <div className="text-sm text-bambu-gray">
+                {t('calculator.totalTTC')}
+                {quantity > 1 ? ` · ${t('calculator.perUnit')}` : ''}
+              </div>
+              <Money currency={currency} value={result.total_ttc} className="text-4xl font-bold tracking-tight text-bambu-green" />
+            </div>
+            {quantity > 1 && (
+              <div className="text-right">
+                <div className="text-sm text-bambu-gray">{t('calculator.forQuantity', { count: quantity })}</div>
+                <Money currency={currency} value={result.total_ttc_qty} className="text-xl font-semibold text-white" />
+              </div>
+            )}
+          </div>
         </div>
         <div className={`grid gap-x-6 gap-y-2 text-sm ${easy ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3'}`}>
           <div className="flex justify-between gap-2">

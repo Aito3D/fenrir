@@ -6989,6 +6989,8 @@ export default {
     costsSoFar: 'Kosten gesamt',
     totalHT: 'Gesamt (netto)',
     totalTTC: 'Gesamt (brutto)',
+    byPrinter: 'Preis pro Drucker',
+    byPrinterHint: 'Preis mit {{name}} — klicken, um diesen Drucker auszuwählen',
     marge: 'Gewinnmarge',
     marginPct: 'Marge in %',
     perUnit: 'pro Stück',
