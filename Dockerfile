@@ -43,14 +43,6 @@ RUN curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg \
     && apt-get update && apt-get install -y --no-install-recommends tailscale \
     && rm -rf /var/lib/apt/lists/*
 
-# Install go2rtc (optional camera engine for WebRTC streaming)
-# Pin to specific version for reproducible builds
-ARG GO2RTC_VERSION=1.9.14
-RUN ARCH=$(dpkg --print-architecture) && \
-    curl -fsSL "https://github.com/AlexxIT/go2rtc/releases/download/v${GO2RTC_VERSION}/go2rtc_linux_${ARCH}" \
-    -o /usr/local/bin/go2rtc && \
-    chmod +x /usr/local/bin/go2rtc
-
 # Allow binding to privileged ports (e.g. 990/FTPS) as non-root user.
 # File capabilities are more reliable than Docker cap_add with user: directive,
 # which depends on ambient capability support in the container runtime.
@@ -146,9 +138,7 @@ EXPOSE 3000
 EXPOSE 3002
 EXPOSE 6000
 EXPOSE 8000
-EXPOSE 8555
 EXPOSE 8883
-EXPOSE 9990
 EXPOSE 50000-50100
 
 # Health check (uses PORT env var via shell)
@@ -160,5 +150,19 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
 # Port is configurable via PORT (default 8000); bind address via HOST (default
 # 0.0.0.0). Set HOST=127.0.0.1 to bind loopback only, e.g. when a reverse proxy
 # on the same host fronts the app.
+#
+# `exec` is load-bearing, not style. Without it the shell stays as PID 1 and
+# uvicorn runs as its child; dash does not forward signals, so `docker stop`
+# SIGTERMs the shell and uvicorn never hears about it. Every stop then ran to
+# the end of the grace period and died on SIGKILL (exit 137) — no WAL
+# checkpoint, no MQTT disconnect, no virtual-printer teardown, on every restart
+# and every image update. With `exec`, uvicorn *is* PID 1 and gets the signal.
+#
+# --timeout-graceful-shutdown caps the wait on in-flight requests. Uvicorn's
+# default is to wait forever, and an MJPEG camera stream is a response that
+# never completes, so a single open camera tile would otherwise pin the process
+# past Docker's 10s grace and back into SIGKILL. On timeout uvicorn cancels the
+# request tasks; the camera generators already unwind cleanly on CancelledError.
+ENV UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN=5
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["sh", "-c", "uvicorn backend.app.main:app --host ${HOST:-0.0.0.0} --port ${PORT:-8000} --loop asyncio"]
+CMD ["sh", "-c", "exec uvicorn backend.app.main:app --host ${HOST:-0.0.0.0} --port ${PORT:-8000} --loop asyncio --timeout-graceful-shutdown ${UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN}"]

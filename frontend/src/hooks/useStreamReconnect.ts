@@ -105,12 +105,18 @@ export function useStreamReconnect({
     }
 
     let stallCheckInFlight = false;
+    // Consecutive stalled reads. Only reconnect after two in a row (#2521) so a
+    // brief blip while the shared fan-out upstream is starting up or handing
+    // over between viewers doesn't tear down a stream that's about to deliver.
+    let stallStrikes = 0;
     stallCheckIntervalRef.current = setInterval(async () => {
       if (stallCheckInFlight) return;
       stallCheckInFlight = true;
       try {
         const stalled = await checkStalled();
-        if (stalled) {
+        if (!stalled) {
+          stallStrikes = 0;
+        } else if (++stallStrikes >= 2) {
           if (stallCheckIntervalRef.current) {
             clearInterval(stallCheckIntervalRef.current);
             stallCheckIntervalRef.current = null;

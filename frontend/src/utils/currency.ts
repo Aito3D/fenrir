@@ -31,6 +31,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   UAH: '₴',
   IDR: 'Rp',
   XPF: 'FCFP',
+  PHP: '₱',
 };
 
 export function getCurrencySymbol(currencyCode: string): string {
