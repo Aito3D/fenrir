@@ -8552,9 +8552,8 @@ export function PrintersPage() {
         </button>
       </div>
 
-      {/* Cam-wall grid tile size selector (compact/default/large) — our feature,
-          shown only in cam-wall view where card sizes don't apply. */}
-      {pageView === 'camwall' && (
+      {/* Size selector — card sizes in cards view, grid tile sizes in cam-wall view */}
+      {pageView === 'camwall' ? (
       <div className={`flex h-8 items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary ${inMenu ? 'w-full' : ''}`}>
         {(['compact', 'default', 'large'] as GridLayout[]).map((l, index) => {
           const Icon = GRID_LAYOUT_ICONS[l];
@@ -8582,10 +8581,8 @@ export function PrintersPage() {
           );
         })}
       </div>
-      )}
-
-      {/* Card size selector — dimmed in cam-wall view where it doesn't apply */}
-      <div className={`flex h-8 items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary ${pageView === 'camwall' ? 'opacity-40 pointer-events-none' : ''} ${inMenu ? 'w-full' : ''}`}>
+      ) : (
+      <div className={`flex h-8 items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary ${inMenu ? 'w-full' : ''}`}>
         {cardSizeLabels.map((label, index) => {
           const size = index + 1;
           const isSelected = cardSize === size;
@@ -8613,6 +8610,7 @@ export function PrintersPage() {
           );
         })}
       </div>
+      )}
     </>
   );
 
