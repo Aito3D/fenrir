@@ -288,6 +288,7 @@ export default {
     cameraGridError: 'Falha ao carregar a grade de câmeras. Atualize a página.',
     cameraGrid: {
       quality: 'Qualidade',
+      qualityGlobalHint: 'aplica-se a todos os usuários',
       auto: 'Auto',
       low: 'Baixa',
       medium: 'Méd',

@@ -266,6 +266,7 @@ export default {
     cameraGridError: '카메라 그리드를 불러오지 못했습니다. 페이지를 새로고침하세요.',
     cameraGrid: {
       quality: '화질',
+      qualityGlobalHint: '모든 시청자에게 적용됩니다',
       auto: '자동',
       low: '낮음',
       medium: '중간',

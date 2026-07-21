@@ -7696,6 +7696,25 @@ function PowerDropdownItem({
   );
 }
 
+/* Fullscreen camera-wall clock — 24h seven-segment readout. The dim "88:88:88"
+   layer underneath reproduces a real LCD's unlit segments; both layers use the
+   fixed-advance DSEG7 digits, so they stay perfectly registered. */
+function CamWallClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const time = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  return (
+    <div className="relative font-seven-seg text-xl md:text-2xl leading-none select-none shrink-0">
+      <span aria-hidden="true" className="text-white/10">88:88</span>
+      <span className="absolute inset-0 text-white">{time}</span>
+    </div>
+  );
+}
+
 export function PrintersPage() {
   const { t } = useTranslation();
   const { fullscreen, toggleFullscreen } = useFullscreen();
@@ -8385,7 +8404,7 @@ export function PrintersPage() {
           ? (status?.active_extruder === 1 ? 'L' as const : 'R' as const)
           : undefined,
         bedTemp: status?.temperatures?.bed ?? null,
-        supports_rtsp: (printer as unknown as Record<string, unknown>).supports_rtsp as boolean | undefined,
+        supports_rtsp: printer.supports_rtsp,
       };
     }).filter(p => !hideDisconnected || p.connected),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- statusCacheVersion forces recompute on WebSocket status updates
@@ -8684,29 +8703,37 @@ export function PrintersPage() {
           )}
         </div>
       )}
-      <Button
-        onClick={() => setShowAddModal(true)}
-        disabled={!hasPermission('printers:create')}
-        title={!hasPermission('printers:create') ? t('printers.permission.noAdd') : undefined}
-        className={`!h-8 !min-h-8 px-2 py-0 ${inMenu ? 'w-full' : ''}`}
-      >
-        <Plus className="w-4 h-4" />
-        {t('printers.addPrinter')}
-      </Button>
+      {/* Fullscreen camera wall is a passive display — hide the add action */}
+      {!(pageView === 'camwall' && fullscreen) && (
+        <Button
+          onClick={() => setShowAddModal(true)}
+          disabled={!hasPermission('printers:create')}
+          title={!hasPermission('printers:create') ? t('printers.permission.noAdd') : undefined}
+          className={`!h-8 !min-h-8 px-2 py-0 ${inMenu ? 'w-full' : ''}`}
+        >
+          <Plus className="w-4 h-4" />
+          {t('printers.addPrinter')}
+        </Button>
+      )}
     </>
   );
 
   return (
     <div className="p-4 md:p-8">
       <div className="space-y-3 mb-6 animate-topbar-in">
-        <div>
-          {!fullscreen && (
-            <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-              <PrinterIcon className="w-7 h-7 text-bambu-green" />
-              {t('printers.title')}
-            </h1>
-          )}
-          <StatusSummaryBar printers={printers} smartPlugs={smartPlugs} />
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            {!fullscreen && (
+              <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+                <PrinterIcon className="w-7 h-7 text-bambu-green" />
+                {t('printers.title')}
+              </h1>
+            )}
+            <StatusSummaryBar printers={printers} smartPlugs={smartPlugs} />
+          </div>
+          {/* Camera-wall clock: right edge (over the fullscreen toggle below),
+              baseline-aligned with the status bar row */}
+          {fullscreen && pageView === 'camwall' && <CamWallClock />}
         </div>
         <div ref={toolbarRef} className="relative flex items-center gap-2">
           {/* Only show search bar when printers exist */}
@@ -8817,6 +8844,7 @@ export function PrintersPage() {
             timeFormat={settings?.time_format || 'system'}
             printers={cameraGridPrinters}
             onExpand={hasPermission('camera:view') ? handleGridExpand : undefined}
+            fullscreen={fullscreen}
           />
         </ErrorBoundary>
       ) : groupedPrinters ? (

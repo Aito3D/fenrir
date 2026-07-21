@@ -359,6 +359,9 @@ export interface Printer {
   camera_rotation: number;  // 0, 90, 180, 270 degrees
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
+  // RTSP-capable model (X1/H2/P2) — when camera_engine is 'go2rtc' these
+  // printers stream via WebRTC instead of the MJPEG grid stream
+  supports_rtsp?: boolean;
   created_at: string;
   updated_at: string;
 }

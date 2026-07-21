@@ -288,6 +288,7 @@ export default {
     cameraGridError: 'Échec du chargement de la grille caméra. Veuillez rafraîchir la page.',
     cameraGrid: {
       quality: 'Qualité',
+      qualityGlobalHint: 's’applique à tous les utilisateurs',
       auto: 'Auto',
       low: 'Bas',
       medium: 'Moy',

@@ -287,6 +287,7 @@ export default {
     cameraGridError: 'カメラグリッドの読み込みに失敗しました。ページを更新してください。',
     cameraGrid: {
       quality: '画質',
+      qualityGlobalHint: 'すべての閲覧者に適用されます',
       auto: '自動',
       low: '低',
       medium: '中',

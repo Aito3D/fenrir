@@ -272,6 +272,7 @@ export default {
     cameraGridError: "Не удалось загрузить сетку камер. Обновите страницу.",
     cameraGrid: {
       quality: "Качество",
+      qualityGlobalHint: 'применяется ко всем пользователям',
       auto: "Авто",
       low: "Низкое",
       medium: "Сред.",

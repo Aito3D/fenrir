@@ -288,6 +288,7 @@ export default {
     cameraGridError: 'Kamera ızgarası yüklenemedi. Lütfen sayfayı yenileyin.',
     cameraGrid: {
       quality: 'Kalite',
+      qualityGlobalHint: 'tüm izleyiciler için geçerlidir',
       auto: 'Oto',
       low: 'Düşük',
       medium: 'Orta',

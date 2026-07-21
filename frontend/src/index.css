@@ -23,6 +23,21 @@
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
+/* DSEG7 Classic (SIL OFL 1.1, https://github.com/keshikan/DSEG) — seven-segment
+   LCD digits for the fullscreen camera-wall clock. Self-hosted like Inter above;
+   digits + colon only, so the file is tiny (~5KB). */
+@font-face {
+  font-family: 'DSEG7';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/DSEG7Classic-Bold.woff2') format('woff2');
+}
+.font-seven-seg {
+  font-family: 'DSEG7', ui-monospace, monospace;
+  font-weight: 700;
+}
+
 /* Enable class-based dark mode for Tailwind v4 */
 @custom-variant dark (&:where(.dark, .dark *));
 
