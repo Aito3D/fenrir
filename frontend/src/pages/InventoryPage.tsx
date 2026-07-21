@@ -13,6 +13,7 @@ import { ForecastPanel } from '../components/ForecastPanel';
 import { api, spoolbuddyApi, ApiError } from '../api/client';
 import type { InventorySpool, SpoolCatalogEntry } from '../api/client';
 import { Button } from '../components/Button';
+import { SkeletonGrid } from '../components/Skeleton';
 import { FilamentSwatch } from '../components/FilamentSwatch';
 import { buildFilamentBackground } from '../components/filamentSwatchHelpers';
 import {SpoolFormModal, type SpoolFormMode} from '../components/SpoolFormModal';
@@ -1859,9 +1860,11 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
 
       {/* Content */}
       {isLoading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="w-8 h-8 text-bambu-green animate-spin" />
-        </div>
+        <SkeletonGrid
+          count={8}
+          gridClassName="grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+          cardClassName="h-44"
+        />
       ) : viewMode === 'forecast' ? (
         /* Forecast view */
         <ForecastPanel spools={spools || []} />

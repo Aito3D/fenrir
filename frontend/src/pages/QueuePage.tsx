@@ -68,6 +68,7 @@ import { getBedTypeInfo } from '../utils/bedType';
 import type { PrintQueueItem, PrintQueueBulkUpdate, Permission } from '../api/client';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
+import { SkeletonGrid } from '../components/Skeleton';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { PrintModal } from '../components/PrintModal';
 import { useToast } from '../contexts/ToastContext';
@@ -2117,7 +2118,7 @@ export function QueuePage() {
       {activeTab === 'pipelines' ? (
         <PipelineRunsView />
       ) : isLoading ? (
-        <div className="text-center py-12 text-bambu-gray">{t('common.loading')}</div>
+        <SkeletonGrid count={5} gridClassName="grid-cols-1" cardClassName="h-28" />
       ) : queue?.length === 0 ? (
         <Card className="p-12 text-center border-dashed">
           <Calendar className="w-16 h-16 text-bambu-gray mx-auto mb-4 opacity-50" />

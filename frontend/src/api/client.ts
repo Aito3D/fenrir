@@ -3240,6 +3240,45 @@ export interface CalculatorDefaults {
 
 export type CalculatorDefaultsUpdate = Partial<Omit<CalculatorDefaults, 'id' | 'updated_at'>>;
 
+// Measured "reality check" figures for the calculator (GET /calculator/insights)
+export interface CalculatorFailureRateEntry {
+  printer_id: number | null;
+  printer_name: string | null;
+  material: string | null;
+  rate_pct: number;
+  sample: number;
+}
+
+export interface CalculatorTimeAccuracyEntry {
+  printer_id: number;
+  printer_name: string;
+  accuracy_pct: number;
+  sample: number;
+}
+
+export interface CalculatorSpoolCostEntry {
+  material: string;
+  avg_cost_per_kg: number;
+  sample: number;
+}
+
+export interface CalculatorInsights {
+  window_days: number;
+  failure: {
+    overall_pct: number | null;
+    sample: number;
+    by_printer: CalculatorFailureRateEntry[];
+    by_material: CalculatorFailureRateEntry[];
+  };
+  energy_cost_per_kwh: number;
+  spool_cost_by_material: CalculatorSpoolCostEntry[];
+  time_accuracy: {
+    overall_pct: number | null;
+    sample: number;
+    by_printer: CalculatorTimeAccuracyEntry[];
+  };
+}
+
 // Permission type - all available permissions
 export type Permission =
   | 'printers:read' | 'printers:create' | 'printers:update' | 'printers:delete' | 'printers:control' | 'printers:files' | 'printers:ams_rfid' | 'printers:clear_plate'
@@ -5950,6 +5989,8 @@ export const api = {
   deleteCalculatorPrinter: (id: number) =>
     request<{ message: string }>(`/calculator/printers/${id}`, { method: 'DELETE' }),
   getCalculatorDefaults: () => request<CalculatorDefaults>('/calculator/defaults'),
+  getCalculatorInsights: (days?: number) =>
+    request<CalculatorInsights>(`/calculator/insights${days ? `?days=${days}` : ''}`),
   updateCalculatorDefaults: (data: CalculatorDefaultsUpdate) =>
     request<CalculatorDefaults>('/calculator/defaults', {
       method: 'PATCH',

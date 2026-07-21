@@ -136,6 +136,50 @@ describe('CalculatorPage', () => {
     expect(chips[0].textContent).toMatch(/\+\d+(\.\d+)?%/);
   });
 
+  it('reality check: applying the measured failure rate re-prices the job', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+    server.use(
+      http.get('/api/v1/calculator/insights', () =>
+        HttpResponse.json({
+          window_days: 365,
+          failure: {
+            overall_pct: 8.0,
+            sample: 25,
+            by_printer: [{ printer_id: 1, printer_name: 'H2S', material: null, rate_pct: 8.0, sample: 25 }],
+            by_material: [],
+          },
+          // Equal to the defaults' tariff → no tariff row, keeps one Apply button.
+          energy_cost_per_kwh: 120,
+          spool_cost_by_material: [],
+          time_accuracy: { overall_pct: null, sample: 0, by_printer: [] },
+        }),
+      ),
+    );
+
+    render(<CalculatorPage />);
+    await screen.findByText('2 211 FCFP');
+
+    // Measured 8% vs assumed 30% → the reality-check row appears.
+    await screen.findByText('Reality check');
+    expect(screen.getByText(/Failure rate/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    // Provisions shrink (30% → 8% failure provision), so the total drops.
+    await waitFor(() => expect(screen.queryByText('2 211 FCFP')).not.toBeInTheDocument());
+    expect(screen.getByText('Applied')).toBeInTheDocument();
+  });
+
+  it('reality check card stays hidden without insights data', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+    render(<CalculatorPage />);
+    await screen.findByText('2 211 FCFP');
+    expect(screen.queryByText('Reality check')).not.toBeInTheDocument();
+  });
+
   it('hides the printer comparison when only one printer is configured', async () => {
     vi.mocked(localStorage.getItem).mockImplementation((key) =>
       key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,

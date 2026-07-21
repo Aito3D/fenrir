@@ -128,6 +128,10 @@ function recomputeAggregate(jobs: DispatchToastJob[]): DispatchToastData {
 export function ToastProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const [toasts, setToasts] = useState<Toast[]>([]);
+  // IDs currently playing their 150ms slide-out before removal. Only transient
+  // (non-dispatch) toasts use this; the dispatch toast keeps its immediate
+  // dismiss contract (see DispatchToastContext tests).
+  const [leaving, setLeaving] = useState<Set<string>>(new Set());
   const [viewportSuppressed, setViewportSuppressed] = useState(false);
   const [isDispatchCollapsed, setIsDispatchCollapsed] = useState(false);
   const timeoutRefs = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -151,19 +155,41 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Play the 150ms slide-out, then remove. Cancels any pending auto-dismiss so
+  // a manual dismiss mid-life doesn't double-fire. Fully guarded for unmount.
+  const beginLeave = useCallback((id: string) => {
+    if (!isMountedRef.current) return;
+    const pending = timeoutRefs.current.get(id);
+    if (pending) {
+      clearTimeout(pending);
+      timeoutRefs.current.delete(id);
+    }
+    setLeaving((prev) => new Set(prev).add(id));
+    const timeout = setTimeout(() => {
+      timeoutRefs.current.delete(`${id}:leave`);
+      if (!isMountedRef.current) return;
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+      setLeaving((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }, 150);
+    timeoutRefs.current.set(`${id}:leave`, timeout);
+  }, []);
+
   const showToast = useCallback((message: string, type: ToastType = 'success') => {
     if (!isMountedRef.current) return;
     const id = Math.random().toString(36).substr(2, 9);
     setToasts((prev) => [...prev, { id, message, type }]);
 
-    // Auto-dismiss after 3 seconds
+    // Auto-dismiss after 3 seconds, then slide out over 150ms.
     const timeout = setTimeout(() => {
-      if (!isMountedRef.current) return;
-      setToasts((prev) => prev.filter((t) => t.id !== id));
       timeoutRefs.current.delete(id);
+      beginLeave(id);
     }, 3000);
     timeoutRefs.current.set(id, timeout);
-  }, []);
+  }, [beginLeave]);
 
   const showPersistentToast = useCallback(
     (id: string, message: string, type: ToastType = 'info', options?: { action?: ToastAction }) => {
@@ -321,7 +347,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={`rounded-lg border shadow-lg backdrop-blur-sm animate-slide-in ${bgColors[toast.type]} ${
+            className={`rounded-lg border shadow-lg backdrop-blur-sm ${
+              leaving.has(toast.id) ? 'animate-slide-out' : 'animate-slide-in'
+            } ${bgColors[toast.type]} ${
               toast.dispatchData ? 'w-[420px] p-3' : 'flex items-center gap-3 px-4 py-3'
             }`}
             data-testid={toast.dispatchData ? 'dispatch-toast-wrapper' : undefined}
@@ -459,7 +487,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                   </a>
                 )}
                 <button
-                  onClick={() => dismissToast(toast.id)}
+                  onClick={() => beginLeave(toast.id)}
                   className="ml-2 text-bambu-gray hover:text-white transition-colors"
                 >
                   <X className="w-4 h-4" />

@@ -9,10 +9,42 @@ interface FullscreenContextType {
 
 const FullscreenContext = createContext<FullscreenContextType | undefined>(undefined);
 
-export function FullscreenProvider({ children }: { children: ReactNode }) {
-  const [fullscreen, setFullscreen] = useState(false);
+const FULLSCREEN_STORAGE_KEY = 'printersFullscreen';
 
-  const toggleFullscreen = useCallback(() => setFullscreen(prev => !prev), []);
+function readStoredFullscreen(): boolean {
+  try {
+    return localStorage.getItem(FULLSCREEN_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function persistFullscreen(value: boolean): void {
+  try {
+    localStorage.setItem(FULLSCREEN_STORAGE_KEY, String(value));
+  } catch {
+    // Storage unavailable (private mode / quota) — persistence is best-effort.
+  }
+}
+
+export function FullscreenProvider({ children }: { children: ReactNode }) {
+  // Persisted so fullscreen survives a page reload. It is scoped to the
+  // printers page in practice: that's the only page with a toggle, and Layout
+  // clears it when navigating to any other page (which also updates storage).
+  const [fullscreen, setFullscreenState] = useState(readStoredFullscreen);
+
+  const setFullscreen = useCallback((value: boolean) => {
+    persistFullscreen(value);
+    setFullscreenState(value);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    setFullscreenState(prev => {
+      const next = !prev;
+      persistFullscreen(next);
+      return next;
+    });
+  }, []);
 
   // Escape exits fullscreen (unless typing in an input)
   useEffect(() => {
@@ -25,11 +57,11 @@ export function FullscreenProvider({ children }: { children: ReactNode }) {
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [fullscreen]);
+  }, [fullscreen, setFullscreen]);
 
   const value = useMemo(
     () => ({ fullscreen, setFullscreen, toggleFullscreen }),
-    [fullscreen, toggleFullscreen],
+    [fullscreen, setFullscreen, toggleFullscreen],
   );
 
   return <FullscreenContext.Provider value={value}>{children}</FullscreenContext.Provider>;

@@ -6,12 +6,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import type { PricingInputs } from '../utils/pricing';
 
 export const PAGE_TABS = ['calculator', 'filaments', 'printers', 'defaults'] as const;
 export type PageTab = (typeof PAGE_TABS)[number];
 
 const STORAGE_KEY = 'calculator-state';
-const PREFILL_PARAMS = ['weight', 'time', 'quantity', 'filamentId', 'printerId', 'energyKwh'] as const;
+const PREFILL_PARAMS = ['weight', 'time', 'quantity', 'filamentId', 'printerId', 'energyKwh', 'timeSource'] as const;
 
 export interface CalcState {
   weight: string;
@@ -35,6 +36,12 @@ export interface CalcState {
   filamentId: number | null;
   printerId: number | null;
   easyMode: boolean;
+  /** Reality-check session overrides; '' = use the stored default. */
+  failureRateOverride: string;
+  tariffOverride: string;
+  /** True when the time fields came from a slicer estimate (prefill), so the
+      time-accuracy correction chip is relevant. Cleared on manual edits. */
+  timeFromEstimate: boolean;
 }
 
 export const DEFAULT_STATE: CalcState = {
@@ -58,6 +65,9 @@ export const DEFAULT_STATE: CalcState = {
   filamentId: null,
   printerId: null,
   easyMode: false,
+  failureRateOverride: '',
+  tariffOverride: '',
+  timeFromEstimate: false,
 };
 
 /** Parse a numeric input string, falling back when empty or invalid. */
@@ -68,7 +78,7 @@ export const num = (s: string, fallback = 0): number => {
 };
 
 /** Split decimal hours ("1.25") into hour/minute field values ("1" / "15"). */
-function splitDecimalHours(value: number): { timeH: string; timeM: string } {
+export function splitDecimalHours(value: number): { timeH: string; timeM: string } {
   let h = Math.floor(value);
   let m = Math.round((value - h) * 60);
   if (m === 60) {
@@ -135,6 +145,9 @@ export function useCalculatorState() {
     if (weight !== null && Number.isFinite(Number(weight)) && Number(weight) >= 0) patch.weight = weight;
     if (time !== null && Number.isFinite(Number(time)) && Number(time) >= 0) {
       Object.assign(patch, splitDecimalHours(Number(time)));
+      // Slicer estimates can be corrected by the measured time-accuracy chip;
+      // an actual (measured) duration needs no correction.
+      patch.timeFromEstimate = searchParams.get('timeSource') === 'est';
     }
     if (quantity !== null && Number.isInteger(Number(quantity)) && Number(quantity) >= 1) patch.quantity = quantity;
     const energyKwh = searchParams.get('energyKwh');
@@ -199,4 +212,39 @@ export function useCalculatorState() {
   }, [state, t]);
 
   return { state, set, reset, errors, tab, setTab };
+}
+
+/** Read the persisted calculator state without mounting the hook (quote page). */
+export function loadCalculatorState(): CalcState {
+  return loadState();
+}
+
+/** Synchronous persist for navigation flows that outrun the 500ms debounce. */
+export function persistCalculatorStateNow(state: CalcState): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Persistence is best-effort (private mode, quota).
+  }
+}
+
+/** CalcState → PricingInputs mapping shared by the calculator and quote pages. */
+export function buildPricingInputs(state: CalcState, defaults: { stuff_markup_pct: number }): PricingInputs {
+  return {
+    weight_g: Math.max(0, num(state.weight)),
+    printing_time_h: Math.max(0, num(state.timeH)) + Math.max(0, num(state.timeM)) / 60,
+    measured_energy_kwh: num(state.energyKwh) > 0 ? num(state.energyKwh) : undefined,
+    quantity: Math.max(1, Math.floor(num(state.quantity, 1))),
+    modeling_hours: Math.max(0, num(state.modelingHours)),
+    modeling_base_price: Math.max(0, num(state.modelingBasePrice)),
+    prep_model_min: Math.max(0, num(state.prepModel)),
+    prep_slicing_min: Math.max(0, num(state.prepSlicing)),
+    prep_transfer_min: Math.max(0, num(state.prepTransfer)),
+    post_removal_min: Math.max(0, num(state.postRemoval)),
+    post_support_min: Math.max(0, num(state.postSupport)),
+    post_additional_min: Math.max(0, num(state.postAdditional)),
+    post_fulfillment_min: Math.max(0, num(state.postFulfillment)),
+    stuff_amount: Math.max(0, num(state.stuffAmount)),
+    stuff_markup_pct: Math.max(0, num(state.stuffMarkup, defaults.stuff_markup_pct)),
+  };
 }

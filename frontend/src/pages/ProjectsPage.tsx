@@ -27,6 +27,7 @@ import {
 import { api } from '../api/client';
 import type { ProjectListItem, ProjectCreate, ProjectUpdate, ProjectImport, Permission } from '../api/client';
 import { Button } from '../components/Button';
+import { SkeletonGrid } from '../components/Skeleton';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -1106,12 +1107,11 @@ export function ProjectsPage() {
 
       {/* Content */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <div className="flex flex-col items-center gap-3">
-            <Loader2 className="w-8 h-8 animate-spin text-bambu-green" />
-            <p className="text-sm text-bambu-gray">{t('projects.loading')}</p>
-          </div>
-        </div>
+        <SkeletonGrid
+          count={6}
+          gridClassName="grid-cols-1 md:grid-cols-2 xl:grid-cols-3"
+          cardClassName="h-64"
+        />
       ) : projects?.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 px-4">
           <div className="p-4 bg-bambu-dark rounded-2xl mb-4">
@@ -1138,17 +1138,18 @@ export function ProjectsPage() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8 stagger-children">
           {projects?.map((project) => (
-            <ProjectCard
-              key={project.id}
-              project={project}
-              onClick={() => handleClick(project)}
-              onEdit={() => handleEdit(project)}
-              onDelete={() => handleDeleteClick(project.id)}
-              hasPermission={hasPermission}
-              t={t}
-            />
+            <div key={project.id} className="animate-rise">
+              <ProjectCard
+                project={project}
+                onClick={() => handleClick(project)}
+                onEdit={() => handleEdit(project)}
+                onDelete={() => handleDeleteClick(project.id)}
+                hasPermission={hasPermission}
+                t={t}
+              />
+            </div>
           ))}
         </div>
       )}

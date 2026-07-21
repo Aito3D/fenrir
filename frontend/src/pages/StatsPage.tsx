@@ -33,6 +33,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { Button } from '../components/Button';
+import { Skeleton, SkeletonGrid } from '../components/Skeleton';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { api, type ArchiveSlim } from '../api/client';
@@ -1245,8 +1246,17 @@ export function StatsPage() {
 
   if (isLoading) {
     return (
-      <div className="p-4 md:p-8">
-        <div className="text-center py-12 text-bambu-gray">{t('stats.loadingStats')}</div>
+      <div className="p-4 md:p-8 space-y-6">
+        <SkeletonGrid
+          count={4}
+          gridClassName="grid-cols-2 lg:grid-cols-4"
+          cardClassName="h-28"
+        />
+        <Skeleton className="h-80 w-full rounded-xl" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Skeleton className="h-64 w-full rounded-xl" />
+          <Skeleton className="h-64 w-full rounded-xl" />
+        </div>
       </div>
     );
   }

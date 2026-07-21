@@ -2,7 +2,7 @@
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,10 +18,12 @@ from backend.app.schemas.calculator import (
     CalculatorFilamentCreate,
     CalculatorFilamentResponse,
     CalculatorFilamentUpdate,
+    CalculatorInsightsResponse,
     CalculatorPrinterCreate,
     CalculatorPrinterResponse,
     CalculatorPrinterUpdate,
 )
+from backend.app.services.calculator_insights import calculator_insights_service
 
 logger = logging.getLogger(__name__)
 
@@ -219,3 +221,21 @@ async def update_calculator_defaults(
     await db.refresh(defaults)
     logger.info("Updated calculator defaults")
     return defaults
+
+
+# --- Insights ---
+
+
+@router.get("/insights", response_model=CalculatorInsightsResponse)
+async def get_calculator_insights(
+    days: int = Query(default=365, ge=7, le=3650),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_READ),
+):
+    """Measured pricing signals (failure rates, tariff, spool costs, time accuracy).
+
+    Gated on CALCULATOR_READ alone by design: the aggregates are computed
+    server-side so a calculator-only user doesn't need archives/spool read
+    permissions to benefit from them.
+    """
+    return await calculator_insights_service.compute(db, days=days)

@@ -67,11 +67,13 @@ import { getCurrencySymbol } from '../utils/currency';
 import { getBedTypeInfo } from '../utils/bedType';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { usePageFileDrop } from '../hooks/usePageFileDrop';
+import { useFlipReorder } from '../hooks/useFlipReorder';
 import type { Archive, CalculatorDefaults, CalculatorFilament, CalculatorPrinter, PrintLogEntry, ProjectListItem } from '../api/client';
 import { estimateArchiveSalePrice } from '../utils/archivePricing';
 import { formatMoney } from '../utils/pricing';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
+import { SkeletonGrid } from '../components/Skeleton';
 import { PrintModal } from '../components/PrintModal';
 import { UploadModal } from '../components/UploadModal';
 import { PurgeArchivesModal } from '../components/PurgeArchivesModal';
@@ -163,6 +165,9 @@ function calculatorPrefillUrl(archive: Archive, calcConfig: CalcConfig | null, p
     weight: (archive.filament_used_grams ?? 0).toFixed(1),
     time: timeH.toFixed(2),
     quantity: '1',
+    // Slicer estimates can be corrected by the calculator's time-accuracy
+    // chip; measured durations need no correction.
+    timeSource: archive.actual_time_seconds ? 'actual' : 'est',
   });
   // Real measured energy beats the calculator's watts × hours estimate.
   if (archive.energy_kwh != null && archive.energy_kwh > 0) {
@@ -3256,6 +3261,13 @@ export function ArchivesPage() {
     ? filteredArchives
     : filteredArchives?.slice(pageIndex * effectivePageSize, (pageIndex + 1) * effectivePageSize);
 
+  // FLIP reorder for the card grid: when search/filter/sort changes the order,
+  // persisting cards slide to their new slots instead of jumping. Newly-entering
+  // cards still play their `animate-rise` entrance; the two compose cleanly.
+  const archiveGridRef = useRef<HTMLDivElement>(null);
+  const archiveOrderKey = (paginatedArchives ?? []).map((a) => a.id).join(',');
+  useFlipReorder(archiveGridRef, archiveOrderKey);
+
   // Jump to the page containing the highlighted archive
   useEffect(() => {
     if (highlightedArchiveId && filteredArchives && !showAll) {
@@ -3864,7 +3876,11 @@ export function ArchivesPage() {
 
       {/* Archives */}
       {isLoading ? (
-        <div className="text-center py-12 text-bambu-gray">{t('archives.loadingArchives')}</div>
+        <SkeletonGrid
+          count={8}
+          gridClassName="grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+          cardClassName="h-52"
+        />
       ) : filteredArchives?.length === 0 ? (
         <Card>
           <CardContent className="text-center py-12">
@@ -3891,26 +3907,35 @@ export function ArchivesPage() {
         </Card>
       ) : viewMode === 'grid' ? (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {/* stagger-children + animate-rise reveals the cards one after another
+              (left-to-right, top-to-bottom) on first paint and for cards that
+              newly enter. useFlipReorder (above) slides persisting cards to new
+              slots on search/filter/sort. Elements must persist (stable keys, no
+              container remount) for FLIP to measure old→new positions. */}
+          <div
+            ref={archiveGridRef}
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 stagger-children"
+          >
             {paginatedArchives?.map((archive) => (
-              <ArchiveCard
-                key={archive.id}
-                archive={archive}
-                printerName={archive.printer_id ? printerMap.get(archive.printer_id) || 'Unknown' : (archive.sliced_for_model || 'No Printer')}
-                isSelected={selectedIds.has(archive.id)}
-                onSelect={toggleSelect}
-                selectionMode={selectionMode}
-                projects={projects}
-                isHighlighted={archive.id === highlightedArchiveId}
-                timeFormat={timeFormat}
-                preferredSlicer={preferredSlicer}
-                useSlicerApi={useSlicerApi}
-                currency={currency}
-                currencyCode={settings?.currency || 'USD'}
-                calcConfig={calcConfig}
-                t={t}
-                onNavigateToArchive={handleNavigateToArchive}
-              />
+              <div key={archive.id} data-flip-key={archive.id} className="animate-rise">
+                <ArchiveCard
+                  archive={archive}
+                  printerName={archive.printer_id ? printerMap.get(archive.printer_id) || 'Unknown' : (archive.sliced_for_model || 'No Printer')}
+                  isSelected={selectedIds.has(archive.id)}
+                  onSelect={toggleSelect}
+                  selectionMode={selectionMode}
+                  projects={projects}
+                  isHighlighted={archive.id === highlightedArchiveId}
+                  timeFormat={timeFormat}
+                  preferredSlicer={preferredSlicer}
+                  useSlicerApi={useSlicerApi}
+                  currency={currency}
+                  currencyCode={settings?.currency || 'USD'}
+                  calcConfig={calcConfig}
+                  t={t}
+                  onNavigateToArchive={handleNavigateToArchive}
+                />
+              </div>
             ))}
           </div>
           <ArchivePaginationBar

@@ -312,3 +312,38 @@ export function formatPct(fraction: number, decimals = 2): string {
   if (!Number.isFinite(fraction)) return '—%';
   return `${(fraction * 100).toFixed(decimals)}%`;
 }
+
+export interface WaterfallStep {
+  key: 'filament' | 'printer' | 'energy' | 'provisions' | 'other' | 'labor' | 'marge' | 'tax';
+  value: number;
+  /** Running total AFTER this step — the last step's cumulative is total_ttc. */
+  cumulative: number;
+}
+
+/**
+ * The price build-up as ordered waterfall steps: machine costs, provisions,
+ * ads+consumables, labor, then margin and tax. Zero-value steps are dropped.
+ * Invariant (pinned by tests): the final cumulative equals total_ttc.
+ */
+export function buildWaterfall(result: PricingResult): WaterfallStep[] {
+  const raw: Array<{ key: WaterfallStep['key']; value: number }> = [
+    { key: 'filament', value: result.filament_cost },
+    { key: 'printer', value: result.depreciation_cost + result.repairs_cost },
+    { key: 'energy', value: result.energy_cost },
+    { key: 'provisions', value: result.prototype_cost + result.failures_cost },
+    { key: 'other', value: result.ads_cost + result.consumables_flat },
+    { key: 'labor', value: result.labor_total },
+    { key: 'marge', value: result.marge },
+    { key: 'tax', value: result.total_ttc - result.total_ht },
+  ];
+  const steps: WaterfallStep[] = [];
+  let cumulative = 0;
+  for (const step of raw) {
+    if (step.value <= 0.005) continue;
+    cumulative += step.value;
+    steps.push({ ...step, cumulative });
+  }
+  // Absorb float drift so the right edge is exactly the displayed total.
+  if (steps.length > 0) steps[steps.length - 1].cumulative = result.total_ttc;
+  return steps;
+}

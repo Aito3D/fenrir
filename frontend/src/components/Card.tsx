@@ -14,6 +14,12 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
   className?: string;
   onClick?: (e: MouseEvent) => void;
   onContextMenu?: (e: MouseEvent) => void;
+  /**
+   * Opt-in hover affordance for clickable cards (grid tiles, list rows).
+   * Adds a sub-100ms lift + green border on hover. Leave off for static
+   * container/modal cards so they don't drift on hover.
+   */
+  interactive?: boolean;
   ref?: Ref<HTMLDivElement>;
 }
 
@@ -23,10 +29,13 @@ interface CardSectionProps {
   dense?: boolean;
 }
 
-export function Card({ children, className = '', onClick, onContextMenu, ...rest }: CardProps) {
+export function Card({ children, className = '', onClick, onContextMenu, interactive = false, ...rest }: CardProps) {
+  const interactiveCls = interactive
+    ? 'transition-[transform,box-shadow,border-color] duration-100 ease-out cursor-pointer hover:-translate-y-0.5 hover:border-bambu-green/40 hover:shadow-lg motion-reduce:hover:translate-y-0 motion-reduce:transition-none'
+    : '';
   return (
     <div
-      className={`bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary card-shadow ${className}`}
+      className={`bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary card-shadow ${interactiveCls} ${className}`}
       onClick={onClick}
       onContextMenu={onContextMenu}
       {...rest}

@@ -55,7 +55,7 @@ export interface ArchivePriceEstimate {
   timeH: number;
 }
 
-const containsEitherWay = (a: string, b: string): boolean => a.includes(b) || b.includes(a);
+export const containsEitherWay = (a: string, b: string): boolean => a.includes(b) || b.includes(a);
 
 const cheapest = (candidates: NamedCalculatorFilament[]): NamedCalculatorFilament | undefined =>
   candidates.reduce<NamedCalculatorFilament | undefined>(

@@ -96,6 +96,7 @@ import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../util
 import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
+import { SkeletonGrid } from '../components/Skeleton';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { BulkPrinterToolbar, type PrinterState } from '../components/BulkPrinterToolbar';
 import { FileManagerModal } from '../components/FileManagerModal';
@@ -262,7 +263,7 @@ function NozzleSlotHoverCard({ slot, index, activeStatus, filamentName, children
           className={`
             absolute left-1/2 -translate-x-1/2 z-50
             ${position === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'}
-            animate-in fade-in-0 zoom-in-95 duration-150
+            animate-dropdown-in
           `}
           style={{ maxWidth: 'calc(100vw - 24px)' }}
         >
@@ -500,7 +501,7 @@ function DualNozzleHoverCard({ leftSlot, rightSlot, activeNozzle, filamentInfo, 
           className={`
             absolute left-1/2 -translate-x-1/2 z-50
             ${position === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'}
-            animate-in fade-in-0 zoom-in-95 duration-150
+            animate-dropdown-in
           `}
           style={{ maxWidth: 'calc(100vw - 24px)' }}
         >
@@ -1083,9 +1084,9 @@ function StatusSummaryBar({ printers, smartPlugs }: { printers: Printer[] | unde
   ];
 
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-4 gap-y-2 text-bambu-gray">
+    <div className="mt-1 flex flex-wrap items-center gap-4 gap-y-2 text-bambu-gray stagger-children">
       {badges.map(({ count, dot, label }) => count > 0 && (
-        <div key={label} className="flex items-center gap-1.5">
+        <div key={label} className="flex items-center gap-1.5 animate-rise">
           <div className={`w-2 h-2 rounded-full ${dot}`} />
           <span className="text-bambu-gray">
             {label} <span className="text-white font-medium">{count}</span>
@@ -1094,8 +1095,8 @@ function StatusSummaryBar({ printers, smartPlugs }: { printers: Printer[] | unde
       ))}
       {totalPowerW > 0 && (
         <>
-          <div className="w-px h-4 bg-bambu-dark-tertiary" />
-          <div className="flex items-center gap-1.5">
+          <div className="w-px h-4 bg-bambu-dark-tertiary animate-rise" />
+          <div className="flex items-center gap-1.5 animate-rise">
             <Zap className="w-3.5 h-3.5 text-yellow-400" />
             <span className="tabular-nums inline-block min-w-[3rem]"><span className="text-white font-medium">{Math.round(totalPowerW)}</span><span className="text-bambu-gray ml-0.5 text-xs">W</span></span>
           </div>
@@ -1103,8 +1104,8 @@ function StatusSummaryBar({ printers, smartPlugs }: { printers: Printer[] | unde
       )}
       {nextFinish && (
         <>
-          <div className="w-px h-4 bg-bambu-dark-tertiary" />
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+          <div className="w-px h-4 bg-bambu-dark-tertiary animate-rise" />
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2 animate-rise">
             <div className="flex items-center gap-2">
               <span className="text-bambu-green font-medium">{t('printers.nextAvailable')}:</span>
               <span className="text-white font-medium">{nextFinish.name}</span>
@@ -1668,7 +1669,7 @@ export function AmsNameHoverCard({
           className={`
             absolute left-0 z-50
             ${position === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'}
-            animate-in fade-in-0 zoom-in-95 duration-150
+            animate-dropdown-in
           `}
           style={{ maxWidth: 'calc(100vw - 24px)' }}
           onMouseEnter={handleMouseEnter}
@@ -8616,7 +8617,7 @@ export function PrintersPage() {
 
   return (
     <div className="p-4 md:p-8">
-      <div className="space-y-3 mb-6">
+      <div className="space-y-3 mb-6 animate-topbar-in">
         <div>
           {!fullscreen && (
             <h1 className="text-2xl font-bold text-white flex items-center gap-3">
@@ -8702,7 +8703,11 @@ export function PrintersPage() {
       </div>
 
       {isLoading ? (
-        <div className="text-center py-12 text-bambu-gray">{t('common.loading')}</div>
+        <SkeletonGrid
+          count={4}
+          gridClassName="grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3"
+          cardClassName="h-72"
+        />
       ) : printers?.length === 0 ? (
         <Card>
           <CardContent className="text-center py-12">

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -45,6 +45,7 @@ import { Toggle } from '../components/Toggle';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 
 // Icon mapping for maintenance types
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -305,6 +306,10 @@ function PrinterSection({
   const [editingHours, setEditingHours] = useState(false);
   const [hoursInput, setHoursInput] = useState(overview.total_print_hours.toFixed(1));
 
+  // Item cards cascade in each time the section is expanded
+  const itemsGridRef = useRef<HTMLDivElement>(null);
+  useStaggeredEntrance(itemsGridRef);
+
   const sortedItems = [...overview.maintenance_items].sort((a, b) => {
     // Sort by urgency first, then by type
     if (a.is_due && !b.is_due) return -1;
@@ -436,7 +441,7 @@ function PrinterSection({
       {/* Maintenance items */}
       {expanded && (
         <CardContent className="pt-0 border-t border-bambu-dark-tertiary">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 pt-4">
+          <div ref={itemsGridRef} className="grid grid-cols-1 lg:grid-cols-2 gap-3 pt-4">
             {sortedItems.map((item) => (
               <MaintenanceCard
                 key={item.id}
@@ -494,6 +499,12 @@ function SettingsSection({
   const [selectedPrinters, setSelectedPrinters] = useState<Set<number>>(new Set());
   const [expandedType, setExpandedType] = useState<number | null>(null);
   const [pendingSystemDelete, setPendingSystemDelete] = useState<MaintenanceType | null>(null);
+
+  // Type cards and override cards cascade in when the settings tab appears
+  const typesGridRef = useRef<HTMLDivElement>(null);
+  useStaggeredEntrance(typesGridRef);
+  const overridesListRef = useRef<HTMLDivElement>(null);
+  useStaggeredEntrance(overridesListRef);
 
   // Get unique printers from overview
   const printers = useMemo(() => {
@@ -753,7 +764,7 @@ function SettingsSection({
         )}
 
         {/* Types grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div ref={typesGridRef} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {/* System types */}
           {systemTypes.map((type) => {
             const Icon = getIcon(type.icon);
@@ -974,7 +985,7 @@ function SettingsSection({
             <h2 className="text-lg font-semibold text-white">{t('maintenance.intervalOverrides')}</h2>
             <p className="text-sm text-bambu-gray mt-1">{t('maintenance.intervalOverridesDescription')}</p>
           </div>
-          <div className="space-y-4">
+          <div ref={overridesListRef} className="space-y-4">
             {printerItems.map((printer) => (
               <Card key={printer.printerId}>
                 <CardContent className="py-4">
@@ -1089,6 +1100,10 @@ export function MaintenancePage() {
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('status');
+
+  // Printer cards cascade in one after another when the status tab appears
+  const statusListRef = useRef<HTMLDivElement>(null);
+  useStaggeredEntrance(statusListRef);
 
   const { data: overview, isLoading } = useQuery({
     queryKey: ['maintenanceOverview'],
@@ -1275,7 +1290,7 @@ export function MaintenancePage() {
 
       {/* Tab content */}
       {activeTab === 'status' ? (
-        <div className="space-y-6">
+        <div ref={statusListRef} className="space-y-6">
           {overview && overview.length > 0 ? (
             [...overview].sort((a, b) => {
               // Sort printers with issues first

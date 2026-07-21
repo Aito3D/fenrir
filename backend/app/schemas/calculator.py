@@ -123,3 +123,52 @@ class CalculatorDefaultsResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# --- Insights (measured "reality check" figures) ---
+
+
+class FailureRateEntry(BaseModel):
+    """Measured failure rate for one printer or one material."""
+
+    printer_id: int | None = None
+    printer_name: str | None = None
+    material: str | None = None
+    rate_pct: float
+    sample: int
+
+
+class FailureInsights(BaseModel):
+    overall_pct: float | None
+    sample: int
+    by_printer: list[FailureRateEntry]
+    by_material: list[FailureRateEntry]
+
+
+class TimeAccuracyEntry(BaseModel):
+    printer_id: int
+    printer_name: str
+    accuracy_pct: float
+    sample: int
+
+
+class TimeAccuracyInsights(BaseModel):
+    overall_pct: float | None
+    sample: int
+    by_printer: list[TimeAccuracyEntry]
+
+
+class SpoolCostEntry(BaseModel):
+    material: str
+    avg_cost_per_kg: float
+    sample: int
+
+
+class CalculatorInsightsResponse(BaseModel):
+    """Measured values the calculator can offer in place of its assumptions."""
+
+    window_days: int
+    failure: FailureInsights
+    energy_cost_per_kwh: float
+    spool_cost_by_material: list[SpoolCostEntry]
+    time_accuracy: TimeAccuracyInsights

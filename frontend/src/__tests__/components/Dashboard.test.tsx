@@ -227,6 +227,27 @@ describe('Dashboard', () => {
       // Widget 1 should be visible
       expect(screen.getByText('Widget One Content')).toBeInTheDocument();
     });
+
+    it('renders a widget once even if the saved order lists its id twice', async () => {
+      // Regression: the new-widget migration effect could append an id twice,
+      // and the duplicated order was then persisted
+      localStorageData['test-dashboard-dupes'] = JSON.stringify({
+        order: ['widget-1', 'widget-2', 'widget-2', 'widget-1', 'widget-3'],
+        hidden: ['widget-3'],
+        sizes: { 'widget-1': 2, 'widget-2': 4, 'widget-3': 1 },
+      });
+
+      render(<Dashboard widgets={mockWidgets} storageKey="test-dashboard-dupes" />);
+
+      expect(screen.getAllByText('Widget One Content')).toHaveLength(1);
+      expect(screen.getAllByText('Widget Two Content')).toHaveLength(1);
+
+      // The healed (deduped) order is persisted back
+      await waitFor(() => {
+        const saved = JSON.parse(localStorageData['test-dashboard-dupes']);
+        expect(saved.order).toEqual(['widget-1', 'widget-2', 'widget-3']);
+      });
+    });
   });
 
   describe('empty state', () => {

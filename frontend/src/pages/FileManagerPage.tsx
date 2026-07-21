@@ -73,6 +73,7 @@ import { libraryTagsQueryKey } from '../utils/libraryTagsQuery';
 import { useToast } from '../contexts/ToastContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { usePageFileDrop } from '../hooks/usePageFileDrop';
+import { useFlipReorder } from '../hooks/useFlipReorder';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDuration, parseUTCDate } from '../utils/date';
 import { formatFileSize } from '../utils/file';
@@ -1372,6 +1373,12 @@ export function FileManagerPage() {
     return result;
   }, [files, searchQuery, filterType, filterUsername, sortField, sortDirection]);
 
+  // FLIP reorder for the file card grid: on search/filter/sort, persisting
+  // cards slide to their new slots; newly-entering cards play `animate-rise`.
+  const fileGridRef = useRef<HTMLDivElement>(null);
+  const fileOrderKey = filteredAndSortedFiles.map((f) => f.id).join(',');
+  useFlipReorder(fileGridRef, fileOrderKey);
+
   // Check if disk space is low
   const isDiskSpaceLow = useMemo(() => {
     if (!stats || !settings) return false;
@@ -2323,10 +2330,16 @@ export function FileManagerPage() {
             </div>
           ) : viewMode === 'grid' ? (
             <div className="flex-1 lg:overflow-y-auto">
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
+              {/* stagger-children + animate-rise cascades the cards in on first
+                  paint and for cards that newly enter; useFlipReorder slides
+                  persisting cards to new slots on search/filter/sort. */}
+              <div
+                ref={fileGridRef}
+                className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 stagger-children"
+              >
                 {filteredAndSortedFiles.map((file) => (
+                  <div key={file.id} data-flip-key={file.id} className="animate-rise">
                   <FileCard
-                    key={file.id}
                     file={file}
                     isSelected={selectedFiles.includes(file.id)}
                     isMobile={isMobile}
@@ -2359,6 +2372,7 @@ export function FileManagerPage() {
                     canModify={canModify}
                     authEnabled={authEnabled}
                   />
+                  </div>
                 ))}
               </div>
             </div>

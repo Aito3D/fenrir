@@ -1,22 +1,23 @@
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PieChart } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '../Card';
-import { CostSplitBar, Money, SegmentLegend, type Segment } from './shared';
-import type { PricingResult } from '../../utils/pricing';
+import { Money } from './shared';
+import { CostWaterfall } from './CostWaterfall';
+import { buildWaterfall, type PricingResult } from '../../utils/pricing';
 
 /** Per-unit cost lines grouped like the split bar. With quantity > 1 the
  *  modeling/preparation lines are the amortized per-unit share, so every
  *  group still sums to costs_so_far. */
 export function CalculatorBreakdownCard({
   result,
-  segments,
   currency,
 }: {
   result: PricingResult;
-  segments: Segment[];
   currency: string;
 }) {
   const { t } = useTranslation();
+  const waterfall = useMemo(() => buildWaterfall(result), [result]);
 
   const groups: Array<{ labelKey: string; color: string; lines: Array<[string, number]> }> = [
     {
@@ -58,7 +59,7 @@ export function CalculatorBreakdownCard({
   ];
 
   return (
-    <Card className="animate-calc-rise" style={{ animationDelay: '150ms' }}>
+    <Card className="animate-calc-rise" style={{ animationDelay: '50ms' }}>
       <CardHeader>
         <h2 className="font-semibold text-white flex items-center gap-2">
           <PieChart className="w-4 h-4 text-bambu-gray" />
@@ -66,10 +67,10 @@ export function CalculatorBreakdownCard({
         </h2>
       </CardHeader>
       <CardContent className="space-y-5">
-        <div className="space-y-2">
-          <CostSplitBar segments={segments} total={result.costs_so_far} currency={currency} />
-          <SegmentLegend segments={segments} total={result.costs_so_far} />
-        </div>
+        {/* Full mode gets the waterfall (costs + margin + tax assembling the
+            sale price); Easy mode keeps the simpler split bar on the totals
+            card, so `segments` stays a prop for that path. */}
+        <CostWaterfall steps={waterfall} currency={currency} />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
           {groups.map((group) => (
             <div key={group.labelKey}>

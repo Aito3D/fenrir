@@ -9,7 +9,7 @@ import { BULK_DISCOUNTS, formatMoney, formatPct, type BulkRow } from '../../util
 export function CalculatorBulkTable({ rows, currency }: { rows: BulkRow[]; currency: string }) {
   const { t } = useTranslation();
   return (
-    <Card className="animate-calc-rise" style={{ animationDelay: '250ms' }}>
+    <Card className="animate-calc-rise" style={{ animationDelay: '150ms' }}>
       <CardHeader>
         <h2 className="font-semibold text-white flex items-center gap-2">
           <Boxes className="w-4 h-4 text-bambu-gray" />

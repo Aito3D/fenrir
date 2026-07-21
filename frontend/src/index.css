@@ -589,10 +589,137 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* `backwards` fill keeps staggered cards hidden during their delay */
+/* `backwards` fill keeps staggered cards hidden during their delay.
+   easeOutQuint decelerates late for a premium, settled landing. */
 .animate-calc-rise {
-  animation: calc-rise 0.25s ease-out backwards;
+  animation: calc-rise 0.25s cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
+
+/* Global button interaction feedback: quick color/shadow transitions plus a
+   snappy sub-100ms press-scale. The scale is gated behind no-preference so
+   reduced-motion users still get instant color feedback, just no movement. */
+.btn-press {
+  transition:
+    color 0.12s ease,
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    box-shadow 0.12s ease,
+    transform 0.09s ease-out;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .btn-press:not(:disabled):active {
+    transform: scale(0.97);
+  }
+}
+
+/* Tab panel entrance — plays when switching between the settings tabs. */
+@keyframes calc-tab-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-calc-tab-in {
+  animation: calc-tab-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* ==========================================================================
+   App-wide motion system
+   Motion budget: 250ms entrance · 150ms exit · <100ms feedback · 50ms stagger.
+   Signature entrance curve is easeOutQuint — cubic-bezier(0.22, 1, 0.36, 1).
+   All utilities below are neutralized under prefers-reduced-motion (see the
+   reduce block near the bottom of this file). Tailwind v4 does not read
+   tailwind.config.js here, so custom utilities MUST live in this file.
+   ========================================================================== */
+
+/* Generic mount entrance — the app-wide counterpart to .animate-calc-rise.
+   `backwards` fill keeps staggered children hidden through their delay. */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-rise {
+  animation: rise 0.25s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* Route/page transition — the incoming page rises + fades in. AnimatedOutlet
+   plays this after the outgoing page has finished .animate-page-out. */
+.animate-page-in {
+  animation: calc-tab-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* Route/page exit — the outgoing page drifts up while fading, continuing the
+   same vertical axis the enter rises along. `forwards` holds the gone state so
+   it never flashes back before AnimatedOutlet swaps in the next page. */
+@keyframes page-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-8px); }
+}
+.animate-page-out {
+  animation: page-out 0.15s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+/* Modal card entrance — fade + gentle scale-up from center. */
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+.animate-modal-in {
+  animation: modal-in 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: center;
+}
+
+/* Backdrop / overlay fade — 150ms so it never lags the card it dims. */
+.animate-overlay-in {
+  animation: fade-in 0.15s ease-out;
+}
+
+/* Toast/panel exit — 150ms slide-out + fade (mirrors .animate-slide-in). */
+@keyframes slide-out {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(100%); }
+}
+.animate-slide-out {
+  animation: slide-out 0.15s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+/* Top-of-page notice banner entrance: fades in while sliding down into place.
+   Deliberately slow (~550ms) so the banner eases in rather than snapping. */
+@keyframes banner-in {
+  from { opacity: 0; transform: translateY(-100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-banner-in {
+  animation: banner-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* Staggered list reveal: direct children each need .animate-rise; this sets a
+   50ms cascade on their animation-delay. Capped at 8 steps so large grids
+   (dozens of cards) stay snappy — child 9+ all share the 350ms max delay. */
+.stagger-children > * { animation-delay: 0ms; }
+.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 50ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 100ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 150ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 200ms; }
+.stagger-children > *:nth-child(6) { animation-delay: 250ms; }
+.stagger-children > *:nth-child(7) { animation-delay: 300ms; }
+.stagger-children > *:nth-child(n + 8) { animation-delay: 350ms; }
+
+/* Self-contained staggered fade-in for a small set of inline children (e.g. the
+   sidebar footer icon row). Unlike .stagger-children this also supplies the
+   animation, so the many icon buttons don't each need an entrance class. Each
+   child fades in over 250ms, offset 50ms in DOM order, capped at 8 steps.
+   `backwards` fill keeps each child hidden until its delay elapses. */
+.stagger-fade-in > * {
+  animation: fade-in 0.25s ease-out backwards;
+}
+.stagger-fade-in > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-fade-in > *:nth-child(2) { animation-delay: 50ms; }
+.stagger-fade-in > *:nth-child(3) { animation-delay: 100ms; }
+.stagger-fade-in > *:nth-child(4) { animation-delay: 150ms; }
+.stagger-fade-in > *:nth-child(5) { animation-delay: 200ms; }
+.stagger-fade-in > *:nth-child(6) { animation-delay: 250ms; }
+.stagger-fade-in > *:nth-child(7) { animation-delay: 300ms; }
+.stagger-fade-in > *:nth-child(n + 8) { animation-delay: 350ms; }
 
 /* Opacity-only so recomputing numbers never shift layout */
 @keyframes value-tick {
@@ -627,12 +754,106 @@ tbody .calc-table-row:hover {
   transform-origin: top;
 }
 
+/* Calculator cost waterfall: segments fill left-to-right with a stagger set
+   inline per segment; hovering the track spotlights one segment. The tax
+   segment is hatched — collected, not kept. */
+@keyframes waterfall-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.animate-waterfall-fill {
+  transform-origin: left;
+  animation: waterfall-fill 0.35s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+.waterfall-seg {
+  transition: opacity 0.15s ease-out;
+}
+
+.waterfall-track:hover .waterfall-seg { opacity: 0.35; }
+.waterfall-track:hover .waterfall-seg:hover { opacity: 1; }
+
+.waterfall-seg-tax {
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--color-bambu-gray, #888) 55%, transparent) 0 4px,
+    color-mix(in srgb, var(--color-bambu-gray, #888) 20%, transparent) 4px 8px
+  );
+}
+
+/* Login card entrance: fades in while drifting down from slightly above into
+   its resting position. easeOutQuint decelerates late for a settled landing. */
+@keyframes login-card-in {
+  from { opacity: 0; transform: translateY(-16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-login-card-in {
+  animation: login-card-in 0.8s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* Login card exit: on successful auth the card accelerates up and fades out,
+   leaving an empty screen before the dashboard mounts. forwards holds the
+   gone state so it never flashes back before navigation. */
+@keyframes login-card-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-24px); }
+}
+
+.animate-login-card-out {
+  animation: login-card-out 0.5s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+/* Sidebar entrance: on first mount after login the whole panel slides in from
+   off-screen left. The aside is `fixed left-0` while the content area sits at a
+   fixed margin, so the sliding box briefly leaves a strip to its right; the
+   Layout root is painted bambu-dark-secondary (the sidebar's own color) so that
+   strip blends into the panel instead of exposing the page background as a gap.
+   Desktop-only — the compact drawer drives its own transform. */
+@keyframes sidebar-in {
+  from { opacity: 0; transform: translateX(-100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.animate-sidebar-in {
+  animation: sidebar-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* Top bar entrance: fades in while sliding down from above on first mount. */
+@keyframes topbar-in {
+  from { opacity: 0; transform: translateY(-16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-topbar-in {
+  animation: topbar-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-in,
   .animate-slide-up,
+  .animate-slide-in,
+  .animate-slide-in-left,
+  .animate-slide-down,
   .animate-calc-rise,
+  .animate-calc-tab-in,
   .animate-value-tick,
-  .animate-dropdown-in {
+  .animate-dropdown-in,
+  .animate-waterfall-fill,
+  .animate-login-card-in,
+  .animate-login-card-out,
+  .animate-sidebar-in,
+  .animate-topbar-in,
+  .animate-rise,
+  .animate-page-in,
+  .animate-page-out,
+  .animate-modal-in,
+  .animate-overlay-in,
+  .animate-slide-out,
+  .animate-banner-in,
+  .stagger-children > *,
+  .stagger-fade-in > * {
     animation: none;
   }
 }

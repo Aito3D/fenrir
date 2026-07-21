@@ -1,5 +1,6 @@
 import { Component, type ReactNode, type ErrorInfo } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Layout } from './components/Layout';
 import { PrintersPage } from './pages/PrintersPage';
@@ -10,6 +11,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { ProfilesPage } from './pages/ProfilesPage';
 import { MaintenancePage } from './pages/MaintenancePage';
 import { CalculatorPage } from './pages/CalculatorPage';
+import { CalculatorQuotePage } from './pages/CalculatorQuotePage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { FileManagerPage } from './pages/FileManagerPage';
@@ -83,6 +85,16 @@ const queryClient = new QueryClient({
   },
 });
 
+// Full-viewport route-guard loading state — a centered spinner instead of a
+// bare "Loading..." so the pre-auth/permission gate resolves less jarringly.
+function RouteLoading() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-bambu-dark animate-fade-in">
+      <Loader2 className="w-7 h-7 text-bambu-green animate-spin" />
+    </div>
+  );
+}
+
 function StreamTokenSync() {
   useStreamTokenSync();
   return null;
@@ -98,7 +110,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+    return <RouteLoading />;
   }
 
   if (authEnabled && !user) {
@@ -118,7 +130,7 @@ function PermissionRoute({ permission, children }: { permission: string; childre
   const location = useLocation();
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+    return <RouteLoading />;
   }
 
   // Auth disabled → open access (backward compatibility)
@@ -141,7 +153,7 @@ function SetupRoute({ children }: { children: React.ReactNode }) {
   const { authEnabled, loading } = useAuth();
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+    return <RouteLoading />;
   }
 
   // If auth is already enabled, redirect to login
@@ -184,6 +196,18 @@ function App() {
 
                 {/* Stream overlay page - standalone for OBS/streaming embeds, no auth required */}
                 <Route path="/overlay/:printerId" element={<StreamOverlayPage />} />
+
+                {/* Printable client-facing quote — standalone (light, print-first, no app chrome) */}
+                <Route
+                  path="/calculator/quote"
+                  element={
+                    <ProtectedRoute>
+                      <PermissionRoute permission="calculator:read">
+                        <CalculatorQuotePage />
+                      </PermissionRoute>
+                    </ProtectedRoute>
+                  }
+                />
 
                 {/* SpoolBuddy kiosk UI */}
                 <Route element={<ProtectedRoute><WebSocketProvider><SpoolBuddyLayout /></WebSocketProvider></ProtectedRoute>}>

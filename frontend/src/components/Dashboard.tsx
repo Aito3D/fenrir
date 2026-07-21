@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -18,6 +18,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, Eye, EyeOff, RotateCcw, Maximize2, Minimize2 } from 'lucide-react';
 import { Button } from './Button';
+import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 
 export interface DashboardWidget {
   id: string;
@@ -154,6 +155,11 @@ export function Dashboard({ widgets, storageKey, columns = 4, stackBelow, hideCo
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        // Heal layouts corrupted by the (since-fixed) migration effect that
+        // could append a new widget id twice, duplicating its card
+        if (Array.isArray(parsed.order)) {
+          parsed.order = [...new Set(parsed.order)];
+        }
         // Ensure sizes exist (for backwards compatibility)
         if (!parsed.sizes) {
           parsed.sizes = getDefaultSizes();
@@ -211,16 +217,19 @@ export function Dashboard({ widgets, storageKey, columns = 4, stackBelow, hideCo
     localStorage.setItem(storageKey, JSON.stringify(layout));
   }, [layout, storageKey]);
 
-  // Ensure all widget IDs are in the order array (for newly added widgets)
+  // Ensure all widget IDs are in the order array (for newly added widgets).
+  // Missing ids must be recomputed inside the updater: a stale closure over
+  // layout.order let a double-fired effect append the same id twice.
   useEffect(() => {
     const allIds = widgets.map((w) => w.id);
-    const missingIds = allIds.filter((id) => !layout.order.includes(id));
-    if (missingIds.length > 0) {
-      setLayout((prev) => ({
+    setLayout((prev) => {
+      const missingIds = allIds.filter((id) => !prev.order.includes(id));
+      if (missingIds.length === 0) return prev;
+      return {
         ...prev,
         order: [...prev.order, ...missingIds],
-      }));
-    }
+      };
+    });
   }, [widgets, layout.order]);
 
   const sensors = useSensors(
@@ -283,8 +292,13 @@ export function Dashboard({ widgets, storageKey, columns = 4, stackBelow, hideCo
     onResetLayout?.();
   };
 
-  // Get ordered widgets
-  const orderedWidgets = layout.order
+  // Widgets cascade in one after another when the dashboard first renders
+  const gridRef = useRef<HTMLDivElement>(null);
+  useStaggeredEntrance(gridRef);
+
+  // Get ordered widgets (deduped — a widget must never render twice even if
+  // a stale saved layout lists its id more than once)
+  const orderedWidgets = [...new Set(layout.order)]
     .map((id) => widgets.find((w) => w.id === id))
     .filter(Boolean) as DashboardWidget[];
 
@@ -351,6 +365,7 @@ export function Dashboard({ widgets, storageKey, columns = 4, stackBelow, hideCo
       >
         <SortableContext items={visibleWidgets.map((w) => w.id)} strategy={rectSortingStrategy}>
           <div
+            ref={gridRef}
             className="grid gap-6"
             style={{
               gridTemplateColumns: `repeat(${effectiveColumns}, minmax(0, 1fr))`,

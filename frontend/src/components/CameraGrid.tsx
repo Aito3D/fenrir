@@ -29,6 +29,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useGridStream } from '../hooks/useGridStream';
 import { useFlipReorder } from '../hooks/useFlipReorder';
+import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import type { GridStreamStats } from '../hooks/useGridStream';
 import { useWebRTCStream } from '../hooks/useWebRTCStream';
 import type { WebRTCPrinterStats } from '../hooks/useWebRTCStream';
@@ -810,6 +811,10 @@ export function CameraGrid({
   const gridRef = useRef<HTMLDivElement>(null);
   const orderKey = gridPrinters.map(p => p.id).join(',');
   useFlipReorder(gridRef, orderKey);
+
+  // Staggered entrance — tiles cascade in one after another when the wall
+  // first renders (page arrival or refresh)
+  useStaggeredEntrance(gridRef);
 
   const getControlLoading = useCallback((id: number) =>
     (pauseMutation.isPending && pauseMutation.variables === id) ? 'pause' as const

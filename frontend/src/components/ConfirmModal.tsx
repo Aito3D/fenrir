@@ -80,11 +80,11 @@ export function ConfirmModal({
 
   return (
     <div
-      className={`fixed inset-0 bg-black/50 flex items-center justify-center p-4 ${overlayZIndex ?? 'z-50'}`}
+      className={`fixed inset-0 bg-black/50 flex items-center justify-center p-4 animate-overlay-in ${overlayZIndex ?? 'z-50'}`}
       onClick={isLoading ? undefined : onCancel}
     >
       <Card
-        className={`w-full max-w-md ${cardClassName ?? ''}`}
+        className={`w-full max-w-md animate-modal-in ${cardClassName ?? ''}`}
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
         <CardContent className="p-6">

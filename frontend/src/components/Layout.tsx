@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { Printer, Archive, ListOrdered, BarChart3, Calculator, Cloud, Settings, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Keyboard, Github, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Globe, Bell, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
@@ -17,9 +17,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useFullscreen } from '../contexts/FullscreenContext';
 import { Card, CardHeader, CardContent } from './Card';
+import { AnimatedOutlet } from './AnimatedOutlet';
 import { parseUTCDate } from '../utils/date';
 import { Button } from './Button';
 import { BugReportBubble } from './BugReportBubble';
+import aito3dLogo from '../assets/aito3d_logo.png';
 import {
   getHiddenSidebarSystemItemIds,
   getSidebarOrder,
@@ -70,7 +72,7 @@ export function setDefaultView(path: string) {
 export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { mode, resolvedMode, toggleMode } = useTheme();
+  const { mode, toggleMode } = useTheme();
   const { t } = useTranslation();
   const isSidebarCompact = useIsSidebarCompact();
 
@@ -407,8 +409,17 @@ export function Layout() {
     }
   }, [location.pathname, isSidebarCompact]);
 
-  // Exit fullscreen on navigation — other pages have no toggle to restore the chrome
+  // Exit fullscreen on navigation — other pages have no toggle to restore the
+  // chrome. On the very first render we skip this so a persisted fullscreen can
+  // be restored on reload, but only while on the printers page (`/`); loading
+  // straight into any other page still clears it so the chrome isn't stuck off.
+  const fullscreenNavFirstRun = useRef(true);
   useEffect(() => {
+    if (fullscreenNavFirstRun.current) {
+      fullscreenNavFirstRun.current = false;
+      if (location.pathname !== '/') setFullscreen(false);
+      return;
+    }
     setFullscreen(false);
   }, [location.pathname, setFullscreen]);
 
@@ -483,10 +494,10 @@ export function Layout() {
   }, [handleKeyDown]);
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-bambu-dark-secondary">
       {/* Compact Header */}
       {isSidebarCompact && !fullscreen && (
-        <header className="fixed top-0 left-0 right-0 z-40 h-14 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary flex items-center px-4">
+        <header className="animate-topbar-in fixed top-0 left-0 right-0 z-40 h-14 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary flex items-center px-4">
           <button
             onClick={() => setMobileDrawerOpen(true)}
             className="p-2 -ml-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
@@ -494,11 +505,9 @@ export function Layout() {
           >
             <Menu className="w-6 h-6 text-white" />
           </button>
-          <img
-            src={resolvedMode === 'dark' ? '/img/bambuddy_logo_dark_transparent.png' : '/img/bambuddy_logo_light.png'}
-            alt="Bambuddy"
-            className="h-8 ml-3"
-          />
+          {/* Transparent logo. In dark mode invert luminance so the dark "AITO"
+              reads on the dark header; hue-rotate-180 keeps the "3D" blue. */}
+          <img src={aito3dLogo} alt="AITO3D" className="ml-3 h-6 w-auto dark:invert dark:hue-rotate-180" />
         </header>
       )}
 
@@ -513,18 +522,22 @@ export function Layout() {
       {/* Sidebar / Mobile Drawer */}
       {!fullscreen && (
       <aside
-        className={`bg-bambu-dark-secondary border-r border-bambu-dark-tertiary flex flex-col transition-all duration-300 ${
+        className={`bg-bambu-dark-secondary border-r border-bambu-dark-tertiary flex flex-col overflow-x-hidden transition-[width,transform] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
           isSidebarCompact
             ? `fixed inset-y-0 left-0 z-50 w-72 transform ${mobileDrawerOpen ? 'translate-x-0' : '-translate-x-full'}`
-            : `fixed inset-y-0 left-0 z-30 ${sidebarExpanded ? 'w-64' : 'w-16'}`
+            : `fixed inset-y-0 left-0 z-30 animate-sidebar-in ${sidebarExpanded ? 'w-64' : 'w-16'}`
         }`}
       >
-        {/* Logo */}
+        {/* Transparent logo. In dark mode invert luminance so the dark "AITO"
+            reads on the dark sidebar; hue-rotate-180 keeps the "3D" blue. The
+            collapsed rail shrinks the wordmark to fit rather than cropping it. */}
         <div className={`border-b border-bambu-dark-tertiary flex items-center justify-center ${isSidebarCompact || sidebarExpanded ? 'p-4' : 'p-2'}`}>
           <img
-            src={resolvedMode === 'dark' ? '/img/bambuddy_logo_dark_transparent.png' : '/img/bambuddy_logo_light.png'}
-            alt="Bambuddy"
-            className={isSidebarCompact || sidebarExpanded ? 'h-16 w-auto' : 'h-8 w-8 object-cover object-left'}
+            src={aito3dLogo}
+            alt="AITO3D"
+            className={`dark:invert dark:hue-rotate-180 ${
+              isSidebarCompact || sidebarExpanded ? 'h-9 w-auto' : 'h-auto w-full'
+            }`}
           />
         </div>
 
@@ -547,7 +560,7 @@ export function Layout() {
                         href={link.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className={`flex items-center ${isSidebarCompact || sidebarExpanded ? 'gap-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-colors group text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white`}
+                        className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white`}
                         title={!isSidebarCompact && !sidebarExpanded ? link.name : undefined}
                       >
                         {link.custom_icon ? (
@@ -559,13 +572,13 @@ export function Layout() {
                         ) : (
                           LinkIcon && <LinkIcon className="w-5 h-5 flex-shrink-0" />
                         )}
-                        {(isSidebarCompact || sidebarExpanded) && <span>{link.name}</span>}
+                        <span className={`whitespace-nowrap transition-opacity duration-200 ${isSidebarCompact || sidebarExpanded ? 'opacity-100' : 'opacity-0'}`}>{link.name}</span>
                       </a>
                     ) : (
                       <NavLink
                         to={`/external/${link.id}`}
                         className={({ isActive }) =>
-                          `flex items-center ${isSidebarCompact || sidebarExpanded ? 'gap-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-colors group ${
+                          `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${
                             isActive
                               ? 'bg-bambu-green text-white'
                               : 'text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white'
@@ -582,7 +595,7 @@ export function Layout() {
                         ) : (
                           LinkIcon && <LinkIcon className="w-5 h-5 flex-shrink-0" />
                         )}
-                        {(isSidebarCompact || sidebarExpanded) && <span>{link.name}</span>}
+                        <span className={`whitespace-nowrap transition-opacity duration-200 ${isSidebarCompact || sidebarExpanded ? 'opacity-100' : 'opacity-0'}`}>{link.name}</span>
                       </NavLink>
                     )}
                   </li>
@@ -604,7 +617,7 @@ export function Layout() {
                     <NavLink
                       to={to}
                       className={({ isActive }) =>
-                        `flex items-center ${isSidebarCompact || sidebarExpanded ? 'gap-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-colors group ${
+                        `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${
                           isActive
                             ? 'bg-bambu-green text-white'
                             : 'text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white'
@@ -625,7 +638,7 @@ export function Layout() {
                           </span>
                         )}
                       </div>
-                      {(isSidebarCompact || sidebarExpanded) && <span>{t(labelKey)}</span>}
+                      <span className={`whitespace-nowrap transition-opacity duration-200 ${isSidebarCompact || sidebarExpanded ? 'opacity-100' : 'opacity-0'}`}>{t(labelKey)}</span>
                     </NavLink>
                   </li>
                 );
@@ -653,8 +666,8 @@ export function Layout() {
         <div className="flex-shrink-0 p-2 border-t border-bambu-dark-tertiary">
           {isSidebarCompact || sidebarExpanded ? (
             <div className="flex flex-col gap-2 px-2">
-              {/* Top row: icons */}
-              <div className="flex items-center justify-center gap-1 flex-wrap">
+              {/* Top row: icons — staggered fade-in on mount */}
+              <div className="flex items-center justify-center gap-1 flex-wrap stagger-fade-in">
                 {hasSwitchbarPlugs && (
                   <div className="relative">
                     <button
@@ -750,7 +763,7 @@ export function Layout() {
               </div>
             </div>
           ) : (
-            <div className="flex flex-col items-center gap-1 overflow-y-auto max-h-[50vh]">
+            <div className="flex flex-col items-center gap-1 overflow-y-auto max-h-[50vh] stagger-fade-in">
               {updateCheck?.update_available && (
                 <button
                   onClick={() => navigate('/settings')}
@@ -845,7 +858,7 @@ export function Layout() {
       )}
 
       {/* Main content */}
-      <main className={`flex-1 bg-bambu-dark overflow-auto transition-all duration-300 ${
+      <main className={`flex-1 bg-bambu-dark overflow-auto transition-[margin] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
         fullscreen ? '' : isSidebarCompact ? 'mt-14' : sidebarExpanded ? 'ml-64' : 'ml-16'
       }`}>
         {/* Debug logging indicator */}
@@ -871,7 +884,13 @@ export function Layout() {
           </div>
         )}
         {!fullscreen && devModeWarnings && devModeWarnings.length > 0 && (
-          <div className="bg-orange-100 dark:bg-orange-500/20 border-b border-orange-300 dark:border-orange-500/30 px-4 py-2 flex items-center justify-between">
+          // 700ms delay so the banner slides in only after the sidebar entrance
+          // (.animate-sidebar-in, 0.7s) has finished. `backwards` fill keeps it
+          // hidden during the wait; reduced motion disables the anim entirely.
+          <div
+            style={{ animationDelay: '700ms' }}
+            className="bg-orange-100 dark:bg-orange-500/20 border-b border-orange-300 dark:border-orange-500/30 px-4 py-2 flex items-center justify-between animate-banner-in"
+          >
             <div className="flex items-center gap-2 text-sm">
               <ShieldAlert className="w-4 h-4 text-orange-500" />
               <span className="text-orange-800 dark:text-orange-200">
@@ -915,7 +934,10 @@ export function Layout() {
             </button>
           </div>
         )}
-        <Outlet />
+        {/* Two-phase route transition: the outgoing page animates out before
+            the incoming page animates in. Reduced-motion users get an instant
+            swap. See AnimatedOutlet. */}
+        <AnimatedOutlet />
       </main>
 
       <UnknownSpoolModal
@@ -943,8 +965,8 @@ export function Layout() {
 
       {/* Plate Detection Alert Modal */}
       {plateDetectionAlert && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-4">
-          <div className="bg-bambu-dark-secondary border-2 border-yellow-500 rounded-xl shadow-2xl max-w-md w-full animate-in fade-in zoom-in duration-200">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-4 animate-overlay-in">
+          <div className="bg-bambu-dark-secondary border-2 border-yellow-500 rounded-xl shadow-2xl max-w-md w-full animate-modal-in">
             <div className="p-6 text-center">
               <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-yellow-500/20 flex items-center justify-center">
                 <svg className="w-10 h-10 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

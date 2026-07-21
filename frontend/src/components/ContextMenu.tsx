@@ -231,7 +231,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 min-w-[180px] max-w-[280px] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1"
+      className="fixed z-50 min-w-[180px] max-w-[280px] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 animate-dropdown-in"
       style={{
         left: position.x,
         top: position.y,
@@ -283,7 +283,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
                 items={item.submenu!}
                 searchPlaceholder={item.submenuSearchPlaceholder}
                 onClose={onClose}
-                className={`absolute min-w-[200px] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 overflow-hidden max-h-[300px] overflow-y-auto z-[60] ${
+                className={`absolute min-w-[200px] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 overflow-hidden max-h-[300px] overflow-y-auto z-[60] animate-dropdown-in ${
                   openSubmenuLeft ? 'right-full mr-1' : 'left-full ml-1'
                 } ${submenuPositions[index] === 'bottom' ? 'bottom-0' : 'top-0'}`}
                 onMouseEnter={() => {

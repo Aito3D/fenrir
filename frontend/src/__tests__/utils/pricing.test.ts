@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   breakEvenDiscount,
+  buildWaterfall,
   computePricing,
   discountMatrix,
   bulkPricing,
@@ -361,5 +362,28 @@ describe('formatPct', () => {
   it('formats fractions as percentages', () => {
     expect(formatPct(0.2842)).toBe('28.42%');
     expect(formatPct(1.5, 0)).toBe('150%');
+  });
+});
+
+describe('buildWaterfall', () => {
+  it('assembles ordered steps whose final cumulative is exactly total_ttc', () => {
+    const result = computePricing({ ...referenceInputs, modeling_hours: 1 }, filament, printer, defaults);
+    const steps = buildWaterfall(result);
+    expect(steps.length).toBeGreaterThan(3);
+    // Strictly increasing cumulative, each step = previous cumulative + value.
+    let running = 0;
+    for (const step of steps) {
+      expect(step.value).toBeGreaterThan(0);
+      expect(step.cumulative).toBeCloseTo(running + step.value, 6);
+      running = step.cumulative;
+    }
+    expect(steps[steps.length - 1].cumulative).toBe(result.total_ttc);
+    expect(steps[steps.length - 1].key).toBe('tax');
+  });
+
+  it('drops zero-value steps (no labor → no labor step)', () => {
+    const result = computePricing(referenceInputs, filament, printer, defaults);
+    const steps = buildWaterfall(result);
+    expect(steps.find((s) => s.key === 'labor')).toBeUndefined();
   });
 });

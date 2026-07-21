@@ -2,10 +2,11 @@
 // with a settled-value tick animation, the cost-split bar + legend, and the
 // table class strings used by the discount and bulk tables.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatMoney, formatPct } from '../../utils/pricing';
 import { computeDelta, type StatDelta } from '../stats/deltas';
+import { useSettledValue } from '../../hooks/useSettledValue';
 
 export const thCls =
   'px-3 py-2 text-right text-[11px] uppercase tracking-wide font-medium text-bambu-gray whitespace-nowrap';
@@ -15,21 +16,60 @@ export const tdCls = 'px-3 py-2 text-right text-sm text-white tabular-nums white
 export const stickyTdCls = 'sticky left-0 z-10 bg-inherit';
 export const rowCls = 'calc-table-row border-b border-bambu-dark-tertiary/50 transition-colors';
 
-/** The value once it has stopped changing for `delay` ms. */
-function useSettledValue<T>(value: T, delay: number): T {
-  const [settled, setSettled] = useState(value);
+
+/** Numeric interpolation toward `target` (~250ms ease-out). Inactive (and
+ *  snapped to the target) when disabled or reduced motion is preferred. */
+function useCountUp(target: number, enabled: boolean): number {
+  const [display, setDisplay] = useState(target);
+  const displayRef = useRef(target);
   useEffect(() => {
-    const handle = setTimeout(() => setSettled(value), delay);
-    return () => clearTimeout(handle);
-  }, [value, delay]);
-  return settled;
+    const reduceMotion =
+      typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!enabled || reduceMotion || !Number.isFinite(target)) {
+      displayRef.current = target;
+      setDisplay(target);
+      return;
+    }
+    const from = displayRef.current;
+    if (from === target) return;
+    const start = performance.now();
+    const duration = 250;
+    let raf = 0;
+    const step = (now: number) => {
+      const progress = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const next = progress < 1 ? from + (target - from) * eased : target;
+      displayRef.current = next;
+      setDisplay(next);
+      if (progress < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [target, enabled]);
+  return enabled ? display : target;
 }
 
-export function Money({ value, currency, className = '' }: { value: number; currency: string; className?: string }) {
+export function Money({
+  value,
+  currency,
+  className = '',
+  countUp = false,
+}: {
+  value: number;
+  currency: string;
+  className?: string;
+  /** Animate numerically toward the settled value — headline totals only. */
+  countUp?: boolean;
+}) {
   // The displayed amount always tracks `value` live; the remount key uses the
   // SETTLED value so the tick animation plays once after typing pauses
-  // instead of flickering on every keystroke.
+  // instead of flickering on every keystroke. In count-up mode the number
+  // itself interpolates to the settled value instead of remount-ticking.
   const settled = useSettledValue(value, 250);
+  const counted = useCountUp(settled, countUp);
+  if (countUp) {
+    return <span className={`tabular-nums ${className}`}>{formatMoney(counted, currency)}</span>;
+  }
   return (
     <span key={settled} className={`tabular-nums animate-value-tick ${className}`}>
       {formatMoney(value, currency)}
@@ -137,7 +177,7 @@ export function PrinterComparisonChips({
             type="button"
             onClick={() => onSelect(p.id)}
             title={t('calculator.byPrinterHint', { name: p.name })}
-            className="inline-flex items-baseline gap-1.5 px-2 py-0.5 rounded-full border text-xs border-bambu-dark-tertiary hover:border-bambu-green/50 transition-colors"
+            className="inline-flex items-baseline gap-1.5 px-2 py-0.5 rounded-full border text-xs border-bambu-dark-tertiary hover:border-bambu-green/50 hover:bg-bambu-green/5 transition-[color,background-color,border-color,transform] duration-100 ease-out motion-safe:active:scale-95"
           >
             <span className="text-bambu-gray truncate max-w-[9rem]">{p.name}</span>
             <Money currency={currency} value={p.total} className="text-white" />

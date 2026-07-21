@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Copy, Crosshair, Receipt } from 'lucide-react';
+import { Copy, Crosshair, FileText, Receipt } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '../Card';
 import { Button } from '../Button';
 import { Collapsible } from '../Collapsible';
@@ -22,6 +22,7 @@ export function CalculatorTotalsCard({
   printerComparison = [],
   selectedPrinterId = null,
   onSelectPrinter,
+  onOpenQuote,
 }: {
   result: PricingResult;
   segments: Segment[];
@@ -35,6 +36,7 @@ export function CalculatorTotalsCard({
   printerComparison?: PrinterComparisonEntry[];
   selectedPrinterId?: number | null;
   onSelectPrinter?: (id: number) => void;
+  onOpenQuote?: () => void;
 }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -51,7 +53,7 @@ export function CalculatorTotalsCard({
   };
 
   return (
-    <Card className="animate-calc-rise" style={{ animationDelay: '100ms' }}>
+    <Card className="animate-calc-rise">
       <CardHeader className="flex items-center justify-between">
         <h2 className="font-semibold text-white flex items-center gap-2">
           <Receipt className="w-4 h-4 text-bambu-gray" />
@@ -67,6 +69,11 @@ export function CalculatorTotalsCard({
           <Button variant="ghost" size="sm" onClick={copySummary} aria-label={t('calculator.copySummary')} title={t('calculator.copySummary')}>
             <Copy className="w-4 h-4" />
           </Button>
+          {onOpenQuote && (
+            <Button variant="ghost" size="sm" onClick={onOpenQuote} aria-label={t('calculator.quote.open')} title={t('calculator.quote.open')}>
+              <FileText className="w-4 h-4" />
+            </Button>
+          )}
         </span>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -86,12 +93,12 @@ export function CalculatorTotalsCard({
                 {t('calculator.totalTTC')}
                 {quantity > 1 ? ` · ${t('calculator.perUnit')}` : ''}
               </div>
-              <Money currency={currency} value={result.total_ttc} className="text-4xl font-bold tracking-tight text-bambu-green" />
+              <Money countUp currency={currency} value={result.total_ttc} className="text-4xl font-bold tracking-tight text-bambu-green" />
             </div>
             {quantity > 1 && (
               <div className="text-right">
                 <div className="text-sm text-bambu-gray">{t('calculator.forQuantity', { count: quantity })}</div>
-                <Money currency={currency} value={result.total_ttc_qty} className="text-xl font-semibold text-white" />
+                <Money countUp currency={currency} value={result.total_ttc_qty} className="text-xl font-semibold text-white" />
               </div>
             )}
           </div>

@@ -29,7 +29,7 @@ export function CalculatorDiscountTable({
   const colCls = (discount: number) => (belowCost(discount) ? ' bg-status-error/5' : '');
 
   return (
-    <Card className="animate-calc-rise" style={{ animationDelay: '200ms' }}>
+    <Card className="animate-calc-rise" style={{ animationDelay: '100ms' }}>
       <CardHeader>
         <h2 className="font-semibold text-white flex items-center gap-2">
           <Percent className="w-4 h-4 text-bambu-gray" />

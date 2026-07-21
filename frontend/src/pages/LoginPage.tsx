@@ -131,6 +131,19 @@ export function LoginPage() {
     return consumePostLoginRedirect() ?? '/';
   }
 
+  // Play the card exit animation, then navigate. Under reduced motion (CSS
+  // neutralizes the animation) we skip the artificial delay and go immediately.
+  function exitToDashboard(target: string) {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) {
+      navigate(target, { replace: true });
+      return;
+    }
+    setIsExiting(true);
+    // 0.5s exit animation + ~0.2s empty-screen beat before the dashboard mounts.
+    window.setTimeout(() => navigate(target, { replace: true }), 700);
+  }
+
   // Credentials step state
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -147,6 +160,10 @@ export function LoginPage() {
   const twoFAInputRef = useRef<HTMLInputElement>(null);
 
   const [rememberMe, setRememberMe] = useState(false);
+
+  // True while the card plays its exit animation on a successful login, just
+  // before we navigate to the dashboard.
+  const [isExiting, setIsExiting] = useState(false);
 
   // H-6: Password reset step state
   const [resetToken, setResetToken] = useState('');
@@ -274,7 +291,7 @@ export function LoginPage() {
         } else if (resp.access_token && resp.user) {
           loginWithToken(resp.access_token, resp.user, toPersistence(savedRememberMe));
           showToast(t('login.loginSuccess'));
-          navigate(resolvePostLoginRedirect(), { replace: true });
+          exitToDashboard(resolvePostLoginRedirect());
         } else {
           showToast(t('login.oidcLoginFailed'), 'error');
           navigate('/login', { replace: true });
@@ -303,7 +320,7 @@ export function LoginPage() {
         setStep('2fa');
       } else if (resp.access_token && resp.user) {
         showToast(t('login.loginSuccess'));
-        navigate(resolvePostLoginRedirect(), { replace: true });
+        exitToDashboard(resolvePostLoginRedirect());
       }
     },
     onError: (error: Error) => {
@@ -359,7 +376,7 @@ export function LoginPage() {
       if (resp.access_token && resp.user) {
         loginWithToken(resp.access_token, resp.user, toPersistence(rememberMe));
         showToast(t('login.loginSuccess'));
-        navigate(resolvePostLoginRedirect(), { replace: true });
+        exitToDashboard(resolvePostLoginRedirect());
       } else {
         console.error('2FA verify: unexpected response shape', resp);
         showToast(t('login.loginFailed'), 'error');
@@ -448,7 +465,7 @@ export function LoginPage() {
 
     return (
       <div className="min-h-screen flex items-center justify-center bg-bambu-dark p-4">
-        <div className="max-w-md w-full space-y-8 p-8 bg-gradient-to-br from-bambu-card to-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary shadow-lg">
+        <div className="animate-login-card-in max-w-md w-full space-y-8 p-8 bg-gradient-to-br from-bambu-card to-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary shadow-lg">
           <div className="text-center">
             <div className="flex items-center justify-center mb-4">
               <div className="w-14 h-14 rounded-full bg-bambu-green/20 flex items-center justify-center">
@@ -526,7 +543,7 @@ export function LoginPage() {
   if (step === '2fa') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-bambu-dark p-4">
-        <div className="max-w-md w-full space-y-8 p-8 bg-gradient-to-br from-bambu-card to-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary shadow-lg">
+        <div className={`${isExiting ? 'animate-login-card-out pointer-events-none' : 'animate-login-card-in'} max-w-md w-full space-y-8 p-8 bg-gradient-to-br from-bambu-card to-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary shadow-lg`}>
           <div className="text-center">
             <div className="flex items-center justify-center mb-4">
               <div className="w-14 h-14 rounded-full bg-bambu-green/20 flex items-center justify-center">
@@ -686,7 +703,7 @@ export function LoginPage() {
   // ---- Render: credentials step ----
   return (
     <div className="min-h-screen flex items-center justify-center bg-bambu-dark p-4">
-      <div className="max-w-md w-full space-y-8 p-8 bg-gradient-to-br from-bambu-card to-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary shadow-lg">
+      <div className={`${isExiting ? 'animate-login-card-out pointer-events-none' : 'animate-login-card-in'} max-w-md w-full space-y-8 p-8 bg-gradient-to-br from-bambu-card to-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary shadow-lg`}>
         <div className="text-center">
           <div className="flex items-center justify-center mb-6">
             <img

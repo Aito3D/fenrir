@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Info, Minus, Package, Plus, X, Zap } from 'lucide-react';
+import { Info, Minus, Package, Plus, Timer, X, Zap } from 'lucide-react';
 import type { CalculatorFilament, CalculatorPrinter } from '../../api/client';
 import { Card, CardContent, CardHeader } from '../Card';
 import { NumberField } from '../NumberField';
@@ -7,7 +7,8 @@ import { SearchableSelect } from '../SearchableSelect';
 import { Tooltip } from '../Tooltip';
 import { labelCls } from '../formStyles';
 import { formatPct } from '../../utils/pricing';
-import { num, type CalcState } from '../../hooks/useCalculatorState';
+import { correctedTimeH } from '../../utils/calculatorInsights';
+import { num, splitDecimalHours, type CalcState } from '../../hooks/useCalculatorState';
 
 function QuantityField({
   value,
@@ -40,7 +41,7 @@ function QuantityField({
           aria-label={t('calculator.qtyDecrease')}
           onClick={() => step(-1)}
           disabled={Math.floor(num(value, 1)) <= 1}
-          className="px-2.5 text-bambu-gray hover:text-white disabled:opacity-40 disabled:hover:text-bambu-gray transition-colors"
+          className="px-2.5 text-bambu-gray hover:text-white disabled:opacity-40 disabled:hover:text-bambu-gray transition-[color,transform] duration-100 ease-out motion-safe:active:scale-90"
         >
           <Minus className="w-4 h-4" />
         </button>
@@ -60,7 +61,7 @@ function QuantityField({
           type="button"
           aria-label={t('calculator.qtyIncrease')}
           onClick={() => step(1)}
-          className="px-2.5 text-bambu-gray hover:text-white transition-colors"
+          className="px-2.5 text-bambu-gray hover:text-white transition-[color,transform] duration-100 ease-out motion-safe:active:scale-90"
         >
           <Plus className="w-4 h-4" />
         </button>
@@ -78,6 +79,7 @@ export function CalculatorInputsCard({
   printers,
   filament,
   printer,
+  timeAccuracy,
 }: {
   state: CalcState;
   errors: Partial<Record<keyof CalcState, string>>;
@@ -86,8 +88,21 @@ export function CalculatorInputsCard({
   printers: CalculatorPrinter[];
   filament?: CalculatorFilament;
   printer?: CalculatorPrinter;
+  timeAccuracy?: { accuracy_pct: number; sample: number; scope: string | null } | null;
 }) {
   const { t } = useTranslation();
+  // Offer the time correction only while the time still comes from a slicer
+  // estimate and the measured drift is worth correcting (≥2%).
+  const showTimeCorrection =
+    state.timeFromEstimate && timeAccuracy != null && Math.abs(timeAccuracy.accuracy_pct - 100) >= 2;
+  const applyTimeCorrection = () => {
+    if (!timeAccuracy) return;
+    const estimateH = num(state.timeH) + num(state.timeM) / 60;
+    set({
+      ...splitDecimalHours(correctedTimeH(estimateH, timeAccuracy.accuracy_pct)),
+      timeFromEstimate: false,
+    });
+  };
   return (
     <Card className="animate-calc-rise">
       <CardHeader>
@@ -111,7 +126,7 @@ export function CalculatorInputsCard({
             id="calc-time-h"
             label={t('calculator.printingTime')}
             value={state.timeH}
-            onChange={(v) => set({ timeH: v })}
+            onChange={(v) => set({ timeH: v, timeFromEstimate: false })}
             error={errors.timeH}
             placeholder="0"
           />
@@ -119,11 +134,33 @@ export function CalculatorInputsCard({
             id="calc-time-m"
             label={t('calculator.printingTimeMin')}
             value={state.timeM}
-            onChange={(v) => set({ timeM: v })}
+            onChange={(v) => set({ timeM: v, timeFromEstimate: false })}
             error={errors.timeM}
             placeholder="0"
           />
         </div>
+        {showTimeCorrection && timeAccuracy && (
+          <div className="flex items-center gap-2 text-xs rounded-full bg-blue-500/10 text-blue-400 px-3 py-1.5 w-fit">
+            <Timer className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
+            {timeAccuracy.scope
+              ? t('calculator.timeCorrection.hintScoped', {
+                  scope: timeAccuracy.scope,
+                  pct: timeAccuracy.accuracy_pct.toFixed(0),
+                })
+              : t('calculator.timeCorrection.hint', { pct: timeAccuracy.accuracy_pct.toFixed(0) })}
+            <button type="button" onClick={applyTimeCorrection} className="font-medium hover:text-white transition-colors underline">
+              {t('calculator.timeCorrection.apply')}
+            </button>
+            <button
+              type="button"
+              aria-label={t('calculator.timeCorrection.dismiss')}
+              onClick={() => set({ timeFromEstimate: false })}
+              className="hover:text-white transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
         {num(state.energyKwh) > 0 && (
           <div className="flex items-center gap-2 text-xs rounded-full bg-bambu-green/10 text-bambu-green px-3 py-1.5 w-fit">
             <Zap className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />

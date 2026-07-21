@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Calculator as CalculatorIcon, RotateCcw } from 'lucide-react';
 import { api } from '../api/client';
 import { Card, CardContent } from '../components/Card';
@@ -14,22 +15,25 @@ import {
 } from '../components/CalculatorSettingsPanels';
 import { CalculatorInputsCard } from '../components/calculator/CalculatorInputsCard';
 import { CalculatorLaborCard } from '../components/calculator/CalculatorLaborCard';
+import { CalculatorRealityCheckCard } from '../components/calculator/CalculatorRealityCheckCard';
 import { CalculatorTotalsCard } from '../components/calculator/CalculatorTotalsCard';
 import { CalculatorBreakdownCard } from '../components/calculator/CalculatorBreakdownCard';
 import { CalculatorDiscountTable } from '../components/calculator/CalculatorDiscountTable';
 import { CalculatorBulkTable } from '../components/calculator/CalculatorBulkTable';
 import { CalculatorMobileSummary } from '../components/calculator/CalculatorMobileSummary';
 import type { Segment } from '../components/calculator/shared';
-import { num, PAGE_TABS, useCalculatorState, type PageTab } from '../hooks/useCalculatorState';
+import { buildPricingInputs, num, PAGE_TABS, persistCalculatorStateNow, useCalculatorState, type PageTab } from '../hooks/useCalculatorState';
 import {
   bulkPricing,
   computePricing,
-  formatMoney,
-  formatPct,
   type PricingInputs,
   type PricingResult,
 } from '../utils/pricing';
 import { getCurrencySymbol } from '../utils/currency';
+import { pickTimeAccuracy, selectRealityChecks } from '../utils/calculatorInsights';
+import { buildQuoteSummary } from '../utils/quoteSummary';
+import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 
 const TAB_LABEL_KEYS: Record<PageTab, string> = {
   calculator: 'calculator.title',
@@ -42,6 +46,7 @@ export function CalculatorPage() {
   const { t } = useTranslation();
   const { state, set, reset, errors, tab, setTab } = useCalculatorState();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const navigate = useNavigate();
 
   const { data: filaments = [], isLoading: filamentsLoading } = useQuery({
     queryKey: ['calculatorFilaments'],
@@ -62,6 +67,17 @@ export function CalculatorPage() {
     queryKey: ['settings'],
     queryFn: api.getSettings,
   });
+  // Measured reality-check figures. Failure-tolerant on purpose: when the
+  // endpoint is unavailable the card simply doesn't render.
+  const { data: insights } = useQuery({
+    queryKey: ['calculatorInsights'],
+    queryFn: () => api.getCalculatorInsights(),
+    staleTime: 300_000,
+    retry: false,
+  });
+  const { hasPermission } = useAuth();
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const currency = settings?.currency || 'USD';
   const currencySymbol = getCurrencySymbol(currency);
 
@@ -88,41 +104,41 @@ export function CalculatorPage() {
 
   const inputs: PricingInputs | null = useMemo(() => {
     if (!defaults) return null;
-    return {
-      weight_g: Math.max(0, num(state.weight)),
-      printing_time_h: Math.max(0, num(state.timeH)) + Math.max(0, num(state.timeM)) / 60,
-      measured_energy_kwh: num(state.energyKwh) > 0 ? num(state.energyKwh) : undefined,
-      quantity: Math.max(1, Math.floor(num(state.quantity, 1))),
-      modeling_hours: Math.max(0, num(state.modelingHours)),
-      modeling_base_price: Math.max(0, num(state.modelingBasePrice)),
-      prep_model_min: Math.max(0, num(state.prepModel)),
-      prep_slicing_min: Math.max(0, num(state.prepSlicing)),
-      prep_transfer_min: Math.max(0, num(state.prepTransfer)),
-      post_removal_min: Math.max(0, num(state.postRemoval)),
-      post_support_min: Math.max(0, num(state.postSupport)),
-      post_additional_min: Math.max(0, num(state.postAdditional)),
-      post_fulfillment_min: Math.max(0, num(state.postFulfillment)),
-      stuff_amount: Math.max(0, num(state.stuffAmount)),
-      stuff_markup_pct: Math.max(0, num(state.stuffMarkup, defaults.stuff_markup_pct)),
-    };
+    return buildPricingInputs(state, defaults);
   }, [state, defaults]);
 
+  // Defaults with the reality-check session overrides folded in. The pricing
+  // engine is untouched — an applied measured rate is just a different input.
+  const effectiveDefaults = useMemo(() => {
+    if (!defaults) return undefined;
+    if (state.failureRateOverride === '' && state.tariffOverride === '') return defaults;
+    return {
+      ...defaults,
+      failure_rate_pct:
+        state.failureRateOverride !== ''
+          ? num(state.failureRateOverride, defaults.failure_rate_pct)
+          : defaults.failure_rate_pct,
+      electricity_tariff:
+        state.tariffOverride !== '' ? num(state.tariffOverride, defaults.electricity_tariff) : defaults.electricity_tariff,
+    };
+  }, [defaults, state.failureRateOverride, state.tariffOverride]);
+
   const result: PricingResult | null = useMemo(() => {
-    if (!inputs || !filament || !printer || !defaults) return null;
-    return computePricing(inputs, filament, printer, defaults);
-  }, [inputs, filament, printer, defaults]);
+    if (!inputs || !filament || !printer || !effectiveDefaults) return null;
+    return computePricing(inputs, filament, printer, effectiveDefaults);
+  }, [inputs, filament, printer, effectiveDefaults]);
 
   // Per-printer totals for the comparison chips above the total price — the
   // same inputs priced against every configured printer, so the operator can
   // see at a glance which machine is cheaper for this job.
   const printerComparison = useMemo(() => {
-    if (!inputs || !filament || !defaults || printers.length < 2) return [];
+    if (!inputs || !filament || !effectiveDefaults || printers.length < 2) return [];
     return printers.map((p) => ({
       id: p.id,
       name: p.name,
-      total: computePricing(inputs, filament, p, defaults).total_ttc,
+      total: computePricing(inputs, filament, p, effectiveDefaults).total_ttc,
     }));
-  }, [inputs, filament, printers, defaults]);
+  }, [inputs, filament, printers, effectiveDefaults]);
 
   const segments: Segment[] = useMemo(() => {
     if (!result) return [];
@@ -137,27 +153,40 @@ export function CalculatorPage() {
   }, [result, t]);
 
   const bulk = useMemo(() => {
-    if (!inputs || !filament || !printer || !defaults) return [];
-    return bulkPricing(inputs, filament, printer, defaults);
-  }, [inputs, filament, printer, defaults]);
+    if (!inputs || !filament || !printer || !effectiveDefaults) return [];
+    return bulkPricing(inputs, filament, printer, effectiveDefaults);
+  }, [inputs, filament, printer, effectiveDefaults]);
+
+  const realityChecks = useMemo(
+    () =>
+      selectRealityChecks(insights, filament, printer, defaults, {
+        failureRateOverride: state.failureRateOverride,
+        tariffOverride: state.tariffOverride,
+      }),
+    [insights, filament, printer, defaults, state.failureRateOverride, state.tariffOverride],
+  );
+  const timeAccuracy = useMemo(() => pickTimeAccuracy(insights, printer), [insights, printer]);
+
+  const saveDefaultMutation = useMutation({
+    mutationFn: (patch: { failure_rate_pct?: number; electricity_tariff?: number }) =>
+      api.updateCalculatorDefaults(patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calculatorDefaults'] });
+      showToast(t('calculator.realityCheck.savedDefault'));
+    },
+  });
+  const updateFilamentCostMutation = useMutation({
+    mutationFn: ({ id, cost }: { id: number; cost: number }) => api.updateCalculatorFilament(id, { cost_per_kg: cost }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calculatorFilaments'] });
+      showToast(t('calculator.realityCheck.profileUpdated'));
+    },
+  });
 
   // Plain-text quote summary for the copy button on the totals card.
   const summaryText = useMemo(() => {
     if (!result || !filament || !printer) return '';
-    const time = `${Math.max(0, num(state.timeH))}h${state.timeM.trim() ? ` ${state.timeM}min` : ''}`;
-    const lines = [
-      `${t('calculator.title')} — ${filament.name} · ${printer.name}`,
-      `${t('calculator.weight')}: ${state.weight || '0'} · ${t('calculator.printingTime')}: ${time} · ${t('calculator.quantity')}: ${result.quantity}`,
-      `${t('calculator.machineCost')}: ${formatMoney(result.machine_cost, currency)}`,
-      `${t('calculator.groupLabor')}: ${formatMoney(result.labor_total, currency)}`,
-      `${t('calculator.totalHT')}: ${formatMoney(result.total_ht, currency)}`,
-      `${t('calculator.totalTTC')}: ${formatMoney(result.total_ttc, currency)}`,
-    ];
-    if (result.quantity > 1) {
-      lines.push(`${t('calculator.forQuantity', { count: result.quantity })}: ${formatMoney(result.total_ttc_qty, currency)}`);
-    }
-    lines.push(`${t('calculator.marginPct')}: ${formatPct(result.margin_pct)}`);
-    return lines.join('\n');
+    return buildQuoteSummary(result, filament, printer, state, currency, t);
   }, [result, filament, printer, state, currency, t]);
 
   const isLoading = filamentsLoading || printersLoading || defaultsLoading;
@@ -207,8 +236,8 @@ export function CalculatorPage() {
                 {t('calculator.easyMode')}
               </button>
             </div>
-            <Button variant="secondary" size="sm" onClick={() => setShowResetConfirm(true)}>
-              <RotateCcw className="w-4 h-4" />
+            <Button variant="secondary" size="sm" className="group" onClick={() => setShowResetConfirm(true)}>
+              <RotateCcw className="w-4 h-4 transition-transform duration-200 ease-out group-hover:-rotate-180 motion-reduce:transition-none" />
               {t('calculator.reset')}
             </Button>
           </div>
@@ -232,7 +261,7 @@ export function CalculatorPage() {
               tabRefs.current[id] = el;
             }}
             onClick={() => setTab(id)}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
+            className={`px-4 py-2 text-sm font-medium transition-[color,transform] duration-100 ease-out motion-safe:active:scale-95 ${
               tab === id ? 'text-bambu-green' : 'text-bambu-gray hover:text-white'
             }`}
           >
@@ -241,23 +270,23 @@ export function CalculatorPage() {
         ))}
         <span
           aria-hidden="true"
-          className="absolute bottom-0 h-0.5 bg-bambu-green transition-[left,width] duration-200 ease-out"
+          className="absolute bottom-0 h-0.5 bg-bambu-green transition-[left,width] duration-[250ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
           style={{ left: tabIndicator.left, width: tabIndicator.width }}
         />
       </div>
 
       {tab === 'filaments' && (
-        <div role="tabpanel" aria-labelledby="calc-tab-filaments">
+        <div key="filaments" role="tabpanel" aria-labelledby="calc-tab-filaments" className="animate-calc-tab-in">
           <CalculatorFilamentsPanel selectedFilamentId={filament?.id ?? null} />
         </div>
       )}
       {tab === 'printers' && (
-        <div role="tabpanel" aria-labelledby="calc-tab-printers">
+        <div key="printers" role="tabpanel" aria-labelledby="calc-tab-printers" className="animate-calc-tab-in">
           <CalculatorPrintersPanel selectedPrinterId={printer?.id ?? null} />
         </div>
       )}
       {tab === 'defaults' && (
-        <div role="tabpanel" aria-labelledby="calc-tab-defaults">
+        <div key="defaults" role="tabpanel" aria-labelledby="calc-tab-defaults" className="animate-calc-tab-in">
           <CalculatorDefaultsPanel />
         </div>
       )}
@@ -306,7 +335,32 @@ export function CalculatorPage() {
                     printers={printers}
                     filament={filament}
                     printer={printer}
+                    timeAccuracy={timeAccuracy}
                   />
+                  {!easy && (
+                    <CalculatorRealityCheckCard
+                      checks={realityChecks}
+                      currency={currency}
+                      appliedFailure={state.failureRateOverride !== ''}
+                      appliedTariff={state.tariffOverride !== ''}
+                      onApply={(kind, value) =>
+                        set(kind === 'failure' ? { failureRateOverride: String(value) } : { tariffOverride: String(value) })
+                      }
+                      onRevert={(kind) =>
+                        set(kind === 'failure' ? { failureRateOverride: '' } : { tariffOverride: '' })
+                      }
+                      onSaveDefault={(kind, value) => {
+                        saveDefaultMutation.mutate(
+                          kind === 'failure' ? { failure_rate_pct: value } : { electricity_tariff: value },
+                        );
+                        // The saved default now equals the measured value —
+                        // the session override would just shadow it.
+                        set(kind === 'failure' ? { failureRateOverride: '' } : { tariffOverride: '' });
+                      }}
+                      onUpdateFilamentCost={(id, cost) => updateFilamentCostMutation.mutate({ id, cost })}
+                      canUpdate={hasPermission('calculator:update')}
+                    />
+                  )}
                   <CalculatorLaborCard
                     state={state}
                     errors={errors}
@@ -353,8 +407,14 @@ export function CalculatorPage() {
                         printerComparison={printerComparison}
                         selectedPrinterId={printer?.id ?? null}
                         onSelectPrinter={(id) => set({ printerId: id })}
+                        onOpenQuote={() => {
+                          // The quote page re-reads localStorage; flush the
+                          // debounced persist so it can't be 500ms stale.
+                          persistCalculatorStateNow(state);
+                          navigate('/calculator/quote');
+                        }}
                       />
-                      {!easy && <CalculatorBreakdownCard result={result} segments={segments} currency={currency} />}
+                      {!easy && <CalculatorBreakdownCard result={result} currency={currency} />}
                       <CalculatorDiscountTable result={result} currency={currency} easy={easy} />
                       {!easy && <CalculatorBulkTable rows={bulk} currency={currency} />}
                     </div>

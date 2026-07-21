@@ -46,7 +46,7 @@ export function CalculatorLaborCard({
   const { t } = useTranslation();
   const showAmortized = result.quantity > 1 && result.modeling_cost_total + result.prep_cost_total > 0;
   return (
-    <Card className="animate-calc-rise" style={{ animationDelay: '50ms' }}>
+    <Card className="animate-calc-rise" style={{ animationDelay: '100ms' }}>
       <CardHeader>
         <h2 className="font-semibold text-white flex items-center gap-2">
           <Wrench className="w-4 h-4 text-bambu-gray" />
