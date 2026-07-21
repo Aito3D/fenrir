@@ -1,7 +1,13 @@
 services:
   bambuddy:
     image: ghcr.io/maziggy/bambuddy:latest
-    build: .
+    build:
+      context: .
+      args:
+        # Version of the bundled go2rtc (WebRTC camera engine) binary. Override
+        # via a GO2RTC_VERSION env var / .env entry, e.g. GO2RTC_VERSION=v1.9.14.
+        # Only applies to local `--build`; the pre-built ghcr.io image is fixed.
+        GO2RTC_VERSION: ${GO2RTC_VERSION:-v1.9.14}
     # Usage:
     #   docker compose up -d          → pulls pre-built image from ghcr.io
     #   docker compose up -d --build  → builds locally from source

@@ -43,6 +43,27 @@ RUN curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg \
     && apt-get update && apt-get install -y --no-install-recommends tailscale \
     && rm -rf /var/lib/apt/lists/*
 
+# Install go2rtc — the optional WebRTC camera engine. It is NOT in Debian's apt
+# repos (it ships as a single static Go binary via GitHub releases), so nothing
+# above pulls it in. Without this the runtime's shutil.which("go2rtc") probe in
+# settings.check-go2rtc returns not-installed, the UI greys out the
+# "go2rtc (WebRTC)" camera-engine option, and cameras fall back to FFmpeg/MJPEG.
+# Mapped from Docker's TARGETARCH to go2rtc's release asset names; unsupported
+# arches skip the install and simply fall back to FFmpeg (same as before).
+ARG TARGETARCH
+ARG GO2RTC_VERSION=v1.9.14
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+        amd64) go2rtc_arch="amd64" ;; \
+        arm64) go2rtc_arch="arm64" ;; \
+        arm)   go2rtc_arch="arm" ;; \
+        386)   go2rtc_arch="i386" ;; \
+        *)     echo "no go2rtc build for arch '${TARGETARCH}', skipping" >&2; exit 0 ;; \
+    esac; \
+    curl -fsSL -o /usr/local/bin/go2rtc \
+        "https://github.com/AlexxIT/go2rtc/releases/download/${GO2RTC_VERSION}/go2rtc_linux_${go2rtc_arch}"; \
+    chmod +x /usr/local/bin/go2rtc
+
 # Allow binding to privileged ports (e.g. 990/FTPS) as non-root user.
 # File capabilities are more reliable than Docker cap_add with user: directive,
 # which depends on ambient capability support in the container runtime.

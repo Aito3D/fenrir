@@ -20,7 +20,6 @@ import { Card, CardHeader, CardContent } from './Card';
 import { AnimatedOutlet } from './AnimatedOutlet';
 import { parseUTCDate } from '../utils/date';
 import { Button } from './Button';
-import { BugReportBubble } from './BugReportBubble';
 import aito3dLogo from '../assets/aito3d_logo.png';
 import {
   getHiddenSidebarSystemItemIds,
@@ -1137,7 +1136,6 @@ export function Layout() {
           </Card>
         </div>
       )}
-      {!fullscreen && <BugReportBubble />}
     </div>
   );
 }
