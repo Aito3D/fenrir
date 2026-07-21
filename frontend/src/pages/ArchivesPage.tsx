@@ -1007,7 +1007,7 @@ function ArchiveCard({
         )}
       </div>
 
-      <CardContent className="p-4 flex-1 flex flex-col">
+      <CardContent className="p-4 flex-1 flex flex-col stagger-nested">
         {/* Archive ID */}
         <p className="text-[10px] text-bambu-gray/70 mb-1">#{archive.id}</p>
 
@@ -3502,7 +3502,7 @@ export function ArchivesPage() {
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8 animate-rise-lg">
         <div>
           <div className="flex items-start gap-3">
             <div>
@@ -3908,17 +3908,19 @@ export function ArchivesPage() {
         </Card>
       ) : viewMode === 'grid' ? (
         <>
-          {/* stagger-children + animate-rise reveals the cards one after another
+          {/* stagger-parents + animate-rise-lg reveals the cards one after another
               (left-to-right, top-to-bottom) on first paint and for cards that
-              newly enter. useFlipReorder (above) slides persisting cards to new
-              slots on search/filter/sort. Elements must persist (stable keys, no
-              container remount) for FLIP to measure old→new positions. */}
+              newly enter; each card's details then cascade via the stagger-nested
+              block inside ArchiveCard. useFlipReorder (above) slides persisting
+              cards to new slots on search/filter/sort. Elements must persist
+              (stable keys, no container remount) for FLIP to measure old→new
+              positions. */}
           <div
             ref={archiveGridRef}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 stagger-children"
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 stagger-parents"
           >
             {paginatedArchives?.map((archive) => (
-              <div key={archive.id} data-flip-key={archive.id} className="animate-rise">
+              <div key={archive.id} data-flip-key={archive.id} className="animate-rise-lg">
                 <ArchiveCard
                   archive={archive}
                   printerName={archive.printer_id ? printerMap.get(archive.printer_id) || 'Unknown' : (archive.sliced_for_model || 'No Printer')}

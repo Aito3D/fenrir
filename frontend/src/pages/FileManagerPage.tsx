@@ -789,7 +789,7 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
       </div>
 
       {/* Info */}
-      <div className="p-3">
+      <div className="p-3 stagger-nested">
         <h3 className="text-sm font-medium text-white truncate" title={file.print_name || file.filename}>
           {file.print_name || file.filename}
         </h3>
@@ -1689,7 +1689,7 @@ export function FileManagerPage() {
       )}
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 animate-rise-lg">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
             <FolderOpen className="w-7 h-7 text-bambu-green" />
@@ -2332,15 +2332,16 @@ export function FileManagerPage() {
             </div>
           ) : viewMode === 'grid' ? (
             <div className="flex-1 lg:overflow-y-auto">
-              {/* stagger-children + animate-rise cascades the cards in on first
-                  paint and for cards that newly enter; useFlipReorder slides
-                  persisting cards to new slots on search/filter/sort. */}
+              {/* stagger-parents + animate-rise-lg cascades the cards in on first
+                  paint and for cards that newly enter; each card's info block
+                  then cascades via stagger-nested inside FileCard. useFlipReorder
+                  slides persisting cards to new slots on search/filter/sort. */}
               <div
                 ref={fileGridRef}
-                className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 stagger-children"
+                className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 stagger-parents"
               >
                 {filteredAndSortedFiles.map((file) => (
-                  <div key={file.id} data-flip-key={file.id} className="animate-rise">
+                  <div key={file.id} data-flip-key={file.id} className="animate-rise-lg">
                   <FileCard
                     file={file}
                     isSelected={selectedFiles.includes(file.id)}

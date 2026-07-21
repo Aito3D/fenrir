@@ -535,7 +535,7 @@ function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission, t }: P
         }}
       />
 
-      <div className="p-5 pl-6">
+      <div className="p-5 pl-6 stagger-nested">
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -1035,7 +1035,7 @@ export function ProjectsPage() {
       />
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-rise-lg">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
             <FolderKanban className="w-7 h-7 text-bambu-green" />
@@ -1139,9 +1139,9 @@ export function ProjectsPage() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8 stagger-children">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8 stagger-parents">
           {projects?.map((project) => (
-            <div key={project.id} className="animate-rise">
+            <div key={project.id} className="animate-rise-lg">
               <ProjectCard
                 project={project}
                 onClick={() => handleClick(project)}

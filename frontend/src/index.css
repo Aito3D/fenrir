@@ -623,8 +623,11 @@ body {
 
 /* ==========================================================================
    App-wide motion system
-   Motion budget: 250ms entrance · 150ms exit · <100ms feedback · 50ms stagger.
+   Motion budget: 400ms parent entrance · 280ms child entrance · 150ms exit ·
+   <100ms feedback · 80ms parent stagger · 50ms child stagger.
    Signature entrance curve is easeOutQuint — cubic-bezier(0.22, 1, 0.36, 1).
+   Entrances are two-level (see "Two-level entrance hierarchy" below): page
+   title and cards land first, then each card's details cascade in.
    All utilities below are neutralized under prefers-reduced-motion (see the
    reduce block near the bottom of this file). Tailwind v4 does not read
    tailwind.config.js here, so custom utilities MUST live in this file.
@@ -703,6 +706,58 @@ body {
 .stagger-children > *:nth-child(6) { animation-delay: 250ms; }
 .stagger-children > *:nth-child(7) { animation-delay: 300ms; }
 .stagger-children > *:nth-child(n + 8) { animation-delay: 350ms; }
+
+/* ── Two-level entrance hierarchy ──────────────────────────────────────────
+   Level 1 (parents): the page title and top-level cards establish the layout.
+   .animate-rise-lg is the parent entrance; it consumes --enter-delay so the
+   same class works standalone (page title, delay 0) and inside a staggered
+   grid. .stagger-parents only assigns each direct child an --enter-delay slot
+   (80ms cadence starting at 80ms so a delay-0 title always leads, capped at
+   8 slots so large grids stay snappy). Being a custom property, the slot
+   delay INHERITS into the card's subtree — which is what lets level 2 anchor
+   to its own parent's start time with no JS.
+
+   Level 2 (card details): put .stagger-nested on a card's static content
+   block; each direct child (title, meta rows, badges, footer) plays a
+   smaller/faster rise offset to its card: --enter-delay + 200ms + 50ms per
+   slot. At 200ms the 400ms easeOutQuint parent is ~97% settled, so details
+   surface just as their card lands and can never precede it. Only use on
+   containers whose direct children are ALL present on first paint —
+   conditionally-mounted children (hover menus, live-status blocks) would
+   replay the delayed entrance whenever they appear. */
+@keyframes rise-lg {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-rise-lg {
+  animation: rise-lg 0.4s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: var(--enter-delay, 0ms);
+}
+
+.stagger-parents > *:nth-child(1) { --enter-delay: 80ms; }
+.stagger-parents > *:nth-child(2) { --enter-delay: 160ms; }
+.stagger-parents > *:nth-child(3) { --enter-delay: 240ms; }
+.stagger-parents > *:nth-child(4) { --enter-delay: 320ms; }
+.stagger-parents > *:nth-child(5) { --enter-delay: 400ms; }
+.stagger-parents > *:nth-child(6) { --enter-delay: 480ms; }
+.stagger-parents > *:nth-child(7) { --enter-delay: 560ms; }
+.stagger-parents > *:nth-child(n + 8) { --enter-delay: 640ms; }
+
+@keyframes rise-sm {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.stagger-nested > * {
+  animation: rise-sm 0.28s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: calc(var(--enter-delay, 0ms) + 200ms + var(--nested-slot, 0) * 50ms);
+}
+.stagger-nested > *:nth-child(2) { --nested-slot: 1; }
+.stagger-nested > *:nth-child(3) { --nested-slot: 2; }
+.stagger-nested > *:nth-child(4) { --nested-slot: 3; }
+.stagger-nested > *:nth-child(5) { --nested-slot: 4; }
+.stagger-nested > *:nth-child(6) { --nested-slot: 5; }
+.stagger-nested > *:nth-child(7) { --nested-slot: 6; }
+.stagger-nested > *:nth-child(n + 8) { --nested-slot: 7; }
 
 /* Self-contained staggered fade-in for a small set of inline children (e.g. the
    sidebar footer icon row). Unlike .stagger-children this also supplies the
@@ -846,6 +901,8 @@ tbody .calc-table-row:hover {
   .animate-sidebar-in,
   .animate-topbar-in,
   .animate-rise,
+  .animate-rise-lg,
+  .stagger-nested > *,
   .animate-page-in,
   .animate-page-out,
   .animate-modal-in,
