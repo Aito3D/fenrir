@@ -1,12 +1,10 @@
 """Integration tests for the token-authenticated streaming-overlay feed (#2613).
 
-Like the Cam Wall feed, the overlay endpoint exists as its own scope-gated
-route because a kiosk/OBS URL is not a secret. But it is deliberately *wider*
-than the Cam Wall: it names the file being printed (the overlay draws the part
-on screen). So the tests that matter are the scope boundaries — an overlay
-token must not reach the Cam Wall feed and vice versa, a camwall token must not
-reach the overlay feed (that would leak the filename it is trusted to hide) —
-plus the positive path and the disconnected-printer shape.
+The overlay endpoint exists as its own scope-gated route because a kiosk/OBS URL
+is not a secret. It names the file being printed (the overlay draws the part on
+screen), so the tests that matter are the scope boundaries — a bare
+``camera_stream`` token (handed out for video alone) must not reach the overlay
+feed — plus the positive path and the disconnected-printer shape.
 """
 
 from __future__ import annotations
@@ -85,20 +83,6 @@ class TestOverlayFeedAuth:
         stream_token = await _mint(async_client, jwt, scope="camera_stream")
 
         response = await async_client.get(f"/api/v1/printers/{printer_row.id}/overlay-status?token={stream_token}")
-        assert response.status_code == 401
-
-    async def test_camwall_token_cannot_reach_the_feed(self, async_client: AsyncClient, printer_row):
-        """The crux of a *separate* scope from camwall.
-
-        A Cam Wall token is trusted precisely because it can never name the part
-        being printed. The overlay feed does name it, so a camwall token must be
-        rejected here — otherwise every wall token silently gains filename
-        visibility.
-        """
-        jwt = await _setup_admin(async_client, suffix="_camwallscope")
-        camwall_token = await _mint(async_client, jwt, scope="camwall")
-
-        response = await async_client.get(f"/api/v1/printers/{printer_row.id}/overlay-status?token={camwall_token}")
         assert response.status_code == 401
 
     async def test_overlay_token_reaches_the_feed(self, async_client: AsyncClient, printer_row):
@@ -196,21 +180,10 @@ class TestOverlayTokenReachesTheVideo:
 
         assert await verify_camera_stream_token(overlay_token) is True
 
-    async def test_overlay_gate_rejects_camera_stream_and_camwall(self, async_client: AsyncClient):
+    async def test_overlay_gate_rejects_camera_stream(self, async_client: AsyncClient):
         from backend.app.core.auth import verify_overlay_token
 
         jwt = await _setup_admin(async_client, suffix="_gate")
         stream_token = await _mint(async_client, jwt, scope="camera_stream")
-        camwall_token = await _mint(async_client, jwt, scope="camwall", name="wall")
 
         assert await verify_overlay_token(stream_token) is False
-        assert await verify_overlay_token(camwall_token) is False
-
-    async def test_camwall_gate_rejects_an_overlay_token(self, async_client: AsyncClient):
-        """Symmetric guard: the new scope must not widen the Cam Wall either."""
-        from backend.app.core.auth import verify_camwall_token
-
-        jwt = await _setup_admin(async_client, suffix="_gate_camwall")
-        overlay_token = await _mint(async_client, jwt, scope="overlay")
-
-        assert await verify_camwall_token(overlay_token) is False

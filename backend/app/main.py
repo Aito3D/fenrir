@@ -26,7 +26,6 @@ from backend.app.api.routes import (
     bug_report,
     calculator,
     camera,
-    camwall,
     cloud,
     discovery,
     external_links,
@@ -6795,14 +6794,6 @@ PUBLIC_API_ROUTES = {
     # before the route handler runs, regardless of the route's own
     # "no auth required" intent.
     "/api/v1/system/appliance",
-    # Cam Wall kiosk feed (#2531): a TV or Pi in kiosk mode has no login, so it
-    # authenticates with a long-lived ``camwall``-scoped token in the query
-    # string — exactly like the camera streams two lists below, and for the same
-    # reason (no header to put a JWT in). "Public" here only means the middleware
-    # steps aside; the route still runs RequireCamWallTokenIfAuthEnabled, which
-    # rejects an absent, expired, revoked, or wrong-scoped token. In particular a
-    # plain ``camera_stream`` token does NOT open this door.
-    "/api/v1/camwall/printers",
 }
 
 # Route prefixes that are public (for routes with dynamic segments)
@@ -6836,7 +6827,7 @@ PUBLIC_API_PATTERNS = [
     # string (same reasoning as the camera streams above — no header to carry a
     # JWT). "Public" only means the middleware steps aside; the route still runs
     # RequireOverlayTokenIfAuthEnabled, which rejects an absent, expired, revoked,
-    # or wrong-scoped token — a camwall or camera_stream token does NOT open it.
+    # or wrong-scoped token — a camera_stream token does NOT open it.
     "/overlay-status",  # /printers/{id}/overlay-status
     # Slicer token-authenticated downloads — protocol handlers (bambustudioopen://,
     # orcaslicer://) cannot send auth headers. These endpoints validate a short-lived
@@ -7223,7 +7214,6 @@ app.include_router(spoolman_inventory.router, prefix=app_settings.api_prefix)
 app.include_router(updates.router, prefix=app_settings.api_prefix)
 app.include_router(sponsor_prompt.router, prefix=app_settings.api_prefix)
 app.include_router(maintenance.router, prefix=app_settings.api_prefix)
-app.include_router(camwall.router, prefix=app_settings.api_prefix)
 app.include_router(external_links.router, prefix=app_settings.api_prefix)
 app.include_router(projects.router, prefix=app_settings.api_prefix)
 app.include_router(library.router, prefix=app_settings.api_prefix)

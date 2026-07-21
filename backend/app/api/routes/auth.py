@@ -1629,8 +1629,8 @@ async def provision_ldap_user(
 # token-mint endpoint).
 #
 # Two scopes, both minted here — see ALLOWED_SCOPES in services/long_lived_tokens
-# for what each one reaches: "camera_stream" (video only) and "camwall" (video
-# plus the Cam Wall's read-only tile metadata, #2531).
+# for what each one reaches: "camera_stream" (video only) and "overlay" (video
+# plus the print status the streaming overlay draws, #2613).
 
 
 def _long_lived_token_to_response(record, *, plaintext: str | None = None) -> dict:

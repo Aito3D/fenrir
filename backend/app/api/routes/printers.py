@@ -842,9 +842,9 @@ async def get_overlay_status(
     the one setting the overlay reads) rather than the full ``PrinterStatus``:
     a token holder gets exactly the fields the overlay renders, nothing more.
 
-    Unlike the Cam Wall feed this *includes the print filename* — the overlay
-    names the part on screen — which is why it sits behind its own ``overlay``
-    scope rather than ``camwall``.
+    This *includes the print filename* — the overlay names the part on screen —
+    which is why it sits behind its own ``overlay`` scope rather than the
+    video-only ``camera_stream`` scope.
     """
     from backend.app.api.routes.settings import get_setting
 

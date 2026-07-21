@@ -17,7 +17,6 @@ import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { FileManagerPage } from './pages/FileManagerPage';
 import { LibraryTrashPage } from './pages/LibraryTrashPage';
 import { CameraPage } from './pages/CameraPage';
-import { CamWallPage } from './pages/CamWallPage';
 import { StreamOverlayPage } from './pages/StreamOverlayPage';
 import { ExternalLinkPage } from './pages/ExternalLinkPage';
 import { GroupEditPage } from './pages/GroupEditPage';
@@ -209,11 +208,6 @@ function App() {
                     </ProtectedRoute>
                   }
                 />
-
-                {/* Cam Wall on its own URL (#2531). Outside ProtectedRoute because a
-                    ?token= kiosk has no session to protect; the page itself sends a
-                    tokenless visitor to /login, and the backend gates the feed. */}
-                <Route path="/camwall" element={<CamWallPage />} />
 
                 {/* SpoolBuddy kiosk UI */}
                 <Route element={<ProtectedRoute><WebSocketProvider><SpoolBuddyLayout /></WebSocketProvider></ProtectedRoute>}>
