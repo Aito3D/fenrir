@@ -6987,6 +6987,13 @@ export default {
     laborAmortized: 'La modélisation et la préparation sont des coûts uniques, répartis sur {{count}} unités.',
     defaultsHint: 'Vérifiez ces tarifs avant de faire un devis — le tarif électrique, le taux horaire et la taxe doivent correspondre à vos coûts locaux et à votre devise.',
     copySummary: 'Copier le récapitulatif',
+    copyBlock: {
+      material: 'Matériau',
+      weight: 'Poids',
+      time: 'Temps',
+      color: 'Couleur',
+      printer: 'Imprimante',
+    },
     summaryCopied: 'Récapitulatif copié dans le presse-papiers',
     quantity: 'Quantité',
     filament: 'Filament',

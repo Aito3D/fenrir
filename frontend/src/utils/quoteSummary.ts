@@ -1,31 +1,25 @@
-// Plain-text quote summary shared by the calculator's copy button and the
-// printable quote page. Pure module — the caller supplies the translator.
+// Plain-text job spec for the calculator's copy button — a compact block the
+// operator pastes into their own quote document. Pure module — the caller
+// supplies the translator. The color line is deliberately left blank: the
+// customer's color choice isn't something the calculator knows.
 
 import type { TFunction } from 'i18next';
 import type { CalculatorFilament, CalculatorPrinter } from '../api/client';
-import { formatMoney, formatPct, type PricingResult } from './pricing';
 import { num, type CalcState } from '../hooks/useCalculatorState';
 
 export function buildQuoteSummary(
-  result: PricingResult,
   filament: CalculatorFilament,
   printer: CalculatorPrinter,
   state: CalcState,
-  currency: string,
   t: TFunction,
 ): string {
-  const time = `${Math.max(0, num(state.timeH))}h${state.timeM.trim() ? ` ${state.timeM}min` : ''}`;
-  const lines = [
-    `${t('calculator.title')} — ${filament.name} · ${printer.name}`,
-    `${t('calculator.weight')}: ${state.weight || '0'} · ${t('calculator.printingTime')}: ${time} · ${t('calculator.quantity')}: ${result.quantity}`,
-    `${t('calculator.machineCost')}: ${formatMoney(result.machine_cost, currency)}`,
-    `${t('calculator.groupLabor')}: ${formatMoney(result.labor_total, currency)}`,
-    `${t('calculator.totalHT')}: ${formatMoney(result.total_ht, currency)}`,
-    `${t('calculator.totalTTC')}: ${formatMoney(result.total_ttc, currency)}`,
-  ];
-  if (result.quantity > 1) {
-    lines.push(`${t('calculator.forQuantity', { count: result.quantity })}: ${formatMoney(result.total_ttc_qty, currency)}`);
-  }
-  lines.push(`${t('calculator.marginPct')}: ${formatPct(result.margin_pct)}`);
-  return lines.join('\n');
+  const hours = Math.max(0, num(state.timeH)) + Math.max(0, num(state.timeM)) / 60;
+  const time = String(Math.round(hours * 100) / 100);
+  return [
+    `${t('calculator.copyBlock.material')}: ${filament.material || filament.name}`,
+    `${t('calculator.copyBlock.weight')}: ${state.weight || '0'}g`,
+    `${t('calculator.copyBlock.time')}: ${time}h`,
+    `${t('calculator.copyBlock.color')}: `,
+    `${t('calculator.copyBlock.printer')}: ${printer.name}`,
+  ].join('\n');
 }

@@ -266,11 +266,11 @@ export function CalculatorPage() {
       ),
     );
 
-  // Plain-text quote summary for the copy button on the totals card.
+  // Plain-text job spec for the copy button on the totals card.
   const summaryText = useMemo(() => {
-    if (!result || !filament || !printer) return '';
-    return buildQuoteSummary(result, filament, printer, state, currency, t);
-  }, [result, filament, printer, state, currency, t]);
+    if (!filament || !printer) return '';
+    return buildQuoteSummary(filament, printer, state, t);
+  }, [filament, printer, state, t]);
 
   const isLoading = filamentsLoading || printersLoading || defaultsLoading;
   const isEmpty = !isLoading && (filaments.length === 0 || printers.length === 0);

@@ -6928,6 +6928,13 @@ export default {
     laborAmortized: 'Modelleme ve hazırlık tek seferlik maliyetlerdir, {{count}} adede bölünür.',
     defaultsHint: 'Teklif vermeden önce bu oranları gözden geçirin — elektrik tarifesi, işçilik ücreti ve vergi yerel maliyetlerinize ve para biriminize uymalıdır.',
     copySummary: 'Özeti kopyala',
+    copyBlock: {
+      material: 'Malzeme',
+      weight: 'Ağırlık',
+      time: 'Süre',
+      color: 'Renk',
+      printer: 'Yazıcı',
+    },
     summaryCopied: 'Özet panoya kopyalandı',
     quantity: 'Adet',
     filament: 'Filament',
