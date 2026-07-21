@@ -203,40 +203,13 @@ export default {
       extraLarge: 'Extra große Karten',
     },
     pageView: {
-      openCamWallPage: 'Kamera-Wand als Seite öffnen',
       cards: 'Karten',
       camWall: 'Kamera-Wand',
     },
     fullscreen: 'Vollbild',
     exitFullscreen: 'Vollbild beenden',
     camWall: {
-      page: {
-        tokenRejected:
-          'Dieser Kamera-Wand-Link ist nicht mehr gültig. Das Token ist möglicherweise abgelaufen oder wurde widerrufen.',
-        loadFailed: 'Die Drucker konnten nicht geladen werden.',
-      },
       noPrinters: 'Keine Drucker anzuzeigen',
-      noSignal: 'Kein Signal',
-      live: 'Live',
-      snap: 'Foto',
-      off: 'Aus',
-      summary: '{{live}} live, {{snap}} Schnappschüsse, {{total}} insgesamt',
-      layer: 'Schicht {{cur}}/{{total}}',
-      timeLeft: 'noch {{time}}',
-      statusMode: {
-        off: 'Aus',
-        compact: 'Kompakt',
-        full: 'Voll',
-      },
-      settings: {
-        title: 'Kamera-Wand-Einstellungen',
-        maxLive: 'Max. Live-Streams',
-        maxLiveHint: 'Wie viele Kacheln gleichzeitig live streamen. Andere aktualisieren als Schnappschüsse.',
-        snapshotInterval: 'Schnappschuss-Intervall (Sekunden)',
-        snapshotIntervalHint: 'Wie oft Nicht-Live-Kacheln einen neuen Schnappschuss abrufen.',
-        statusOverlay: 'Status-Overlay',
-        statusOverlayHint: 'Kompakt: nur Status-Plakette. Voll: + Fortschritt, Schicht, Restzeit.',
-      },
     },
     // Controls
     hideOffline: 'Offline ausblenden',
@@ -6818,7 +6791,6 @@ export default {
   cameraTokens: {
     scope: {
       camera_stream: 'Kamera-Stream',
-      camwall: 'Kamera-Wand',
       overlay: 'Streaming-Overlay',
     },
     title: 'Kamera-API-Tokens',
@@ -6836,8 +6808,6 @@ export default {
       scopeLabel: 'Geltungsbereich',
       hintCameraStream:
         'Ein Kamera-Stream-Token kann ausschließlich Kamera-Streams und Schnappschüsse abrufen. Geeignet für Home Assistant, Frigate oder alles, was eine einzelne Kamera einbettet.',
-      hintCamWall:
-        'Ein Kamera-Wand-Token öffnet /camwall auf einem Bildschirm ohne Anmeldung. Es sieht Name und Status jedes Druckers sowie deren Kamera-Streams. Dateinamen, Adressen und Zugangscodes sieht es nicht.',
       hintOverlay:
         'Ein Streaming-Overlay-Token öffnet /overlay/{printerId} auf einem Bildschirm ohne Anmeldung – für OBS oder jeden Livestream. Es sieht den Kamera-Stream eines Druckers sowie dessen Live-Druckstatus, einschließlich des auf dem Bildschirm angezeigten Dateinamens. Adressen und Zugangscodes sieht es nicht.',
       title: 'Neues Token erstellen',
@@ -6849,9 +6819,6 @@ export default {
         'Maximale Lebensdauer 365 Tage. Der Token-Wert wird nur einmal bei der Erstellung angezeigt – jetzt kopieren.',
     },
     created: {
-      camWallUrlTitle: 'Kamera-Wand-Adresse für diesen Bildschirm',
-      camWallUrlHint:
-        'Diese Adresse auf dem Bildschirm öffnen. Wer die Adresse lesen kann, kann die Kamera-Wand sehen — behandeln Sie sie wie einen Schlüssel. Widerrufen Sie das Token, um den Bildschirm abzuschalten.',
       overlayUrlTitle: 'Overlay-Adresse für OBS',
       overlayUrlHint:
         'Fügen Sie dies in OBS als Browser-Quelle hinzu. Ändern Sie die Zahl in /overlay/1 auf die Nummer Ihres Druckers (aus dessen Adresse auf der Seite „Drucker“). Wer die Adresse lesen kann, kann den Stream sehen – behandeln Sie sie wie einen Schlüssel und widerrufen Sie das Token, um sie abzuschalten.',
@@ -7070,14 +7037,35 @@ export default {
       failureScoped: 'Fehlerquote ({{scope}})',
       tariff: 'Strompreis',
       spoolCost: 'Filamentkosten ({{material}})',
+      spoolCostBrand: 'Filamentkosten ({{brand}} {{material}})',
+      time: 'Druckzeit (korrigiert)',
+      timeScoped: 'Druckzeit ({{scope}})',
+      power: 'Leistungsaufnahme',
+      powerScoped: 'Leistungsaufnahme ({{scope}})',
+      dailyHours: 'Tägliche Nutzung',
+      dailyHoursScoped: 'Tägliche Nutzung ({{scope}})',
       apply: 'Übernehmen',
+      applyAll: 'Alle übernehmen',
       applied: 'Übernommen',
       revert: 'Zurücksetzen',
+      dismiss: 'Ausblenden',
+      restore: '{{count}} ausgeblendete wiederherstellen',
+      allClear: 'Annahmen stimmen mit Ihren Messwerten überein',
+      deltaUnit: '{{amount}}/Stück',
+      sourcePrints: 'Basierend auf {{count}} Drucken der letzten {{days}} Tage',
+      sourcePrintsFleet: 'Gemittelt über {{printers}} Drucker dieses Profils — {{count}} Drucke in den letzten {{days}} Tagen',
+      sourceSetting: 'Aus der Strompreis-Einstellung der App',
+      sourceSpools: 'Durchschnitt aus {{count}} Spulen in Ihrem Bestand',
+      sourceUsage: 'Basierend auf {{count}} Drucken über {{days}} beobachtete Tage — geringere reale Nutzung erhöht die Abschreibung pro Stunde',
+      sourceUsageFleet: 'Durchschnitt pro Maschine über {{printers}} Drucker dieses Profils ({{count}} Drucke, {{days}} beobachtete Tage) — geringere reale Nutzung erhöht die Abschreibung pro Stunde',
       saveDefault: 'Als Standard speichern',
       savedDefault: 'Standard aktualisiert',
       updateProfile: 'Profil aktualisieren',
       updateProfileHint: 'Einkaufspreis dieses Filamentprofils auf den gemessenen Durchschnitt setzen',
       profileUpdated: 'Filamentprofil aktualisiert',
+      updatePrinter: 'Profil aktualisieren',
+      updatePrinterHint: 'Dieses Druckerprofil auf den gemessenen Wert setzen',
+      printerUpdated: 'Druckerprofil aktualisiert',
     },
     timeCorrection: {
       hint: 'Ihre Drucker erreichen im Schnitt {{pct}}% der Slicer-Schätzung',

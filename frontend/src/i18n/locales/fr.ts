@@ -203,40 +203,13 @@ export default {
       extraLarge: 'Très grandes cartes',
     },
     pageView: {
-      openCamWallPage: 'Ouvrir le mur de caméras en pleine page',
       cards: 'Cartes',
       camWall: 'Mur de caméras',
     },
     fullscreen: 'Plein écran',
     exitFullscreen: 'Quitter le plein écran',
     camWall: {
-      page: {
-        tokenRejected:
-          "Ce lien du mur de caméras n'est plus valide. Le jeton a peut-être expiré ou été révoqué.",
-        loadFailed: 'Impossible de charger les imprimantes.',
-      },
       noPrinters: 'Aucune imprimante à afficher',
-      noSignal: 'Aucun signal',
-      live: 'En direct',
-      snap: 'Photo',
-      off: 'Arrêt',
-      summary: '{{live}} en direct, {{snap}} captures, {{total}} au total',
-      layer: 'Couche {{cur}}/{{total}}',
-      timeLeft: '{{time}} restantes',
-      statusMode: {
-        off: 'Arrêt',
-        compact: 'Compact',
-        full: 'Complet',
-      },
-      settings: {
-        title: 'Paramètres du mur de caméras',
-        maxLive: 'Flux en direct max.',
-        maxLiveHint: 'Combien de vignettes diffusent en direct à la fois. Les autres se rafraîchissent en captures.',
-        snapshotInterval: 'Intervalle de capture (secondes)',
-        snapshotIntervalHint: 'À quelle fréquence les vignettes hors direct récupèrent une nouvelle capture.',
-        statusOverlay: 'Overlay de statut',
-        statusOverlayHint: 'Compact : badge de statut seul. Complet : + progression, couche, temps restant.',
-      },
     },
     // Controls
     hideOffline: 'Masquer hors ligne',
@@ -6806,7 +6779,6 @@ export default {
   cameraTokens: {
     scope: {
       camera_stream: 'Flux de caméra',
-      camwall: 'Mur de caméras',
       overlay: 'Incrustation de streaming',
     },
     title: 'Jetons API caméra',
@@ -6824,8 +6796,6 @@ export default {
       scopeLabel: 'Portée',
       hintCameraStream:
         'Un jeton de flux de caméra ne peut récupérer que des flux et des instantanés. À utiliser pour Home Assistant, Frigate ou tout ce qui intègre une seule caméra.',
-      hintCamWall:
-        "Un jeton Mur de caméras ouvre /camwall sur un écran sans connexion. Il voit le nom et l'état de chaque imprimante, ainsi que leurs flux de caméra. Il ne voit ni les noms de fichiers, ni les adresses, ni les codes d'accès.",
       hintOverlay:
         "Un jeton Incrustation de streaming ouvre /overlay/{printerId} sur un écran sans connexion — pour OBS ou tout autre flux en direct. Il voit le flux de caméra d'une imprimante ainsi que son état d'impression en direct, y compris le nom de fichier affiché à l'écran. Il ne voit ni les adresses ni les codes d'accès.",
       title: 'Créer un nouveau jeton',
@@ -6837,9 +6807,6 @@ export default {
         'Durée de vie maximale 365 jours. La valeur du jeton n\'est affichée qu\'une seule fois — copiez-la maintenant.',
     },
     created: {
-      camWallUrlTitle: 'Adresse du mur de caméras pour cet écran',
-      camWallUrlHint:
-        "Ouvrez cette adresse sur l'écran. Quiconque peut lire l'adresse peut regarder le mur : traitez-la comme une clé. Révoquez le jeton pour couper l'écran.",
       overlayUrlTitle: "Adresse d'incrustation pour OBS",
       overlayUrlHint:
         "Ajoutez ceci comme Source navigateur dans OBS. Remplacez le numéro dans /overlay/1 par le numéro de votre imprimante (indiqué dans son adresse sur la page Imprimantes). Quiconque peut lire l'adresse peut regarder le flux : traitez-la comme une clé et révoquez le jeton pour couper l'accès.",
@@ -7057,14 +7024,35 @@ export default {
       failureScoped: 'Taux d\'échec ({{scope}})',
       tariff: 'Prix de l\'électricité',
       spoolCost: 'Coût du filament ({{material}})',
+      spoolCostBrand: 'Coût du filament ({{brand}} {{material}})',
+      time: 'Temps d\'impression (corrigé)',
+      timeScoped: 'Temps d\'impression ({{scope}})',
+      power: 'Puissance consommée',
+      powerScoped: 'Puissance consommée ({{scope}})',
+      dailyHours: 'Utilisation quotidienne',
+      dailyHoursScoped: 'Utilisation quotidienne ({{scope}})',
       apply: 'Appliquer',
+      applyAll: 'Tout appliquer',
       applied: 'Appliqué',
       revert: 'Rétablir',
+      dismiss: 'Ignorer',
+      restore: 'Restaurer {{count}} ignoré(s)',
+      allClear: 'Les hypothèses correspondent à vos mesures',
+      deltaUnit: '{{amount}}/unité',
+      sourcePrints: 'Basé sur {{count}} impressions au cours des {{days}} derniers jours',
+      sourcePrintsFleet: 'Moyenne sur {{printers}} imprimantes correspondant à ce profil — {{count}} impressions au cours des {{days}} derniers jours',
+      sourceSetting: 'Issu du réglage du prix de l\'électricité de l\'application',
+      sourceSpools: 'Moyenne de {{count}} bobines de votre inventaire',
+      sourceUsage: 'Basé sur {{count}} impressions sur {{days}} jours observés — une utilisation réelle plus faible augmente l\'amortissement horaire',
+      sourceUsageFleet: 'Moyenne par machine sur {{printers}} imprimantes correspondant à ce profil ({{count}} impressions, {{days}} jours observés) — une utilisation réelle plus faible augmente l\'amortissement horaire',
       saveDefault: 'Enregistrer par défaut',
       savedDefault: 'Valeur par défaut mise à jour',
       updateProfile: 'Mettre à jour le profil',
       updateProfileHint: 'Définir le coût d\'achat de ce profil de filament sur la moyenne mesurée',
       profileUpdated: 'Profil de filament mis à jour',
+      updatePrinter: 'Mettre à jour le profil',
+      updatePrinterHint: 'Définir ce profil d\'imprimante sur la valeur mesurée',
+      printerUpdated: 'Profil d\'imprimante mis à jour',
     },
     timeCorrection: {
       hint: 'Vos imprimantes atteignent en moyenne {{pct}}% des estimations du slicer',

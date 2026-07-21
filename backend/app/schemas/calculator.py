@@ -164,6 +164,32 @@ class SpoolCostEntry(BaseModel):
     sample: int
 
 
+class SpoolCostBrandEntry(BaseModel):
+    brand: str
+    material: str
+    avg_cost_per_kg: float
+    sample: int
+
+
+class PowerDrawEntry(BaseModel):
+    """Energy-weighted average watts measured for one printer."""
+
+    printer_id: int
+    printer_name: str
+    avg_watts: float
+    sample: int
+
+
+class DailyUsageEntry(BaseModel):
+    """Measured usage-hours/day for one printer over the observed window."""
+
+    printer_id: int
+    printer_name: str
+    hours_per_day: float
+    observed_days: int
+    sample: int
+
+
 class CalculatorInsightsResponse(BaseModel):
     """Measured values the calculator can offer in place of its assumptions."""
 
@@ -171,4 +197,7 @@ class CalculatorInsightsResponse(BaseModel):
     failure: FailureInsights
     energy_cost_per_kwh: float
     spool_cost_by_material: list[SpoolCostEntry]
+    spool_cost_by_brand: list[SpoolCostBrandEntry]
     time_accuracy: TimeAccuracyInsights
+    power_by_printer: list[PowerDrawEntry]
+    usage_by_printer: list[DailyUsageEntry]

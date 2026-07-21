@@ -202,40 +202,13 @@ export default {
       extraLarge: '特大',
     },
     pageView: {
-      openCamWallPage: 'カメラウォールをページとして開く',
       cards: 'カード',
       camWall: 'カメラウォール',
     },
     fullscreen: '全画面表示',
     exitFullscreen: '全画面表示を終了',
     camWall: {
-      page: {
-        tokenRejected:
-          'このカメラウォールのリンクは無効です。トークンの有効期限が切れたか、取り消された可能性があります。',
-        loadFailed: 'プリンターを読み込めませんでした。',
-      },
       noPrinters: '表示するプリンターがありません',
-      noSignal: '信号なし',
-      live: 'ライブ',
-      snap: 'スナップ',
-      off: 'オフ',
-      summary: 'ライブ {{live}}件、スナップ {{snap}}件、合計 {{total}}件',
-      layer: 'レイヤー {{cur}}/{{total}}',
-      timeLeft: '残り {{time}}',
-      statusMode: {
-        off: 'オフ',
-        compact: 'コンパクト',
-        full: 'フル',
-      },
-      settings: {
-        title: 'カメラウォール設定',
-        maxLive: '最大ライブ配信数',
-        maxLiveHint: '同時にライブ配信するタイル数。残りはスナップショットとして更新されます。',
-        snapshotInterval: 'スナップショット間隔（秒）',
-        snapshotIntervalHint: '非ライブのタイルが新しいスナップショットを取得する頻度。',
-        statusOverlay: 'ステータス表示',
-        statusOverlayHint: 'コンパクト：状態バッジのみ。フル：＋進捗・レイヤー・残り時間。',
-      },
     },
     // Controls
     hideOffline: 'オフラインを非表示',
@@ -6817,7 +6790,6 @@ export default {
   cameraTokens: {
     scope: {
       camera_stream: 'カメラストリーム',
-      camwall: 'カメラウォール',
       overlay: '配信オーバーレイ',
     },
     title: 'カメラAPIトークン',
@@ -6835,8 +6807,6 @@ export default {
       scopeLabel: 'スコープ',
       hintCameraStream:
         'カメラストリームトークンで取得できるのは、カメラの映像とスナップショットだけです。Home Assistant や Frigate など、単一のカメラを埋め込む用途に使用してください。',
-      hintCamWall:
-        'カメラウォールトークンは、ログインなしの画面で /camwall を開きます。各プリンターの名前と状態、そしてカメラ映像を見ることができます。ファイル名、アドレス、アクセスコードは見えません。',
       hintOverlay:
         '配信オーバーレイトークンは、ログインなしの画面で /overlay/{printerId} を開きます — OBS やライブ配信向けです。1台のプリンターのカメラ映像に加え、画面に表示されるファイル名を含むライブの印刷状況を見ることができます。アドレスやアクセスコードは見えません。',
       title: '新しいトークンを作成',
@@ -6848,9 +6818,6 @@ export default {
         '最大有効期間は365日。トークン値は作成時に一度だけ表示されます — 今すぐコピーしてください。',
     },
     created: {
-      camWallUrlTitle: 'この画面用のカメラウォール URL',
-      camWallUrlHint:
-        'この URL を画面で開いてください。URL を読める人は誰でもウォールを見られるため、鍵と同じように扱ってください。トークンを取り消すと、その画面は遮断されます。',
       overlayUrlTitle: 'OBS 用のオーバーレイ URL',
       overlayUrlHint:
         'これを OBS の「ブラウザ」ソース（Browser Source）として追加してください。/overlay/1 の番号を、お使いのプリンターの番号（プリンターページの URL に表示）に変更します。URL を読める人は誰でも配信を見られるため、鍵と同じように扱い、遮断するにはトークンを取り消してください。',
@@ -7069,14 +7036,35 @@ export default {
       failureScoped: '失敗率（{{scope}}）',
       tariff: '電気料金',
       spoolCost: 'フィラメントコスト（{{material}}）',
+      spoolCostBrand: 'フィラメントコスト（{{brand}} {{material}}）',
+      time: '印刷時間（補正済み）',
+      timeScoped: '印刷時間（{{scope}}）',
+      power: '消費電力',
+      powerScoped: '消費電力（{{scope}}）',
+      dailyHours: '1日あたりの稼働',
+      dailyHoursScoped: '1日あたりの稼働（{{scope}}）',
       apply: '適用',
+      applyAll: 'すべて適用',
       applied: '適用済み',
       revert: '元に戻す',
+      dismiss: '非表示',
+      restore: '非表示の{{count}}件を復元',
+      allClear: '前提値は実測データと一致しています',
+      deltaUnit: '{{amount}}/個',
+      sourcePrints: '過去{{days}}日間の{{count}}件の印刷に基づく',
+      sourcePrintsFleet: 'このプロファイルに一致する{{printers}}台のプリンターの平均 — 過去{{days}}日間の{{count}}件の印刷',
+      sourceSetting: 'アプリの電気料金設定より',
+      sourceSpools: '在庫の{{count}}本のスプールの平均',
+      sourceUsage: '{{days}}日間の{{count}}件の印刷に基づく — 実稼働が少ないほど時間あたりの減価償却は増えます',
+      sourceUsageFleet: 'このプロファイルに一致する{{printers}}台のプリンターの1台あたり平均（{{count}}件の印刷、{{days}}観測日）— 実稼働が少ないほど時間あたりの減価償却は増えます',
       saveDefault: 'デフォルトとして保存',
       savedDefault: 'デフォルトを更新しました',
       updateProfile: 'プロファイルを更新',
       updateProfileHint: 'このフィラメントプロファイルの購入価格を実測平均に設定',
       profileUpdated: 'フィラメントプロファイルを更新しました',
+      updatePrinter: 'プロファイルを更新',
+      updatePrinterHint: 'このプリンタープロファイルを実測値に設定',
+      printerUpdated: 'プリンタープロファイルを更新しました',
     },
     timeCorrection: {
       hint: 'プリンターの実績はスライサー推定の平均 {{pct}}% です',

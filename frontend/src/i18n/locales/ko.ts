@@ -190,40 +190,13 @@ export default {
       extraLarge: '아주 큰 카드'
     },
     pageView: {
-      openCamWallPage: '카메라 월을 페이지로 열기',
       cards: '카드',
       camWall: '카메라 월'
     },
     fullscreen: '전체 화면',
     exitFullscreen: '전체 화면 종료',
     camWall: {
-      page: {
-        tokenRejected:
-          '이 카메라 월 링크는 더 이상 유효하지 않습니다. 토큰이 만료되었거나 취소되었을 수 있습니다.',
-        loadFailed: '프린터를 불러오지 못했습니다.',
-      },
       noPrinters: '표시할 프린터가 없습니다',
-      noSignal: '신호 없음',
-      live: '라이브',
-      snap: '스냅',
-      off: '꺼짐',
-      summary: '라이브 {{live}}개, 스냅 {{snap}}개, 총 {{total}}개',
-      layer: '레이어 {{cur}}/{{total}}',
-      timeLeft: '{{time}} 남음',
-      statusMode: {
-        off: '꺼짐',
-        compact: '간단',
-        full: '전체'
-      },
-      settings: {
-        title: '카메라 월 설정',
-        maxLive: '최대 라이브 스트림',
-        maxLiveHint: '동시에 라이브 스트리밍할 타일 수. 나머지는 스냅샷으로 갱신됩니다.',
-        snapshotInterval: '스냅샷 간격(초)',
-        snapshotIntervalHint: '비라이브 타일이 새 스냅샷을 가져오는 주기.',
-        statusOverlay: '상태 표시',
-        statusOverlayHint: '간단: 상태 배지만 표시. 전체: + 진행률, 레이어, 남은 시간.'
-      }
     },
     hideOffline: '오프라인 숨기기',
     nextAvailable: '다음 가용',
@@ -6287,7 +6260,6 @@ export default {
   cameraTokens: {
     scope: {
       camera_stream: '카메라 스트림',
-      camwall: '카메라 월',
       overlay: '스트리밍 오버레이',
     },
     title: '카메라 API 토큰',
@@ -6305,8 +6277,6 @@ export default {
       scopeLabel: '범위',
       hintCameraStream:
         '카메라 스트림 토큰은 카메라 스트림과 스냅숏만 가져올 수 있습니다. Home Assistant, Frigate 등 카메라 하나를 삽입하는 용도로 사용하세요.',
-      hintCamWall:
-        '카메라 월 토큰은 로그인 없이 화면에서 /camwall을 엽니다. 모든 프린터의 이름과 상태, 카메라 스트림을 볼 수 있습니다. 파일 이름, 주소, 액세스 코드는 볼 수 없습니다.',
       hintOverlay:
         '스트리밍 오버레이 토큰은 로그인 없이 화면에서 /overlay/{printerId}을 엽니다 — OBS나 모든 라이브 방송용입니다. 프린터 한 대의 카메라 스트림과 화면에 표시되는 파일 이름을 포함한 실시간 인쇄 상태를 볼 수 있습니다. 주소나 액세스 코드는 볼 수 없습니다.',
       title: '새 토큰 만들기',
@@ -6317,9 +6287,6 @@ export default {
       hint: '최대 수명은 365일입니다. 토큰 값은 생성 시 한 번만 표시됩니다 — 지금 복사하세요.'
     },
     created: {
-      camWallUrlTitle: '이 화면용 카메라 월 주소',
-      camWallUrlHint:
-        '이 주소를 화면에서 여세요. 주소를 읽을 수 있는 사람은 누구나 월을 볼 수 있으므로 열쇠처럼 다루세요. 토큰을 취소하면 해당 화면의 접근이 차단됩니다.',
       overlayUrlTitle: 'OBS용 오버레이 주소',
       overlayUrlHint:
         'OBS에서 이것을 브라우저 소스로 추가하세요. /overlay/1의 숫자를 프린터의 번호(프린터 페이지의 주소에 표시됨)로 변경하세요. 주소를 읽을 수 있는 사람은 누구나 스트림을 볼 수 있으므로 열쇠처럼 다루세요 — 접근을 차단하려면 토큰을 취소하세요.',
@@ -6694,14 +6661,35 @@ export default {
       failureScoped: '실패율 ({{scope}})',
       tariff: '전기 요금',
       spoolCost: '필라멘트 비용 ({{material}})',
+      spoolCostBrand: '필라멘트 비용 ({{brand}} {{material}})',
+      time: '출력 시간 (보정됨)',
+      timeScoped: '출력 시간 ({{scope}})',
+      power: '소비 전력',
+      powerScoped: '소비 전력 ({{scope}})',
+      dailyHours: '일일 사용량',
+      dailyHoursScoped: '일일 사용량 ({{scope}})',
       apply: '적용',
+      applyAll: '모두 적용',
       applied: '적용됨',
       revert: '되돌리기',
+      dismiss: '숨기기',
+      restore: '숨긴 {{count}}개 복원',
+      allClear: '가정값이 측정 데이터와 일치합니다',
+      deltaUnit: '{{amount}}/개',
+      sourcePrints: '최근 {{days}}일간 {{count}}회 인쇄 기준',
+      sourcePrintsFleet: '이 프로필과 일치하는 프린터 {{printers}}대의 평균 — 최근 {{days}}일간 {{count}}회 인쇄',
+      sourceSetting: '앱의 전기 요금 설정에서 가져옴',
+      sourceSpools: '재고 스풀 {{count}}개의 평균',
+      sourceUsage: '관측된 {{days}}일 동안 {{count}}회 인쇄 기준 — 실제 사용량이 적을수록 시간당 감가상각이 커집니다',
+      sourceUsageFleet: '이 프로필과 일치하는 프린터 {{printers}}대의 기기당 평균 ({{count}}회 인쇄, 관측 {{days}}일) — 실제 사용량이 적을수록 시간당 감가상각이 커집니다',
       saveDefault: '기본값으로 저장',
       savedDefault: '기본값이 업데이트되었습니다',
       updateProfile: '프로필 업데이트',
       updateProfileHint: '이 필라멘트 프로필의 구매 가격을 측정 평균으로 설정',
       profileUpdated: '필라멘트 프로필이 업데이트되었습니다',
+      updatePrinter: '프로필 업데이트',
+      updatePrinterHint: '이 프린터 프로필을 측정값으로 설정',
+      printerUpdated: '프린터 프로필이 업데이트되었습니다',
     },
     timeCorrection: {
       hint: '프린터가 슬라이서 추정치의 평균 {{pct}}%를 기록합니다',

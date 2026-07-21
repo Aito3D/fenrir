@@ -203,40 +203,13 @@ export default {
       extraLarge: 'Extra large cards',
     },
     pageView: {
-      openCamWallPage: 'Open cam wall as page',
       cards: 'Cards',
       camWall: 'Cam wall',
     },
     fullscreen: 'Fullscreen',
     exitFullscreen: 'Exit fullscreen',
     camWall: {
-      page: {
-        tokenRejected:
-          'This Cam Wall link is no longer valid. The token may have expired or been revoked.',
-        loadFailed: 'Could not load the printers.',
-      },
       noPrinters: 'No printers to show',
-      noSignal: 'No signal',
-      live: 'Live',
-      snap: 'Snap',
-      off: 'Off',
-      summary: '{{live}} live, {{snap}} snapshots, {{total}} total',
-      layer: 'Layer {{cur}}/{{total}}',
-      timeLeft: '{{time}} left',
-      statusMode: {
-        off: 'Off',
-        compact: 'Compact',
-        full: 'Full',
-      },
-      settings: {
-        title: 'Cam wall settings',
-        maxLive: 'Max live streams',
-        maxLiveHint: 'How many tiles stream live at once. Others refresh as snapshots.',
-        snapshotInterval: 'Snapshot interval (seconds)',
-        snapshotIntervalHint: 'How often non-live tiles fetch a fresh snapshot.',
-        statusOverlay: 'Status overlay',
-        statusOverlayHint: 'Compact: state badge only. Full: + progress, layer, time left.',
-      },
     },
     // Controls
     hideOffline: 'Hide offline',
@@ -6862,7 +6835,6 @@ export default {
   cameraTokens: {
     scope: {
       camera_stream: 'Camera stream',
-      camwall: 'Cam Wall',
       overlay: 'Streaming Overlay',
     },
     title: 'Camera API Tokens',
@@ -6880,8 +6852,6 @@ export default {
       scopeLabel: 'Scope',
       hintCameraStream:
         'A camera-stream token can only fetch camera streams and snapshots. Use it for Home Assistant, Frigate, or anything embedding a single camera.',
-      hintCamWall:
-        "A Cam Wall token opens /camwall on a screen with no login. It can see every printer's name and state, and their camera streams. It cannot see filenames, addresses or access codes.",
       hintOverlay:
         "A Streaming Overlay token opens /overlay/{printerId} on a screen with no login — for OBS or any live stream. It can see one printer's camera stream plus its live print status, including the filename shown on screen. It cannot see addresses or access codes.",
       title: 'Create new token',
@@ -6893,9 +6863,6 @@ export default {
         'Maximum lifetime is 365 days. The token value is shown only once on creation — copy it now.',
     },
     created: {
-      camWallUrlTitle: 'Cam Wall URL for this display',
-      camWallUrlHint:
-        'Open this on the screen. Anyone who can read the URL can watch the wall, so treat it like a key — revoke the token to cut the display off.',
       overlayUrlTitle: 'Overlay URL for OBS',
       overlayUrlHint:
         "Add this as a Browser Source in OBS. Change the /overlay/1 number to your printer's number (from its URL on the Printers page). Anyone who can read the URL can watch the stream, so treat it like a key — revoke the token to cut it off.",
@@ -7113,14 +7080,35 @@ export default {
       failureScoped: 'Failure rate ({{scope}})',
       tariff: 'Electricity price',
       spoolCost: 'Filament cost ({{material}})',
+      spoolCostBrand: 'Filament cost ({{brand}} {{material}})',
+      time: 'Print time (corrected)',
+      timeScoped: 'Print time ({{scope}})',
+      power: 'Power draw',
+      powerScoped: 'Power draw ({{scope}})',
+      dailyHours: 'Daily usage',
+      dailyHoursScoped: 'Daily usage ({{scope}})',
       apply: 'Apply',
+      applyAll: 'Apply all',
       applied: 'Applied',
       revert: 'Revert',
+      dismiss: 'Dismiss',
+      restore: 'Restore {{count}} dismissed',
+      allClear: 'Assumptions match your measured data',
+      deltaUnit: '{{amount}}/unit',
+      sourcePrints: 'Based on {{count}} prints over the last {{days}} days',
+      sourcePrintsFleet: 'Averaged over {{printers}} printers matching this profile — {{count}} prints in the last {{days}} days',
+      sourceSetting: "From the app's electricity price setting",
+      sourceSpools: 'Average of {{count}} spools in your inventory',
+      sourceUsage: 'Based on {{count}} prints over {{days}} observed days — lower real usage raises the depreciation per hour',
+      sourceUsageFleet: 'Per-machine average over {{printers}} printers matching this profile ({{count}} prints, {{days}} observed days) — lower real usage raises the depreciation per hour',
       saveDefault: 'Save as default',
       savedDefault: 'Default updated',
       updateProfile: 'Update profile',
       updateProfileHint: 'Set this filament profile\'s purchase cost to the measured average',
       profileUpdated: 'Filament profile updated',
+      updatePrinter: 'Update profile',
+      updatePrinterHint: 'Set this printer profile to the measured figure',
+      printerUpdated: 'Printer profile updated',
     },
     timeCorrection: {
       hint: 'Your printers average {{pct}}% of slicer estimates',

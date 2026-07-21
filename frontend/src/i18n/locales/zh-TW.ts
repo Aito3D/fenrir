@@ -203,40 +203,13 @@ export default {
       extraLarge: '超大卡片',
     },
     pageView: {
-      openCamWallPage: '在獨立頁面中開啟攝影機牆',
       cards: '卡片',
       camWall: '攝影機牆',
     },
     fullscreen: '全螢幕',
     exitFullscreen: '退出全螢幕',
     camWall: {
-      page: {
-        tokenRejected:
-          '此攝影機牆連結已失效。權杖可能已過期或遭撤銷。',
-        loadFailed: '無法載入印表機。',
-      },
       noPrinters: '沒有可顯示的印表機',
-      noSignal: '無訊號',
-      live: '直播',
-      snap: '快照',
-      off: '關閉',
-      summary: '直播 {{live}} 個，快照 {{snap}} 個，共 {{total}} 個',
-      layer: '第 {{cur}}/{{total}} 層',
-      timeLeft: '剩餘 {{time}}',
-      statusMode: {
-        off: '關閉',
-        compact: '精簡',
-        full: '完整',
-      },
-      settings: {
-        title: '攝影機牆設定',
-        maxLive: '最大直播數',
-        maxLiveHint: '同時直播的畫面數量。其他畫面以快照重新整理。',
-        snapshotInterval: '快照重新整理間隔（秒）',
-        snapshotIntervalHint: '非直播畫面取得新快照的頻率。',
-        statusOverlay: '狀態疊加',
-        statusOverlayHint: '精簡：僅顯示狀態標籤。完整：加上進度、層數、剩餘時間。',
-      },
     },
     // Controls
     hideOffline: '隱藏離線',
@@ -6804,7 +6777,6 @@ export default {
   cameraTokens: {
     scope: {
       camera_stream: '攝影機串流',
-      camwall: '攝影機牆',
       overlay: '直播疊加層',
     },
     title: '攝影機 API 權杖',
@@ -6822,8 +6794,6 @@ export default {
       scopeLabel: '權限範圍',
       hintCameraStream:
         '攝影機串流權杖只能取得攝影機串流與快照。適用於 Home Assistant、Frigate 或任何嵌入單一攝影機的情境。',
-      hintCamWall:
-        '攝影機牆權杖可在無須登入的螢幕上開啟 /camwall，能看到每台印表機的名稱與狀態以及攝影機串流，但看不到檔案名稱、位址或存取碼。',
       hintOverlay:
         '直播疊加層權杖可在無須登入的螢幕上開啟 /overlay/{printerId}——供 OBS 或任何直播使用。它能看到一台印表機的攝影機串流以及即時列印狀態，包括螢幕上顯示的檔案名稱，但看不到位址或存取碼。',
       title: '建立新權杖',
@@ -6835,9 +6805,6 @@ export default {
         '最大有效期 365 天。權杖值僅在建立時顯示一次 — 請立即複製。',
     },
     created: {
-      camWallUrlTitle: '此螢幕的攝影機牆網址',
-      camWallUrlHint:
-        '在螢幕上開啟此網址。任何能看到該網址的人都能觀看攝影機牆，請像對待鑰匙一樣對待它——撤銷權杖即可切斷該螢幕的存取。',
       overlayUrlTitle: '用於 OBS 的疊加層網址',
       overlayUrlHint:
         '在 OBS 中將其新增為「瀏覽器」來源（Browser Source）。將 /overlay/1 中的數字改為您印表機的編號（可在「印表機」頁面的網址中查看）。任何能看到該網址的人都能觀看直播，請像對待鑰匙一樣對待它——撤銷權杖即可切斷存取。',
@@ -7056,14 +7023,35 @@ export default {
       failureScoped: '失敗率（{{scope}}）',
       tariff: '電價',
       spoolCost: '耗材成本（{{material}}）',
+      spoolCostBrand: '耗材成本（{{brand}} {{material}}）',
+      time: '列印時間（已校正）',
+      timeScoped: '列印時間（{{scope}}）',
+      power: '功耗',
+      powerScoped: '功耗（{{scope}}）',
+      dailyHours: '每日使用時數',
+      dailyHoursScoped: '每日使用時數（{{scope}}）',
       apply: '套用',
+      applyAll: '全部套用',
       applied: '已套用',
       revert: '還原',
+      dismiss: '忽略',
+      restore: '還原 {{count}} 個已忽略項目',
+      allClear: '假設值與您的實測資料一致',
+      deltaUnit: '{{amount}}/件',
+      sourcePrints: '根據最近 {{days}} 天的 {{count}} 次列印',
+      sourcePrintsFleet: '符合此設定檔的 {{printers}} 台印表機的平均值 — 最近 {{days}} 天共 {{count}} 次列印',
+      sourceSetting: '來自應用程式的電價設定',
+      sourceSpools: '庫存中 {{count}} 捲耗材的平均值',
+      sourceUsage: '根據 {{days}} 個觀察日內的 {{count}} 次列印 — 實際使用越少，每小時折舊越高',
+      sourceUsageFleet: '符合此設定檔的 {{printers}} 台印表機的單機平均值（{{count}} 次列印，{{days}} 個觀察日）— 實際使用越少，每小時折舊越高',
       saveDefault: '儲存為預設值',
       savedDefault: '預設值已更新',
       updateProfile: '更新設定檔',
       updateProfileHint: '將此耗材設定檔的採購成本設為實測平均值',
       profileUpdated: '耗材設定檔已更新',
+      updatePrinter: '更新設定檔',
+      updatePrinterHint: '將此印表機設定檔設為實測值',
+      printerUpdated: '印表機設定檔已更新',
     },
     timeCorrection: {
       hint: '您的印表機平均達到切片預估的 {{pct}}%',

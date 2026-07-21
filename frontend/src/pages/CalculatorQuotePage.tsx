@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Printer as PrinterIcon } from 'lucide-react';
 import { api } from '../api/client';
 import { Button } from '../components/Button';
-import { buildPricingInputs, loadCalculatorState, num } from '../hooks/useCalculatorState';
+import { buildPricingInputs, foldSessionOverrides, loadCalculatorState, num } from '../hooks/useCalculatorState';
 import { computePricing, discountMatrix, formatMoney, formatPct } from '../utils/pricing';
 
 /**
@@ -28,14 +28,10 @@ export function CalculatorQuotePage() {
   const printer = printers.find((p) => p.id === state.printerId) ?? printers[0];
   const result = useMemo(() => {
     if (!defaults || !filament || !printer) return null;
-    const effectiveDefaults = {
-      ...defaults,
-      failure_rate_pct:
-        state.failureRateOverride !== '' ? num(state.failureRateOverride, defaults.failure_rate_pct) : defaults.failure_rate_pct,
-      electricity_tariff:
-        state.tariffOverride !== '' ? num(state.tariffOverride, defaults.electricity_tariff) : defaults.electricity_tariff,
-    };
-    return computePricing(buildPricingInputs(state, defaults), filament, printer, effectiveDefaults);
+    // Same session-override folding as the calculator page, so the printed
+    // quote can't diverge from the totals the operator just saw.
+    const effective = foldSessionOverrides(state, defaults, printer, buildPricingInputs(state, defaults));
+    return computePricing(effective.inputs, filament, effective.printer, effective.defaults);
   }, [state, filament, printer, defaults]);
 
   const discounts = useMemo(() => (result ? discountMatrix(result).filter((c) => c.discount > 0) : []), [result]);

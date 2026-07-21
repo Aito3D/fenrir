@@ -203,40 +203,13 @@ export default {
       extraLarge: '超大卡片',
     },
     pageView: {
-      openCamWallPage: '在独立页面中打开摄像头墙',
       cards: '卡片',
       camWall: '摄像头墙',
     },
     fullscreen: '全屏',
     exitFullscreen: '退出全屏',
     camWall: {
-      page: {
-        tokenRejected:
-          '此摄像头墙链接已失效。令牌可能已过期或被撤销。',
-        loadFailed: '无法加载打印机。',
-      },
       noPrinters: '没有可显示的打印机',
-      noSignal: '无信号',
-      live: '直播',
-      snap: '快照',
-      off: '关闭',
-      summary: '直播 {{live}} 个，快照 {{snap}} 个，共 {{total}} 个',
-      layer: '第 {{cur}}/{{total}} 层',
-      timeLeft: '剩余 {{time}}',
-      statusMode: {
-        off: '关闭',
-        compact: '简洁',
-        full: '完整',
-      },
-      settings: {
-        title: '摄像头墙设置',
-        maxLive: '最大直播数',
-        maxLiveHint: '同时直播的画面数量。其他画面以快照刷新。',
-        snapshotInterval: '快照刷新间隔（秒）',
-        snapshotIntervalHint: '非直播画面获取新快照的频率。',
-        statusOverlay: '状态叠加',
-        statusOverlayHint: '简洁：仅显示状态标签。完整：加上进度、层数、剩余时间。',
-      },
     },
     // Controls
     hideOffline: '隐藏离线',
@@ -6804,7 +6777,6 @@ export default {
   cameraTokens: {
     scope: {
       camera_stream: '摄像头视频流',
-      camwall: '摄像头墙',
       overlay: '直播叠加层',
     },
     title: '摄像头 API 令牌',
@@ -6822,8 +6794,6 @@ export default {
       scopeLabel: '权限范围',
       hintCameraStream:
         '摄像头视频流令牌只能获取摄像头视频流和快照。适用于 Home Assistant、Frigate 或任何嵌入单个摄像头的场景。',
-      hintCamWall:
-        '摄像头墙令牌可在无需登录的屏幕上打开 /camwall，能看到每台打印机的名称和状态以及摄像头视频流，但看不到文件名、地址或访问码。',
       hintOverlay:
         '直播叠加层令牌可在无需登录的屏幕上打开 /overlay/{printerId}——供 OBS 或任何直播使用。它能看到一台打印机的摄像头视频流以及实时打印状态，包括屏幕上显示的文件名，但看不到地址或访问码。',
       title: '创建新令牌',
@@ -6835,9 +6805,6 @@ export default {
         '最大有效期 365 天。令牌值仅在创建时显示一次 — 请立即复制。',
     },
     created: {
-      camWallUrlTitle: '此屏幕的摄像头墙网址',
-      camWallUrlHint:
-        '在屏幕上打开此网址。任何能看到该网址的人都能观看摄像头墙，请像对待钥匙一样对待它——撤销令牌即可切断该屏幕的访问。',
       overlayUrlTitle: '用于 OBS 的叠加层网址',
       overlayUrlHint:
         '在 OBS 中将其添加为“浏览器”源（Browser Source）。将 /overlay/1 中的数字改为您打印机的编号（可在“打印机”页面的网址中查看）。任何能看到该网址的人都能观看直播，请像对待钥匙一样对待它——撤销令牌即可切断访问。',
@@ -7056,14 +7023,35 @@ export default {
       failureScoped: '失败率（{{scope}}）',
       tariff: '电价',
       spoolCost: '耗材成本（{{material}}）',
+      spoolCostBrand: '耗材成本（{{brand}} {{material}}）',
+      time: '打印时间（已校正）',
+      timeScoped: '打印时间（{{scope}}）',
+      power: '功耗',
+      powerScoped: '功耗（{{scope}}）',
+      dailyHours: '每日使用时长',
+      dailyHoursScoped: '每日使用时长（{{scope}}）',
       apply: '应用',
+      applyAll: '全部应用',
       applied: '已应用',
       revert: '还原',
+      dismiss: '忽略',
+      restore: '恢复 {{count}} 条已忽略项',
+      allClear: '假设值与您的实测数据一致',
+      deltaUnit: '{{amount}}/件',
+      sourcePrints: '基于最近 {{days}} 天的 {{count}} 次打印',
+      sourcePrintsFleet: '匹配此配置的 {{printers}} 台打印机的平均值 — 最近 {{days}} 天共 {{count}} 次打印',
+      sourceSetting: '来自应用的电价设置',
+      sourceSpools: '库存中 {{count}} 卷耗材的平均值',
+      sourceUsage: '基于 {{days}} 个观测天内的 {{count}} 次打印 — 实际使用越少，每小时折旧越高',
+      sourceUsageFleet: '匹配此配置的 {{printers}} 台打印机的单机平均值（{{count}} 次打印，{{days}} 个观测天）— 实际使用越少，每小时折旧越高',
       saveDefault: '保存为默认值',
       savedDefault: '默认值已更新',
       updateProfile: '更新配置',
       updateProfileHint: '将此耗材配置的采购成本设为实测平均值',
       profileUpdated: '耗材配置已更新',
+      updatePrinter: '更新配置',
+      updatePrinterHint: '将此打印机配置设为实测值',
+      printerUpdated: '打印机配置已更新',
     },
     timeCorrection: {
       hint: '您的打印机平均达到切片预估的 {{pct}}%',

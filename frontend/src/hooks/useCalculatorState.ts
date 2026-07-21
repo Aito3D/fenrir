@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { PricingInputs } from '../utils/pricing';
+import { correctedTimeH } from '../utils/calculatorInsights';
 
 export const PAGE_TABS = ['calculator', 'filaments', 'printers', 'defaults'] as const;
 export type PageTab = (typeof PAGE_TABS)[number];
@@ -39,6 +40,13 @@ export interface CalcState {
   /** Reality-check session overrides; '' = use the stored default. */
   failureRateOverride: string;
   tariffOverride: string;
+  /** Measured time-accuracy % applied to the slicer estimate; '' = off. */
+  timeAccuracyOverride: string;
+  /** Measured printer figures applied for this session; '' = use the profile. */
+  powerWattsOverride: string;
+  dailyHoursOverride: string;
+  /** Reality-check rows the user dismissed (checkKey values). */
+  dismissedChecks: string[];
   /** True when the time fields came from a slicer estimate (prefill), so the
       time-accuracy correction chip is relevant. Cleared on manual edits. */
   timeFromEstimate: boolean;
@@ -67,6 +75,10 @@ export const DEFAULT_STATE: CalcState = {
   easyMode: false,
   failureRateOverride: '',
   tariffOverride: '',
+  timeAccuracyOverride: '',
+  powerWattsOverride: '',
+  dailyHoursOverride: '',
+  dismissedChecks: [],
   timeFromEstimate: false,
 };
 
@@ -226,6 +238,52 @@ export function persistCalculatorStateNow(state: CalcState): void {
   } catch {
     // Persistence is best-effort (private mode, quota).
   }
+}
+
+/**
+ * Fold the reality-check session overrides into the pricing inputs. The
+ * pricing engine is untouched — an applied measured value is just a different
+ * input. Shared by the calculator and quote pages so their totals can't
+ * diverge. Failure/tariff replace stored defaults; power/daily-hours replace
+ * the selected printer profile's figures; the time-accuracy correction
+ * rescales the slicer estimate (only while it still IS an estimate).
+ */
+export function foldSessionOverrides<
+  D extends { failure_rate_pct: number; electricity_tariff: number },
+  P extends { power_watts: number; daily_usage_hours: number },
+>(state: CalcState, defaults: D, printer: P, inputs: PricingInputs): { defaults: D; printer: P; inputs: PricingInputs } {
+  let d = defaults;
+  if (state.failureRateOverride !== '' || state.tariffOverride !== '') {
+    d = {
+      ...defaults,
+      failure_rate_pct:
+        state.failureRateOverride !== ''
+          ? num(state.failureRateOverride, defaults.failure_rate_pct)
+          : defaults.failure_rate_pct,
+      electricity_tariff:
+        state.tariffOverride !== ''
+          ? num(state.tariffOverride, defaults.electricity_tariff)
+          : defaults.electricity_tariff,
+    };
+  }
+  let p = printer;
+  if (state.powerWattsOverride !== '' || state.dailyHoursOverride !== '') {
+    p = {
+      ...printer,
+      power_watts:
+        state.powerWattsOverride !== '' ? num(state.powerWattsOverride, printer.power_watts) : printer.power_watts,
+      daily_usage_hours:
+        state.dailyHoursOverride !== ''
+          ? num(state.dailyHoursOverride, printer.daily_usage_hours)
+          : printer.daily_usage_hours,
+    };
+  }
+  let i = inputs;
+  if (state.timeAccuracyOverride !== '' && state.timeFromEstimate) {
+    const accuracy = num(state.timeAccuracyOverride);
+    if (accuracy > 0) i = { ...inputs, printing_time_h: correctedTimeH(inputs.printing_time_h, accuracy) };
+  }
+  return { defaults: d, printer: p, inputs: i };
 }
 
 /** CalcState → PricingInputs mapping shared by the calculator and quote pages. */

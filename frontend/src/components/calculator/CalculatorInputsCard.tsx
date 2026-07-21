@@ -80,6 +80,7 @@ export function CalculatorInputsCard({
   filament,
   printer,
   timeAccuracy,
+  showTimeChip,
 }: {
   state: CalcState;
   errors: Partial<Record<keyof CalcState, string>>;
@@ -89,18 +90,24 @@ export function CalculatorInputsCard({
   filament?: CalculatorFilament;
   printer?: CalculatorPrinter;
   timeAccuracy?: { accuracy_pct: number; sample: number; scope: string | null } | null;
+  /** Easy mode shows the correction as this inline chip; advanced mode has
+      the reality-check card's time row instead. */
+  showTimeChip?: boolean;
 }) {
   const { t } = useTranslation();
   // Offer the time correction only while the time still comes from a slicer
   // estimate and the measured drift is worth correcting (≥2%).
   const showTimeCorrection =
-    state.timeFromEstimate && timeAccuracy != null && Math.abs(timeAccuracy.accuracy_pct - 100) >= 2;
+    showTimeChip && state.timeFromEstimate && timeAccuracy != null && Math.abs(timeAccuracy.accuracy_pct - 100) >= 2;
   const applyTimeCorrection = () => {
     if (!timeAccuracy) return;
     const estimateH = num(state.timeH) + num(state.timeM) / 60;
     set({
       ...splitDecimalHours(correctedTimeH(estimateH, timeAccuracy.accuracy_pct)),
       timeFromEstimate: false,
+      // The correction is baked into the fields now — a lingering session
+      // override from the reality-check card would correct it twice.
+      timeAccuracyOverride: '',
     });
   };
   return (
@@ -126,7 +133,7 @@ export function CalculatorInputsCard({
             id="calc-time-h"
             label={t('calculator.printingTime')}
             value={state.timeH}
-            onChange={(v) => set({ timeH: v, timeFromEstimate: false })}
+            onChange={(v) => set({ timeH: v, timeFromEstimate: false, timeAccuracyOverride: '' })}
             error={errors.timeH}
             placeholder="0"
           />
@@ -134,7 +141,7 @@ export function CalculatorInputsCard({
             id="calc-time-m"
             label={t('calculator.printingTimeMin')}
             value={state.timeM}
-            onChange={(v) => set({ timeM: v, timeFromEstimate: false })}
+            onChange={(v) => set({ timeM: v, timeFromEstimate: false, timeAccuracyOverride: '' })}
             error={errors.timeM}
             placeholder="0"
           />

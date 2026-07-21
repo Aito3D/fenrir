@@ -153,7 +153,10 @@ describe('CalculatorPage', () => {
           // Equal to the defaults' tariff → no tariff row, keeps one Apply button.
           energy_cost_per_kwh: 120,
           spool_cost_by_material: [],
+          spool_cost_by_brand: [],
           time_accuracy: { overall_pct: null, sample: 0, by_printer: [] },
+          power_by_printer: [],
+          usage_by_printer: [],
         }),
       ),
     );

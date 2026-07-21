@@ -203,40 +203,13 @@ export default {
       extraLarge: 'Çok büyük kartlar',
     },
     pageView: {
-      openCamWallPage: 'Kamera duvarını sayfa olarak aç',
       cards: 'Kartlar',
       camWall: 'Kamera duvarı',
     },
     fullscreen: 'Tam ekran',
     exitFullscreen: 'Tam ekrandan çık',
     camWall: {
-      page: {
-        tokenRejected:
-          'Bu kamera duvarı bağlantısı artık geçerli değil. Belirtecin süresi dolmuş veya belirteç iptal edilmiş olabilir.',
-        loadFailed: 'Yazıcılar yüklenemedi.',
-      },
       noPrinters: 'Gösterilecek yazıcı yok',
-      noSignal: 'Sinyal yok',
-      live: 'Canlı',
-      snap: 'Foto',
-      off: 'Kapalı',
-      summary: '{{live}} canlı, {{snap}} fotoğraf, toplam {{total}}',
-      layer: 'Katman {{cur}}/{{total}}',
-      timeLeft: '{{time}} kaldı',
-      statusMode: {
-        off: 'Kapalı',
-        compact: 'Sade',
-        full: 'Tam',
-      },
-      settings: {
-        title: 'Kamera duvarı ayarları',
-        maxLive: 'Maks. canlı yayın',
-        maxLiveHint: 'Aynı anda kaç döşemenin canlı yayın yaptığı. Diğerleri foto olarak yenilenir.',
-        snapshotInterval: 'Foto aralığı (saniye)',
-        snapshotIntervalHint: 'Canlı olmayan döşemelerin ne sıklıkla yeni bir foto aldığı.',
-        statusOverlay: 'Durum kaplaması',
-        statusOverlayHint: 'Sade: yalnızca durum rozeti. Tam: + ilerleme, katman, kalan süre.',
-      },
     },
     // Kontroller
     hideOffline: 'Çevrimdışı olanları gizle',
@@ -6758,7 +6731,6 @@ export default {
   cameraTokens: {
     scope: {
       camera_stream: 'Kamera akışı',
-      camwall: 'Kamera duvarı',
       overlay: 'Yayın bindirmesi',
     },
     title: 'Kamera API Belirteçleri',
@@ -6776,8 +6748,6 @@ export default {
       scopeLabel: 'Kapsam',
       hintCameraStream:
         'Kamera akışı belirteci yalnızca kamera akışlarını ve anlık görüntüleri alabilir. Home Assistant, Frigate veya tek bir kamerayı gömen her şey için kullanın.',
-      hintCamWall:
-        'Kamera duvarı belirteci, oturum açmadan bir ekranda /camwall adresini açar. Her yazıcının adını ve durumunu, ayrıca kamera akışlarını görebilir. Dosya adlarını, adresleri veya erişim kodlarını göremez.',
       hintOverlay:
         'Yayın bindirmesi belirteci, oturum açmadan bir ekranda /overlay/{printerId} adresini açar — OBS veya herhangi bir canlı yayın için. Bir yazıcının kamera akışını ve ekranda gösterilen dosya adı dahil canlı yazdırma durumunu görebilir. Adresleri veya erişim kodlarını göremez.',
       title: 'Yeni belirteç oluştur',
@@ -6789,9 +6759,6 @@ export default {
         'Maksimum ömür 365 gün. Belirteç değeri oluşturmada yalnızca bir kez gösterilir — şimdi kopyalayın.',
     },
     created: {
-      camWallUrlTitle: 'Bu ekran için kamera duvarı adresi',
-      camWallUrlHint:
-        'Bu adresi ekranda açın. Adresi okuyabilen herkes duvarı izleyebilir, bu yüzden onu bir anahtar gibi görün; ekranın erişimini kesmek için belirteci iptal edin.',
       overlayUrlTitle: 'OBS için bindirme adresi',
       overlayUrlHint:
         'Bunu OBS\'ye Tarayıcı Kaynağı olarak ekleyin. /overlay/1 içindeki sayıyı yazıcınızın numarasıyla değiştirin (Yazıcılar sayfasındaki adresinden). Adresi okuyabilen herkes yayını izleyebilir, bu yüzden onu bir anahtar gibi görün — erişimi kesmek için belirteci iptal edin.',
@@ -6998,14 +6965,35 @@ export default {
       failureScoped: 'Başarısızlık oranı ({{scope}})',
       tariff: 'Elektrik fiyatı',
       spoolCost: 'Filament maliyeti ({{material}})',
+      spoolCostBrand: 'Filament maliyeti ({{brand}} {{material}})',
+      time: 'Baskı süresi (düzeltilmiş)',
+      timeScoped: 'Baskı süresi ({{scope}})',
+      power: 'Güç tüketimi',
+      powerScoped: 'Güç tüketimi ({{scope}})',
+      dailyHours: 'Günlük kullanım',
+      dailyHoursScoped: 'Günlük kullanım ({{scope}})',
       apply: 'Uygula',
+      applyAll: 'Tümünü uygula',
       applied: 'Uygulandı',
       revert: 'Geri al',
+      dismiss: 'Yoksay',
+      restore: '{{count}} yoksayılanı geri getir',
+      allClear: 'Varsayımlar ölçülen verilerinizle uyuşuyor',
+      deltaUnit: '{{amount}}/adet',
+      sourcePrints: 'Son {{days}} gündeki {{count}} baskıya dayanır',
+      sourcePrintsFleet: 'Bu profille eşleşen {{printers}} yazıcının ortalaması — son {{days}} gündeki {{count}} baskı',
+      sourceSetting: 'Uygulamanın elektrik fiyatı ayarından',
+      sourceSpools: 'Envanterinizdeki {{count}} makaranın ortalaması',
+      sourceUsage: '{{days}} gözlem günündeki {{count}} baskıya dayanır — daha düşük gerçek kullanım saatlik amortismanı artırır',
+      sourceUsageFleet: 'Bu profille eşleşen {{printers}} yazıcının makine başına ortalaması ({{count}} baskı, {{days}} gözlem günü) — daha düşük gerçek kullanım saatlik amortismanı artırır',
       saveDefault: 'Varsayılan olarak kaydet',
       savedDefault: 'Varsayılan güncellendi',
       updateProfile: 'Profili güncelle',
       updateProfileHint: 'Bu filament profilinin satın alma maliyetini ölçülen ortalamaya ayarla',
       profileUpdated: 'Filament profili güncellendi',
+      updatePrinter: 'Profili güncelle',
+      updatePrinterHint: 'Bu yazıcı profilini ölçülen değere ayarla',
+      printerUpdated: 'Yazıcı profili güncellendi',
     },
     timeCorrection: {
       hint: 'Yazıcılarınız dilimleyici tahminlerinin ortalama %{{pct}} kadarını gerçekleştiriyor',

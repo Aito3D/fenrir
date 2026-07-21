@@ -6,8 +6,11 @@ calculator can show "assumed vs measured" with one-click apply:
 
 - failure rates from the print log (overall, per printer, per filament type)
 - the global electricity price setting (`energy_cost_per_kwh`)
-- average real spool purchase cost per material from the inventory
+- average real spool purchase cost per material (and per brand+material) from
+  the inventory
 - slicer-estimate vs actual duration accuracy per printer
+- measured average power draw per printer from smart-plug energy readings
+- measured daily usage hours per printer from print-log durations
 
 Groups with fewer than ``MIN_SAMPLE`` runs are suppressed — a rate computed
 from a couple of prints is noise dressed up as truth.
@@ -31,6 +34,21 @@ MIN_SAMPLE = 5
 _ACCURACY_BAND_LO = 50.0
 _ACCURACY_BAND_HI = 200.0
 
+# Implied per-print watts outside this band are attribution noise (plug
+# powering more than the printer, counter glitches, sub-minute blips).
+_WATTS_BAND_LO = 1.0
+_WATTS_BAND_HI = 3000.0
+# Prints shorter than this can't produce a meaningful watts figure.
+_MIN_POWER_SECONDS = 300
+# Stale log entries (left open for weeks, then bulk-closed by a cleanup
+# sweep) carry weeks of wall-clock time as "duration" — under any status.
+# No real print outlasts this bound, so longer durations are corrupted
+# records and must be skipped entirely, not clamped.
+_MAX_PRINT_SECONDS = 4 * 24 * 3600
+# A usage-hours/day figure needs at least this many observed days — a
+# 3-day-old printer showing 20 h/day is noise, not utilization.
+_MIN_USAGE_DAYS = 14
+
 _FAILED_STATUSES = ("failed", "aborted")
 
 
@@ -42,6 +60,9 @@ class CalculatorInsightsService:
         failure = await self._failure_rates(db, since)
         time_accuracy = await self._time_accuracy(db, since)
         spool_costs = await self._spool_costs(db)
+        spool_costs_by_brand = await self._spool_costs_by_brand(db)
+        power = await self._power_draw(db, since)
+        usage = await self._daily_usage(db, since)
 
         from backend.app.api.routes.settings import get_energy_cost_per_kwh
 
@@ -50,7 +71,10 @@ class CalculatorInsightsService:
             "failure": failure,
             "energy_cost_per_kwh": await get_energy_cost_per_kwh(db),
             "spool_cost_by_material": spool_costs,
+            "spool_cost_by_brand": spool_costs_by_brand,
             "time_accuracy": time_accuracy,
+            "power_by_printer": power,
+            "usage_by_printer": usage,
         }
 
     async def _failure_rates(self, db: AsyncSession, since: datetime) -> dict:
@@ -172,6 +196,109 @@ class CalculatorInsightsService:
             "by_printer": sorted(by_printer, key=lambda r: -r["sample"]),
         }
 
+    async def _power_draw(self, db: AsyncSession, since: datetime) -> list[dict]:
+        """Energy-weighted average watts per printer from measured print energy.
+
+        ``PrintLogEntry.energy_kwh`` is backfilled from the smart-plug lifetime
+        counter delta, so attribution is already per-printer — but it assumes
+        the plug powers only the printer; a plug also feeding a dryer or light
+        inflates the figure (the outlier band catches the worst of it).
+        """
+        rows = await db.execute(
+            select(
+                PrintLogEntry.energy_kwh,
+                PrintLogEntry.duration_seconds,
+                PrintLogEntry.started_at,
+                PrintLogEntry.completed_at,
+                PrintLogEntry.printer_id,
+            ).where(
+                PrintLogEntry.energy_kwh > 0,
+                PrintLogEntry.printer_id.isnot(None),
+                PrintLogEntry.created_at >= since,
+                PrintLogEntry.status.in_(("completed", *_FAILED_STATUSES)),
+            )
+        )
+
+        per_printer: dict[int, dict[str, float]] = {}
+        for energy_kwh, duration_seconds, started_at, completed_at, printer_id in rows.all():
+            actual_seconds = duration_seconds
+            if not actual_seconds and started_at and completed_at:
+                elapsed = (completed_at - started_at).total_seconds()
+                actual_seconds = int(elapsed) if elapsed > 0 else None
+            if not actual_seconds or actual_seconds < _MIN_POWER_SECONDS or actual_seconds > _MAX_PRINT_SECONDS:
+                continue
+            hours = actual_seconds / 3600
+            implied_watts = energy_kwh * 1000 / hours
+            if implied_watts < _WATTS_BAND_LO or implied_watts > _WATTS_BAND_HI:
+                continue
+            bucket = per_printer.setdefault(printer_id, {"kwh": 0.0, "hours": 0.0, "sample": 0})
+            bucket["kwh"] += energy_kwh
+            bucket["hours"] += hours
+            bucket["sample"] += 1
+
+        printer_names = (
+            dict((await db.execute(select(Printer.id, Printer.name).where(Printer.id.in_(per_printer.keys())))).all())
+            if per_printer
+            else {}
+        )
+
+        by_printer = [
+            {
+                "printer_id": printer_id,
+                "printer_name": printer_names.get(printer_id, f"#{printer_id}"),
+                "avg_watts": round(bucket["kwh"] * 1000 / bucket["hours"], 1),
+                "sample": int(bucket["sample"]),
+            }
+            for printer_id, bucket in per_printer.items()
+            if bucket["sample"] >= MIN_SAMPLE and bucket["hours"] > 0
+        ]
+        return sorted(by_printer, key=lambda r: -r["sample"])
+
+    async def _daily_usage(self, db: AsyncSession, since: datetime) -> list[dict]:
+        """Measured usage-hours/day per printer, for the depreciation assumption."""
+        rows = await db.execute(
+            select(
+                PrintLogEntry.printer_id,
+                func.sum(PrintLogEntry.duration_seconds),
+                func.count(PrintLogEntry.id),
+                func.min(PrintLogEntry.created_at),
+            )
+            .where(
+                PrintLogEntry.printer_id.isnot(None),
+                PrintLogEntry.created_at >= since,
+                PrintLogEntry.duration_seconds.isnot(None),
+                PrintLogEntry.duration_seconds <= _MAX_PRINT_SECONDS,
+                PrintLogEntry.status.in_(("completed", *_FAILED_STATUSES)),
+            )
+            .group_by(PrintLogEntry.printer_id)
+        )
+
+        now = datetime.now(timezone.utc)
+        entries: dict[int, dict] = {}
+        for printer_id, total_seconds, sample, first_at in rows.all():
+            if not total_seconds or sample < MIN_SAMPLE or first_at is None:
+                continue
+            if first_at.tzinfo is None:
+                first_at = first_at.replace(tzinfo=timezone.utc)
+            observed_days = max(1, (now - first_at).days)
+            if observed_days < _MIN_USAGE_DAYS:
+                continue
+            entries[printer_id] = {
+                "printer_id": printer_id,
+                "hours_per_day": round(total_seconds / 3600 / observed_days, 2),
+                "observed_days": observed_days,
+                "sample": sample,
+            }
+
+        printer_names = (
+            dict((await db.execute(select(Printer.id, Printer.name).where(Printer.id.in_(entries.keys())))).all())
+            if entries
+            else {}
+        )
+        for printer_id, entry in entries.items():
+            entry["printer_name"] = printer_names.get(printer_id, f"#{printer_id}")
+        return sorted(entries.values(), key=lambda r: -r["sample"])
+
     async def _spool_costs(self, db: AsyncSession) -> list[dict]:
         rows = await db.execute(
             select(
@@ -186,6 +313,28 @@ class CalculatorInsightsService:
             {"material": material, "avg_cost_per_kg": round(avg_cost, 2), "sample": count}
             for material, avg_cost, count in rows.all()
             if material
+        ]
+
+    async def _spool_costs_by_brand(self, db: AsyncSession) -> list[dict]:
+        """Like ``_spool_costs`` but grouped by brand+material for exact matches."""
+        rows = await db.execute(
+            select(
+                func.upper(Spool.brand),
+                func.upper(Spool.material),
+                func.avg(Spool.cost_per_kg),
+                func.count(Spool.id),
+            )
+            .where(
+                Spool.cost_per_kg.isnot(None),
+                Spool.archived_at.is_(None),
+                Spool.brand.isnot(None),
+            )
+            .group_by(func.upper(Spool.brand), func.upper(Spool.material))
+        )
+        return [
+            {"brand": brand, "material": material, "avg_cost_per_kg": round(avg_cost, 2), "sample": count}
+            for brand, material, avg_cost, count in rows.all()
+            if brand and material
         ]
 
 

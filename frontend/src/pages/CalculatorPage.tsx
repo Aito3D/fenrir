@@ -22,7 +22,7 @@ import { CalculatorDiscountTable } from '../components/calculator/CalculatorDisc
 import { CalculatorBulkTable } from '../components/calculator/CalculatorBulkTable';
 import { CalculatorMobileSummary } from '../components/calculator/CalculatorMobileSummary';
 import type { Segment } from '../components/calculator/shared';
-import { buildPricingInputs, num, PAGE_TABS, persistCalculatorStateNow, useCalculatorState, type PageTab } from '../hooks/useCalculatorState';
+import { buildPricingInputs, foldSessionOverrides, PAGE_TABS, persistCalculatorStateNow, useCalculatorState, type PageTab } from '../hooks/useCalculatorState';
 import {
   bulkPricing,
   computePricing,
@@ -30,7 +30,15 @@ import {
   type PricingResult,
 } from '../utils/pricing';
 import { getCurrencySymbol } from '../utils/currency';
-import { pickTimeAccuracy, selectRealityChecks } from '../utils/calculatorInsights';
+import {
+  checkKey,
+  hasRealityCheckData,
+  pickTimeAccuracy,
+  realityCheckImpact,
+  selectRealityChecks,
+  type RealityCheck,
+  type RealityCheckKind,
+} from '../utils/calculatorInsights';
 import { buildQuoteSummary } from '../utils/quoteSummary';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -107,38 +115,37 @@ export function CalculatorPage() {
     return buildPricingInputs(state, defaults);
   }, [state, defaults]);
 
-  // Defaults with the reality-check session overrides folded in. The pricing
-  // engine is untouched — an applied measured rate is just a different input.
-  const effectiveDefaults = useMemo(() => {
-    if (!defaults) return undefined;
-    if (state.failureRateOverride === '' && state.tariffOverride === '') return defaults;
-    return {
-      ...defaults,
-      failure_rate_pct:
-        state.failureRateOverride !== ''
-          ? num(state.failureRateOverride, defaults.failure_rate_pct)
-          : defaults.failure_rate_pct,
-      electricity_tariff:
-        state.tariffOverride !== '' ? num(state.tariffOverride, defaults.electricity_tariff) : defaults.electricity_tariff,
-    };
-  }, [defaults, state.failureRateOverride, state.tariffOverride]);
+  // Inputs/printer/defaults with the reality-check session overrides folded
+  // in. The pricing engine is untouched — an applied measured value is just a
+  // different input.
+  const effective = useMemo(() => {
+    if (!inputs || !defaults || !printer) return null;
+    return foldSessionOverrides(state, defaults, printer, inputs);
+  }, [inputs, defaults, printer, state]);
 
   const result: PricingResult | null = useMemo(() => {
-    if (!inputs || !filament || !printer || !effectiveDefaults) return null;
-    return computePricing(inputs, filament, printer, effectiveDefaults);
-  }, [inputs, filament, printer, effectiveDefaults]);
+    if (!effective || !filament) return null;
+    return computePricing(effective.inputs, filament, effective.printer, effective.defaults);
+  }, [effective, filament]);
 
   // Per-printer totals for the comparison chips above the total price — the
   // same inputs priced against every configured printer, so the operator can
-  // see at a glance which machine is cheaper for this job.
+  // see at a glance which machine is cheaper for this job. The printer-scoped
+  // overrides (power, daily hours) were measured for the SELECTED machine
+  // only, so every other row prices against its stored profile.
   const printerComparison = useMemo(() => {
-    if (!inputs || !filament || !effectiveDefaults || printers.length < 2) return [];
+    if (!effective || !filament || printers.length < 2) return [];
     return printers.map((p) => ({
       id: p.id,
       name: p.name,
-      total: computePricing(inputs, filament, p, effectiveDefaults).total_ttc,
+      total: computePricing(
+        effective.inputs,
+        filament,
+        p.id === printer?.id ? effective.printer : p,
+        effective.defaults,
+      ).total_ttc,
     }));
-  }, [inputs, filament, printers, effectiveDefaults]);
+  }, [effective, filament, printers, printer?.id]);
 
   const segments: Segment[] = useMemo(() => {
     if (!result) return [];
@@ -153,19 +160,66 @@ export function CalculatorPage() {
   }, [result, t]);
 
   const bulk = useMemo(() => {
-    if (!inputs || !filament || !printer || !effectiveDefaults) return [];
-    return bulkPricing(inputs, filament, printer, effectiveDefaults);
-  }, [inputs, filament, printer, effectiveDefaults]);
+    if (!effective || !filament) return [];
+    return bulkPricing(effective.inputs, filament, effective.printer, effective.defaults);
+  }, [effective, filament]);
 
-  const realityChecks = useMemo(
+  // All disagreement rows, before dismissal filtering — needed to tell
+  // "everything agrees" (all-clear) apart from "everything was dismissed".
+  const allRealityChecks = useMemo(
     () =>
-      selectRealityChecks(insights, filament, printer, defaults, {
-        failureRateOverride: state.failureRateOverride,
-        tariffOverride: state.tariffOverride,
-      }),
-    [insights, filament, printer, defaults, state.failureRateOverride, state.tariffOverride],
+      selectRealityChecks(
+        insights,
+        filament,
+        printer,
+        defaults,
+        {
+          failureRateOverride: state.failureRateOverride,
+          tariffOverride: state.tariffOverride,
+          timeAccuracyOverride: state.timeAccuracyOverride,
+          powerWattsOverride: state.powerWattsOverride,
+          dailyHoursOverride: state.dailyHoursOverride,
+        },
+        inputs ? { fromEstimate: state.timeFromEstimate, estimateH: inputs.printing_time_h } : undefined,
+      ),
+    [
+      insights,
+      filament,
+      printer,
+      defaults,
+      inputs,
+      state.failureRateOverride,
+      state.tariffOverride,
+      state.timeAccuracyOverride,
+      state.powerWattsOverride,
+      state.dailyHoursOverride,
+      state.timeFromEstimate,
+    ],
   );
+  const realityChecks = useMemo(
+    () => allRealityChecks.filter((c) => !state.dismissedChecks.includes(checkKey(c))),
+    [allRealityChecks, state.dismissedChecks],
+  );
+  // Per-unit price delta of applying each visible check, against the RAW
+  // (un-overridden) inputs — "what would this do to the quote".
+  const impacts = useMemo(() => {
+    if (!inputs || !filament || !printer || !defaults) return {};
+    return Object.fromEntries(
+      realityChecks.map((c) => [checkKey(c), realityCheckImpact(c, inputs, filament, printer, defaults)]),
+    );
+  }, [realityChecks, inputs, filament, printer, defaults]);
   const timeAccuracy = useMemo(() => pickTimeAccuracy(insights, printer), [insights, printer]);
+
+  // The printer-scoped overrides were measured for one machine — they must
+  // not leak onto another profile when the selection changes.
+  const prevPrinterId = useRef(state.printerId);
+  useEffect(() => {
+    if (prevPrinterId.current !== null && state.printerId !== prevPrinterId.current) {
+      set({ powerWattsOverride: '', dailyHoursOverride: '', timeAccuracyOverride: '' });
+    }
+    prevPrinterId.current = state.printerId;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.printerId]);
 
   const saveDefaultMutation = useMutation({
     mutationFn: (patch: { failure_rate_pct?: number; electricity_tariff?: number }) =>
@@ -182,6 +236,35 @@ export function CalculatorPage() {
       showToast(t('calculator.realityCheck.profileUpdated'));
     },
   });
+  const updatePrinterProfileMutation = useMutation({
+    mutationFn: ({ id, patch }: { id: number; patch: { power_watts?: number; daily_usage_hours?: number } }) =>
+      api.updateCalculatorPrinter(id, patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calculatorPrinters'] });
+      showToast(t('calculator.realityCheck.printerUpdated'));
+    },
+  });
+
+  // Session-override field for each overridable check kind, and the value the
+  // override stores. The time row stores the measured accuracy %, not the
+  // corrected hours, so the correction keeps tracking edits to the estimate.
+  const overrideFieldFor: Record<Exclude<RealityCheckKind, 'spoolCost'>, 'failureRateOverride' | 'tariffOverride' | 'timeAccuracyOverride' | 'powerWattsOverride' | 'dailyHoursOverride'> = {
+    failure: 'failureRateOverride',
+    tariff: 'tariffOverride',
+    time: 'timeAccuracyOverride',
+    power: 'powerWattsOverride',
+    dailyHours: 'dailyHoursOverride',
+  };
+  const overrideValueFor = (check: RealityCheck): string =>
+    check.kind === 'time' ? String((check.assumed / check.measured) * 100) : String(check.measured);
+  const applyChecks = (checks: RealityCheck[]) =>
+    set(
+      Object.fromEntries(
+        checks
+          .filter((c) => c.kind !== 'spoolCost')
+          .map((c) => [overrideFieldFor[c.kind as Exclude<RealityCheckKind, 'spoolCost'>], overrideValueFor(c)]),
+      ),
+    );
 
   // Plain-text quote summary for the copy button on the totals card.
   const summaryText = useMemo(() => {
@@ -336,19 +419,26 @@ export function CalculatorPage() {
                     filament={filament}
                     printer={printer}
                     timeAccuracy={timeAccuracy}
+                    showTimeChip={easy}
                   />
                   {!easy && (
                     <CalculatorRealityCheckCard
                       checks={realityChecks}
+                      impacts={impacts}
                       currency={currency}
-                      appliedFailure={state.failureRateOverride !== ''}
-                      appliedTariff={state.tariffOverride !== ''}
-                      onApply={(kind, value) =>
-                        set(kind === 'failure' ? { failureRateOverride: String(value) } : { tariffOverride: String(value) })
-                      }
-                      onRevert={(kind) =>
-                        set(kind === 'failure' ? { failureRateOverride: '' } : { tariffOverride: '' })
-                      }
+                      windowDays={insights?.window_days}
+                      applied={{
+                        failure: state.failureRateOverride !== '',
+                        tariff: state.tariffOverride !== '',
+                        time: state.timeAccuracyOverride !== '',
+                        power: state.powerWattsOverride !== '',
+                        dailyHours: state.dailyHoursOverride !== '',
+                      }}
+                      onApply={(check) => applyChecks([check])}
+                      onApplyAll={applyChecks}
+                      onRevert={(kind) => {
+                        if (kind !== 'spoolCost') set({ [overrideFieldFor[kind]]: '' });
+                      }}
                       onSaveDefault={(kind, value) => {
                         saveDefaultMutation.mutate(
                           kind === 'failure' ? { failure_rate_pct: value } : { electricity_tariff: value },
@@ -358,7 +448,17 @@ export function CalculatorPage() {
                         set(kind === 'failure' ? { failureRateOverride: '' } : { tariffOverride: '' });
                       }}
                       onUpdateFilamentCost={(id, cost) => updateFilamentCostMutation.mutate({ id, cost })}
+                      onUpdatePrinterProfile={(id, patch) => {
+                        updatePrinterProfileMutation.mutate({ id, patch });
+                        // The profile now holds the measured figure — the
+                        // session override would just shadow it.
+                        set(patch.power_watts !== undefined ? { powerWattsOverride: '' } : { dailyHoursOverride: '' });
+                      }}
+                      onDismiss={(key) => set({ dismissedChecks: [...state.dismissedChecks, key] })}
+                      dismissedCount={state.dismissedChecks.length}
+                      onRestoreDismissed={() => set({ dismissedChecks: [] })}
                       canUpdate={hasPermission('calculator:update')}
+                      allClear={allRealityChecks.length === 0 && hasRealityCheckData(insights)}
                     />
                   )}
                   <CalculatorLaborCard

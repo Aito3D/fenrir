@@ -203,40 +203,13 @@ export default {
       extraLarge: 'Tarjetas extragrandes',
     },
     pageView: {
-      openCamWallPage: 'Abrir el muro de cámaras como página',
       cards: 'Tarjetas',
       camWall: 'Muro de cámaras',
     },
     fullscreen: 'Pantalla completa',
     exitFullscreen: 'Salir de pantalla completa',
     camWall: {
-      page: {
-        tokenRejected:
-          'Este enlace del muro de cámaras ya no es válido. Es posible que el token haya caducado o se haya revocado.',
-        loadFailed: 'No se han podido cargar las impresoras.',
-      },
       noPrinters: 'No hay impresoras que mostrar',
-      noSignal: 'Sin señal',
-      live: 'En vivo',
-      snap: 'Foto',
-      off: 'Inactivo',
-      summary: '{{live}} en vivo, {{snap}} fotos, {{total}} en total',
-      layer: 'Capa {{cur}}/{{total}}',
-      timeLeft: 'quedan {{time}}',
-      statusMode: {
-        off: 'Apagado',
-        compact: 'Compacto',
-        full: 'Completo',
-      },
-      settings: {
-        title: 'Ajustes del muro de cámaras',
-        maxLive: 'Máx. transmisiones en vivo',
-        maxLiveHint: 'Cuántos mosaicos transmiten en vivo a la vez. Los demás se actualizan como fotos.',
-        snapshotInterval: 'Intervalo de fotos (segundos)',
-        snapshotIntervalHint: 'Con qué frecuencia los mosaicos no en vivo obtienen una nueva foto.',
-        statusOverlay: 'Superposición de estado',
-        statusOverlayHint: 'Compacto: solo insignia de estado. Completo: + progreso, capa, tiempo restante.',
-      },
     },
     // Controls
     hideOffline: 'Ocultar desconectadas',
@@ -6827,7 +6800,6 @@ export default {
   cameraTokens: {
     scope: {
       camera_stream: 'Transmisión de cámara',
-      camwall: 'Muro de cámaras',
       overlay: 'Superposición de streaming',
     },
     title: 'Tokens de API de la cámara',
@@ -6845,8 +6817,6 @@ export default {
       scopeLabel: 'Alcance',
       hintCameraStream:
         'Un token de transmisión de cámara solo puede obtener transmisiones e instantáneas. Úsalo para Home Assistant, Frigate o cualquier cosa que incruste una sola cámara.',
-      hintCamWall:
-        'Un token de muro de cámaras abre /camwall en una pantalla sin iniciar sesión. Puede ver el nombre y el estado de cada impresora, y sus transmisiones de cámara. No puede ver nombres de archivo, direcciones ni códigos de acceso.',
       hintOverlay:
         'Un token de superposición de streaming abre /overlay/{printerId} en una pantalla sin iniciar sesión, para OBS o cualquier transmisión en vivo. Puede ver la transmisión de la cámara de una impresora y su estado de impresión en vivo, incluido el nombre de archivo que aparece en pantalla. No puede ver direcciones ni códigos de acceso.',
       title: 'Crear nuevo token',
@@ -6858,9 +6828,6 @@ export default {
         'La vida útil máxima es de 365 días. El valor del token se muestra solo una vez al crearlo — cópielo ahora.',
     },
     created: {
-      camWallUrlTitle: 'Dirección del muro de cámaras para esta pantalla',
-      camWallUrlHint:
-        'Abre esta dirección en la pantalla. Cualquiera que pueda leerla puede ver el muro, así que trátala como una llave: revoca el token para dejar la pantalla sin acceso.',
       overlayUrlTitle: 'Dirección de superposición para OBS',
       overlayUrlHint:
         'Agrega esto como Fuente de navegador en OBS. Cambia el número de /overlay/1 por el número de tu impresora (de su dirección en la página Impresoras). Cualquiera que pueda leer la dirección puede ver la transmisión, así que trátala como una llave: revoca el token para cortar el acceso.',
@@ -7079,14 +7046,35 @@ export default {
       failureScoped: 'Tasa de fallos ({{scope}})',
       tariff: 'Precio de la electricidad',
       spoolCost: 'Coste del filamento ({{material}})',
+      spoolCostBrand: 'Coste del filamento ({{brand}} {{material}})',
+      time: 'Tiempo de impresión (corregido)',
+      timeScoped: 'Tiempo de impresión ({{scope}})',
+      power: 'Consumo eléctrico',
+      powerScoped: 'Consumo eléctrico ({{scope}})',
+      dailyHours: 'Uso diario',
+      dailyHoursScoped: 'Uso diario ({{scope}})',
       apply: 'Aplicar',
+      applyAll: 'Aplicar todo',
       applied: 'Aplicado',
       revert: 'Revertir',
+      dismiss: 'Descartar',
+      restore: 'Restaurar {{count}} descartados',
+      allClear: 'Las suposiciones coinciden con sus datos medidos',
+      deltaUnit: '{{amount}}/unidad',
+      sourcePrints: 'Basado en {{count}} impresiones de los últimos {{days}} días',
+      sourcePrintsFleet: 'Promedio de {{printers}} impresoras que coinciden con este perfil — {{count}} impresiones en los últimos {{days}} días',
+      sourceSetting: 'Del ajuste de precio de electricidad de la aplicación',
+      sourceSpools: 'Media de {{count}} bobinas de su inventario',
+      sourceUsage: 'Basado en {{count}} impresiones en {{days}} días observados — un uso real menor aumenta la amortización por hora',
+      sourceUsageFleet: 'Promedio por máquina de {{printers}} impresoras que coinciden con este perfil ({{count}} impresiones, {{days}} días observados) — un uso real menor aumenta la amortización por hora',
       saveDefault: 'Guardar como predeterminado',
       savedDefault: 'Valor predeterminado actualizado',
       updateProfile: 'Actualizar perfil',
       updateProfileHint: 'Fijar el coste de compra de este perfil de filamento en la media medida',
       profileUpdated: 'Perfil de filamento actualizado',
+      updatePrinter: 'Actualizar perfil',
+      updatePrinterHint: 'Fijar este perfil de impresora en el valor medido',
+      printerUpdated: 'Perfil de impresora actualizado',
     },
     timeCorrection: {
       hint: 'Sus impresoras alcanzan de media el {{pct}}% de las estimaciones del slicer',
