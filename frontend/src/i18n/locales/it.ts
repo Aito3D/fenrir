@@ -6987,13 +6987,6 @@ export default {
     laborAmortized: 'Modellazione e preparazione sono costi una tantum, ripartiti su {{count}} unità.',
     defaultsHint: 'Controlla queste tariffe prima di fare un preventivo: tariffa elettrica, costo orario e tasse devono corrispondere ai tuoi costi locali e alla tua valuta.',
     copySummary: 'Copia riepilogo',
-    copyBlock: {
-      material: 'Materiale',
-      weight: 'Peso',
-      time: 'Tempo',
-      color: 'Colore',
-      printer: 'Stampante',
-    },
     summaryCopied: 'Riepilogo copiato negli appunti',
     quantity: 'Quantità',
     filament: 'Filamento',

@@ -6987,13 +6987,6 @@ export default {
     laborAmortized: 'Modelagem e preparação são custos únicos, divididos entre {{count}} unidades.',
     defaultsHint: 'Revise estas taxas antes de orçar — tarifa de energia, valor da mão de obra e imposto devem corresponder aos seus custos locais e à sua moeda.',
     copySummary: 'Copiar resumo',
-    copyBlock: {
-      material: 'Material',
-      weight: 'Peso',
-      time: 'Tempo',
-      color: 'Cor',
-      printer: 'Impressora',
-    },
     summaryCopied: 'Resumo copiado para a área de transferência',
     quantity: 'Quantidade',
     filament: 'Filamento',

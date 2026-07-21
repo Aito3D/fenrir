@@ -6624,13 +6624,6 @@ export default {
     laborAmortized: '모델링과 준비는 일회성 비용으로 {{count}}개에 분할됩니다.',
     defaultsHint: '견적 전에 이 요율을 확인하세요. 전기 요금, 인건비, 세금은 현지 비용과 통화에 맞아야 합니다.',
     copySummary: '요약 복사',
-    copyBlock: {
-      material: '소재',
-      weight: '무게',
-      time: '시간',
-      color: '색상',
-      printer: '프린터',
-    },
     summaryCopied: '요약이 클립보드에 복사되었습니다',
     quantity: '수량',
     filament: '필라멘트',

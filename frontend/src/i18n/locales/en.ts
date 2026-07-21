@@ -7043,13 +7043,6 @@ export default {
     laborAmortized: 'Modeling & preparation are one-time costs, split across {{count}} units.',
     defaultsHint: 'Review these rates before quoting — electricity tariff, labor rate and tax must match your local costs and currency.',
     copySummary: 'Copy summary',
-    copyBlock: {
-      material: 'Material',
-      weight: 'Weight',
-      time: 'Time',
-      color: 'Color',
-      printer: 'Printer',
-    },
     summaryCopied: 'Summary copied to clipboard',
     quantity: 'Quantity',
     filament: 'Filament',

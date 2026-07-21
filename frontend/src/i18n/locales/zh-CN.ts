@@ -6986,13 +6986,6 @@ export default {
     laborAmortized: '建模和准备为一次性成本，分摊到 {{count}} 件。',
     defaultsHint: '报价前请核对这些费率 — 电价、人工费率和税率需符合您当地的成本和货币。',
     copySummary: '复制摘要',
-    copyBlock: {
-      material: '材料',
-      weight: '重量',
-      time: '时间',
-      color: '颜色',
-      printer: '打印机',
-    },
     summaryCopied: '摘要已复制到剪贴板',
     quantity: '数量',
     filament: '耗材',

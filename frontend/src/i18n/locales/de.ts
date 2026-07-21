@@ -7000,13 +7000,6 @@ export default {
     laborAmortized: 'Modellierung & Vorbereitung sind Einmalkosten, verteilt auf {{count}} Stück.',
     defaultsHint: 'Prüfen Sie diese Sätze vor dem ersten Angebot — Stromtarif, Stundensatz und Steuer müssen zu Ihren lokalen Kosten und Ihrer Währung passen.',
     copySummary: 'Zusammenfassung kopieren',
-    copyBlock: {
-      material: 'Material',
-      weight: 'Gewicht',
-      time: 'Zeit',
-      color: 'Farbe',
-      printer: 'Drucker',
-    },
     summaryCopied: 'Zusammenfassung in die Zwischenablage kopiert',
     quantity: 'Menge',
     filament: 'Filament',

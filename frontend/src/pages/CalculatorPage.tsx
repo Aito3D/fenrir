@@ -269,8 +269,8 @@ export function CalculatorPage() {
   // Plain-text job spec for the copy button on the totals card.
   const summaryText = useMemo(() => {
     if (!filament || !printer) return '';
-    return buildQuoteSummary(filament, printer, state, t);
-  }, [filament, printer, state, t]);
+    return buildQuoteSummary(filament, printer, state);
+  }, [filament, printer, state]);
 
   const isLoading = filamentsLoading || printersLoading || defaultsLoading;
   const isEmpty = !isLoading && (filaments.length === 0 || printers.length === 0);

@@ -7009,13 +7009,6 @@ export default {
     laborAmortized: 'El modelado y la preparación son costes únicos, repartidos entre {{count}} unidades.',
     defaultsHint: 'Revisa estas tarifas antes de presupuestar: la tarifa eléctrica, la tarifa de mano de obra y el impuesto deben coincidir con tus costes locales y tu moneda.',
     copySummary: 'Copiar resumen',
-    copyBlock: {
-      material: 'Material',
-      weight: 'Peso',
-      time: 'Tiempo',
-      color: 'Color',
-      printer: 'Impresora',
-    },
     summaryCopied: 'Resumen copiado al portapapeles',
     quantity: 'Cantidad',
     filament: 'Filamento',

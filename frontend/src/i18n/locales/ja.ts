@@ -6999,13 +6999,6 @@ export default {
     laborAmortized: 'モデリングと準備は一回限りのコストで、{{count}} 個に分割されます。',
     defaultsHint: '見積もり前にこれらの料金を確認してください。電気料金、人件費、税率はお住まいの地域のコストと通貨に合わせる必要があります。',
     copySummary: '概要をコピー',
-    copyBlock: {
-      material: '素材',
-      weight: '重量',
-      time: '時間',
-      color: 'カラー',
-      printer: 'プリンター',
-    },
     summaryCopied: '概要をクリップボードにコピーしました',
     quantity: '数量',
     filament: 'フィラメント',
