@@ -203,7 +203,7 @@ export function computePricing(
 }
 
 export const DISCOUNT_COLUMNS = [0, 0.05, 0.1, 0.2, 0.3, 0.5];
-export const BULK_QUANTITIES = [10, 20, 30, 50, 100, 300];
+const BULK_QUANTITIES = [10, 20, 30, 50, 100, 300];
 export const BULK_DISCOUNTS = [0.05, 0.1, 0.2, 0.3, 0.4, 0.5];
 
 export interface DiscountColumn {

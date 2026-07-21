@@ -1,9 +1,9 @@
 /** Period-over-period comparison helpers for the Stats page. */
 
 /** How a metric's growth should be judged when comparing periods. */
-export type DeltaSemantics = 'more-is-good' | 'more-is-bad' | 'neutral';
+type DeltaSemantics = 'more-is-good' | 'more-is-bad' | 'neutral';
 
-export type DeltaTone = 'good' | 'bad' | 'neutral';
+type DeltaTone = 'good' | 'bad' | 'neutral';
 
 export interface StatDelta {
   /** Signed percentage change vs the previous period. */

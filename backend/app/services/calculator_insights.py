@@ -105,11 +105,7 @@ class CalculatorInsightsService:
             for material in _split_materials(filament_type):
                 per_material.setdefault(material, {"completed": 0, "failed": 0})[bucket] += count
 
-        printer_names = (
-            dict((await db.execute(select(Printer.id, Printer.name).where(Printer.id.in_(per_printer.keys())))).all())
-            if per_printer
-            else {}
-        )
+        printer_names = await _printer_names(db, per_printer.keys())
 
         def rate(counts: dict[str, int]) -> tuple[float, int]:
             sample = counts["completed"] + counts["failed"]
@@ -161,10 +157,7 @@ class CalculatorInsightsService:
         accuracies: list[float] = []
         per_printer: dict[int, list[float]] = {}
         for duration_seconds, started_at, completed_at, printer_id, estimate_seconds in rows.all():
-            actual_seconds = duration_seconds
-            if not actual_seconds and started_at and completed_at:
-                elapsed = (completed_at - started_at).total_seconds()
-                actual_seconds = int(elapsed) if elapsed > 0 else None
+            actual_seconds = _resolve_duration(duration_seconds, started_at, completed_at)
             if not actual_seconds or not estimate_seconds:
                 continue
             accuracy = (estimate_seconds / actual_seconds) * 100
@@ -174,11 +167,7 @@ class CalculatorInsightsService:
             if printer_id is not None:
                 per_printer.setdefault(printer_id, []).append(accuracy)
 
-        printer_names = (
-            dict((await db.execute(select(Printer.id, Printer.name).where(Printer.id.in_(per_printer.keys())))).all())
-            if per_printer
-            else {}
-        )
+        printer_names = await _printer_names(db, per_printer.keys())
 
         by_printer = [
             {
@@ -221,10 +210,7 @@ class CalculatorInsightsService:
 
         per_printer: dict[int, dict[str, float]] = {}
         for energy_kwh, duration_seconds, started_at, completed_at, printer_id in rows.all():
-            actual_seconds = duration_seconds
-            if not actual_seconds and started_at and completed_at:
-                elapsed = (completed_at - started_at).total_seconds()
-                actual_seconds = int(elapsed) if elapsed > 0 else None
+            actual_seconds = _resolve_duration(duration_seconds, started_at, completed_at)
             if not actual_seconds or actual_seconds < _MIN_POWER_SECONDS or actual_seconds > _MAX_PRINT_SECONDS:
                 continue
             hours = actual_seconds / 3600
@@ -236,11 +222,7 @@ class CalculatorInsightsService:
             bucket["hours"] += hours
             bucket["sample"] += 1
 
-        printer_names = (
-            dict((await db.execute(select(Printer.id, Printer.name).where(Printer.id.in_(per_printer.keys())))).all())
-            if per_printer
-            else {}
-        )
+        printer_names = await _printer_names(db, per_printer.keys())
 
         by_printer = [
             {
@@ -290,11 +272,7 @@ class CalculatorInsightsService:
                 "sample": sample,
             }
 
-        printer_names = (
-            dict((await db.execute(select(Printer.id, Printer.name).where(Printer.id.in_(entries.keys())))).all())
-            if entries
-            else {}
-        )
+        printer_names = await _printer_names(db, entries.keys())
         for printer_id, entry in entries.items():
             entry["printer_name"] = printer_names.get(printer_id, f"#{printer_id}")
         return sorted(entries.values(), key=lambda r: -r["sample"])
@@ -336,6 +314,24 @@ class CalculatorInsightsService:
             for brand, material, avg_cost, count in rows.all()
             if brand and material
         ]
+
+
+async def _printer_names(db: AsyncSession, printer_ids) -> dict[int, str]:
+    """Batched id → name lookup for the per-printer groupings."""
+    ids = list(printer_ids)
+    if not ids:
+        return {}
+    return dict((await db.execute(select(Printer.id, Printer.name).where(Printer.id.in_(ids)))).all())
+
+
+def _resolve_duration(duration_seconds, started_at, completed_at) -> int | None:
+    """Actual run seconds: the stored duration, else the started→completed elapsed."""
+    if duration_seconds:
+        return duration_seconds
+    if started_at and completed_at:
+        elapsed = (completed_at - started_at).total_seconds()
+        return int(elapsed) if elapsed > 0 else None
+    return None
 
 
 def _split_materials(filament_type: str | None) -> list[str]:

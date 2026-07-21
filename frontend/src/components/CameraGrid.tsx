@@ -36,8 +36,6 @@ import type { WebRTCPrinterStats } from '../hooks/useWebRTCStream';
 import { formatFileSize } from '../utils/file';
 import type { GridLayout } from './cameraGridLayout';
 import { GRID_LAYOUT_COLS, gridBlinkSyncStyle, gridCardHighlightClass } from './cameraGridLayout';
-export type { GridLayout } from './cameraGridLayout';
-export { GRID_LAYOUT_COLS, GRID_LAYOUT_ICONS } from './cameraGridLayout';
 
 /** How long the tab must stay hidden before camera streams are suspended. */
 const HIDDEN_SUSPEND_DELAY_MS = 15_000;

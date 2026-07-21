@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, func
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.database import Base
@@ -19,6 +19,8 @@ class PrintLogEntry(Base):
     """
 
     __tablename__ = "print_log_entries"
+    # Stats/insights aggregations all filter on status + a created_at window.
+    __table_args__ = (Index("ix_print_log_entries_status_created", "status", "created_at"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     archive_id: Mapped[int | None] = mapped_column(

@@ -3409,6 +3409,11 @@ async def run_migrations(conn):
     await _safe_execute(
         conn, "CREATE INDEX IF NOT EXISTS ix_print_log_entries_archive_id ON print_log_entries (archive_id)"
     )
+    # Stats/insights aggregations filter on status + a created_at window (#calculator insights).
+    await _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_print_log_entries_status_created ON print_log_entries (status, created_at)",
+    )
 
     # Backfill PrintLogEntry → PrintArchive linkage and per-event cost/energy
     # for pre-#1378 rows the column-add migration left NULL (#1390).

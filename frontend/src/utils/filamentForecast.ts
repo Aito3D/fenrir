@@ -4,7 +4,7 @@
 
 import type { InventorySpool, SpoolUsageRecord, FilamentSkuSettings } from '../api/client';
 
-export const Z_95 = 1.65;
+const Z_95 = 1.65;
 
 export interface SkuGroup {
   key: string;
