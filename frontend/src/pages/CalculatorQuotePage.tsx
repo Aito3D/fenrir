@@ -6,8 +6,7 @@ import { ArrowLeft, Printer as PrinterIcon } from 'lucide-react';
 import { api } from '../api/client';
 import { Button } from '../components/Button';
 import { buildPricingInputs, foldSessionOverrides, loadCalculatorState, num } from '../hooks/useCalculatorState';
-import { buildWaterfall, computePricing, formatMoney } from '../utils/pricing';
-import { STEP_LABEL_KEY } from '../components/calculator/CostWaterfall';
+import { buildWaterfall, computePricing, formatMoney, STEP_LABEL_KEY } from '../utils/pricing';
 
 /**
  * Client-facing printable quote. Deliberately light-on-white and free of the

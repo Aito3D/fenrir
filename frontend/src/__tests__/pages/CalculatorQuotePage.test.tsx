@@ -75,9 +75,9 @@ describe('CalculatorQuotePage', () => {
     render(<CalculatorQuotePage />);
 
     expect(await screen.findByText('Quote')).toBeInTheDocument();
-    // Same reference case as the calculator page tests: 2 211 FCFP TTC —
+    // Same reference case as the calculator page tests: 2 031 FCFP TTC —
     // shown twice: the headline total and the breakdown's total row.
-    expect(await screen.findAllByText('2 211 FCFP')).toHaveLength(2);
+    expect(await screen.findAllByText('2 031 FCFP')).toHaveLength(2);
     expect(screen.getByText('Generic PLA')).toBeInTheDocument();
     // Selected printer appears in the job details.
     expect(screen.getByText('H2S')).toBeInTheDocument();

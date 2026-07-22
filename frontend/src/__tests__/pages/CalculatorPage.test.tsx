@@ -83,13 +83,13 @@ describe('CalculatorPage', () => {
 
     render(<CalculatorPage />);
 
-    // Consistent difficulty rule (base × d), filament margin embedded in the
-    // machine cost (not added twice): TTC = 2 211, HT = 1 956, machine = 772
-    await screen.findByText('2 211 FCFP');
-    expect(screen.getByText('1 956 FCFP')).toBeInTheDocument();
-    expect(screen.getByText('772 FCFP')).toBeInTheDocument();
-    // Margin fraction over the pre-tax price: 652.16 / 1956.47
-    expect(screen.getByText('33.33%')).toBeInTheDocument();
+    // Costs at true value, margins at the end (global + filament):
+    // TTC = 2 031, HT = 1 798, machine = 644
+    await screen.findByText('2 031 FCFP');
+    expect(screen.getByText('1 798 FCFP')).toBeInTheDocument();
+    expect(screen.getByText('644 FCFP')).toBeInTheDocument();
+    // Margin fraction over the pre-tax price: 685.09 / 1797.77
+    expect(screen.getByText('38.11%')).toBeInTheDocument();
     // Difficulty comes from the filament profile and is shown read-only
     expect(screen.getByText('150%')).toBeInTheDocument();
     expect(screen.queryByLabelText('Difficulty factor (%)')).not.toBeInTheDocument();
@@ -115,7 +115,7 @@ describe('CalculatorPage', () => {
     });
 
     render(<CalculatorPage />);
-    await screen.findByText('2 211 FCFP');
+    await screen.findByText('2 031 FCFP');
 
     // The selected printer (H2S) is hidden — only the alternative shows,
     // with its price and a signed % delta vs the current selection.
@@ -162,7 +162,7 @@ describe('CalculatorPage', () => {
     );
 
     render(<CalculatorPage />);
-    await screen.findByText('2 211 FCFP');
+    await screen.findByText('2 031 FCFP');
 
     // Measured 8% vs assumed 30% → the reality-check row appears.
     await screen.findByText('Reality check');
@@ -170,7 +170,7 @@ describe('CalculatorPage', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
     // Provisions shrink (30% → 8% failure provision), so the total drops.
-    await waitFor(() => expect(screen.queryByText('2 211 FCFP')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument());
     expect(screen.getByText('Applied')).toBeInTheDocument();
   });
 
@@ -179,7 +179,7 @@ describe('CalculatorPage', () => {
       key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
     );
     render(<CalculatorPage />);
-    await screen.findByText('2 211 FCFP');
+    await screen.findByText('2 031 FCFP');
     expect(screen.queryByText('Reality check')).not.toBeInTheDocument();
   });
 
@@ -189,7 +189,7 @@ describe('CalculatorPage', () => {
     );
 
     render(<CalculatorPage />);
-    await screen.findByText('2 211 FCFP');
+    await screen.findByText('2 031 FCFP');
 
     expect(screen.queryByRole('group', { name: 'Price by printer' })).not.toBeInTheDocument();
   });
@@ -214,7 +214,7 @@ describe('CalculatorPage', () => {
     render(<CalculatorPage />);
 
     // Same reference case as above, rendered as USD: prefixed symbol, two decimals
-    await screen.findByText('$2 210.81');
+    await screen.findByText('$2 031.48');
     expect(screen.queryByText(/FCFP/)).not.toBeInTheDocument();
   });
 
@@ -229,8 +229,8 @@ describe('CalculatorPage', () => {
     expect(screen.getByText('Bulk pricing')).toBeInTheDocument();
     expect(screen.getByText('Cost breakdown')).toBeInTheDocument();
     expect(screen.getByText('Potential profit')).toBeInTheDocument();
-    // Break-even on the pre-tax price: 1 − 1/1.5 with the 50% global markup
-    expect(screen.getByText(/Break-even discount: 33\.3%/)).toBeInTheDocument();
+    // Break-even on the pre-tax price = the margin fraction (all margins at the end)
+    expect(screen.getByText(/Break-even discount: 38\.1%/)).toBeInTheDocument();
   });
 
   it('easy mode hides breakdown, bulk table and profit rows but keeps discounted prices', async () => {
@@ -242,7 +242,7 @@ describe('CalculatorPage', () => {
 
     render(<CalculatorPage />);
 
-    await screen.findByText('2 211 FCFP');
+    await screen.findByText('2 031 FCFP');
     expect(screen.queryByText('Cost breakdown')).not.toBeInTheDocument();
     expect(screen.queryByText('Bulk pricing')).not.toBeInTheDocument();
     expect(screen.queryByText('Potential profit')).not.toBeInTheDocument();
@@ -264,7 +264,7 @@ describe('CalculatorPage', () => {
     // outlast the default 1s (same allowance as the localStorage test below).
     await waitFor(
       () => {
-        expect(screen.getByText('2 211 FCFP')).toBeInTheDocument();
+        expect(screen.getByText('2 031 FCFP')).toBeInTheDocument();
       },
       { timeout: 2000 },
     );
@@ -297,17 +297,17 @@ describe('CalculatorPage', () => {
     const user = userEvent.setup();
     render(<CalculatorPage />);
 
-    await screen.findByText('2 211 FCFP');
+    await screen.findByText('2 031 FCFP');
     await user.click(screen.getByText('Target price'));
-    // 2260 TTC → net 2000 → profit 695.69 over costs 1304.31 (margin 34.8%)
+    // 2260 TTC → net 2000 → profit 887.32 over costs 1112.68 (margin 44.4%)
     await user.type(screen.getByLabelText('Target price (incl. tax)'), '2260');
-    expect(await screen.findByText('696 FCFP')).toBeInTheDocument();
-    expect(screen.getByText('(34.8%)')).toBeInTheDocument();
+    expect(await screen.findByText('887 FCFP')).toBeInTheDocument();
+    expect(screen.getByText('(44.4%)')).toBeInTheDocument();
 
     // Below costs → negative profit
     await user.clear(screen.getByLabelText('Target price (incl. tax)'));
     await user.type(screen.getByLabelText('Target price (incl. tax)'), '1130');
-    expect(await screen.findByText('-304 FCFP')).toBeInTheDocument();
+    expect(await screen.findByText('-113 FCFP')).toBeInTheDocument();
   });
 
   it('prefills measured energy from the URL and clears it via the chip', async () => {
@@ -377,7 +377,7 @@ describe('CalculatorPage', () => {
     const user = userEvent.setup();
 
     render(<CalculatorPage />);
-    await screen.findByText('2 211 FCFP'); // Sunlu PA6-CF selected by default
+    await screen.findByText('2 031 FCFP'); // Sunlu PA6-CF selected by default
 
     const combo = screen.getByLabelText('Filament');
     await user.click(combo);
@@ -392,7 +392,7 @@ describe('CalculatorPage', () => {
     await user.click(screen.getByRole('option', { name: 'Generic PLA' }));
     await waitFor(
       () => {
-        expect(screen.getByText('1 363 FCFP')).toBeInTheDocument(); // PLA at 100% difficulty
+        expect(screen.getByText('1 310 FCFP')).toBeInTheDocument(); // PLA at 100% difficulty
       },
       { timeout: 2000 },
     );

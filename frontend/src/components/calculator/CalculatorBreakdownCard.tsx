@@ -7,8 +7,9 @@ import { CostWaterfall } from './CostWaterfall';
 import { buildWaterfall, type PricingResult } from '../../utils/pricing';
 
 /** Per-unit cost lines grouped like the split bar. With quantity > 1 the
- *  modeling/preparation lines are the amortized per-unit share, so every
- *  group still sums to costs_so_far. */
+ *  modeling/preparation lines are the amortized per-unit share, so the cost
+ *  groups sum to total_cost and the margin group to marge — together the
+ *  pre-tax price. */
 export function CalculatorBreakdownCard({
   result,
   currency,
@@ -55,6 +56,15 @@ export function CalculatorBreakdownCard({
         ['calculator.costPreparation', result.prep_cost],
         ['calculator.costPostProcessing', result.post_processing_cost],
         ['calculator.costStuff', result.stuff_cost],
+      ],
+    },
+    {
+      labelKey: 'calculator.marge',
+      color: 'var(--color-bambu-green)',
+      lines: [
+        ['calculator.marginGlobal', result.margin_global],
+        ['calculator.marginFilament', result.margin_filament],
+        ['calculator.marginStuff', result.margin_stuff],
       ],
     },
   ];

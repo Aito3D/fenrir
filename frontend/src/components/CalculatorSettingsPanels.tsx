@@ -262,7 +262,11 @@ function FilamentForm({
   );
 }
 
-type FilamentSortKey = 'name' | 'brand' | 'material' | 'cost' | 'sale' | 'difficulty';
+type FilamentSortKey = 'name' | 'brand' | 'material' | 'cost' | 'sale' | 'margin' | 'difficulty';
+
+/** Margin over purchase cost as a fraction; null when there is no cost yet. */
+const filamentMarginOverCost = (f: CalculatorFilament): number | null =>
+  f.cost_per_kg > 0 ? (f.sale_price_per_kg - f.cost_per_kg) / f.cost_per_kg : null;
 
 export function CalculatorFilamentsPanel({ selectedFilamentId }: { selectedFilamentId: number | null }) {
   const { t } = useTranslation();
@@ -339,6 +343,8 @@ export function CalculatorFilamentsPanel({ selectedFilamentId }: { selectedFilam
           return dir * (a.cost_per_kg - b.cost_per_kg);
         case 'sale':
           return dir * (a.sale_price_per_kg - b.sale_price_per_kg);
+        case 'margin':
+          return dir * ((filamentMarginOverCost(a) ?? -1) - (filamentMarginOverCost(b) ?? -1));
         case 'difficulty':
           return dir * (a.difficulty_pct - b.difficulty_pct);
         default:
@@ -421,6 +427,7 @@ export function CalculatorFilamentsPanel({ selectedFilamentId }: { selectedFilam
                       <SortHeader label={t('calculator.material')} active={sortKey === 'material'} dir={sortDir} onClick={() => toggleSort('material')} align="left" />
                       <SortHeader label={t('calculator.costPerKg', { currency: currencySymbol })} active={sortKey === 'cost'} dir={sortDir} onClick={() => toggleSort('cost')} />
                       <SortHeader label={t('calculator.salePerKg', { currency: currencySymbol })} active={sortKey === 'sale'} dir={sortDir} onClick={() => toggleSort('sale')} />
+                      <SortHeader label={t('calculator.marginOverCost')} active={sortKey === 'margin'} dir={sortDir} onClick={() => toggleSort('margin')} />
                       <SortHeader label={t('calculator.difficulty')} active={sortKey === 'difficulty'} dir={sortDir} onClick={() => toggleSort('difficulty')} />
                       <th></th>
                     </tr>
@@ -437,6 +444,9 @@ export function CalculatorFilamentsPanel({ selectedFilamentId }: { selectedFilam
                         <td className={`${tdCls} text-white`}>{f.material}</td>
                         <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{formatMoney(f.cost_per_kg, currency, false)}</td>
                         <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{formatMoney(f.sale_price_per_kg, currency, false)}</td>
+                        <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>
+                          {filamentMarginOverCost(f) !== null ? formatPct(filamentMarginOverCost(f)!, 0) : '—'}
+                        </td>
                         <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`} title={t('calculator.difficultyTooltip')}>{formatPct(f.difficulty_pct / 100, 0)}</td>
                         <td className={`${tdCls} text-right`}>
                           <div className="flex gap-1 justify-end">
@@ -776,7 +786,9 @@ export function CalculatorPrintersPanel({ selectedPrinterId }: { selectedPrinter
   );
 }
 
-const DEFAULTS_FIELDS: Array<{ key: keyof Omit<CalculatorDefaults, 'id' | 'updated_at'>; labelKey: string }> = [
+type DefaultsField = { key: keyof Omit<CalculatorDefaults, 'id' | 'updated_at'>; labelKey: string };
+
+const DEFAULTS_FIELDS_GENERAL: DefaultsField[] = [
   { key: 'electricity_tariff', labelKey: 'calculator.electricityTariff' },
   { key: 'labor_rate_per_hour', labelKey: 'calculator.laborRate' },
   { key: 'consumables_packaging_flat', labelKey: 'calculator.consumablesFlat' },
@@ -787,10 +799,16 @@ const DEFAULTS_FIELDS: Array<{ key: keyof Omit<CalculatorDefaults, 'id' | 'updat
   { key: 'filament_markup_pct', labelKey: 'calculator.filamentMarkup' },
   { key: 'global_markup_pct', labelKey: 'calculator.globalMarkup' },
   { key: 'tax_pct', labelKey: 'calculator.taxPct' },
-  { key: 'default_difficulty_pct', labelKey: 'calculator.defaultDifficulty' },
-  { key: 'default_margin_over_cost_pct', labelKey: 'calculator.defaultMargin' },
   { key: 'stuff_markup_pct', labelKey: 'calculator.stuffMarkup' },
 ];
+
+// Prefill values for new filament profiles — shown in their own card.
+const DEFAULTS_FIELDS_FILAMENT: DefaultsField[] = [
+  { key: 'default_difficulty_pct', labelKey: 'calculator.defaultDifficulty' },
+  { key: 'default_margin_over_cost_pct', labelKey: 'calculator.defaultMargin' },
+];
+
+const DEFAULTS_FIELDS: DefaultsField[] = [...DEFAULTS_FIELDS_GENERAL, ...DEFAULTS_FIELDS_FILAMENT];
 
 function DefaultsForm({ defaults, currencySymbol }: { defaults: CalculatorDefaults; currencySymbol: string }) {
   const { t } = useTranslation();
@@ -821,27 +839,44 @@ function DefaultsForm({ defaults, currencySymbol }: { defaults: CalculatorDefaul
     return n !== null && n >= 0;
   });
 
+  const renderFields = (fields: DefaultsField[]) => (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {fields.map(({ key, labelKey }) => (
+        <NumberField
+          key={key}
+          id={`calc-def-${key}`}
+          label={t(labelKey, { currency: currencySymbol })}
+          value={form[key]}
+          onChange={(v) => setForm((f) => ({ ...f, [key]: v }))}
+          required
+        />
+      ))}
+    </div>
+  );
+
   return (
     <form
       autoComplete="off"
-      className="space-y-4"
+      className="space-y-6"
       onSubmit={(e) => {
         e.preventDefault();
         if (allValid) saveMutation.mutate();
       }}
     >
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {DEFAULTS_FIELDS.map(({ key, labelKey }) => (
-          <NumberField
-            key={key}
-            id={`calc-def-${key}`}
-            label={t(labelKey, { currency: currencySymbol })}
-            value={form[key]}
-            onChange={(v) => setForm((f) => ({ ...f, [key]: v }))}
-            required
-          />
-        ))}
-      </div>
+      <Card className="animate-calc-rise">
+        <CardHeader>
+          <h2 className="font-semibold text-white">{t('calculator.tabDefaults')}</h2>
+          <p className="text-sm text-bambu-gray mt-1">{t('calculator.defaultsHint')}</p>
+        </CardHeader>
+        <CardContent>{renderFields(DEFAULTS_FIELDS_GENERAL)}</CardContent>
+      </Card>
+      <Card className="animate-calc-rise" style={{ animationDelay: '50ms' }}>
+        <CardHeader>
+          <h2 className="font-semibold text-white">{t('calculator.filamentSettings')}</h2>
+          <p className="text-sm text-bambu-gray mt-1">{t('calculator.filamentSettingsHint')}</p>
+        </CardHeader>
+        <CardContent>{renderFields(DEFAULTS_FIELDS_FILAMENT)}</CardContent>
+      </Card>
       <div className="flex justify-end">
         <Button type="submit" size="sm" disabled={!allValid || saveMutation.isPending}>
           {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -853,7 +888,6 @@ function DefaultsForm({ defaults, currencySymbol }: { defaults: CalculatorDefaul
 }
 
 export function CalculatorDefaultsPanel() {
-  const { t } = useTranslation();
   const { data: defaults } = useQuery({
     queryKey: ['calculatorDefaults'],
     queryFn: api.getCalculatorDefaults,
@@ -863,20 +897,18 @@ export function CalculatorDefaultsPanel() {
   const currencySymbol = getCurrencySymbol(settings?.currency || 'USD');
 
   return (
-    <Card className="animate-calc-rise max-w-4xl">
-      <CardHeader>
-        <h2 className="font-semibold text-white">{t('calculator.tabDefaults')}</h2>
-        <p className="text-sm text-bambu-gray mt-1">{t('calculator.defaultsHint')}</p>
-      </CardHeader>
-      <CardContent>
-        {defaults ? (
-          <DefaultsForm key={defaults.updated_at} defaults={defaults} currencySymbol={currencySymbol} />
-        ) : (
-          <div className="flex justify-center py-8">
-            <Loader2 className="w-6 h-6 text-bambu-green animate-spin" />
-          </div>
-        )}
-      </CardContent>
-    </Card>
+    <div className="max-w-4xl">
+      {defaults ? (
+        <DefaultsForm key={defaults.updated_at} defaults={defaults} currencySymbol={currencySymbol} />
+      ) : (
+        <Card className="animate-calc-rise">
+          <CardContent>
+            <div className="flex justify-center py-8">
+              <Loader2 className="w-6 h-6 text-bambu-green animate-spin" />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }

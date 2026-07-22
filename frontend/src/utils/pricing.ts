@@ -82,7 +82,14 @@ export interface PricingResult {
   post_processing_cost: number;
   stuff_cost: number;
   labor_total: number;
-  costs_so_far: number;
+  /** Per-print production costs redone when a print fails — the base the
+   *  prototype and failure provisions are computed on. */
+  risk_base: number;
+  /** Full per-unit cost basis (all costs, provisions and overhead — no margin). */
+  total_cost: number;
+  margin_global: number;
+  margin_filament: number;
+  margin_stuff: number;
   marge: number;
   total_ht: number;
   total_ttc: number;
@@ -105,8 +112,10 @@ export const printerRepairsPerHour = (p: PricingPrinter): number => {
   return hours > 0 ? (p.purchase_price * (p.repair_rate_pct / 100)) / hours : 0;
 };
 
-/** The quote's filament line: sale price embeds the filament margin, then the
- *  per-filament difficulty factor and the global filament markup apply. */
+/** Quote-style filament line (sale price × difficulty × filament markup) —
+ *  used by the Statistics tile via archivePricing. computePricing prices
+ *  filament at cost_per_kg and books the sale-price delta as margin_filament;
+ *  the two split this line exactly (cost part + margin part ≡ this value). */
 export const filamentLineCost = (weightG: number, filament: PricingFilament, defaults: PricingDefaults): number =>
   (weightG / 1000) *
   filament.sale_price_per_kg *
@@ -123,15 +132,17 @@ export function computePricing(
   const d = filament.difficulty_pct / 100; // per-filament, e.g. 1.5
   const quantity = Math.max(1, Math.floor(inputs.quantity || 1));
 
-  // 1. Filament — the sale price already embeds the filament margin, and the
-  // difficulty factor is applied consistently as cost × d (the source
-  // spreadsheet was inconsistent between sections; see tests).
-  const filament_cost = filamentLineCost(inputs.weight_g, filament, defaults);
+  // ── Phase A: true costs (per unit). No margin or markup enters here —
+  // every line is what the job actually costs to produce.
 
-  // 2. Printer depreciation (no difficulty)
+  // Filament at purchase cost; the difficulty factor covers waste/handling
+  // (the sale-price uplift is booked in Phase C as margin_filament).
+  const filament_cost = (inputs.weight_g / 1000) * filament.cost_per_kg * d;
+
+  // Printer depreciation (pure time, no difficulty)
   const depreciation_cost = printerDepreciationPerHour(printer) * t;
 
-  // 3. Energy — measured kWh (from an archive) wins over the nameplate
+  // Energy — measured kWh (from an archive) wins over the nameplate
   // watts × hours estimate; the difficulty surcharge applies either way.
   const measured = inputs.measured_energy_kwh ?? 0;
   const energy_base =
@@ -140,21 +151,12 @@ export function computePricing(
       : (printer.power_watts / 1000) * defaults.electricity_tariff * t;
   const energy_cost = energy_base * d;
 
-  // 4. Repairs
+  // Repairs
   const repairs_cost = printerRepairsPerHour(printer) * t * d;
 
-  // 5. Machine cost
   const machine_cost = filament_cost + depreciation_cost + energy_cost + repairs_cost;
 
-  // 6–8. Safety provisions
-  const prototype_cost = machine_cost * (defaults.prototype_rate_pct / 100);
-  const failures_cost = machine_cost * (defaults.failure_rate_pct / 100);
-  const machine_cost_safety = machine_cost + prototype_cost + failures_cost;
-
-  // 9. Ads
-  const ads_cost = machine_cost * (defaults.ads_rate_pct / 100);
-
-  // 10. Labor + consumables. Modeling and preparation are one-time costs for
+  // Labor + consumables. Modeling and preparation are one-time costs for
   // the whole job (you design and slice once), so their per-unit share is the
   // total amortized across the quantity; post-processing and stuff recur per
   // unit. All downstream figures are per unit.
@@ -168,20 +170,47 @@ export function computePricing(
     ((inputs.post_removal_min + inputs.post_support_min + inputs.post_additional_min + inputs.post_fulfillment_min) /
       60) *
     laborRate;
-  const stuff_cost = inputs.stuff_amount * (1 + inputs.stuff_markup_pct / 100);
+  // Extras at cost — their markup is booked in Phase C as margin_stuff.
+  const stuff_cost = inputs.stuff_amount;
   const labor_total = modeling_cost + prep_cost + post_processing_cost + stuff_cost;
   const consumables_flat = defaults.consumables_packaging_flat;
   // Base fee: a one-time per-job amount (quotation time, order handling) —
   // like modeling/prep it is amortized across the quantity, and like the
-  // other flat costs it sits in costs_so_far so margin and tax apply.
+  // other flat costs it sits in total_cost so margin and tax apply.
   const base_fee_total = defaults.base_fee_flat ?? 0;
   const base_fee = base_fee_total / quantity;
-  const costs_so_far = machine_cost_safety + consumables_flat + base_fee + ads_cost + labor_total;
 
-  // 11–14. Margin and totals. Collected tax is not revenue, so the margin
-  // fraction is expressed over the pre-tax price.
-  const marge = costs_so_far * (defaults.global_markup_pct / 100);
-  const total_ht = costs_so_far + marge;
+  // ── Phase B: risk + overhead. The risk provisions cover what is redone
+  // when a print fails: the machine costs plus the prep and post-processing
+  // labor. Modeling, base fee, consumables and extras are not lost on a
+  // failure, so they stay out of the risk base.
+  const risk_base = machine_cost + prep_cost + post_processing_cost;
+  const prototype_cost = risk_base * (defaults.prototype_rate_pct / 100);
+  const failures_cost = risk_base * (defaults.failure_rate_pct / 100);
+  const machine_cost_safety = machine_cost + prototype_cost + failures_cost;
+
+  // Ads are business overhead, spread over everything the job costs.
+  const cost_subtotal =
+    machine_cost + prototype_cost + failures_cost + labor_total + consumables_flat + base_fee;
+  const ads_cost = cost_subtotal * (defaults.ads_rate_pct / 100);
+  const total_cost = cost_subtotal + ads_cost;
+
+  // ── Phase C: margins, all applied at the end on the full cost basis.
+  // margin_filament: kg·sale·d·(1+fm) ≡ filament_cost + this line, so the
+  // filament contribution to the pre-margin price is exactly the old quote
+  // line, just split honestly between cost and margin. No clamp — a sale
+  // price below cost shows a negative margin rather than hiding the loss.
+  const margin_global = total_cost * (defaults.global_markup_pct / 100);
+  const margin_filament =
+    (inputs.weight_g / 1000) *
+    (filament.sale_price_per_kg * (1 + defaults.filament_markup_pct / 100) - filament.cost_per_kg) *
+    d;
+  const margin_stuff = inputs.stuff_amount * (inputs.stuff_markup_pct / 100);
+  const marge = margin_global + margin_filament + margin_stuff;
+
+  // Totals. Collected tax is not revenue, so the margin fraction is
+  // expressed over the pre-tax price.
+  const total_ht = total_cost + marge;
   const total_ttc = total_ht * (1 + defaults.tax_pct / 100);
   const margin_pct = total_ht > 0 ? marge / total_ht : 0;
 
@@ -205,7 +234,11 @@ export function computePricing(
     post_processing_cost,
     stuff_cost,
     labor_total,
-    costs_so_far,
+    risk_base,
+    total_cost,
+    margin_global,
+    margin_filament,
+    margin_stuff,
     marge,
     total_ht,
     total_ttc,
@@ -227,28 +260,28 @@ export interface DiscountColumn {
   price: number; // customer-facing, TTC × (1 − discount)
   price_ht: number; // pre-tax price at this discount, total_ht × (1 − discount)
   discount_amount: number;
-  potential_profit: number; // pre-tax: price_ht − costs_so_far (tax is not profit)
+  potential_profit: number; // pre-tax: price_ht − total_cost (tax is not profit)
 }
 
-/** Largest discount that still covers costs_so_far on the pre-tax price
+/** Largest discount that still covers total_cost on the pre-tax price
  *  (collected tax is owed to the tax authority, not profit) — beyond it every
  *  sale loses money. Returns null when there is no price yet. */
 export function breakEvenDiscount(result: PricingResult): number | null {
   if (result.total_ht <= 0) return null;
-  return Math.max(0, 1 - result.costs_so_far / result.total_ht);
+  return Math.max(0, 1 - result.total_cost / result.total_ht);
 }
 
 /** Profit implied by a customer-facing target price (tax included): the net
- *  (pre-tax) revenue, the profit vs costs_so_far and the margin fraction over
+ *  (pre-tax) revenue, the profit vs total_cost and the margin fraction over
  *  net. Returns null when the target is not a usable price. */
 export function targetPriceProfit(
   targetTtc: number,
   taxPct: number,
-  costsSoFar: number,
+  totalCost: number,
 ): { net: number; profit: number; margin: number } | null {
   if (!Number.isFinite(targetTtc) || targetTtc <= 0) return null;
   const net = targetTtc / (1 + taxPct / 100);
-  return { net, profit: net - costsSoFar, margin: net > 0 ? (net - costsSoFar) / net : 0 };
+  return { net, profit: net - totalCost, margin: net > 0 ? (net - totalCost) / net : 0 };
 }
 
 export function discountMatrix(result: PricingResult, discounts: number[] = DISCOUNT_COLUMNS): DiscountColumn[] {
@@ -262,7 +295,7 @@ export function discountMatrix(result: PricingResult, discounts: number[] = DISC
       price,
       price_ht,
       discount_amount: result.total_ttc - price,
-      potential_profit: price_ht - result.costs_so_far,
+      potential_profit: price_ht - result.total_cost,
     };
   });
 }
@@ -334,10 +367,26 @@ export interface WaterfallStep {
   cumulative: number;
 }
 
+/** i18n label key per waterfall step — lives here (not in a component file)
+ *  so component modules keep fast refresh. */
+export const STEP_LABEL_KEY: Record<WaterfallStep['key'], string> = {
+  filament: 'calculator.costFilament',
+  printer: 'calculator.splitPrinter',
+  energy: 'calculator.costEnergy',
+  provisions: 'calculator.groupProvisions',
+  other: 'calculator.splitAdsConsumables',
+  labor: 'calculator.groupLabor',
+  marge: 'calculator.marge',
+  tax: 'calculator.waterfall.tax',
+};
+
 /**
  * The price build-up as ordered waterfall steps: machine costs, provisions,
- * ads+consumables, labor, then margin and tax. Zero-value steps are dropped.
- * Invariant (pinned by tests): the final cumulative equals total_ttc.
+ * ads+consumables, labor, then margin and tax. The marge step is the combined
+ * margin (global + filament + extras) — the split lives in the breakdown card.
+ * Zero-value steps are dropped (a non-positive combined marge simply drops its
+ * step; the drift-absorb below keeps the right edge at total_ttc). Invariant
+ * (pinned by tests): the final cumulative equals total_ttc.
  */
 export function buildWaterfall(result: PricingResult): WaterfallStep[] {
   const raw: Array<{ key: WaterfallStep['key']; value: number }> = [

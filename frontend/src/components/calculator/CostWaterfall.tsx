@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { formatMoney, formatPct, type WaterfallStep } from '../../utils/pricing';
+import { formatMoney, formatPct, STEP_LABEL_KEY, type WaterfallStep } from '../../utils/pricing';
 import { SegmentLegend } from './shared';
 import { useSettledValue } from '../../hooks/useSettledValue';
 
@@ -12,17 +12,6 @@ const STEP_COLOR: Record<WaterfallStep['key'], string> = {
   labor: 'var(--viz-6)',
   marge: 'var(--color-bambu-green)',
   tax: 'transparent', // hatched via CSS — tax is collected, not kept
-};
-
-export const STEP_LABEL_KEY: Record<WaterfallStep['key'], string> = {
-  filament: 'calculator.costFilament',
-  printer: 'calculator.splitPrinter',
-  energy: 'calculator.costEnergy',
-  provisions: 'calculator.groupProvisions',
-  other: 'calculator.splitAdsConsumables',
-  labor: 'calculator.groupLabor',
-  marge: 'calculator.marge',
-  tax: 'calculator.waterfall.tax',
 };
 
 /**

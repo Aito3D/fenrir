@@ -45,7 +45,7 @@ export function CalculatorTotalsCard({
   const { t } = useTranslation();
   const { showToast } = useToast();
   const quantity = result.quantity;
-  const target = targetPriceProfit(num(targetPrice), taxPct, result.costs_so_far);
+  const target = targetPriceProfit(num(targetPrice), taxPct, result.total_cost);
 
   // Screen-reader echo of the headline price: announce once per typing pause
   // (settled value), never per keystroke.
@@ -144,7 +144,7 @@ export function CalculatorTotalsCard({
               </div>
               <div className="flex justify-between gap-2">
                 <span className="text-bambu-gray">{t('calculator.costsSoFar')}</span>
-                <Money currency={currency} value={result.costs_so_far} className="text-white" />
+                <Money currency={currency} value={result.total_cost} className="text-white" />
               </div>
               {quantity > 1 && (
                 <div className="flex justify-between gap-2">
@@ -159,8 +159,8 @@ export function CalculatorTotalsCard({
         </div>
         {easy && (
           <div className="space-y-2">
-            <CostSplitBar segments={segments} total={result.costs_so_far} currency={currency} />
-            <SegmentLegend segments={segments} total={result.costs_so_far} />
+            <CostSplitBar segments={segments} total={result.total_cost} currency={currency} />
+            <SegmentLegend segments={segments} total={result.total_cost} />
           </div>
         )}
         <Collapsible

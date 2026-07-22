@@ -82,8 +82,8 @@ describe('CostBreakdownWidget', () => {
     );
 
     expect(await screen.findByText('1 of 1 prints priced')).toBeInTheDocument();
-    // Filament line: 100g × €25/kg = €2.50
-    expect(screen.getByText('€ 2.50')).toBeInTheDocument();
+    // Filament line at true cost: 100g × €20/kg = €2.00
+    expect(screen.getByText('€ 2.00')).toBeInTheDocument();
     // Energy line: 0.1kW × 2h × €0.30 = €0.06
     expect(screen.getByText('€ 0.06')).toBeInTheDocument();
     expect(screen.getByText('Per print hour')).toBeInTheDocument();
