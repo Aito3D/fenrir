@@ -6,7 +6,8 @@ import { ArrowLeft, Printer as PrinterIcon } from 'lucide-react';
 import { api } from '../api/client';
 import { Button } from '../components/Button';
 import { buildPricingInputs, foldSessionOverrides, loadCalculatorState, num } from '../hooks/useCalculatorState';
-import { computePricing, discountMatrix, formatMoney, formatPct } from '../utils/pricing';
+import { buildWaterfall, computePricing, formatMoney } from '../utils/pricing';
+import { STEP_LABEL_KEY } from '../components/calculator/CostWaterfall';
 
 /**
  * Client-facing printable quote. Deliberately light-on-white and free of the
@@ -15,7 +16,7 @@ import { computePricing, discountMatrix, formatMoney, formatPct } from '../utils
  * calculator currently holds.
  */
 export function CalculatorQuotePage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const state = useMemo(() => loadCalculatorState(), []);
 
   const { data: filaments = [] } = useQuery({ queryKey: ['calculatorFilaments'], queryFn: api.getCalculatorFilaments });
@@ -34,11 +35,18 @@ export function CalculatorQuotePage() {
     return computePricing(effective.inputs, filament, effective.printer, effective.defaults);
   }, [state, filament, printer, defaults]);
 
-  const discounts = useMemo(() => (result ? discountMatrix(result).filter((c) => c.discount > 0) : []), [result]);
-  const timeLabel = `${Math.max(0, num(state.timeH))}h${state.timeM.trim() ? ` ${state.timeM}min` : ''}`;
+  const waterfall = useMemo(() => (result ? buildWaterfall(result) : []), [result]);
+  const timeLabel = [
+    num(state.timeD) > 0 ? `${Math.max(0, num(state.timeD))}${t('calculator.durationDaysShort')}` : '',
+    `${Math.max(0, num(state.timeH))}h`,
+    state.timeM.trim() ? `${state.timeM}min` : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
   // Without weight AND time there is no job — the "price" would just be the
   // flat consumables constant marked up (same guard as the calculator page).
-  const noJob = num(state.weight) <= 0 && num(state.timeH) <= 0 && num(state.timeM) <= 0;
+  const noJob =
+    num(state.weight) <= 0 && num(state.timeD) <= 0 && num(state.timeH) <= 0 && num(state.timeM) <= 0;
 
   return (
     <div className="min-h-screen bg-white text-gray-900">
@@ -61,7 +69,9 @@ export function CalculatorQuotePage() {
           <>
             <header className="border-b-2 border-gray-900 pb-4 mb-6">
               <h1 className="text-2xl font-bold tracking-tight">{t('calculator.quote.title')}</h1>
-              <p className="text-sm text-gray-500 mt-1">{new Date().toLocaleDateString()}</p>
+              {/* Date in the app language, not the browser locale — this is
+                  the one document that leaves the workshop. */}
+              <p className="text-sm text-gray-500 mt-1">{new Date().toLocaleDateString(i18n.language)}</p>
             </header>
 
             <section className="mb-8">
@@ -69,6 +79,10 @@ export function CalculatorQuotePage() {
                 {t('calculator.quote.jobDetails')}
               </h2>
               <dl className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-sm">
+                <div className="flex justify-between gap-4">
+                  <dt className="text-gray-500">{t('calculator.printer')}</dt>
+                  <dd className="font-medium text-right">{printer.name}</dd>
+                </div>
                 <div className="flex justify-between gap-4">
                   <dt className="text-gray-500">{t('calculator.filament')}</dt>
                   <dd className="font-medium text-right">{filament.name}</dd>
@@ -106,25 +120,28 @@ export function CalculatorQuotePage() {
               )}
             </section>
 
-            {discounts.length > 0 && (
+            {waterfall.length > 0 && (
               <section className="mb-8">
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
-                  {t('calculator.quote.volumePricing')}
+                  {t('calculator.breakdown')}
+                  {result.quantity > 1 ? ` · ${t('calculator.perUnit')}` : ''}
                 </h2>
+                {/* Same steps as the calculator's waterfall — per-unit amounts
+                    whose sum is exactly the headline total above. */}
                 <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-200 text-gray-500">
-                      <th className="text-left py-1.5 font-medium">{t('calculator.quote.discount')}</th>
-                      <th className="text-right py-1.5 font-medium">{t('calculator.quote.unitPrice')}</th>
-                    </tr>
-                  </thead>
                   <tbody>
-                    {discounts.map((column) => (
-                      <tr key={column.discount} className="border-b border-gray-100">
-                        <td className="py-1.5">{formatPct(column.discount, 0)}</td>
-                        <td className="py-1.5 text-right tabular-nums">{formatMoney(column.price, currency)}</td>
+                    {waterfall.map((step) => (
+                      <tr key={step.key} className="border-b border-gray-100">
+                        <td className="py-1.5 text-gray-500">{t(STEP_LABEL_KEY[step.key])}</td>
+                        <td className="py-1.5 text-right tabular-nums">{formatMoney(step.value, currency)}</td>
                       </tr>
                     ))}
+                    <tr>
+                      <td className="py-2 font-semibold">{t('calculator.totalTTC')}</td>
+                      <td className="py-2 text-right font-semibold tabular-nums">
+                        {formatMoney(result.total_ttc, currency)}
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
               </section>

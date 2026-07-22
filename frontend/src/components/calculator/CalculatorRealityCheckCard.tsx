@@ -3,6 +3,7 @@ import { ArrowRight, CheckCircle2, Gauge, Info, RotateCcw, Save, X } from 'lucid
 import { Card, CardContent, CardHeader } from '../Card';
 import { Button } from '../Button';
 import { Tooltip } from '../Tooltip';
+import { focusRingCls } from '../formStyles';
 import { formatMoney } from '../../utils/pricing';
 import { checkKey, type RealityCheck, type RealityCheckKind } from '../../utils/calculatorInsights';
 
@@ -63,7 +64,7 @@ export function CalculatorRealityCheckCard({
           </>
         )}
         {dismissedCount > 0 && (
-          <button type="button" onClick={onRestoreDismissed} className="underline hover:text-white transition-colors">
+          <button type="button" onClick={onRestoreDismissed} className={`underline hover:text-white transition-colors rounded ${focusRingCls}`}>
             {t('calculator.realityCheck.restore', { count: dismissedCount })}
           </button>
         )}
@@ -216,7 +217,7 @@ export function CalculatorRealityCheckCard({
                     aria-label={t('calculator.realityCheck.dismiss')}
                     title={t('calculator.realityCheck.dismiss')}
                     onClick={() => onDismiss(key)}
-                    className="text-bambu-gray hover:text-white transition-colors"
+                    className={`p-2 -m-2 rounded-full text-bambu-gray hover:text-white transition-colors ${focusRingCls}`}
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -300,7 +301,7 @@ export function CalculatorRealityCheckCard({
           <button
             type="button"
             onClick={onRestoreDismissed}
-            className="text-[10px] text-bambu-gray underline hover:text-white transition-colors"
+            className={`text-[10px] text-bambu-gray underline hover:text-white transition-colors rounded ${focusRingCls}`}
           >
             {t('calculator.realityCheck.restore', { count: dismissedCount })}
           </button>

@@ -12,7 +12,8 @@ export function buildQuoteSummary(
   printer: CalculatorPrinter,
   state: CalcState,
 ): string {
-  const hours = Math.max(0, num(state.timeH)) + Math.max(0, num(state.timeM)) / 60;
+  const hours =
+    Math.max(0, num(state.timeD)) * 24 + Math.max(0, num(state.timeH)) + Math.max(0, num(state.timeM)) / 60;
   const time = String(Math.round(hours * 100) / 100);
   return [
     `Matériau: ${filament.material || filament.name}`,

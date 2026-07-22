@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Calculator as CalculatorIcon, RotateCcw } from 'lucide-react';
 import { api } from '../api/client';
 import { Card, CardContent } from '../components/Card';
+import { focusRingCls } from '../components/formStyles';
 import { Button } from '../components/Button';
 import { Toggle } from '../components/Toggle';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -154,7 +155,7 @@ export function CalculatorPage() {
       { key: 'printer', label: t('calculator.splitPrinter'), value: result.depreciation_cost + result.repairs_cost, color: 'var(--viz-2)' },
       { key: 'energy', label: t('calculator.costEnergy'), value: result.energy_cost, color: 'var(--viz-3)' },
       { key: 'provisions', label: t('calculator.groupProvisions'), value: result.prototype_cost + result.failures_cost, color: 'var(--viz-4)' },
-      { key: 'other', label: t('calculator.splitAdsConsumables'), value: result.ads_cost + result.consumables_flat, color: 'var(--viz-5)' },
+      { key: 'other', label: t('calculator.splitAdsConsumables'), value: result.ads_cost + result.consumables_flat + result.base_fee, color: 'var(--viz-5)' },
       { key: 'labor', label: t('calculator.groupLabor'), value: result.labor_total, color: 'var(--viz-6)' },
     ].filter((s) => s.value > 0.005);
   }, [result, t]);
@@ -315,7 +316,7 @@ export function CalculatorPage() {
                 onChange={(v) => set({ easyMode: v })}
                 aria-label={t('calculator.easyMode')}
               />
-              <button type="button" className="cursor-pointer" onClick={() => set({ easyMode: !state.easyMode })}>
+              <button type="button" className={`cursor-pointer rounded ${focusRingCls}`} onClick={() => set({ easyMode: !state.easyMode })}>
                 {t('calculator.easyMode')}
               </button>
             </div>
@@ -344,7 +345,7 @@ export function CalculatorPage() {
               tabRefs.current[id] = el;
             }}
             onClick={() => setTab(id)}
-            className={`px-4 py-2 text-sm font-medium transition-[color,transform] duration-100 ease-out motion-safe:active:scale-95 ${
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-[color,transform] duration-100 ease-out motion-safe:active:scale-95 ${focusRingCls} ${
               tab === id ? 'text-bambu-green' : 'text-bambu-gray hover:text-white'
             }`}
           >

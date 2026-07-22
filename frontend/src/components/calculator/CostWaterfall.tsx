@@ -14,7 +14,7 @@ const STEP_COLOR: Record<WaterfallStep['key'], string> = {
   tax: 'transparent', // hatched via CSS — tax is collected, not kept
 };
 
-const STEP_LABEL_KEY: Record<WaterfallStep['key'], string> = {
+export const STEP_LABEL_KEY: Record<WaterfallStep['key'], string> = {
   filament: 'calculator.costFilament',
   printer: 'calculator.splitPrinter',
   energy: 'calculator.costEnergy',

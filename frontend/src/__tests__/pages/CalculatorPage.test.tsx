@@ -201,8 +201,8 @@ describe('CalculatorPage', () => {
 
     render(<CalculatorPage />);
 
-    expect(await screen.findByLabelText('Printing time (h)')).toHaveValue(2);
-    expect(screen.getByLabelText('Printing time (min)')).toHaveValue(30);
+    expect(await screen.findByLabelText('Hours')).toHaveValue(2);
+    expect(screen.getByLabelText('Minutes')).toHaveValue(30);
   });
 
   it('formats amounts in the currency from app settings', async () => {
@@ -253,16 +253,21 @@ describe('CalculatorPage', () => {
     const user = userEvent.setup();
     render(<CalculatorPage />);
 
-    const weight = await screen.findByLabelText('Object weight (g)');
-    const hours = screen.getByLabelText('Printing time (h)');
-    const minutes = screen.getByLabelText('Printing time (min)');
+    const weight = await screen.findByLabelText('Object weight');
+    const hours = screen.getByLabelText('Hours');
+    const minutes = screen.getByLabelText('Minutes');
     await user.type(weight, '40');
     await user.type(hours, '1');
     await user.type(minutes, '60'); // 1 h + 60 min = the 2 h reference case
 
-    await waitFor(() => {
-      expect(screen.getByText('2 211 FCFP')).toBeInTheDocument();
-    });
+    // 2s timeout: three typed fields under a fully parallel suite run can
+    // outlast the default 1s (same allowance as the localStorage test below).
+    await waitFor(
+      () => {
+        expect(screen.getByText('2 211 FCFP')).toBeInTheDocument();
+      },
+      { timeout: 2000 },
+    );
   });
 
   it('validates quantity ≥ 1 and dims results behind an alert', async () => {
@@ -385,9 +390,12 @@ describe('CalculatorPage', () => {
     expect(screen.queryByRole('option', { name: 'Sunlu PA6-CF' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('option', { name: 'Generic PLA' }));
-    await waitFor(() => {
-      expect(screen.getByText('1 363 FCFP')).toBeInTheDocument(); // PLA at 100% difficulty
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByText('1 363 FCFP')).toBeInTheDocument(); // PLA at 100% difficulty
+      },
+      { timeout: 2000 },
+    );
   });
 
   it('prefills weight/time/quantity/printer from URL params and strips them, keeping labor fields', async () => {
@@ -415,11 +423,11 @@ describe('CalculatorPage', () => {
     try {
       render(<CalculatorPage />);
 
-      const weight = await screen.findByLabelText('Object weight (g)');
+      const weight = await screen.findByLabelText('Object weight');
       expect(weight).toHaveValue(15.5);
       // Decimal hours from the URL are split into hour + minute fields
-      expect(screen.getByLabelText('Printing time (h)')).toHaveValue(1);
-      expect(screen.getByLabelText('Printing time (min)')).toHaveValue(15);
+      expect(screen.getByLabelText('Hours')).toHaveValue(1);
+      expect(screen.getByLabelText('Minutes')).toHaveValue(15);
       expect(screen.getByLabelText('Quantity')).toHaveValue(2);
       // The printer from the URL is selected instead of the default first one
       expect(screen.getByLabelText('Printer')).toHaveValue('A1 Mini');
@@ -443,10 +451,10 @@ describe('CalculatorPage', () => {
     try {
       render(<CalculatorPage />);
 
-      const weight = await screen.findByLabelText('Object weight (g)');
+      const weight = await screen.findByLabelText('Object weight');
       expect(weight).toHaveValue(40);
       // Saved legacy time '2' survives the invalid prefill, migrated to hours
-      expect(screen.getByLabelText('Printing time (h)')).toHaveValue(2);
+      expect(screen.getByLabelText('Hours')).toHaveValue(2);
       await waitFor(() => {
         expect(window.location.search).toBe('');
       });
@@ -543,7 +551,7 @@ describe('CalculatorPage', () => {
     const user = userEvent.setup();
     render(<CalculatorPage />);
 
-    const weight = await screen.findByLabelText('Object weight (g)');
+    const weight = await screen.findByLabelText('Object weight');
     await user.type(weight, '40');
 
     await waitFor(

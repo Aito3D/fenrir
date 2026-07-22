@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { focusRingCls } from '../formStyles';
 import { formatMoney, formatPct } from '../../utils/pricing';
 import { computeDelta, type StatDelta } from '../stats/deltas';
 import { useSettledValue } from '../../hooks/useSettledValue';
@@ -177,7 +178,7 @@ export function PrinterComparisonChips({
             type="button"
             onClick={() => onSelect(p.id)}
             title={t('calculator.byPrinterHint', { name: p.name })}
-            className="inline-flex items-baseline gap-1.5 px-2 py-0.5 rounded-full border text-xs border-bambu-dark-tertiary hover:border-bambu-green/50 hover:bg-bambu-green/5 transition-[color,background-color,border-color,transform] duration-100 ease-out motion-safe:active:scale-95"
+            className={`inline-flex items-baseline gap-1.5 px-2 py-0.5 rounded-full border text-xs border-bambu-dark-tertiary hover:border-bambu-green/50 hover:bg-bambu-green/5 transition-[color,background-color,border-color,transform] duration-100 ease-out motion-safe:active:scale-95 ${focusRingCls}`}
           >
             <span className="text-bambu-gray truncate max-w-[9rem]">{p.name}</span>
             <Money currency={currency} value={p.total} className="text-white" />

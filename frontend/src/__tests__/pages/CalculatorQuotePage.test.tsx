@@ -75,11 +75,18 @@ describe('CalculatorQuotePage', () => {
     render(<CalculatorQuotePage />);
 
     expect(await screen.findByText('Quote')).toBeInTheDocument();
-    // Same reference case as the calculator page tests: 2 211 FCFP TTC.
-    expect(await screen.findByText('2 211 FCFP')).toBeInTheDocument();
+    // Same reference case as the calculator page tests: 2 211 FCFP TTC —
+    // shown twice: the headline total and the breakdown's total row.
+    expect(await screen.findAllByText('2 211 FCFP')).toHaveLength(2);
     expect(screen.getByText('Generic PLA')).toBeInTheDocument();
-    // Volume pricing table shows discounted unit prices.
-    expect(screen.getByText('Volume pricing')).toBeInTheDocument();
+    // Selected printer appears in the job details.
+    expect(screen.getByText('H2S')).toBeInTheDocument();
+    // Cost breakdown replaces the old volume-pricing table: waterfall lines
+    // and no discount grid. "Filament" appears twice — job-details label and
+    // the breakdown's first cost row.
+    expect(screen.getByText('Cost breakdown')).toBeInTheDocument();
+    expect(screen.getAllByText('Filament')).toHaveLength(2);
+    expect(screen.queryByText('Volume pricing')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Print/ })).toBeInTheDocument();
   });
 

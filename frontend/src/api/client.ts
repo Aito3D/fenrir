@@ -3336,6 +3336,7 @@ export interface CalculatorDefaults {
   default_difficulty_pct: number;
   default_margin_over_cost_pct: number;
   stuff_markup_pct: number;
+  base_fee_flat: number;
   updated_at: string;
 }
 

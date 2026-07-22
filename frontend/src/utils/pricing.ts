@@ -31,6 +31,9 @@ export interface PricingDefaults {
   tax_pct: number;
   default_difficulty_pct: number;
   stuff_markup_pct: number;
+  /** One-time per-job base fee (quotation time, order handling). Optional so
+   *  pre-migration configs keep working; treated as 0 when absent. */
+  base_fee_flat?: number;
 }
 
 export interface PricingInputs {
@@ -64,6 +67,10 @@ export interface PricingResult {
   machine_cost_safety: number;
   ads_cost: number;
   consumables_flat: number;
+  /** Full one-time base fee for the whole job (quotation time etc.). */
+  base_fee_total: number;
+  /** Per-unit share of the one-time base fee (total ÷ quantity). */
+  base_fee: number;
   /** Full one-time modeling cost for the whole job. */
   modeling_cost_total: number;
   /** Full one-time preparation cost for the whole job. */
@@ -164,7 +171,12 @@ export function computePricing(
   const stuff_cost = inputs.stuff_amount * (1 + inputs.stuff_markup_pct / 100);
   const labor_total = modeling_cost + prep_cost + post_processing_cost + stuff_cost;
   const consumables_flat = defaults.consumables_packaging_flat;
-  const costs_so_far = machine_cost_safety + consumables_flat + ads_cost + labor_total;
+  // Base fee: a one-time per-job amount (quotation time, order handling) —
+  // like modeling/prep it is amortized across the quantity, and like the
+  // other flat costs it sits in costs_so_far so margin and tax apply.
+  const base_fee_total = defaults.base_fee_flat ?? 0;
+  const base_fee = base_fee_total / quantity;
+  const costs_so_far = machine_cost_safety + consumables_flat + base_fee + ads_cost + labor_total;
 
   // 11–14. Margin and totals. Collected tax is not revenue, so the margin
   // fraction is expressed over the pre-tax price.
@@ -184,6 +196,8 @@ export function computePricing(
     machine_cost_safety,
     ads_cost,
     consumables_flat,
+    base_fee_total,
+    base_fee,
     modeling_cost_total,
     prep_cost_total,
     modeling_cost,
@@ -331,7 +345,7 @@ export function buildWaterfall(result: PricingResult): WaterfallStep[] {
     { key: 'printer', value: result.depreciation_cost + result.repairs_cost },
     { key: 'energy', value: result.energy_cost },
     { key: 'provisions', value: result.prototype_cost + result.failures_cost },
-    { key: 'other', value: result.ads_cost + result.consumables_flat },
+    { key: 'other', value: result.ads_cost + result.consumables_flat + result.base_fee },
     { key: 'labor', value: result.labor_total },
     { key: 'marge', value: result.marge },
     { key: 'tax', value: result.total_ttc - result.total_ht },

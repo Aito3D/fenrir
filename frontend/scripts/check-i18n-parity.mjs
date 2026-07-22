@@ -188,6 +188,7 @@ const FR_COGNATES = [
   'Token', 'Server', 'Port', 'Plate', 'Layer', 'Active', 'Total', 'Avatar',
   'Job', 'Modal', 'Pin', 'Pro', 'Mini', 'Studio', 'Excellent', 'Description',
   'Pipeline', 'Pipelines', 'Filament {{n}}',  // #1425 — Slicer Pipelines (FR)
+  'Minutes', 'min',  // duration unit — same word/abbreviation in French
   // Pricing calculator — the English copy borrows these French business terms
   'Informations', 'Total HT', 'Total TTC', 'Marge', 'Prototype', 'Machine', 'Provisions',
   'Copies', '{{n}} copies', 'max {{n}}',  // #1425 PR C — French uses these forms verbatim
@@ -233,7 +234,8 @@ const IT_COGNATES = [
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Email',  // common loanword in Italian, used verbatim in UI labels
   'Pipeline', 'slicing',  // #1425 — Slicer Pipelines (cognate in IT)
-  'Slicing (min)',  // pricing calculator — "slicing" is the standard IT loanword
+  'Slicing',  // pricing calculator — "slicing" is the standard IT loanword
+  'min',  // minutes abbreviation — same in Italian
   'max {{n}}',  // #1425 PR C — same form in Italian (max + number)
   'round robin',  // borrowed English term used as-is in Italian tech contexts
   'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Filament',
@@ -281,6 +283,7 @@ const PT_BR_COGNATES = [
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Pipeline', 'Pipelines',  // #1425 — Slicer Pipelines (PT-BR)
+  'min',  // minutes abbreviation — same in Portuguese
   'round robin',  // borrowed English term used as-is in Portuguese tech contexts
   'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Filament',
   'Software', 'Hardware', 'Stop', 'Reset', 'Test', 'Code', 'Token', 'Server',
@@ -357,6 +360,7 @@ const ES_COGNATES = [
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Pipeline', 'Pipelines',  // #1425 — Slicer Pipelines (ES)
+  'min',  // minutes abbreviation — same in Spanish
   'round robin',  // borrowed English term used as-is in Spanish tech contexts
   'Error', 'Firmware', 'General', 'Control', 'Total', 'total', 'Material',
   'Material:', 'Color', 'Hex', 'Local', 'Global', 'China', 'Editable',

@@ -54,7 +54,7 @@ export function Collapsible({
         tabIndex={0}
         onClick={handleToggle}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggle(); } }}
-        className={`w-full flex items-center justify-between gap-2 text-left cursor-pointer ${summaryClassName}`}
+        className={`w-full flex items-center justify-between gap-2 text-left cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40 ${summaryClassName}`}
         aria-expanded={isOpen}
       >
         <div className="flex-1 min-w-0">{summary}</div>

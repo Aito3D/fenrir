@@ -58,5 +58,8 @@ class CalculatorDefaults(Base):
     default_difficulty_pct: Mapped[float] = mapped_column(Float, default=100.0)  # prefill for new filaments
     default_margin_over_cost_pct: Mapped[float] = mapped_column(Float, default=50.0)  # prefill for new filaments
     stuff_markup_pct: Mapped[float] = mapped_column(Float, default=20.0)
+    # One-time per-job base fee (quotation time, order handling) — a flat
+    # amount added to every job's costs, amortized across the quantity.
+    base_fee_flat: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

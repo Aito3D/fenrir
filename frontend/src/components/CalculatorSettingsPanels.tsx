@@ -600,7 +600,7 @@ function PrinterForm({
   );
 }
 
-type PrinterSortKey = 'name' | 'purchase' | 'lifetime' | 'depreciation' | 'repairs';
+type PrinterSortKey = 'name' | 'purchase' | 'power' | 'daily' | 'lifetime' | 'depreciation' | 'repairs';
 
 export function CalculatorPrintersPanel({ selectedPrinterId }: { selectedPrinterId: number | null }) {
   const { t } = useTranslation();
@@ -650,6 +650,10 @@ export function CalculatorPrintersPanel({ selectedPrinterId }: { selectedPrinter
       switch (sortKey) {
         case 'purchase':
           return dir * (a.purchase_price - b.purchase_price);
+        case 'power':
+          return dir * (a.power_watts - b.power_watts);
+        case 'daily':
+          return dir * (a.daily_usage_hours - b.daily_usage_hours);
         case 'lifetime':
           return dir * (printerLifetimeHours(a) - printerLifetimeHours(b));
         case 'depreciation':
@@ -708,6 +712,8 @@ export function CalculatorPrintersPanel({ selectedPrinterId }: { selectedPrinter
                     <tr className="border-b border-bambu-dark-tertiary">
                       <SortHeader label={t('calculator.name')} active={sortKey === 'name'} dir={sortDir} onClick={() => toggleSort('name')} align="left" />
                       <SortHeader label={t('calculator.purchasePrice', { currency: currencySymbol })} active={sortKey === 'purchase'} dir={sortDir} onClick={() => toggleSort('purchase')} />
+                      <SortHeader label={t('calculator.powerWatts')} active={sortKey === 'power'} dir={sortDir} onClick={() => toggleSort('power')} />
+                      <SortHeader label={t('calculator.dailyUsage')} active={sortKey === 'daily'} dir={sortDir} onClick={() => toggleSort('daily')} />
                       <SortHeader label={t('calculator.lifetimeHours')} active={sortKey === 'lifetime'} dir={sortDir} onClick={() => toggleSort('lifetime')} />
                       <SortHeader label={t('calculator.depreciationPerHour')} active={sortKey === 'depreciation'} dir={sortDir} onClick={() => toggleSort('depreciation')} />
                       <SortHeader label={t('calculator.repairsPerHour')} active={sortKey === 'repairs'} dir={sortDir} onClick={() => toggleSort('repairs')} />
@@ -724,6 +730,8 @@ export function CalculatorPrintersPanel({ selectedPrinterId }: { selectedPrinter
                           )}
                         </td>
                         <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{formatMoney(p.purchase_price, currency, false)}</td>
+                        <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{p.power_watts.toLocaleString()}</td>
+                        <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{p.daily_usage_hours.toLocaleString()}</td>
                         <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{Math.round(printerLifetimeHours(p)).toLocaleString()}</td>
                         <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{printerDepreciationPerHour(p).toFixed(2)}</td>
                         <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{printerRepairsPerHour(p).toFixed(2)}</td>
@@ -772,6 +780,7 @@ const DEFAULTS_FIELDS: Array<{ key: keyof Omit<CalculatorDefaults, 'id' | 'updat
   { key: 'electricity_tariff', labelKey: 'calculator.electricityTariff' },
   { key: 'labor_rate_per_hour', labelKey: 'calculator.laborRate' },
   { key: 'consumables_packaging_flat', labelKey: 'calculator.consumablesFlat' },
+  { key: 'base_fee_flat', labelKey: 'calculator.baseFee' },
   { key: 'failure_rate_pct', labelKey: 'calculator.failureRate' },
   { key: 'prototype_rate_pct', labelKey: 'calculator.prototypeRate' },
   { key: 'ads_rate_pct', labelKey: 'calculator.adsRate' },

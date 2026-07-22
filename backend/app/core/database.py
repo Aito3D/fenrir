@@ -3845,6 +3845,9 @@ async def run_migrations(conn):
         conn, "ALTER TABLE calculator_defaults ADD COLUMN default_margin_over_cost_pct FLOAT DEFAULT 50.0"
     )
 
+    # Migration: one-time per-job base fee (quotation time, order handling).
+    await _safe_execute(conn, "ALTER TABLE calculator_defaults ADD COLUMN base_fee_flat FLOAT DEFAULT 0.0")
+
     # Migration: calculator filament profiles split the single free-text name
     # into brand + material (searchable dropdowns in the UI); name stays as the
     # derived display label. Backfill copies the legacy name into material so

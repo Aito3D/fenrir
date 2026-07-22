@@ -1,12 +1,16 @@
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { Copy, Crosshair, FileText, Receipt } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '../Card';
 import { Button } from '../Button';
 import { Collapsible } from '../Collapsible';
 import { NumberField } from '../NumberField';
+import { focusRingCls } from '../formStyles';
 import { useToast } from '../../contexts/ToastContext';
+import { useSettledValue } from '../../hooks/useSettledValue';
 import { CostSplitBar, Money, PrinterComparisonChips, SegmentLegend, type PrinterComparisonEntry, type Segment } from './shared';
-import { formatPct, targetPriceProfit, type PricingResult } from '../../utils/pricing';
+import { formatMoney, formatPct, targetPriceProfit, type PricingResult } from '../../utils/pricing';
+import { getCurrencySymbol } from '../../utils/currency';
 import { num } from '../../hooks/useCalculatorState';
 
 export function CalculatorTotalsCard({
@@ -43,12 +47,17 @@ export function CalculatorTotalsCard({
   const quantity = result.quantity;
   const target = targetPriceProfit(num(targetPrice), taxPct, result.costs_so_far);
 
+  // Screen-reader echo of the headline price: announce once per typing pause
+  // (settled value), never per keystroke.
+  const settledTotal = useSettledValue(result.total_ttc, 600);
+
   const copySummary = async () => {
     try {
       await navigator.clipboard.writeText(summaryText);
       showToast(t('calculator.summaryCopied'));
     } catch {
-      // Clipboard unavailable (insecure context, permissions) — do nothing.
+      // Clipboard unavailable (insecure context, permissions).
+      showToast(t('calculator.summaryCopyFailed'), 'error');
     }
   };
 
@@ -94,6 +103,9 @@ export function CalculatorTotalsCard({
                 {quantity > 1 ? ` · ${t('calculator.perUnit')}` : ''}
               </div>
               <Money countUp currency={currency} value={result.total_ttc} className="text-4xl font-bold tracking-tight text-bambu-green" />
+              <p className="sr-only" role="status">
+                {t('calculator.totalTTC')}: {formatMoney(settledTotal, currency)}
+              </p>
             </div>
             {quantity > 1 && (
               <div className="text-right">
@@ -103,6 +115,14 @@ export function CalculatorTotalsCard({
             )}
           </div>
         </div>
+        {easy && (
+          <Link
+            to="/calculator?tab=defaults"
+            className={`block w-fit text-xs text-bambu-gray underline decoration-bambu-gray/40 underline-offset-2 hover:text-white transition-colors rounded ${focusRingCls}`}
+          >
+            {t('calculator.easyAssumptions')}
+          </Link>
+        )}
         <div className={`grid gap-x-6 gap-y-2 text-sm ${easy ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3'}`}>
           <div className="flex justify-between gap-2">
             <span className="text-bambu-gray">{t('calculator.totalHT')}</span>
@@ -157,6 +177,7 @@ export function CalculatorTotalsCard({
             <NumberField
               id="calc-target-price"
               label={t('calculator.targetPriceLabel')}
+              unit={getCurrencySymbol(currency)}
               value={targetPrice}
               onChange={onTargetPriceChange}
               error={targetPriceError}

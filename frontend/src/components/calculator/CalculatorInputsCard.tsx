@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader } from '../Card';
 import { NumberField } from '../NumberField';
 import { SearchableSelect } from '../SearchableSelect';
 import { Tooltip } from '../Tooltip';
-import { labelCls } from '../formStyles';
+import { focusRingCls, labelCls } from '../formStyles';
 import { formatPct } from '../../utils/pricing';
 import { correctedTimeH } from '../../utils/calculatorInsights';
 import { num, splitDecimalHours, type CalcState } from '../../hooks/useCalculatorState';
@@ -71,6 +71,78 @@ function QuantityField({
   );
 }
 
+/** Single, clean day/hour/minute duration entry. Three segments share one
+    bordered box with a focus ring; leaving the field normalizes overflow
+    (90 min → 1 h 30 m, 25 h → 1 d 1 h) so the operator can type freely. */
+function DurationField({
+  days,
+  hours,
+  minutes,
+  onChange,
+  error,
+}: {
+  days: string;
+  hours: string;
+  minutes: string;
+  onChange: (patch: Partial<Pick<CalcState, 'timeD' | 'timeH' | 'timeM'>>) => void;
+  error?: string;
+}) {
+  const { t } = useTranslation();
+  const segments = [
+    { key: 'timeD' as const, value: days, unit: t('calculator.durationDaysShort'), aria: t('calculator.durationDays') },
+    { key: 'timeH' as const, value: hours, unit: t('calculator.durationHoursShort'), aria: t('calculator.durationHours') },
+    { key: 'timeM' as const, value: minutes, unit: t('calculator.durationMinutesShort'), aria: t('calculator.durationMinutes') },
+  ];
+  const normalize = () => {
+    const totalMin = Math.max(0, num(days)) * 1440 + Math.max(0, num(hours)) * 60 + Math.max(0, num(minutes));
+    const split = splitDecimalHours(totalMin / 60);
+    if (split.timeD !== days || split.timeH !== hours || split.timeM !== minutes) onChange(split);
+  };
+  return (
+    <div className="col-span-2">
+      <label htmlFor="calc-time-d" className={labelCls}>
+        {t('calculator.printingTimeLabel')}
+      </label>
+      <div
+        // Normalize only once focus leaves the whole group, not when tabbing
+        // between its own segments.
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) normalize();
+        }}
+        className={`flex items-stretch divide-x rounded-lg border bg-bambu-dark transition-colors focus-within:ring-2 ${
+          error
+            ? 'border-status-error/70 divide-status-error/30 focus-within:border-status-error focus-within:ring-status-error/20'
+            : 'border-bambu-dark-tertiary divide-bambu-dark-tertiary focus-within:border-bambu-green focus-within:ring-bambu-green/20'
+        }`}
+      >
+        {segments.map((seg) => (
+          <label
+            key={seg.key}
+            className="flex flex-1 items-baseline gap-1.5 px-3 py-2 cursor-text"
+          >
+            <input
+              id={seg.key === 'timeD' ? 'calc-time-d' : undefined}
+              type="number"
+              inputMode="numeric"
+              autoComplete="off"
+              min="0"
+              step="1"
+              aria-label={seg.aria}
+              aria-invalid={!!error}
+              placeholder="0"
+              className="w-full min-w-0 bg-transparent text-right text-lg text-white tabular-nums no-spinner focus:outline-none placeholder:text-bambu-gray/40"
+              value={seg.value}
+              onChange={(e) => onChange({ [seg.key]: e.target.value })}
+            />
+            <span className="select-none text-xs text-bambu-gray">{seg.unit}</span>
+          </label>
+        ))}
+      </div>
+      {error && <p className="text-xs text-status-error mt-1">{error}</p>}
+    </div>
+  );
+}
+
 export function CalculatorInputsCard({
   state,
   errors,
@@ -101,7 +173,7 @@ export function CalculatorInputsCard({
     showTimeChip && state.timeFromEstimate && timeAccuracy != null && Math.abs(timeAccuracy.accuracy_pct - 100) >= 2;
   const applyTimeCorrection = () => {
     if (!timeAccuracy) return;
-    const estimateH = num(state.timeH) + num(state.timeM) / 60;
+    const estimateH = num(state.timeD) * 24 + num(state.timeH) + num(state.timeM) / 60;
     set({
       ...splitDecimalHours(correctedTimeH(estimateH, timeAccuracy.accuracy_pct)),
       timeFromEstimate: false,
@@ -123,27 +195,19 @@ export function CalculatorInputsCard({
           <NumberField
             id="calc-weight"
             label={t('calculator.weight')}
+            unit="g"
             value={state.weight}
             onChange={(v) => set({ weight: v })}
             error={errors.weight}
             placeholder="0"
           />
           <QuantityField value={state.quantity} onChange={(v) => set({ quantity: v })} error={errors.quantity} />
-          <NumberField
-            id="calc-time-h"
-            label={t('calculator.printingTime')}
-            value={state.timeH}
-            onChange={(v) => set({ timeH: v, timeFromEstimate: false, timeAccuracyOverride: '' })}
-            error={errors.timeH}
-            placeholder="0"
-          />
-          <NumberField
-            id="calc-time-m"
-            label={t('calculator.printingTimeMin')}
-            value={state.timeM}
-            onChange={(v) => set({ timeM: v, timeFromEstimate: false, timeAccuracyOverride: '' })}
-            error={errors.timeM}
-            placeholder="0"
+          <DurationField
+            days={state.timeD}
+            hours={state.timeH}
+            minutes={state.timeM}
+            onChange={(patch) => set({ ...patch, timeFromEstimate: false, timeAccuracyOverride: '' })}
+            error={errors.timeD || errors.timeH || errors.timeM}
           />
         </div>
         {showTimeCorrection && timeAccuracy && (
@@ -155,14 +219,14 @@ export function CalculatorInputsCard({
                   pct: timeAccuracy.accuracy_pct.toFixed(0),
                 })
               : t('calculator.timeCorrection.hint', { pct: timeAccuracy.accuracy_pct.toFixed(0) })}
-            <button type="button" onClick={applyTimeCorrection} className="font-medium hover:text-white transition-colors underline">
+            <button type="button" onClick={applyTimeCorrection} className={`font-medium hover:text-white transition-colors underline rounded ${focusRingCls}`}>
               {t('calculator.timeCorrection.apply')}
             </button>
             <button
               type="button"
               aria-label={t('calculator.timeCorrection.dismiss')}
               onClick={() => set({ timeFromEstimate: false })}
-              className="hover:text-white transition-colors"
+              className={`p-2 -m-2 rounded-full hover:text-white transition-colors ${focusRingCls}`}
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -176,7 +240,7 @@ export function CalculatorInputsCard({
               type="button"
               aria-label={t('calculator.measuredEnergyClear')}
               onClick={() => set({ energyKwh: '' })}
-              className="hover:text-white transition-colors"
+              className={`p-2 -m-2 rounded-full hover:text-white transition-colors ${focusRingCls}`}
             >
               <X className="w-3.5 h-3.5" />
             </button>

@@ -159,7 +159,9 @@ export function estimateArchiveSalePrice(
     },
     matched.filament,
     printer,
-    defaults,
+    // Archive estimates are machine-cost pricing — the per-job base fee
+    // (quotation time) doesn't belong in an after-the-fact suggestion.
+    { ...defaults, base_fee_flat: 0 },
   );
 
   return {

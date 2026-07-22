@@ -43,6 +43,7 @@ export function CalculatorBreakdownCard({
       color: 'var(--viz-5)',
       lines: [
         ['calculator.costConsumables', result.consumables_flat],
+        ['calculator.costBaseFee', result.base_fee],
         ['calculator.costAds', result.ads_cost],
       ],
     },

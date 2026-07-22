@@ -102,6 +102,7 @@ class CalculatorDefaultsUpdate(BaseModel):
     default_difficulty_pct: float | None = Field(default=None, ge=100, le=1000)
     default_margin_over_cost_pct: float | None = Field(default=None, ge=0, le=1000)
     stuff_markup_pct: float | None = Field(default=None, ge=0, le=1000)
+    base_fee_flat: float | None = Field(default=None, ge=0)
 
 
 class CalculatorDefaultsResponse(BaseModel):
@@ -120,6 +121,7 @@ class CalculatorDefaultsResponse(BaseModel):
     default_difficulty_pct: float
     default_margin_over_cost_pct: float
     stuff_markup_pct: float
+    base_fee_flat: float
     updated_at: datetime
 
     model_config = {"from_attributes": True}

@@ -60,8 +60,8 @@ export function CalculatorLaborCard({
           summary={<SectionSummary label={t('calculator.modeling')} cost={result.modeling_cost_total} currency={currency} />}
         >
           <div className="grid grid-cols-2 gap-3">
-            <NumberField id="calc-mod-hours" label={t('calculator.workingHours')} value={state.modelingHours} onChange={(v) => set({ modelingHours: v })} error={errors.modelingHours} placeholder="0" />
-            <NumberField id="calc-mod-base" label={t('calculator.basePrice', { currency: currencySymbol })} value={state.modelingBasePrice} onChange={(v) => set({ modelingBasePrice: v })} error={errors.modelingBasePrice} placeholder="0" />
+            <NumberField id="calc-mod-hours" label={t('calculator.workingHours')} unit={t('calculator.durationHoursShort')} value={state.modelingHours} onChange={(v) => set({ modelingHours: v })} error={errors.modelingHours} placeholder="0" />
+            <NumberField id="calc-mod-base" label={t('calculator.basePrice')} unit={currencySymbol} value={state.modelingBasePrice} onChange={(v) => set({ modelingBasePrice: v })} error={errors.modelingBasePrice} placeholder="0" />
           </div>
         </Collapsible>
         <Collapsible
@@ -70,9 +70,9 @@ export function CalculatorLaborCard({
           summary={<SectionSummary label={t('calculator.preparation')} cost={result.prep_cost_total} currency={currency} />}
         >
           <div className="grid grid-cols-2 gap-3">
-            <NumberField id="calc-prep-model" label={t('calculator.modelPreparation')} value={state.prepModel} onChange={(v) => set({ prepModel: v })} error={errors.prepModel} placeholder="0" />
-            <NumberField id="calc-prep-slicing" label={t('calculator.slicing')} value={state.prepSlicing} onChange={(v) => set({ prepSlicing: v })} error={errors.prepSlicing} placeholder="0" />
-            <NumberField id="calc-prep-transfer" label={t('calculator.transferStart')} value={state.prepTransfer} onChange={(v) => set({ prepTransfer: v })} error={errors.prepTransfer} placeholder="0" />
+            <NumberField id="calc-prep-model" label={t('calculator.modelPreparation')} unit={t('calculator.durationMinutesShort')} value={state.prepModel} onChange={(v) => set({ prepModel: v })} error={errors.prepModel} placeholder="0" />
+            <NumberField id="calc-prep-slicing" label={t('calculator.slicing')} unit={t('calculator.durationMinutesShort')} value={state.prepSlicing} onChange={(v) => set({ prepSlicing: v })} error={errors.prepSlicing} placeholder="0" />
+            <NumberField id="calc-prep-transfer" label={t('calculator.transferStart')} unit={t('calculator.durationMinutesShort')} value={state.prepTransfer} onChange={(v) => set({ prepTransfer: v })} error={errors.prepTransfer} placeholder="0" />
           </div>
         </Collapsible>
         <Collapsible
@@ -81,10 +81,10 @@ export function CalculatorLaborCard({
           summary={<SectionSummary label={t('calculator.postProcessing')} cost={result.post_processing_cost} currency={currency} />}
         >
           <div className="grid grid-cols-2 gap-3">
-            <NumberField id="calc-post-removal" label={t('calculator.jobRemoval')} value={state.postRemoval} onChange={(v) => set({ postRemoval: v })} error={errors.postRemoval} placeholder="0" />
-            <NumberField id="calc-post-support" label={t('calculator.supportRemoval')} value={state.postSupport} onChange={(v) => set({ postSupport: v })} error={errors.postSupport} placeholder="0" />
-            <NumberField id="calc-post-additional" label={t('calculator.additionalWork')} value={state.postAdditional} onChange={(v) => set({ postAdditional: v })} error={errors.postAdditional} placeholder="0" />
-            <NumberField id="calc-post-fulfillment" label={t('calculator.fulfillment')} value={state.postFulfillment} onChange={(v) => set({ postFulfillment: v })} error={errors.postFulfillment} placeholder="0" />
+            <NumberField id="calc-post-removal" label={t('calculator.jobRemoval')} unit={t('calculator.durationMinutesShort')} value={state.postRemoval} onChange={(v) => set({ postRemoval: v })} error={errors.postRemoval} placeholder="0" />
+            <NumberField id="calc-post-support" label={t('calculator.supportRemoval')} unit={t('calculator.durationMinutesShort')} value={state.postSupport} onChange={(v) => set({ postSupport: v })} error={errors.postSupport} placeholder="0" />
+            <NumberField id="calc-post-additional" label={t('calculator.additionalWork')} unit={t('calculator.durationMinutesShort')} value={state.postAdditional} onChange={(v) => set({ postAdditional: v })} error={errors.postAdditional} placeholder="0" />
+            <NumberField id="calc-post-fulfillment" label={t('calculator.fulfillment')} unit={t('calculator.durationMinutesShort')} value={state.postFulfillment} onChange={(v) => set({ postFulfillment: v })} error={errors.postFulfillment} placeholder="0" />
           </div>
         </Collapsible>
         <Collapsible
@@ -93,8 +93,8 @@ export function CalculatorLaborCard({
           summary={<SectionSummary label={t('calculator.stuff')} cost={result.stuff_cost} currency={currency} />}
         >
           <div className="grid grid-cols-2 gap-3">
-            <NumberField id="calc-stuff-amount" label={t('calculator.amount', { currency: currencySymbol })} value={state.stuffAmount} onChange={(v) => set({ stuffAmount: v })} error={errors.stuffAmount} placeholder="0" />
-            <NumberField id="calc-stuff-markup" label={t('calculator.markupPct')} value={state.stuffMarkup} onChange={(v) => set({ stuffMarkup: v })} error={errors.stuffMarkup} placeholder={String(defaults.stuff_markup_pct)} />
+            <NumberField id="calc-stuff-amount" label={t('calculator.amount')} unit={currencySymbol} value={state.stuffAmount} onChange={(v) => set({ stuffAmount: v })} error={errors.stuffAmount} placeholder="0" />
+            <NumberField id="calc-stuff-markup" label={t('calculator.markupPct')} unit="%" value={state.stuffMarkup} onChange={(v) => set({ stuffMarkup: v })} error={errors.stuffMarkup} placeholder={String(defaults.stuff_markup_pct)} />
           </div>
         </Collapsible>
         {showAmortized && (

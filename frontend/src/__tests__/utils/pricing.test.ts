@@ -124,6 +124,33 @@ describe('computePricing — behaviors', () => {
     expect(r.total_ht_qty).toBeCloseTo(r.total_ht * 10, 6);
   });
 
+  it('base fee: absent or zero is neutral; when set it lands in costs_so_far with margin + tax on top', () => {
+    const base = computePricing(referenceInputs, filament, printer, defaults);
+    const absent = computePricing(referenceInputs, filament, printer, { ...defaults, base_fee_flat: undefined });
+    expect(absent.total_ttc).toBeCloseTo(base.total_ttc, 6);
+    expect(base.base_fee).toBe(0);
+    expect(base.base_fee_total).toBe(0);
+
+    const withFee = computePricing(referenceInputs, filament, printer, { ...defaults, base_fee_flat: 500 });
+    expect(withFee.base_fee_total).toBe(500);
+    expect(withFee.base_fee).toBe(500);
+    expect(withFee.costs_so_far).toBeCloseTo(base.costs_so_far + 500, 6);
+    // Flat cost behaves like consumables: margin then tax apply on top
+    expect(withFee.total_ttc).toBeCloseTo(base.total_ttc + 500 * 1.5 * 1.13, 6);
+  });
+
+  it('base fee is one-time per job — amortized across the quantity', () => {
+    const d = { ...defaults, base_fee_flat: 500 };
+    const r10 = computePricing({ ...referenceInputs, quantity: 10 }, filament, printer, d);
+    expect(r10.base_fee_total).toBeCloseTo(500, 6);
+    expect(r10.base_fee).toBeCloseTo(50, 6);
+    // The whole job carries the fee exactly once
+    const r1 = computePricing(referenceInputs, filament, printer, d);
+    const jobDelta10 = r10.total_ht_qty - computePricing({ ...referenceInputs, quantity: 10 }, filament, printer, defaults).total_ht_qty;
+    const jobDelta1 = r1.total_ht - computePricing(referenceInputs, filament, printer, defaults).total_ht;
+    expect(jobDelta10).toBeCloseTo(jobDelta1, 4);
+  });
+
   it('amortizes one-time modeling and preparation costs across the quantity', () => {
     const inputs = { ...referenceInputs, modeling_hours: 1, prep_slicing_min: 30 };
     const r1 = computePricing(inputs, filament, printer, defaults);

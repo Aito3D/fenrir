@@ -17,6 +17,7 @@ const PREFILL_PARAMS = ['weight', 'time', 'quantity', 'filamentId', 'printerId',
 
 export interface CalcState {
   weight: string;
+  timeD: string;
   timeH: string;
   timeM: string;
   /** Measured energy in kWh from an archive prefill; '' = use the estimate. */
@@ -54,6 +55,7 @@ export interface CalcState {
 
 export const DEFAULT_STATE: CalcState = {
   weight: '',
+  timeD: '',
   timeH: '',
   timeM: '',
   energyKwh: '',
@@ -82,22 +84,27 @@ export const DEFAULT_STATE: CalcState = {
   timeFromEstimate: false,
 };
 
-/** Parse a numeric input string, falling back when empty or invalid. */
-export const num = (s: string, fallback = 0): number => {
-  if (s.trim() === '') return fallback;
+/** Parse a numeric input string, falling back when empty, missing or invalid.
+ *  Tolerates undefined so a partially-shaped state (stale HMR module mix,
+ *  hand-edited localStorage) degrades to the fallback instead of crashing. */
+export const num = (s: string | undefined | null, fallback = 0): number => {
+  if (s == null || s.trim() === '') return fallback;
   const n = Number(s);
   return Number.isFinite(n) ? n : fallback;
 };
 
-/** Split decimal hours ("1.25") into hour/minute field values ("1" / "15"). */
-export function splitDecimalHours(value: number): { timeH: string; timeM: string } {
-  let h = Math.floor(value);
-  let m = Math.round((value - h) * 60);
-  if (m === 60) {
-    h += 1;
-    m = 0;
-  }
-  return { timeH: String(h), timeM: m > 0 ? String(m) : '' };
+/** Split decimal hours ("38.25") into day/hour/minute field values ("1" / "14" / "15"). */
+export function splitDecimalHours(value: number): { timeD: string; timeH: string; timeM: string } {
+  let totalMin = Math.round(value * 60);
+  const d = Math.floor(totalMin / (24 * 60));
+  totalMin -= d * 24 * 60;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin - h * 60;
+  return {
+    timeD: d > 0 ? String(d) : '',
+    timeH: h > 0 ? String(h) : '',
+    timeM: m > 0 ? String(m) : '',
+  };
 }
 
 function loadState(): CalcState {
@@ -206,7 +213,7 @@ export function useCalculatorState() {
   const errors = useMemo(() => {
     const e: Partial<Record<keyof CalcState, string>> = {};
     const nonNegative: Array<keyof CalcState> = [
-      'weight', 'timeH', 'timeM', 'energyKwh', 'modelingHours', 'modelingBasePrice', 'prepModel', 'prepSlicing',
+      'weight', 'timeD', 'timeH', 'timeM', 'energyKwh', 'modelingHours', 'modelingBasePrice', 'prepModel', 'prepSlicing',
       'prepTransfer', 'postRemoval', 'postSupport', 'postAdditional', 'postFulfillment',
       'stuffAmount', 'stuffMarkup', 'targetPrice',
     ];
@@ -216,8 +223,10 @@ export function useCalculatorState() {
         e[key] = t('calculator.valNonNegative');
       }
     }
+    // An empty quantity computes as 1 (buildPricingInputs), so don't nag the
+    // user who just cleared the field to retype — only flag real nonsense.
     const qty = Number(state.quantity);
-    if (state.quantity.trim() === '' || !Number.isInteger(qty) || qty < 1) {
+    if (state.quantity.trim() !== '' && (!Number.isInteger(qty) || qty < 1)) {
       e.quantity = t('calculator.valQuantityMin');
     }
     return e;
@@ -290,7 +299,8 @@ export function foldSessionOverrides<
 export function buildPricingInputs(state: CalcState, defaults: { stuff_markup_pct: number }): PricingInputs {
   return {
     weight_g: Math.max(0, num(state.weight)),
-    printing_time_h: Math.max(0, num(state.timeH)) + Math.max(0, num(state.timeM)) / 60,
+    printing_time_h:
+      Math.max(0, num(state.timeD)) * 24 + Math.max(0, num(state.timeH)) + Math.max(0, num(state.timeM)) / 60,
     measured_energy_kwh: num(state.energyKwh) > 0 ? num(state.energyKwh) : undefined,
     quantity: Math.max(1, Math.floor(num(state.quantity, 1))),
     modeling_hours: Math.max(0, num(state.modelingHours)),
