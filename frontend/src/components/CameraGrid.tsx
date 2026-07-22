@@ -50,16 +50,17 @@ export interface GridPrinter {
 }
 
 /**
- * Triage order for the wall: tiles needing an operator float to the front.
- * failed → paused → pickup-ready → printing → idle → offline. Mirrors the
- * border signals in gridCardHighlightClass.
+ * Wall order: active prints float to the front sorted by soonest ETA, then
+ * failed tiles needing attention, then finished/idle, then offline last.
+ * ETA → Failed → Finish/Idle → Offline. Paused jobs keep their ETA so they
+ * sort alongside running prints (and render double-size, see spotlight below).
  */
-function attentionRank(p: GridPrinter, hasQueuedJobs: boolean): number {
-  if (!p.connected) return 5;
-  if (p.state === 'FAILED') return 0;
-  if (p.state === 'PAUSE') return 1;
-  if (p.state === 'FINISH' && !(hasQueuedJobs && p.plateCleared)) return 2;
-  return p.state === 'RUNNING' ? 3 : 4;
+function etaTier(p: GridPrinter): number {
+  if (!p.connected) return 3; // offline last
+  const active = p.state === 'RUNNING' || p.state === 'PAUSE';
+  if (active && p.remainingTime != null && p.remainingTime > 0) return 0; // active with ETA
+  if (p.state === 'FAILED') return 1; // failed
+  return 2; // finish / idle (incl. active without an ETA yet)
 }
 
 /**
@@ -264,15 +265,23 @@ export function CameraGrid({
   // Kiosk mode: on the fullscreen wall, hide cursor + toolbar after idle input
   const kioskIdle = useIdleHide(!!fullscreen, KIOSK_IDLE_MS);
 
-  // Order the wall by triage priority (attention first), then keep the page's
-  // incoming order stable within each rank. When go2rtc is active, split
-  // printers: RTSP models → WebRTC, chamber models → MJPEG grid. gridPrinters
-  // keeps the full sorted list for rendering — tiles interleave both stream
-  // types so the triage order stays correct across mixed fleets.
+  // Order the wall ETA-first (active prints by soonest ETA), then failed,
+  // finished/idle, and offline last; ties within a tier fall back to name.
+  // When go2rtc is active, split printers: RTSP models → WebRTC, chamber
+  // models → MJPEG grid. gridPrinters keeps the full sorted list for rendering
+  // — tiles interleave both stream types so the order stays correct across
+  // mixed fleets.
   const { gridPrinters, mjpegPrinters, webrtcPrinters } = useMemo(() => {
-    const sorted = [...printers].sort(
-      (a, b) => attentionRank(a, printersWithQueue.has(a.id)) - attentionRank(b, printersWithQueue.has(b.id)),
-    );
+    const sorted = [...printers].sort((a, b) => {
+      const ta = etaTier(a);
+      const tb = etaTier(b);
+      if (ta !== tb) return ta - tb;
+      if (ta === 0) {
+        const diff = (a.remainingTime ?? 0) - (b.remainingTime ?? 0);
+        if (diff !== 0) return diff;
+      }
+      return a.name.localeCompare(b.name);
+    });
     if (cameraEngine !== 'go2rtc') {
       return { gridPrinters: sorted, mjpegPrinters: sorted, webrtcPrinters: [] as GridPrinter[] };
     }
@@ -286,7 +295,7 @@ export function CameraGrid({
       }
     }
     return { gridPrinters: sorted, mjpegPrinters: mjpeg, webrtcPrinters: webrtc };
-  }, [printers, cameraEngine, printersWithQueue]);
+  }, [printers, cameraEngine]);
 
   // Only stream connected printers — the backend would otherwise spawn ffmpeg
   // against unreachable printers and slow-retry them forever. Offline cards
@@ -343,7 +352,10 @@ export function CameraGrid({
   // Slide tiles to their new slots when the triage order changes (statuses
   // update live) or the spotlight moves — spanning a tile reflows the wall.
   const gridRef = useRef<HTMLDivElement>(null);
-  const orderKey = `${gridPrinters.map(p => p.id).join(',')}|${spotlightId ?? ''}`;
+  // Include paused ids: a pause flips the tile to 2×2, which reflows the wall
+  // and must animate even when the tile's slot order is unchanged.
+  const pausedKey = gridPrinters.filter(p => p.state === 'PAUSE').map(p => p.id).join(',');
+  const orderKey = `${gridPrinters.map(p => p.id).join(',')}|${spotlightId ?? ''}|${pausedKey}`;
   useFlipReorder(gridRef, orderKey);
 
   // Staggered entrance — tiles cascade in one after another when the wall
@@ -405,7 +417,9 @@ export function CameraGrid({
             hmsErrors: p.hmsErrors,
             dismissedErrorDesc: dismissedErrors.get(p.id),
             hasQueuedJobs: printersWithQueue.has(p.id),
-            spotlighted: spotlightId === p.id,
+            // Paused prints auto-expand to a 2×2 tile so a stalled job is
+            // impossible to miss on the wall — same span as a manual spotlight.
+            spotlighted: spotlightId === p.id || p.state === 'PAUSE',
             handlers,
           };
           return cameraEngine === 'go2rtc' && p.supports_rtsp ? (
