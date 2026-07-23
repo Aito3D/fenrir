@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense, lazy } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -26,8 +26,18 @@ import { api } from '../api/client';
 import { parseUTCDate } from '../utils/date';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
-import { ModelViewer } from './ModelViewer';
-import { GcodeViewer } from './GcodeViewer';
+// Lazy: ModelViewer pulls in three.js + jszip, GcodeViewer pulls in
+// gcode-preview — defer those bundles until a preview is actually opened.
+const ModelViewer = lazy(() => import('./ModelViewer').then(m => ({ default: m.ModelViewer })));
+const GcodeViewer = lazy(() => import('./GcodeViewer').then(m => ({ default: m.GcodeViewer })));
+
+function ViewerLoading() {
+  return (
+    <div className="w-full h-full flex items-center justify-center">
+      <Loader2 className="w-6 h-6 text-bambu-green animate-spin" />
+    </div>
+  );
+}
 import type { PlateMetadata } from '../types/plates';
 import { useToast } from '../contexts/ToastContext';
 import { formatFileSize } from '../utils/file';
@@ -213,19 +223,23 @@ function PrinterFileViewerModal({ printerId, filePath, filename, onClose }: Prin
                 </div>
               )}
               <div className="flex-1">
-                <ModelViewer
-                  url={api.getPrinterFileDownloadUrl(printerId, filePath)}
-                  fileType={ext}
-                  selectedPlateId={selectedPlateId}
-                  className="w-full h-full"
-                />
+                <Suspense fallback={<ViewerLoading />}>
+                  <ModelViewer
+                    url={api.getPrinterFileDownloadUrl(printerId, filePath)}
+                    fileType={ext}
+                    selectedPlateId={selectedPlateId}
+                    className="w-full h-full"
+                  />
+                </Suspense>
               </div>
             </div>
           ) : activeTab === 'gcode' && hasGcode ? (
-            <GcodeViewer
-              gcodeUrl={api.getPrinterFileGcodeUrl(printerId, filePath)}
-              className="w-full h-full"
-            />
+            <Suspense fallback={<ViewerLoading />}>
+              <GcodeViewer
+                gcodeUrl={api.getPrinterFileGcodeUrl(printerId, filePath)}
+                className="w-full h-full"
+              />
+            </Suspense>
           ) : (
             <div className="w-full h-full flex items-center justify-center text-bambu-gray">
               No preview available for this file

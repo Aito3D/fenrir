@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense, lazy, type ComponentProps } from 'react';
 import DOMPurify from 'dompurify';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -15,7 +15,18 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { Button } from './Button';
-import { RichTextEditor } from './RichTextEditor';
+// Lazy: RichTextEditor pulls in all @tiptap/* packages — defer that bundle
+// until a project page is actually edited. The wrapper keeps the render
+// sites identical to a direct import.
+const RichTextEditorLazy = lazy(() => import('./RichTextEditor').then(m => ({ default: m.RichTextEditor })));
+
+function RichTextEditor(props: ComponentProps<typeof RichTextEditorLazy>) {
+  return (
+    <Suspense fallback={<div className="min-h-[120px] rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary animate-pulse" />}>
+      <RichTextEditorLazy {...props} />
+    </Suspense>
+  );
+}
 
 interface ProjectPageModalProps {
   archiveId: number;

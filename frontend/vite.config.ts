@@ -87,7 +87,10 @@ export default defineConfig({
   build: {
     outDir: '../static',
     emptyOutDir: true,
-    chunkSizeWarningLimit: 3000,
+    // With lazy routes (App.tsx) and lazy heavy components (viewers, editor,
+    // locales) every chunk stays under ~700 kB; keep this limit honest so a
+    // future accidental eager import of a heavy library is flagged again.
+    chunkSizeWarningLimit: 1000,
   },
   server: {
     host: '0.0.0.0',

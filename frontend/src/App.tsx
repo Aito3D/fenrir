@@ -1,32 +1,8 @@
-import { Component, type ReactNode, type ErrorInfo } from 'react';
+import { Component, Suspense, lazy, type ComponentType, type ReactNode, type ErrorInfo } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Layout } from './components/Layout';
-import { PrintersPage } from './pages/PrintersPage';
-import { ArchivesPage } from './pages/ArchivesPage';
-import { QueuePage } from './pages/QueuePage';
-import { StatsPage } from './pages/StatsPage';
-import { SettingsPage } from './pages/SettingsPage';
-import { ProfilesPage } from './pages/ProfilesPage';
-import { MaintenancePage } from './pages/MaintenancePage';
-import { CalculatorPage } from './pages/CalculatorPage';
-import { CalculatorQuotePage } from './pages/CalculatorQuotePage';
-import { ProjectsPage } from './pages/ProjectsPage';
-import { ProjectDetailPage } from './pages/ProjectDetailPage';
-import { FileManagerPage } from './pages/FileManagerPage';
-import { LibraryTrashPage } from './pages/LibraryTrashPage';
-import { CameraPage } from './pages/CameraPage';
-import { StreamOverlayPage } from './pages/StreamOverlayPage';
-import { ExternalLinkPage } from './pages/ExternalLinkPage';
-import { GroupEditPage } from './pages/GroupEditPage';
-import InventoryPage from './pages/InventoryPage';
-import { MakerworldPage } from './pages/MakerworldPage';
-import { SystemInfoPage } from './pages/SystemInfoPage';
-import { LoginPage } from './pages/LoginPage';
-import { SetupPage } from './pages/SetupPage';
-import { NotificationsPage } from './pages/NotificationsPage';
-import { GCodeViewerPage } from './pages/GCodeViewerPage';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useStreamTokenSync } from './hooks/useCameraStreamToken';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -35,13 +11,62 @@ import { SliceJobTrackerProvider } from './contexts/SliceJobTrackerContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ColorCatalogProvider } from './contexts/ColorCatalogContext';
 import { FullscreenProvider } from './contexts/FullscreenContext';
-import { SpoolBuddyLayout } from './components/spoolbuddy/SpoolBuddyLayout';
-import { SpoolBuddyDashboard } from './pages/spoolbuddy/SpoolBuddyDashboard';
-import { SpoolBuddyAmsPage } from './pages/spoolbuddy/SpoolBuddyAmsPage';
-import { SpoolBuddySettingsPage } from './pages/spoolbuddy/SpoolBuddySettingsPage';
-import { SpoolBuddyCalibrationPage } from './pages/spoolbuddy/SpoolBuddyCalibrationPage';
-import { SpoolBuddyWriteTagPage } from './pages/spoolbuddy/SpoolBuddyWriteTagPage';
-import { SpoolBuddyInventoryPage } from './pages/spoolbuddy/SpoolBuddyInventoryPage';
+
+// After a redeploy the previous build's hashed chunk files no longer exist,
+// so a lazy route's dynamic import rejects. One forced reload picks up the
+// new index.html; the sessionStorage guard prevents a reload loop when the
+// failure has a different cause.
+const CHUNK_RELOAD_KEY = 'bambuddy-chunk-reload';
+function lazyWithReload(load: () => Promise<{ default: ComponentType }>) {
+  return lazy(() =>
+    load().then(
+      (module) => {
+        sessionStorage.removeItem(CHUNK_RELOAD_KEY);
+        return module;
+      },
+      (error) => {
+        if (sessionStorage.getItem(CHUNK_RELOAD_KEY)) {
+          throw error;
+        }
+        sessionStorage.setItem(CHUNK_RELOAD_KEY, '1');
+        window.location.reload();
+        return new Promise<{ default: ComponentType }>(() => {});
+      },
+    )
+  );
+}
+
+const PrintersPage = lazyWithReload(() => import('./pages/PrintersPage').then(m => ({ default: m.PrintersPage })));
+const ArchivesPage = lazyWithReload(() => import('./pages/ArchivesPage').then(m => ({ default: m.ArchivesPage })));
+const QueuePage = lazyWithReload(() => import('./pages/QueuePage').then(m => ({ default: m.QueuePage })));
+const StatsPage = lazyWithReload(() => import('./pages/StatsPage').then(m => ({ default: m.StatsPage })));
+const SettingsPage = lazyWithReload(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const ProfilesPage = lazyWithReload(() => import('./pages/ProfilesPage').then(m => ({ default: m.ProfilesPage })));
+const MaintenancePage = lazyWithReload(() => import('./pages/MaintenancePage').then(m => ({ default: m.MaintenancePage })));
+const CalculatorPage = lazyWithReload(() => import('./pages/CalculatorPage').then(m => ({ default: m.CalculatorPage })));
+const CalculatorQuotePage = lazyWithReload(() => import('./pages/CalculatorQuotePage').then(m => ({ default: m.CalculatorQuotePage })));
+const ProjectsPage = lazyWithReload(() => import('./pages/ProjectsPage').then(m => ({ default: m.ProjectsPage })));
+const ProjectDetailPage = lazyWithReload(() => import('./pages/ProjectDetailPage').then(m => ({ default: m.ProjectDetailPage })));
+const FileManagerPage = lazyWithReload(() => import('./pages/FileManagerPage').then(m => ({ default: m.FileManagerPage })));
+const LibraryTrashPage = lazyWithReload(() => import('./pages/LibraryTrashPage').then(m => ({ default: m.LibraryTrashPage })));
+const CameraPage = lazyWithReload(() => import('./pages/CameraPage').then(m => ({ default: m.CameraPage })));
+const StreamOverlayPage = lazyWithReload(() => import('./pages/StreamOverlayPage').then(m => ({ default: m.StreamOverlayPage })));
+const ExternalLinkPage = lazyWithReload(() => import('./pages/ExternalLinkPage').then(m => ({ default: m.ExternalLinkPage })));
+const GroupEditPage = lazyWithReload(() => import('./pages/GroupEditPage').then(m => ({ default: m.GroupEditPage })));
+const InventoryPage = lazyWithReload(() => import('./pages/InventoryPage'));
+const MakerworldPage = lazyWithReload(() => import('./pages/MakerworldPage').then(m => ({ default: m.MakerworldPage })));
+const SystemInfoPage = lazyWithReload(() => import('./pages/SystemInfoPage').then(m => ({ default: m.SystemInfoPage })));
+const LoginPage = lazyWithReload(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
+const SetupPage = lazyWithReload(() => import('./pages/SetupPage').then(m => ({ default: m.SetupPage })));
+const NotificationsPage = lazyWithReload(() => import('./pages/NotificationsPage').then(m => ({ default: m.NotificationsPage })));
+const GCodeViewerPage = lazyWithReload(() => import('./pages/GCodeViewerPage').then(m => ({ default: m.GCodeViewerPage })));
+const SpoolBuddyLayout = lazyWithReload(() => import('./components/spoolbuddy/SpoolBuddyLayout').then(m => ({ default: m.SpoolBuddyLayout })));
+const SpoolBuddyDashboard = lazyWithReload(() => import('./pages/spoolbuddy/SpoolBuddyDashboard').then(m => ({ default: m.SpoolBuddyDashboard })));
+const SpoolBuddyAmsPage = lazyWithReload(() => import('./pages/spoolbuddy/SpoolBuddyAmsPage').then(m => ({ default: m.SpoolBuddyAmsPage })));
+const SpoolBuddySettingsPage = lazyWithReload(() => import('./pages/spoolbuddy/SpoolBuddySettingsPage').then(m => ({ default: m.SpoolBuddySettingsPage })));
+const SpoolBuddyCalibrationPage = lazyWithReload(() => import('./pages/spoolbuddy/SpoolBuddyCalibrationPage').then(m => ({ default: m.SpoolBuddyCalibrationPage })));
+const SpoolBuddyWriteTagPage = lazyWithReload(() => import('./pages/spoolbuddy/SpoolBuddyWriteTagPage').then(m => ({ default: m.SpoolBuddyWriteTagPage })));
+const SpoolBuddyInventoryPage = lazyWithReload(() => import('./pages/spoolbuddy/SpoolBuddyInventoryPage').then(m => ({ default: m.SpoolBuddyInventoryPage })));
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null; errorInfo: ErrorInfo | null }> {
   state = { error: null as Error | null, errorInfo: null as ErrorInfo | null };
 
@@ -184,6 +209,7 @@ function App() {
             <FullscreenProvider>
             <StreamTokenSync />
             <BrowserRouter>
+              <Suspense fallback={<RouteLoading />}>
               <Routes>
                 {/* Setup page - only accessible if auth not enabled */}
                 <Route path="/setup" element={<SetupRoute><SetupPage /></SetupRoute>} />
@@ -250,6 +276,7 @@ function App() {
                   <Route path="camera-tokens" element={<Navigate to="/settings?tab=apikeys#card-camera-tokens" replace />} />
                 </Route>
               </Routes>
+              </Suspense>
             </BrowserRouter>
             </FullscreenProvider>
             </SliceJobTrackerProvider>

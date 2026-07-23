@@ -1,44 +1,61 @@
-import i18n from 'i18next';
+import i18n, { type BackendModule, type ReadCallback } from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 
-// Import translations directly for bundling
+// English ships in the entry bundle: it is the fallback language and must be
+// available synchronously. Every other locale (~350 KB of source each) is
+// code-split and fetched on demand by the backend below, keeping ~4 MB of
+// translations out of the initial download.
 import en from './locales/en';
-import de from './locales/de';
-import es from './locales/es';
-import fr from './locales/fr';
-import ja from './locales/ja';
-import it from './locales/it';
-import ko from './locales/ko';
-import ptBR from './locales/pt-BR';
-import zhCN from './locales/zh-CN';
-import zhTW from './locales/zh-TW';
-import tr from './locales/tr';
-import ru from './locales/ru';
+
+const LOCALE_LOADERS: Record<string, () => Promise<{ default: object }>> = {
+  de: () => import('./locales/de'),
+  es: () => import('./locales/es'),
+  fr: () => import('./locales/fr'),
+  ja: () => import('./locales/ja'),
+  it: () => import('./locales/it'),
+  ko: () => import('./locales/ko'),
+  'pt-BR': () => import('./locales/pt-BR'),
+  'zh-CN': () => import('./locales/zh-CN'),
+  'zh-TW': () => import('./locales/zh-TW'),
+  tr: () => import('./locales/tr'),
+  ru: () => import('./locales/ru'),
+};
+
+// Minimal i18next backend: resolves a language to its lazily imported
+// locale chunk. Combined with `partialBundledLanguages`, i18next only calls
+// this for languages missing from `resources` (i.e. everything but en).
+const lazyLocaleBackend: BackendModule = {
+  type: 'backend',
+  init: () => {},
+  read: (lng: string, _ns: string, callback: ReadCallback) => {
+    const load = LOCALE_LOADERS[lng];
+    if (!load) {
+      callback(null, {});
+      return;
+    }
+    load().then(
+      (mod) => callback(null, mod.default),
+      (err) => callback(err, null),
+    );
+  },
+};
 
 const resources = {
   en: { translation: en },
-  de: { translation: de },
-  es: { translation: es },
-  fr: { translation: fr },
-  ja: { translation: ja },
-  it: { translation: it },
-  ko: { translation: ko },
-  'pt-BR': { translation: ptBR },
-  'zh-CN': { translation: zhCN },
-  'zh-TW': { translation: zhTW },
-  tr: { translation: tr },
-  ru: { translation: ru },
 };
 
 const SUPPORTED_LNGS = ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'pt-BR', 'ru', 'tr', 'zh-CN', 'zh-TW'];
 const APPLIANCE_CONSUMED_KEY = 'bambuddy_appliance_locale_consumed';
 
 i18n
+  .use(lazyLocaleBackend)
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
     resources,
+    // resources only bundles en; other languages come from lazyLocaleBackend.
+    partialBundledLanguages: true,
     fallbackLng: 'en',
     supportedLngs: SUPPORTED_LNGS,
 
@@ -57,6 +74,9 @@ i18n
 
     react: {
       useSuspense: false,
+      // Re-render translated components when a lazily fetched locale bundle
+      // arrives, not only on languageChanged (English shows in the interim).
+      bindI18n: 'languageChanged loaded',
     },
   });
 
