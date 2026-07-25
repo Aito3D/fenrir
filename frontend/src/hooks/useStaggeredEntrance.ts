@@ -35,7 +35,15 @@ export function useStaggeredEntrance(containerRef: React.RefObject<HTMLElement |
           { opacity: 0, transform: 'translateY(12px)' },
           { opacity: 1, transform: 'translateY(0)' },
         ],
-        { duration: 350, delay: i * 80, easing: 'ease-out', fill: 'backwards' },
+        {
+          duration: 350,
+          // Snappy 45ms cascade, capped at 400ms total so a large fleet's last
+          // tile still lands promptly instead of trickling in for >1s.
+          delay: Math.min(i * 45, 400),
+          // easeOutQuint — matches the app's signature entrance curve.
+          easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+          fill: 'backwards',
+        },
       );
       i++;
     }

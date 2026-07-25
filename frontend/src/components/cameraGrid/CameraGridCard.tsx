@@ -254,7 +254,7 @@ export const CameraGridCard = memo(function CameraGridCard({
           </div>
         )}
         {connected && reconnecting && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/70 z-10">
+          <div className="absolute inset-0 flex items-center justify-center bg-black/70 z-10 animate-grid-fade-in">
             <div className="text-center">
               <WifiOff className="w-6 h-6 text-white/50 mx-auto mb-1.5" />
               <p className="text-xs text-white/70 mb-0.5">{t('printers.cameraGrid.connectionLost')}</p>
@@ -265,7 +265,7 @@ export const CameraGridCard = memo(function CameraGridCard({
           </div>
         )}
         {connected && error && !reconnecting && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 animate-grid-fade-in">
             <AlertCircle className="w-8 h-8 text-red-400" />
             <span className="text-xs text-white/50">{t('printers.cameraGrid.cameraUnavailable')}</span>
             {onRestart && (
@@ -280,7 +280,7 @@ export const CameraGridCard = memo(function CameraGridCard({
           </div>
         )}
         {!connected && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 animate-grid-fade-in">
             <WifiOff className="w-6 h-6 text-bambu-gray/40" />
             <span className={`${textXs} text-bambu-gray/40`}>{t('printers.status.offline')}</span>
           </div>
@@ -410,7 +410,7 @@ export const CameraGridCard = memo(function CameraGridCard({
                     <Clock className={iconSm} />
                     {remainingTime > 0 ? formatDuration(remainingTime * 60) : '--'}
                     {remainingTime > 0 && (
-                      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 rounded-md bg-bambu-dark-tertiary text-white text-[10px] font-medium whitespace-nowrap opacity-0 scale-95 group-hover/eta:opacity-100 group-hover/eta:scale-100 transition-all duration-150 shadow-lg border border-white/10 z-50">
+                      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 rounded-md bg-bambu-dark-tertiary text-white text-[10px] font-medium whitespace-nowrap opacity-0 scale-95 origin-bottom group-hover/eta:opacity-100 group-hover/eta:scale-100 transition-[opacity,transform] duration-150 shadow-lg border border-white/10 z-50">
                         ETA {formatETA(remainingTime, timeFormat, t)}
                         <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-bambu-dark-tertiary" />
                       </span>
@@ -428,7 +428,7 @@ export const CameraGridCard = memo(function CameraGridCard({
             </div>
             <div className={`bg-white/20 rounded-full ${barH}`}>
               <div
-                className={`${state === 'PAUSE' ? 'bg-yellow-400' : 'bg-bambu-green'} ${barH} rounded-full transition-all`}
+                className={`${state === 'PAUSE' ? 'bg-yellow-400' : 'bg-bambu-green'} ${barH} rounded-full transition-[width] duration-300 ease-out`}
                 style={{ width: `${progress}%` }}
               />
             </div>

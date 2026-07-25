@@ -520,16 +520,19 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Signature entrance curve is easeOutQuint — cubic-bezier(0.22, 1, 0.36, 1) —
+   shared with calc-rise, modal-in, banner-in, sidebar-in so grid tiles enter
+   with the same confident settle as the rest of the app. */
 .animate-grid-fade-in {
-  animation: grid-fade-in 0.5s ease-out;
+  animation: grid-fade-in 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .animate-grid-slide-in-top {
-  animation: grid-slide-in-top 0.2s ease-out;
+  animation: grid-slide-in-top 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .animate-grid-slide-in-bottom {
-  animation: grid-slide-in-bottom 0.3s ease-out;
+  animation: grid-slide-in-bottom 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Grid tile attention blink — slow border pulse meaning "operator action
@@ -799,6 +802,25 @@ body {
 
 .animate-value-tick {
   animation: value-tick 0.35s ease-out;
+}
+
+/* Confirmation pop for the reality-check "Applied" pill — the badge mounts
+   fresh when a check is applied, so this fades + grows it in from its left edge
+   once, registering the apply as feedback rather than a snap. */
+@keyframes calc-badge-pop {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-calc-badge-pop {
+  animation: calc-badge-pop 0.15s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: left center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-calc-badge-pop {
+    animation: none;
+  }
 }
 
 /* Calculator tables: rows carry a SOLID background so the sticky first

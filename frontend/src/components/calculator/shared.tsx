@@ -95,7 +95,7 @@ export function CostSplitBar({ segments, total, currency }: { segments: Segment[
           key={s.key}
           title={`${s.label}: ${formatMoney(s.value, currency)} (${formatPct(s.value / total, 1)})`}
           style={{ width: `${(s.value / total) * 100}%`, minWidth: 3, backgroundColor: s.color }}
-          className="rounded-sm transition-all duration-300 hover:opacity-80"
+          className="rounded-sm transition-[width,opacity] duration-300 hover:opacity-80"
         />
       ))}
     </div>

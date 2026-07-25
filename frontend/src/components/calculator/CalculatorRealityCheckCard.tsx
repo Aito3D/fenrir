@@ -166,7 +166,7 @@ export function CalculatorRealityCheckCard({
       </CardHeader>
       <CardContent className="space-y-1.5">
         <p className="text-xs text-bambu-gray">{t('calculator.realityCheck.subtitle')}</p>
-        {checks.map((check) => {
+        {checks.map((check, idx) => {
           const key = checkKey(check);
           const isApplied = overridable(check) && !!applied[check.kind];
           const impact = impacts[key] ?? null;
@@ -187,9 +187,15 @@ export function CalculatorRealityCheckCard({
           return (
             <div
               key={key}
-              className={`rounded-lg bg-bambu-dark/50 border-l-2 px-3 py-2 text-sm ${
+              // Rows are keyed by checkKey, so this entrance fires exactly when
+              // a check first mounts: a gentle cascade on first paint, a lone
+              // fade-in when a later check appears (material switch, fresh print
+              // data) instead of teleporting into the settled card. Capped delay
+              // keeps a long list from trickling in.
+              className={`animate-calc-tab-in rounded-lg bg-bambu-dark/50 border-l-2 px-3 py-2 text-sm ${
                 check.severity === 'significant' ? 'border-status-error/70' : 'border-status-warning/60'
               }`}
+              style={{ animationDelay: `${Math.min(idx * 30, 180)}ms` }}
             >
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="text-bambu-gray flex-1 min-w-[8rem] inline-flex items-center gap-1.5">
@@ -241,7 +247,7 @@ export function CalculatorRealityCheckCard({
                 )}
                 {overridable(check) && isApplied && (
                   <span className="flex items-center gap-1">
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-bambu-green/10 text-bambu-green">
+                    <span className="animate-calc-badge-pop text-xs px-2 py-0.5 rounded-full bg-bambu-green/10 text-bambu-green">
                       {t('calculator.realityCheck.applied')}
                     </span>
                     <Button
