@@ -100,6 +100,7 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
     Permission.SETTINGS_READ: "can_read_status",
     Permission.MAKERWORLD_VIEW: "can_read_status",
     Permission.CALCULATOR_READ: "can_read_status",
+    Permission.AITO_READ: "can_read_status",
     Permission.WEBSOCKET_CONNECT: "can_read_status",
     # can_queue — queue write ops + reprint (which enqueues an existing archive)
     Permission.QUEUE_CREATE: "can_queue",
@@ -276,6 +277,10 @@ _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
         # Pricing calculator — catalog/config mutation (filaments, printers,
         # defaults), same trust dimension as FILAMENTS_UPDATE / SETTINGS_UPDATE.
         Permission.CALCULATOR_UPDATE,
+        # Aito board mutation — UI workflow, not an API-key surface.
+        Permission.AITO_CREATE,
+        Permission.AITO_UPDATE,
+        Permission.AITO_DELETE,
     }
 )
 

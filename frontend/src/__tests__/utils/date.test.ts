@@ -16,6 +16,7 @@ import {
   formatETA,
   formatDuration,
   formatRelativeTime,
+  formatElapsedTime,
   localDateKey,
 } from '../../utils/date';
 
@@ -435,6 +436,67 @@ describe('formatRelativeTime', () => {
 
     expect(formatRelativeTime('2025-06-15T11:55:00Z', 'system', t)).toBe('5 minutes ago');
     expect(formatRelativeTime('2025-06-15T12:05:00Z', 'system', t)).toBe('in 5 minutes');
+  });
+});
+
+describe('formatElapsedTime', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // Local midnight anchor: 2025-06-15 12:00 local (system default tz, no TZ override needed).
+    vi.setSystemTime(new Date(2025, 5, 15, 12, 0, 0));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns "Today" for a timestamp earlier the same local day', () => {
+    const today9am = new Date(2025, 5, 15, 9, 0, 0).toISOString().slice(0, -1);
+    expect(formatElapsedTime(today9am)).toBe('Today');
+  });
+
+  it('returns "Yesterday" for the previous local calendar day', () => {
+    const yesterday = new Date(2025, 5, 14, 8, 0, 0).toISOString().slice(0, -1);
+    expect(formatElapsedTime(yesterday)).toBe('Yesterday');
+  });
+
+  it('treats 23:59 yesterday, viewed 10 minutes later, as "Yesterday" (calendar-day boundary)', () => {
+    vi.setSystemTime(new Date(2025, 5, 15, 0, 10, 0));
+    const lateYesterday = new Date(2025, 5, 14, 23, 59, 0).toISOString().slice(0, -1);
+    expect(formatElapsedTime(lateYesterday)).toBe('Yesterday');
+  });
+
+  it('returns "N days ago" for a 10-day-old timestamp', () => {
+    const tenDaysAgo = new Date(2025, 5, 5, 8, 0, 0).toISOString().slice(0, -1);
+    expect(formatElapsedTime(tenDaysAgo)).toBe('10 days ago');
+  });
+
+  it('scales to months around the 3-month mark', () => {
+    const threeMonthsAgo = new Date(2025, 2, 17, 8, 0, 0).toISOString().slice(0, -1); // ~90 days
+    expect(formatElapsedTime(threeMonthsAgo)).toBe('3 months ago');
+  });
+
+  it('scales to years around the 2-year mark', () => {
+    const twoYearsAgo = new Date(2023, 5, 16, 8, 0, 0).toISOString().slice(0, -1); // ~730 days
+    expect(formatElapsedTime(twoYearsAgo)).toBe('2 years ago');
+  });
+
+  it('returns the unknown fallback for null input', () => {
+    expect(formatElapsedTime(null)).toBe('-');
+  });
+
+  it('clamps future dates to "Today"', () => {
+    const future = new Date(2025, 5, 20, 8, 0, 0).toISOString().slice(0, -1);
+    expect(formatElapsedTime(future)).toBe('Today');
+  });
+
+  it('uses the translation function when provided', () => {
+    const t = vi.fn((key: string, options?: Record<string, unknown>) => {
+      if (key === 'time.daysElapsed') return `il y a ${options?.count} jours`;
+      return key;
+    });
+    const tenDaysAgo = new Date(2025, 5, 5, 8, 0, 0).toISOString().slice(0, -1);
+    expect(formatElapsedTime(tenDaysAgo, t)).toBe('il y a 10 jours');
   });
 });
 

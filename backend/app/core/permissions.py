@@ -187,6 +187,12 @@ class Permission(StrEnum):
     CALCULATOR_READ = "calculator:read"
     CALCULATOR_UPDATE = "calculator:update"  # Manage calculator filaments, printers, and defaults
 
+    # Aito production board
+    AITO_READ = "aito:read"
+    AITO_CREATE = "aito:create"  # create projects + search Zoho contacts
+    AITO_UPDATE = "aito:update"  # move cards between columns
+    AITO_DELETE = "aito:delete"  # soft-delete cards
+
     # WebSocket connection
     WEBSOCKET_CONNECT = "websocket:connect"
 
@@ -355,6 +361,12 @@ PERMISSION_CATEGORIES = {
         Permission.CALCULATOR_READ,
         Permission.CALCULATOR_UPDATE,
     ],
+    "Aito": [
+        Permission.AITO_READ,
+        Permission.AITO_CREATE,
+        Permission.AITO_UPDATE,
+        Permission.AITO_DELETE,
+    ],
     "WebSocket": [
         Permission.WEBSOCKET_CONNECT,
     ],
@@ -415,6 +427,11 @@ DEFAULT_GROUPS = {
             Permission.PROJECTS_CREATE.value,
             Permission.PROJECTS_UPDATE.value,
             Permission.PROJECTS_DELETE.value,
+            # Aito production board - full access
+            Permission.AITO_READ.value,
+            Permission.AITO_CREATE.value,
+            Permission.AITO_UPDATE.value,
+            Permission.AITO_DELETE.value,
             # Filaments - full access
             Permission.FILAMENTS_READ.value,
             Permission.FILAMENTS_CREATE.value,

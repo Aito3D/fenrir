@@ -459,6 +459,14 @@ class AppSettings(BaseModel):
         description="Fallback BamBuddy group name assigned when an LDAP user authenticates but has no mapped groups. Empty = no fallback.",
     )
 
+    # Zoho Books integration (Aito board client search)
+    zoho_client_id: str = Field(default="", description="Zoho OAuth client id")
+    zoho_client_secret: str = Field(default="", description="Zoho OAuth client secret (write-only)")
+    zoho_refresh_token: str = Field(default="", description="Zoho OAuth refresh token (write-only)")
+    zoho_organization_id: str = Field(default="", description="Zoho Books organization id")
+    zoho_base_url: str = Field(default="https://www.zohoapis.eu", description="Zoho API base URL")
+    zoho_accounts_url: str = Field(default="https://accounts.zoho.eu", description="Zoho accounts (OAuth) URL")
+
     # Obico AI failure detection (#172)
     obico_enabled: bool = Field(default=False, description="Enable Obico AI print failure detection")
     obico_ml_url: str = Field(
@@ -617,6 +625,12 @@ class AppSettingsUpdate(BaseModel):
     ldap_group_mapping: str | None = None
     ldap_auto_provision: bool | None = None
     ldap_default_group: str | None = None
+    zoho_client_id: str | None = None
+    zoho_client_secret: str | None = None
+    zoho_refresh_token: str | None = None
+    zoho_organization_id: str | None = None
+    zoho_base_url: str | None = None
+    zoho_accounts_url: str | None = None
     obico_enabled: bool | None = None
     obico_ml_url: str | None = None
     obico_sensitivity: str | None = None

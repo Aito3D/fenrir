@@ -46,6 +46,7 @@ const MaintenancePage = lazyWithReload(() => import('./pages/MaintenancePage').t
 const CalculatorPage = lazyWithReload(() => import('./pages/CalculatorPage').then(m => ({ default: m.CalculatorPage })));
 const CalculatorQuotePage = lazyWithReload(() => import('./pages/CalculatorQuotePage').then(m => ({ default: m.CalculatorQuotePage })));
 const ProjectsPage = lazyWithReload(() => import('./pages/ProjectsPage').then(m => ({ default: m.ProjectsPage })));
+const AitoPage = lazyWithReload(() => import('./pages/AitoPage').then(m => ({ default: m.AitoPage })));
 const ProjectDetailPage = lazyWithReload(() => import('./pages/ProjectDetailPage').then(m => ({ default: m.ProjectDetailPage })));
 const FileManagerPage = lazyWithReload(() => import('./pages/FileManagerPage').then(m => ({ default: m.FileManagerPage })));
 const LibraryTrashPage = lazyWithReload(() => import('./pages/LibraryTrashPage').then(m => ({ default: m.LibraryTrashPage })));
@@ -260,6 +261,7 @@ function App() {
                   <Route path="calculator" element={<PermissionRoute permission="calculator:read"><CalculatorPage /></PermissionRoute>} />
                   <Route path="projects" element={<ProjectsPage />} />
                   <Route path="projects/:id" element={<ProjectDetailPage />} />
+                  <Route path="aito" element={<AitoPage />} />
                   <Route path="inventory" element={<InventoryPage />} />
                   <Route path="files" element={<FileManagerPage />} />
                   <Route path="files/trash" element={<LibraryTrashPage />} />

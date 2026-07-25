@@ -1328,6 +1328,13 @@ export interface AppSettings {
   obico_enabled_printers: string;
   // Inventory forecasting global lead time
   forecast_global_lead_time_days: number;
+  // Zoho Books integration
+  zoho_client_id: string;
+  zoho_client_secret: string;
+  zoho_refresh_token: string;
+  zoho_organization_id: string;
+  zoho_base_url: string;
+  zoho_accounts_url: string;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -3406,6 +3413,37 @@ export interface CalculatorInsights {
   usage_by_printer: CalculatorDailyUsageEntry[];
 }
 
+// Aito kanban board
+export type AitoColumnId = 'devis' | 'model' | 'print' | 'finish';
+
+export interface AitoProject {
+  id: number;
+  description: string;
+  column: AitoColumnId;
+  position: number;
+  status: string;
+  client_id: string | null;
+  client_name: string | null;
+  client_phone: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Zoho Books integration
+export interface ZohoContact {
+  id: string;
+  name: string;
+  company_name: string;
+  phone: string;
+  mobile: string;
+  email: string;
+}
+
+export interface ZohoStatus {
+  configured: boolean;
+  reachable: boolean;
+}
+
 // Permission type - all available permissions
 export type Permission =
   | 'printers:read' | 'printers:create' | 'printers:update' | 'printers:delete' | 'printers:control' | 'printers:files' | 'printers:ams_rfid' | 'printers:clear_plate'
@@ -3443,6 +3481,7 @@ export type Permission =
   | 'groups:read' | 'groups:create' | 'groups:update' | 'groups:delete'
   | 'pipelines:read' | 'pipelines:write' | 'pipelines:run'
   | 'calculator:read' | 'calculator:update'
+  | 'aito:read' | 'aito:create' | 'aito:update' | 'aito:delete'
   | 'websocket:connect';
 
 // Group types
@@ -6129,6 +6168,32 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
+
+  // Aito kanban board
+  getAitoProjects: () => request<AitoProject[]>('/aito/'),
+  createAitoProject: (data: { description: string; client_id: string; client_name: string; client_phone?: string | null }) =>
+    request<AitoProject>('/aito/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  importAitoProjects: (data: { projects: { description: string; column: AitoColumnId; position: number }[] }) =>
+    request<AitoProject[]>('/aito/import', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  moveAitoProject: (id: number, data: { column: AitoColumnId; position: number }) =>
+    request<AitoProject>(`/aito/${id}/move`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteAitoProject: (id: number) =>
+    request<void>(`/aito/${id}`, { method: 'DELETE' }),
+  getAitoTrash: () => request<AitoProject[]>('/aito/trash'),
+  restoreAitoProject: (id: number) => request<AitoProject>(`/aito/${id}/restore`, { method: 'POST' }),
+
+  // Zoho Books integration
+  getZohoStatus: () => request<ZohoStatus>('/zoho/status'),
+  searchZohoContacts: (q: string) => request<ZohoContact[]>(`/zoho/contacts?q=${encodeURIComponent(q)}`),
 
   // Projects
   getProjects: (status?: string) => {

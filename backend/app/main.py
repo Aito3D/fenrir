@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import delete, or_, select, text
 
 from backend.app.api.routes import (
+    aito,
     ams_history,
     api_keys,
     archive_purge,
@@ -73,6 +74,7 @@ from backend.app.api.routes import (
     virtual_printers,
     webhook,
     websocket,
+    zoho,
 )
 from backend.app.api.routes.maintenance import _get_printer_maintenance_internal, ensure_default_types
 from backend.app.api.routes.support import init_debug_logging
@@ -7188,6 +7190,8 @@ app.include_router(auth.router, prefix=app_settings.api_prefix)
 app.include_router(mfa.router, prefix=app_settings.api_prefix)
 app.include_router(bug_report.router, prefix=app_settings.api_prefix)
 app.include_router(calculator.router, prefix=app_settings.api_prefix)
+app.include_router(aito.router, prefix=app_settings.api_prefix)
+app.include_router(zoho.router, prefix=app_settings.api_prefix)
 app.include_router(users.router, prefix=app_settings.api_prefix)
 app.include_router(groups.router, prefix=app_settings.api_prefix)
 app.include_router(

@@ -32,6 +32,8 @@ _SENSITIVE_FIELDS_FOR_API_KEY = (
     "prometheus_token",
     "virtual_printer_access_code",
     "ldap_bind_password",
+    "zoho_client_secret",
+    "zoho_refresh_token",
 )
 
 
@@ -168,6 +170,10 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
 
     # ldap_bind_password is never returned to any caller
     settings_dict["ldap_bind_password"] = ""
+
+    # Zoho secrets are write-only — never returned to any caller.
+    settings_dict["zoho_client_secret"] = ""
+    settings_dict["zoho_refresh_token"] = ""
 
     if is_api_key:
         for field in _SENSITIVE_FIELDS_FOR_API_KEY:

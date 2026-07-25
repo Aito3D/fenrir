@@ -420,6 +420,33 @@ export function formatRelativeTime(
 }
 
 /**
+ * Day-granularity elapsed time: "Today", "Yesterday", "10 days ago",
+ * scaling to months/years. Never falls back to an absolute date —
+ * callers wanting exact timestamps should put them in a tooltip.
+ * Calendar-day based (local midnights), so 23:59 yesterday is "Yesterday"
+ * even 10 minutes later.
+ */
+export function formatElapsedTime(dateStr: string | null, t?: TranslateFunction): string {
+  const date = parseUTCDate(dateStr);
+  if (!date) return t?.('time.unknown') ?? '-';
+
+  const todayMidnight = parseLocalDateKey(localDateKey(new Date()));
+  const dateMidnight = parseLocalDateKey(localDateKey(date));
+  // Future dates (negative diff) clamp to 0, i.e. "Today".
+  const days = Math.max(0, Math.round((todayMidnight.getTime() - dateMidnight.getTime()) / 86400000));
+
+  if (days === 0) return t?.('time.today') ?? 'Today';
+  if (days === 1) return t?.('time.yesterday') ?? 'Yesterday';
+  if (days < 60) return t?.('time.daysElapsed', { count: days }) ?? `${days} days ago`;
+  if (days < 730) {
+    const months = Math.floor(days / 30);
+    return t?.('time.monthsElapsed', { count: months }) ?? `${months} months ago`;
+  }
+  const years = Math.floor(days / 365);
+  return t?.('time.yearsElapsed', { count: years }) ?? `${years} years ago`;
+}
+
+/**
  * Format seconds as MM:SS for media/video player display.
  *
  * @param seconds - Total seconds
