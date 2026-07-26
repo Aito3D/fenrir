@@ -1247,6 +1247,18 @@ export function StatsPage() {
   if (isLoading) {
     return (
       <div className="p-4 md:p-8 space-y-6">
+        {/* Same header as the loaded state (minus the action buttons) so the
+            page-title view-transition group has a destination during the
+            crossfade and the title doesn't pop in after the skeletons. */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 animate-rise-lg vt-page-title">
+          <div>
+            <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+              <BarChart3 className="w-7 h-7 text-bambu-green" />
+              {t('stats.title')}
+            </h1>
+            <p className="text-bambu-gray mt-1">{t('stats.subtitle')}</p>
+          </div>
+        </div>
         <SkeletonGrid
           count={4}
           gridClassName="grid-cols-2 lg:grid-cols-4"
