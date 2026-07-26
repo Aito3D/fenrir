@@ -343,22 +343,6 @@ body {
   transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
-/* Toast slide-in animation */
-@keyframes slide-in {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
-.animate-slide-in {
-  animation: slide-in 0.2s ease-out;
-}
-
 /* Theme-aware icon inversion - only invert in dark mode */
 .icon-theme {
   opacity: 0.5;
@@ -693,13 +677,39 @@ body {
   animation: fade-in 0.15s ease-out;
 }
 
-/* Toast/panel exit — 150ms slide-out + fade (mirrors .animate-slide-in). */
-@keyframes slide-out {
-  from { opacity: 1; transform: translateX(0); }
-  to { opacity: 0; transform: translateX(100%); }
+/* Toast enter/exit — a single transition-driven element with three states
+   (pre-enter, open, leaving) instead of two @keyframes swapped by class, so a
+   mid-entrance dismissal retargets smoothly from wherever the toast visually
+   is instead of hard-cutting to the exit's start value. One rAF after mount
+   flips to [data-state="open"] so the initial off-screen state paints first. */
+.toast-slide {
+  transform: translateX(100%);
+  opacity: 0;
+  transition: transform 0.2s var(--ease-signature), opacity 0.2s var(--ease-signature);
 }
-.animate-slide-out {
-  animation: slide-out 0.15s var(--ease-exit) forwards;
+.toast-slide[data-state='open'] {
+  transform: translateX(0);
+  opacity: 1;
+}
+.toast-slide[data-state='leaving'] {
+  transform: translateX(100%);
+  opacity: 0;
+  transition: transform 0.15s var(--ease-exit), opacity 0.15s var(--ease-exit);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Fade only — no horizontal movement. */
+  .toast-slide {
+    transform: none;
+    transition: opacity 0.2s var(--ease-signature);
+  }
+  .toast-slide[data-state='open'] {
+    transform: none;
+  }
+  .toast-slide[data-state='leaving'] {
+    transform: none;
+    transition: opacity 0.15s var(--ease-exit);
+  }
 }
 
 /* Top-of-page notice banner entrance: fades in while sliding down into place.
@@ -925,7 +935,6 @@ tbody .calc-table-row:hover {
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-in,
   .animate-slide-up,
-  .animate-slide-in,
   .animate-slide-in-left,
   .animate-slide-down,
   .animate-calc-rise,
@@ -943,7 +952,6 @@ tbody .calc-table-row:hover {
   .animate-page-in,
   .animate-modal-in,
   .animate-overlay-in,
-  .animate-slide-out,
   .animate-banner-in,
   .stagger-children > *,
   .stagger-fade-in > * {

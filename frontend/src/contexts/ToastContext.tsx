@@ -1,5 +1,14 @@
 import { AlertCircle, CheckCircle, ChevronDown, ChevronUp, Info, Loader2, X, XCircle } from 'lucide-react';
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatFileSize } from '../utils/file';
 
@@ -91,6 +100,42 @@ const bgColors = {
 
 const DISPATCH_TOAST_ID = 'background-dispatch';
 const DISPATCH_TERMINAL_DISMISS_MS = 3500;
+
+/**
+ * Owns the one-rAF-after-mount flip from the pre-enter state to 'open' (the
+ * pre-`@starting-style` pattern: paint off-screen first, then transition to
+ * on-screen) so `.toast-slide`'s CSS transition actually animates instead of
+ * snapping straight to its resting value. `leaving` comes from the provider
+ * and short-circuits straight to the exit state.
+ */
+function ToastShell({
+  leaving,
+  className,
+  style,
+  ...rest
+}: {
+  leaving: boolean;
+  className: string;
+  style?: CSSProperties;
+  children: ReactNode;
+  'data-testid'?: string;
+}) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  return (
+    <div
+      data-state={leaving ? 'leaving' : mounted ? 'open' : undefined}
+      className={`toast-slide ${className}`}
+      style={style}
+      {...rest}
+    />
+  );
+}
 
 interface DispatchEventDetail {
   type: string;
@@ -355,11 +400,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         }}
       >
         {toasts.map((toast) => (
-          <div
+          <ToastShell
             key={toast.id}
-            className={`rounded-lg border shadow-lg backdrop-blur-sm ${
-              leaving.has(toast.id) ? 'animate-slide-out' : 'animate-slide-in'
-            } ${bgColors[toast.type]} ${
+            leaving={leaving.has(toast.id)}
+            className={`rounded-lg border shadow-lg backdrop-blur-sm ${bgColors[toast.type]} ${
               toast.dispatchData ? 'w-[420px] p-3' : 'flex items-center gap-3 px-4 py-3'
             }`}
             // Cap width to the viewport so the fixed-width dispatch toast (420px)
@@ -515,7 +559,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 </button>
               </>
             )}
-          </div>
+          </ToastShell>
         ))}
       </div>
     </ToastContext.Provider>
