@@ -76,6 +76,7 @@ export function useFlipReorder(containerRef: React.RefObject<HTMLElement | null>
                 { opacity: 0, transform: 'translateY(12px)' },
                 { opacity: 1, transform: 'translateY(0)' },
               ],
+              // keep in sync with --ease-signature in index.css
               { duration: 300, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'backwards' },
             );
           }
@@ -93,6 +94,7 @@ export function useFlipReorder(containerRef: React.RefObject<HTMLElement | null>
         // easeOutQuint — the app's signature curve (calc-rise, modal-in,
         // sidebar-in); a confident settle that matches the rest of the UI
         // instead of the flat built-in `ease`.
+        // keep in sync with --ease-signature in index.css
         const easing = 'cubic-bezier(0.22, 1, 0.36, 1)';
         if (!resized) {
           // Pure reorder slide — default transform-origin is fine for translate.

@@ -41,6 +41,7 @@ export function useStaggeredEntrance(containerRef: React.RefObject<HTMLElement |
           // tile still lands promptly instead of trickling in for >1s.
           delay: Math.min(i * 45, 400),
           // easeOutQuint — matches the app's signature entrance curve.
+          // keep in sync with --ease-signature in index.css
           easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
           fill: 'backwards',
         },

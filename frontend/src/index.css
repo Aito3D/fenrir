@@ -520,19 +520,19 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Signature entrance curve is easeOutQuint — cubic-bezier(0.22, 1, 0.36, 1) —
+/* Signature entrance curve is easeOutQuint — var(--ease-signature) —
    shared with calc-rise, modal-in, banner-in, sidebar-in so grid tiles enter
    with the same confident settle as the rest of the app. */
 .animate-grid-fade-in {
-  animation: grid-fade-in 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: grid-fade-in 0.4s var(--ease-signature);
 }
 
 .animate-grid-slide-in-top {
-  animation: grid-slide-in-top 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: grid-slide-in-top 0.2s var(--ease-signature);
 }
 
 .animate-grid-slide-in-bottom {
-  animation: grid-slide-in-bottom 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: grid-slide-in-bottom 0.3s var(--ease-signature);
 }
 
 /* Grid tile attention blink — slow border pulse meaning "operator action
@@ -610,7 +610,7 @@ body {
 /* `backwards` fill keeps staggered cards hidden during their delay.
    easeOutQuint decelerates late for a premium, settled landing. */
 .animate-calc-rise {
-  animation: calc-rise 0.25s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: calc-rise 0.25s var(--ease-signature) backwards;
 }
 
 /* Global button interaction feedback: quick color/shadow transitions plus a
@@ -636,20 +636,27 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 .animate-calc-tab-in {
-  animation: calc-tab-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: calc-tab-in 0.25s var(--ease-signature) backwards;
 }
 
 /* ==========================================================================
    App-wide motion system
    Motion budget: 400ms parent entrance · 280ms child entrance · 150ms exit ·
    <100ms feedback · 80ms parent stagger · 50ms child stagger.
-   Signature entrance curve is easeOutQuint — cubic-bezier(0.22, 1, 0.36, 1).
+   Signature entrance curve is easeOutQuint — var(--ease-signature).
    Entrances are two-level (see "Two-level entrance hierarchy" below): page
    title and cards land first, then each card's details cascade in.
    All utilities below are neutralized under prefers-reduced-motion (see the
    reduce block near the bottom of this file). Tailwind v4 does not read
    tailwind.config.js here, so custom utilities MUST live in this file.
    ========================================================================== */
+
+:root {
+  /* easeOutQuint — the app's signature entrance curve */
+  --ease-signature: cubic-bezier(0.22, 1, 0.36, 1);
+  /* accelerating exit curve */
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+}
 
 /* Generic mount entrance — the app-wide counterpart to .animate-calc-rise.
    `backwards` fill keeps staggered children hidden through their delay. */
@@ -658,13 +665,13 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 .animate-rise {
-  animation: rise 0.25s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: rise 0.25s var(--ease-signature) backwards;
 }
 
 /* Route/page transition — the incoming page rises + fades in. AnimatedOutlet
    plays this after the outgoing page has finished .animate-page-out. */
 .animate-page-in {
-  animation: calc-tab-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: calc-tab-in 0.25s var(--ease-signature) backwards;
 }
 
 /* Route/page exit — the outgoing page drifts up while fading, continuing the
@@ -675,7 +682,7 @@ body {
   to { opacity: 0; transform: translateY(-8px); }
 }
 .animate-page-out {
-  animation: page-out 0.15s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: page-out 0.15s var(--ease-exit) forwards;
 }
 
 /* Modal card entrance — fade + gentle scale-up from center. */
@@ -684,7 +691,7 @@ body {
   to { opacity: 1; transform: scale(1); }
 }
 .animate-modal-in {
-  animation: modal-in 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: modal-in 0.25s var(--ease-signature);
   transform-origin: center;
 }
 
@@ -699,7 +706,7 @@ body {
   to { opacity: 0; transform: translateX(100%); }
 }
 .animate-slide-out {
-  animation: slide-out 0.15s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: slide-out 0.15s var(--ease-exit) forwards;
 }
 
 /* Top-of-page notice banner entrance: fades in while sliding down into place.
@@ -709,7 +716,7 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 .animate-banner-in {
-  animation: banner-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: banner-in 0.55s var(--ease-signature) backwards;
 }
 
 /* Staggered list reveal: direct children each need .animate-rise; this sets a
@@ -748,7 +755,7 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 .animate-rise-lg {
-  animation: rise-lg 0.4s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: rise-lg 0.4s var(--ease-signature) backwards;
   animation-delay: var(--enter-delay, 0ms);
 }
 
@@ -766,7 +773,7 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 .stagger-nested > * {
-  animation: rise-sm 0.28s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: rise-sm 0.28s var(--ease-signature) backwards;
   animation-delay: calc(var(--enter-delay, 0ms) + 200ms + var(--nested-slot, 0) * 50ms);
 }
 .stagger-nested > *:nth-child(2) { --nested-slot: 1; }
@@ -813,7 +820,7 @@ body {
 }
 
 .animate-calc-badge-pop {
-  animation: calc-badge-pop 0.15s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: calc-badge-pop 0.15s var(--ease-signature);
   transform-origin: left center;
 }
 
@@ -856,7 +863,7 @@ tbody .calc-table-row:hover {
 
 .animate-waterfall-fill {
   transform-origin: left;
-  animation: waterfall-fill 0.35s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: waterfall-fill 0.35s var(--ease-signature) backwards;
 }
 
 .waterfall-seg {
@@ -882,7 +889,7 @@ tbody .calc-table-row:hover {
 }
 
 .animate-login-card-in {
-  animation: login-card-in 0.8s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: login-card-in 0.8s var(--ease-signature) backwards;
 }
 
 /* Login card exit: on successful auth the card accelerates up and fades out,
@@ -894,7 +901,7 @@ tbody .calc-table-row:hover {
 }
 
 .animate-login-card-out {
-  animation: login-card-out 0.5s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: login-card-out 0.5s var(--ease-exit) forwards;
 }
 
 /* Sidebar entrance: on first mount after login the whole panel slides in from
@@ -909,7 +916,7 @@ tbody .calc-table-row:hover {
 }
 
 .animate-sidebar-in {
-  animation: sidebar-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: sidebar-in 0.7s var(--ease-signature) backwards;
 }
 
 /* Top bar entrance: fades in while sliding down from above on first mount. */
@@ -919,7 +926,7 @@ tbody .calc-table-row:hover {
 }
 
 .animate-topbar-in {
-  animation: topbar-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: topbar-in 0.4s var(--ease-signature) backwards;
 }
 
 @media (prefers-reduced-motion: reduce) {

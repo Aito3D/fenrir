@@ -358,7 +358,7 @@ export function CalculatorPage() {
           // not left/width — keeps the slide on the GPU instead of triggering
           // layout each tab switch. scaleX of a solid bar is crisp (no edges to
           // blur); origin-left maps the scale to offsetWidth directly.
-          className="absolute bottom-0 left-0 w-px h-0.5 origin-left bg-bambu-green transition-transform duration-[250ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+          className="absolute bottom-0 left-0 w-px h-0.5 origin-left bg-bambu-green transition-transform duration-[250ms] ease-(--ease-signature) motion-reduce:transition-none"
           style={{ transform: `translateX(${tabIndicator.left}px) scaleX(${tabIndicator.width})` }}
         />
       </div>
