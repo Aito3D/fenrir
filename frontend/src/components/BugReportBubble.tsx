@@ -280,11 +280,13 @@ export function BugReportBubble() {
                           </p>
                         </div>
                       </div>
+                      {/* Collapsibles here are NOT `animated`: that keeps closed children
+                          mounted, and the collapsed-rows test asserts problem details are
+                          absent from the DOM until expanded. */}
                       <div className="space-y-2">
                         {diagnosticProblems.map((entry) => (
                           <Collapsible
                             key={entry.result.printer_id ?? entry.result.ip_address}
-                            animated
                             defaultOpen={diagnosticProblems.length === 1}
                             className="rounded-lg bg-amber-100/60 dark:bg-amber-900/30 px-3 py-2"
                             summary={
