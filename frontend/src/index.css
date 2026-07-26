@@ -656,6 +656,9 @@ body {
   --ease-signature: cubic-bezier(0.22, 1, 0.36, 1);
   /* accelerating exit curve */
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  /* .animate-sidebar-in's duration — read by Layout.tsx's dev-mode banner
+     delay so the two can never desync. */
+  --sidebar-in-duration: 400ms;
 }
 
 /* Generic mount entrance — the app-wide counterpart to .animate-calc-rise.
@@ -889,7 +892,7 @@ tbody .calc-table-row:hover {
 }
 
 .animate-login-card-in {
-  animation: login-card-in 0.8s var(--ease-signature) backwards;
+  animation: login-card-in 0.5s var(--ease-signature) backwards;
 }
 
 /* Login card exit: on successful auth the card accelerates up and fades out,
@@ -916,7 +919,7 @@ tbody .calc-table-row:hover {
 }
 
 .animate-sidebar-in {
-  animation: sidebar-in 0.7s var(--ease-signature) backwards;
+  animation: sidebar-in var(--sidebar-in-duration) var(--ease-signature) backwards;
 }
 
 /* Top bar entrance: fades in while sliding down from above on first mount. */

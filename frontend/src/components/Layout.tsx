@@ -885,11 +885,13 @@ export function Layout() {
           </div>
         )}
         {!fullscreen && devModeWarnings && devModeWarnings.length > 0 && (
-          // 700ms delay so the banner slides in only after the sidebar entrance
-          // (.animate-sidebar-in, 0.7s) has finished. `backwards` fill keeps it
-          // hidden during the wait; reduced motion disables the anim entirely.
+          // Delay so the banner slides in only after the sidebar entrance
+          // (.animate-sidebar-in) has finished — driven by the same
+          // --sidebar-in-duration var so the two can never desync.
+          // `backwards` fill keeps it hidden during the wait; reduced motion
+          // disables the anim entirely.
           <div
-            style={{ animationDelay: '700ms' }}
+            style={{ animationDelay: 'var(--sidebar-in-duration)' }}
             className="bg-orange-100 dark:bg-orange-500/20 border-b border-orange-300 dark:border-orange-500/30 px-4 py-2 flex items-center justify-between animate-banner-in"
           >
             <div className="flex items-center gap-2 text-sm">

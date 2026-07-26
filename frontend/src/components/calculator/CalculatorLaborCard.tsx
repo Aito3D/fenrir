@@ -46,6 +46,9 @@ export function CalculatorLaborCard({
   const { t } = useTranslation();
   const showAmortized = result.quantity > 1 && result.modeling_cost_total + result.prep_cost_total > 0;
   return (
+    // Delay matches the house `stagger-children` 50ms cadence; kept inline
+    // because this card and its siblings live in separate grid columns, not
+    // one shared parent that `stagger-children` could be applied to.
     <Card className="animate-calc-rise" style={{ animationDelay: '100ms' }}>
       <CardHeader>
         <h2 className="font-semibold text-white flex items-center gap-2">

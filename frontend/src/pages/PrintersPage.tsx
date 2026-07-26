@@ -8831,7 +8831,7 @@ export function PrintersPage() {
           </CardContent>
         </Card>
       ) : sortedPrinters.length === 0 && (search.trim() || statusFilter !== 'all' || locationFilter !== 'all') ? (
-        <Card>
+        <Card className="animate-rise">
           <CardContent className="text-center py-12">
             <p className="text-bambu-gray">{t('printers.noSearchResults')}</p>
           </CardContent>

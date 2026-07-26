@@ -70,6 +70,9 @@ export function CalculatorBreakdownCard({
   ];
 
   return (
+    // Delay matches the house `stagger-children` 50ms cadence; kept inline
+    // because this card and its siblings live in separate grid columns, not
+    // one shared parent that `stagger-children` could be applied to.
     <Card className="animate-calc-rise" style={{ animationDelay: '50ms' }}>
       <CardHeader>
         <h2 className="font-semibold text-white flex items-center gap-2">
