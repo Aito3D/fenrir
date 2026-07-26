@@ -4,7 +4,7 @@
 
 **Goal:** Rework the client half of the Aito "New project" modal so it opens with a default client preselected, exposes editable phone/email that write back to Zoho Books on submit, and can create a brand-new Zoho contact without leaving the modal.
 
-**Architecture:** Three independent backend endpoints (`GET /zoho/status` extended, `POST /zoho/contacts`, `PATCH /zoho/contacts/{id}`) proxy Zoho Books; the frontend orchestrates them so a Zoho failure never blocks project creation. The client input decomposes out of the 796-line `AitoPage.tsx` into six focused components plus two pure helper modules. Phone handling is a country-code picker plus a national number, normalized to `+CC-XXXXXXXX`, synced only when the user actually edited the field.
+**Architecture:** Three independent backend endpoints (`GET /zoho/status` extended, `POST /zoho/contacts`, `PATCH /zoho/contacts/{id}`) proxy Zoho Books; the frontend orchestrates them so a Zoho failure never blocks project creation. The client input decomposes out of `AitoPage.tsx` into six focused components plus two pure helper modules. Phone handling is a country-code picker plus a national number, normalized to `+CC-XXXXXXXX`, synced only when the user actually edited the field.
 
 **Tech Stack:** FastAPI + SQLAlchemy + Pydantic (backend), pytest with `httpx.MockTransport`; React 19 + TanStack Query + Tailwind 4 (frontend), Vitest + Testing Library + MSW.
 
@@ -2623,9 +2623,11 @@ git commit -m "feat(aito): client section with editable phone/email and intent-b
 
 ### Task 12: Extract `NewProjectModal` and wire the submit flow
 
+> **Locate by symbol, not line number.** `AitoPage.tsx` is being actively refactored on this branch (the board card components were extracted after this plan was written). Find `NewProjectModal`, `createMutation` and `createProject` by name.
+
 **Files:**
 - Create: `frontend/src/components/aito/NewProjectModal.tsx`
-- Modify: `frontend/src/pages/AitoPage.tsx` (delete lines 305–394, update the create mutation and `createProject`)
+- Modify: `frontend/src/pages/AitoPage.tsx` (delete the inline `NewProjectModal`, update the create mutation and `createProject`)
 - Modify: `frontend/src/__tests__/pages/AitoPage.test.tsx` if it asserts on the old modal markup
 
 **Interfaces:**
@@ -2853,7 +2855,7 @@ Expected: PASS — two tests.
 
 - [ ] **Step 5: Rewire `AitoPage.tsx`**
 
-Delete the `NewProjectModal` function (lines 305–394) and replace the `ClientCombobox` import (line 28) with:
+Delete the inline `NewProjectModal` function and replace the `ClientCombobox` import with:
 
 ```tsx
 import { NewProjectModal } from '../components/aito/NewProjectModal';
@@ -2861,7 +2863,7 @@ import { formatPhone } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
 ```
 
-Replace `createMutation` (around line 591) with:
+Replace `createMutation` with:
 
 ```tsx
   const createMutation = useMutation({
@@ -2910,7 +2912,7 @@ Add above it:
   };
 ```
 
-Replace `createProject` (around line 704) with:
+Replace `createProject` with:
 
 ```tsx
   const createProject = (description: string, draft: ClientDraft) => {
