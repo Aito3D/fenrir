@@ -1306,7 +1306,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   return (
     <div className="p-4 md:p-8 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between animate-rise-lg">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
             <Package className="w-7 h-7 text-bambu-green" />
@@ -1366,9 +1366,12 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
 
       {/* Stats Bar */}
       {stats && !isLoading && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        {/* Two-level entrance (house pattern): tiles cascade 80ms apart after the
+            title. The spool grid below stays static on purpose — it re-renders on
+            every filter/page change, which would replay the entrance. */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 stagger-parents">
           {/* Total Inventory */}
-          <div className="bg-bambu-dark-secondary rounded-lg p-4">
+          <div className="bg-bambu-dark-secondary rounded-lg p-4 animate-rise-lg">
             <div className="flex items-center gap-2 mb-1">
               <Package className="w-4 h-4 text-bambu-green" />
               <span className="text-xs text-bambu-gray font-medium uppercase tracking-wide">{t('inventory.totalInventory')}</span>
@@ -1378,7 +1381,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           </div>
 
           {/* Total Consumed */}
-          <div className="bg-bambu-dark-secondary rounded-lg p-4">
+          <div className="bg-bambu-dark-secondary rounded-lg p-4 animate-rise-lg">
             <div className="flex items-center justify-between gap-2 mb-1">
               <div className="flex items-center gap-2">
                 <TrendingDown className="w-4 h-4 text-blue-600 dark:text-blue-400" />
@@ -1400,7 +1403,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           </div>
 
           {/* By Material */}
-          <div className="bg-bambu-dark-secondary rounded-lg p-4">
+          <div className="bg-bambu-dark-secondary rounded-lg p-4 animate-rise-lg">
             <div className="flex items-center gap-2 mb-1">
               <Layers className="w-4 h-4 text-green-600 dark:text-green-400" />
               <span className="text-xs text-bambu-gray font-medium uppercase tracking-wide">{t('inventory.byMaterial')}</span>
@@ -1418,7 +1421,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           </div>
 
           {/* In Printer */}
-          <div className="bg-bambu-dark-secondary rounded-lg p-4">
+          <div className="bg-bambu-dark-secondary rounded-lg p-4 animate-rise-lg">
             <div className="flex items-center gap-2 mb-1">
               <Printer className="w-4 h-4 text-purple-600 dark:text-purple-400" />
               <span className="text-xs text-bambu-gray font-medium uppercase tracking-wide">{t('inventory.inPrinter')}</span>
@@ -1428,7 +1431,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           </div>
 
           {/* Low Stock */}
-          <div className="bg-bambu-dark-secondary rounded-lg p-4">
+          <div className="bg-bambu-dark-secondary rounded-lg p-4 animate-rise-lg">
             <div className="flex items-center gap-2 mb-1">
               <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
               <span className="text-xs text-bambu-gray font-medium uppercase tracking-wide">{t('inventory.lowStock')}</span>

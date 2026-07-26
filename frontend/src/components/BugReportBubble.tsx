@@ -284,6 +284,7 @@ export function BugReportBubble() {
                         {diagnosticProblems.map((entry) => (
                           <Collapsible
                             key={entry.result.printer_id ?? entry.result.ip_address}
+                            animated
                             defaultOpen={diagnosticProblems.length === 1}
                             className="rounded-lg bg-amber-100/60 dark:bg-amber-900/30 px-3 py-2"
                             summary={

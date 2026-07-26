@@ -1087,7 +1087,7 @@ export function ProjectsPage() {
           <button
             key={key}
             onClick={() => setStatusFilter(key)}
-            className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-all ${
+            className={`btn-press flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-all ${
               statusFilter === key
                 ? 'bg-bambu-card text-white shadow-sm'
                 : 'text-bambu-gray hover:text-white'

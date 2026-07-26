@@ -1972,7 +1972,7 @@ export function QueuePage() {
           <button
             key={id}
             onClick={() => setActiveTab(id)}
-            className={`px-4 py-2.5 text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors whitespace-nowrap ${
+            className={`btn-press px-4 py-2.5 text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors whitespace-nowrap ${
               activeTab === id
                 ? 'text-white border-bambu-green font-medium'
                 : 'text-bambu-gray border-transparent hover:text-white'

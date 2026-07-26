@@ -1365,7 +1365,7 @@ export function SettingsPage() {
       <nav className="flex flex-wrap gap-1 border-b border-bambu-dark-tertiary lg:flex-col lg:flex-nowrap lg:gap-0 lg:border-b-0 lg:border-r lg:w-48 lg:flex-shrink-0 lg:self-start lg:sticky lg:top-4">
         <button
           onClick={() => handleTabChange('general')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+          className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
             activeTab === 'general'
               ? 'text-bambu-green border-bambu-green'
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
@@ -1376,7 +1376,7 @@ export function SettingsPage() {
         </button>
         <button
           onClick={() => handleTabChange('plugs')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+          className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
             activeTab === 'plugs'
               ? 'text-bambu-green border-bambu-green'
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
@@ -1392,7 +1392,7 @@ export function SettingsPage() {
         </button>
         <button
           onClick={() => handleTabChange('notifications')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+          className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
             activeTab === 'notifications'
               ? 'text-bambu-green border-bambu-green'
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
@@ -1408,7 +1408,7 @@ export function SettingsPage() {
         </button>
         <button
           onClick={() => handleTabChange('queue')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+          className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
             activeTab === 'queue'
               ? 'text-bambu-green border-bambu-green'
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
@@ -1419,7 +1419,7 @@ export function SettingsPage() {
         </button>
         <button
           onClick={() => handleTabChange('filament')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+          className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
             activeTab === 'filament'
               ? 'text-bambu-green border-bambu-green'
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
@@ -1430,7 +1430,7 @@ export function SettingsPage() {
         </button>
         <button
           onClick={() => handleTabChange('network')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+          className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
             activeTab === 'network'
               ? 'text-bambu-green border-bambu-green'
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
@@ -1442,7 +1442,7 @@ export function SettingsPage() {
         </button>
         <button
           onClick={() => handleTabChange('apikeys')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+          className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
             activeTab === 'apikeys'
               ? 'text-bambu-green border-bambu-green'
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
@@ -1458,7 +1458,7 @@ export function SettingsPage() {
         </button>
         <button
           onClick={() => handleTabChange('virtual-printer')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+          className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
             activeTab === 'virtual-printer'
               ? 'text-bambu-green border-bambu-green'
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
@@ -1470,7 +1470,7 @@ export function SettingsPage() {
         </button>
         <button
           onClick={() => handleTabChange('spoolbuddy')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+          className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
             activeTab === 'spoolbuddy'
               ? 'text-bambu-green border-bambu-green'
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
@@ -1487,7 +1487,7 @@ export function SettingsPage() {
         </button>
         <button
           onClick={() => handleTabChange('failure-detection')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+          className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
             activeTab === 'failure-detection'
               ? 'text-bambu-green border-bambu-green'
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
@@ -1499,7 +1499,7 @@ export function SettingsPage() {
         </button>
         <button
           onClick={() => handleTabChange('users')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+          className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
             activeTab === 'users'
               ? 'text-bambu-green border-bambu-green'
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
@@ -1513,7 +1513,7 @@ export function SettingsPage() {
         </button>
         <button
           onClick={() => handleTabChange('backup')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+          className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
             activeTab === 'backup'
               ? 'text-bambu-green border-bambu-green'
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
@@ -1525,7 +1525,7 @@ export function SettingsPage() {
         </button>
         <button
           onClick={() => handleTabChange('zoho')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+          className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
             activeTab === 'zoho'
               ? 'text-bambu-green border-bambu-green'
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
@@ -4733,6 +4733,7 @@ export function SettingsPage() {
                   return (
                     <Collapsible
                       key={model}
+                      animated
                       defaultOpen={hasContent}
                       className="border border-bambu-dark-tertiary rounded-lg px-3 py-2"
                       summary={
@@ -5660,7 +5661,7 @@ export function SettingsPage() {
           <div className="flex gap-1 border-b border-bambu-dark-tertiary">
             <button
               onClick={() => setUsersSubTab('users')}
-              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+              className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
                 usersSubTab === 'users'
                   ? 'text-bambu-green border-bambu-green'
                   : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
@@ -5671,7 +5672,7 @@ export function SettingsPage() {
             </button>
             <button
               onClick={() => setUsersSubTab('email')}
-              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+              className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
                 usersSubTab === 'email'
                   ? 'text-bambu-green border-bambu-green'
                   : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
@@ -5685,7 +5686,7 @@ export function SettingsPage() {
             </button>
             <button
               onClick={() => setUsersSubTab('ldap')}
-              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+              className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
                 usersSubTab === 'ldap'
                   ? 'text-bambu-green border-bambu-green'
                   : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'

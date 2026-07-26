@@ -75,7 +75,10 @@ export function SetupPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-bambu-dark p-4">
-      <div className="max-w-md w-full space-y-8 p-8 bg-gradient-to-br from-bambu-card to-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary shadow-lg">
+      {/* First-run entrance: the card rises, then header and form cascade in
+          (stagger-nested). SetupPage sits outside AnimatedOutlet, so without
+          this it is the only screen that pops in with zero motion. */}
+      <div className="max-w-md w-full space-y-8 p-8 bg-gradient-to-br from-bambu-card to-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary shadow-lg animate-rise-lg stagger-nested">
         <div className="text-center">
           <div className="flex items-center justify-center mb-6">
             <img

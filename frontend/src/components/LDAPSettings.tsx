@@ -347,6 +347,7 @@ export function LDAPSettings() {
 
             {/* Advanced (collapsed by default) */}
             <Collapsible
+              animated
               summary={
                 <span className="text-sm font-medium text-bambu-gray">
                   {t('settings.ldap.advanced') || 'Advanced'}
