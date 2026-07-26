@@ -4,7 +4,7 @@
 
 **Goal:** Rework the client half of the Aito "New project" modal so it opens with a default client preselected, exposes editable phone/email that write back to Zoho Books on submit, and can create a brand-new Zoho contact without leaving the modal.
 
-**Architecture:** Three independent backend endpoints (`GET /zoho/status` extended, `POST /zoho/contacts`, `PATCH /zoho/contacts/{id}`) proxy Zoho Books; the frontend orchestrates them so a Zoho failure never blocks project creation. The client input decomposes out of `AitoPage.tsx` into six focused components plus two pure helper modules. Phone handling is a country-code picker plus a national number, normalized to `+CC-XXXXXXXX`, synced only when the user actually edited the field.
+**Architecture:** Three independent backend endpoints (`GET /zoho/status` extended, `POST /zoho/contacts`, `PATCH /zoho/contacts/{id}`) proxy Zoho Books; the frontend orchestrates them so a Zoho failure never blocks project creation. The client input decomposes out of `AitoPage.tsx` into seven focused components plus two pure helper modules. Phone handling is a country-code picker plus a national number, normalized to `+CC-XXXXXXXX`, synced only when the user actually edited the field. Email and phone are format-checked on both sides, with a one-line inline error that appears on blur and then updates live.
 
 **Tech Stack:** FastAPI + SQLAlchemy + Pydantic (backend), pytest with `httpx.MockTransport`; React 19 + TanStack Query + Tailwind 4 (frontend), Vitest + Testing Library + MSW.
 
@@ -22,6 +22,7 @@
 - The default Zoho contact is **`66407000001237340` / `Client de passage`**. It is a shared walk-in record with live transaction history — it must never receive a phone or email write.
 - Both new Zoho endpoints reuse `Permission.AITO_CREATE`. Do **not** introduce a new permission.
 - Phone house format for values this feature writes: `+CC-XXXXXXXX` — country code, a single hyphen, then digits with all separators stripped and **leading zeros preserved**.
+- Validation rules, identical on both sides: email `/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/`, country code `/^\+\d{1,4}$/`, national number 4–14 digits. **Empty always passes** — both fields are optional. Errors surface as one inline line under the field, visible only after the field has been blurred once, then live.
 - Commit after every task.
 
 ---
@@ -50,9 +51,10 @@
 | File | Responsibility |
 |---|---|
 | `frontend/src/utils/countryCodes.ts` | `CountryCode[]` + `DEFAULT_COUNTRY_CODE` |
-| `frontend/src/utils/clientDraft.ts` | `ClientDraft` type + pure helpers (parse/format phone, name casing, draft builders) |
+| `frontend/src/utils/clientDraft.ts` | `ClientDraft` type + pure helpers (parse/format phone, name casing, validators, draft builders) |
 | `frontend/src/components/aito/PhoneInput.tsx` | Country-code select + national number input |
 | `frontend/src/components/aito/NewContactForm.tsx` | Create-contact sub-step |
+| `frontend/src/components/aito/FieldError.tsx` | One-line inline validation error under a field |
 | `frontend/src/components/aito/ClientSection.tsx` | Owns one `ClientDraft`; client + phone + email rows and resets |
 | `frontend/src/components/aito/NewProjectModal.tsx` | Two-view modal shell + submit orchestration (moved out of `AitoPage.tsx`) |
 | `frontend/src/__tests__/utils/clientDraft.test.ts` | Pure-helper tests |
@@ -687,6 +689,36 @@ async def test_create_contact_requires_a_name(async_client):
 
 
 @pytest.mark.asyncio
+async def test_create_contact_rejects_malformed_email(async_client):
+    await _configure(async_client)
+    r = await async_client.post(
+        "/api/v1/zoho/contacts", json={"company_name": "ACME SARL", "email": "nope"}
+    )
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_contact_rejects_malformed_phone(async_client):
+    await _configure(async_client)
+    r = await async_client.post(
+        "/api/v1/zoho/contacts", json={"company_name": "ACME SARL", "phone": "87123456"}
+    )
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_contact_accepts_house_format_phone(async_client):
+    await _configure(async_client)
+    zoho_service.transport = _token_then(
+        lambda request: httpx.Response(201, json={"contact": {"contact_id": "n2", "contact_name": "ACME SARL"}})
+    )
+    r = await async_client.post(
+        "/api/v1/zoho/contacts", json={"company_name": "ACME SARL", "phone": "+689-87123456"}
+    )
+    assert r.status_code == 201
+
+
+@pytest.mark.asyncio
 async def test_create_contact_duplicate_maps_to_409_with_message(async_client):
     await _configure(async_client)
     zoho_service.transport = _token_then(
@@ -714,6 +746,25 @@ Expected: FAIL — 405 Method Not Allowed.
 In `backend/app/api/routes/zoho.py`, add the import of `ZohoRequestRejected` to the existing service import, then:
 
 ```python
+# Mirrors the frontend rules in utils/clientDraft.ts. These endpoints are
+# reachable independently of the modal, so the client checks cannot be the only
+# gate. Both fields are optional — only a non-empty malformed value is rejected.
+_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$")
+_PHONE_RE = re.compile(r"^\+\d{1,4}-\d{4,14}$")
+
+
+def _check_email(value: str) -> str:
+    if value.strip() and not _EMAIL_RE.match(value.strip()):
+        raise ValueError("Enter a valid email address")
+    return value
+
+
+def _check_phone(value: str) -> str:
+    if value.strip() and not _PHONE_RE.match(value.strip()):
+        raise ValueError("Phone must look like +689-87123456")
+    return value
+
+
 class ZohoContactCreate(BaseModel):
     """Either ``company_name`` or both name parts must be present — the display
     name is derived from them server-side, never taken from the client."""
@@ -723,6 +774,16 @@ class ZohoContactCreate(BaseModel):
     last_name: str = Field(default="", max_length=100)
     email: str = Field(default="", max_length=200)
     phone: str = Field(default="", max_length=50)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        return _check_email(value)
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value: str) -> str:
+        return _check_phone(value)
 
     @model_validator(mode="after")
     def check_name(self):
@@ -755,7 +816,8 @@ async def create_contact(
         raise HTTPException(status_code=502, detail=str(e)) from e
 ```
 
-Add `model_validator` to the pydantic import: `from pydantic import BaseModel, Field, model_validator`.
+Add `import re` at the top of the file, and widen the pydantic import to
+`from pydantic import BaseModel, Field, field_validator, model_validator`.
 
 - [ ] **Step 8: Run the backend tests**
 
@@ -972,6 +1034,32 @@ async def test_patch_contact_updates_primary_person(async_client):
 
 
 @pytest.mark.asyncio
+async def test_patch_contact_rejects_malformed_values(async_client):
+    await _configure(async_client)
+    assert (await async_client.patch("/api/v1/zoho/contacts/z1", json={"email": "nope"})).status_code == 422
+    assert (
+        await async_client.patch("/api/v1/zoho/contacts/z1", json={"phone": "87123456"})
+    ).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_patch_contact_accepts_empty_string_to_clear(async_client):
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, json={"contact": {
+                "contact_id": "z1", "first_name": "M", "last_name": "G",
+                "contact_persons": [{"contact_person_id": "cp1", "is_primary_contact": True}],
+            }})
+        return httpx.Response(200, json={"contact_person": {}})
+
+    zoho_service.transport = _token_then(handler)
+    r = await async_client.patch("/api/v1/zoho/contacts/z1", json={"phone": "", "phone_field": "mobile"})
+    assert r.status_code == 204
+
+
+@pytest.mark.asyncio
 async def test_patch_contact_upstream_error_maps_to_502(async_client):
     await _configure(async_client)
     zoho_service.transport = _token_then(lambda request: httpx.Response(500, text="boom"))
@@ -990,11 +1078,22 @@ In `backend/app/api/routes/zoho.py`:
 
 ```python
 class ZohoContactPatch(BaseModel):
-    """Only the keys present are written. An empty string clears the value."""
+    """Only the keys present are written. An empty string clears the value, so it
+    passes validation; a non-empty malformed value does not."""
 
     email: str | None = Field(default=None, max_length=200)
     phone: str | None = Field(default=None, max_length=50)
     phone_field: Literal["phone", "mobile"] = "mobile"
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str | None) -> str | None:
+        return value if value is None else _check_email(value)
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value: str | None) -> str | None:
+        return value if value is None else _check_phone(value)
 
 
 @router.patch("/contacts/{contact_id}", status_code=204)
@@ -1182,7 +1281,7 @@ Added up front so later component tasks can reference keys without breaking the 
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: the 19 `aito.*` keys listed below, available to Tasks 8–12.
+- Produces: the 22 `aito.*` keys listed below, available to Tasks 8–12.
 
 - [ ] **Step 1: Add the English keys**
 
@@ -1208,6 +1307,9 @@ In `frontend/src/i18n/locales/en.ts`, inside the `aito` block, after `zohoUnreac
     clientNameRequired: 'Enter a company name, or a first and last name.',
     clientCreateFailed: 'Could not create the client. Please try again.',
     clientSyncFailed: 'Project created — could not update the client in Zoho.',
+    invalidEmail: 'Enter a valid email address.',
+    invalidPhone: 'Enter between 4 and 14 digits.',
+    invalidCountryCode: 'Enter a country code such as +689.',
 ```
 
 - [ ] **Step 2: Add the French keys**
@@ -1234,11 +1336,14 @@ In `frontend/src/i18n/locales/fr.ts`, same position in the `aito` block:
     clientNameRequired: 'Saisissez un nom de société, ou un prénom et un nom.',
     clientCreateFailed: 'Impossible de créer le client. Veuillez réessayer.',
     clientSyncFailed: 'Projet créé — impossible de mettre à jour le client dans Zoho.',
+    invalidEmail: 'Saisissez une adresse e-mail valide.',
+    invalidPhone: 'Saisissez entre 4 et 14 chiffres.',
+    invalidCountryCode: 'Saisissez un indicatif, par exemple +689.',
 ```
 
 - [ ] **Step 3: Translate into the remaining 10 locales**
 
-Add the same 19 keys, in the same position inside each `aito` block, to `de.ts, es.ts, it.ts, ja.ts, ko.ts, pt-BR.ts, ru.ts, tr.ts, zh-CN.ts, zh-TW.ts`. Translate every value into that language — English text left in a non-English file is a defect, even in the five locales the parity test does not gate. Keep `{{name}}` intact in `displayNamePreview` and leave `phonePlaceholder` as the literal `87123456` everywhere.
+Add the same 22 keys, in the same position inside each `aito` block, to `de.ts, es.ts, it.ts, ja.ts, ko.ts, pt-BR.ts, ru.ts, tr.ts, zh-CN.ts, zh-TW.ts`. Translate every value into that language — English text left in a non-English file is a defect, even in the five locales the parity test does not gate. Keep `{{name}}` intact in `displayNamePreview` and leave `phonePlaceholder` as the literal `87123456` everywhere.
 
 - [ ] **Step 4: Run the parity test**
 
@@ -1249,7 +1354,7 @@ Expected: PASS — all three assertions for each of the six gated locales.
 
 ```bash
 git add frontend/src/i18n/locales
-git commit -m "i18n(aito): keys for the client input, phone/email rows and create-client form"
+git commit -m "i18n(aito): keys for the client input, phone/email rows, validation and create-client form"
 ```
 
 ---
@@ -1282,12 +1387,17 @@ export interface ClientDraft {
   nationalNumber: string;
   email: string;
   touched: { phone: boolean; email: boolean };
+  blurred: { phone: boolean; email: boolean };
   original: { phone: string; email: string; phoneField: 'phone' | 'mobile' };
 }
+export interface ClientDraftErrors { phone: string | null; email: string | null }
 export function parsePhone(raw: string, defaultCode?: string): ParsedPhone;
 export function formatPhone(phone: ParsedPhone): string;
 export function titleCaseSegments(value: string): string;
 export function formatDisplayName(firstName: string, lastName: string): string;
+export function validateEmail(value: string): string | null;   // i18n key or null
+export function validatePhone(phone: ParsedPhone): string | null;
+export function clientDraftErrors(draft: ClientDraft): ClientDraftErrors;
 export function draftFromContact(contact: ZohoContact, defaultContactId: string): ClientDraft;
 export function defaultClientDraft(id: string, name: string): ClientDraft;
 ```
@@ -1303,6 +1413,9 @@ import {
   formatPhone,
   titleCaseSegments,
   formatDisplayName,
+  validateEmail,
+  validatePhone,
+  clientDraftErrors,
   draftFromContact,
   defaultClientDraft,
 } from '../../utils/clientDraft';
@@ -1380,6 +1493,72 @@ describe('formatDisplayName', () => {
   });
 });
 
+describe('validateEmail', () => {
+  it.each(['', '   ', 'a@b.pf', 'client@example.com', 'first.last+tag@sub.domain.co'])(
+    'accepts %s',
+    (value) => {
+      expect(validateEmail(value)).toBeNull();
+    },
+  );
+
+  it.each(['a', 'a@', '@b.pf', 'a@b', 'a b@c.pf', 'a@b.p'])('rejects %s', (value) => {
+    expect(validateEmail(value)).toBe('aito.invalidEmail');
+  });
+});
+
+describe('validatePhone', () => {
+  it('accepts an empty number regardless of the code', () => {
+    expect(validatePhone({ countryCode: '+689', nationalNumber: '' })).toBeNull();
+  });
+
+  it.each(['1234', '763138', '89645864', '01234567890123'])('accepts %s digits', (national) => {
+    expect(validatePhone({ countryCode: '+689', nationalNumber: national })).toBeNull();
+  });
+
+  it.each(['123', '012345678901234'])('rejects %s', (national) => {
+    expect(validatePhone({ countryCode: '+689', nationalNumber: national })).toBe('aito.invalidPhone');
+  });
+
+  it('rejects a malformed country code', () => {
+    expect(validatePhone({ countryCode: '689', nationalNumber: '87123456' })).toBe(
+      'aito.invalidCountryCode',
+    );
+    expect(validatePhone({ countryCode: '+', nationalNumber: '87123456' })).toBe(
+      'aito.invalidCountryCode',
+    );
+  });
+
+  it('does not flag the country code when the number is empty', () => {
+    expect(validatePhone({ countryCode: '689', nationalNumber: '' })).toBeNull();
+  });
+});
+
+describe('clientDraftErrors', () => {
+  const bad = {
+    ...defaultClientDraft('d1', 'Client de passage'),
+    email: 'nope',
+    nationalNumber: '12',
+  };
+
+  it('reports nothing while the fields are unblurred', () => {
+    expect(clientDraftErrors(bad)).toEqual({ phone: null, email: null });
+  });
+
+  it('reports both once blurred', () => {
+    expect(clientDraftErrors({ ...bad, blurred: { phone: true, email: true } })).toEqual({
+      phone: 'aito.invalidPhone',
+      email: 'aito.invalidEmail',
+    });
+  });
+
+  it('reports only the blurred field', () => {
+    expect(clientDraftErrors({ ...bad, blurred: { phone: false, email: true } })).toEqual({
+      phone: null,
+      email: 'aito.invalidEmail',
+    });
+  });
+});
+
 describe('draftFromContact', () => {
   const base = { id: 'z1', name: 'ACME SARL', company_name: 'ACME', phone: '', mobile: '', email: '' };
 
@@ -1389,6 +1568,7 @@ describe('draftFromContact', () => {
     expect(draft.nationalNumber).toBe('89645864');
     expect(draft.original).toEqual({ phone: '89645864', email: '', phoneField: 'mobile' });
     expect(draft.touched).toEqual({ phone: false, email: false });
+    expect(draft.blurred).toEqual({ phone: false, email: false });
     expect(draft.isDefault).toBe(false);
   });
 
@@ -1417,6 +1597,7 @@ describe('defaultClientDraft', () => {
       nationalNumber: '',
       email: '',
       touched: { phone: false, email: false },
+      blurred: { phone: false, email: false },
       original: { phone: '', email: '', phoneField: 'mobile' },
     });
   });
@@ -1487,7 +1668,15 @@ export interface ClientDraft {
   nationalNumber: string;
   email: string;
   touched: { phone: boolean; email: boolean };
+  /** Has the field been left once? Gates error *visibility* only — reusing
+   *  `touched` would flash the error from the first keystroke. */
+  blurred: { phone: boolean; email: boolean };
   original: { phone: string; email: string; phoneField: 'phone' | 'mobile' };
+}
+
+export interface ClientDraftErrors {
+  phone: string | null;
+  email: string | null;
 }
 
 const digitsOnly = (value: string) => value.replace(/\D/g, '');
@@ -1549,6 +1738,44 @@ export function formatDisplayName(firstName: string, lastName: string): string {
   return `${titleCaseSegments(firstName)} ${lastName.trim().toLocaleUpperCase('fr')}`.trim();
 }
 
+// Shape check only. A stricter pattern rejects real addresses; the authority on
+// deliverability is Zoho, not this regex.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const COUNTRY_CODE_RE = /^\+\d{1,4}$/;
+const MIN_NATIONAL_DIGITS = 4;
+const MAX_NATIONAL_DIGITS = 14; // E.164 caps a full number at 15; the code takes 1-4
+
+/** Both fields are optional, so empty always passes. Returns an i18n key rather
+ *  than a rendered string so this stays pure and testable without i18n. */
+export function validateEmail(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return EMAIL_RE.test(trimmed) ? null : 'aito.invalidEmail';
+}
+
+export function validatePhone(phone: ParsedPhone): string | null {
+  const national = digitsOnly(phone.nationalNumber);
+  // No number means no phone at all — an odd leftover country code is harmless.
+  if (!national) return null;
+  if (!COUNTRY_CODE_RE.test(phone.countryCode)) return 'aito.invalidCountryCode';
+  if (national.length < MIN_NATIONAL_DIGITS || national.length > MAX_NATIONAL_DIGITS) {
+    return 'aito.invalidPhone';
+  }
+  return null;
+}
+
+/** Single source of truth for what the form shows and whether it may submit.
+ *  A field that has never been blurred reports no error, so opening a contact
+ *  whose stored value is already malformed stays quiet. */
+export function clientDraftErrors(draft: ClientDraft): ClientDraftErrors {
+  return {
+    phone: draft.blurred.phone
+      ? validatePhone({ countryCode: draft.countryCode, nationalNumber: draft.nationalNumber })
+      : null,
+    email: draft.blurred.email ? validateEmail(draft.email) : null,
+  };
+}
+
 export function draftFromContact(contact: ZohoContact, defaultContactId: string): ClientDraft {
   const phoneField: 'phone' | 'mobile' = contact.mobile ? 'mobile' : contact.phone ? 'phone' : 'mobile';
   const raw = contact.mobile || contact.phone || '';
@@ -1561,6 +1788,7 @@ export function draftFromContact(contact: ZohoContact, defaultContactId: string)
     nationalNumber: parsed.nationalNumber,
     email: contact.email ?? '',
     touched: { phone: false, email: false },
+    blurred: { phone: false, email: false },
     original: { phone: raw, email: contact.email ?? '', phoneField },
   };
 }
@@ -1575,6 +1803,7 @@ export function defaultClientDraft(id: string, name: string): ClientDraft {
     nationalNumber: '',
     email: '',
     touched: { phone: false, email: false },
+    blurred: { phone: false, email: false },
     original: { phone: '', email: '', phoneField: 'mobile' },
   };
 }
@@ -1600,10 +1829,10 @@ git commit -m "feat(aito): pure helpers for client drafts, phone parsing and nam
 
 ---
 
-### Task 8: `PhoneInput` component
+### Task 8: `PhoneInput` and `FieldError` components
 
 **Files:**
-- Create: `frontend/src/components/aito/PhoneInput.tsx`
+- Create: `frontend/src/components/aito/PhoneInput.tsx`, `frontend/src/components/aito/FieldError.tsx`
 - Test: covered by `ClientSection.test.tsx` in Task 11 and `NewContactForm.test.tsx` in Task 10.
 
 **Interfaces:**
@@ -1615,24 +1844,56 @@ export interface PhoneInputProps {
   countryCode: string;
   nationalNumber: string;
   onChange: (next: { countryCode: string; nationalNumber: string }) => void;
+  /** Fired when the national-number input loses focus — the owner flips `blurred`. */
+  onBlur?: () => void;
+  /** Paints the red border. The error text itself is rendered by the owner. */
+  invalid?: boolean;
   id?: string;
   disabled?: boolean;
 }
 export function PhoneInput(props: PhoneInputProps): JSX.Element;
+
+export interface FieldErrorProps { messageKey: string | null }
+export function FieldError(props: FieldErrorProps): JSX.Element | null;
 ```
 
-- [ ] **Step 1: Create the component**
+- [ ] **Step 1: Create `FieldError.tsx`**
+
+```tsx
+import { useTranslation } from 'react-i18next';
+
+export interface FieldErrorProps {
+  /** An i18n key from the pure validators, or null when the field is fine. */
+  messageKey: string | null;
+}
+
+/** One line of inline validation feedback under a form field. Renders nothing
+ *  when there is no error, so callers can drop it in unconditionally. */
+export function FieldError({ messageKey }: FieldErrorProps) {
+  const { t } = useTranslation();
+  if (!messageKey) return null;
+  return (
+    <p role="alert" className="mt-1 text-xs text-status-error">
+      {t(messageKey)}
+    </p>
+  );
+}
+```
+
+- [ ] **Step 2: Create `PhoneInput.tsx`**
 
 ```tsx
 import { useTranslation } from 'react-i18next';
 import { SearchableSelect } from '../SearchableSelect';
 import { COUNTRY_CODES } from '../../utils/countryCodes';
-import { inputCls } from '../formStyles';
+import { inputCls, inputErrorCls } from '../formStyles';
 
 export interface PhoneInputProps {
   countryCode: string;
   nationalNumber: string;
   onChange: (next: { countryCode: string; nationalNumber: string }) => void;
+  onBlur?: () => void;
+  invalid?: boolean;
   id?: string;
   disabled?: boolean;
 }
@@ -1644,7 +1905,15 @@ const options = COUNTRY_CODES.map((c) => ({ value: c.code, label: `${c.code} ${c
  *  as `+CC-XXXXXXXX`. Digits are stripped of separators on blur so the user
  *  sees exactly what will be stored. `allowCustom` lets an unlisted code
  *  through rather than blocking an unusual number. */
-export function PhoneInput({ countryCode, nationalNumber, onChange, id, disabled }: PhoneInputProps) {
+export function PhoneInput({
+  countryCode,
+  nationalNumber,
+  onChange,
+  onBlur,
+  invalid,
+  id,
+  disabled,
+}: PhoneInputProps) {
   const { t } = useTranslation();
 
   return (
@@ -1666,25 +1935,29 @@ export function PhoneInput({ countryCode, nationalNumber, onChange, id, disabled
         disabled={disabled}
         value={nationalNumber}
         onChange={(e) => onChange({ countryCode, nationalNumber: e.target.value })}
-        onBlur={(e) => onChange({ countryCode, nationalNumber: e.target.value.replace(/\D/g, '') })}
+        onBlur={(e) => {
+          onChange({ countryCode, nationalNumber: e.target.value.replace(/\D/g, '') });
+          onBlur?.();
+        }}
         placeholder={t('aito.phonePlaceholder')}
-        className={inputCls}
+        aria-invalid={invalid ? true : undefined}
+        className={invalid ? inputErrorCls : inputCls}
       />
     </div>
   );
 }
 ```
 
-- [ ] **Step 2: Type-check**
+- [ ] **Step 3: Type-check**
 
 Run: `cd frontend && npx tsc --noEmit && cd ..`
 Expected: no errors.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add frontend/src/components/aito/PhoneInput.tsx
-git commit -m "feat(aito): country-code phone input built on SearchableSelect"
+git add frontend/src/components/aito/PhoneInput.tsx frontend/src/components/aito/FieldError.tsx
+git commit -m "feat(aito): country-code phone input and inline field error"
 ```
 
 ---
@@ -2121,6 +2394,33 @@ describe('NewContactForm', () => {
     render(<NewContactForm initialQuery="" onCancel={vi.fn()} onCreated={vi.fn()} />);
     expect(screen.getByRole('button', { name: /create client/i })).toBeDisabled();
   });
+
+  it('shows an email error only after the field is left, and disables submit', async () => {
+    const user = userEvent.setup();
+    render(<NewContactForm initialQuery="ACME SARL" onCancel={vi.fn()} onCreated={vi.fn()} />);
+    await user.type(screen.getByLabelText(/^email/i), 'nope');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /create client/i })).toBeDisabled();
+
+    await user.tab();
+    expect(screen.getByRole('alert')).toHaveTextContent(/valid email/i);
+
+    await user.clear(screen.getByLabelText(/^email/i));
+    await user.type(screen.getByLabelText(/^email/i), 'hi@acme.pf');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /create client/i })).toBeEnabled();
+  });
+
+  it('rejects a too-short phone number and never calls the API', async () => {
+    const onCreated = vi.fn();
+    const user = userEvent.setup();
+    render(<NewContactForm initialQuery="ACME SARL" onCancel={vi.fn()} onCreated={onCreated} />);
+    await user.type(screen.getByLabelText(/^phone/i), '12');
+    await user.tab();
+    expect(screen.getByRole('alert')).toHaveTextContent(/4 and 14 digits/i);
+    expect(screen.getByRole('button', { name: /create client/i })).toBeDisabled();
+    expect(onCreated).not.toHaveBeenCalled();
+  });
 });
 ```
 
@@ -2140,8 +2440,16 @@ import { api } from '../../api/client';
 import type { ZohoContact } from '../../api/client';
 import { Button } from '../Button';
 import { PhoneInput } from './PhoneInput';
-import { inputCls, labelCls } from '../formStyles';
-import { DEFAULT_COUNTRY_CODE, formatDisplayName, formatPhone, titleCaseSegments } from '../../utils/clientDraft';
+import { FieldError } from './FieldError';
+import { inputCls, inputErrorCls, labelCls } from '../formStyles';
+import {
+  DEFAULT_COUNTRY_CODE,
+  formatDisplayName,
+  formatPhone,
+  titleCaseSegments,
+  validateEmail,
+  validatePhone,
+} from '../../utils/clientDraft';
 
 export interface NewContactFormProps {
   initialQuery: string;
@@ -2166,11 +2474,22 @@ export function NewContactForm({ initialQuery, onCancel, onCreated }: NewContact
   const [nationalNumber, setNationalNumber] = useState('');
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [blurred, setBlurred] = useState({ phone: false, email: false });
 
   const hasCompany = companyName.trim().length > 0;
   const hasPerson = firstName.trim().length > 0 || lastName.trim().length > 0;
-  const canSubmit = hasCompany || (firstName.trim().length > 0 && lastName.trim().length > 0);
+  const hasName = hasCompany || (firstName.trim().length > 0 && lastName.trim().length > 0);
   const preview = hasCompany ? companyName.trim() : formatDisplayName(firstName, lastName);
+
+  // Same two-stage rule as ClientSection: the message only becomes visible once
+  // the field has been left, but validity always gates the submit.
+  const phoneError = validatePhone({ countryCode, nationalNumber });
+  const emailError = validateEmail(email);
+  const visibleErrors = {
+    phone: blurred.phone ? phoneError : null,
+    email: blurred.email ? emailError : null,
+  };
+  const canSubmit = hasName && !phoneError && !emailError;
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -2187,8 +2506,12 @@ export function NewContactForm({ initialQuery, onCancel, onCreated }: NewContact
 
   return (
     <form
+      noValidate
       onSubmit={(e) => {
         e.preventDefault();
+        // Reveal any error the user never triggered by blurring, so a disabled
+        // button is always explained by a message on screen.
+        setBlurred({ phone: true, email: true });
         if (!canSubmit) return;
         setError(null);
         createMutation.mutate();
@@ -2256,11 +2579,14 @@ export function NewContactForm({ initialQuery, onCancel, onCreated }: NewContact
             id="aito-new-phone"
             countryCode={countryCode}
             nationalNumber={nationalNumber}
+            invalid={visibleErrors.phone !== null}
+            onBlur={() => setBlurred((b) => ({ ...b, phone: true }))}
             onChange={(next) => {
               setCountryCode(next.countryCode);
               setNationalNumber(next.nationalNumber);
             }}
           />
+          <FieldError messageKey={visibleErrors.phone} />
         </div>
 
         <div>
@@ -2273,9 +2599,12 @@ export function NewContactForm({ initialQuery, onCancel, onCreated }: NewContact
             autoComplete="off"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            onBlur={() => setBlurred((b) => ({ ...b, email: true }))}
             placeholder={t('aito.emailPlaceholder')}
-            className={inputCls}
+            aria-invalid={visibleErrors.email !== null ? true : undefined}
+            className={visibleErrors.email !== null ? inputErrorCls : inputCls}
           />
+          <FieldError messageKey={visibleErrors.email} />
         </div>
 
         {error && <p className="text-sm text-status-error">{error}</p>}
@@ -2305,7 +2634,7 @@ export { DEFAULT_COUNTRY_CODE } from './countryCodes';
 - [ ] **Step 4: Run the tests**
 
 Run: `cd frontend && npx vitest run src/__tests__/components/NewContactForm.test.tsx && cd ..`
-Expected: PASS — six tests.
+Expected: PASS — eight tests.
 
 - [ ] **Step 5: Commit**
 
@@ -2430,7 +2759,58 @@ describe('ClientSection', () => {
     );
     await user.click(screen.getByRole('button', { name: /revert phone/i }));
     expect(draft.touched.phone).toBe(false);
+    expect(draft.blurred.phone).toBe(false);
     expect(draft.nationalNumber).toBe('89645864');
+  });
+
+  it('stays quiet while an email is being typed, then errors on blur', async () => {
+    // ClientSection is controlled, so the test plays the parent: every onChange
+    // is fed straight back in as the new value.
+    let draft = defaultClientDraft(DEFAULT_ID, DEFAULT_NAME);
+    const section = (value: typeof draft) => (
+      <ClientSection
+        value={value}
+        onChange={(next) => {
+          draft = next;
+          rerender(section(next));
+        }}
+        onCreateNew={vi.fn()}
+        defaultContactId={DEFAULT_ID}
+        defaultContactName={DEFAULT_NAME}
+      />
+    );
+    const user = userEvent.setup();
+    const { rerender } = render(section(draft));
+
+    await user.type(screen.getByLabelText(/^email/i), 'cli');
+    expect(draft.email).toBe('cli');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    await user.tab();
+    expect(screen.getByRole('alert')).toHaveTextContent(/valid email/i);
+    expect(screen.getByLabelText(/^email/i)).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('clears the email error live once the value becomes valid', () => {
+    const draft = {
+      ...defaultClientDraft(DEFAULT_ID, DEFAULT_NAME),
+      email: 'client@example.pf',
+      touched: { phone: false, email: true },
+      blurred: { phone: false, email: true },
+    };
+    renderSection(draft);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('errors on a too-short phone number once blurred', () => {
+    const draft = {
+      ...defaultClientDraft(DEFAULT_ID, DEFAULT_NAME),
+      nationalNumber: '12',
+      touched: { phone: true, email: false },
+      blurred: { phone: true, email: false },
+    };
+    renderSection(draft);
+    expect(screen.getByRole('alert')).toHaveTextContent(/4 and 14 digits/i);
   });
 
   it('resets the whole draft to the default client', async () => {
@@ -2473,9 +2853,10 @@ import { api } from '../../api/client';
 import type { ZohoContact } from '../../api/client';
 import { ClientCombobox } from './ClientCombobox';
 import { PhoneInput } from './PhoneInput';
-import { defaultClientDraft, draftFromContact, parsePhone } from '../../utils/clientDraft';
+import { FieldError } from './FieldError';
+import { clientDraftErrors, defaultClientDraft, draftFromContact, parsePhone } from '../../utils/clientDraft';
 import type { ClientDraft } from '../../utils/clientDraft';
-import { focusRingCls, inputCls, labelCls } from '../formStyles';
+import { focusRingCls, inputCls, inputErrorCls, labelCls } from '../formStyles';
 
 export interface ClientSectionProps {
   value: ClientDraft;
@@ -2517,6 +2898,8 @@ export function ClientSection({
 
   const selectContact = (contact: ZohoContact) => onChange(draftFromContact(contact, defaultContactId));
 
+  // Reverting returns the field to its quiet initial state: the stored value
+  // back, and both flags cleared so any error message disappears with it.
   const revertPhone = () => {
     const parsed = parsePhone(value.original.phone);
     onChange({
@@ -2524,11 +2907,19 @@ export function ClientSection({
       countryCode: parsed.countryCode,
       nationalNumber: parsed.nationalNumber,
       touched: { ...value.touched, phone: false },
+      blurred: { ...value.blurred, phone: false },
     });
   };
 
   const revertEmail = () =>
-    onChange({ ...value, email: value.original.email, touched: { ...value.touched, email: false } });
+    onChange({
+      ...value,
+      email: value.original.email,
+      touched: { ...value.touched, email: false },
+      blurred: { ...value.blurred, email: false },
+    });
+
+  const errors = clientDraftErrors(value);
 
   const resetButtonCls = (visible: boolean) =>
     `p-2 rounded-md text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary transition-opacity ${focusRingCls} ${
@@ -2555,6 +2946,8 @@ export function ClientSection({
               id="aito-client-phone"
               countryCode={value.countryCode}
               nationalNumber={value.nationalNumber}
+              invalid={errors.phone !== null}
+              onBlur={() => onChange({ ...value, blurred: { ...value.blurred, phone: true } })}
               onChange={(next) =>
                 onChange({
                   ...value,
@@ -2575,6 +2968,7 @@ export function ClientSection({
             <RotateCcw className="w-4 h-4" />
           </button>
         </div>
+        <FieldError messageKey={errors.phone} />
       </div>
 
       <div>
@@ -2588,8 +2982,10 @@ export function ClientSection({
             autoComplete="off"
             value={value.email}
             onChange={(e) => onChange({ ...value, email: e.target.value, touched: { ...value.touched, email: true } })}
+            onBlur={() => onChange({ ...value, blurred: { ...value.blurred, email: true } })}
             placeholder={t('aito.emailPlaceholder')}
-            className={inputCls}
+            aria-invalid={errors.email !== null ? true : undefined}
+            className={errors.email !== null ? inputErrorCls : inputCls}
           />
           <button
             type="button"
@@ -2601,6 +2997,7 @@ export function ClientSection({
             <RotateCcw className="w-4 h-4" />
           </button>
         </div>
+        <FieldError messageKey={errors.email} />
       </div>
     </div>
   );
@@ -2610,7 +3007,7 @@ export function ClientSection({
 - [ ] **Step 4: Run the tests**
 
 Run: `cd frontend && npx vitest run src/__tests__/components/ClientSection.test.tsx && cd ..`
-Expected: PASS — five tests.
+Expected: PASS — eight tests.
 
 - [ ] **Step 5: Commit**
 
@@ -2685,6 +3082,28 @@ describe('NewProjectModal', () => {
     );
   });
 
+  it('blocks submit on a malformed email and reveals the error', async () => {
+    const onCreate = vi.fn();
+    const user = userEvent.setup();
+    render(<NewProjectModal onClose={vi.fn()} onCreate={onCreate} />);
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: /client/i })).toHaveValue('Client de passage'),
+    );
+    await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
+    await user.type(screen.getByLabelText(/^email/i), 'nope');
+    // Never blurred, so no message yet — but the button is already disabled.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /create project/i })).toBeDisabled();
+
+    await user.tab();
+    expect(screen.getByRole('alert')).toHaveTextContent(/valid email/i);
+    expect(onCreate).not.toHaveBeenCalled();
+
+    await user.clear(screen.getByLabelText(/^email/i));
+    await user.click(screen.getByRole('button', { name: /create project/i }));
+    expect(onCreate).toHaveBeenCalled();
+  });
+
   it('switches to the create-client sub-step and back', async () => {
     const user = userEvent.setup();
     render(<NewProjectModal onClose={vi.fn()} onCreate={vi.fn()} />);
@@ -2716,7 +3135,7 @@ import type { ZohoContact } from '../../api/client';
 import { Button } from '../Button';
 import { ClientSection } from './ClientSection';
 import { NewContactForm } from './NewContactForm';
-import { defaultClientDraft, draftFromContact } from '../../utils/clientDraft';
+import { clientDraftErrors, defaultClientDraft, draftFromContact } from '../../utils/clientDraft';
 import type { ClientDraft } from '../../utils/clientDraft';
 import { inputCls, labelCls } from '../formStyles';
 
@@ -2753,10 +3172,22 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const canSubmit = description.trim().length > 0 && draft !== null;
+  // `clientDraftErrors` only reports blurred fields, so this is what the user can
+  // currently see. Validity for gating is computed against a fully-blurred copy,
+  // which is also what `submit` reveals — a disabled button is therefore always
+  // accompanied by a visible message.
+  const clientValid =
+    draft === null ||
+    Object.values(clientDraftErrors({ ...draft, blurred: { phone: true, email: true } })).every(
+      (e) => e === null,
+    );
+  const canSubmit = description.trim().length > 0 && draft !== null && clientValid;
 
   const submit = () => {
-    if (!canSubmit || !draft) return;
+    if (!draft) return;
+    // Reveal errors the user never triggered by leaving a field.
+    setDraft({ ...draft, blurred: { phone: true, email: true } });
+    if (description.trim().length === 0 || !clientValid) return;
     onCreate(description.trim(), draft);
   };
 
@@ -2795,6 +3226,7 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
           />
         ) : (
           <form
+            noValidate
             onSubmit={(e) => {
               e.preventDefault();
               submit();
@@ -2851,7 +3283,7 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
 - [ ] **Step 4: Run the modal tests**
 
 Run: `cd frontend && npx vitest run src/__tests__/components/NewProjectModal.test.tsx && cd ..`
-Expected: PASS — two tests.
+Expected: PASS — three tests.
 
 - [ ] **Step 5: Rewire `AitoPage.tsx`**
 
@@ -2952,7 +3384,8 @@ git commit -m "feat(aito): default client, editable contact details and Zoho wri
 | `client_email` column and DTOs | 5 |
 | i18n, 12 locales | 6 (+ the 3 `zoho.*` keys in 2) |
 | `countryCodes.ts`, `clientDraft.ts`, phone parse/format, name casing | 7 |
-| `PhoneInput` | 8 |
+| `PhoneInput`, `FieldError` | 8 |
+| Email/phone validation, inline errors, submit blocking | 3, 4 (server), 7 (validators), 10–12 (UI) |
 | Editable combobox + create footer | 9 |
 | Create sub-step, mutually exclusive name paths, preview | 10 |
 | `ClientSection`, reset controls, not-configured branch | 11 |

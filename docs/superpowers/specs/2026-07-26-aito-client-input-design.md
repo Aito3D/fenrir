@@ -100,6 +100,9 @@ search results will show a mix of both conventions. That is expected.
 | Duplicate names | No pre-check; Zoho's own rejection is surfaced inline |
 | Default client config | Two settings rows (`id` + `name`) with built-in fallbacks; no live fetch |
 | Combobox behaviour | Editable combobox showing the current client; typing searches |
+| Phone/email validation | Format-checked with a small inline error under the field; also enforced server-side (422) |
+| Validation timing | First check on blur, then live on every keystroke for that field |
+| Invalid input | Blocks submit — both "Create project" and "Create client" |
 
 ## Frontend
 
@@ -115,7 +118,8 @@ block is about to triple in size. It moves out, and the client input decomposes:
 | `components/aito/ClientCombobox.tsx` | Rewritten: editable combobox, search, dropdown, "+ Create new client" footer |
 | `components/aito/PhoneInput.tsx` | `SearchableSelect` (country code) + national-number input |
 | `components/aito/NewContactForm.tsx` | The create sub-step |
-| `lib/clientDraft.ts` | Pure helpers: `formatDisplayName`, `parsePhone`, `formatPhone` |
+| `components/aito/FieldError.tsx` | The one-line inline error rendered under a field |
+| `lib/clientDraft.ts` | Pure helpers: `formatDisplayName`, `parsePhone`, `formatPhone`, `validateEmail`, `validatePhone` |
 | `lib/countryCodes.ts` | `{ code, iso, name }[]`, ≈240 entries |
 
 `AitoPage.tsx` keeps the board, the mutations and the trash modal.
@@ -133,6 +137,7 @@ interface ClientDraft {
   nationalNumber: string;                      // '87296912'
   email: string;
   touched: { phone: boolean; email: boolean }; // user intent, not value diff
+  blurred: { phone: boolean; email: boolean }; // has this field been left once
   original: {
     phone: string;                             // raw Zoho string, for revert
     email: string;
@@ -144,6 +149,12 @@ interface ClientDraft {
 `original.phoneField` is `mobile` when the contact's `mobile` is set, otherwise
 `phone` when that is set, otherwise `mobile` (the default target for a contact with
 neither).
+
+`touched` and `blurred` are separate on purpose. `touched` flips on the first
+keystroke and decides whether the field is written back to Zoho. `blurred` flips
+only when the field is left and decides whether its validation error is visible —
+reusing `touched` for both would show the error from keystroke one, which is
+exactly the behaviour we're avoiding.
 
 Selecting a contact from the dropdown populates the draft directly from the search
 result — the search endpoint already returns `phone`, `mobile` and `email`, so no
@@ -215,6 +226,56 @@ can still be typed.
 display does **not** mark it dirty — creating a project must never mutate a client
 record as a side effect.
 
+### Validation
+
+Both fields are optional, so **empty is always valid**. Only a non-empty value that
+fails its format check produces an error.
+
+| Field | Rule | Rationale |
+|---|---|---|
+| Email | `/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/` | Shape check only. Deliberately loose — a stricter regex rejects real addresses |
+| Country code | `/^\+\d{1,4}$/` | `allowCustom` on the picker lets free text through |
+| National number | 4–14 digits | E.164 caps a full number at 15 digits; the code takes 1–4 |
+
+The 4-digit floor accommodates the real short numbers in the directory
+(`763138`, six digits) without accepting an obvious typo. Separators are already
+stripped by the time validation runs, so `40 54 43 09` validates as `40544309`.
+
+**Timing.** Nothing shows while the field is first being filled. The error appears
+when the field is blurred, and from then on that field re-validates on every
+keystroke so it clears the instant the value becomes valid:
+
+```
+typing "cli"          → (no error)
+leave field           → ⚠ Enter a valid email address
+typing "client@"      → ⚠ Enter a valid email address
+typing "client@a.pf"  → (clears immediately)
+```
+
+**Scope.** Only fields the user has blurred are validated. A contact whose stored
+Zoho value is already malformed does not light up an error on open — same principle
+as the reformat policy: opening the modal must never flag work the user didn't do.
+
+**Reverting clears the error.** The ↺ control restores the stored value and resets
+both `touched` and `blurred`, so the field returns to its quiet initial state.
+
+**Blocking.** While any visible error is present, "Create project" and "Create
+client" are both disabled. Showing an error and then letting the submit through
+would make the message decorative.
+
+**Rendering.** A shared `FieldError` component renders one line of
+`text-xs text-status-error` under the field, and the input swaps `inputCls` for the
+existing `inputErrorCls` so the border turns red. Three new i18n keys:
+`aito.invalidEmail`, `aito.invalidPhone`, `aito.invalidCountryCode`.
+
+The pure validators return an **i18n key or `null`**, not a rendered string, so
+they stay testable without i18n:
+
+```ts
+validateEmail(value: string): string | null
+validatePhone(phone: ParsedPhone): string | null
+```
+
 ### Display-name rule (create sub-step)
 
 Company name and First/Last are mutually exclusive: filling one disables the other,
@@ -240,12 +301,13 @@ Casing, applied on blur and re-applied server-side:
 A live preview line under the fields shows the resulting display name, so the rule
 is visible rather than surprising.
 
-Phone and email are optional in this form and use the same `PhoneInput`.
+Phone and email are optional in this form, use the same `PhoneInput`, and are
+validated by the same rules and timing described above.
 
 ### Submit flow
 
 ```
-main submit
+main submit  (disabled while a visible validation error is present)
   1. POST /aito/  { description, client_id, client_name, client_phone, client_email }
        success → close modal, board updates via the existing invalidation path
        failure → existing "could not create the project" toast, modal stays open
@@ -262,8 +324,8 @@ self-healing divergence.
 
 The create-client sub-step submits independently: `POST /zoho/contacts` → on
 success the new contact becomes the selection with its phone/email as the baseline
-(`touched` reset to false) and the view returns to the main form. Errors, including
-Zoho's duplicate-name rejection, render inline in the sub-step.
+(`touched` and `blurred` both reset to false) and the view returns to the main form.
+Errors, including Zoho's duplicate-name rejection, render inline in the sub-step.
 
 ## Backend
 
@@ -283,9 +345,16 @@ made to resolve them.
 
 ### `POST /zoho/contacts` — create
 
-Request: `{ display_name, company_name?, first_name?, last_name?, email?, phone? }`.
+Request: `{ company_name?, first_name?, last_name?, email?, phone? }`. The display
+name is **derived from the parts server-side**, never taken from the client — the
+casing convention is then guaranteed regardless of what the caller sends. Either
+`company_name` or both name parts must be present; otherwise **422**.
 Response: the same `ZohoContact` shape as search, so it is a drop-in for the
 combobox.
+
+A non-empty `email` or `phone` that fails the format rules in the Validation
+section is rejected with **422**. These endpoints are reachable independently of
+the modal, so client-side checks cannot be the only gate.
 
 Zoho payload:
 
@@ -313,7 +382,8 @@ other upstream failures map to 502; not-configured maps to 409 with the existing
 ### `PATCH /zoho/contacts/{contact_id}` — sync phone/email
 
 Request: `{ email?, phone?, phone_field: 'phone' | 'mobile' }`. Only the keys
-present are written.
+present are written. A non-empty value that fails the format rules is rejected with
+**422**; the empty string is accepted, because clearing a value is a legitimate edit.
 
 1. **Guard:** if `contact_id` equals the configured default contact id, return
    **400** immediately. Server-side, so a frontend bug can never write to the
@@ -360,12 +430,18 @@ introduced, so no API-key classification change is needed.
 | `PATCH /zoho/contacts` fails | Warning toast; the card is already created and keeps the typed values |
 | `POST /zoho/contacts` duplicate name | 409 → inline error on the display-name field; sub-step stays open |
 | `POST /zoho/contacts` upstream error | 502 → inline error banner in the sub-step |
+| Malformed email or phone typed | Inline one-line error under the field once blurred; submit disabled |
+| Malformed email or phone posted directly to the API | 422 from Pydantic; the modal cannot produce this |
+| Stored Zoho value is already malformed | No error shown — untouched fields are not validated |
 
 ## Testing
 
 **`lib/clientDraft.ts` (vitest, pure):**
 - Every casing row in the display-name table, plus empty and single-segment inputs.
 - Every `parsePhone` row, plus `formatPhone` round-trips and the empty-national case.
+- `validateEmail` — empty passes; `a@b.pf` passes; `a`, `a@`, `a@b`, `a b@c.pf` fail.
+- `validatePhone` — empty passes; 4 and 14 digits pass; 3 and 15 digits fail; a
+  malformed country code fails.
 
 **Backend (`httpx.MockTransport`, the existing test seam):**
 - `POST /zoho/contacts` payload shape for the company path and the person path.
@@ -376,6 +452,9 @@ introduced, so no API-key classification change is needed.
 - `PATCH` with `contact_persons: []` → `POST contactpersons` with
   `is_primary_contact: true`.
 - `PATCH` against the default contact id → 400, and no upstream request is made.
+- `POST /zoho/contacts` with no company name and no name parts → 422.
+- `POST /zoho/contacts` with a malformed email or phone → 422.
+- `PATCH` with a malformed phone → 422; with an empty phone → accepted.
 - `GET /zoho/status` returns settings values, and the fallbacks when unset.
 - `POST /aito/` persists and returns `client_email`.
 
@@ -391,10 +470,16 @@ introduced, so no API-key classification change is needed.
   phone field has a value.
 - The create sub-step disables First/Last when a company name is present and vice
   versa, and shows the correct display-name preview.
+- Typing a partial email shows no error; blurring shows one; typing a valid address
+  clears it without another blur.
+- A malformed email disables "Create project"; reverting with ↺ re-enables it.
+- A contact whose stored email is malformed shows no error until the field is
+  blurred.
 
 ## i18n
 
-Roughly 15 new keys under `aito.*` (reset labels, phone/email labels and
-placeholders, the create-client footer and sub-step fields, the sync-failure
-toast, duplicate-name error). The project has 12 locales and the i18n gate rejects
-English placeholders, so every key needs a real translation in all 12 files.
+22 new keys under `aito.*` (reset labels, phone/email labels and placeholders, the
+create-client footer and sub-step fields, the three validation messages, the
+sync-failure toast, duplicate-name error), plus three `zoho.*` keys for the
+default-contact settings fields. The project has 12 locales and the i18n gate
+rejects English placeholders, so every key needs a real translation in all 12 files.
