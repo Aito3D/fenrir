@@ -669,7 +669,9 @@ body {
    view-transition-name: sidebar so the static shell never flickers. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 250ms;
+  /* 1s per user preference (2026-07-25) — deliberately slower than the house
+     motion budget; the crossfade reads as a scene change, not a UI response. */
+  animation-duration: 1000ms;
   animation-timing-function: var(--ease-signature);
 }
 ::view-transition-old(sidebar),
