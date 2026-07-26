@@ -428,7 +428,7 @@ function SortableQueueItem({
       ref={setNodeRef}
       style={style}
       className={`
-        group relative bg-bambu-dark-secondary rounded-xl border transition-all duration-200
+        group relative bg-bambu-dark-secondary rounded-xl border transition-colors duration-200
         border-l-[3px] ${
           isPrinting ? 'border-l-blue-500' :
           isPending ? 'border-l-yellow-500' :

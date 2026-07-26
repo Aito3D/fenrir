@@ -428,8 +428,8 @@ export const CameraGridCard = memo(function CameraGridCard({
             </div>
             <div className={`bg-white/20 rounded-full ${barH}`}>
               <div
-                className={`${state === 'PAUSE' ? 'bg-yellow-400' : 'bg-bambu-green'} ${barH} rounded-full transition-[width] duration-300 ease-out`}
-                style={{ width: `${progress}%` }}
+                className={`${state === 'PAUSE' ? 'bg-yellow-400' : 'bg-bambu-green'} ${barH} w-full rounded-full origin-left transition-transform duration-300 ease-(--ease-signature) motion-reduce:transition-none`}
+                style={{ transform: `scaleX(${Math.min(100, Math.max(0, progress)) / 100})` }}
               />
             </div>
           </>

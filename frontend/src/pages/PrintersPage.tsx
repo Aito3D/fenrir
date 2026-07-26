@@ -1126,8 +1126,8 @@ function StatusSummaryBar({ printers, smartPlugs }: { printers: Printer[] | unde
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <div className="w-full sm:w-16 bg-bambu-dark-tertiary rounded-full h-1.5">
                 <div
-                  className="bg-bambu-green h-1.5 rounded-full transition-all"
-                  style={{ width: `${nextFinish.progress}%` }}
+                  className="bg-bambu-green h-1.5 w-full rounded-full origin-left transition-transform duration-300 ease-(--ease-signature) motion-reduce:transition-none"
+                  style={{ transform: `scaleX(${Math.min(100, Math.max(0, nextFinish.progress)) / 100})` }}
                 />
               </div>
               <span className="text-white font-medium">{Math.round(nextFinish.progress)}%</span>
@@ -3654,8 +3654,8 @@ function PrinterCard({
                   <div className="relative mt-2 flex items-center gap-2">
                     <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-bambu-dark-tertiary">
                       <div
-                        className={`${compactProgressClass} h-1.5 rounded-full transition-all`}
-                        style={{ width: `${compactProgress}%` }}
+                        className={`${compactProgressClass} h-1.5 w-full rounded-full origin-left transition-transform duration-300 ease-(--ease-signature) motion-reduce:transition-none`}
+                        style={{ transform: `scaleX(${Math.min(100, Math.max(0, compactProgress)) / 100})` }}
                       />
                     </div>
                     <span className={`w-9 shrink-0 text-right text-[11px] leading-none ${isActiveCompactPrint ? 'text-white' : 'text-bambu-gray'}`}>
@@ -3726,8 +3726,8 @@ function PrinterCard({
                           <div className="flex h-3 items-center gap-2 text-sm">
                             <div className="h-1.5 min-w-0 flex-1 rounded-full bg-bambu-dark-tertiary">
                               <div
-                                className={`${isActivePrint ? (status.state === 'PAUSE' ? 'bg-status-warning' : 'bg-bambu-green') : showRetainedPrint ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'} h-1.5 rounded-full transition-all`}
-                                style={{ width: `${progress}%` }}
+                                className={`${isActivePrint ? (status.state === 'PAUSE' ? 'bg-status-warning' : 'bg-bambu-green') : showRetainedPrint ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'} h-1.5 w-full rounded-full origin-left transition-transform duration-300 ease-(--ease-signature) motion-reduce:transition-none`}
+                                style={{ transform: `scaleX(${Math.min(100, Math.max(0, progress)) / 100})` }}
                               />
                             </div>
                             <span className={`w-9 shrink-0 pr-1 text-right text-[11px] leading-none ${isActivePrint || showRetainedPrint ? 'text-white' : 'text-bambu-gray'}`}>{isActivePrint || showRetainedPrint ? `${Math.round(progress)}%` : '---%'}</span>
@@ -4818,9 +4818,9 @@ function PrinterCard({
                                     <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
                                       {effectiveFill !== null && effectiveFill >= 0 && !isEmpty && tray && (
                                         <div
-                                          className="h-full rounded-full transition-all"
+                                          className="h-full w-full rounded-full origin-left transition-transform duration-300 ease-(--ease-signature) motion-reduce:transition-none"
                                           style={{
-                                            width: `${effectiveFill}%`,
+                                            transform: `scaleX(${Math.min(100, Math.max(0, effectiveFill)) / 100})`,
                                             backgroundColor: getFillBarColor(effectiveFill),
                                           }}
                                         />
@@ -5110,9 +5110,9 @@ function PrinterCard({
                             <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
                               {htEffectiveFill !== null && htEffectiveFill >= 0 && !isEmpty && (
                                 <div
-                                  className="h-full rounded-full transition-all"
+                                  className="h-full w-full rounded-full origin-left transition-transform duration-300 ease-(--ease-signature) motion-reduce:transition-none"
                                   style={{
-                                    width: `${htEffectiveFill}%`,
+                                    transform: `scaleX(${Math.min(100, Math.max(0, htEffectiveFill)) / 100})`,
                                     backgroundColor: getFillBarColor(htEffectiveFill),
                                   }}
                                 />
@@ -5483,9 +5483,9 @@ function PrinterCard({
                                   <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
                                     {extEffectiveFill !== null && extEffectiveFill >= 0 && !isEmpty && (
                                       <div
-                                        className="h-full rounded-full transition-all"
+                                        className="h-full w-full rounded-full origin-left transition-transform duration-300 ease-(--ease-signature) motion-reduce:transition-none"
                                         style={{
-                                          width: `${extEffectiveFill}%`,
+                                          transform: `scaleX(${Math.min(100, Math.max(0, extEffectiveFill)) / 100})`,
                                           backgroundColor: getFillBarColor(extEffectiveFill),
                                         }}
                                       />
@@ -7302,11 +7302,11 @@ function FirmwareUpdateModal({
               </div>
               <div className="w-full bg-bambu-dark-tertiary rounded-full h-2">
                 <div
-                  className={`h-2 rounded-full transition-all ${
+                  className={`h-2 w-full rounded-full origin-left transition-transform duration-300 ease-(--ease-signature) motion-reduce:transition-none ${
                     uploadStatus.status === 'error' ? 'bg-status-error' :
                     uploadStatus.status === 'complete' ? 'bg-status-ok' : 'bg-orange-500'
                   } ${uploadStatus.status === 'uploading' ? 'animate-pulse' : ''}`}
-                  style={{ width: `${uploadStatus.progress}%` }}
+                  style={{ transform: `scaleX(${Math.min(100, Math.max(0, uploadStatus.progress)) / 100})` }}
                 />
               </div>
               <p className="text-xs text-bambu-gray mt-1">{uploadStatus.message}</p>
