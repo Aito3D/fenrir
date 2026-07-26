@@ -27,6 +27,7 @@ interface SubmenuPanelProps {
   searchPlaceholder?: string;
   onClose: () => void;
   className: string;
+  style?: React.CSSProperties;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
 }
@@ -36,6 +37,7 @@ function SubmenuPanel({
   searchPlaceholder,
   onClose,
   className,
+  style,
   onMouseEnter,
   onMouseLeave,
 }: SubmenuPanelProps) {
@@ -58,6 +60,7 @@ function SubmenuPanel({
   return (
     <div
       className={className}
+      style={style}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
@@ -95,7 +98,7 @@ function SubmenuPanel({
             }
           }}
           disabled={subItem.disabled}
-          className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+          className={`btn-press w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
             subItem.disabled
               ? 'text-bambu-gray cursor-not-allowed'
               : subItem.danger
@@ -118,7 +121,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [activeSubmenu, setActiveSubmenu] = useState<number | null>(null);
   const submenuTimeoutRef = useRef<number | null>(null);
-  const [position, setPosition] = useState({ x, y, visible: false });
+  const [position, setPosition] = useState({ x, y, visible: false, flipped: false });
   const [openSubmenuLeft, setOpenSubmenuLeft] = useState(false);
   const [submenuPositions, setSubmenuPositions] = useState<Record<number, 'top' | 'bottom'>>({});
 
@@ -191,6 +194,11 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
         adjustedY = padding;
       }
 
+      // Menu flipped upward (clamp moved it above its natural position) —
+      // it should scale from its bottom edge, toward the cursor, instead of
+      // scaling downward from a top edge that no longer touches the anchor.
+      const flipped = adjustedY < y;
+
       // Check if submenus should open to the left (more space on left than right)
       const submenuWidth = 180;
       const spaceOnRight = viewportWidth - adjustedX - rect.width;
@@ -198,7 +206,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
       // Only open left if there's not enough space on right AND there's enough space on left
       setOpenSubmenuLeft(spaceOnRight < submenuWidth && spaceOnLeft > submenuWidth);
 
-      setPosition({ x: adjustedX, y: adjustedY, visible: true });
+      setPosition({ x: adjustedX, y: adjustedY, visible: true, flipped });
     }
   }, [x, y]);
 
@@ -235,8 +243,9 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
       style={{
         left: position.x,
         top: position.y,
-        visibility: position.visible ? 'visible' : 'hidden'
-      }}
+        visibility: position.visible ? 'visible' : 'hidden',
+        '--dropdown-origin': position.flipped ? 'bottom' : 'top',
+      } as React.CSSProperties}
     >
       {items.map((item, index) => {
         if (item.divider) {
@@ -265,7 +274,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
               }}
               disabled={item.disabled}
               title={item.title}
-              className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+              className={`btn-press w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
                 item.disabled
                   ? 'text-bambu-gray cursor-not-allowed'
                   : item.danger
@@ -286,6 +295,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
                 className={`absolute min-w-[200px] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 overflow-hidden max-h-[300px] overflow-y-auto z-[60] animate-dropdown-in ${
                   openSubmenuLeft ? 'right-full mr-1' : 'left-full ml-1'
                 } ${submenuPositions[index] === 'bottom' ? 'bottom-0' : 'top-0'}`}
+                style={{ '--dropdown-origin': submenuPositions[index] === 'bottom' ? 'bottom' : 'top' } as React.CSSProperties}
                 onMouseEnter={() => {
                   if (submenuTimeoutRef.current) {
                     clearTimeout(submenuTimeoutRef.current);

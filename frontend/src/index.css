@@ -853,7 +853,7 @@ tbody .calc-table-row:hover {
 
 .animate-dropdown-in {
   animation: dropdown-in 0.12s ease-out;
-  transform-origin: top;
+  transform-origin: var(--dropdown-origin, top);
 }
 
 /* Calculator cost waterfall: segments fill left-to-right with a stagger set
