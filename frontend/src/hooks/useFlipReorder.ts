@@ -96,10 +96,36 @@ export function useFlipReorder(containerRef: React.RefObject<HTMLElement | null>
         // instead of the flat built-in `ease`.
         // keep in sync with --ease-signature in index.css
         const easing = 'cubic-bezier(0.22, 1, 0.36, 1)';
+
+        // Retarget from wherever the element visually is right now, not just
+        // from its idle layout position. dx/dy above are purely layout deltas
+        // (prev/next come from offset*, per the measurement note up top) — if
+        // a previous tween is still mid-flight when this reorder lands, the
+        // element's *visual* position is offset from that layout position by
+        // whatever the running animation has moved it. Read that live offset
+        // ONCE via getComputedStyle before touching any animation: cancel()
+        // removes the animation's effect immediately, which would change what
+        // getComputedStyle reports if read after. Then cancel every animation
+        // on the element (only our transform tweens ever run on these nodes)
+        // and fold the live offset into the new tween's start keyframe so it
+        // continues smoothly instead of snapping to the layout-derived start.
+        let liveX = 0;
+        let liveY = 0;
+        const activeAnims = el.getAnimations();
+        if (activeAnims.length > 0) {
+          const liveTransform = getComputedStyle(el).transform;
+          if (liveTransform && liveTransform !== 'none') {
+            const m = new DOMMatrixReadOnly(liveTransform);
+            liveX = m.m41;
+            liveY = m.m42;
+          }
+          for (const anim of activeAnims) anim.cancel();
+        }
+
         if (!resized) {
           // Pure reorder slide — default transform-origin is fine for translate.
           el.animate(
-            [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }],
+            [{ transform: `translate(${dx + liveX}px, ${dy + liveY}px)` }, { transform: 'translate(0, 0)' }],
             { duration: 320, easing },
           );
         } else {
@@ -107,9 +133,13 @@ export function useFlipReorder(containerRef: React.RefObject<HTMLElement | null>
           // the top-left corner so the scale composes correctly with the
           // offset-based translate, then animate back to the natural size. The
           // tile (and its live video) zooms to its new span instead of snapping.
+          // Retargeting only folds in the live *translate* here, not scale —
+          // resize retargets (interrupting a mid-flight resize with another
+          // resize) are rare and the seam is near-invisible; correcting the
+          // translate is the win that matters.
           el.animate(
             [
-              { transformOrigin: '0 0', transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})` },
+              { transformOrigin: '0 0', transform: `translate(${dx + liveX}px, ${dy + liveY}px) scale(${sx}, ${sy})` },
               { transformOrigin: '0 0', transform: 'translate(0, 0) scale(1, 1)' },
             ],
             { duration: 320, easing },
