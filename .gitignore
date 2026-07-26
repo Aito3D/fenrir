@@ -1,6 +1,8 @@
 # Claude
 .claude/
 CLAUDE.md
+.superpowers/
+plans/
 
 # macOS
 .DS_Store
