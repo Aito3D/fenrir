@@ -313,6 +313,12 @@ export function AitoPage() {
   }, [aitoQuery.data, aitoQuery.isError, queryClient]);
 
   const moveMutation = useMutation({
+    // Serializes overlapping moves in drop order: without a scope, two quick
+    // drags race the endpoint concurrently and the second's position (computed
+    // against a board that assumed the first had already landed) can land
+    // first. This also means a move never starts while an earlier one's
+    // rollback snapshot is still live, so a failure can't restore over it.
+    scope: { id: 'aito-move' },
     mutationFn: ({ id, column, position }: MoveVariables) => api.moveAitoProject(id, { column, position }),
     // The optimistic cache write happens synchronously in handleDragEnd, so all
     // this needs to do is stop in-flight refetches and carry the rollback
@@ -331,7 +337,15 @@ export function AitoPage() {
     onSettled: () => {
       pendingMoves.current -= 1;
       setSyncGeneration((generation) => generation + 1);
-      queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+      // Only the last move to settle refetches: invalidating while another
+      // PATCH is still in flight lets that PATCH's own pre-move GET response
+      // overwrite the optimistic cache, which the generation bump above would
+      // then rebuild the board from — the card flies back, then jumps forward
+      // again when the correct data finally lands. The last settle always
+      // invalidates, so nothing is left stale.
+      if (pendingMoves.current === 0) {
+        queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+      }
     },
   });
 
@@ -392,14 +406,20 @@ export function AitoPage() {
 
     // Dropped outside any droppable: dragOver may already have relocated the
     // card locally with nothing to persist it, so resync rather than desync.
+    // Skipped while a move is pending — see onSettled for why.
     if (!over) {
-      queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+      if (pendingMoves.current === 0) {
+        queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+      }
       return;
     }
 
     const result = computeMoveTarget(board, active.id as number, over.id, originColumn);
     if (result.kind === 'resync') {
-      queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+      // Skipped while a move is pending — see onSettled for why.
+      if (pendingMoves.current === 0) {
+        queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+      }
       return;
     }
     if (result.kind === 'noop') return;
@@ -489,7 +509,10 @@ export function AitoPage() {
           dragOriginColumnRef.current = null;
           // A cancelled drag (e.g. Escape) can leave a cross-column dragOver
           // relocation applied locally with nothing persisted — resync.
-          queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+          // Skipped while a move is pending — see onSettled for why.
+          if (pendingMoves.current === 0) {
+            queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+          }
         }}
       >
         <div className="flex gap-4 items-stretch overflow-x-auto pb-4 stagger-parents">
