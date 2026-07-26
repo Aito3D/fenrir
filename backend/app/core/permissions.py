@@ -190,7 +190,7 @@ class Permission(StrEnum):
     # Aito production board
     AITO_READ = "aito:read"
     AITO_CREATE = "aito:create"  # create projects + search Zoho contacts
-    AITO_UPDATE = "aito:update"  # move cards between columns
+    AITO_UPDATE = "aito:update"  # move cards between columns + edit card content
     AITO_DELETE = "aito:delete"  # soft-delete cards
 
     # WebSocket connection

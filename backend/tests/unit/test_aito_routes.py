@@ -106,3 +106,60 @@ async def test_restore_active_or_missing_404s(async_client):
     a = (await _create(async_client, description="a")).json()
     assert (await async_client.post(f"/api/v1/aito/{a['id']}/restore")).status_code == 404
     assert (await async_client.post("/api/v1/aito/999999/restore")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_description_leaves_client_untouched(async_client):
+    a = (await _create(async_client)).json()
+    r = await async_client.patch(f"/api/v1/aito/{a['id']}", json={"description": "Nouveau support"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["description"] == "Nouveau support"
+    assert body["client_name"] == "ACME"
+    assert body["client_phone"] == "+33 6 12 34 56 78"
+
+
+@pytest.mark.asyncio
+async def test_update_replaces_the_whole_client_snapshot(async_client):
+    a = (await _create(async_client)).json()
+    r = await async_client.patch(
+        f"/api/v1/aito/{a['id']}",
+        json={"client_id": "z9", "client_name": "Globex", "client_phone": None},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert (body["client_id"], body["client_name"], body["client_phone"]) == ("z9", "Globex", None)
+    assert body["description"] == "Support GoPro"
+
+
+@pytest.mark.asyncio
+async def test_update_rejects_client_id_without_a_name(async_client):
+    a = (await _create(async_client)).json()
+    r = await async_client.patch(f"/api/v1/aito/{a['id']}", json={"client_id": "z9"})
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_rejects_blank_description(async_client):
+    a = (await _create(async_client)).json()
+    assert (await async_client.patch(f"/api/v1/aito/{a['id']}", json={"description": ""})).status_code == 422
+    assert (await async_client.patch(f"/api/v1/aito/{a['id']}", json={"description": "   "})).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_never_touches_column_or_position(async_client):
+    a = (await _create(async_client)).json()
+    await async_client.patch(f"/api/v1/aito/{a['id']}/move", json={"column": "print", "position": 0})
+    r = await async_client.patch(
+        f"/api/v1/aito/{a['id']}", json={"description": "moved then edited", "column": "devis", "position": 7}
+    )
+    assert r.status_code == 200
+    assert r.json()["column"] == "print" and r.json()["position"] == 0
+
+
+@pytest.mark.asyncio
+async def test_update_404s_on_deleted_or_missing(async_client):
+    a = (await _create(async_client)).json()
+    await async_client.delete(f"/api/v1/aito/{a['id']}")
+    assert (await async_client.patch(f"/api/v1/aito/{a['id']}", json={"description": "x"})).status_code == 404
+    assert (await async_client.patch("/api/v1/aito/99999", json={"description": "x"})).status_code == 404

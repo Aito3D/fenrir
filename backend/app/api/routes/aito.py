@@ -16,6 +16,7 @@ from backend.app.schemas.aito import (
     AitoProjectImport,
     AitoProjectMove,
     AitoProjectResponse,
+    AitoProjectUpdate,
 )
 
 logger = logging.getLogger(__name__)
@@ -143,6 +144,32 @@ async def move_project(
     if source_column != payload.column:
         for i, row in enumerate(await _active_in_column(db, source_column, exclude_id=project.id)):
             row.position = i
+    await db.commit()
+    await db.refresh(project)
+    return _to_response(project)
+
+
+@router.patch("/{project_id}", response_model=AitoProjectResponse)
+async def update_project(
+    project_id: int,
+    payload: AitoProjectUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Edit a card's content. Only fields present in the body are written, so a
+    null client_phone clears it while an omitted one is left alone."""
+    project = (
+        await db.execute(select(AitoProject).where(AitoProject.id == project_id, AitoProject.status == "active"))
+    ).scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    fields = payload.model_dump(exclude_unset=True)
+    if "description" in fields:
+        project.description = fields["description"].strip()
+    for key in ("client_id", "client_name", "client_phone"):
+        if key in fields:
+            setattr(project, key, fields[key])
     await db.commit()
     await db.refresh(project)
     return _to_response(project)

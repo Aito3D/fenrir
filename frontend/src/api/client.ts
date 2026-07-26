@@ -3429,6 +3429,13 @@ export interface AitoProject {
   updated_at: string;
 }
 
+export interface AitoProjectUpdate {
+  description?: string;
+  client_id?: string;
+  client_name?: string;
+  client_phone?: string | null;
+}
+
 // Zoho Books integration
 export interface ZohoContact {
   id: string;
@@ -6183,6 +6190,11 @@ export const api = {
     }),
   moveAitoProject: (id: number, data: { column: AitoColumnId; position: number }) =>
     request<AitoProject>(`/aito/${id}/move`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  updateAitoProject: (id: number, data: AitoProjectUpdate) =>
+    request<AitoProject>(`/aito/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
