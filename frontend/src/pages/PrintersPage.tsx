@@ -104,6 +104,7 @@ import { EmbeddedCameraViewer } from '../components/EmbeddedCameraViewer';
 import { CameraGrid } from '../components/CameraGrid';
 import { type GridLayout, GRID_LAYOUT_ICONS } from '../components/cameraGridLayout';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { useFlipReorder } from '../hooks/useFlipReorder';
 import { MQTTDebugModal } from '../components/MQTTDebugModal';
 import { HMSErrorModal, filterKnownHMSErrors } from '../components/HMSErrorModal';
 import { PrinterQueueWidget } from '../components/PrinterQueueWidget';
@@ -8362,6 +8363,48 @@ export function PrintersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- classifyPrinterStatus & filterKnownHMSErrors are stable module-level functions, not reactive deps; statusCacheVersion forces recompute on WebSocket status updates
   }, [sortBy, sortedPrinters, queryClient, statusCacheVersion]);
 
+  // Fleet grid — one flat row list shared by grouped and flat views, so
+  // PrinterCard instances keep the same key at the same grid-container depth
+  // across grouped<->flat toggles (React only reuses a fiber when both type
+  // AND parent stay put; two structurally distinct branches, even with
+  // matching card keys, always remount). Grouping just interleaves header
+  // rows into the flow; collapsing a group still drops its cards out of the
+  // row list entirely (matches the Collapsible's existing non-animated,
+  // fully-unmounting collapse below).
+  type FleetRow =
+    | { kind: 'header'; groupKey: string }
+    | { kind: 'card'; printer: (typeof sortedPrinters)[number] };
+
+  const fleetRows: FleetRow[] = useMemo(() => {
+    if (!groupedPrinters) {
+      return sortedPrinters.map(printer => ({ kind: 'card' as const, printer }));
+    }
+    const keys = sortBy === 'status'
+      ? STATUS_GROUP_ORDER.filter(k => groupedPrinters[k]?.length > 0)
+      : Object.keys(groupedPrinters);
+    const orderedKeys = sortAsc ? keys : [...keys].reverse();
+    const rows: FleetRow[] = [];
+    orderedKeys.forEach(groupKey => {
+      rows.push({ kind: 'header', groupKey });
+      const collapseKey = `${sortBy}:${groupKey}`;
+      if (!collapsedSections[collapseKey]) {
+        groupedPrinters[groupKey].forEach(printer => rows.push({ kind: 'card' as const, printer }));
+      }
+    });
+    return rows;
+  }, [groupedPrinters, sortedPrinters, sortBy, sortAsc, collapsedSections]);
+
+  // FLIP repositioning for the fleet grid — see useFlipReorder's doc comment.
+  // The order key changes whenever the rendered row sequence changes (sort,
+  // group toggle, collapse/expand, filtering); useFlipReorder then slides
+  // persisting cards to their new slot instead of letting them teleport.
+  const fleetGridRef = useRef<HTMLDivElement>(null);
+  const fleetOrderKey = useMemo(
+    () => fleetRows.map(row => (row.kind === 'header' ? `h:${row.groupKey}` : `c:${row.printer.id}`)).join('|'),
+    [fleetRows],
+  );
+  useFlipReorder(fleetGridRef, fleetOrderKey);
+
   // Expand a camera-grid tile — respects the camera view mode setting.
   // Stable callback so it doesn't break CameraGridCard memoization.
   const handleGridExpand = useCallback((id: number, name: string) => {
@@ -8847,147 +8890,109 @@ export function PrintersPage() {
             fullscreen={fullscreen}
           />
         </ErrorBoundary>
-      ) : groupedPrinters ? (
-        /* Grouped view (location, status, or model) */
-        <div className="space-y-6">
-          {(() => {
-            const keys = sortBy === 'status'
-              ? STATUS_GROUP_ORDER.filter(k => groupedPrinters[k]?.length > 0)
-              : Object.keys(groupedPrinters);
-            // For status grouping, asc/desc flips the fixed priority order
-            // (asc = error→offline, desc = offline→error). This matches the
-            // sort-toggle behaviour for other groupings.
-            return (sortAsc ? keys : [...keys].reverse());
-          })().map((groupKey) => {
-            const groupPrinters = groupedPrinters[groupKey];
-            const collapseKey = `${sortBy}:${groupKey}`;
-            const isOpen = !collapsedSections[collapseKey];
+      ) : (
+        /* Fleet grid — single container shared by grouped and flat views
+           (fleetRows/fleetGridRef above) so PrinterCard instances keep their
+           DOM identity across sort/group toggles instead of remounting.
+           Group headers render as col-span-full rows interleaved with the
+           cards; collapsing a group still removes its cards from the flow
+           (the Collapsible below is intentionally non-animated, same as
+           before — see the `animated` prop's doc comment). */
+        <div ref={fleetGridRef} className={`grid gap-4 stagger-parents ${cardSize >= 3 ? 'gap-6' : ''} ${getGridClasses()}`}>
+          {fleetRows.map((row) => {
+            if (row.kind === 'header') {
+              const { groupKey } = row;
+              const groupPrinters = groupedPrinters![groupKey];
+              const collapseKey = `${sortBy}:${groupKey}`;
+              const isOpen = !collapsedSections[collapseKey];
 
-            const dot = sortBy === 'status'
-              ? STATUS_GROUP_META[groupKey]?.dot || 'bg-bambu-green'
-              : 'bg-bambu-green';
-            const label = sortBy === 'status'
-              ? t(STATUS_GROUP_META[groupKey]?.labelKey || groupKey)
-              : groupKey;
+              const dot = sortBy === 'status'
+                ? STATUS_GROUP_META[groupKey]?.dot || 'bg-bambu-green'
+                : 'bg-bambu-green';
+              const label = sortBy === 'status'
+                ? t(STATUS_GROUP_META[groupKey]?.labelKey || groupKey)
+                : groupKey;
 
+              return (
+                <Collapsible
+                  key={`group:${groupKey}`}
+                  className="col-span-full"
+                  open={isOpen}
+                  onToggle={() => toggleSectionCollapse(collapseKey)}
+                  summaryClassName="py-1"
+                  summary={
+                    <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${dot}`} />
+                      {label}
+                      <span className="text-sm font-normal text-bambu-gray">({groupPrinters.length})</span>
+                      {selectionMode && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (sortBy === 'location') selectByLocation(groupKey === 'Ungrouped' ? '' : groupKey);
+                            else if (sortBy === 'status') selectByState(groupKey as PrinterState);
+                            else if (sortBy === 'model') selectByModel(groupKey);
+                          }}
+                          className="text-xs text-bambu-green hover:text-bambu-green-light transition-colors ml-1"
+                        >
+                          {t('printers.bulk.selectAll')}
+                        </button>
+                      )}
+                    </h2>
+                  }
+                >
+                  {null}
+                </Collapsible>
+              );
+            }
+
+            const { printer } = row;
             return (
-              <Collapsible
-                key={groupKey}
-                open={isOpen}
-                onToggle={() => toggleSectionCollapse(collapseKey)}
-                summaryClassName="py-1"
-                summary={
-                  <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${dot}`} />
-                    {label}
-                    <span className="text-sm font-normal text-bambu-gray">({groupPrinters.length})</span>
-                    {selectionMode && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (sortBy === 'location') selectByLocation(groupKey === 'Ungrouped' ? '' : groupKey);
-                          else if (sortBy === 'status') selectByState(groupKey as PrinterState);
-                          else if (sortBy === 'model') selectByModel(groupKey);
-                        }}
-                        className="text-xs text-bambu-green hover:text-bambu-green-light transition-colors ml-1"
-                      >
-                        {t('printers.bulk.selectAll')}
-                      </button>
-                    )}
-                  </h2>
-                }
-              >
-                <div className={`grid gap-4 stagger-parents ${cardSize >= 3 ? 'gap-6' : ''} ${getGridClasses()}`}>
-                  {groupPrinters.map((printer) => (
-                    <PrinterCard
-                      key={printer.id}
-                      printer={printer}
-                      hideIfDisconnected={hideDisconnected}
-                      maintenanceInfo={maintenanceByPrinter[printer.id]}
-                      viewMode={viewMode}
-                      cardSize={cardSize}
-                      amsThresholds={settings ? {
-                        humidityGood: Number(settings.ams_humidity_good) || 40,
-                        humidityFair: Number(settings.ams_humidity_fair) || 60,
-                        tempGood: Number(settings.ams_temp_good) || 28,
-                        tempFair: Number(settings.ams_temp_fair) || 35,
-                      } : undefined}
-                      spoolmanEnabled={spoolmanEnabled}
-                      hasUnlinkedSpools={hasUnlinkedSpools}
-                      linkedSpools={linkedSpools}
-                      spoolmanUrl={spoolmanStatus?.url}
-                      spoolmanSyncMode={spoolmanSyncMode}
-                      onGetAssignment={getAssignment}
-                      onUnassignSpool={(pid, aid, tid) => unassignMutation.mutate({ printerId: pid, amsId: aid, trayId: tid })}
-                      spoolmanSpools={spoolmanSpools}
-                      spoolmanSlotAssignments={spoolmanSlotAssignments}
-                      spoolmanLoading={spoolmanSpoolsLoading || spoolmanAssignmentsLoading}
-                      onUnassignSpoolmanSpool={(id) => unassignSpoolmanMutation.mutate(id)}
-                      timeFormat={settings?.time_format || 'system'}
-                      cameraViewMode={settings?.camera_view_mode || 'window'}
-                      onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
-                      checkPrinterFirmware={settings?.check_printer_firmware !== false}
-                      dryingPresets={effectiveDryingPresets}
-                      nozzleTempPresets={effectiveNozzleTempPresets}
-                      bedTempPresets={effectiveBedTempPresets}
-                      chamberTempPresets={effectiveChamberTempPresets}
-                      fanSpeedPresets={effectiveFanSpeedPresets}
-                      requirePlateClear={settings?.require_plate_clear === true}
-                      selectionMode={selectionMode}
-                      isSelected={selectedPrinterIds.has(printer.id)}
-                      onToggleSelect={toggleSelect}
-                      onOpenCompactCard={openCompactCard}
-                    />
-                  ))}
-                </div>
-              </Collapsible>
+              // data-flip-key anchors useFlipReorder without touching PrinterCard
+              // itself (which already carries its own animate-rise-lg entrance —
+              // adding another entrance class here would double it up).
+              <div key={printer.id} data-flip-key={printer.id}>
+                <PrinterCard
+                  printer={printer}
+                  hideIfDisconnected={hideDisconnected}
+                  maintenanceInfo={maintenanceByPrinter[printer.id]}
+                  viewMode={viewMode}
+                  cardSize={cardSize}
+                  amsThresholds={settings ? {
+                    humidityGood: Number(settings.ams_humidity_good) || 40,
+                    humidityFair: Number(settings.ams_humidity_fair) || 60,
+                    tempGood: Number(settings.ams_temp_good) || 28,
+                    tempFair: Number(settings.ams_temp_fair) || 35,
+                  } : undefined}
+                  spoolmanEnabled={spoolmanEnabled}
+                  hasUnlinkedSpools={hasUnlinkedSpools}
+                  linkedSpools={linkedSpools}
+                  spoolmanUrl={spoolmanStatus?.url}
+                  spoolmanSyncMode={spoolmanSyncMode}
+                  onGetAssignment={getAssignment}
+                  onUnassignSpool={(pid, aid, tid) => unassignMutation.mutate({ printerId: pid, amsId: aid, trayId: tid })}
+                  spoolmanSpools={spoolmanSpools}
+                  spoolmanSlotAssignments={spoolmanSlotAssignments}
+                  spoolmanLoading={spoolmanSpoolsLoading || spoolmanAssignmentsLoading}
+                  onUnassignSpoolmanSpool={(id) => unassignSpoolmanMutation.mutate(id)}
+                  timeFormat={settings?.time_format || 'system'}
+                  cameraViewMode={settings?.camera_view_mode || 'window'}
+                  onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
+                  checkPrinterFirmware={settings?.check_printer_firmware !== false}
+                  dryingPresets={effectiveDryingPresets}
+                  nozzleTempPresets={effectiveNozzleTempPresets}
+                  bedTempPresets={effectiveBedTempPresets}
+                  chamberTempPresets={effectiveChamberTempPresets}
+                  fanSpeedPresets={effectiveFanSpeedPresets}
+                  requirePlateClear={settings?.require_plate_clear === true}
+                  selectionMode={selectionMode}
+                  isSelected={selectedPrinterIds.has(printer.id)}
+                  onToggleSelect={toggleSelect}
+                  onOpenCompactCard={openCompactCard}
+                />
+              </div>
             );
           })}
-        </div>
-      ) : (
-        /* Regular grid view */
-        <div className={`grid gap-4 stagger-parents ${cardSize >= 3 ? 'gap-6' : ''} ${getGridClasses()}`}>
-          {sortedPrinters.map((printer) => (
-            <PrinterCard
-              key={printer.id}
-              printer={printer}
-              hideIfDisconnected={hideDisconnected}
-              maintenanceInfo={maintenanceByPrinter[printer.id]}
-              viewMode={viewMode}
-              cardSize={cardSize}
-              spoolmanEnabled={spoolmanEnabled}
-              hasUnlinkedSpools={hasUnlinkedSpools}
-              linkedSpools={linkedSpools}
-              spoolmanUrl={spoolmanStatus?.url}
-              spoolmanSyncMode={spoolmanSyncMode}
-              onGetAssignment={getAssignment}
-              onUnassignSpool={(pid, aid, tid) => unassignMutation.mutate({ printerId: pid, amsId: aid, trayId: tid })}
-              spoolmanSpools={spoolmanSpools}
-              spoolmanSlotAssignments={spoolmanSlotAssignments}
-              spoolmanLoading={spoolmanSpoolsLoading || spoolmanAssignmentsLoading}
-              onUnassignSpoolmanSpool={(id) => unassignSpoolmanMutation.mutate(id)}
-              amsThresholds={settings ? {
-                humidityGood: Number(settings.ams_humidity_good) || 40,
-                humidityFair: Number(settings.ams_humidity_fair) || 60,
-                tempGood: Number(settings.ams_temp_good) || 28,
-                tempFair: Number(settings.ams_temp_fair) || 35,
-              } : undefined}
-              timeFormat={settings?.time_format || 'system'}
-              cameraViewMode={settings?.camera_view_mode || 'window'}
-              onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
-              checkPrinterFirmware={settings?.check_printer_firmware !== false}
-              dryingPresets={effectiveDryingPresets}
-              nozzleTempPresets={effectiveNozzleTempPresets}
-              bedTempPresets={effectiveBedTempPresets}
-              chamberTempPresets={effectiveChamberTempPresets}
-              fanSpeedPresets={effectiveFanSpeedPresets}
-              requirePlateClear={settings?.require_plate_clear === true}
-              selectionMode={selectionMode}
-              isSelected={selectedPrinterIds.has(printer.id)}
-              onToggleSelect={toggleSelect}
-              onOpenCompactCard={openCompactCard}
-            />
-          ))}
         </div>
       )}
 
