@@ -671,21 +671,11 @@ body {
   animation: rise 0.25s var(--ease-signature) backwards;
 }
 
-/* Route/page transition — the incoming page rises + fades in. AnimatedOutlet
-   plays this after the outgoing page has finished .animate-page-out. */
+/* Route/page transition — the incoming page rises + fades in immediately on
+   navigation. AnimatedOutlet mounts the destination right away (no exit
+   phase/timer); this is the only animation that plays. */
 .animate-page-in {
   animation: calc-tab-in 0.25s var(--ease-signature) backwards;
-}
-
-/* Route/page exit — the outgoing page drifts up while fading, continuing the
-   same vertical axis the enter rises along. `forwards` holds the gone state so
-   it never flashes back before AnimatedOutlet swaps in the next page. */
-@keyframes page-out {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(-8px); }
-}
-.animate-page-out {
-  animation: page-out 0.15s var(--ease-exit) forwards;
 }
 
 /* Modal card entrance — fade + gentle scale-up from center. */
@@ -951,7 +941,6 @@ tbody .calc-table-row:hover {
   .animate-rise-lg,
   .stagger-nested > *,
   .animate-page-in,
-  .animate-page-out,
   .animate-modal-in,
   .animate-overlay-in,
   .animate-slide-out,
