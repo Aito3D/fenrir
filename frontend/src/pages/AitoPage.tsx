@@ -5,6 +5,7 @@ import {
   DndContext,
   DragOverlay,
   KeyboardSensor,
+  MeasuringStrategy,
   PointerSensor,
   closestCorners,
   useSensor,
@@ -13,7 +14,7 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
-import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
+import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { AlertTriangle, Kanban, Plus, Trash2, X } from 'lucide-react';
 import { Button } from '../components/Button';
 import { inputCls, labelCls } from '../components/formStyles';
@@ -26,9 +27,12 @@ import { useToast } from '../contexts/ToastContext';
 import { formatElapsedTime } from '../utils/date';
 import {
   COLUMN_IDS,
+  applyCrossColumnMove,
   buildBoard,
+  computeMoveTarget,
   emptyBoard,
   findColumn,
+  toOptimisticProjects,
   type Board,
   type ColumnId,
 } from '../utils/aitoBoard';
@@ -43,6 +47,13 @@ interface LegacyProject {
 type LegacyBoard = Partial<Record<ColumnId, LegacyProject[]>>;
 
 const STORAGE_KEY = 'aito-board-v1';
+
+interface MoveVariables {
+  id: number;
+  column: ColumnId;
+  position: number;
+  previous: AitoProject[] | undefined;
+}
 
 function NewProjectModal({
   onClose,
@@ -239,14 +250,22 @@ export function AitoPage() {
   const [showTrash, setShowTrash] = useState(false);
   const [activeId, setActiveId] = useState<number | null>(null);
 
+  // A move is "in flight" from the moment handleDragEnd fires until the PATCH
+  // settles. The local board owns the ordering for that whole window — a ref so
+  // the guard closes synchronously, plus a counter so the effect re-runs once
+  // the server agrees even if the query data identity never changes.
+  const pendingMoves = useRef(0);
+  const [syncGeneration, setSyncGeneration] = useState(0);
+
   // Keeps the local drag-friendly board in sync with the server, but never
   // while a drag is in flight — a background refetch mid-drag would yank
   // the card out from under the pointer.
   useEffect(() => {
     if (!aitoQuery.data) return;
     if (activeId !== null) return;
+    if (pendingMoves.current > 0) return;
     setBoard(buildBoard(aitoQuery.data));
-  }, [aitoQuery.data, activeId]);
+  }, [aitoQuery.data, activeId, syncGeneration]);
 
   // One-time migration of the pre-Task-7 localStorage board: only runs when
   // the backend board is confirmed empty, and only once per mount. Failures
@@ -294,33 +313,24 @@ export function AitoPage() {
   }, [aitoQuery.data, aitoQuery.isError, queryClient]);
 
   const moveMutation = useMutation({
-    mutationFn: ({ id, column, position }: { id: number; column: ColumnId; position: number; board: Board }) =>
-      api.moveAitoProject(id, { column, position }),
-    // Optimistically write the already-applied local board state into the
-    // query cache so the sync effect's post-drop re-run (triggered by
-    // handleDragEnd clearing activeId) rebuilds from the NEW layout instead
-    // of the stale pre-move cache — otherwise the dropped card snaps back
-    // until the PATCH + refetch land. The board snapshot travels in the
-    // mutation variables (not the outer `board` closure) because setBoard()
-    // and mutate() are both called synchronously in handleDragEnd, before
-    // React re-renders with the reordered state.
-    onMutate: async (variables) => {
+    mutationFn: ({ id, column, position }: MoveVariables) => api.moveAitoProject(id, { column, position }),
+    // The optimistic cache write happens synchronously in handleDragEnd, so all
+    // this needs to do is stop in-flight refetches and carry the rollback
+    // snapshot through. Doing the write here, behind an await, is what let the
+    // sync effect rebuild from stale data and snap the card back.
+    onMutate: async (variables: MoveVariables) => {
       await queryClient.cancelQueries({ queryKey: ['aito-projects'] });
-      const previous = queryClient.getQueryData<AitoProject[]>(['aito-projects']);
-      const optimistic = COLUMN_IDS.flatMap((col) =>
-        variables.board[col].map((project, index) => ({ ...project, column: col, position: index })),
-      );
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], optimistic);
-      return { previous };
+      return { previous: variables.previous };
     },
     onError: (_err, _vars, context) => {
       if (context?.previous) {
         queryClient.setQueryData(['aito-projects'], context.previous);
       }
-      queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
       showToast(t('aito.moveFailed'), 'error');
     },
     onSettled: () => {
+      pendingMoves.current -= 1;
+      setSyncGeneration((generation) => generation + 1);
       queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
     },
   });
@@ -372,20 +382,7 @@ export function AitoPage() {
   // opens a slot under the pointer (Trello-style), not only on drop.
   const handleDragOver = ({ active, over }: DragOverEvent) => {
     if (!over) return;
-    const from = findColumn(board, active.id);
-    const to = findColumn(board, over.id);
-    if (!from || !to || from === to) return;
-
-    setBoard((prev) => {
-      const moving = prev[from].find((p) => p.id === active.id);
-      if (!moving) return prev;
-      const overIndex = prev[to].findIndex((p) => p.id === over.id);
-      const insertAt = overIndex >= 0 ? overIndex : prev[to].length;
-      const next = { ...prev };
-      next[from] = prev[from].filter((p) => p.id !== active.id);
-      next[to] = [...prev[to].slice(0, insertAt), moving, ...prev[to].slice(insertAt)];
-      return next;
-    });
+    setBoard((prev) => applyCrossColumnMove(prev, active.id as number, over.id));
   };
 
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
@@ -394,43 +391,33 @@ export function AitoPage() {
     dragOriginColumnRef.current = null;
 
     // Dropped outside any droppable: dragOver may already have relocated the
-    // card locally with nothing to persist it, so resync from the server
-    // instead of leaving the board desynced.
+    // card locally with nothing to persist it, so resync rather than desync.
     if (!over) {
       queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
       return;
     }
-    const column = findColumn(board, active.id);
-    if (!column) {
+
+    const result = computeMoveTarget(board, active.id as number, over.id, originColumn);
+    if (result.kind === 'resync') {
       queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
       return;
     }
+    if (result.kind === 'noop') return;
 
-    const oldIndex = board[column].findIndex((p) => p.id === active.id);
-    const overIndex = board[column].findIndex((p) => p.id === over.id);
-    const newIndex = overIndex >= 0 ? overIndex : board[column].length - 1;
-    const movedColumns = originColumn !== null && originColumn !== column;
+    setBoard(result.board);
 
-    // Plain click-drag-release back into the same slot: nothing changed, so
-    // don't fire a redundant PATCH. A real cross-column relocation (already
-    // applied live by dragOver) must still persist even if the index in the
-    // destination column happens to match.
-    if (!movedColumns && (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex)) {
-      return;
-    }
+    // Write the new ordering into the cache synchronously, before mutate(), so
+    // the sync effect can never observe the pre-move layout.
+    const previous = queryClient.getQueryData<AitoProject[]>(['aito-projects']);
+    queryClient.setQueryData<AitoProject[]>(['aito-projects'], toOptimisticProjects(result.board));
 
-    const reordered =
-      oldIndex >= 0 && newIndex >= 0 && oldIndex !== newIndex
-        ? arrayMove(board[column], oldIndex, newIndex)
-        : board[column];
-    const nextBoard: Board = reordered !== board[column] ? { ...board, [column]: reordered } : board;
-    if (nextBoard !== board) {
-      setBoard(nextBoard);
-    }
-
-    const position = reordered.findIndex((p) => p.id === active.id);
-    if (position < 0) return;
-    moveMutation.mutate({ id: active.id as number, column, position, board: nextBoard });
+    pendingMoves.current += 1;
+    moveMutation.mutate({
+      id: active.id as number,
+      column: result.column,
+      position: result.position,
+      previous,
+    });
   };
 
   const createProject = (description: string, client: SelectedClient) => {
@@ -493,6 +480,7 @@ export function AitoPage() {
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
+        measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
