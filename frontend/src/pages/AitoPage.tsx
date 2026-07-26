@@ -7,32 +7,31 @@ import {
   KeyboardSensor,
   PointerSensor,
   closestCorners,
-  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
-import {
-  SortableContext,
-  arrayMove,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { AlertTriangle, Kanban, Plus, Trash2, X } from 'lucide-react';
 import { Button } from '../components/Button';
 import { inputCls, labelCls } from '../components/formStyles';
+import { CardView } from '../components/aito/CardView';
+import { BoardColumn } from '../components/aito/BoardColumn';
+import { COLUMNS } from '../components/aito/columns';
 import { ClientCombobox, type SelectedClient } from '../components/aito/ClientCombobox';
-import { api, ApiError, type AitoColumnId, type AitoProject } from '../api/client';
+import { api, ApiError, type AitoProject } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
-import { formatElapsedTime, parseUTCDate } from '../utils/date';
-
-type ColumnId = AitoColumnId;
-
-type Board = Record<ColumnId, AitoProject[]>;
+import { formatElapsedTime } from '../utils/date';
+import {
+  COLUMN_IDS,
+  buildBoard,
+  emptyBoard,
+  findColumn,
+  type Board,
+  type ColumnId,
+} from '../utils/aitoBoard';
 
 // Shape of the pre-Task-7 localStorage board, kept only for the one-time
 // migration into the DB-backed board.
@@ -43,264 +42,7 @@ interface LegacyProject {
 }
 type LegacyBoard = Partial<Record<ColumnId, LegacyProject[]>>;
 
-// Stage accents follow the pipeline temperature: quote (cool) → modeling →
-// printing (hot) → finished (brand green, the app's "done" color).
-const COLUMNS: { id: ColumnId; labelKey: string; dot: string; ring: string }[] = [
-  { id: 'devis', labelKey: 'aito.columns.devis', dot: 'bg-sky-400', ring: 'ring-sky-400/30' },
-  { id: 'model', labelKey: 'aito.columns.model', dot: 'bg-violet-400', ring: 'ring-violet-400/30' },
-  { id: 'print', labelKey: 'aito.columns.print', dot: 'bg-orange-400', ring: 'ring-orange-400/30' },
-  { id: 'finish', labelKey: 'aito.columns.finish', dot: 'bg-bambu-green', ring: 'ring-bambu-green/30' },
-];
-
-const COLUMN_IDS = COLUMNS.map((c) => c.id);
 const STORAGE_KEY = 'aito-board-v1';
-
-const emptyBoard = (): Board => ({ devis: [], model: [], print: [], finish: [] });
-
-interface CardViewProps {
-  project: AitoProject;
-  overlay?: boolean;
-  onDelete?: () => void;
-}
-
-// Hold-to-delete progress ring geometry: a small circle traced around the
-// trash icon, animated via stroke-dashoffset instead of requestAnimationFrame
-// so the browser's own CSS transition timeline drives the fill.
-const HOLD_RADIUS = 9;
-const HOLD_CIRCUMFERENCE = 2 * Math.PI * HOLD_RADIUS;
-const HOLD_DURATION_MS = 2000;
-// A press released before this threshold counts as a "tap" and surfaces the
-// hold hint; anything longer (but still short of completing) is treated as
-// an intentional-but-abandoned hold and cancels silently.
-const HOLD_HINT_THRESHOLD_MS = 400;
-const HOLD_HINT_VISIBLE_MS = 1600;
-
-// Trash2 button that requires a 2s pointer/keyboard hold to fire delete,
-// replacing the old ConfirmModal flow. A short press instead shows a
-// "hold to delete" hint popover. See task-14-brief.md for the full spec.
-function DeleteHoldButton({
-  onDelete,
-  label,
-  hint,
-}: {
-  onDelete: () => void;
-  label: string;
-  hint: string;
-}) {
-  const [holding, setHolding] = useState(false);
-  const [showHint, setShowHint] = useState(false);
-  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pressStartRef = useRef(0);
-
-  const clearHoldTimer = () => {
-    if (holdTimerRef.current) {
-      clearTimeout(holdTimerRef.current);
-      holdTimerRef.current = null;
-    }
-  };
-
-  const startHold = () => {
-    if (holdTimerRef.current) return; // already holding (e.g. key repeat before guard)
-    pressStartRef.current = Date.now();
-    setHolding(true);
-    holdTimerRef.current = setTimeout(() => {
-      holdTimerRef.current = null;
-      setHolding(false);
-      onDelete();
-    }, HOLD_DURATION_MS);
-  };
-
-  const cancelHold = () => {
-    if (!holdTimerRef.current && !holding) return;
-    clearHoldTimer();
-    setHolding(false);
-    if (Date.now() - pressStartRef.current < HOLD_HINT_THRESHOLD_MS) {
-      setShowHint(true);
-      if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
-      hintTimerRef.current = setTimeout(() => setShowHint(false), HOLD_HINT_VISIBLE_MS);
-    }
-  };
-
-  useEffect(
-    () => () => {
-      clearHoldTimer();
-      if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
-    },
-    [],
-  );
-
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        aria-label={label}
-        title={hint}
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          startHold();
-        }}
-        onPointerUp={(e) => {
-          e.stopPropagation();
-          cancelHold();
-        }}
-        onPointerLeave={(e) => {
-          e.stopPropagation();
-          cancelHold();
-        }}
-        onPointerCancel={(e) => {
-          e.stopPropagation();
-          cancelHold();
-        }}
-        onKeyDown={(e) => {
-          if (e.key !== 'Enter' && e.key !== ' ') return;
-          e.stopPropagation();
-          if (!e.repeat) {
-            e.preventDefault();
-            startHold();
-          }
-        }}
-        onKeyUp={(e) => {
-          if (e.key !== 'Enter' && e.key !== ' ') return;
-          e.stopPropagation();
-          cancelHold();
-        }}
-        className={`relative p-1 -m-1 rounded-md text-bambu-gray hover:text-red-400 hover:bg-red-400/10 transition-[color,background-color,opacity] duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/40 ${
-          holding ? 'opacity-100 text-red-400' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
-        }`}
-      >
-        <svg className="absolute inset-0 -rotate-90 w-full h-full" viewBox="0 0 24 24" aria-hidden="true">
-          <circle
-            cx="12"
-            cy="12"
-            r={HOLD_RADIUS}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeDasharray={HOLD_CIRCUMFERENCE}
-            strokeDashoffset={holding ? 0 : HOLD_CIRCUMFERENCE}
-            className={
-              holding
-                ? 'transition-[stroke-dashoffset] duration-[2000ms] ease-linear motion-reduce:duration-200'
-                : 'transition-none'
-            }
-          />
-        </svg>
-        <Trash2 className="relative w-3.5 h-3.5" />
-      </button>
-      {showHint && (
-        <div className="absolute bottom-full right-0 mb-1 whitespace-nowrap rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-2 py-1 text-xs text-white shadow-lg animate-fade-in">
-          {hint}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Presentational card, shared by the in-column sortable wrapper and the
-// DragOverlay clone (which must not carry sortable listeners/transform).
-function CardView({ project, overlay = false, onDelete }: CardViewProps) {
-  const { t, i18n } = useTranslation();
-  const created = parseUTCDate(project.created_at);
-  const updated = parseUTCDate(project.updated_at);
-  const elapsed = formatElapsedTime(project.created_at, t);
-  const dateTitle = [
-    created && t('aito.created', { date: created.toLocaleString(i18n.language) }),
-    updated && t('aito.updated', { date: updated.toLocaleString(i18n.language) }),
-  ]
-    .filter(Boolean)
-    .join(' · ');
-
-  return (
-    <div
-      className={`group relative rounded-xl border bg-bambu-dark-secondary p-3 select-none ${
-        overlay
-          ? 'rotate-2 scale-[1.03] border-bambu-green/40 shadow-2xl cursor-grabbing'
-          : 'border-bambu-dark-tertiary card-shadow cursor-grab active:cursor-grabbing transition-[border-color,box-shadow] duration-100 hover:border-bambu-green/40 hover:shadow-lg'
-      }`}
-    >
-      <span className="text-xs text-bambu-gray tabular-nums">#{project.id}</span>
-      {project.client_name && (
-        <div className="mt-1">
-          <p className="text-sm font-medium text-white truncate">{project.client_name}</p>
-          {project.client_phone && (
-            <a
-              href={`tel:${project.client_phone}`}
-              onPointerDown={(e) => e.stopPropagation()}
-              className="text-xs text-bambu-gray hover:text-bambu-green"
-            >
-              {project.client_phone}
-            </a>
-          )}
-        </div>
-      )}
-      <p className="mt-1 text-sm text-white whitespace-pre-wrap break-words line-clamp-5">{project.description}</p>
-      <div className="mt-2 flex items-center justify-between">
-        <span className="text-xs text-bambu-gray" title={dateTitle}>
-          {elapsed}
-        </span>
-        {onDelete && (
-          <DeleteHoldButton onDelete={onDelete} label={t('aito.deleteTitle')} hint={t('aito.holdToDelete')} />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function SortableCard({ project, onDelete }: { project: AitoProject; onDelete: () => void }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.id });
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      {...attributes}
-      {...listeners}
-      className={`touch-none animate-rise ${isDragging ? 'opacity-30' : ''}`}
-    >
-      <CardView project={project} onDelete={onDelete} />
-    </div>
-  );
-}
-
-interface ColumnProps {
-  column: (typeof COLUMNS)[number];
-  projects: AitoProject[];
-  isDropTarget: boolean;
-  onDeleteCard: (id: number) => void;
-}
-
-function BoardColumn({ column, projects, isDropTarget, onDeleteCard }: ColumnProps) {
-  const { t } = useTranslation();
-  const { setNodeRef } = useDroppable({ id: column.id });
-
-  return (
-    <div
-      className={`w-72 sm:w-80 flex-shrink-0 flex flex-col rounded-xl bg-bambu-dark-secondary/40 border transition-[border-color,box-shadow] duration-150 ${
-        isDropTarget ? `border-transparent ring-2 ${column.ring}` : 'border-bambu-dark-tertiary'
-      }`}
-    >
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-bambu-dark-tertiary/60">
-        <span className={`w-2 h-2 rounded-full ${column.dot}`} />
-        <h2 className="text-sm font-semibold text-white flex-1 truncate">{t(column.labelKey)}</h2>
-        <span className="min-w-[1.5rem] px-1.5 py-0.5 text-center text-xs font-medium text-bambu-gray-light bg-bambu-dark-tertiary rounded-full tabular-nums">
-          {projects.length}
-        </span>
-      </div>
-
-      <SortableContext items={projects.map((p) => p.id)} strategy={verticalListSortingStrategy}>
-        <div ref={setNodeRef} className="flex-1 flex flex-col gap-2 p-2 min-h-[10rem] overflow-y-auto">
-          {projects.map((project) => (
-            <SortableCard key={project.id} project={project} onDelete={() => onDeleteCard(project.id)} />
-          ))}
-          {projects.length === 0 && (
-            <div className="flex-1 min-h-[8rem] rounded-lg border border-dashed border-bambu-dark-tertiary/80" />
-          )}
-        </div>
-      </SortableContext>
-    </div>
-  );
-}
 
 function NewProjectModal({
   onClose,
@@ -503,12 +245,7 @@ export function AitoPage() {
   useEffect(() => {
     if (!aitoQuery.data) return;
     if (activeId !== null) return;
-    const next = emptyBoard();
-    for (const project of aitoQuery.data) {
-      if (COLUMN_IDS.includes(project.column)) next[project.column].push(project);
-    }
-    for (const col of COLUMN_IDS) next[col].sort((a, b) => a.position - b.position);
-    setBoard(next);
+    setBoard(buildBoard(aitoQuery.data));
   }, [aitoQuery.data, activeId]);
 
   // One-time migration of the pre-Task-7 localStorage board: only runs when
@@ -620,11 +357,6 @@ export function AitoPage() {
     [activeId, board],
   );
 
-  const findColumn = (id: string | number): ColumnId | undefined => {
-    if (COLUMN_IDS.includes(id as ColumnId)) return id as ColumnId;
-    return COLUMN_IDS.find((col) => board[col].some((p) => p.id === id));
-  };
-
   // Tracks the column the card started in so dragEnd can tell a real
   // cross-column relocation (already applied live by dragOver) apart from a
   // plain click-drag-release back into the same slot — the latter must not
@@ -633,15 +365,15 @@ export function AitoPage() {
 
   const handleDragStart = ({ active }: DragStartEvent) => {
     setActiveId(active.id as number);
-    dragOriginColumnRef.current = findColumn(active.id) ?? null;
+    dragOriginColumnRef.current = findColumn(board, active.id) ?? null;
   };
 
   // Cross-column moves happen live during dragOver so the destination column
   // opens a slot under the pointer (Trello-style), not only on drop.
   const handleDragOver = ({ active, over }: DragOverEvent) => {
     if (!over) return;
-    const from = findColumn(active.id);
-    const to = findColumn(over.id);
+    const from = findColumn(board, active.id);
+    const to = findColumn(board, over.id);
     if (!from || !to || from === to) return;
 
     setBoard((prev) => {
@@ -668,7 +400,7 @@ export function AitoPage() {
       queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
       return;
     }
-    const column = findColumn(active.id);
+    const column = findColumn(board, active.id);
     if (!column) {
       queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
       return;
@@ -712,7 +444,7 @@ export function AitoPage() {
 
   // While dragging, highlight the column currently holding the active card
   // (dragOver moves it live, so this is always the drop destination).
-  const dropTarget = activeId !== null ? findColumn(activeId) : undefined;
+  const dropTarget = activeId !== null ? findColumn(board, activeId) : undefined;
 
   return (
     <div className="p-4 md:p-8 space-y-6">
