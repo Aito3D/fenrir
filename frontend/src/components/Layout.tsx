@@ -937,9 +937,8 @@ export function Layout() {
             </button>
           </div>
         )}
-        {/* Two-phase route transition: the outgoing page animates out before
-            the incoming page animates in. Reduced-motion users get an instant
-            swap. See AnimatedOutlet. */}
+        {/* Route transition: the destination mounts immediately and plays only
+            the entrance — no blocking exit phase. See AnimatedOutlet. */}
         <AnimatedOutlet />
       </main>
 
