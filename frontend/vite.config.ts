@@ -94,6 +94,12 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',
+    // Opt-in polling watcher (VITE_USE_POLLING=1) for machines where macOS
+    // FSEvents silently stops delivering changes — the dev server then serves
+    // stale modules forever. Polling costs CPU, so it stays opt-in.
+    watch: process.env.VITE_USE_POLLING
+      ? { usePolling: true, interval: 300 }
+      : undefined,
     proxy: {
       '/api/v1/ws': {
         target: backendUrl,
