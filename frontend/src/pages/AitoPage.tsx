@@ -316,8 +316,10 @@ export function AitoPage() {
     // Serializes overlapping moves in drop order: without a scope, two quick
     // drags race the endpoint concurrently and the second's position (computed
     // against a board that assumed the first had already landed) can land
-    // first. This also means a move never starts while an earlier one's
-    // rollback snapshot is still live, so a failure can't restore over it.
+    // first. Note this does not fix the rollback chain: each move's
+    // `previous` snapshot is captured at drop time, so if two moves both fail
+    // the second's rollback restores over the first's — self-corrected one
+    // round trip later by the settle-invalidate.
     scope: { id: 'aito-move' },
     mutationFn: ({ id, column, position }: MoveVariables) => api.moveAitoProject(id, { column, position }),
     // The optimistic cache write happens synchronously in handleDragEnd, so all
@@ -335,14 +337,16 @@ export function AitoPage() {
       showToast(t('aito.moveFailed'), 'error');
     },
     onSettled: () => {
+      // Must not throw: on the success path React Query runs onSettled inside the
+      // same try as the mutationFn, so a throw here re-runs onError + onSettled
+      // and double-decrements the counter.
       pendingMoves.current -= 1;
       setSyncGeneration((generation) => generation + 1);
       // Only the last move to settle refetches: invalidating while another
-      // PATCH is still in flight lets that PATCH's own pre-move GET response
-      // overwrite the optimistic cache, which the generation bump above would
-      // then rebuild the board from — the card flies back, then jumps forward
-      // again when the correct data finally lands. The last settle always
-      // invalidates, so nothing is left stale.
+      // move is still queued or in flight lets the resulting GET — which
+      // predates that move — overwrite its optimistic cache entry, which the
+      // generation bump would then rebuild the board from. The last settle
+      // always invalidates, so nothing is left stale.
       if (pendingMoves.current === 0) {
         queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
       }
