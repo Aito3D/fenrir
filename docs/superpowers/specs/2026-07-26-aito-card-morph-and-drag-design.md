@@ -116,9 +116,11 @@ snapping at the end:
 
 ```css
 .aito-card-dropping [data-aito-card] {
-  transform: none;
+  rotate: 0deg;
+  scale: 1;
   transition:
-    transform 250ms var(--ease-signature),
+    rotate 250ms var(--ease-signature),
+    scale 250ms var(--ease-signature),
     box-shadow 250ms var(--ease-signature);
 }
 @media (prefers-reduced-motion: reduce) {
@@ -127,6 +129,10 @@ snapping at the end:
   }
 }
 ```
+
+Note the individual `rotate` / `scale` properties rather than `transform`. Tailwind 4
+compiles `rotate-1` to `rotate: 1deg` and `scale-[1.02]` to `scale: 1.02` — a
+`transform: none` override would be a no-op here.
 
 The overlay lift drops from `rotate-2 scale-[1.03]` to `rotate-1 scale-[1.02]`. At
 the larger values the card reads as thrown rather than lifted, and the smaller the
