@@ -165,6 +165,16 @@ async def update_project(
         raise HTTPException(status_code=404, detail="Project not found")
 
     fields = payload.model_dump(exclude_unset=True)
+
+    # The client fields are a snapshot, so consistency has to hold for the MERGED
+    # row, not just the payload: a lone {"client_name": null} passes any
+    # payload-only check while leaving client_id pointing at a contact with no
+    # name attached.
+    merged_client_id = fields.get("client_id", project.client_id)
+    merged_client_name = fields.get("client_name", project.client_name)
+    if merged_client_id is not None and not merged_client_name:
+        raise HTTPException(status_code=422, detail="client_name is required when client_id is set")
+
     if "description" in fields:
         project.description = fields["description"].strip()
     for key in ("client_id", "client_name", "client_phone"):

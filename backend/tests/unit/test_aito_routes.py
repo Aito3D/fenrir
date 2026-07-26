@@ -134,9 +134,42 @@ async def test_update_replaces_the_whole_client_snapshot(async_client):
 
 @pytest.mark.asyncio
 async def test_update_rejects_client_id_without_a_name(async_client):
+    """A client_id whose merged client_name would be absent is rejected, even
+    though client_id alone is fine when the stored name already satisfies it."""
     a = (await _create(async_client)).json()
-    r = await async_client.patch(f"/api/v1/aito/{a['id']}", json={"client_id": "z9"})
+    r = await async_client.patch(f"/api/v1/aito/{a['id']}", json={"client_id": "z9", "client_name": None})
     assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_rejects_nulling_the_client_name_alone(async_client):
+    """A lone client_name:null would leave client_id pointing at a nameless contact."""
+    a = (await _create(async_client)).json()
+    r = await async_client.patch(f"/api/v1/aito/{a['id']}", json={"client_name": None})
+    assert r.status_code == 422
+    unchanged = (await async_client.get("/api/v1/aito/")).json()[0]
+    assert unchanged["client_name"] == "ACME" and unchanged["client_id"] == "z1"
+
+
+@pytest.mark.asyncio
+async def test_update_allows_clearing_the_whole_client_snapshot(async_client):
+    """Clearing id and name together is consistent, so it is allowed."""
+    a = (await _create(async_client)).json()
+    r = await async_client.patch(
+        f"/api/v1/aito/{a['id']}", json={"client_id": None, "client_name": None, "client_phone": None}
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert (body["client_id"], body["client_name"], body["client_phone"]) == (None, None, None)
+
+
+@pytest.mark.asyncio
+async def test_update_allows_renaming_the_client_without_resending_the_id(async_client):
+    """The stored client_id satisfies the invariant, so a name-only edit is fine."""
+    a = (await _create(async_client)).json()
+    r = await async_client.patch(f"/api/v1/aito/{a['id']}", json={"client_name": "ACME SARL"})
+    assert r.status_code == 200
+    assert r.json()["client_name"] == "ACME SARL" and r.json()["client_id"] == "z1"
 
 
 @pytest.mark.asyncio
