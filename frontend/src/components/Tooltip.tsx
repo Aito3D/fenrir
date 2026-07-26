@@ -39,8 +39,8 @@ export function Tooltip({ content, children }: { content: string; children: Reac
         role="tooltip"
         id={id}
         ref={tipRef}
-        style={{ transform: `translateX(calc(-50% + ${shift}px))` }}
-        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 w-max max-w-[16rem] rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-2.5 py-1.5 text-left text-xs font-normal normal-case tracking-normal text-bambu-gray-light shadow-lg opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+        style={{ transform: `translateX(calc(-50% + ${shift}px)) translateY(var(--tip-y, 3px))` }}
+        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 w-max max-w-[16rem] rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-2.5 py-1.5 text-left text-xs font-normal normal-case tracking-normal text-bambu-gray-light shadow-lg opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover:opacity-100 group-hover:[--tip-y:0px] group-focus-visible:opacity-100 group-focus-visible:[--tip-y:0px] motion-reduce:transition-opacity"
       >
         {content}
       </span>
