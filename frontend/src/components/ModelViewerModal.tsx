@@ -323,11 +323,11 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
 
   return (
     <div
-      className={`fixed inset-0 bg-black/70 flex items-center justify-center z-50 ${isFullscreen ? 'p-0' : 'p-8'}`}
+      className={`fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-overlay-in ${isFullscreen ? 'p-0' : 'p-8'}`}
       onClick={onClose}
     >
       <div
-        className={`bg-bambu-dark-secondary border border-bambu-dark-tertiary w-full flex flex-col ${
+        className={`bg-bambu-dark-secondary border border-bambu-dark-tertiary w-full flex flex-col animate-modal-in ${
           isFullscreen ? 'h-full max-w-none rounded-none' : 'h-[80vh] max-w-4xl rounded-xl'
         }`}
         onClick={(e) => e.stopPropagation()}

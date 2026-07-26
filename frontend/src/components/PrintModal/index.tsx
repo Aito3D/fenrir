@@ -1207,11 +1207,11 @@ export function PrintModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-overlay-in"
       onClick={isSubmitting ? undefined : onClose}
     >
       <Card
-        className="w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-modal-in"
         onClick={(e) => e.stopPropagation()}
       >
         <CardContent className="p-0">

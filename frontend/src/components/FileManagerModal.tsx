@@ -90,9 +90,9 @@ function PrinterFileViewerModal({ printerId, filePath, filename, onClose }: Prin
     : plates.find((plate) => plate.index === selectedPlateId) ?? null;
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6 animate-overlay-in" onClick={onClose}>
       <div
-        className="bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary w-full max-w-4xl h-[80vh] flex flex-col"
+        className="bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary w-full max-w-4xl h-[80vh] flex flex-col animate-modal-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-bambu-dark-tertiary">
@@ -437,11 +437,11 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-overlay-in"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-3xl max-h-[85vh] flex flex-col bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary overflow-hidden"
+        className="w-full max-w-3xl max-h-[85vh] flex flex-col bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary overflow-hidden animate-modal-in"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

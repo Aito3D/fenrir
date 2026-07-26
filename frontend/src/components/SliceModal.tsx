@@ -540,13 +540,13 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   // because the presets query is gated on it; the loader covers both.
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-overlay-in"
       onClick={() => {
         if (!isEnqueuing) onClose();
       }}
     >
       <div
-        className="w-full max-w-xl max-h-[85vh] flex flex-col rounded-lg bg-bambu-dark-secondary border border-bambu-dark-tertiary/60"
+        className="w-full max-w-xl max-h-[85vh] flex flex-col rounded-lg bg-bambu-dark-secondary border border-bambu-dark-tertiary/60 animate-modal-in"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

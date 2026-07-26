@@ -1537,8 +1537,8 @@ function ArchiveCard({
 
       {/* Timelapse Selection Modal */}
       {showTimelapseSelect && availableTimelapses.length > 0 && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-card-dark rounded-lg max-w-lg w-full max-h-[80vh] flex flex-col">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 animate-overlay-in">
+          <div className="bg-card-dark rounded-lg max-w-lg w-full max-h-[80vh] flex flex-col animate-modal-in">
             <div className="flex items-center justify-between p-4 border-b border-gray-700">
               <div>
                 <h3 className="text-lg font-semibold text-white">{t('archives.modal.selectTimelapse')}</h3>
@@ -2574,8 +2574,8 @@ function ArchiveListRow({
 
       {/* Timelapse Selection Modal */}
       {showTimelapseSelect && availableTimelapses.length > 0 && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-card-dark rounded-lg max-w-lg w-full max-h-[80vh] flex flex-col">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 animate-overlay-in">
+          <div className="bg-card-dark rounded-lg max-w-lg w-full max-h-[80vh] flex flex-col animate-modal-in">
             <div className="flex items-center justify-between p-4 border-b border-gray-700">
               <div>
                 <h3 className="text-lg font-semibold text-white">{t('archives.modal.selectTimelapse')}</h3>
@@ -4357,11 +4357,11 @@ export function ArchivesPage() {
           Archive Edit modal — backend validates against the same list. */}
       {editingLogEntry !== null && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-overlay-in"
           onClick={() => setEditingLogEntry(null)}
         >
           <div
-            className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg w-full max-w-md mx-4 p-6"
+            className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg w-full max-w-md mx-4 p-6 animate-modal-in"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-white mb-4">

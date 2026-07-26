@@ -281,13 +281,13 @@ export function PipelineRunsView() {
           preserved so an active batch isn't accidentally torched. */}
       {showClearConfirm && (
         <div
-          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-overlay-in"
           onClick={() => setShowClearConfirm(false)}
           role="dialog"
           aria-modal="true"
         >
           <div
-            className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-2xl w-full max-w-md p-4"
+            className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-2xl w-full max-w-md p-4 animate-modal-in"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-base font-semibold text-white flex items-center gap-2">

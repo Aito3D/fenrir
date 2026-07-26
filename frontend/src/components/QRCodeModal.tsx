@@ -30,11 +30,11 @@ export function QRCodeModal({ archiveId, archiveName, onClose }: QRCodeModalProp
 
   return (
     <div
-      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-overlay-in"
       onClick={onClose}
     >
       <div
-        className="bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary w-full max-w-sm"
+        className="bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary w-full max-w-sm animate-modal-in"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

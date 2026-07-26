@@ -222,12 +222,12 @@ export function PrinterInfoModal({ printer, status, totalPrintHours, onClose }: 
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-overlay-in"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
     >
-      <Card className="w-full max-w-md" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+      <Card className="w-full max-w-md animate-modal-in" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <CardContent>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-white">

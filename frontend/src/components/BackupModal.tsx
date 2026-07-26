@@ -182,10 +182,10 @@ export function BackupModal({ onClose, onExport }: BackupModalProps) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-overlay-in"
       onClick={isExporting ? undefined : onClose}
     >
-      <Card className="w-full max-w-lg" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+      <Card className="w-full max-w-lg animate-modal-in" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <CardContent className="p-0">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">

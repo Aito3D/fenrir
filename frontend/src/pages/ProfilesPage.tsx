@@ -558,8 +558,8 @@ function PresetDetailModal({
   const metadata = extractMetadata(setting.name, detail?.setting?.inherits as string);
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-overlay-in">
+      <Card className="w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-modal-in">
         <CardContent className="p-0 flex flex-col min-h-0 flex-1">
           {/* Header */}
           <div className="flex-shrink-0 flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
@@ -795,11 +795,11 @@ function TemplatesModal({
   }, [deleteConfirmId, editingId, onClose]);
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-overlay-in">
       {/* Delete confirmation modal */}
       {templateToDelete && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60">
-          <Card className="w-full max-w-md">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 animate-overlay-in">
+          <Card className="w-full max-w-md animate-modal-in">
             <CardContent className="p-6">
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-2 bg-red-500/20 rounded-lg">
@@ -827,7 +827,7 @@ function TemplatesModal({
         </div>
       )}
 
-      <Card className="w-full max-w-2xl max-h-[80vh] flex flex-col">
+      <Card className="w-full max-w-2xl max-h-[80vh] flex flex-col animate-modal-in">
         <CardContent className="p-0 flex flex-col h-full">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
@@ -1111,8 +1111,8 @@ function DiffModal({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-overlay-in">
+      <Card className="w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden animate-modal-in">
         <CardContent className="p-0 flex flex-col min-h-0 flex-1">
           {/* Header */}
           <div className="flex-shrink-0 flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
@@ -1703,7 +1703,7 @@ function CreatePresetModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-overlay-in"
       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
       onDragLeave={() => setIsDragging(false)}
       onDrop={handleFileDrop}
@@ -1720,7 +1720,7 @@ function CreatePresetModal({
         />
       )}
 
-      <Card className="w-full max-w-6xl max-h-[90vh] flex flex-col overflow-y-auto">
+      <Card className="w-full max-w-6xl max-h-[90vh] flex flex-col overflow-y-auto animate-modal-in">
         <CardContent className="p-0 flex flex-col h-full">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">

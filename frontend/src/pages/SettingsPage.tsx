@@ -3289,8 +3289,8 @@ export function SettingsPage() {
 
       {/* Home Assistant Test Connection Modal */}
       {haTestResult && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-bambu-dark-secondary rounded-lg p-6 max-w-md w-full mx-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-overlay-in">
+          <div className="bg-bambu-dark-secondary rounded-lg p-6 max-w-md w-full mx-4 animate-modal-in">
             <div className="flex items-center gap-3 mb-4">
               {haTestResult.success ? (
                 <CheckCircle className="w-8 h-8 text-green-600 dark:text-green-400" />
@@ -5604,10 +5604,10 @@ export function SettingsPage() {
       {/* Release Notes Modal */}
       {showReleaseNotes && updateCheck?.release_notes && (
         <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-overlay-in"
           onClick={() => setShowReleaseNotes(false)}
         >
-          <Card className="w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+          <Card className="w-full max-w-2xl max-h-[80vh] flex flex-col animate-modal-in" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
             <CardHeader className="flex flex-row items-center justify-between shrink-0">
               <div>
                 <h2 className="text-lg font-semibold text-white">
@@ -6180,14 +6180,14 @@ export function SettingsPage() {
       {/* Create User Modal */}
       {showCreateUserModal && !advancedAuthStatus?.advanced_auth_enabled && (
         <div
-          className="fixed inset-0 bg-black flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 bg-black flex items-center justify-center z-50 p-4 animate-overlay-in"
           onClick={() => {
             setShowCreateUserModal(false);
             setUserFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
           }}
         >
           <Card
-            className="w-full max-w-md"
+            className="w-full max-w-md animate-modal-in"
             onClick={(e: React.MouseEvent) => e.stopPropagation()}
           >
             <CardHeader>
@@ -6398,7 +6398,7 @@ export function SettingsPage() {
       {/* Edit User Modal */}
       {showEditUserModal && editingUserId !== null && (
         <div
-          className="fixed inset-0 bg-black flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 bg-black flex items-center justify-center z-50 p-4 animate-overlay-in"
           onClick={() => {
             setShowEditUserModal(false);
             setEditingUserId(null);
@@ -6406,7 +6406,7 @@ export function SettingsPage() {
           }}
         >
           <Card
-            className="w-full max-w-md"
+            className="w-full max-w-md animate-modal-in"
             onClick={(e: React.MouseEvent) => e.stopPropagation()}
           >
             <CardHeader>
@@ -6595,14 +6595,14 @@ export function SettingsPage() {
       {/* Delete User Confirmation Modal */}
       {deleteUserId !== null && (
         <div
-          className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 animate-overlay-in"
           onClick={() => {
             setDeleteUserId(null);
             setDeleteUserItemCounts(null);
           }}
         >
           <Card
-            className="w-full max-w-md"
+            className="w-full max-w-md animate-modal-in"
             onClick={(e: React.MouseEvent) => e.stopPropagation()}
           >
             <CardHeader>
@@ -6756,14 +6756,14 @@ export function SettingsPage() {
       {/* Change Password Modal */}
       {showChangePasswordModal && (
         <div
-          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-overlay-in"
           onClick={() => {
             setShowChangePasswordModal(false);
             setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
           }}
         >
           <Card
-            className="w-full max-w-md"
+            className="w-full max-w-md animate-modal-in"
             onClick={(e: React.MouseEvent) => e.stopPropagation()}
           >
             <CardHeader>

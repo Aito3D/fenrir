@@ -372,9 +372,9 @@ function SpoolDetailModal({ spool, assignment, sbState, onSyncWeight, onAssignTo
   const persistedGrossWeight = spool.last_scale_weight != null ? Math.round(spool.last_scale_weight) : null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4 animate-overlay-in" onClick={onClose}>
       <div
-        className="w-full max-w-md bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-2xl p-4 overflow-y-auto max-h-[90vh]"
+        className="w-full max-w-md bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-2xl p-4 overflow-y-auto max-h-[90vh] animate-modal-in"
         onClick={e => e.stopPropagation()}
       >
         <div className="space-y-3">

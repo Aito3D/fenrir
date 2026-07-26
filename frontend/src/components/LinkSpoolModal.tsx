@@ -69,8 +69,8 @@ export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, a
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-bambu-dark-secondary rounded-xl shadow-xl w-full max-w-md mx-4 max-h-[80vh] flex flex-col border border-bambu-dark-tertiary">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-overlay-in" onClick={onClose} />
+      <div className="relative bg-bambu-dark-secondary rounded-xl shadow-xl w-full max-w-md mx-4 max-h-[80vh] flex flex-col border border-bambu-dark-tertiary animate-modal-in">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10">
           <div>

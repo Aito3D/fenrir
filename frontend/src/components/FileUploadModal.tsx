@@ -261,8 +261,8 @@ export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUpl
   const allDone = files.length > 0 && pendingCount === 0 && !isUploading && !isChecking;
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-lg border border-bambu-dark-tertiary">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-overlay-in">
+      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-lg border border-bambu-dark-tertiary animate-modal-in">
         <div className="p-4 border-b border-bambu-dark-tertiary flex items-center justify-between">
           <h2 className="text-lg font-semibold text-white">{t('fileManager.uploadFiles')}</h2>
           <button onClick={onClose} className="p-1 hover:bg-bambu-dark rounded">

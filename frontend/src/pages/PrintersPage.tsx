@@ -3523,8 +3523,8 @@ function PrinterCard({
 
         {/* Delete Confirmation */}
         {showDeleteConfirm && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <Card className="w-full max-w-md mx-4">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-overlay-in">
+            <Card className="w-full max-w-md mx-4 animate-modal-in">
               <CardContent>
                 <div className="flex items-start gap-3 mb-4">
                   <div className="p-2 rounded-full bg-red-100 dark:bg-red-500/20">
@@ -5883,8 +5883,8 @@ function PrinterCard({
 
       {/* Plate Check Result Modal */}
       {plateCheckResult && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => closePlateCheckModal()}>
-          <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl max-w-lg w-full" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-overlay-in" onClick={() => closePlateCheckModal()}>
+          <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl max-w-lg w-full animate-modal-in" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
               <div className="flex items-center gap-2">
                 {plateCheckResult.needs_calibration ? (
@@ -6786,10 +6786,10 @@ export function AddPrinterModal({
   return (
     <>
     <div
-      className="fixed inset-0 bg-black/50 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto"
+      className="fixed inset-0 bg-black/50 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto animate-overlay-in"
       onClick={onClose}
     >
-      <Card className="w-full max-w-md my-auto max-h-[calc(100vh-2rem)] overflow-y-auto" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+      <Card className="w-full max-w-md my-auto max-h-[calc(100vh-2rem)] overflow-y-auto animate-modal-in" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <CardContent>
           <h2 className="text-xl font-semibold mb-4">{t('printers.addPrinter')}</h2>
 
@@ -7157,8 +7157,8 @@ function FirmwareUpdateModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <Card className="w-full max-w-md mx-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-overlay-in">
+      <Card className="w-full max-w-md mx-4 animate-modal-in">
         <CardContent>
           <div className="flex items-start gap-3 mb-4">
             <div className={`p-2 rounded-full ${firmwareInfo.update_available ? 'bg-orange-100 dark:bg-orange-500/20' : 'bg-status-ok/20'}`}>
@@ -7447,10 +7447,10 @@ function EditPrinterModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto"
+      className="fixed inset-0 bg-black/50 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto animate-overlay-in"
       onClick={onClose}
     >
-      <Card className="w-full max-w-md my-auto max-h-[calc(100vh-2rem)] overflow-y-auto" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+      <Card className="w-full max-w-md my-auto max-h-[calc(100vh-2rem)] overflow-y-auto animate-modal-in" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <CardContent>
           <h2 className="text-xl font-semibold mb-4">{t('printers.editPrinter')}</h2>
           <form onSubmit={handleSubmit} className="space-y-4">

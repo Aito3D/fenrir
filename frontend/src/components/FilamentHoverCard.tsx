@@ -462,9 +462,9 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
       {/* Unlink Confirmation Dialog */}
       {showUnlinkConfirm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center" onClick={() => setShowUnlinkConfirm(false)}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-overlay-in" />
           <div
-            className="relative bg-bambu-dark-secondary rounded-lg shadow-xl w-full max-w-sm mx-4 border border-bambu-dark-tertiary"
+            className="relative bg-bambu-dark-secondary rounded-lg shadow-xl w-full max-w-sm mx-4 border border-bambu-dark-tertiary animate-modal-in"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-4 space-y-4">

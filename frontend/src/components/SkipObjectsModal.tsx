@@ -74,10 +74,10 @@ export function SkipObjectsModal({ printerId, isOpen, onClose }: SkipObjectsModa
       ref={(el) => el?.focus()}
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50 z-0" />
+      <div className="absolute inset-0 bg-black/50 z-0 animate-overlay-in" />
       {/* Modal */}
       <div
-        className="relative z-10 bg-white dark:bg-bambu-dark border border-gray-200 dark:border-bambu-dark-tertiary rounded-xl shadow-2xl w-[560px] max-h-[85vh] flex flex-col overflow-hidden"
+        className="relative z-10 bg-white dark:bg-bambu-dark border border-gray-200 dark:border-bambu-dark-tertiary rounded-xl shadow-2xl w-[560px] max-h-[85vh] flex flex-col overflow-hidden animate-modal-in"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -296,7 +296,7 @@ export function SkipObjectsModal({ printerId, isOpen, onClose }: SkipObjectsModa
     {/* Enlarged lightbox overlay */}
     {enlarged && objectsData && (
       <div
-        className="fixed inset-0 bg-black/90 flex items-center justify-center z-60"
+        className="fixed inset-0 bg-black/90 flex items-center justify-center z-60 animate-overlay-in"
         onClick={() => setEnlarged(false)}
       >
         <button
@@ -306,7 +306,7 @@ export function SkipObjectsModal({ printerId, isOpen, onClose }: SkipObjectsModa
           <X className="w-6 h-6" />
         </button>
         <div
-          className="relative max-w-[600px] max-h-[80vh] aspect-square"
+          className="relative max-w-[600px] max-h-[80vh] aspect-square animate-modal-in"
           onClick={(e) => e.stopPropagation()}
         >
           {status?.cover_url ? (

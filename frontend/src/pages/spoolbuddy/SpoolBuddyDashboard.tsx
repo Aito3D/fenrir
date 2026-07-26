@@ -681,8 +681,8 @@ export function SpoolBuddyDashboard() {
 
       {/* Quick-add to Inventory Modal */}
       {showQuickAddModal && displayedTagId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="bg-zinc-800 rounded-2xl p-6 mx-4 max-w-sm w-full border border-zinc-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 animate-overlay-in">
+          <div className="bg-zinc-800 rounded-2xl p-6 mx-4 max-w-sm w-full border border-zinc-700 animate-modal-in">
             <h3 className="text-lg font-semibold text-zinc-100 mb-3">
               {t('spoolbuddy.modal.addToInventory', 'Add to Inventory')}
             </h3>

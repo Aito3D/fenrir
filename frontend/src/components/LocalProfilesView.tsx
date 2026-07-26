@@ -491,8 +491,8 @@ export function LocalProfilesView() {
 
       {/* Delete Confirmation Modal */}
       {deleteConfirm !== null && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg p-6 max-w-sm mx-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-overlay-in">
+          <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg p-6 max-w-sm mx-4 animate-modal-in">
             <div className="flex items-center gap-2 mb-3">
               <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
               <h3 className="text-white font-medium">{t('profiles.localProfiles.deleteConfirmTitle')}</h3>

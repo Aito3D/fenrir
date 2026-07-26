@@ -62,8 +62,8 @@ export function PurgeArchivesModal({ onClose, initialDays }: PurgeArchivesModalP
   const canConfirm = count > 0 && !purgeMutation.isPending;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-lg w-full">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-overlay-in">
+      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-lg w-full animate-modal-in">
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
             <Trash2 className="w-5 h-5" />

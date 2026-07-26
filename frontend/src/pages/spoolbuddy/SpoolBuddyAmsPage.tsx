@@ -718,10 +718,10 @@ export function SpoolBuddyAmsPage() {
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-overlay-in"
               onClick={() => setSlotActionPicker(null)}
             />
-            <div className="relative w-full max-w-sm mx-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl">
+            <div className="relative w-full max-w-sm mx-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl animate-modal-in">
               <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
                 <div className="flex items-center gap-2">
                   {slotActionPicker.trayColor && (

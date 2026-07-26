@@ -1477,8 +1477,8 @@ export function GitHubBackupSettings() {
 
       {/* Blocking overlay during backup/restore operations */}
       {(isExporting || isRestoring) && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100]">
-          <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl p-8 max-w-md w-full mx-4 text-center">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] animate-overlay-in">
+          <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl p-8 max-w-md w-full mx-4 text-center animate-modal-in">
             <div className="flex justify-center mb-4">
               <div className="relative">
                 <div className="w-16 h-16 border-4 border-bambu-dark-tertiary rounded-full"></div>

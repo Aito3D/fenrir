@@ -26,8 +26,8 @@ export function CompareArchivesModal({ archiveIds, onClose }: CompareArchivesMod
   });
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-bambu-dark-secondary rounded-lg max-w-4xl w-full max-h-[90vh] flex flex-col border border-bambu-dark-tertiary" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 animate-overlay-in" onClick={onClose}>
+      <div className="bg-bambu-dark-secondary rounded-lg max-w-4xl w-full max-h-[90vh] flex flex-col border border-bambu-dark-tertiary animate-modal-in" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
           <h3 className="text-lg font-semibold text-white">

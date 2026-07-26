@@ -1077,7 +1077,7 @@ export function ConfigureAmsSlotModal({
       {/* Backdrop */}
       {!fullScreen && (
         <div
-          className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+          className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-overlay-in"
           onClick={onClose}
         />
       )}
@@ -1085,7 +1085,7 @@ export function ConfigureAmsSlotModal({
       {/* Modal */}
       <div className={fullScreen
         ? 'relative w-full h-full bg-bambu-dark-secondary flex flex-col'
-        : 'relative w-full max-w-lg mx-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl'
+        : 'relative w-full max-w-lg mx-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl animate-modal-in'
       }>
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary shrink-0">

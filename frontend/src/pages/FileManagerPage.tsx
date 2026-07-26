@@ -100,8 +100,8 @@ function NewFolderModal({ parentId, onClose, onSave, isLoading, t }: NewFolderMo
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-sm border border-bambu-dark-tertiary">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-overlay-in">
+      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-sm border border-bambu-dark-tertiary animate-modal-in">
         <div className="p-4 border-b border-bambu-dark-tertiary">
           <h2 className="text-lg font-semibold text-white">{t('fileManager.newFolder')}</h2>
         </div>
@@ -159,8 +159,8 @@ function ExternalFolderModal({ onClose, onSave, isLoading, t }: ExternalFolderMo
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-md border border-bambu-dark-tertiary">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-overlay-in">
+      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-md border border-bambu-dark-tertiary animate-modal-in">
         <div className="p-4 border-b border-bambu-dark-tertiary">
           <h2 className="text-lg font-semibold text-white flex items-center gap-2">
             <FolderSymlink className="w-5 h-5 text-bambu-green" />
@@ -276,8 +276,8 @@ function RenameModal({ type, currentName, onClose, onSave, isLoading, t }: Renam
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-sm border border-bambu-dark-tertiary">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-overlay-in">
+      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-sm border border-bambu-dark-tertiary animate-modal-in">
         <div className="p-4 border-b border-bambu-dark-tertiary">
           <h2 className="text-lg font-semibold text-white">{type === 'file' ? t('fileManager.renameFile') : t('fileManager.renameFolder')}</h2>
         </div>
@@ -345,8 +345,8 @@ function MoveFilesModal({ folders, selectedFiles, currentFolderId, onClose, onMo
   const flatFolders = [{ id: null, name: t('fileManager.rootNoFolder'), depth: 0 }, ...flattenFolders(folders)];
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-sm border border-bambu-dark-tertiary">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-overlay-in">
+      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-sm border border-bambu-dark-tertiary animate-modal-in">
         <div className="p-4 border-b border-bambu-dark-tertiary">
           <h2 className="text-lg font-semibold text-white">{t('fileManager.moveFiles', { count: selectedFiles.length })}</h2>
         </div>
@@ -441,8 +441,8 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading, t }: LinkFolderMo
   const isLinked = folder.project_id || folder.archive_id;
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-md border border-bambu-dark-tertiary">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-overlay-in">
+      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-md border border-bambu-dark-tertiary animate-modal-in">
         <div className="p-4 border-b border-bambu-dark-tertiary flex items-center justify-between">
           <h2 className="text-lg font-semibold text-white flex items-center gap-2">
             <Link2 className="w-5 h-5 text-bambu-green" />

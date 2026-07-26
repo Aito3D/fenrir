@@ -120,14 +120,14 @@ export function LocationsModal({ open, onClose, onPickLocation }: LocationsModal
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div
-        className="absolute inset-0 bg-black/60"
+        className="absolute inset-0 bg-black/60 animate-overlay-in"
         onClick={() => {
           if (saveMutation.isPending || deleteMutation.isPending) return;
           onClose();
         }}
       />
       <div
-        className="relative w-full max-w-2xl mx-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl max-h-[90vh] flex flex-col"
+        className="relative w-full max-w-2xl mx-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl max-h-[90vh] flex flex-col animate-modal-in"
         role="dialog"
         aria-modal="true"
         aria-labelledby={modalTitleId}
@@ -220,9 +220,9 @@ export function LocationsModal({ open, onClose, onPickLocation }: LocationsModal
 
       {editorOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60" onClick={closeEditor} />
+          <div className="absolute inset-0 bg-black/60 animate-overlay-in" onClick={closeEditor} />
           <div
-            className="relative w-full max-w-md mx-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl p-6 shadow-2xl"
+            className="relative w-full max-w-md mx-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl p-6 shadow-2xl animate-modal-in"
             role="dialog"
             aria-modal="true"
             aria-labelledby={editorTitleId}

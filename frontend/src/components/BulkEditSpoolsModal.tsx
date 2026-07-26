@@ -320,11 +320,11 @@ export function BulkEditSpoolsModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-overlay-in"
       onClick={isPending ? undefined : onClose}
     >
       <div
-        className="w-full max-w-3xl bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg max-h-[90vh] flex flex-col"
+        className="w-full max-w-3xl bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg max-h-[90vh] flex flex-col animate-modal-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-5 border-b border-bambu-dark-tertiary">

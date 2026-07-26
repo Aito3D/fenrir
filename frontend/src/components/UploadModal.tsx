@@ -147,8 +147,8 @@ export function UploadModal({ onClose, initialFiles }: UploadModalProps) {
   const isUploading = uploadMutation.isPending;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-2xl max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-overlay-in">
+      <Card className="w-full max-w-2xl max-h-[90vh] flex flex-col animate-modal-in">
         <CardContent className="p-0 flex flex-col h-full">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">

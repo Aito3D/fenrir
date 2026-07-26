@@ -121,14 +121,14 @@ export function RunWithPipelineModal({ source, onClose }: RunWithPipelineModalPr
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-overlay-in"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label={t('library.runWithPipeline.modalTitle', 'Run with pipeline')}
     >
       <div
-        className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden"
+        className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden animate-modal-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-bambu-dark-tertiary">

@@ -378,8 +378,8 @@ function KProfileModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-md relative">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-overlay-in">
+      <Card className="w-full max-w-md relative animate-modal-in">
         {/* Syncing overlay */}
         {isSyncing && (
           <div className="absolute inset-0 bg-bambu-dark-secondary/90 flex flex-col items-center justify-center z-10 rounded-lg">
@@ -646,8 +646,8 @@ function KProfileModal({
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60]">
-          <Card className="w-full max-w-sm">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] animate-overlay-in">
+          <Card className="w-full max-w-sm animate-modal-in">
             <CardContent className="p-6">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
@@ -1165,7 +1165,7 @@ export function KProfilesView() {
     <>
       {/* Loading overlay when refetching profiles (not initial load) */}
       {isFetching && !kprofilesLoading && (
-        <div className="fixed inset-0 bg-black/50 flex flex-col items-center justify-center z-40">
+        <div className="fixed inset-0 bg-black/50 flex flex-col items-center justify-center z-40 animate-modal-in">
           <Loader2 className="w-10 h-10 text-bambu-green animate-spin mb-3" />
           <p className="text-white font-medium">{t('kProfiles.loadingProfiles')}</p>
         </div>
@@ -1521,8 +1521,8 @@ export function KProfilesView() {
 
       {/* Bulk Delete Confirmation Modal */}
       {showBulkDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-sm">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-overlay-in">
+          <Card className="w-full max-w-sm animate-modal-in">
             <CardContent className="p-6">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">

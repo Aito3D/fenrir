@@ -179,8 +179,8 @@ function BulkEditModal({
     nozzleOffsetCali !== 'unchanged';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary w-full max-w-lg max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-overlay-in">
+      <div className="bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary w-full max-w-lg max-h-[90vh] overflow-y-auto animate-modal-in">
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
           <h2 className="text-lg font-semibold text-white">
             {t('queue.bulkEdit.title', { count: selectedCount })}
@@ -2617,8 +2617,8 @@ interface GroupBatchModalProps {
 function GroupBatchModal({ itemCount, defaultName, isSaving, onSave, onClose, t }: GroupBatchModalProps) {
   const [name, setName] = useState(defaultName);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl p-6 w-full max-w-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-overlay-in">
+      <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl p-6 w-full max-w-md animate-modal-in">
         <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
           <Package className="w-5 h-5 text-cyan-700 dark:text-cyan-300" />
           {t('queue.batch.groupAsBatch')}

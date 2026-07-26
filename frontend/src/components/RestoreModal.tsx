@@ -100,7 +100,7 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-overlay-in"
       onMouseDown={(e) => {
         // Only close if clicking directly on the backdrop, not on children
         if (e.target === e.currentTarget && state !== 'restoring') {
@@ -108,7 +108,7 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
         }
       }}
     >
-      <Card className="w-full max-w-lg">
+      <Card className="w-full max-w-lg animate-modal-in">
         <CardContent className="p-0">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
