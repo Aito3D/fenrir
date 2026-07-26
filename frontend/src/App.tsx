@@ -1,5 +1,5 @@
 import { Component, Suspense, lazy, type ComponentType, type ReactNode, type ErrorInfo } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { createBrowserRouter, createRoutesFromElements, RouterProvider, Route, Navigate, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Layout } from './components/Layout';
@@ -192,6 +192,83 @@ function SetupRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Data router (createBrowserRouter) instead of the declarative <BrowserRouter>:
+// React Router only wires the `viewTransition` option (page crossfades) through
+// the data-router state machine — under <BrowserRouter> the prop is silently
+// ignored. The route tree is unchanged; providers stay above <RouterProvider>
+// so route elements keep their contexts.
+const router = createBrowserRouter(
+  createRoutesFromElements(
+    <>
+      {/* Setup page - only accessible if auth not enabled */}
+      <Route path="/setup" element={<SetupRoute><SetupPage /></SetupRoute>} />
+
+      {/* Login page */}
+      <Route path="/login" element={<LoginPage />} />
+
+      {/* Camera page - standalone, no layout, no WebSocket (doesn't need real-time updates) */}
+      <Route path="/camera/:printerId" element={<CameraPage />} />
+
+      {/* Stream overlay page - standalone for OBS/streaming embeds, no auth required */}
+      <Route path="/overlay/:printerId" element={<StreamOverlayPage />} />
+
+      {/* Printable client-facing quote — standalone (light, print-first, no app chrome) */}
+      <Route
+        path="/calculator/quote"
+        element={
+          <ProtectedRoute>
+            <PermissionRoute permission="calculator:read">
+              <CalculatorQuotePage />
+            </PermissionRoute>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* SpoolBuddy kiosk UI */}
+      <Route element={<ProtectedRoute><WebSocketProvider><SpoolBuddyLayout /></WebSocketProvider></ProtectedRoute>}>
+        <Route path="spoolbuddy" element={<SpoolBuddyDashboard />} />
+        <Route path="spoolbuddy/ams" element={<SpoolBuddyAmsPage />} />
+        <Route path="spoolbuddy/write-tag" element={<SpoolBuddyWriteTagPage />} />
+        <Route path="spoolbuddy/inventory" element={<SpoolBuddyInventoryPage />} />
+        <Route path="spoolbuddy/settings" element={<SpoolBuddySettingsPage />} />
+        <Route path="spoolbuddy/calibration" element={<SpoolBuddyCalibrationPage />} />
+      </Route>
+
+      {/* Main app with WebSocket for real-time updates */}
+      <Route element={<ProtectedRoute><WebSocketProvider><Layout /></WebSocketProvider></ProtectedRoute>}>
+        <Route index element={<PrintersPage />} />
+        <Route path="archives" element={<ArchivesPage />} />
+        <Route path="queue" element={<QueuePage />} />
+        {/* Slicer Pipelines (#1425) — Pipelines tab lives on the
+            Print Queue page (Queue + History + Timeline +
+            Pipelines). Old standalone URL redirects. */}
+        <Route path="pipelines/runs" element={<Navigate to="/queue?tab=pipelines" replace />} />
+        <Route path="stats" element={<StatsPage />} />
+        <Route path="profiles" element={<ProfilesPage />} />
+        <Route path="maintenance" element={<MaintenancePage />} />
+        <Route path="calculator" element={<PermissionRoute permission="calculator:read"><CalculatorPage /></PermissionRoute>} />
+        <Route path="projects" element={<ProjectsPage />} />
+        <Route path="projects/:id" element={<ProjectDetailPage />} />
+        <Route path="aito" element={<AitoPage />} />
+        <Route path="inventory" element={<InventoryPage />} />
+        <Route path="files" element={<FileManagerPage />} />
+        <Route path="files/trash" element={<LibraryTrashPage />} />
+        <Route path="makerworld" element={<PermissionRoute permission="makerworld:view"><MakerworldPage /></PermissionRoute>} />
+        <Route path="settings" element={<PermissionRoute permission="settings:read"><SettingsPage /></PermissionRoute>} />
+        <Route path="groups/new" element={<PermissionRoute permission="groups:create"><GroupEditPage /></PermissionRoute>} />
+        <Route path="groups/:id/edit" element={<PermissionRoute permission="groups:update"><GroupEditPage /></PermissionRoute>} />
+        <Route path="users" element={<Navigate to="/settings?tab=users" replace />} />
+        <Route path="groups" element={<Navigate to="/settings?tab=users" replace />} />
+        <Route path="system" element={<SystemInfoPage />} />
+        <Route path="notifications" element={<NotificationsPage />} />
+        <Route path="gcode-viewer" element={<GCodeViewerPage />} />
+        <Route path="external/:id" element={<ExternalLinkPage />} />
+        <Route path="camera-tokens" element={<Navigate to="/settings?tab=apikeys#card-camera-tokens" replace />} />
+      </Route>
+    </>,
+  ),
+);
+
 function App() {
   return (
     <ErrorBoundary>
@@ -209,77 +286,9 @@ function App() {
             <SliceJobTrackerProvider>
             <FullscreenProvider>
             <StreamTokenSync />
-            <BrowserRouter>
-              <Suspense fallback={<RouteLoading />}>
-              <Routes>
-                {/* Setup page - only accessible if auth not enabled */}
-                <Route path="/setup" element={<SetupRoute><SetupPage /></SetupRoute>} />
-
-                {/* Login page */}
-                <Route path="/login" element={<LoginPage />} />
-
-                {/* Camera page - standalone, no layout, no WebSocket (doesn't need real-time updates) */}
-                <Route path="/camera/:printerId" element={<CameraPage />} />
-
-                {/* Stream overlay page - standalone for OBS/streaming embeds, no auth required */}
-                <Route path="/overlay/:printerId" element={<StreamOverlayPage />} />
-
-                {/* Printable client-facing quote — standalone (light, print-first, no app chrome) */}
-                <Route
-                  path="/calculator/quote"
-                  element={
-                    <ProtectedRoute>
-                      <PermissionRoute permission="calculator:read">
-                        <CalculatorQuotePage />
-                      </PermissionRoute>
-                    </ProtectedRoute>
-                  }
-                />
-
-                {/* SpoolBuddy kiosk UI */}
-                <Route element={<ProtectedRoute><WebSocketProvider><SpoolBuddyLayout /></WebSocketProvider></ProtectedRoute>}>
-                  <Route path="spoolbuddy" element={<SpoolBuddyDashboard />} />
-                  <Route path="spoolbuddy/ams" element={<SpoolBuddyAmsPage />} />
-                  <Route path="spoolbuddy/write-tag" element={<SpoolBuddyWriteTagPage />} />
-                  <Route path="spoolbuddy/inventory" element={<SpoolBuddyInventoryPage />} />
-                  <Route path="spoolbuddy/settings" element={<SpoolBuddySettingsPage />} />
-                  <Route path="spoolbuddy/calibration" element={<SpoolBuddyCalibrationPage />} />
-                </Route>
-
-                {/* Main app with WebSocket for real-time updates */}
-                <Route element={<ProtectedRoute><WebSocketProvider><Layout /></WebSocketProvider></ProtectedRoute>}>
-                  <Route index element={<PrintersPage />} />
-                  <Route path="archives" element={<ArchivesPage />} />
-                  <Route path="queue" element={<QueuePage />} />
-                  {/* Slicer Pipelines (#1425) — Pipelines tab lives on the
-                      Print Queue page (Queue + History + Timeline +
-                      Pipelines). Old standalone URL redirects. */}
-                  <Route path="pipelines/runs" element={<Navigate to="/queue?tab=pipelines" replace />} />
-                  <Route path="stats" element={<StatsPage />} />
-                  <Route path="profiles" element={<ProfilesPage />} />
-                  <Route path="maintenance" element={<MaintenancePage />} />
-                  <Route path="calculator" element={<PermissionRoute permission="calculator:read"><CalculatorPage /></PermissionRoute>} />
-                  <Route path="projects" element={<ProjectsPage />} />
-                  <Route path="projects/:id" element={<ProjectDetailPage />} />
-                  <Route path="aito" element={<AitoPage />} />
-                  <Route path="inventory" element={<InventoryPage />} />
-                  <Route path="files" element={<FileManagerPage />} />
-                  <Route path="files/trash" element={<LibraryTrashPage />} />
-                  <Route path="makerworld" element={<PermissionRoute permission="makerworld:view"><MakerworldPage /></PermissionRoute>} />
-                  <Route path="settings" element={<PermissionRoute permission="settings:read"><SettingsPage /></PermissionRoute>} />
-                  <Route path="groups/new" element={<PermissionRoute permission="groups:create"><GroupEditPage /></PermissionRoute>} />
-                  <Route path="groups/:id/edit" element={<PermissionRoute permission="groups:update"><GroupEditPage /></PermissionRoute>} />
-                  <Route path="users" element={<Navigate to="/settings?tab=users" replace />} />
-                  <Route path="groups" element={<Navigate to="/settings?tab=users" replace />} />
-                  <Route path="system" element={<SystemInfoPage />} />
-                  <Route path="notifications" element={<NotificationsPage />} />
-                  <Route path="gcode-viewer" element={<GCodeViewerPage />} />
-                  <Route path="external/:id" element={<ExternalLinkPage />} />
-                  <Route path="camera-tokens" element={<Navigate to="/settings?tab=apikeys#card-camera-tokens" replace />} />
-                </Route>
-              </Routes>
-              </Suspense>
-            </BrowserRouter>
+            <Suspense fallback={<RouteLoading />}>
+              <RouterProvider router={router} />
+            </Suspense>
             </FullscreenProvider>
             </SliceJobTrackerProvider>
             </ColorCatalogProvider>
