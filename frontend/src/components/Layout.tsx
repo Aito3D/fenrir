@@ -38,6 +38,16 @@ interface NavItem {
   labelKey: string; // Translation key
 }
 
+// The shell intro (sidebar/topbar slide-in, footer icon stagger, banner delay)
+// should play only when arriving in the app — after login, or on a real page
+// load. Module state survives React remounts within a JS session (returning
+// from /camera/:id, SpoolBuddy, etc. must NOT replay it) and resets naturally
+// on any full reload. LoginPage re-arms it so every login gets the intro.
+let shellIntroPlayed = false;
+export function armShellIntro() {
+  shellIntroPlayed = false;
+}
+
 export const defaultNavItems: NavItem[] = [
   { id: 'printers', to: '/', icon: Printer, labelKey: 'nav.printers' },
   { id: 'inventory', to: '/inventory', icon: Disc3, labelKey: 'nav.inventory' },
@@ -88,6 +98,12 @@ export function Layout() {
   const { user, authEnabled, logout, hasPermission } = useAuth();
   const { showToast } = useToast();
   const { fullscreen, setFullscreen } = useFullscreen();
+  // Latch once per mount: first Layout mount of the session plays the intro.
+  const [playIntro] = useState(() => {
+    const play = !shellIntroPlayed;
+    shellIntroPlayed = true;
+    return play;
+  });
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [changePasswordData, setChangePasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [changePasswordLoading, setChangePasswordLoading] = useState(false);
@@ -498,7 +514,7 @@ export function Layout() {
     <div className="flex min-h-screen bg-bambu-dark-secondary">
       {/* Compact Header */}
       {isSidebarCompact && !fullscreen && (
-        <header className="animate-topbar-in fixed top-0 left-0 right-0 z-40 h-14 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary flex items-center px-4">
+        <header className={`${playIntro ? 'animate-topbar-in' : ''} fixed top-0 left-0 right-0 z-40 h-14 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary flex items-center px-4`}>
           <button
             onClick={() => setMobileDrawerOpen(true)}
             className="p-2 -ml-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
@@ -526,7 +542,7 @@ export function Layout() {
         className={`bg-bambu-dark-secondary border-r border-bambu-dark-tertiary flex flex-col overflow-x-hidden transition-[width,transform] duration-[280ms] ease-(--ease-signature) motion-reduce:transition-none ${
           isSidebarCompact
             ? `fixed inset-y-0 left-0 z-50 w-72 transform ${mobileDrawerOpen ? 'translate-x-0' : '-translate-x-full'}`
-            : `fixed inset-y-0 left-0 z-30 animate-sidebar-in ${sidebarExpanded ? 'w-64' : 'w-16'}`
+            : `fixed inset-y-0 left-0 z-30 ${playIntro ? 'animate-sidebar-in' : ''} ${sidebarExpanded ? 'w-64' : 'w-16'}`
         }`}
       >
         {/* Transparent logo. In dark mode invert luminance so the dark "AITO"
@@ -668,7 +684,7 @@ export function Layout() {
           {isSidebarCompact || sidebarExpanded ? (
             <div className="flex flex-col gap-2 px-2">
               {/* Top row: icons — staggered fade-in on mount */}
-              <div className="flex items-center justify-center gap-1 flex-wrap stagger-fade-in">
+              <div className={`flex items-center justify-center gap-1 flex-wrap ${playIntro ? 'stagger-fade-in' : ''}`}>
                 {hasSwitchbarPlugs && (
                   <div className="relative">
                     <button
@@ -764,7 +780,7 @@ export function Layout() {
               </div>
             </div>
           ) : (
-            <div className="flex flex-col items-center gap-1 overflow-y-auto max-h-[50vh] stagger-fade-in">
+            <div className={`flex flex-col items-center gap-1 overflow-y-auto max-h-[50vh] ${playIntro ? 'stagger-fade-in' : ''}`}>
               {updateCheck?.update_available && (
                 <button
                   onClick={() => navigate('/settings')}
@@ -889,9 +905,11 @@ export function Layout() {
           // (.animate-sidebar-in) has finished — driven by the same
           // --sidebar-in-duration var so the two can never desync.
           // `backwards` fill keeps it hidden during the wait; reduced motion
-          // disables the anim entirely.
+          // disables the anim entirely. When the shell intro isn't playing
+          // (not the first mount of the session), the banner still gets
+          // .animate-banner-in but skips the wait — only the delay is gated.
           <div
-            style={{ animationDelay: 'var(--sidebar-in-duration)' }}
+            style={{ animationDelay: playIntro ? 'var(--sidebar-in-duration)' : '0ms' }}
             className="bg-orange-100 dark:bg-orange-500/20 border-b border-orange-300 dark:border-orange-500/30 px-4 py-2 flex items-center justify-between animate-banner-in"
           >
             <div className="flex items-center gap-2 text-sm">

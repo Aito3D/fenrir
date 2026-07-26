@@ -9,6 +9,7 @@ import { X, Mail, Shield, Smartphone, Key } from 'lucide-react';
 import { api, type LoginResponse, type OIDCProvider, type TokenPersistence } from '../api/client';
 import { Card, CardHeader, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
+import { armShellIntro } from '../components/Layout';
 
 type LoginStep = 'credentials' | '2fa' | 'reset-password';
 
@@ -116,6 +117,12 @@ export function LoginPage() {
   const { login, loginWithToken, user, loading } = useAuth();
   const { showToast } = useToast();
   const { mode } = useTheme();
+
+  // Arriving at the login screen means the next Layout mount is a genuine
+  // app entry — re-arm the shell intro so login → dashboard always animates.
+  useEffect(() => {
+    armShellIntro();
+  }, []);
 
   // Resolve the post-login destination, preferring router state (set by
   // ProtectedRoute when it redirects an unauthed visit) over the sessionStorage
