@@ -523,7 +523,7 @@ export function Layout() {
       {/* Sidebar / Mobile Drawer */}
       {!fullscreen && (
       <aside
-        className={`bg-bambu-dark-secondary border-r border-bambu-dark-tertiary flex flex-col overflow-x-hidden transition-[width,transform] duration-500 ease-(--ease-signature) motion-reduce:transition-none ${
+        className={`bg-bambu-dark-secondary border-r border-bambu-dark-tertiary flex flex-col overflow-x-hidden transition-[width,transform] duration-[280ms] ease-(--ease-signature) motion-reduce:transition-none ${
           isSidebarCompact
             ? `fixed inset-y-0 left-0 z-50 w-72 transform ${mobileDrawerOpen ? 'translate-x-0' : '-translate-x-full'}`
             : `fixed inset-y-0 left-0 z-30 animate-sidebar-in ${sidebarExpanded ? 'w-64' : 'w-16'}`
@@ -859,7 +859,7 @@ export function Layout() {
       )}
 
       {/* Main content */}
-      <main className={`flex-1 bg-bambu-dark overflow-auto transition-[margin] duration-500 ease-(--ease-signature) motion-reduce:transition-none ${
+      <main className={`flex-1 bg-bambu-dark overflow-auto transition-[margin] duration-[280ms] ease-(--ease-signature) motion-reduce:transition-none ${
         fullscreen ? '' : isSidebarCompact ? 'mt-14' : sidebarExpanded ? 'ml-64' : 'ml-16'
       }`}>
         {/* Debug logging indicator */}
