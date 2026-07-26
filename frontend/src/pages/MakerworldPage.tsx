@@ -418,7 +418,7 @@ export function MakerworldPage() {
 
   return (
     <div className="p-4 md:p-8 max-w-screen-2xl space-y-6">
-      <div>
+      <div className="animate-rise-lg">
         <h1 className="text-2xl font-bold text-white flex items-center gap-3">
           <Globe className="w-7 h-7 text-bambu-green" />
           {t('makerworld.title')}

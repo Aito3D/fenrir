@@ -493,7 +493,7 @@ export function ProjectDetailPage() {
 
       {/* Header */}
       <div className="flex items-start justify-between">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 animate-rise-lg vt-page-title">
           <button
             onClick={() => navigate('/projects')}
             className="p-2 rounded-lg bg-bambu-card hover:bg-bambu-dark-tertiary transition-colors"

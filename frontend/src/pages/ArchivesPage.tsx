@@ -3502,7 +3502,7 @@ export function ArchivesPage() {
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8 animate-rise-lg">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8 animate-rise-lg vt-page-title">
         <div>
           <div className="flex items-start gap-3">
             <div>

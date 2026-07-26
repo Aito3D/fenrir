@@ -1308,7 +1308,7 @@ export function SettingsPage() {
   return (
     <CardDensityProvider density="dense">
     <div className="p-4 md:p-8">
-      <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-rise-lg vt-page-title">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
             <SettingsIcon className="w-7 h-7 text-bambu-green" />

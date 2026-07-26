@@ -202,7 +202,7 @@ export function SystemInfoPage() {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between animate-rise-lg vt-page-title">
         <div>
           <h1 className="text-2xl font-bold text-white">{t('system.title', 'System Information')}</h1>
           <p className="text-bambu-gray mt-1">

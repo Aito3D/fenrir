@@ -8764,7 +8764,7 @@ export function PrintersPage() {
   return (
     <div className="p-4 md:p-8">
       <div className="space-y-3 mb-6 animate-topbar-in">
-        <div className="flex items-end justify-between gap-4">
+        <div className="flex items-end justify-between gap-4 animate-rise-lg vt-page-title">
           <div>
             {!fullscreen && (
               <h1 className="text-2xl font-bold text-white flex items-center gap-3">

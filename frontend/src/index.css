@@ -669,14 +669,26 @@ body {
    view-transition-name: sidebar so the static shell never flickers. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  /* 1s per user preference (2026-07-25) — deliberately slower than the house
-     motion budget; the crossfade reads as a scene change, not a UI response. */
-  animation-duration: 1000ms;
+  /* 350ms per user preference (2026-07-26) — a beat slower than the 250ms
+     entrance budget so the crossfade reads as a scene change. */
+  animation-duration: 350ms;
   animation-timing-function: var(--ease-signature);
 }
 ::view-transition-old(sidebar),
 ::view-transition-new(sidebar) {
   animation: none;
+}
+/* Every page's title block shares one view-transition-name, so on navigation
+   the browser morphs old title → new title as its own group (fade out + fade
+   in + position/size morph) instead of the titles just swapping inside the
+   root crossfade. Apply .vt-page-title to exactly ONE element per page. */
+.vt-page-title {
+  view-transition-name: page-title;
+}
+::view-transition-old(page-title),
+::view-transition-new(page-title) {
+  animation-duration: 350ms;
+  animation-timing-function: var(--ease-signature);
 }
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(root),

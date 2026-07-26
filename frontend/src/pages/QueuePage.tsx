@@ -1947,7 +1947,7 @@ export function QueuePage() {
   return (
     <div className="p-4 md:p-8">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 animate-rise-lg vt-page-title">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
             <ListOrdered className="w-7 h-7 text-bambu-green" />
