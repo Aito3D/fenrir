@@ -13,6 +13,7 @@ import {
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
+  type DropAnimation,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { AlertTriangle, Kanban, Plus, Trash2, X } from 'lucide-react';
@@ -25,6 +26,7 @@ import { ClientCombobox, type SelectedClient } from '../components/aito/ClientCo
 import { api, ApiError, type AitoProject } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { formatElapsedTime } from '../utils/date';
+import { prefersReducedMotion } from '../utils/motion';
 import {
   COLUMN_IDS,
   applyCrossColumnMove,
@@ -47,6 +49,22 @@ interface LegacyProject {
 type LegacyBoard = Partial<Record<ColumnId, LegacyProject[]>>;
 
 const STORAGE_KEY = 'aito-board-v1';
+
+// Shared with SortableCard so the dropped card and the neighbours closing
+// the gap around it settle on the same curve.
+const SORTABLE_TRANSITION = { duration: 250, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' };
+
+const DROP_ANIMATION: DropAnimation = {
+  duration: 250,
+  easing: 'cubic-bezier(0.22, 1, 0.36, 1)', // var(--ease-signature)
+  sideEffects: ({ dragOverlay, active }) => {
+    dragOverlay.node.classList.add('aito-card-dropping');
+    active.node.style.opacity = '0';
+    return () => {
+      active.node.style.opacity = '';
+    };
+  },
+};
 
 interface MoveVariables {
   id: number;
@@ -385,6 +403,17 @@ export function AitoPage() {
     [activeId, board],
   );
 
+  const reducedMotion = useMemo(() => prefersReducedMotion(), []);
+
+  // animate-rise is an entrance, not a move. A cross-column drag remounts the
+  // card under a new parent, which would otherwise replay it mid-interaction.
+  const seenIds = useRef(new Set<number>());
+  const shouldAnimateIn = (id: number) => {
+    if (seenIds.current.has(id)) return false;
+    seenIds.current.add(id);
+    return true;
+  };
+
   // Tracks the column the card started in so dragEnd can tell a real
   // cross-column relocation (already applied live by dragOver) apart from a
   // plain click-drag-release back into the same slot — the latter must not
@@ -527,12 +556,16 @@ export function AitoPage() {
                 projects={board[column.id]}
                 isDropTarget={dropTarget === column.id}
                 onDeleteCard={(id) => deleteMutation.mutate(id)}
+                transitionConfig={reducedMotion ? null : SORTABLE_TRANSITION}
+                shouldAnimateIn={shouldAnimateIn}
               />
             </div>
           ))}
         </div>
 
-        <DragOverlay>{activeProject ? <CardView project={activeProject} overlay /> : null}</DragOverlay>
+        <DragOverlay dropAnimation={reducedMotion ? null : DROP_ANIMATION}>
+          {activeProject ? <CardView project={activeProject} overlay /> : null}
+        </DragOverlay>
       </DndContext>
 
       {showModal && <NewProjectModal onClose={() => setShowModal(false)} onCreate={createProject} />}

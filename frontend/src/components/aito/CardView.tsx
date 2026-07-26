@@ -25,9 +25,10 @@ export function CardView({ project, overlay = false, onDelete }: CardViewProps) 
 
   return (
     <div
+      data-aito-card
       className={`group relative rounded-xl border bg-bambu-dark-secondary p-3 select-none ${
         overlay
-          ? 'rotate-2 scale-[1.03] border-bambu-green/40 shadow-2xl cursor-grabbing'
+          ? 'rotate-1 scale-[1.02] border-bambu-green/40 shadow-2xl cursor-grabbing'
           : 'border-bambu-dark-tertiary card-shadow cursor-grab active:cursor-grabbing transition-[border-color,box-shadow] duration-100 hover:border-bambu-green/40 hover:shadow-lg'
       }`}
     >

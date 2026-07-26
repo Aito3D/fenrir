@@ -697,6 +697,25 @@ body {
   }
 }
 
+/* dnd-kit drop flight. The overlay's lift unwinds across the 250ms flight
+   instead of snapping at the end, so the card settles rather than arriving
+   still tilted. Tailwind 4 compiles rotate-*/scale-* to the individual
+   `rotate`/`scale` properties, so those — not `transform` — are what must be
+   overridden here. */
+.aito-card-dropping [data-aito-card] {
+  rotate: 0deg;
+  scale: 1;
+  transition:
+    rotate 250ms var(--ease-signature),
+    scale 250ms var(--ease-signature),
+    box-shadow 250ms var(--ease-signature);
+}
+@media (prefers-reduced-motion: reduce) {
+  .aito-card-dropping [data-aito-card] {
+    transition: none;
+  }
+}
+
 /* Modal card entrance — fade + gentle scale-up from center. */
 @keyframes modal-in {
   from { opacity: 0; transform: scale(0.96); }

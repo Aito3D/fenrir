@@ -6,8 +6,21 @@ import { CardView } from './CardView';
 import type { ColumnMeta } from './columns';
 import type { AitoProject } from '../../api/client';
 
-function SortableCard({ project, onDelete }: { project: AitoProject; onDelete: () => void }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.id });
+function SortableCard({
+  project,
+  onDelete,
+  transitionConfig,
+  animateIn,
+}: {
+  project: AitoProject;
+  onDelete: () => void;
+  transitionConfig: { duration: number; easing: string } | null;
+  animateIn: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: project.id,
+    transition: transitionConfig,
+  });
 
   return (
     <div
@@ -15,7 +28,7 @@ function SortableCard({ project, onDelete }: { project: AitoProject; onDelete: (
       style={{ transform: CSS.Transform.toString(transform), transition }}
       {...attributes}
       {...listeners}
-      className={`touch-none animate-rise ${isDragging ? 'opacity-30' : ''}`}
+      className={`touch-none ${animateIn ? 'animate-rise' : ''} ${isDragging ? 'opacity-30' : ''}`}
     >
       <CardView project={project} onDelete={onDelete} />
     </div>
@@ -27,9 +40,18 @@ interface ColumnProps {
   projects: AitoProject[];
   isDropTarget: boolean;
   onDeleteCard: (id: number) => void;
+  transitionConfig: { duration: number; easing: string } | null;
+  shouldAnimateIn: (id: number) => boolean;
 }
 
-export function BoardColumn({ column, projects, isDropTarget, onDeleteCard }: ColumnProps) {
+export function BoardColumn({
+  column,
+  projects,
+  isDropTarget,
+  onDeleteCard,
+  transitionConfig,
+  shouldAnimateIn,
+}: ColumnProps) {
   const { t } = useTranslation();
   const { setNodeRef } = useDroppable({ id: column.id });
 
@@ -50,7 +72,13 @@ export function BoardColumn({ column, projects, isDropTarget, onDeleteCard }: Co
       <SortableContext items={projects.map((p) => p.id)} strategy={verticalListSortingStrategy}>
         <div ref={setNodeRef} className="flex-1 flex flex-col gap-2 p-2 min-h-[10rem] overflow-y-auto">
           {projects.map((project) => (
-            <SortableCard key={project.id} project={project} onDelete={() => onDeleteCard(project.id)} />
+            <SortableCard
+              key={project.id}
+              project={project}
+              onDelete={() => onDeleteCard(project.id)}
+              transitionConfig={transitionConfig}
+              animateIn={shouldAnimateIn(project.id)}
+            />
           ))}
           {projects.length === 0 && (
             <div className="flex-1 min-h-[8rem] rounded-lg border border-dashed border-bambu-dark-tertiary/80" />
