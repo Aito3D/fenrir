@@ -29,19 +29,20 @@ beforeEach(() => {
 });
 
 describe('AitoPage (backend board)', () => {
-  it('renders project number, client name and tel: phone link', async () => {
+  it('leads with the client name and a tel: phone link, without the row id', async () => {
     render(<AitoPage />);
-    expect(await screen.findByText('#12')).toBeInTheDocument();
-    expect(screen.getByText('ACME SARL')).toBeInTheDocument();
+    expect(await screen.findByText('ACME SARL')).toBeInTheDocument();
+    expect(screen.queryByText('#12')).not.toBeInTheDocument();
     const tel = screen.getByRole('link', { name: '+33 6 12 34 56 78' });
     expect(tel).toHaveAttribute('href', 'tel:+33 6 12 34 56 78');
   });
 
-  it('renders clientless legacy cards without a client line', async () => {
+  it('shows a placeholder title on clientless legacy cards', async () => {
     server.use(http.get('/api/v1/aito/', () =>
       HttpResponse.json([{ ...project, client_id: null, client_name: null, client_phone: null }])));
     render(<AitoPage />);
-    expect(await screen.findByText('#12')).toBeInTheDocument();
+    expect(await screen.findByText('No client')).toBeInTheDocument();
+    expect(screen.queryByText('#12')).not.toBeInTheDocument();
     expect(screen.queryByText('ACME SARL')).not.toBeInTheDocument();
   });
 
@@ -150,7 +151,7 @@ describe('AitoPage (backend board)', () => {
 
       const user = userEvent.setup();
       render(<AitoPage />);
-      await screen.findByText('#12');
+      await screen.findByText('ACME SARL');
 
       await user.click(screen.getByRole('button', { name: 'Trash' }));
 

@@ -25,6 +25,7 @@ export default {
     moveFailed: '프로젝트를 이동할 수 없습니다. 다시 시도해 주세요.',
     createFailed: '프로젝트를 만들 수 없습니다. 다시 시도해 주세요.',
     client: '고객',
+    noClient: '고객 없음',
     clientPlaceholder: '고객 검색…',
     searching: '검색 중…',
     noResults: '일치하는 고객이 없습니다',

@@ -25,6 +25,7 @@ export default {
     moveFailed: 'Proje taşınamadı. Lütfen tekrar deneyin.',
     createFailed: 'Proje oluşturulamadı. Lütfen tekrar deneyin.',
     client: 'Müşteri',
+    noClient: 'Müşteri yok',
     clientPlaceholder: 'Müşteri ara…',
     searching: 'Aranıyor…',
     noResults: 'Eşleşen müşteri bulunamadı',

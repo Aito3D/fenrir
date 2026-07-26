@@ -25,6 +25,7 @@ export default {
     moveFailed: '无法移动项目，请重试。',
     createFailed: '无法创建项目，请重试。',
     client: '客户',
+    noClient: '无客户',
     clientPlaceholder: '搜索客户…',
     searching: '搜索中…',
     noResults: '未找到匹配的客户',

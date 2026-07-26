@@ -25,6 +25,7 @@ export default {
     moveFailed: 'Impossible de déplacer le projet. Veuillez réessayer.',
     createFailed: 'Impossible de créer le projet. Veuillez réessayer.',
     client: 'Client',
+    noClient: 'Aucun client',
     clientPlaceholder: 'Rechercher un client…',
     searching: 'Recherche en cours…',
     noResults: 'Aucun client correspondant',

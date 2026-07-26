@@ -25,6 +25,7 @@ export default {
     moveFailed: '無法移動專案，請再試一次。',
     createFailed: '無法建立專案，請再試一次。',
     client: '客戶',
+    noClient: '無客戶',
     clientPlaceholder: '搜尋客戶…',
     searching: '搜尋中…',
     noResults: '找不到符合的客戶',

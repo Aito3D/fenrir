@@ -32,22 +32,23 @@ export function CardView({ project, overlay = false, onDelete }: CardViewProps) 
           : 'border-bambu-dark-tertiary card-shadow cursor-grab active:cursor-grabbing transition-[border-color,box-shadow] duration-100 hover:border-bambu-green/40 hover:shadow-lg'
       }`}
     >
-      <span className="text-xs text-bambu-gray tabular-nums">#{project.id}</span>
-      {project.client_name && (
-        <div className="mt-1">
+      <div>
+        {project.client_name ? (
           <p className="text-sm font-medium text-white truncate">{project.client_name}</p>
-          {project.client_phone && (
-            <a
-              href={`tel:${project.client_phone}`}
-              onPointerDown={(e) => e.stopPropagation()}
-              className="text-xs text-bambu-gray hover:text-bambu-green"
-            >
-              {project.client_phone}
-            </a>
-          )}
-        </div>
-      )}
-      <p className="mt-1 text-sm text-white whitespace-pre-wrap break-words line-clamp-5">{project.description}</p>
+        ) : (
+          <p className="text-sm font-medium text-bambu-gray truncate">{t('aito.noClient')}</p>
+        )}
+        {project.client_phone && (
+          <a
+            href={`tel:${project.client_phone}`}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="text-xs text-bambu-gray hover:text-bambu-green"
+          >
+            {project.client_phone}
+          </a>
+        )}
+      </div>
+      <p className="mt-1 text-sm text-white whitespace-pre-wrap break-words line-clamp-3">{project.description}</p>
       <div className="mt-2 flex items-center justify-between">
         <span className="text-xs text-bambu-gray" title={dateTitle}>
           {elapsed}
