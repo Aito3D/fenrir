@@ -405,14 +405,18 @@ export function AitoPage() {
 
   const reducedMotion = useMemo(() => prefersReducedMotion(), []);
 
-  // animate-rise is an entrance, not a move. A cross-column drag remounts the
-  // card under a new parent, which would otherwise replay it mid-interaction.
-  const seenIds = useRef(new Set<number>());
-  const shouldAnimateIn = (id: number) => {
-    if (seenIds.current.has(id)) return false;
-    seenIds.current.add(id);
-    return true;
-  };
+  // animate-rise is an entrance, not a move. Track which ids were on the board
+  // as of the last commit: an id that was already there is relocating, so a
+  // cross-column drag — which remounts the card under a new parent — must not
+  // replay its entrance. A card restored from the trash left the board and
+  // comes back, so it correctly animates again. Read-only during render;
+  // updated post-commit so StrictMode's double-invoke cannot consume it.
+  const presentIds = useRef<Set<number>>(new Set());
+  const shouldAnimateIn = (id: number) => !presentIds.current.has(id);
+
+  useEffect(() => {
+    presentIds.current = new Set(COLUMN_IDS.flatMap((col) => board[col].map((project) => project.id)));
+  }, [board]);
 
   // Tracks the column the card started in so dragEnd can tell a real
   // cross-column relocation (already applied live by dragOver) apart from a
