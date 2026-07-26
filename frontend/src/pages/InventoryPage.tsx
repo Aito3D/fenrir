@@ -1364,11 +1364,11 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
         </div>
       </div>
 
-      {/* Stats Bar */}
+      {/* Stats Bar — two-level entrance (house pattern): tiles cascade 80ms
+          apart after the title. The spool grid below stays static on purpose —
+          it re-renders on every filter/page change, which would replay the
+          entrance. */}
       {stats && !isLoading && (
-        {/* Two-level entrance (house pattern): tiles cascade 80ms apart after the
-            title. The spool grid below stays static on purpose — it re-renders on
-            every filter/page change, which would replay the entrance. */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 stagger-parents">
           {/* Total Inventory */}
           <div className="bg-bambu-dark-secondary rounded-lg p-4 animate-rise-lg">
