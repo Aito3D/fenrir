@@ -697,6 +697,39 @@ body {
   }
 }
 
+/* Aito card → detail panel morph. The card and the panel share one
+   view-transition-name; the page-level root/page-title animations are
+   suppressed for the duration via html[data-vt='aito-card'] so only the card
+   group animates instead of crossfading the whole board. 350ms matches the
+   page-title morph — a card expanding is the same class of scene change. */
+html[data-vt='aito-card']::view-transition-old(root),
+html[data-vt='aito-card']::view-transition-new(root),
+html[data-vt='aito-card']::view-transition-old(page-title),
+html[data-vt='aito-card']::view-transition-new(page-title) {
+  animation: none;
+}
+::view-transition-old(aito-card),
+::view-transition-new(aito-card) {
+  animation-duration: 350ms;
+  animation-timing-function: var(--ease-signature);
+}
+/* The backdrop is new in the post-transition state and has nothing to morph
+   from, so it gets its own group and a plain fade. */
+::view-transition-new(aito-backdrop) {
+  animation: aito-backdrop-in 350ms var(--ease-signature);
+}
+::view-transition-old(aito-backdrop) {
+  animation: aito-backdrop-in 350ms var(--ease-exit) reverse;
+}
+@keyframes aito-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* dnd-kit drop flight. The overlay's lift unwinds across the 250ms flight
    instead of snapping at the end, so the card settles rather than arriving
    still tilted. Tailwind 4 compiles rotate-*/scale-* to the individual
