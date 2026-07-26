@@ -309,7 +309,7 @@ export function StreamOverlayPage() {
         <img
           src="/img/bambuddy_logo_dark_transparent.png"
           alt="Bambuddy"
-          className={`${sizes.logoHeight} object-contain drop-shadow-lg hover:scale-105 transition-transform`}
+          className={`${sizes.logoHeight} object-contain drop-shadow-lg [@media(hover:hover)]:hover:scale-105 transition-transform`}
         />
       </a>
 
