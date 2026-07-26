@@ -1,22 +1,28 @@
+import { useState } from 'react';
 import { useLocation, useOutlet } from 'react-router-dom';
 
 /**
- * Renders the routed page, mounting the destination immediately on navigation
- * and playing only the entrance animation (.animate-page-in). There is no
- * exit phase: the outgoing page is simply unmounted the instant the new one
- * takes its place, so navigation never waits on a timer before the
- * destination's DOM exists.
+ * Renders the routed page, mounting the destination immediately on navigation.
  *
- * Reduced-motion users get the same instant mount; `.animate-page-in` is
- * neutralized under prefers-reduced-motion in index.css, so no separate JS
- * branch is needed here.
+ * Browsers with the View Transitions API get their page change animated by the
+ * router-level crossfade (NavLinks/navigate pass `viewTransition`; see
+ * index.css ::view-transition rules) — so this wrapper adds NO entrance class
+ * there, otherwise the page would animate twice. Browsers without the API fall
+ * back to the 250ms .animate-page-in rise. Exactly one of the two ever applies.
+ *
+ * Reduced-motion: .animate-page-in is neutralized in index.css's reduce block,
+ * and the ::view-transition rules are disabled under the same media query.
  */
 export function AnimatedOutlet() {
   const outlet = useOutlet();
   const location = useLocation();
+  // Evaluated at mount (not import) so tests can stub startViewTransition.
+  const [supportsViewTransitions] = useState(
+    () => typeof document.startViewTransition === 'function',
+  );
 
   return (
-    <div key={location.pathname} className="animate-page-in">
+    <div key={location.pathname} className={supportsViewTransitions ? undefined : 'animate-page-in'}>
       {outlet}
     </div>
   );

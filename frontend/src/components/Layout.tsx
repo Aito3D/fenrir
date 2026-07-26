@@ -487,7 +487,7 @@ export function Layout() {
           // Internal nav item
           const navItem = navItemsMap.get(id);
           if (navItem) {
-            navigate(navItem.to);
+            navigate(navItem.to, { viewTransition: true });
           }
         }
         return;
@@ -539,7 +539,7 @@ export function Layout() {
       {/* Sidebar / Mobile Drawer */}
       {!fullscreen && (
       <aside
-        className={`bg-bambu-dark-secondary border-r border-bambu-dark-tertiary flex flex-col overflow-x-hidden transition-[width,transform] duration-[280ms] ease-(--ease-signature) motion-reduce:transition-none ${
+        className={`bg-bambu-dark-secondary border-r border-bambu-dark-tertiary flex flex-col overflow-x-hidden transition-[width,transform] duration-[280ms] ease-(--ease-signature) motion-reduce:transition-none [view-transition-name:sidebar] ${
           isSidebarCompact
             ? `fixed inset-y-0 left-0 z-50 w-72 transform ${mobileDrawerOpen ? 'translate-x-0' : '-translate-x-full'}`
             : `fixed inset-y-0 left-0 z-30 ${playIntro ? 'animate-sidebar-in' : ''} ${sidebarExpanded ? 'w-64' : 'w-16'}`
@@ -594,6 +594,7 @@ export function Layout() {
                     ) : (
                       <NavLink
                         to={`/external/${link.id}`}
+                        viewTransition
                         className={({ isActive }) =>
                           `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${
                             isActive
@@ -633,6 +634,7 @@ export function Layout() {
                   <li key={id}>
                     <NavLink
                       to={to}
+                      viewTransition
                       className={({ isActive }) =>
                         `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group ${
                           isActive
@@ -704,6 +706,7 @@ export function Layout() {
                 {hasPermission('system:read') ? (
                   <NavLink
                     to="/system"
+                    viewTransition
                     className={({ isActive }) =>
                       `p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors ${
                         isActive ? 'text-bambu-green' : 'text-bambu-gray-light hover:text-white'
@@ -809,6 +812,7 @@ export function Layout() {
               {hasPermission('system:read') ? (
                 <NavLink
                   to="/system"
+                  viewTransition
                   className={({ isActive }) =>
                     `p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors ${
                       isActive ? 'text-bambu-green' : 'text-bambu-gray-light hover:text-white'

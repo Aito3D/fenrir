@@ -662,6 +662,27 @@ body {
   animation: calc-tab-in 0.25s var(--ease-signature) backwards;
 }
 
+/* Router-driven View Transitions crossfade (NavLinks pass `viewTransition`).
+   The old page's snapshot fades into the new one — no bare-background flash.
+   Browsers without the API never create these pseudo-elements and use
+   .animate-page-in instead (see AnimatedOutlet). The aside opts out via
+   view-transition-name: sidebar so the static shell never flickers. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 250ms;
+  animation-timing-function: var(--ease-signature);
+}
+::view-transition-old(sidebar),
+::view-transition-new(sidebar) {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}
+
 /* Modal card entrance — fade + gentle scale-up from center. */
 @keyframes modal-in {
   from { opacity: 0; transform: scale(0.96); }
