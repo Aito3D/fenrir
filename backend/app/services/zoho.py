@@ -23,6 +23,22 @@ class ZohoUpstreamError(Exception):
     """Raised when Zoho returns an error or is unreachable."""
 
 
+class ZohoRequestRejected(ZohoUpstreamError):
+    """Zoho rejected the payload (HTTP 400). The message is user-actionable."""
+
+
+def _map_contact(contact: dict) -> dict:
+    """Zoho contact -> the flat shape the Aito client picker consumes."""
+    return {
+        "id": contact.get("contact_id", ""),
+        "name": contact.get("contact_name", ""),
+        "company_name": contact.get("company_name", ""),
+        "phone": contact.get("phone", ""),
+        "mobile": contact.get("mobile", ""),
+        "email": contact.get("email", ""),
+    }
+
+
 class ZohoService:
     def __init__(self) -> None:
         self._access_token: str | None = None
@@ -92,15 +108,30 @@ class ZohoService:
             self._expires_at = time.monotonic() + int(payload.get("expires_in", 3600)) - _EXPIRY_MARGIN_SECONDS
             return token
 
-    async def search_contacts(self, db: AsyncSession, query: str) -> list[dict]:
+    async def _request(
+        self,
+        db: AsyncSession,
+        method: str,
+        path: str,
+        *,
+        params: dict | None = None,
+        json: dict | None = None,
+    ) -> dict:
+        """One Books API call: token, org scoping, 401-retry-once, error mapping.
+
+        ``path`` is relative to ``/books/v3`` (e.g. ``"/contacts/z1"``).
+        """
         config = await self._load_config(db)
+        request_params = {"organization_id": config["zoho_organization_id"], **(params or {})}
         for attempt in (1, 2):
             token = await self.get_access_token(db)
             try:
                 async with self._client() as client:
-                    response = await client.get(
-                        f"{config['zoho_base_url']}/books/v3/contacts",
-                        params={"organization_id": config["zoho_organization_id"], "search_text": query},
+                    response = await client.request(
+                        method,
+                        f"{config['zoho_base_url']}/books/v3{path}",
+                        params=request_params,
+                        json=json,
                         headers={"Authorization": f"Zoho-oauthtoken {token}"},
                     )
             except httpx.HTTPError as e:
@@ -108,24 +139,20 @@ class ZohoService:
             if response.status_code == 401 and attempt == 1:
                 self.invalidate_token()  # token revoked/expired early — refresh once
                 continue
-            if response.status_code != 200:
-                raise ZohoUpstreamError(f"Zoho Books error (HTTP {response.status_code})")
             try:
-                contacts = response.json().get("contacts", [])
+                payload = response.json() if response.content else {}
             except ValueError as e:
                 raise ZohoUpstreamError(f"Zoho returned a non-JSON response (HTTP {response.status_code})") from e
-            return [
-                {
-                    "id": c.get("contact_id", ""),
-                    "name": c.get("contact_name", ""),
-                    "company_name": c.get("company_name", ""),
-                    "phone": c.get("phone", ""),
-                    "mobile": c.get("mobile", ""),
-                    "email": c.get("email", ""),
-                }
-                for c in contacts
-            ]
+            if response.status_code == 400:
+                raise ZohoRequestRejected(payload.get("message") or "Zoho rejected the request")
+            if response.status_code >= 400:
+                raise ZohoUpstreamError(f"Zoho Books error (HTTP {response.status_code})")
+            return payload
         raise ZohoUpstreamError("Zoho Books rejected the refreshed token")  # unreachable guard
+
+    async def search_contacts(self, db: AsyncSession, query: str) -> list[dict]:
+        payload = await self._request(db, "GET", "/contacts", params={"search_text": query})
+        return [_map_contact(c) for c in payload.get("contacts", [])]
 
 
 zoho_service = ZohoService()
