@@ -116,6 +116,37 @@ describe('ClientSection', () => {
     expect(screen.getByLabelText(/^email/i)).toHaveAttribute('aria-invalid', 'true');
   });
 
+  it('normalizes the phone field on blur without losing the blurred flag', async () => {
+    // Regression test: PhoneInput's blur fires onChange(stripped) and onBlur()
+    // synchronously in the same native event. ClientSection must merge both
+    // into a single onChange, or the second call (built from the stale
+    // pre-blur value) clobbers the digit-stripping the first one just did.
+    let draft = draftFromContact(acme, DEFAULT_ID);
+    const section = (value: typeof draft) => (
+      <ClientSection
+        value={value}
+        onChange={(next) => {
+          draft = next;
+          rerender(section(next));
+        }}
+        onCreateNew={vi.fn()}
+        defaultContactId={DEFAULT_ID}
+        defaultContactName={DEFAULT_NAME}
+      />
+    );
+    const user = userEvent.setup();
+    const { rerender } = render(section(draft));
+
+    const phoneInput = screen.getByLabelText(/^phone/i);
+    await user.clear(phoneInput);
+    await user.type(phoneInput, '1-2');
+    await user.tab();
+
+    expect(screen.getByLabelText(/^phone/i)).toHaveValue('12');
+    expect(draft.blurred.phone).toBe(true);
+    expect(screen.getByRole('alert')).toHaveTextContent(/4 and 14 digits/i);
+  });
+
   it('clears the email error live once the value becomes valid', () => {
     const draft = {
       ...defaultClientDraft(DEFAULT_ID, DEFAULT_NAME),

@@ -7,7 +7,7 @@ export interface PhoneInputProps {
   countryCode: string;
   nationalNumber: string;
   onChange: (next: { countryCode: string; nationalNumber: string }) => void;
-  onBlur?: () => void;
+  onBlur?: (next: { countryCode: string; nationalNumber: string }) => void;
   invalid?: boolean;
   id?: string;
   disabled?: boolean;
@@ -58,8 +58,9 @@ export function PhoneInput({
         value={nationalNumber}
         onChange={(e) => onChange({ countryCode, nationalNumber: e.target.value })}
         onBlur={(e) => {
-          onChange({ countryCode, nationalNumber: e.target.value.replace(/\D/g, '') });
-          onBlur?.();
+          const next = { countryCode, nationalNumber: e.target.value.replace(/\D/g, '') };
+          onChange(next);
+          onBlur?.(next);
         }}
         placeholder={t('aito.phonePlaceholder')}
         aria-invalid={invalid ? true : undefined}

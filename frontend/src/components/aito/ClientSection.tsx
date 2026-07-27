@@ -100,7 +100,19 @@ export function ClientSection({
               countryCode={value.countryCode}
               nationalNumber={value.nationalNumber}
               invalid={errors.phone !== null}
-              onBlur={() => onChange({ ...value, blurred: { ...value.blurred, phone: true } })}
+              // PhoneInput fires onChange(stripped) and onBlur(stripped) back to
+              // back in the same native blur event. Both must land in a single
+              // onChange here — issuing two, each spreading the same stale
+              // pre-blur `value`, would let the second call's incomplete draft
+              // clobber the first call's digit-stripping.
+              onBlur={(next) =>
+                onChange({
+                  ...value,
+                  countryCode: next.countryCode,
+                  nationalNumber: next.nationalNumber,
+                  blurred: { ...value.blurred, phone: true },
+                })
+              }
               onChange={(next) =>
                 onChange({
                   ...value,
