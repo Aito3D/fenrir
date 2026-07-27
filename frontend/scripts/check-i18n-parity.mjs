@@ -142,6 +142,7 @@ function isAlwaysAllowedIdentical(value) {
 // UI labels are identical in DE. List below curates the legitimate ones.
 const DE_COGNATES = [
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the DE term too
+  'Auto',  // calibrationMode_auto — German UI uses the loanword (matches BambuStudio DE)
   'Name', 'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Modus',
   'Stop', 'Reset', 'Test', 'Code', 'Token', 'Server', 'Port', 'Bug', 'Job',
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
