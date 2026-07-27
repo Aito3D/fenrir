@@ -123,6 +123,7 @@ function isAlwaysAllowedIdentical(value) {
   if (/^[0-9a-fA-F]{6}$/.test(value)) return true;      // bare hex color
   if (/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(value)) return true;  // email
   if (/^https?:\/\//.test(value)) return true;          // URL
+  if (/^\d{4,}$/.test(value)) return true;              // digit-only example token, e.g. phone placeholder
   if (/^ON,\s+true,\s+1$/.test(value)) return true;     // literal example "ON, true, 1"
   // Brand / technical names that ship verbatim everywhere.
   if (/^(Bambuddy|BamBuddy|Aito|Zoho|Zoho Books|SpoolBuddy|Bambu Lab|Bambu Studio|Bambu Studio 2\.6\+|Bambu Studio sidecar URL|OrcaSlicer|OrcaSlicer sidecar URL|MakerWorld|Spoolman|\(Spoolman\)|Spoolman URL|Tailscale|GitHub|GitLab|Gitea|Forgejo|Discord|MQTT|FTP|HTTPS?|JSON|YAML|RTSP|TLS|SSL|CSRF|OIDC|SSO|SSO \/ OIDC|LDAP|TOTP|2FA|MFA|API|AMS|CRC|SHA256|SHA-256|kWh|MB|GB|KB|RGBA?|HSL|RGB|UTC|ISO|UI|HTTP|HTTP Method|H2D|H2D Pro|X1C|X1E|P1S|P1P|A1|A1 Mini|H2C|N3F|N3S|PETG|PLA|ABS|PA|TPU|PEI|PA-CF|PVA|HIPS|ASA|PC|PETG-HF|G\.code|G-code|gcode|cm³|°C|°F|GCODE|SOURCE|ntfy|Pushover|Telegram|Webhook|Webhook URL|Home Assistant|Home Assistant URL|CallMeBot\/WhatsApp|Bambuddy URL|Cool Plate|FFmpeg \(MJPEG\)|go2rtc \(WebRTC\)|Cool Plate SuperTack|Engineering Plate|High Temp Plate|Smooth PEI Plate|Textured PEI Plate|Ext-L|Ext-R|ISO \(YYYY-MM-DD\))$/.test(value)) return true;
@@ -309,6 +310,7 @@ const PT_BR_COGNATES = [
   'e.g., Home Assistant, OctoPrint', 'ntfy, Pushover, Discord, etc.',
   'Proxy', 'total: {{minutes}} min',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
+  'Email',  // Task 6 Aito client email field — "Email" is used verbatim in PT-BR (see fromEmail, usernameOrEmail)
 ];
 
 // Chinese (Simplified): very few cognates beyond brand names.
@@ -406,6 +408,7 @@ const RU_COGNATES = [
   'EC984C,#6CD4BC,A66EB9,D87694',
   '({{count}}/8)',
   '(25%, 50%, 75%)',
+  'Email',  // Task 6 Aito client email field — "email"/"Email" is used as a loanword in RU (see usernameOrEmail)
 ];
 
 const IDENTICAL_TO_EN_ALLOWED = {
