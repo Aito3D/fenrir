@@ -55,6 +55,10 @@ export default {
     invalidEmail: 'Saisissez une adresse e-mail valide.',
     invalidPhone: 'Saisissez entre 4 et 14 chiffres.',
     invalidCountryCode: 'Saisissez un indicatif, par exemple +689.',
+    showDetails: 'Afficher les détails',
+    createdLabel: 'Créé',
+    lastActivity: 'Dernière activité',
+    stage: 'Étape',
     columns: {
       devis: 'Devis',
       model: 'Modèle 3D',

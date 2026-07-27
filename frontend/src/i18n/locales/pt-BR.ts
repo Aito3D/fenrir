@@ -55,6 +55,10 @@ export default {
     invalidEmail: 'Digite um endereço de email válido.',
     invalidPhone: 'Digite entre 4 e 14 dígitos.',
     invalidCountryCode: 'Digite um DDI como +689.',
+    showDetails: 'Ver detalhes',
+    createdLabel: 'Criado',
+    lastActivity: 'Última atividade',
+    stage: 'Etapa',
     columns: {
       devis: 'Orçamento',
       model: 'Modelo 3D',

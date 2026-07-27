@@ -22,6 +22,10 @@ beforeEach(() => {
   vi.mocked(localStorage.removeItem).mockReset();
   vi.mocked(localStorage.getItem).mockReturnValue(null);
 
+  // Mock scrollIntoView which is not available in jsdom (useCardMorph calls
+  // it before assigning the view-transition name).
+  Element.prototype.scrollIntoView = vi.fn();
+
   server.use(
     http.get('/api/v1/aito/', () => HttpResponse.json([project])),
     http.get('/api/v1/zoho/status', () => HttpResponse.json({ configured: true, reachable: true })),
@@ -134,6 +138,50 @@ describe('AitoPage (backend board)', () => {
       expect(deleteSpy).not.toHaveBeenCalled();
       expect(await screen.findByText('Hold 2s to delete')).toBeInTheDocument();
     });
+  });
+
+  it('opens the detail panel with the full description, dates and stage', async () => {
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await user.click(await screen.findByText('ACME SARL'));
+
+    const panel = await screen.findByRole('dialog');
+    expect(within(panel).getByText('Support GoPro')).toBeInTheDocument();
+    expect(within(panel).getByText('Created')).toBeInTheDocument();
+    expect(within(panel).getByText('Last activity')).toBeInTheDocument();
+    expect(within(panel).getByText('Stage')).toBeInTheDocument();
+    expect(within(panel).getByText('Quote')).toBeInTheDocument();
+  });
+
+  it('opens the panel from the keyboard via the details button', async () => {
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await screen.findByText('ACME SARL');
+    await user.click(screen.getByRole('button', { name: 'Show details' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('closes the panel on Escape', async () => {
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await user.click(await screen.findByText('ACME SARL'));
+    await screen.findByRole('dialog');
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('drives the morph through startViewTransition when the API is present', async () => {
+    const startViewTransition = vi.fn((cb: () => void) => {
+      cb();
+      return { finished: Promise.resolve(), ready: Promise.resolve(), updateCallbackDone: Promise.resolve() };
+    });
+    (document as { startViewTransition?: unknown }).startViewTransition = startViewTransition;
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await user.click(await screen.findByText('ACME SARL'));
+    await screen.findByRole('dialog');
+    expect(startViewTransition).toHaveBeenCalled();
+    delete (document as { startViewTransition?: unknown }).startViewTransition;
   });
 
   describe('trash view', () => {

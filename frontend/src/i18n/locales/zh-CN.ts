@@ -55,6 +55,10 @@ export default {
     invalidEmail: '请输入有效的电子邮箱地址。',
     invalidPhone: '请输入 4 到 14 位数字。',
     invalidCountryCode: '请输入国家区号，例如 +689。',
+    showDetails: '查看详情',
+    createdLabel: '创建时间',
+    lastActivity: '最近活动',
+    stage: '阶段',
     columns: {
       devis: '报价',
       model: '3D 模型',

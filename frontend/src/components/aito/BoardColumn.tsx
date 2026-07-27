@@ -9,11 +9,13 @@ import type { AitoProject } from '../../api/client';
 function SortableCard({
   project,
   onDelete,
+  onExpand,
   transitionConfig,
   animateIn,
 }: {
   project: AitoProject;
   onDelete: () => void;
+  onExpand: () => void;
   transitionConfig: { duration: number; easing: string } | null;
   animateIn: boolean;
 }) {
@@ -30,7 +32,7 @@ function SortableCard({
       {...listeners}
       className={`touch-none ${animateIn ? 'animate-rise' : ''} ${isDragging ? 'opacity-30' : ''}`}
     >
-      <CardView project={project} onDelete={onDelete} />
+      <CardView project={project} onDelete={onDelete} onExpand={onExpand} />
     </div>
   );
 }
@@ -40,6 +42,7 @@ interface ColumnProps {
   projects: AitoProject[];
   isDropTarget: boolean;
   onDeleteCard: (id: number) => void;
+  onExpandCard: (id: number) => void;
   transitionConfig: { duration: number; easing: string } | null;
   shouldAnimateIn: (id: number) => boolean;
 }
@@ -49,6 +52,7 @@ export function BoardColumn({
   projects,
   isDropTarget,
   onDeleteCard,
+  onExpandCard,
   transitionConfig,
   shouldAnimateIn,
 }: ColumnProps) {
@@ -76,6 +80,7 @@ export function BoardColumn({
               key={project.id}
               project={project}
               onDelete={() => onDeleteCard(project.id)}
+              onExpand={() => onExpandCard(project.id)}
               transitionConfig={transitionConfig}
               animateIn={shouldAnimateIn(project.id)}
             />

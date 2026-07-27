@@ -55,6 +55,10 @@ export default {
     invalidEmail: '有効なメールアドレスを入力してください。',
     invalidPhone: '4〜14桁の数字を入力してください。',
     invalidCountryCode: '+689 のような国番号を入力してください。',
+    showDetails: '詳細を表示',
+    createdLabel: '作成日',
+    lastActivity: '最終更新',
+    stage: 'ステージ',
     columns: {
       devis: '見積もり',
       model: '3Dモデル',

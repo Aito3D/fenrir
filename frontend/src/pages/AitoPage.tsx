@@ -23,10 +23,12 @@ import { CardView } from '../components/aito/CardView';
 import { BoardColumn } from '../components/aito/BoardColumn';
 import { COLUMNS } from '../components/aito/columns';
 import { ClientCombobox, type SelectedClient } from '../components/aito/ClientCombobox';
+import { ProjectDetailPanel } from '../components/aito/ProjectDetailPanel';
 import { api, ApiError, type AitoProject } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { formatElapsedTime } from '../utils/date';
 import { prefersReducedMotion } from '../utils/motion';
+import { useCardMorph } from '../hooks/useCardMorph';
 import {
   COLUMN_IDS,
   applyCrossColumnMove,
@@ -267,6 +269,13 @@ export function AitoPage() {
   const [showModal, setShowModal] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
   const [activeId, setActiveId] = useState<number | null>(null);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const { open: openCard, close: closeCard } = useCardMorph(setExpandedId);
+
+  const expandedProject = useMemo(
+    () => (expandedId !== null ? (aitoQuery.data ?? []).find((p) => p.id === expandedId) ?? null : null),
+    [expandedId, aitoQuery.data],
+  );
 
   // A move is "in flight" from the moment handleDragEnd fires until the PATCH
   // settles. The local board owns the ordering for that whole window — a ref so
@@ -560,6 +569,7 @@ export function AitoPage() {
                 projects={board[column.id]}
                 isDropTarget={dropTarget === column.id}
                 onDeleteCard={(id) => deleteMutation.mutate(id)}
+                onExpandCard={openCard}
                 transitionConfig={reducedMotion ? null : SORTABLE_TRANSITION}
                 shouldAnimateIn={shouldAnimateIn}
               />
@@ -575,6 +585,10 @@ export function AitoPage() {
       {showModal && <NewProjectModal onClose={() => setShowModal(false)} onCreate={createProject} />}
 
       {showTrash && <TrashModal onClose={() => setShowTrash(false)} />}
+
+      {expandedProject && (
+        <ProjectDetailPanel project={expandedProject} onClose={() => closeCard(expandedProject.id)} />
+      )}
     </div>
   );
 }

@@ -55,6 +55,10 @@ export default {
     invalidEmail: 'Gib eine gültige E-Mail-Adresse ein.',
     invalidPhone: 'Gib zwischen 4 und 14 Ziffern ein.',
     invalidCountryCode: 'Gib eine Landesvorwahl wie z. B. +689 ein.',
+    showDetails: 'Details anzeigen',
+    createdLabel: 'Erstellt',
+    lastActivity: 'Letzte Aktivität',
+    stage: 'Phase',
     columns: {
       devis: 'Angebot',
       model: '3D-Modell',
