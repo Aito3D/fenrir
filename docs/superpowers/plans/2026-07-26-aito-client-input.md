@@ -16,6 +16,8 @@
 - Use `./venv/bin/python3` for every Python command. `ruff` is on PATH.
 - TypeScript strict mode, no unused locals or parameters, ES2022, `@/` → `frontend/src/`.
 - All test scripts run **from the project root**: `./test_frontend.sh`, `./test_backend.sh`.
+- **Known pre-existing failure:** `./test_backend.sh` starts with `ruff check && ruff format --check` over the whole repo, and 6 files unrelated to this plan already fail the format check at the plan's base commit (`camera.py`, `library.py`, `test_camera_api.py`, `test_library_file_history_api.py`, `test_aito_project_model.py`, `test_camera_chamber_stream.py`). `ruff check` itself passes. Do **not** reformat those files — they are outside this plan's scope. Verify backend work with `ruff check backend/` plus a scoped `ruff format --check` over the files your task touched, and run pytest directly:
+  `./venv/bin/python3 -m pytest backend/tests/unit/ -q`
 - `cd frontend && npm run build` catches import/resolution errors that `tsc --noEmit` does not — run it before declaring frontend work done.
 - Database schema changes are additive `ALTER TABLE` statements inside `run_migrations()` in `backend/app/core/database.py`, wrapped in `_safe_execute` for idempotency. There is no migration framework.
 - Every new user-facing string needs a key in **all 12 locale files** under `frontend/src/i18n/locales/`: `en, de, es, fr, it, ja, ko, pt-BR, ru, tr, zh-CN, zh-TW`. `frontend/src/__tests__/i18n/locales.test.ts` enforces exact key parity between `en` and `de, fr, it, ja, pt-BR, zh-CN`. English text left in a non-English locale is not acceptable.
@@ -1143,8 +1145,9 @@ Add `from typing import Literal` at the top of the file.
 
 - [ ] **Step 8: Run the backend suite**
 
-Run: `./test_backend.sh`
-Expected: PASS
+Run: `./venv/bin/python3 -m pytest backend/tests/unit/ -q && ruff check backend/`
+Expected: PASS. (`./test_backend.sh` also runs a repo-wide `ruff format --check` that
+fails on 6 pre-existing files unrelated to this plan — see Global Constraints.)
 
 - [ ] **Step 9: Add the API client method**
 
