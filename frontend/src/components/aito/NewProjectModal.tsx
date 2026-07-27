@@ -35,14 +35,23 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
     if (!draft && defaultId) setDraft(defaultClientDraft(defaultId, defaultName));
   }, [draft, defaultId, defaultName]);
 
+  // Escape and a backdrop click are both "dismiss the thing on top": while the
+  // create-client sub-step is showing that means stepping back to the main
+  // form (same as its Back button), never discarding whatever the user typed
+  // into it. Only when the main form itself is showing do they close the modal.
+  const dismiss = () => {
+    if (creatingClient !== null) setCreatingClient(null);
+    else onClose();
+  };
+
   useEffect(() => {
     textareaRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') dismiss();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [creatingClient, onClose]);
 
   // `clientDraftErrors` only reports blurred fields, so this is what the user can
   // currently see. Validity for gating is computed against a fully-blurred copy,
@@ -72,7 +81,7 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
     <div
       className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-overlay-in"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) dismiss();
       }}
     >
       <div className="bg-bambu-dark-secondary rounded-xl w-full max-w-md border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)] animate-modal-in">
