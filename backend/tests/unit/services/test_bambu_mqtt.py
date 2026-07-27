@@ -6468,3 +6468,72 @@ class TestPresumedPowerOffRecovery:
         self._report(mqtt_client, {"print": {"wifi_signal": "-30dBm"}})
 
         assert mqtt_client.state.state == "FINISH"
+
+
+class TestKProfileResponseDoesNotClobberNozzle:
+    """#2663: the K-profile fetch (get_kprofiles) probes every nozzle size
+    0.2/0.4/0.6/0.8 with an ``extrusion_cali_get`` request. Each response
+    echoes the *requested* nozzle_diameter at the top level, which is NOT the
+    installed hardware. _process_message must not feed those responses to
+    _update_state, or the real nozzle size gets overwritten (typically to 0.8,
+    the last size probed) and the #1899 dispatch guard then blocks prints.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="A1TEST",
+            access_code="12345678",
+        )
+
+    def test_kprofile_response_does_not_overwrite_nozzle_diameter(self, mqtt_client):
+        # A genuine pushall reports the real 0.4mm nozzle.
+        mqtt_client._process_message({"print": {"nozzle_diameter": "0.4"}})
+        assert mqtt_client.state.nozzles[0].nozzle_diameter == "0.4"
+
+        # The K-profile probe's 0.8mm response arrives (as it did on the
+        # reporter's A1s). It must NOT clobber the hardware nozzle.
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "command": "extrusion_cali_get",
+                    "nozzle_diameter": "0.8",
+                    "filaments": [],
+                    "sequence_id": "1501",
+                }
+            }
+        )
+        assert mqtt_client.state.nozzles[0].nozzle_diameter == "0.4"
+
+    def test_kprofile_response_is_still_parsed(self, mqtt_client):
+        # Skipping _update_state must not skip the K-profile handler: the
+        # response's profiles still populate state.kprofiles.
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "command": "extrusion_cali_get",
+                    "nozzle_diameter": "0.4",
+                    "filaments": [
+                        {
+                            "cali_idx": 0,
+                            "nozzle_diameter": "0.4",
+                            "filament_id": "GFA00",
+                            "name": "PLA",
+                            "k_value": "0.020000",
+                        }
+                    ],
+                }
+            }
+        )
+        assert len(mqtt_client.state.kprofiles) == 1
+        assert mqtt_client.state.kprofiles[0].filament_id == "GFA00"
+
+    def test_genuine_pushall_still_updates_nozzle(self, mqtt_client):
+        # The one legitimate source of the hardware nozzle still works, and a
+        # later pushall corrects a value an old build left wrong.
+        mqtt_client.state.nozzles[0].nozzle_diameter = "0.8"
+        mqtt_client._process_message({"print": {"nozzle_diameter": "0.4"}})
+        assert mqtt_client.state.nozzles[0].nozzle_diameter == "0.4"

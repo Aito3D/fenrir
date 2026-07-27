@@ -1427,10 +1427,19 @@ class BambuMQTTClient:
                 elif cmd == "ams_filament_setting":
                     self._last_ams_cmd_time = 0.0
                     self._ams_cmd_unanswered = 0
-            if "command" in print_data and print_data.get("command") == "extrusion_cali_get":
+            is_kprofile_response = "command" in print_data and print_data.get("command") == "extrusion_cali_get"
+            if is_kprofile_response:
                 self._handle_kprofile_response(print_data)
 
-            self._update_state(print_data)
+            # An extrusion_cali_get response echoes the *requested* nozzle
+            # diameter (get_kprofiles probes 0.2/0.4/0.6/0.8 in turn), not the
+            # installed hardware. Feeding it to _update_state clobbered the real
+            # nozzle size (#2663) — typically leaving 0.8, the last size probed,
+            # which then failed the #1899 dispatch guard. The response carries no
+            # status telemetry, so skip it; the true nozzle comes from pushall.
+            # (Same reasoning as get_accessories in _handle_system_response.)
+            if not is_kprofile_response:
+                self._update_state(print_data)
 
     def _handle_system_response(self, data: dict):
         """Handle system responses including accessories info.
