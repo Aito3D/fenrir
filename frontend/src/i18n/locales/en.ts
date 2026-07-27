@@ -1219,6 +1219,8 @@ export default {
     history: {
       emptyTitle: 'No history yet',
       emptyDescription: 'Completed, cancelled, and failed prints will appear here.',
+      showMore: 'Show more',
+      showingCount: 'Showing {{shown}} of {{total}}',
     },
     // Drag ghost label when multi-dragging
     dragGhost: {

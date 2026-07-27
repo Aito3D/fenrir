@@ -1153,6 +1153,8 @@ export default {
     history: {
       emptyTitle: "История пока пуста",
       emptyDescription: "Здесь появятся завершённые, отменённые и неудачные задания.",
+      showMore: "Показать ещё",
+      showingCount: "Показано {{shown}} из {{total}}",
     },
     dragGhost: {
       multiCount: "{{count}} заданий",

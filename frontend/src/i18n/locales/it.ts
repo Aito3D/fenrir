@@ -1205,6 +1205,8 @@ export default {
     history: {
       emptyTitle: 'Nessuna cronologia',
       emptyDescription: 'Le stampe completate, annullate e fallite appariranno qui.',
+      showMore: 'Mostra altri',
+      showingCount: 'Visualizzati {{shown}} di {{total}}',
     },
     dragGhost: {
       multiCount: '{{count}} elementi',

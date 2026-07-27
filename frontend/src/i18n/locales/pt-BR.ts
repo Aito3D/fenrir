@@ -1205,6 +1205,8 @@ export default {
     history: {
       emptyTitle: 'Sem histórico ainda',
       emptyDescription: 'Impressões concluídas, canceladas e com falha aparecerão aqui.',
+      showMore: 'Mostrar mais',
+      showingCount: 'Mostrando {{shown}} de {{total}}',
     },
     dragGhost: {
       multiCount: '{{count}} itens',

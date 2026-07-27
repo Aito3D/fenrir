@@ -1205,6 +1205,8 @@ export default {
     history: {
       emptyTitle: 'Henüz geçmiş yok',
       emptyDescription: 'Tamamlanan, iptal edilen ve başarısız baskılar burada görünür.',
+      showMore: 'Daha fazla göster',
+      showingCount: '{{total}} öğeden {{shown}} tanesi gösteriliyor',
     },
     dragGhost: {
       multiCount: '{{count}} öğe',

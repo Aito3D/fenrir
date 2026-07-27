@@ -1204,6 +1204,8 @@ export default {
     history: {
       emptyTitle: '履歴はまだありません',
       emptyDescription: '完了・キャンセル・失敗した印刷がここに表示されます。',
+      showMore: 'さらに表示',
+      showingCount: '{{total}} 件中 {{shown}} 件を表示',
     },
     dragGhost: {
       multiCount: '{{count}}件',

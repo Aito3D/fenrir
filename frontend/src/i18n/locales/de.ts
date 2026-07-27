@@ -1205,6 +1205,8 @@ export default {
     history: {
       emptyTitle: 'Noch kein Verlauf',
       emptyDescription: 'Abgeschlossene, abgebrochene und fehlgeschlagene Drucke erscheinen hier.',
+      showMore: 'Mehr anzeigen',
+      showingCount: '{{shown}} von {{total}} werden angezeigt',
     },
     dragGhost: {
       multiCount: '{{count}} Einträge',

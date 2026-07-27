@@ -1147,6 +1147,8 @@ export default {
     history: {
       emptyTitle: '아직 기록이 없습니다',
       emptyDescription: '완료·취소·실패한 인쇄가 여기에 표시됩니다.',
+      showMore: '더 보기',
+      showingCount: '{{total}}개 중 {{shown}}개 표시',
     },
     dragGhost: {
       multiCount: '{{count}}개 항목',

@@ -249,6 +249,51 @@ describe('QueuePage', () => {
     });
   });
 
+  describe('history pagination', () => {
+    // #2682: History rendered the full count in the header but only ever drew
+    // the first 50 rows, with no way to reach the rest. It now paginates with
+    // a "Show more" control.
+    const manyHistory = Array.from({ length: 60 }, (_, i) => ({
+      ...mockQueueItems[2],
+      id: 100 + i,
+      batch_id: null,
+      archive_name: `History Item ${String(i).padStart(2, '0')}`,
+      // Descending completed_at so index 0 is newest and sorts first; the
+      // default History sort is by date, newest first.
+      completed_at: new Date(Date.UTC(2024, 0, 1, 0, 0, 0) - i * 60000).toISOString(),
+    }));
+
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/queue/', () => {
+          return HttpResponse.json(manyHistory);
+        })
+      );
+    });
+
+    it('caps the History list at one page and reveals the rest on Show more', async () => {
+      const user = userEvent.setup();
+      render(<QueuePage />);
+
+      await user.click(await screen.findByRole('button', { name: /^History/ }));
+
+      // First page is drawn; an item past the 50-row cap is not.
+      await waitFor(() => {
+        expect(screen.getByText('History Item 00')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('History Item 59')).not.toBeInTheDocument();
+      expect(screen.getByText('Showing 50 of 60')).toBeInTheDocument();
+
+      // Show more reveals the remainder and then disappears (nothing left).
+      await user.click(screen.getByRole('button', { name: /show more/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('History Item 59')).toBeInTheDocument();
+      });
+      expect(screen.queryByRole('button', { name: /show more/i })).not.toBeInTheDocument();
+    });
+  });
+
   describe('empty state', () => {
     it('shows empty state when no queue items', async () => {
       server.use(

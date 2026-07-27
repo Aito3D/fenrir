@@ -1205,6 +1205,8 @@ export default {
     history: {
       emptyTitle: '目前沒有歷史記錄',
       emptyDescription: '已完成、已取消與失敗的列印將顯示於此。',
+      showMore: '顯示更多',
+      showingCount: '顯示 {{total}} 項中的 {{shown}} 項',
     },
     dragGhost: {
       multiCount: '{{count}} 項',

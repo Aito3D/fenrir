@@ -1205,6 +1205,8 @@ export default {
     history: {
       emptyTitle: 'Sin historial todavía',
       emptyDescription: 'Las impresiones completadas, canceladas y fallidas aparecerán aquí.',
+      showMore: 'Mostrar más',
+      showingCount: 'Mostrando {{shown}} de {{total}}',
     },
     dragGhost: {
       multiCount: '{{count}} elementos',

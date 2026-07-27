@@ -1205,6 +1205,8 @@ export default {
     history: {
       emptyTitle: '暂无历史',
       emptyDescription: '已完成、已取消和失败的打印将在此显示。',
+      showMore: '显示更多',
+      showingCount: '显示 {{total}} 项中的 {{shown}} 项',
     },
     dragGhost: {
       multiCount: '{{count}} 项',
