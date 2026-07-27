@@ -54,6 +54,14 @@ export function SearchableSelect({
     };
     const onEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // This listener is only attached while `open` is true (see the guard
+        // above), so stopping propagation here can never swallow Escape for a
+        // consumer with a closed dropdown. Without this, a window-level Escape
+        // handler in a parent modal fires on the same event — document
+        // listeners run before window listeners in the bubble phase — closing
+        // the modal underneath an open dropdown and discarding whatever the
+        // user had typed into it.
+        e.stopPropagation();
         setOpen(false);
         setSearch('');
         setHighlight(-1);

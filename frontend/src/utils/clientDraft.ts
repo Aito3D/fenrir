@@ -117,16 +117,41 @@ export function validatePhone(phone: ParsedPhone): string | null {
   return null;
 }
 
-/** Single source of truth for what the form shows and whether it may submit.
- *  A field that has never been blurred reports no error, so opening a contact
- *  whose stored value is already malformed stays quiet. */
+/** Pure validity — independent of whether the fields have been blurred. This is
+ *  *not* what a caller should gate submit or rendering on by itself: a contact's
+ *  stored phone or email can already be malformed before the user touches
+ *  anything, and validity alone can't tell "the user typed something bad" apart
+ *  from "Zoho already held something bad". Pair with `maskVisibleErrors` (or
+ *  `visibleClientDraftErrors`) for that. */
 export function clientDraftErrors(draft: ClientDraft): ClientDraftErrors {
   return {
-    phone: draft.blurred.phone
-      ? validatePhone({ countryCode: draft.countryCode, nationalNumber: draft.nationalNumber })
-      : null,
-    email: draft.blurred.email ? validateEmail(draft.email) : null,
+    phone: validatePhone({ countryCode: draft.countryCode, nationalNumber: draft.nationalNumber }),
+    email: validateEmail(draft.email),
   };
+}
+
+interface BlurredFlags {
+  phone: boolean;
+  email: boolean;
+}
+
+/** The one masking rule, shared by every caller that needs "is this error
+ *  visible right now": a field only reports an error once it has been left
+ *  once. Previously each of ClientSection, NewProjectModal and NewContactForm
+ *  applied this by hand — NewProjectModal manufactured a fake fully-blurred
+ *  draft to decide submit-ability, which conflated validity with visibility and
+ *  let a malformed *stored* value disable "Create project" before the user
+ *  touched anything, with no message and no way to tell why. */
+export function maskVisibleErrors(errors: ClientDraftErrors, blurred: BlurredFlags): ClientDraftErrors {
+  return {
+    phone: blurred.phone ? errors.phone : null,
+    email: blurred.email ? errors.email : null,
+  };
+}
+
+/** What the form should currently show and gate submit on for a `ClientDraft`. */
+export function visibleClientDraftErrors(draft: ClientDraft): ClientDraftErrors {
+  return maskVisibleErrors(clientDraftErrors(draft), draft.blurred);
 }
 
 export function draftFromContact(contact: ZohoContact, defaultContactId: string): ClientDraft {

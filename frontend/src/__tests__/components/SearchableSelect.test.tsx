@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SearchableSelect } from '../../components/SearchableSelect';
 
@@ -116,5 +116,43 @@ describe('SearchableSelect keyboard navigation', () => {
 
     expect(onChange).toHaveBeenCalledWith('MyBrand');
     expect(input).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  describe('Escape propagation', () => {
+    // Regression test for a bug where SearchableSelect registered its Escape
+    // handler on `document` without stopping propagation. A parent modal that
+    // listens on `window` (e.g. NewProjectModal) still received the same
+    // Escape event — document listeners run before window listeners in the
+    // bubble phase — and closed itself underneath an open dropdown, discarding
+    // whatever the user had typed into the surrounding form.
+    it('stops Escape from reaching a window-level handler while its dropdown is open', async () => {
+      const user = userEvent.setup();
+      const windowHandler = vi.fn();
+      window.addEventListener('keydown', windowHandler);
+      try {
+        const { input } = setup();
+        await user.click(input);
+        expect(screen.getByRole('option', { name: 'Bambu Lab' })).toBeInTheDocument();
+
+        await user.keyboard('{Escape}');
+
+        expect(screen.queryByRole('option', { name: 'Bambu Lab' })).not.toBeInTheDocument();
+        expect(windowHandler).not.toHaveBeenCalled();
+      } finally {
+        window.removeEventListener('keydown', windowHandler);
+      }
+    });
+
+    it('leaves Escape alone for a window-level handler while its dropdown is closed', () => {
+      const windowHandler = vi.fn();
+      window.addEventListener('keydown', windowHandler);
+      try {
+        setup(); // never opened
+        fireEvent.keyDown(document.body, { key: 'Escape', bubbles: true });
+        expect(windowHandler).toHaveBeenCalledTimes(1);
+      } finally {
+        window.removeEventListener('keydown', windowHandler);
+      }
+    });
   });
 });

@@ -169,6 +169,22 @@ describe('ClientSection', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/4 and 14 digits/i);
   });
 
+  it('does not mark the phone touched while searching the country picker by name', async () => {
+    // Regression test: SearchableSelect(allowCustom) used to call onChange on
+    // every keystroke, including free-text searches. Typing "France" to find
+    // +33 must never reach the draft — it isn't a phone edit, so it must not
+    // set touched.phone (which would trigger a Zoho PATCH on submit and
+    // silently reformat a contact's stored phone) or corrupt countryCode into
+    // literal text like 'Fra'.
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    renderSection(draftFromContact(acme, DEFAULT_ID), onChange);
+    const countryInput = screen.getByRole('combobox', { name: /country code/i });
+    await user.click(countryInput);
+    await user.type(countryInput, 'France');
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it('resets the whole draft to the default client', async () => {
     const onChange = vi.fn();
     const user = userEvent.setup();

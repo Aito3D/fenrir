@@ -7,7 +7,7 @@ import type { ZohoContact } from '../../api/client';
 import { ClientCombobox } from './ClientCombobox';
 import { PhoneInput } from './PhoneInput';
 import { FieldError } from './FieldError';
-import { clientDraftErrors, defaultClientDraft, draftFromContact, parsePhone } from '../../utils/clientDraft';
+import { visibleClientDraftErrors, defaultClientDraft, draftFromContact, parsePhone } from '../../utils/clientDraft';
 import type { ClientDraft } from '../../utils/clientDraft';
 import { focusRingCls, inputCls, inputErrorCls, labelCls } from '../formStyles';
 
@@ -72,7 +72,7 @@ export function ClientSection({
       blurred: { ...value.blurred, email: false },
     });
 
-  const errors = clientDraftErrors(value);
+  const errors = visibleClientDraftErrors(value);
 
   const resetButtonCls = (visible: boolean) =>
     `p-2 rounded-md text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary transition-opacity ${focusRingCls} ${
@@ -113,12 +113,16 @@ export function ClientSection({
                   blurred: { ...value.blurred, phone: true },
                 })
               }
-              onChange={(next) =>
+              onChange={(next, changed) =>
                 onChange({
                   ...value,
                   countryCode: next.countryCode,
                   nationalNumber: next.nationalNumber,
                   touched: { ...value.touched, phone: true },
+                  // A country-code pick is one atomic action, so its error (if
+                  // any) should be visible right away — unlike a national-number
+                  // keystroke, which stays quiet until the field is blurred.
+                  blurred: changed === 'countryCode' ? { ...value.blurred, phone: true } : value.blurred,
                 })
               }
             />

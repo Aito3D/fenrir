@@ -7,6 +7,8 @@ import {
   validateEmail,
   validatePhone,
   clientDraftErrors,
+  maskVisibleErrors,
+  visibleClientDraftErrors,
   draftFromContact,
   defaultClientDraft,
 } from '../../utils/clientDraft';
@@ -125,25 +127,81 @@ describe('validatePhone', () => {
 });
 
 describe('clientDraftErrors', () => {
+  // Pure validity — independent of `blurred`. This is the source of a bug fixed
+  // in the final review: an earlier version of this function folded the
+  // `blurred` mask in here directly, which meant the only way for a caller to
+  // check "is this draft submittable" was to fabricate a fully-blurred copy —
+  // and that copy is what NewProjectModal used to disable "Create project" the
+  // instant a contact with an already-malformed *stored* phone/email was
+  // selected, with no error on screen to explain why. Splitting validity
+  // (this function) from visibility (`maskVisibleErrors`) lets a caller gate
+  // submit on visible errors instead, so a disabled button always has a
+  // message beside it.
   const bad = {
     ...defaultClientDraft('d1', 'Client de passage'),
     email: 'nope',
     nationalNumber: '12',
   };
 
-  it('reports nothing while the fields are unblurred', () => {
-    expect(clientDraftErrors(bad)).toEqual({ phone: null, email: null });
-  });
-
-  it('reports both once blurred', () => {
+  it('reports validity regardless of whether the fields have been blurred', () => {
+    expect(clientDraftErrors(bad)).toEqual({ phone: 'aito.invalidPhone', email: 'aito.invalidEmail' });
     expect(clientDraftErrors({ ...bad, blurred: { phone: true, email: true } })).toEqual({
       phone: 'aito.invalidPhone',
       email: 'aito.invalidEmail',
     });
   });
 
+  it('reports nothing for a valid draft', () => {
+    expect(clientDraftErrors(defaultClientDraft('d1', 'Client de passage'))).toEqual({
+      phone: null,
+      email: null,
+    });
+  });
+});
+
+describe('maskVisibleErrors', () => {
+  const errors = { phone: 'aito.invalidPhone', email: 'aito.invalidEmail' };
+
+  it('hides both while nothing has been blurred', () => {
+    expect(maskVisibleErrors(errors, { phone: false, email: false })).toEqual({ phone: null, email: null });
+  });
+
+  it('reveals only the blurred field', () => {
+    expect(maskVisibleErrors(errors, { phone: false, email: true })).toEqual({
+      phone: null,
+      email: 'aito.invalidEmail',
+    });
+  });
+
+  it('reveals both once both are blurred', () => {
+    expect(maskVisibleErrors(errors, { phone: true, email: true })).toEqual(errors);
+  });
+});
+
+describe('visibleClientDraftErrors', () => {
+  const bad = {
+    ...defaultClientDraft('d1', 'Client de passage'),
+    email: 'nope',
+    nationalNumber: '12',
+  };
+
+  it('reports nothing while the fields are unblurred, even though the draft is invalid', () => {
+    // The exact scenario from the review: `draftFromContact` can hand back a
+    // draft whose stored value is already malformed. Opening it must never
+    // flag work the user didn't do.
+    expect(visibleClientDraftErrors(bad)).toEqual({ phone: null, email: null });
+    expect(clientDraftErrors(bad)).not.toEqual({ phone: null, email: null });
+  });
+
+  it('reports both once blurred', () => {
+    expect(visibleClientDraftErrors({ ...bad, blurred: { phone: true, email: true } })).toEqual({
+      phone: 'aito.invalidPhone',
+      email: 'aito.invalidEmail',
+    });
+  });
+
   it('reports only the blurred field', () => {
-    expect(clientDraftErrors({ ...bad, blurred: { phone: false, email: true } })).toEqual({
+    expect(visibleClientDraftErrors({ ...bad, blurred: { phone: false, email: true } })).toEqual({
       phone: null,
       email: 'aito.invalidEmail',
     });

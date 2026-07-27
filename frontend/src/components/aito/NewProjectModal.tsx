@@ -7,7 +7,7 @@ import type { ZohoContact } from '../../api/client';
 import { Button } from '../Button';
 import { ClientSection } from './ClientSection';
 import { NewContactForm } from './NewContactForm';
-import { clientDraftErrors, defaultClientDraft, draftFromContact } from '../../utils/clientDraft';
+import { defaultClientDraft, draftFromContact, visibleClientDraftErrors } from '../../utils/clientDraft';
 import type { ClientDraft } from '../../utils/clientDraft';
 import { inputCls, labelCls } from '../formStyles';
 
@@ -29,6 +29,11 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
   const statusQuery = useQuery({ queryKey: ['zoho-status'], queryFn: api.getZohoStatus, staleTime: 60_000 });
   const defaultId = statusQuery.data?.default_contact_id ?? '';
   const defaultName = statusQuery.data?.default_contact_name ?? '';
+  // The status endpoint always returns a default contact — even a fallback one
+  // — so it can ride along without a second round trip once Zoho *is*
+  // configured. That default must never be treated as permission to create:
+  // while `configured` is false there is no real client behind that id.
+  const configured = statusQuery.data?.configured === true;
 
   // Seed the draft once the default contact is known.
   useEffect(() => {
@@ -53,22 +58,23 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [creatingClient, onClose]);
 
-  // `clientDraftErrors` only reports blurred fields, so this is what the user can
-  // currently see. Validity for gating is computed against a fully-blurred copy,
-  // which is also what `submit` reveals — a disabled button is therefore always
-  // accompanied by a visible message.
-  const clientValid =
-    draft === null ||
-    Object.values(clientDraftErrors({ ...draft, blurred: { phone: true, email: true } })).every(
-      (e) => e === null,
-    );
-  const canSubmit = description.trim().length > 0 && draft !== null && clientValid;
+  // `visibleClientDraftErrors` only reports blurred fields, so this is what the
+  // user can currently see right now — and gating on exactly that (not on raw
+  // validity) matters: a contact whose *stored* phone or email is already
+  // malformed must never disable the button before the user has touched
+  // anything, with no message on screen explaining why. Clicking submit is what
+  // reveals it, below, the same way leaving the field would have.
+  const visibleErrors = draft ? visibleClientDraftErrors(draft) : { phone: null, email: null };
+  const clientValid = draft === null || (visibleErrors.phone === null && visibleErrors.email === null);
+  const canSubmit = configured && description.trim().length > 0 && draft !== null && clientValid;
 
   const submit = () => {
-    if (!draft) return;
+    if (!draft || !configured) return;
     // Reveal errors the user never triggered by leaving a field.
-    setDraft({ ...draft, blurred: { phone: true, email: true } });
-    if (description.trim().length === 0 || !clientValid) return;
+    const revealed = { ...draft, blurred: { phone: true, email: true } };
+    setDraft(revealed);
+    const revealedErrors = visibleClientDraftErrors(revealed);
+    if (description.trim().length === 0 || revealedErrors.phone !== null || revealedErrors.email !== null) return;
     onCreate(description.trim(), draft);
   };
 

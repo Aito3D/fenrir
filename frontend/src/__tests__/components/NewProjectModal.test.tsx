@@ -45,17 +45,107 @@ describe('NewProjectModal', () => {
     );
     await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
     await user.type(screen.getByLabelText(/^email/i), 'nope');
-    // Never blurred, so no message yet — but the button is already disabled.
+    // Never blurred, so no message yet — and submit is not blocked by a hidden
+    // error either: the spec ties blocking to a *visible* error ("showing an
+    // error and then letting the submit through would make the message
+    // decorative"), which cuts both ways — a hidden error must not silently
+    // block submit before the field has even been left once.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /create project/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /create project/i })).not.toBeDisabled();
 
     await user.tab();
     expect(screen.getByRole('alert')).toHaveTextContent(/valid email/i);
+    expect(screen.getByRole('button', { name: /create project/i })).toBeDisabled();
     expect(onCreate).not.toHaveBeenCalled();
 
     await user.clear(screen.getByLabelText(/^email/i));
     await user.click(screen.getByRole('button', { name: /create project/i }));
     expect(onCreate).toHaveBeenCalled();
+  });
+
+  it('Escape from the country-code picker closes the dropdown, not the modal', async () => {
+    // Regression test: PhoneInput's country-code picker is a SearchableSelect
+    // that used to leave Escape propagating up to the modal's own window-level
+    // handler, closing the whole modal (and discarding the typed description)
+    // instead of just the dropdown.
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<NewProjectModal onClose={onClose} onCreate={vi.fn()} />);
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: /client/i })).toHaveValue('Client de passage'),
+    );
+    await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
+
+    const countryInput = screen.getByRole('combobox', { name: /country code/i });
+    await user.click(countryInput);
+    await user.type(countryInput, 'Fra');
+    await user.keyboard('{Escape}');
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/product description/i)).toHaveValue('Support de caméra');
+  });
+
+  it('lets a contact with an already-malformed stored phone reach a visible error instead of a silently disabled submit', async () => {
+    // Regression test for the finding that NewProjectModal computed
+    // submit-ability from a synthetic fully-blurred draft: selecting a directory
+    // contact whose *stored* phone was already malformed (real org data has six
+    // such "other"-shaped values) disabled "Create project" the instant it was
+    // selected, with no message on screen and nothing to revert, because the
+    // field had never actually been blurred by the user.
+    const badContact = {
+      id: 'bad1', name: 'Bad Contact', company_name: '',
+      phone: '', mobile: '+689-876543210987654', email: 'ok@example.pf',
+    };
+    server.use(http.get('/api/v1/zoho/contacts', () => HttpResponse.json([badContact])));
+    const onCreate = vi.fn();
+    const user = userEvent.setup();
+    render(<NewProjectModal onClose={vi.fn()} onCreate={onCreate} />);
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: /client/i })).toHaveValue('Client de passage'),
+    );
+    await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
+
+    const combobox = screen.getByRole('combobox', { name: /client/i });
+    await user.clear(combobox);
+    await user.type(combobox, 'Bad');
+    await user.click(await screen.findByText('Bad Contact'));
+
+    // Selecting the contact alone must never silently disable submit.
+    expect(screen.getByRole('button', { name: /create project/i })).not.toBeDisabled();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /create project/i }));
+
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent(/4 and 14 digits/i);
+  });
+
+  it('blocks project creation while Zoho is not configured', async () => {
+    // Regression test: GET /zoho/status always returns the fallback default
+    // contact, even when configured is false, so the draft still seeds. Submit
+    // must consult `configured` directly rather than inferring it from having a
+    // default contact id.
+    server.use(
+      http.get('/api/v1/zoho/status', () =>
+        HttpResponse.json({
+          configured: false, reachable: false,
+          default_contact_id: DEFAULT_ID, default_contact_name: 'Client de passage',
+        }),
+      ),
+    );
+    const onCreate = vi.fn();
+    const user = userEvent.setup();
+    render(<NewProjectModal onClose={vi.fn()} onCreate={onCreate} />);
+    await waitFor(() => expect(screen.getByText(/isn.t connected yet/i)).toBeInTheDocument());
+    await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
+
+    const submitButton = screen.getByRole('button', { name: /create project/i });
+    expect(submitButton).toBeDisabled();
+    // The Ctrl+Enter shortcut bypasses the disabled button entirely, so it must
+    // be guarded independently.
+    screen.getByLabelText(/product description/i).focus();
+    await user.keyboard('{Control>}{Enter}{/Control}');
+    expect(onCreate).not.toHaveBeenCalled();
   });
 
   it('switches to the create-client sub-step and back', async () => {

@@ -12,6 +12,7 @@ import {
   DEFAULT_COUNTRY_CODE,
   formatDisplayName,
   formatPhone,
+  maskVisibleErrors,
   titleCaseSegments,
   validateEmail,
   validatePhone,
@@ -47,14 +48,13 @@ export function NewContactForm({ initialQuery, onCancel, onCreated }: NewContact
   const hasName = hasCompany || (firstName.trim().length > 0 && lastName.trim().length > 0);
   const preview = hasCompany ? companyName.trim() : formatDisplayName(firstName, lastName);
 
-  // Same two-stage rule as ClientSection: the message only becomes visible once
-  // the field has been left, but validity always gates the submit.
+  // Same two-stage rule as ClientSection, via the same shared mask: the message
+  // only becomes visible once the field has been left, but validity always
+  // gates the submit — this form's fields start blank, so there is no stored
+  // value that can be malformed before the user types anything.
   const phoneError = validatePhone({ countryCode, nationalNumber });
   const emailError = validateEmail(email);
-  const visibleErrors = {
-    phone: blurred.phone ? phoneError : null,
-    email: blurred.email ? emailError : null,
-  };
+  const visibleErrors = maskVisibleErrors({ phone: phoneError, email: emailError }, blurred);
   const canSubmit = hasName && !phoneError && !emailError;
 
   const createMutation = useMutation({
@@ -147,9 +147,10 @@ export function NewContactForm({ initialQuery, onCancel, onCreated }: NewContact
             nationalNumber={nationalNumber}
             invalid={visibleErrors.phone !== null}
             onBlur={() => setBlurred((b) => ({ ...b, phone: true }))}
-            onChange={(next) => {
+            onChange={(next, changed) => {
               setCountryCode(next.countryCode);
               setNationalNumber(next.nationalNumber);
+              if (changed === 'countryCode') setBlurred((b) => ({ ...b, phone: true }));
             }}
           />
           <FieldError messageKey={visibleErrors.phone} />
