@@ -26,5 +26,6 @@ class AitoProject(Base):
     client_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     client_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     client_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    client_email: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

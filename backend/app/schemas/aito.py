@@ -13,6 +13,7 @@ class AitoProjectCreate(BaseModel):
     client_id: str = Field(min_length=1)
     client_name: str = Field(min_length=1)
     client_phone: str | None = None
+    client_email: str | None = None
 
 
 class AitoProjectImportItem(BaseModel):
@@ -38,6 +39,7 @@ class AitoProjectUpdate(BaseModel):
     client_id: str | None = None
     client_name: str | None = None
     client_phone: str | None = None
+    client_email: str | None = None
 
     @field_validator("description")
     @classmethod
@@ -56,5 +58,6 @@ class AitoProjectResponse(BaseModel):
     client_id: str | None
     client_name: str | None
     client_phone: str | None
+    client_email: str | None
     created_at: datetime
     updated_at: datetime

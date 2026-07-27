@@ -3864,6 +3864,11 @@ async def run_migrations(conn):
             )
         )
 
+    # Migration: Aito cards snapshot the client's email alongside the phone so
+    # the walk-in customer's details survive on the card even when they are
+    # deliberately not written back to Zoho.
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN client_email VARCHAR(200)")
+
 
 _USER_PRINT_TEMPLATE_RENAMES: tuple[tuple[str, str, str], ...] = (
     ("user_print_start", "User Print Started", "User Print Started Email"),

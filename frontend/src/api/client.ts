@@ -3427,6 +3427,7 @@ export interface AitoProject {
   client_id: string | null;
   client_name: string | null;
   client_phone: string | null;
+  client_email: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -3436,6 +3437,7 @@ export interface AitoProjectUpdate {
   client_id?: string;
   client_name?: string;
   client_phone?: string | null;
+  client_email?: string | null;
 }
 
 // Zoho Books integration
@@ -6182,7 +6184,13 @@ export const api = {
 
   // Aito kanban board
   getAitoProjects: () => request<AitoProject[]>('/aito/'),
-  createAitoProject: (data: { description: string; client_id: string; client_name: string; client_phone?: string | null }) =>
+  createAitoProject: (data: {
+    description: string;
+    client_id: string;
+    client_name: string;
+    client_phone?: string | null;
+    client_email?: string | null;
+  }) =>
     request<AitoProject>('/aito/', {
       method: 'POST',
       body: JSON.stringify(data),

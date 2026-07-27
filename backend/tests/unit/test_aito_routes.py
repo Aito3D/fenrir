@@ -196,3 +196,37 @@ async def test_update_404s_on_deleted_or_missing(async_client):
     await async_client.delete(f"/api/v1/aito/{a['id']}")
     assert (await async_client.patch(f"/api/v1/aito/{a['id']}", json={"description": "x"})).status_code == 404
     assert (await async_client.patch("/api/v1/aito/99999", json={"description": "x"})).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_project_persists_client_email(async_client):
+    r = await async_client.post(
+        "/api/v1/aito/",
+        json={
+            "description": "Support de caméra",
+            "client_id": "z1",
+            "client_name": "ACME SARL",
+            "client_phone": "+689-87123456",
+            "client_email": "hi@acme.pf",
+        },
+    )
+    assert r.status_code == 201
+    assert r.json()["client_email"] == "hi@acme.pf"
+    listed = (await async_client.get("/api/v1/aito/")).json()
+    assert listed[0]["client_email"] == "hi@acme.pf"
+
+
+@pytest.mark.asyncio
+async def test_update_project_writes_and_clears_client_email(async_client):
+    project_id = (await _create(async_client)).json()["id"]
+
+    r = await async_client.patch(f"/api/v1/aito/{project_id}", json={"client_email": "hi@acme.pf"})
+    assert r.status_code == 200
+    assert r.json()["client_email"] == "hi@acme.pf"
+
+    # Explicit null clears it; an omitted key leaves it alone (existing semantics).
+    r = await async_client.patch(f"/api/v1/aito/{project_id}", json={"client_email": None})
+    assert r.json()["client_email"] is None
+
+    r = await async_client.patch(f"/api/v1/aito/{project_id}", json={"description": "Autre pièce"})
+    assert r.json()["client_email"] is None
