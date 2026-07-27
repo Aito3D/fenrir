@@ -140,6 +140,26 @@ describe('AitoPage (backend board)', () => {
     });
   });
 
+  it('does not expand the card when the delete button is clicked', async () => {
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await screen.findByText('ACME SARL');
+
+    await user.click(screen.getByRole('button', { name: 'Delete Project' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('does not expand the card when the phone link is clicked', async () => {
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await screen.findByText('ACME SARL');
+
+    await user.click(screen.getByRole('link', { name: '+33 6 12 34 56 78' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('opens the detail panel with the full description, dates and stage', async () => {
     const user = userEvent.setup();
     render(<AitoPage />);

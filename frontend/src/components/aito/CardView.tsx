@@ -61,6 +61,7 @@ export function CardView({ project, overlay = false, onDelete, onExpand }: CardV
           <a
             href={`tel:${project.client_phone}`}
             onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
             className="text-xs text-bambu-gray hover:text-bambu-green"
           >
             {project.client_phone}
