@@ -66,7 +66,16 @@ async function openModal(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('AitoPage: create-project → Zoho sync wiring', () => {
-  it('creates the project with the default walk-in client and never issues a PATCH to Zoho', async () => {
+  it('saves an edited phone number on the card for the default walk-in client, but never PATCHes Zoho', async () => {
+    // Deliberately edits the default client's phone rather than leaving it
+    // untouched: `syncClientToZoho` has two independent early returns —
+    // `isDefault` and "nothing touched" — and a draft that is both default
+    // AND untouched would pass this test even if the `isDefault` guard were
+    // deleted, because the "nothing touched" guard alone would already block
+    // the PATCH. Touching the field forces the `isDefault` guard to be the
+    // one actually doing the work, which is the property this test exists
+    // to pin: `Client de passage` is a shared record with live transaction
+    // history and must never be written to, no matter what the card holds.
     const user = userEvent.setup();
     const createSpy = vi.fn();
     const patchSpy = vi.fn();
@@ -84,11 +93,22 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
 
     await openModal(user);
     await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
+
+    const phoneInput = screen.getByLabelText(/^phone$/i);
+    await user.clear(phoneInput);
+    await user.type(phoneInput, '612345678');
+    await user.tab();
+
     await user.click(screen.getByRole('button', { name: /create project/i }));
 
+    // The card keeps the number...
     await waitFor(() =>
       expect(createSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ client_id: DEFAULT_ID, description: 'Support de caméra' }),
+        expect.objectContaining({
+          client_id: DEFAULT_ID,
+          description: 'Support de caméra',
+          client_phone: expect.stringContaining('612345678'),
+        }),
       ),
     );
     // The modal closes as soon as the card exists — no waiting on Zoho.
@@ -96,7 +116,7 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
       expect(screen.queryByRole('button', { name: /create project/i })).not.toBeInTheDocument(),
     );
 
-    // Give a (wrongly) fired sync a moment to land before asserting its absence.
+    // ...but Zoho never sees it.
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(patchSpy).not.toHaveBeenCalled();
   });
