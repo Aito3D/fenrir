@@ -373,6 +373,28 @@ describe('PrintersPage', () => {
       expect(screen.queryByTitle('Left Auxiliary Fan')).not.toBeInTheDocument();
     });
 
+    it('orders the fan badges left-to-right: part, left aux, aux, exhaust', async () => {
+      // The two aux badges should read in the same order as the physical
+      // hardware, so the left fan sits before the right one.
+      renderWithStatus(
+        { ...mockPrinters[0], model: 'P2S' },
+        { ...statusWithFans, left_aux_fan_speed: 80, exhaust_fan_present: true },
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Left Auxiliary Fan')).toBeInTheDocument();
+      });
+
+      const order = ['Part Cooling Fan', 'Left Auxiliary Fan', 'Auxiliary Fan', 'Exhaust'].map(
+        (title) => screen.getByTitle(title),
+      );
+      for (let i = 1; i < order.length; i++) {
+        // Node.compareDocumentPosition returns FOLLOWING (4) when the argument
+        // comes after the reference node in document order.
+        expect(order[i - 1].compareDocumentPosition(order[i])).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      }
+    });
+
     it('shows left aux fan badge when the accessory is installed (P2S)', async () => {
       renderWithStatus(
         { ...mockPrinters[0], model: 'P2S' },

@@ -3923,16 +3923,11 @@ function PrinterCard({
                   Icon: Fan,
                   activeClass: 'text-cyan-600 dark:text-cyan-400',
                 },
-                {
-                  key: 'aux',
-                  label: t('printers.fans.auxiliary'),
-                  value: status.big_fan1_speed ?? 0,
-                  Icon: Wind,
-                  activeClass: 'text-blue-600 dark:text-blue-400',
-                },
                 // Left auxiliary part cooling fan (optional P2S/X2D accessory).
                 // Only reported (non-null) when the firmware lists airduct part
-                // id 10, i.e. when the fan is physically installed.
+                // id 10, i.e. when the fan is physically installed. Placed
+                // before the right-hand auxiliary fan so the two aux badges read
+                // left-to-right in the same order as the physical hardware.
                 ...(status.left_aux_fan_speed != null
                   ? [
                       {
@@ -3944,6 +3939,13 @@ function PrinterCard({
                       },
                     ]
                   : []),
+                {
+                  key: 'aux',
+                  label: t('printers.fans.auxiliary'),
+                  value: status.big_fan1_speed ?? 0,
+                  Icon: Wind,
+                  activeClass: 'text-blue-600 dark:text-blue-400',
+                },
                 ...(showChamberFan
                   ? [
                       {
