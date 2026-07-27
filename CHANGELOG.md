@@ -2,7 +2,7 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [1.2.6b1] - Unreleased
+## [1.2.5.1] - 2026-07-27
 
 ### Fixed
 - **The spool PA-Profil (Pressure Advance) picker only ever offered the 0.4mm K-profile, hiding nozzle-specific profiles for the same filament on multi-nozzle printers (#2618)** — When a printer had two K-profiles for one filament differing only in nozzle size (e.g. PAHT-CF at 0.4mm K=0.042 and 0.6mm K=0.028), the **Edit Spool → PA-Profil** tab (and the SpoolBuddy write-tag page, which shares the picker) showed only the 0.4mm entry ("1 match, K=0.042"), regardless of the nozzle actually installed. **Root cause.** Both surfaces fetched a printer's calibrations with `getKProfiles(printer.id)`, which defaults the nozzle filter to `0.4` — and the printer/MQTT layer filters strictly by that diameter, so the 0.6mm profile was never retrieved. (The AMS-Slot config dialog was already fixed for this in #1899; these two pickers were not.) **Fix.** The picker now queries every nozzle the printer reports installed (`0.4`, `0.6`, …) and merges the results, falling back to `0.4` only when the printer hasn't reported its nozzle hardware. Each profile row now also shows a nozzle-diameter badge so two identically-named profiles are distinguishable. Frontend-only. Covered by tests for the nozzle enumeration and the two-profile rendering.
