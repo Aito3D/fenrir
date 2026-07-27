@@ -27,6 +27,25 @@
 
 ---
 
+## Codebase baseline
+
+This plan was verified against `f7ef73cb2` (2026-07-26). Since it was first
+written, the board card components were extracted out of `AitoPage.tsx`, pure
+board helpers moved to `utils/aitoBoard.ts`, a `PATCH /aito/{id}` content-edit
+endpoint landed, and a card-to-panel view-transition hook was added. What that
+means for the tasks below:
+
+| Area | Status |
+|---|---|
+| `backend/app/services/zoho.py`, `routes/zoho.py`, `schemas/settings.py` | Untouched — Tasks 1–4 apply as written |
+| `PATCH /aito/{id}` + `AitoProjectUpdate` | **New.** Task 5 threads `client_email` through it |
+| `AitoPage.tsx` | 580 lines; `NewProjectModal`, `createMutation` and `createProject` are structurally unchanged |
+| `SelectedClient` | Still referenced only by `ClientCombobox.tsx` and `AitoPage.tsx` — Task 9 can delete it |
+| `AitoPage.test.tsx` | Has no new-project-modal coverage, so Task 12's extraction breaks nothing there |
+| `aito.*` i18n block | Gained `noClient`; no collision with the 22 keys in Task 6 |
+| `SearchableSelect`, `formStyles`, `Button`, test `render` wrapper | Unchanged |
+| `useCardMorph` / view transitions | Independent of everything here |
+
 ## File Structure
 
 **Backend — create:** none.
@@ -1157,7 +1176,11 @@ git commit -m "feat(zoho): PATCH /zoho/contacts writes through the primary conta
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `AitoProjectCreate.client_email: str | None`, `AitoProjectResponse.client_email: str | None`, TS `AitoProject.client_email: string | null`, and `api.createAitoProject` accepts `client_email?: string | null`.
+- Produces: `AitoProjectCreate.client_email: str | None`, `AitoProjectUpdate.client_email: str | None`, `AitoProjectResponse.client_email: str | None`, TS `AitoProject.client_email: string | null`, TS `AitoProjectUpdate.client_email?: string | null`, and `api.createAitoProject` accepts `client_email?: string | null`.
+
+> **`PATCH /aito/{id}` landed after this plan was written** (`34f4c4ac7`), and it
+> writes the client snapshot from the card detail panel. `client_email` has to be
+> threaded through it too, or the panel will silently drop the email on every edit.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1180,7 +1203,26 @@ async def test_create_project_persists_client_email(async_client):
     assert r.json()["client_email"] == "hi@acme.pf"
     listed = (await async_client.get("/api/v1/aito/")).json()
     assert listed[0]["client_email"] == "hi@acme.pf"
+
+
+@pytest.mark.asyncio
+async def test_update_project_writes_and_clears_client_email(async_client):
+    project_id = (await _create(async_client)).json()["id"]
+
+    r = await async_client.patch(f"/api/v1/aito/{project_id}", json={"client_email": "hi@acme.pf"})
+    assert r.status_code == 200
+    assert r.json()["client_email"] == "hi@acme.pf"
+
+    # Explicit null clears it; an omitted key leaves it alone (existing semantics).
+    r = await async_client.patch(f"/api/v1/aito/{project_id}", json={"client_email": None})
+    assert r.json()["client_email"] is None
+
+    r = await async_client.patch(f"/api/v1/aito/{project_id}", json={"description": "Autre pièce"})
+    assert r.json()["client_email"] is None
 ```
+
+`_create` is the helper already at the top of that file; it posts a valid project
+and returns the response.
 
 - [ ] **Step 2: Run to verify failure**
 
@@ -1208,7 +1250,8 @@ At the end of `run_migrations()` in `backend/app/core/database.py`, after the ca
 
 - [ ] **Step 5: Thread it through the schemas and route**
 
-`backend/app/schemas/aito.py` — add to `AitoProjectCreate` after `client_phone`:
+`backend/app/schemas/aito.py` — add to `AitoProjectCreate` **and** to
+`AitoProjectUpdate`, after `client_phone` in each:
 
 ```python
     client_email: str | None = None
@@ -1226,11 +1269,22 @@ and to `AitoProjectResponse` after `client_phone`:
         client_email=p.client_email,
 ```
 
-and in `create_project`, after `client_phone=payload.client_phone,`:
+in `create_project`, after `client_phone=payload.client_phone,`:
 
 ```python
         client_email=payload.client_email,
 ```
+
+and in `update_project`, widen the snapshot loop:
+
+```python
+    for key in ("client_id", "client_name", "client_phone", "client_email"):
+        if key in fields:
+            setattr(project, key, fields[key])
+```
+
+The merged-snapshot guard above that loop is unchanged — `client_email` is
+optional, so there is no consistency rule tying it to `client_id`.
 
 - [ ] **Step 6: Run the backend tests**
 
@@ -1239,13 +1293,19 @@ Expected: PASS
 
 - [ ] **Step 7: Update the TypeScript types**
 
-In `frontend/src/api/client.ts`, add to `AitoProject` after `client_phone` (around line 3427):
+In `frontend/src/api/client.ts`, add to `AitoProject` after `client_phone`:
 
 ```ts
   client_email: string | null;
 ```
 
-and widen `createAitoProject` (around line 6174):
+and to the `AitoProjectUpdate` interface after `client_phone`:
+
+```ts
+  client_email?: string | null;
+```
+
+and widen `createAitoProject`:
 
 ```ts
   createAitoProject: (data: {
@@ -1918,8 +1978,15 @@ export function PhoneInput({
 
   return (
     <div className="flex gap-2">
-      <div className="w-36 flex-shrink-0" aria-label={t('aito.countryCode')}>
+      <div className="w-36 flex-shrink-0">
+        {/* SearchableSelect renders its own role="combobox" input, so it needs a
+            real label of its own — otherwise it is a second, unnamed combobox
+            sitting next to the client search. `id` lands on the inner input. */}
+        <label htmlFor={`${id ?? 'aito-phone'}-country`} className="sr-only">
+          {t('aito.countryCode')}
+        </label>
         <SearchableSelect
+          id={`${id ?? 'aito-phone'}-country`}
           value={countryCode}
           onChange={(next) => onChange({ countryCode: next, nationalNumber })}
           options={options}
@@ -1952,6 +2019,12 @@ export function PhoneInput({
 
 Run: `cd frontend && npx tsc --noEmit && cd ..`
 Expected: no errors.
+
+> **For the test authors in Tasks 10–12:** anywhere a `PhoneInput` and the
+> `ClientCombobox` are on screen together there are **two** `role="combobox"`
+> elements. Always qualify: `getByRole('combobox', { name: /client/i })` for the
+> client search, `getByLabelText(/country code/i)` for the dialling code, and
+> `getByLabelText(/^phone/i)` for the national-number field.
 
 - [ ] **Step 4: Commit**
 
@@ -3295,6 +3368,15 @@ import { formatPhone } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
 ```
 
+**Also delete this import line** — `inputCls` and `labelCls` are used *only* inside
+the modal being removed, so leaving it trips `noUnusedLocals`:
+
+```tsx
+import { inputCls, labelCls } from '../components/formStyles';
+```
+
+`useRef`, `X` and `Plus` stay — the trash modal and the page header still use them.
+
 Replace `createMutation` with:
 
 ```tsx
@@ -3355,7 +3437,12 @@ Replace `createProject` with:
 - [ ] **Step 6: Full frontend verification**
 
 Run: `cd frontend && npm run build && cd .. && ./test_frontend.sh`
-Expected: build succeeds; TypeScript check, ESLint and every Vitest suite pass. If `AitoPage.test.tsx` asserts on the removed inline modal markup, update those assertions to match the extracted component — do not delete the coverage.
+Expected: build succeeds; TypeScript check, ESLint and every Vitest suite pass.
+
+`AitoPage.test.tsx` covers the card face, the load-failed state, the localStorage
+migration, hold-to-delete and the trash view — it never opens the new-project
+modal, so the extraction needs no changes there. The modal's coverage lives in the
+new `NewProjectModal.test.tsx` from Step 1.
 
 - [ ] **Step 7: Full backend verification**
 
