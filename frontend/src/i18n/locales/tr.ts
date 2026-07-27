@@ -59,6 +59,9 @@ export default {
     createdLabel: 'Oluşturuldu',
     lastActivity: 'Son etkinlik',
     stage: 'Aşama',
+    editDescription: 'Açıklamayı düzenle',
+    saved: 'Kaydedildi',
+    saveFailed: 'Değişiklikleriniz kaydedilemedi. Lütfen tekrar deneyin.',
     columns: {
       devis: 'Teklif',
       model: '3B Model',

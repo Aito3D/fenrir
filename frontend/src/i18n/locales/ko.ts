@@ -59,6 +59,9 @@ export default {
     createdLabel: '생성일',
     lastActivity: '최근 활동',
     stage: '단계',
+    editDescription: '설명 편집',
+    saved: '저장됨',
+    saveFailed: '변경 사항을 저장하지 못했습니다. 다시 시도해 주세요.',
     columns: {
       devis: '견적',
       model: '3D 모델',

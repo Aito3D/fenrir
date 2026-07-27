@@ -204,6 +204,82 @@ describe('AitoPage (backend board)', () => {
     delete (document as { startViewTransition?: unknown }).startViewTransition;
   });
 
+  it('saves an edited description and shows the saved indicator', async () => {
+    const patched = vi.fn();
+    server.use(
+      http.patch('/api/v1/aito/:id', async ({ request }) => {
+        const body = (await request.json()) as { description?: string };
+        patched(body);
+        return HttpResponse.json({ ...project, description: body.description });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await user.click(await screen.findByText('ACME SARL'));
+
+    const panel = await screen.findByRole('dialog');
+    await user.click(within(panel).getByText('Support GoPro'));
+    const textarea = within(panel).getByRole('textbox');
+    await user.clear(textarea);
+    await user.type(textarea, 'Support GoPro v2');
+    await user.tab();
+
+    await waitFor(() => expect(patched).toHaveBeenCalledWith({ description: 'Support GoPro v2' }));
+    expect(await within(panel).findByText('Saved')).toBeInTheDocument();
+  });
+
+  it('reverts an edit on Escape without calling the API', async () => {
+    const patched = vi.fn();
+    server.use(http.patch('/api/v1/aito/:id', () => { patched(); return HttpResponse.json(project); }));
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await user.click(await screen.findByText('ACME SARL'));
+
+    const panel = await screen.findByRole('dialog');
+    await user.click(within(panel).getByText('Support GoPro'));
+    await user.type(within(panel).getByRole('textbox'), ' scrapped');
+    await user.keyboard('{Escape}');
+
+    expect(patched).not.toHaveBeenCalled();
+    expect(within(panel).getByText('Support GoPro')).toBeInTheDocument();
+    // The first Escape leaves edit mode; the panel itself must stay open.
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('does not fire a request when the description is unchanged or blank', async () => {
+    const patched = vi.fn();
+    server.use(http.patch('/api/v1/aito/:id', () => { patched(); return HttpResponse.json(project); }));
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await user.click(await screen.findByText('ACME SARL'));
+
+    const panel = await screen.findByRole('dialog');
+    await user.click(within(panel).getByText('Support GoPro'));
+    await user.tab();
+    expect(patched).not.toHaveBeenCalled();
+
+    await user.click(within(panel).getByText('Support GoPro'));
+    await user.clear(within(panel).getByRole('textbox'));
+    await user.tab();
+    expect(patched).not.toHaveBeenCalled();
+    expect(within(panel).getByText('Support GoPro')).toBeInTheDocument();
+  });
+
+  it('reverts the field and toasts when the save fails', async () => {
+    server.use(http.patch('/api/v1/aito/:id', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })));
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await user.click(await screen.findByText('ACME SARL'));
+
+    const panel = await screen.findByRole('dialog');
+    await user.click(within(panel).getByText('Support GoPro'));
+    await user.type(within(panel).getByRole('textbox'), ' v2');
+    await user.tab();
+
+    expect(await screen.findByText('Could not save your changes. Please try again.')).toBeInTheDocument();
+    await waitFor(() => expect(within(panel).getByText('Support GoPro')).toBeInTheDocument());
+  });
+
   describe('trash view', () => {
     it('lists deleted projects and restores them', async () => {
       const restoreSpy = vi.fn();

@@ -59,6 +59,9 @@ export default {
     createdLabel: 'Créé',
     lastActivity: 'Dernière activité',
     stage: 'Étape',
+    editDescription: 'Modifier la description',
+    saved: 'Enregistré',
+    saveFailed: 'Impossible d’enregistrer vos modifications. Veuillez réessayer.',
     columns: {
       devis: 'Devis',
       model: 'Modèle 3D',

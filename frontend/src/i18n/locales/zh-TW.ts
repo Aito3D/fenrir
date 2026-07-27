@@ -59,6 +59,9 @@ export default {
     createdLabel: '建立時間',
     lastActivity: '最近活動',
     stage: '階段',
+    editDescription: '編輯描述',
+    saved: '已儲存',
+    saveFailed: '無法儲存變更，請重試。',
     columns: {
       devis: '報價',
       model: '3D 模型',

@@ -59,6 +59,9 @@ export default {
     createdLabel: 'Creato',
     lastActivity: 'Ultima attività',
     stage: 'Fase',
+    editDescription: 'Modifica descrizione',
+    saved: 'Salvato',
+    saveFailed: 'Impossibile salvare le modifiche. Riprova.',
     columns: {
       devis: 'Preventivo',
       model: 'Modello 3D',

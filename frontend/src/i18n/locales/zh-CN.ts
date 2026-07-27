@@ -59,6 +59,9 @@ export default {
     createdLabel: '创建时间',
     lastActivity: '最近活动',
     stage: '阶段',
+    editDescription: '编辑描述',
+    saved: '已保存',
+    saveFailed: '无法保存更改，请重试。',
     columns: {
       devis: '报价',
       model: '3D 模型',

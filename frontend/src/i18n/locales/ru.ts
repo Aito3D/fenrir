@@ -59,6 +59,9 @@ export default {
     createdLabel: 'Создано',
     lastActivity: 'Последняя активность',
     stage: 'Этап',
+    editDescription: 'Изменить описание',
+    saved: 'Сохранено',
+    saveFailed: 'Не удалось сохранить изменения. Попробуйте ещё раз.',
     columns: {
       devis: 'Смета',
       model: '3D-модель',

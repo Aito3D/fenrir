@@ -59,6 +59,9 @@ export default {
     createdLabel: '作成日',
     lastActivity: '最終更新',
     stage: 'ステージ',
+    editDescription: '説明を編集',
+    saved: '保存しました',
+    saveFailed: '変更を保存できませんでした。もう一度お試しください。',
     columns: {
       devis: '見積もり',
       model: '3Dモデル',

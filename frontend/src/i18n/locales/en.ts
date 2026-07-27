@@ -59,6 +59,9 @@ export default {
     createdLabel: 'Created',
     lastActivity: 'Last activity',
     stage: 'Stage',
+    editDescription: 'Edit description',
+    saved: 'Saved',
+    saveFailed: 'Could not save your changes. Please try again.',
     columns: {
       devis: 'Quote',
       model: '3D Model',
