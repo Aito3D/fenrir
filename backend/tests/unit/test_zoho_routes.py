@@ -28,10 +28,26 @@ async def _configure(async_client):
 
 
 @pytest.mark.asyncio
-async def test_status_unconfigured(async_client):
+async def test_status_unconfigured_still_returns_default_contact(async_client):
     r = await async_client.get("/api/v1/zoho/status")
     assert r.status_code == 200
-    assert r.json() == {"configured": False, "reachable": False}
+    assert r.json() == {
+        "configured": False,
+        "reachable": False,
+        "default_contact_id": "66407000001237340",
+        "default_contact_name": "Client de passage",
+    }
+
+
+@pytest.mark.asyncio
+async def test_status_uses_configured_default_contact(async_client):
+    await async_client.put(
+        "/api/v1/settings/",
+        json={"zoho_default_contact_id": "abc123", "zoho_default_contact_name": "Walk-in"},
+    )
+    body = (await async_client.get("/api/v1/zoho/status")).json()
+    assert body["default_contact_id"] == "abc123"
+    assert body["default_contact_name"] == "Walk-in"
 
 
 @pytest.mark.asyncio
@@ -40,7 +56,12 @@ async def test_status_configured_reachable(async_client):
     zoho_service.transport = httpx.MockTransport(
         lambda request: httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
     )
-    assert (await async_client.get("/api/v1/zoho/status")).json() == {"configured": True, "reachable": True}
+    assert (await async_client.get("/api/v1/zoho/status")).json() == {
+        "configured": True,
+        "reachable": True,
+        "default_contact_id": "66407000001237340",
+        "default_contact_name": "Client de passage",
+    }
 
 
 @pytest.mark.asyncio

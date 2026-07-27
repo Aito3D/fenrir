@@ -1335,6 +1335,8 @@ export interface AppSettings {
   zoho_organization_id: string;
   zoho_base_url: string;
   zoho_accounts_url: string;
+  zoho_default_contact_id: string;
+  zoho_default_contact_name: string;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -3449,6 +3451,8 @@ export interface ZohoContact {
 export interface ZohoStatus {
   configured: boolean;
   reachable: boolean;
+  default_contact_id: string;
+  default_contact_name: string;
 }
 
 // Permission type - all available permissions

@@ -20,6 +20,8 @@ router = APIRouter(prefix="/zoho", tags=["zoho"])
 class ZohoStatus(BaseModel):
     configured: bool
     reachable: bool
+    default_contact_id: str
+    default_contact_name: str
 
 
 class ZohoContact(BaseModel):
@@ -38,17 +40,30 @@ async def zoho_status(
     # (settings:read) both need this endpoint.
     _: User | None = RequireAnyPermissionIfAuthEnabled(Permission.AITO_CREATE, Permission.SETTINGS_READ),
 ):
+    default_id, default_name = await zoho_service.get_default_contact(db)
     if not await zoho_service.is_configured(db):
-        return ZohoStatus(configured=False, reachable=False)
+        return ZohoStatus(
+            configured=False,
+            reachable=False,
+            default_contact_id=default_id,
+            default_contact_name=default_name,
+        )
     try:
         await zoho_service.get_access_token(db)
-        return ZohoStatus(configured=True, reachable=True)
+        reachable = True
+        configured = True
     except ZohoNotConfiguredError:
         # Settings were cleared between the is_configured() check above and here.
-        return ZohoStatus(configured=False, reachable=False)
+        configured, reachable = False, False
     except ZohoUpstreamError as e:
         logger.warning("Zoho unreachable: %s", e)
-        return ZohoStatus(configured=True, reachable=False)
+        configured, reachable = True, False
+    return ZohoStatus(
+        configured=configured,
+        reachable=reachable,
+        default_contact_id=default_id,
+        default_contact_name=default_name,
+    )
 
 
 @router.get("/contacts", response_model=list[ZohoContact])

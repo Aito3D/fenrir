@@ -466,6 +466,12 @@ class AppSettings(BaseModel):
     zoho_organization_id: str = Field(default="", description="Zoho Books organization id")
     zoho_base_url: str = Field(default="https://www.zohoapis.eu", description="Zoho API base URL")
     zoho_accounts_url: str = Field(default="https://accounts.zoho.eu", description="Zoho accounts (OAuth) URL")
+    zoho_default_contact_id: str = Field(
+        default="66407000001237340", description="Zoho contact used as the default Aito client"
+    )
+    zoho_default_contact_name: str = Field(
+        default="Client de passage", description="Display name of the default Aito client"
+    )
 
     # Obico AI failure detection (#172)
     obico_enabled: bool = Field(default=False, description="Enable Obico AI print failure detection")
@@ -631,6 +637,8 @@ class AppSettingsUpdate(BaseModel):
     zoho_organization_id: str | None = None
     zoho_base_url: str | None = None
     zoho_accounts_url: str | None = None
+    zoho_default_contact_id: str | None = None
+    zoho_default_contact_name: str | None = None
     obico_enabled: bool | None = None
     obico_ml_url: str | None = None
     obico_sensitivity: str | None = None

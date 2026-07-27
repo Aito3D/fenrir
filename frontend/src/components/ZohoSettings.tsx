@@ -21,6 +21,8 @@ export function ZohoSettings() {
   const [organizationId, setOrganizationId] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [accountsUrl, setAccountsUrl] = useState('');
+  const [defaultContactId, setDefaultContactId] = useState('');
+  const [defaultContactName, setDefaultContactName] = useState('');
 
   // Write-only secret fields — always start empty
   const [clientSecret, setClientSecret] = useState('');
@@ -45,6 +47,8 @@ export function ZohoSettings() {
       setOrganizationId(settings.zoho_organization_id ?? '');
       setBaseUrl(settings.zoho_base_url ?? '');
       setAccountsUrl(settings.zoho_accounts_url ?? '');
+      setDefaultContactId(settings.zoho_default_contact_id ?? '');
+      setDefaultContactName(settings.zoho_default_contact_name ?? '');
       // Secrets are never returned by the API — always leave blank.
       setClientSecret('');
       setRefreshToken('');
@@ -75,6 +79,9 @@ export function ZohoSettings() {
     if (organizationId !== (settings?.zoho_organization_id ?? '')) payload.zoho_organization_id = organizationId;
     if (baseUrl !== (settings?.zoho_base_url ?? '')) payload.zoho_base_url = baseUrl;
     if (accountsUrl !== (settings?.zoho_accounts_url ?? '')) payload.zoho_accounts_url = accountsUrl;
+    if (defaultContactId !== (settings?.zoho_default_contact_id ?? '')) payload.zoho_default_contact_id = defaultContactId;
+    if (defaultContactName !== (settings?.zoho_default_contact_name ?? ''))
+      payload.zoho_default_contact_name = defaultContactName;
     if (clientSecret) payload.zoho_client_secret = clientSecret;
     if (refreshToken) payload.zoho_refresh_token = refreshToken;
 
@@ -176,6 +183,26 @@ export function ZohoSettings() {
           </div>
 
           <div>
+            <label className="block text-sm text-bambu-gray mb-1">{t('zoho.defaultContactId')}</label>
+            <input
+              type="text"
+              value={defaultContactId}
+              onChange={(e) => setDefaultContactId(e.target.value)}
+              className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-bambu-gray mb-1">{t('zoho.defaultContactName')}</label>
+            <input
+              type="text"
+              value={defaultContactName}
+              onChange={(e) => setDefaultContactName(e.target.value)}
+              className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+            />
+          </div>
+
+          <div>
             <label className="block text-sm text-bambu-gray mb-1">{t('zoho.baseUrl')}</label>
             <input
               type="text"
@@ -197,6 +224,8 @@ export function ZohoSettings() {
             />
           </div>
         </div>
+
+        <p className="text-sm text-bambu-gray">{t('zoho.defaultContactHint')}</p>
 
         {testResult && (
           <div

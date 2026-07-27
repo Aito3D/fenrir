@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 _EXPIRY_MARGIN_SECONDS = 300
 _REQUIRED_KEYS = ("zoho_client_id", "zoho_client_secret", "zoho_refresh_token", "zoho_organization_id")
+DEFAULT_CONTACT_ID_FALLBACK = "66407000001237340"
+DEFAULT_CONTACT_NAME_FALLBACK = "Client de passage"
 
 
 class ZohoNotConfiguredError(Exception):
@@ -153,6 +155,15 @@ class ZohoService:
     async def search_contacts(self, db: AsyncSession, query: str) -> list[dict]:
         payload = await self._request(db, "GET", "/contacts", params={"search_text": query})
         return [_map_contact(c) for c in payload.get("contacts", [])]
+
+    async def get_default_contact(self, db: AsyncSession) -> tuple[str, str]:
+        """The contact preselected in the Aito modal. Read from settings, never
+        from Zoho — the modal must open even when Books is unreachable."""
+        from backend.app.api.routes.settings import get_setting
+
+        contact_id = await get_setting(db, "zoho_default_contact_id")
+        name = await get_setting(db, "zoho_default_contact_name")
+        return (contact_id or DEFAULT_CONTACT_ID_FALLBACK, name or DEFAULT_CONTACT_NAME_FALLBACK)
 
 
 zoho_service = ZohoService()
