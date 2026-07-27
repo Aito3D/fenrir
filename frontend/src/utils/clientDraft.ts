@@ -160,3 +160,5 @@ export function defaultClientDraft(id: string, name: string): ClientDraft {
     original: { phone: '', email: '', phoneField: 'mobile' },
   };
 }
+
+export { DEFAULT_COUNTRY_CODE } from './countryCodes';
