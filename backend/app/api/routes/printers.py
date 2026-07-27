@@ -3226,11 +3226,16 @@ async def set_fan_speed(
     if not success:
         raise HTTPException(500, "Failed to set fan speed")
 
+    # The enclosure fan is called "Exhaust" on P2S/X2D and "Chamber" elsewhere;
+    # match whatever the printer card badge shows so the toast agrees with the
+    # control the user just clicked.
+    from backend.app.utils.printer_models import uses_exhaust_fan_label
+
     fan_names = {
         "part": "Part cooling fan",
         "aux": "Auxiliary fan",
         "aux2": "Left auxiliary fan",
-        "chamber": "Chamber fan",
+        "chamber": "Exhaust fan" if uses_exhaust_fan_label(printer.model) else "Chamber fan",
     }
     return {"success": True, "message": f"{fan_names[fan]} set to {speed}%"}
 

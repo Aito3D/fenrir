@@ -205,3 +205,26 @@ class TestLeftAuxFanCommand:
         for idx in (1, 2, 3):
             assert mqtt_client.set_fan_speed(idx, 128) is True
         assert sent == ["M106 P1 S128", "M106 P2 S128", "M106 P3 S128"]
+
+
+class TestExhaustFanLabelModels:
+    """P2S/X2D call the big_fan2 enclosure fan "Exhaust"; others say "Chamber"."""
+
+    def test_p2s_and_x2d_use_exhaust_label(self):
+        from backend.app.utils.printer_models import uses_exhaust_fan_label
+
+        for model in ("P2S", "X2D", "p2s", " P2S ", "N7", "N6"):
+            assert uses_exhaust_fan_label(model) is True, model
+
+    def test_other_enclosed_models_keep_chamber_label(self):
+        from backend.app.utils.printer_models import uses_exhaust_fan_label
+
+        for model in ("X1C", "X1", "X1E", "P1S", "H2D", "H2C", "H2S", "A1"):
+            assert uses_exhaust_fan_label(model) is False, model
+
+    def test_unknown_or_missing_model_defaults_to_chamber(self):
+        from backend.app.utils.printer_models import uses_exhaust_fan_label
+
+        assert uses_exhaust_fan_label(None) is False
+        assert uses_exhaust_fan_label("") is False
+        assert uses_exhaust_fan_label("SomeFutureModel") is False
