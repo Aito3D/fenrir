@@ -525,7 +525,8 @@ Creates a Zoho contact. The display name is **derived server-side** from the par
 
 - [ ] **Step 1: Write the failing service tests**
 
-Append to `backend/tests/unit/services/test_zoho_service.py`:
+Add `import json` to the imports at the top of
+`backend/tests/unit/services/test_zoho_service.py`, then append:
 
 ```python
 def test_normalize_display_name_title_cases_and_uppercases():
@@ -545,7 +546,7 @@ async def test_create_contact_person_path(async_client, db_session):
     def handler(request: httpx.Request) -> httpx.Response:
         if "/oauth/v2/token" in str(request.url):
             return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
-        seen["body"] = __import__("json").loads(request.content)
+        seen["body"] = json.loads(request.content)
         return httpx.Response(201, json={"contact": {
             "contact_id": "new1", "contact_name": "Jean-Pierre DUPONT",
             "company_name": "", "phone": "", "mobile": "+689-87123456", "email": "jp@example.pf",
@@ -578,7 +579,7 @@ async def test_create_contact_company_path_without_person(async_client, db_sessi
     def handler(request: httpx.Request) -> httpx.Response:
         if "/oauth/v2/token" in str(request.url):
             return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
-        seen["body"] = __import__("json").loads(request.content)
+        seen["body"] = json.loads(request.content)
         return httpx.Response(201, json={"contact": {"contact_id": "c1", "contact_name": "ACME SARL"}})
 
     zoho_service.transport = _transport(handler)
@@ -887,7 +888,8 @@ Writes phone/email through the **primary contact person**, and refuses the defau
 
 - [ ] **Step 1: Write the failing service tests**
 
-Append to `backend/tests/unit/services/test_zoho_service.py`:
+Append to `backend/tests/unit/services/test_zoho_service.py` (`import json` is
+already at the top from Task 3):
 
 ```python
 @pytest.mark.asyncio
@@ -908,7 +910,7 @@ async def test_update_contact_person_puts_to_existing_primary(async_client, db_s
             }})
         seen["method"] = request.method
         seen["path"] = request.url.path
-        seen["body"] = __import__("json").loads(request.content)
+        seen["body"] = json.loads(request.content)
         return httpx.Response(200, json={"contact_person": {}})
 
     zoho_service.transport = _transport(handler)
@@ -934,7 +936,7 @@ async def test_update_contact_person_creates_one_when_none_exists(async_client, 
             }})
         seen["method"] = request.method
         seen["path"] = request.url.path
-        seen["body"] = __import__("json").loads(request.content)
+        seen["body"] = json.loads(request.content)
         return httpx.Response(201, json={"contact_person": {}})
 
     zoho_service.transport = _transport(handler)
