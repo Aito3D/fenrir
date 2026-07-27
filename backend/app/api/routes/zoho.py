@@ -2,6 +2,7 @@
 
 import logging
 import re
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -89,13 +90,15 @@ _PHONE_RE = re.compile(r"^\+\d{1,4}-\d{4,14}$")
 
 
 def _check_email(value: str) -> str:
-    if value.strip() and not _EMAIL_RE.match(value.strip()):
+    value = value.strip()
+    if value and not _EMAIL_RE.match(value):
         raise ValueError("Enter a valid email address")
     return value
 
 
 def _check_phone(value: str) -> str:
-    if value.strip() and not _PHONE_RE.match(value.strip()):
+    value = value.strip()
+    if value and not _PHONE_RE.match(value):
         raise ValueError("Phone must look like +689-87123456")
     return value
 
@@ -147,5 +150,46 @@ async def create_contact(
     except ZohoRequestRejected as e:
         # Zoho's own validation message (duplicate name, bad email, …) — actionable inline.
         raise HTTPException(status_code=409, detail=str(e)) from e
+    except ZohoUpstreamError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+class ZohoContactPatch(BaseModel):
+    """Only the keys present are written. An empty string clears the value, so it
+    passes validation; a non-empty malformed value does not."""
+
+    email: str | None = Field(default=None, max_length=200)
+    phone: str | None = Field(default=None, max_length=50)
+    phone_field: Literal["phone", "mobile"] = "mobile"
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str | None) -> str | None:
+        return value if value is None else _check_email(value)
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value: str | None) -> str | None:
+        return value if value is None else _check_phone(value)
+
+
+@router.patch("/contacts/{contact_id}", status_code=204)
+async def patch_contact(
+    contact_id: str,
+    payload: ZohoContactPatch,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
+):
+    default_id, _name = await zoho_service.get_default_contact(db)
+    if contact_id == default_id:
+        # The walk-in bucket is shared by every passing customer and carries live
+        # transaction history — it must never take one customer's details.
+        raise HTTPException(status_code=400, detail="The default client cannot be modified")
+    try:
+        await zoho_service.update_contact_person(
+            db, contact_id, email=payload.email, phone=payload.phone, phone_field=payload.phone_field
+        )
+    except ZohoNotConfiguredError:
+        raise HTTPException(status_code=409, detail="Zoho is not configured") from None
     except ZohoUpstreamError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e

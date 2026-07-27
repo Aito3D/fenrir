@@ -188,3 +188,84 @@ async def test_create_contact_upstream_error_maps_to_502(async_client):
     await _configure(async_client)
     zoho_service.transport = _token_then(lambda request: httpx.Response(500, text="boom"))
     assert (await async_client.post("/api/v1/zoho/contacts", json={"company_name": "X"})).status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_patch_contact_refuses_the_default_contact(async_client):
+    await _configure(async_client)
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+
+    zoho_service.transport = httpx.MockTransport(handler)
+    r = await async_client.patch(
+        "/api/v1/zoho/contacts/66407000001237340",
+        json={"phone": "+689-87123456", "phone_field": "mobile"},
+    )
+    assert r.status_code == 400
+    assert calls["n"] == 0  # never reaches Zoho
+
+
+@pytest.mark.asyncio
+async def test_patch_contact_updates_primary_person(async_client):
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "contact": {
+                        "contact_id": "z1",
+                        "first_name": "M",
+                        "last_name": "G",
+                        "contact_persons": [{"contact_person_id": "cp1", "is_primary_contact": True}],
+                    }
+                },
+            )
+        return httpx.Response(200, json={"contact_person": {}})
+
+    zoho_service.transport = _token_then(handler)
+    r = await async_client.patch("/api/v1/zoho/contacts/z1", json={"email": "x@y.pf", "phone_field": "mobile"})
+    assert r.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_patch_contact_rejects_malformed_values(async_client):
+    await _configure(async_client)
+    assert (await async_client.patch("/api/v1/zoho/contacts/z1", json={"email": "nope"})).status_code == 422
+    assert (await async_client.patch("/api/v1/zoho/contacts/z1", json={"phone": "87123456"})).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_patch_contact_accepts_empty_string_to_clear(async_client):
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "contact": {
+                        "contact_id": "z1",
+                        "first_name": "M",
+                        "last_name": "G",
+                        "contact_persons": [{"contact_person_id": "cp1", "is_primary_contact": True}],
+                    }
+                },
+            )
+        return httpx.Response(200, json={"contact_person": {}})
+
+    zoho_service.transport = _token_then(handler)
+    r = await async_client.patch("/api/v1/zoho/contacts/z1", json={"phone": "", "phone_field": "mobile"})
+    assert r.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_patch_contact_upstream_error_maps_to_502(async_client):
+    await _configure(async_client)
+    zoho_service.transport = _token_then(lambda request: httpx.Response(500, text="boom"))
+    r = await async_client.patch("/api/v1/zoho/contacts/z1", json={"email": "x@y.pf"})
+    assert r.status_code == 502

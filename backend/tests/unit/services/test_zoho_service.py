@@ -274,6 +274,81 @@ async def test_create_contact_person_path(async_client, db_session):
 
 
 @pytest.mark.asyncio
+async def test_update_contact_person_puts_to_existing_primary(async_client, db_session):
+    await _configure(async_client)
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "contact": {
+                        "contact_id": "z1",
+                        "first_name": "Michael",
+                        "last_name": "Girard",
+                        "contact_persons": [
+                            {"contact_person_id": "cp0", "is_primary_contact": False},
+                            {"contact_person_id": "cp1", "is_primary_contact": True},
+                        ],
+                    }
+                },
+            )
+        seen["method"] = request.method
+        seen["path"] = request.url.path
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"contact_person": {}})
+
+    zoho_service.transport = _transport(handler)
+    await zoho_service.update_contact_person(
+        db_session, "z1", email="new@example.pf", phone="+689-87123456", phone_field="mobile"
+    )
+    assert seen["method"] == "PUT"
+    assert seen["path"] == "/books/v3/contacts/contactpersons/cp1"
+    assert seen["body"] == {"email": "new@example.pf", "mobile": "+689-87123456"}
+
+
+@pytest.mark.asyncio
+async def test_update_contact_person_creates_one_when_none_exists(async_client, db_session):
+    await _configure(async_client)
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "contact": {
+                        "contact_id": "z9",
+                        "first_name": "",
+                        "last_name": "",
+                        "contact_persons": [],
+                    }
+                },
+            )
+        seen["method"] = request.method
+        seen["path"] = request.url.path
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(201, json={"contact_person": {}})
+
+    zoho_service.transport = _transport(handler)
+    await zoho_service.update_contact_person(db_session, "z9", email=None, phone="+689-40123456", phone_field="phone")
+    assert seen["method"] == "POST"
+    assert seen["path"] == "/books/v3/contacts/contactpersons"
+    assert seen["body"] == {
+        "contact_id": "z9",
+        "first_name": "",
+        "last_name": "",
+        "is_primary_contact": True,
+        "phone": "+689-40123456",
+    }
+
+
+@pytest.mark.asyncio
 async def test_create_contact_company_path_without_person(async_client, db_session):
     await _configure(async_client)
     seen = {}

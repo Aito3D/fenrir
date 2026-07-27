@@ -213,6 +213,49 @@ class ZohoService:
         body = await self._request(db, "POST", "/contacts", json=payload)
         return _map_contact(body.get("contact", {}))
 
+    async def update_contact_person(
+        self,
+        db: AsyncSession,
+        contact_id: str,
+        *,
+        email: str | None,
+        phone: str | None,
+        phone_field: str,
+    ) -> None:
+        """Write email/phone to the contact's primary person.
+
+        The contact-level ``email``/``phone``/``mobile`` fields are read-only
+        mirrors of the primary contact person, so writes must target the person.
+        A contact with no persons at all gets one created.
+        """
+        contact = (await self._request(db, "GET", f"/contacts/{contact_id}")).get("contact", {})
+        persons = contact.get("contact_persons") or []
+        primary = next((p for p in persons if p.get("is_primary_contact")), persons[0] if persons else None)
+
+        fields: dict = {}
+        if email is not None:
+            fields["email"] = email
+        if phone is not None:
+            fields[phone_field] = phone
+        if not fields:
+            return
+
+        if primary:
+            await self._request(db, "PUT", f"/contacts/contactpersons/{primary['contact_person_id']}", json=fields)
+        else:
+            await self._request(
+                db,
+                "POST",
+                "/contacts/contactpersons",
+                json={
+                    "contact_id": contact_id,
+                    "first_name": contact.get("first_name", ""),
+                    "last_name": contact.get("last_name", ""),
+                    "is_primary_contact": True,
+                    **fields,
+                },
+            )
+
     async def get_default_contact(self, db: AsyncSession) -> tuple[str, str]:
         """The contact preselected in the Aito modal. Read from settings, never
         from Zoho — the modal must open even when Books is unreachable."""

@@ -6221,6 +6221,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  updateZohoContact: (
+    id: string,
+    data: { email?: string; phone?: string; phone_field?: 'phone' | 'mobile' },
+  ) =>
+    request<void>(`/zoho/contacts/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
 
   // Projects
   getProjects: (status?: string) => {
