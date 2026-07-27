@@ -280,6 +280,38 @@ describe('AitoPage (backend board)', () => {
     await waitFor(() => expect(within(panel).getByText('Support GoPro')).toBeInTheDocument());
   });
 
+  it('keeps focus in the textarea when the board re-renders mid-edit', async () => {
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await user.click(await screen.findByText('ACME SARL'));
+
+    const panel = await screen.findByRole('dialog');
+    await user.click(within(panel).getByText('Support GoPro'));
+    const textarea = within(panel).getByRole('textbox');
+    expect(textarea).toHaveFocus();
+    const lastActivityBefore = within(panel).getByText('Last activity').nextElementSibling?.textContent;
+
+    // React Query's tracked-properties + structural sharing means a refetch
+    // that returns byte-identical data causes NO re-render at all -- the
+    // realistic trigger (matching what actually happens on window refocus,
+    // since refetchOnWindowFocus listens on 'visibilitychange') is a refetch
+    // that lands genuinely fresh data, which is what forces AitoPage to
+    // re-render with a fresh inline onClose passed down to the panel.
+    server.use(http.get('/api/v1/aito/', () =>
+      HttpResponse.json([{ ...project, updated_at: '2026-07-03T09:30:00Z' }])));
+    act(() => {
+      window.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    // Wait for the fresh data to actually land (proves AitoPage re-rendered)
+    // before asserting focus was preserved.
+    await waitFor(() =>
+      expect(within(panel).getByText('Last activity').nextElementSibling?.textContent).not.toBe(lastActivityBefore),
+    );
+
+    expect(textarea).toHaveFocus();
+  });
+
   describe('trash view', () => {
     it('lists deleted projects and restores them', async () => {
       const restoreSpy = vi.fn();

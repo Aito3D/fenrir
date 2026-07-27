@@ -94,14 +94,23 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
   const editingRef = useRef(false);
   editingRef.current = editingDesc;
 
+  // onClose is a fresh inline closure on every AitoPage render, so it cannot be
+  // an effect dependency: the effect would re-run on every re-render and steal
+  // focus back from whatever the user is editing.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     closeRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !editingRef.current) onClose();
+      if (e.key === 'Escape' && !editingRef.current) onCloseRef.current();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, []);
 
   return (
     <div
