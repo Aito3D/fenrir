@@ -22,9 +22,9 @@ import { inputCls, labelCls } from '../components/formStyles';
 import { CardView } from '../components/aito/CardView';
 import { BoardColumn } from '../components/aito/BoardColumn';
 import { COLUMNS } from '../components/aito/columns';
-import { ClientCombobox, type SelectedClient } from '../components/aito/ClientCombobox';
+import { ClientCombobox } from '../components/aito/ClientCombobox';
 import { ProjectDetailPanel } from '../components/aito/ProjectDetailPanel';
-import { api, ApiError, type AitoProject } from '../api/client';
+import { api, ApiError, type AitoProject, type ZohoContact } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { formatElapsedTime } from '../utils/date';
 import { prefersReducedMotion } from '../utils/motion';
@@ -80,11 +80,11 @@ function NewProjectModal({
   onCreate,
 }: {
   onClose: () => void;
-  onCreate: (description: string, client: SelectedClient) => void;
+  onCreate: (description: string, client: ZohoContact) => void;
 }) {
   const { t } = useTranslation();
   const [description, setDescription] = useState('');
-  const [client, setClient] = useState<SelectedClient | null>(null);
+  const [client, setClient] = useState<ZohoContact | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const canSubmit = description.trim().length > 0 && client !== null;
 
@@ -130,7 +130,13 @@ function NewProjectModal({
           className="flex flex-col flex-1 min-h-0"
         >
           <div className="p-4 overflow-y-auto flex-1 space-y-4">
-            <ClientCombobox value={client} onChange={setClient} />
+            <ClientCombobox
+              clientName={client?.name ?? ''}
+              onSelect={setClient}
+              onCreateNew={() => {}}
+              onReset={() => setClient(null)}
+              showReset={client !== null}
+            />
             <div>
               <label htmlFor="aito-description" className={labelCls}>
                 {t('aito.productDescription')}
@@ -486,12 +492,12 @@ export function AitoPage() {
     });
   };
 
-  const createProject = (description: string, client: SelectedClient) => {
+  const createProject = (description: string, client: ZohoContact) => {
     createMutation.mutate({
       description,
       client_id: client.id,
       client_name: client.name,
-      client_phone: client.phone,
+      client_phone: client.mobile || client.phone || null,
     });
   };
 
