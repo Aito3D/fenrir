@@ -348,6 +348,32 @@ export function filterFilamentsByNozzle<T extends { extruderId?: number }>(
 }
 
 /**
+ * List the distinct nozzle diameters the printer actually reports (#2618).
+ * Mirrors the backend `_installed_nozzle_diameters`: reads each
+ * `status.nozzles[].nozzle_diameter`, skips the empty-string / non-positive
+ * defaults that populate a NozzleInfo before MQTT fills it in, and dedupes.
+ *
+ * Returns e.g. `['0.4']` (single-nozzle) or `['0.4', '0.6']` (dual-nozzle). An
+ * empty array means "the printer hasn't told us its nozzle hardware" — callers
+ * that need to fetch per-nozzle should fall back to their own default rather
+ * than treating it as "no nozzles". Preserves the bare decimal string form the
+ * status carries so it can be passed straight to `getKProfiles`.
+ */
+export function installedNozzleDiameters(
+  status: { nozzles?: { nozzle_diameter?: string }[] } | null | undefined,
+): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const nozzle of status?.nozzles ?? []) {
+    const raw = (nozzle?.nozzle_diameter ?? '').trim();
+    if (!raw || !(parseFloat(raw) > 0) || seen.has(raw)) continue;
+    seen.add(raw);
+    result.push(raw);
+  }
+  return result;
+}
+
+/**
  * Resolve the installed nozzle diameter feeding a given AMS unit, so the
  * Configure-AMS-Slot picker filters filament presets by the nozzle actually on
  * the machine instead of assuming 0.4mm (#1899).
