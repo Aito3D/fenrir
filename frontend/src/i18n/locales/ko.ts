@@ -1147,6 +1147,8 @@ export default {
     history: {
       emptyTitle: '아직 기록이 없습니다',
       emptyDescription: '완료·취소·실패한 인쇄가 여기에 표시됩니다.',
+      showMore: '더 보기',
+      showingCount: '{{total}}개 중 {{shown}}개 표시',
     },
     dragGhost: {
       multiCount: '{{count}}개 항목',
@@ -3459,6 +3461,9 @@ export default {
     prints: '인쇄물',
     ascending: '오름차순',
     descending: '내림차순',
+    showModified: '수정 날짜 표시',
+    hideModified: '수정 날짜 숨기기',
+    lastModified: '마지막 수정',
     resultsCount: '전체 {{total}}개 중 {{showing}}개',
     selectAll: '모두 선택',
     deselectAll: '모두 선택 해제',

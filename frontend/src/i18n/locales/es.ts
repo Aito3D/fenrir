@@ -1205,6 +1205,8 @@ export default {
     history: {
       emptyTitle: 'Sin historial todavía',
       emptyDescription: 'Las impresiones completadas, canceladas y fallidas aparecerán aquí.',
+      showMore: 'Mostrar más',
+      showingCount: 'Mostrando {{shown}} de {{total}}',
     },
     dragGhost: {
       multiCount: '{{count}} elementos',
@@ -3650,6 +3652,9 @@ export default {
     prints: 'Impresiones',
     ascending: 'Ascendente',
     descending: 'Descendente',
+    showModified: 'Mostrar fechas de modificación',
+    hideModified: 'Ocultar fechas de modificación',
+    lastModified: 'Última modificación',
     resultsCount: '{{showing}} de {{total}} archivos',
     selectAll: 'Seleccionar todo',
     deselectAll: 'Deseleccionar todo',

@@ -1205,6 +1205,8 @@ export default {
     history: {
       emptyTitle: 'Noch kein Verlauf',
       emptyDescription: 'Abgeschlossene, abgebrochene und fehlgeschlagene Drucke erscheinen hier.',
+      showMore: 'Mehr anzeigen',
+      showingCount: '{{shown}} von {{total}} werden angezeigt',
     },
     dragGhost: {
       multiCount: '{{count}} Einträge',
@@ -3647,6 +3649,9 @@ export default {
     prints: 'Drucke',
     ascending: 'Aufsteigend',
     descending: 'Absteigend',
+    showModified: 'Änderungsdatum anzeigen',
+    hideModified: 'Änderungsdatum ausblenden',
+    lastModified: 'Zuletzt geändert',
     resultsCount: '{{showing}} von {{total}} Dateien',
     selectAll: 'Alle auswählen',
     deselectAll: 'Auswahl aufheben',

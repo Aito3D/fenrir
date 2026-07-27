@@ -1205,6 +1205,8 @@ export default {
     history: {
       emptyTitle: 'Henüz geçmiş yok',
       emptyDescription: 'Tamamlanan, iptal edilen ve başarısız baskılar burada görünür.',
+      showMore: 'Daha fazla göster',
+      showingCount: '{{total}} öğeden {{shown}} tanesi gösteriliyor',
     },
     dragGhost: {
       multiCount: '{{count}} öğe',
@@ -3643,6 +3645,9 @@ export default {
     prints: 'Baskılar',
     ascending: 'Artan',
     descending: 'Azalan',
+    showModified: 'Değiştirme tarihlerini göster',
+    hideModified: 'Değiştirme tarihlerini gizle',
+    lastModified: 'Son değiştirme',
     resultsCount: '{{total}} dosyadan {{showing}} tanesi',
     selectAll: 'Tümünü Seç',
     deselectAll: 'Seçimi Kaldır',

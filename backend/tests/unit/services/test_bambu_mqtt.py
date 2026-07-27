@@ -642,6 +642,43 @@ class TestAMSDataMerging:
         assert tray["tray_sub_brands"] == "", "tray_sub_brands should be cleared"
         assert tray["tag_uid"] == "0000000000000000", "tag_uid should be cleared"
 
+    def test_bitmask_only_ht_removal_fires_on_ams_change(self, mqtt_client):
+        """#2670: an AMS-HT whose spool is removed can be signalled by
+        tray_exist_bits alone while the firmware keeps echoing the stale
+        tray_type/tag_uid/remain in the tray payload. apply_tray_exist_bits
+        clears the merged slot, but a change-hash built from the RAW payload
+        never flips (the echoed fields are unchanged), so on_ams_change would
+        not fire and the spool_assignment row would stay bound to an empty slot.
+        Hashing the MERGED state fixes it.
+        """
+        from unittest.mock import Mock
+
+        mqtt_client.on_ams_change = Mock()
+
+        # Loaded HT-A: bit 16 set (0x10000). Fires once as the initial state.
+        loaded = {
+            "ams": [{"id": 128, "tray": [{"id": 0, "tray_type": "PLA", "tag_uid": "C7EFC10300000100", "remain": 75}]}],
+            "tray_exist_bits": "10000",
+            "power_on_flag": True,
+        }
+        mqtt_client._handle_ams_data(loaded)
+        assert mqtt_client.state.raw_data["ams"][0]["tray"][0]["tray_type"] == "PLA"
+        mqtt_client.on_ams_change.reset_mock()
+
+        # Removal signalled ONLY by the bitmask: bit 16 now clear, but the tray
+        # payload STILL echoes the same PLA/tag/remain — a raw-based hash would
+        # be byte-identical to the loaded push above and never fire.
+        bitmask_only_removal = {
+            "ams": [{"id": 128, "tray": [{"id": 0, "tray_type": "PLA", "tag_uid": "C7EFC10300000100", "remain": 75}]}],
+            "tray_exist_bits": "0",
+            "power_on_flag": True,
+        }
+        mqtt_client._handle_ams_data(bitmask_only_removal)
+
+        # Merged slot cleared, and the callback fired off the merged-state hash.
+        assert mqtt_client.state.raw_data["ams"][0]["tray"][0]["tray_type"] == ""
+        mqtt_client.on_ams_change.assert_called_once()
+
     def test_partial_update_preserves_other_fields(self, mqtt_client):
         """Test that partial updates still preserve non-slot-status fields."""
         # Initial state with full data
@@ -1331,14 +1368,17 @@ class TestApplyTrayExistBitsHelper:
         assert units[0]["tray"][0]["state"] == 9
         assert isinstance(units[0]["tray"][0]["state"], int)
 
-    def test_ams_ht_unit_skipped(self):
-        """AMS-HT (id >= 128) uses a different addressing scheme."""
+    def test_ams_ht_unit_now_handled_not_skipped(self):
+        """AMS-HT (id 128-135) is no longer skipped: it uses its own bit at
+        16+(ams_id-128). With all bits 0 the HT slot clears like any other
+        (#2670 — the old skip left the HT permanently stale). See the dedicated
+        HT bit-math tests below for the encoding."""
         from backend.app.services.bambu_mqtt import apply_tray_exist_bits
 
         units = [{"id": 128, "tray": [{"id": 0, "tray_type": "PLA"}]}]
         cleared = apply_tray_exist_bits(units, "0", power_on_flag=True)
-        assert cleared == 0
-        assert units[0]["tray"][0]["tray_type"] == "PLA"
+        assert cleared == 1
+        assert units[0]["tray"][0]["tray_type"] == ""
 
     def test_string_ids_handled(self):
         """Bridge cache stores ids as strings (JSON wire format)."""
@@ -1420,6 +1460,82 @@ class TestApplyTrayExistBitsHelper:
         apply_tray_exist_bits(units, "1", power_on_flag=True)
         assert "exists" not in units[0]["tray"][0]
         assert "exists" not in units[0]["tray"][1]
+
+    def test_ht_unit_presence_bit_is_16_not_ams_id_times_4(self):
+        """#2670: AMS-HT (n3s, id 128) is single-tray; its presence bit is
+        16+(ams_id-128)=bit 16, NOT ams_id*4 (=512, which the old code skipped
+        outright, so the HT slot never cleared). Real H2D capture: loaded HT-A
+        reports tray_exist_bits 0x10f7f (bit 16 set); after unload it reports
+        0xf7f (bit 16 clear). Verified against OrcaSlicer DevFilaSystem.cpp."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        # Loaded (bit 16 set) → slot preserved, exists=True.
+        loaded = [{"id": 128, "tray": [{"id": 0, "tray_type": "PLA", "tray_color": "000000FF"}]}]
+        assert apply_tray_exist_bits(loaded, "10f7f", power_on_flag=False, annotate_exists=True) == 0
+        assert loaded[0]["tray"][0]["tray_type"] == "PLA"
+        assert loaded[0]["tray"][0]["exists"] is True
+
+        # Empty (bit 16 clear) → slot cleared, state forced to 9, exists=False.
+        empty = [{"id": 128, "tray": [{"id": 0, "tray_type": "PLA", "tray_color": "000000FF"}]}]
+        assert apply_tray_exist_bits(empty, "f7f", power_on_flag=False, annotate_exists=True) == 1
+        assert empty[0]["tray"][0]["tray_type"] == ""
+        assert empty[0]["tray"][0]["state"] == 9
+        assert empty[0]["tray"][0]["exists"] is False
+
+    def test_ht_second_unit_is_bit_17_not_bit_20(self):
+        """#2670: multiple AMS-HT units pack into CONSECUTIVE bits — HT-A=16,
+        HT-B=17 — NOT the 4-strided bit 20 a naive ams_id*4-style extrapolation
+        would give. This pins the exact encoding OrcaSlicer uses and guards every
+        dual-HT printer. 0x20000 sets ONLY bit 17: a bit-20 implementation would
+        wrongly clear this loaded HT-B."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [{"id": 129, "tray": [{"id": 0, "tray_type": "PETG", "tray_color": "00FF00FF"}]}]
+        assert apply_tray_exist_bits(units, "20000", power_on_flag=False, annotate_exists=True) == 0
+        assert units[0]["tray"][0]["tray_type"] == "PETG"
+        assert units[0]["tray"][0]["exists"] is True
+
+    def test_ht_dual_unit_clears_only_the_empty_one(self):
+        """HT-A loaded + HT-B empty in one push, disambiguated by their
+        consecutive bits. 0x10000 = bit 16 only → HT-A (128) present, HT-B
+        (129, bit 17) empty."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [
+            {"id": 128, "tray": [{"id": 0, "tray_type": "PLA"}]},
+            {"id": 129, "tray": [{"id": 0, "tray_type": "PETG"}]},
+        ]
+        assert apply_tray_exist_bits(units, "10000", power_on_flag=False, annotate_exists=True) == 1
+        assert units[0]["tray"][0]["tray_type"] == "PLA"  # HT-A present
+        assert units[0]["tray"][0]["exists"] is True
+        assert units[1]["tray"][0]["tray_type"] == ""  # HT-B cleared
+        assert units[1]["tray"][0]["exists"] is False
+
+    def test_ht_and_regular_ams_use_their_own_formulas_together(self):
+        """Regular AMS keeps ams_id*4+tray_id while HT uses 16+(ams_id-128) in a
+        single call. bits 0x1 = regular AMS0 slot0 present (bit 0); HT-A empty
+        (bit 16 clear)."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [
+            {"id": 0, "tray": [{"id": 0, "tray_type": "PLA"}]},
+            {"id": 128, "tray": [{"id": 0, "tray_type": "ASA"}]},
+        ]
+        assert apply_tray_exist_bits(units, "1", power_on_flag=True, annotate_exists=True) == 1
+        assert units[0]["tray"][0]["tray_type"] == "PLA"  # regular AMS0 slot0 (bit 0) present
+        assert units[0]["tray"][0]["exists"] is True
+        assert units[1]["tray"][0]["tray_type"] == ""  # HT-A (bit 16) empty
+        assert units[1]["tray"][0]["exists"] is False
+
+    def test_unknown_ams_id_range_is_left_untouched(self):
+        """An id outside regular (0-15) and HT (128-135) has no known bit layout
+        — the helper must NOT guess a bit and must NOT clear the slot."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [{"id": 200, "tray": [{"id": 0, "tray_type": "PLA"}]}]
+        assert apply_tray_exist_bits(units, "0", power_on_flag=True, annotate_exists=True) == 0
+        assert units[0]["tray"][0]["tray_type"] == "PLA"
+        assert "exists" not in units[0]["tray"][0]
 
 
 class TestNozzleRackData:
@@ -6468,3 +6584,72 @@ class TestPresumedPowerOffRecovery:
         self._report(mqtt_client, {"print": {"wifi_signal": "-30dBm"}})
 
         assert mqtt_client.state.state == "FINISH"
+
+
+class TestKProfileResponseDoesNotClobberNozzle:
+    """#2663: the K-profile fetch (get_kprofiles) probes every nozzle size
+    0.2/0.4/0.6/0.8 with an ``extrusion_cali_get`` request. Each response
+    echoes the *requested* nozzle_diameter at the top level, which is NOT the
+    installed hardware. _process_message must not feed those responses to
+    _update_state, or the real nozzle size gets overwritten (typically to 0.8,
+    the last size probed) and the #1899 dispatch guard then blocks prints.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="A1TEST",
+            access_code="12345678",
+        )
+
+    def test_kprofile_response_does_not_overwrite_nozzle_diameter(self, mqtt_client):
+        # A genuine pushall reports the real 0.4mm nozzle.
+        mqtt_client._process_message({"print": {"nozzle_diameter": "0.4"}})
+        assert mqtt_client.state.nozzles[0].nozzle_diameter == "0.4"
+
+        # The K-profile probe's 0.8mm response arrives (as it did on the
+        # reporter's A1s). It must NOT clobber the hardware nozzle.
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "command": "extrusion_cali_get",
+                    "nozzle_diameter": "0.8",
+                    "filaments": [],
+                    "sequence_id": "1501",
+                }
+            }
+        )
+        assert mqtt_client.state.nozzles[0].nozzle_diameter == "0.4"
+
+    def test_kprofile_response_is_still_parsed(self, mqtt_client):
+        # Skipping _update_state must not skip the K-profile handler: the
+        # response's profiles still populate state.kprofiles.
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "command": "extrusion_cali_get",
+                    "nozzle_diameter": "0.4",
+                    "filaments": [
+                        {
+                            "cali_idx": 0,
+                            "nozzle_diameter": "0.4",
+                            "filament_id": "GFA00",
+                            "name": "PLA",
+                            "k_value": "0.020000",
+                        }
+                    ],
+                }
+            }
+        )
+        assert len(mqtt_client.state.kprofiles) == 1
+        assert mqtt_client.state.kprofiles[0].filament_id == "GFA00"
+
+    def test_genuine_pushall_still_updates_nozzle(self, mqtt_client):
+        # The one legitimate source of the hardware nozzle still works, and a
+        # later pushall corrects a value an old build left wrong.
+        mqtt_client.state.nozzles[0].nozzle_diameter = "0.8"
+        mqtt_client._process_message({"print": {"nozzle_diameter": "0.4"}})
+        assert mqtt_client.state.nozzles[0].nozzle_diameter == "0.4"

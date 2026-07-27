@@ -1204,6 +1204,8 @@ export default {
     history: {
       emptyTitle: '履歴はまだありません',
       emptyDescription: '完了・キャンセル・失敗した印刷がここに表示されます。',
+      showMore: 'さらに表示',
+      showingCount: '{{total}} 件中 {{shown}} 件を表示',
     },
     dragGhost: {
       multiCount: '{{count}}件',
@@ -3647,6 +3649,9 @@ export default {
     prints: '印刷回数',
     ascending: '昇順',
     descending: '降順',
+    showModified: '更新日時を表示',
+    hideModified: '更新日時を非表示',
+    lastModified: '最終更新',
     resultsCount: '{{total}}件中{{showing}}件',
     selectAll: 'すべて選択',
     deselectAll: 'すべて選択解除',

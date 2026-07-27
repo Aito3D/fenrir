@@ -1153,6 +1153,8 @@ export default {
     history: {
       emptyTitle: "История пока пуста",
       emptyDescription: "Здесь появятся завершённые, отменённые и неудачные задания.",
+      showMore: "Показать ещё",
+      showingCount: "Показано {{shown}} из {{total}}",
     },
     dragGhost: {
       multiCount: "{{count}} заданий",
@@ -3451,6 +3453,9 @@ export default {
     prints: "Файлы печати",
     ascending: "По возрастанию",
     descending: "По убыванию",
+    showModified: "Показать даты изменения",
+    hideModified: "Скрыть даты изменения",
+    lastModified: "Изменено",
     resultsCount: "Показано {{showing}} из {{total}} файлов",
     selectAll: "Выбрать всё",
     deselectAll: "Снять выделение",

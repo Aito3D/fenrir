@@ -1205,6 +1205,8 @@ export default {
     history: {
       emptyTitle: '目前沒有歷史記錄',
       emptyDescription: '已完成、已取消與失敗的列印將顯示於此。',
+      showMore: '顯示更多',
+      showingCount: '顯示 {{total}} 項中的 {{shown}} 項',
     },
     dragGhost: {
       multiCount: '{{count}} 項',
@@ -3635,6 +3637,9 @@ export default {
     prints: '列印',
     ascending: '升序',
     descending: '降序',
+    showModified: '顯示修改日期',
+    hideModified: '隱藏修改日期',
+    lastModified: '最後修改',
     resultsCount: '{{showing}} / {{total}} 個檔案',
     selectAll: '全選',
     deselectAll: '取消全選',

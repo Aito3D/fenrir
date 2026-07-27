@@ -1205,6 +1205,8 @@ export default {
     history: {
       emptyTitle: 'Nessuna cronologia',
       emptyDescription: 'Le stampe completate, annullate e fallite appariranno qui.',
+      showMore: 'Mostra altri',
+      showingCount: 'Visualizzati {{shown}} di {{total}}',
     },
     dragGhost: {
       multiCount: '{{count}} elementi',
@@ -3635,6 +3637,9 @@ export default {
     prints: 'Stampe',
     ascending: 'Crescente',
     descending: 'Decrescente',
+    showModified: 'Mostra date di modifica',
+    hideModified: 'Nascondi date di modifica',
+    lastModified: 'Ultima modifica',
     resultsCount: '{{showing}} di {{total}} file',
     selectAll: 'Seleziona tutto',
     deselectAll: 'Deseleziona tutto',
