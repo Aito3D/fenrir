@@ -1,6 +1,7 @@
 """Zoho service: config gating, token refresh + caching + 401 retry, contact mapping."""
 
 import asyncio
+import json
 
 import httpx
 import pytest
@@ -23,10 +24,15 @@ def reset_service():
 
 
 async def _configure(async_client):
-    await async_client.put("/api/v1/settings/", json={
-        "zoho_client_id": "1000.FAKE", "zoho_client_secret": "fake-secret",
-        "zoho_refresh_token": "1000.fake.refresh", "zoho_organization_id": "999",
-    })
+    await async_client.put(
+        "/api/v1/settings/",
+        json={
+            "zoho_client_id": "1000.FAKE",
+            "zoho_client_secret": "fake-secret",
+            "zoho_refresh_token": "1000.fake.refresh",
+            "zoho_organization_id": "999",
+        },
+    )
 
 
 def _transport(handler):
@@ -58,9 +64,7 @@ async def test_token_fetched_then_cached(async_client, db_session):
 @pytest.mark.asyncio
 async def test_token_error_maps_to_upstream_error(async_client, db_session):
     await _configure(async_client)
-    zoho_service.transport = _transport(
-        lambda request: httpx.Response(200, json={"error": "invalid_code"})
-    )
+    zoho_service.transport = _transport(lambda request: httpx.Response(200, json={"error": "invalid_code"}))
     with pytest.raises(ZohoUpstreamError):
         await zoho_service.get_access_token(db_session)
 
@@ -79,24 +83,41 @@ async def test_search_contacts_maps_fields_and_retries_401_once(async_client, db
         assert request.url.params["search_text"] == "acm"
         if calls["search"] == 1:
             return httpx.Response(401, json={"code": 57, "message": "expired"})
-        return httpx.Response(200, json={"contacts": [{
-            "contact_id": "z1", "contact_name": "ACME SARL", "company_name": "ACME",
-            "phone": "", "mobile": "+33 6 12 34 56 78", "email": "hi@acme.fr",
-        }]})
+        return httpx.Response(
+            200,
+            json={
+                "contacts": [
+                    {
+                        "contact_id": "z1",
+                        "contact_name": "ACME SARL",
+                        "company_name": "ACME",
+                        "phone": "",
+                        "mobile": "+33 6 12 34 56 78",
+                        "email": "hi@acme.fr",
+                    }
+                ]
+            },
+        )
 
     zoho_service.transport = _transport(handler)
     contacts = await zoho_service.search_contacts(db_session, "acm")
     assert calls["token"] == 2  # initial + refresh after 401
-    assert contacts == [{"id": "z1", "name": "ACME SARL", "company_name": "ACME",
-                         "phone": "", "mobile": "+33 6 12 34 56 78", "email": "hi@acme.fr"}]
+    assert contacts == [
+        {
+            "id": "z1",
+            "name": "ACME SARL",
+            "company_name": "ACME",
+            "phone": "",
+            "mobile": "+33 6 12 34 56 78",
+            "email": "hi@acme.fr",
+        }
+    ]
 
 
 @pytest.mark.asyncio
 async def test_token_non_json_response_maps_to_upstream_error(async_client, db_session):
     await _configure(async_client)
-    zoho_service.transport = _transport(
-        lambda request: httpx.Response(200, content=b"<html>not json</html>")
-    )
+    zoho_service.transport = _transport(lambda request: httpx.Response(200, content=b"<html>not json</html>"))
     with pytest.raises(ZohoUpstreamError):
         await zoho_service.get_access_token(db_session)
 
@@ -186,3 +207,88 @@ async def test_concurrent_token_fetch_deduplicated(async_client, db_session):
     )
     assert results == ["at-concurrent", "at-concurrent"]
     assert calls["token"] == 1  # deduplicated via lock, not fired twice
+
+
+def test_normalize_display_name_title_cases_and_uppercases():
+    from backend.app.services.zoho import normalize_display_name
+
+    assert normalize_display_name("jean-pierre", "de la tour") == "Jean-Pierre DE LA TOUR"
+    assert normalize_display_name("élodie", "teïva-marü") == "Élodie TEÏVA-MARÜ"
+    assert normalize_display_name("MARIE anne", "Dupont") == "Marie Anne DUPONT"
+    assert normalize_display_name("  paul  ", " theis ") == "Paul THEIS"
+
+
+@pytest.mark.asyncio
+async def test_create_contact_person_path(async_client, db_session):
+    await _configure(async_client)
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(
+            201,
+            json={
+                "contact": {
+                    "contact_id": "new1",
+                    "contact_name": "Jean-Pierre DUPONT",
+                    "company_name": "",
+                    "phone": "",
+                    "mobile": "+689-87123456",
+                    "email": "jp@example.pf",
+                }
+            },
+        )
+
+    zoho_service.transport = _transport(handler)
+    result = await zoho_service.create_contact(
+        db_session,
+        company_name="",
+        first_name="jean-pierre",
+        last_name="dupont",
+        email="jp@example.pf",
+        phone="+689-87123456",
+    )
+    assert result == {
+        "id": "new1",
+        "name": "Jean-Pierre DUPONT",
+        "company_name": "",
+        "phone": "",
+        "mobile": "+689-87123456",
+        "email": "jp@example.pf",
+    }
+    assert seen["body"]["contact_name"] == "Jean-Pierre DUPONT"
+    assert seen["body"]["contact_type"] == "customer"
+    assert seen["body"]["customer_sub_type"] == "individual"
+    assert "company_name" not in seen["body"]
+    assert seen["body"]["contact_persons"] == [
+        {
+            "first_name": "Jean-Pierre",
+            "last_name": "DUPONT",
+            "email": "jp@example.pf",
+            "mobile": "+689-87123456",
+            "is_primary_contact": True,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_create_contact_company_path_without_person(async_client, db_session):
+    await _configure(async_client)
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(201, json={"contact": {"contact_id": "c1", "contact_name": "ACME SARL"}})
+
+    zoho_service.transport = _transport(handler)
+    await zoho_service.create_contact(
+        db_session, company_name="ACME SARL", first_name="", last_name="", email="", phone=""
+    )
+    assert seen["body"]["contact_name"] == "ACME SARL"
+    assert seen["body"]["company_name"] == "ACME SARL"
+    assert seen["body"]["customer_sub_type"] == "business"
+    assert "contact_persons" not in seen["body"]  # nothing to put in it

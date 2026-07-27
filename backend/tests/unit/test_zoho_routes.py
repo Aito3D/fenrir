@@ -106,3 +106,85 @@ async def test_contacts_search_and_upstream_error(async_client):
     zoho_service.invalidate_token()
     zoho_service.transport = httpx.MockTransport(lambda request: httpx.Response(500))
     assert (await async_client.get("/api/v1/zoho/contacts?q=acm")).status_code == 502
+
+
+def _token_then(handler):
+    def wrapped(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+        return handler(request)
+
+    return httpx.MockTransport(wrapped)
+
+
+@pytest.mark.asyncio
+async def test_create_contact_returns_mapped_contact(async_client):
+    await _configure(async_client)
+    zoho_service.transport = _token_then(
+        lambda request: httpx.Response(
+            201,
+            json={
+                "contact": {
+                    "contact_id": "n1",
+                    "contact_name": "ACME SARL",
+                    "company_name": "ACME SARL",
+                    "phone": "",
+                    "mobile": "",
+                    "email": "",
+                }
+            },
+        )
+    )
+    r = await async_client.post("/api/v1/zoho/contacts", json={"company_name": "ACME SARL"})
+    assert r.status_code == 201
+    assert r.json()["id"] == "n1"
+    assert r.json()["name"] == "ACME SARL"
+
+
+@pytest.mark.asyncio
+async def test_create_contact_requires_a_name(async_client):
+    await _configure(async_client)
+    r = await async_client.post("/api/v1/zoho/contacts", json={"first_name": "Paul"})
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_contact_rejects_malformed_email(async_client):
+    await _configure(async_client)
+    r = await async_client.post("/api/v1/zoho/contacts", json={"company_name": "ACME SARL", "email": "nope"})
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_contact_rejects_malformed_phone(async_client):
+    await _configure(async_client)
+    r = await async_client.post("/api/v1/zoho/contacts", json={"company_name": "ACME SARL", "phone": "87123456"})
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_contact_accepts_house_format_phone(async_client):
+    await _configure(async_client)
+    zoho_service.transport = _token_then(
+        lambda request: httpx.Response(201, json={"contact": {"contact_id": "n2", "contact_name": "ACME SARL"}})
+    )
+    r = await async_client.post("/api/v1/zoho/contacts", json={"company_name": "ACME SARL", "phone": "+689-87123456"})
+    assert r.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_create_contact_duplicate_maps_to_409_with_message(async_client):
+    await _configure(async_client)
+    zoho_service.transport = _token_then(
+        lambda request: httpx.Response(400, json={"code": 1002, "message": "Contact name already exists."})
+    )
+    r = await async_client.post("/api/v1/zoho/contacts", json={"company_name": "ACME SARL"})
+    assert r.status_code == 409
+    assert "already exists" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_create_contact_upstream_error_maps_to_502(async_client):
+    await _configure(async_client)
+    zoho_service.transport = _token_then(lambda request: httpx.Response(500, text="boom"))
+    assert (await async_client.post("/api/v1/zoho/contacts", json={"company_name": "X"})).status_code == 502

@@ -6210,6 +6210,17 @@ export const api = {
   // Zoho Books integration
   getZohoStatus: () => request<ZohoStatus>('/zoho/status'),
   searchZohoContacts: (q: string) => request<ZohoContact[]>(`/zoho/contacts?q=${encodeURIComponent(q)}`),
+  createZohoContact: (data: {
+    company_name?: string;
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    phone?: string;
+  }) =>
+    request<ZohoContact>('/zoho/contacts', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
   // Projects
   getProjects: (status?: string) => {
