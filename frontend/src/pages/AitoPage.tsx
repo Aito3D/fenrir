@@ -18,15 +18,16 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { AlertTriangle, Kanban, Plus, Trash2, X } from 'lucide-react';
 import { Button } from '../components/Button';
-import { inputCls, labelCls } from '../components/formStyles';
 import { CardView } from '../components/aito/CardView';
 import { BoardColumn } from '../components/aito/BoardColumn';
 import { COLUMNS } from '../components/aito/columns';
-import { ClientCombobox } from '../components/aito/ClientCombobox';
+import { NewProjectModal } from '../components/aito/NewProjectModal';
 import { ProjectDetailPanel } from '../components/aito/ProjectDetailPanel';
-import { api, ApiError, type AitoProject, type ZohoContact } from '../api/client';
+import { api, ApiError, type AitoProject } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { formatElapsedTime } from '../utils/date';
+import { formatPhone } from '../utils/clientDraft';
+import type { ClientDraft } from '../utils/clientDraft';
 import { prefersReducedMotion } from '../utils/motion';
 import { useCardMorph } from '../hooks/useCardMorph';
 import {
@@ -73,103 +74,6 @@ interface MoveVariables {
   column: ColumnId;
   position: number;
   previous: AitoProject[] | undefined;
-}
-
-function NewProjectModal({
-  onClose,
-  onCreate,
-}: {
-  onClose: () => void;
-  onCreate: (description: string, client: ZohoContact) => void;
-}) {
-  const { t } = useTranslation();
-  const [description, setDescription] = useState('');
-  const [client, setClient] = useState<ZohoContact | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const canSubmit = description.trim().length > 0 && client !== null;
-
-  useEffect(() => {
-    textareaRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  const submit = () => {
-    if (!canSubmit || !client) return;
-    onCreate(description.trim(), client);
-  };
-
-  return (
-    <div
-      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-overlay-in"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="bg-bambu-dark-secondary rounded-xl w-full max-w-md border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)] animate-modal-in">
-        <div className="p-4 border-b border-bambu-dark-tertiary flex items-center justify-between flex-shrink-0">
-          <h2 className="text-lg font-semibold text-white">{t('aito.modalTitle')}</h2>
-          <button
-            type="button"
-            aria-label={t('common.close')}
-            onClick={onClose}
-            className="p-1 -m-1 rounded-md text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            submit();
-          }}
-          className="flex flex-col flex-1 min-h-0"
-        >
-          <div className="p-4 overflow-y-auto flex-1 space-y-4">
-            <ClientCombobox
-              clientName={client?.name ?? ''}
-              onSelect={setClient}
-              onCreateNew={() => {}}
-              onReset={() => setClient(null)}
-              showReset={client !== null}
-            />
-            <div>
-              <label htmlFor="aito-description" className={labelCls}>
-                {t('aito.productDescription')}
-              </label>
-              <textarea
-                id="aito-description"
-                ref={textareaRef}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                onKeyDown={(e) => {
-                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submit();
-                }}
-                placeholder={t('aito.descriptionPlaceholder')}
-                rows={4}
-                required
-                className={`${inputCls} resize-none`}
-              />
-            </div>
-          </div>
-
-          <div className="p-4 border-t border-bambu-dark-tertiary flex justify-end gap-2 flex-shrink-0">
-            <Button type="button" variant="secondary" onClick={onClose}>
-              {t('common.cancel')}
-            </Button>
-            <Button type="submit" disabled={!canSubmit}>
-              <Plus className="w-4 h-4 mr-2" />
-              {t('aito.create')}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
 }
 
 function TrashModal({ onClose }: { onClose: () => void }) {
@@ -386,12 +290,41 @@ export function AitoPage() {
     },
   });
 
+  /** Push edited contact details back to Zoho after the card exists.
+   *
+   *  Deliberately not awaited by the create mutation: the board is the job and
+   *  a Zoho outage must not cost the user their card. The default walk-in
+   *  contact is skipped entirely — it is shared by every passing customer and
+   *  carries live transaction history. Fields the user never edited are skipped
+   *  too, so creating a project never silently reformats a stored number. */
+  const syncClientToZoho = async (draft: ClientDraft) => {
+    if (draft.isDefault) return;
+    if (!draft.touched.phone && !draft.touched.email) return;
+    try {
+      await api.updateZohoContact(draft.id, {
+        ...(draft.touched.phone
+          ? { phone: formatPhone(draft), phone_field: draft.original.phoneField }
+          : {}),
+        ...(draft.touched.email ? { email: draft.email.trim() } : {}),
+      });
+    } catch {
+      showToast(t('aito.clientSyncFailed'), 'warning');
+    }
+  };
+
   const createMutation = useMutation({
-    mutationFn: (data: { description: string; client_id: string; client_name: string; client_phone?: string | null }) =>
-      api.createAitoProject(data),
-    onSuccess: () => {
+    mutationFn: ({ description, draft }: { description: string; draft: ClientDraft }) =>
+      api.createAitoProject({
+        description,
+        client_id: draft.id,
+        client_name: draft.name,
+        client_phone: formatPhone(draft) || null,
+        client_email: draft.email.trim() || null,
+      }),
+    onSuccess: (_data, { draft }) => {
       queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
       setShowModal(false);
+      void syncClientToZoho(draft);
     },
     onError: () => {
       showToast(t('aito.createFailed'), 'error');
@@ -492,13 +425,8 @@ export function AitoPage() {
     });
   };
 
-  const createProject = (description: string, client: ZohoContact) => {
-    createMutation.mutate({
-      description,
-      client_id: client.id,
-      client_name: client.name,
-      client_phone: client.mobile || client.phone || null,
-    });
+  const createProject = (description: string, draft: ClientDraft) => {
+    createMutation.mutate({ description, draft });
   };
 
   // While dragging, highlight the column currently holding the active card
