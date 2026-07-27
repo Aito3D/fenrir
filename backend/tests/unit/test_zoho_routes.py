@@ -1,5 +1,7 @@
 """Zoho proxy routes: status flags and contact search error mapping."""
 
+import json
+
 import httpx
 import pytest
 
@@ -242,6 +244,7 @@ async def test_patch_contact_rejects_malformed_values(async_client):
 @pytest.mark.asyncio
 async def test_patch_contact_accepts_empty_string_to_clear(async_client):
     await _configure(async_client)
+    seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "GET":
@@ -256,11 +259,17 @@ async def test_patch_contact_accepts_empty_string_to_clear(async_client):
                     }
                 },
             )
+        seen["method"] = request.method
+        seen["path"] = request.url.path
+        seen["body"] = json.loads(request.content)
         return httpx.Response(200, json={"contact_person": {}})
 
     zoho_service.transport = _token_then(handler)
     r = await async_client.patch("/api/v1/zoho/contacts/z1", json={"phone": "", "phone_field": "mobile"})
     assert r.status_code == 204
+    assert seen["method"] == "PUT"
+    assert seen["path"] == "/books/v3/contacts/contactpersons/cp1"
+    assert seen["body"] == {"mobile": ""}
 
 
 @pytest.mark.asyncio
