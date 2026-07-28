@@ -458,7 +458,7 @@ export function projectTotal(tasks: TaskDraft[]): number {
 
 - [ ] **Step 4: Run the tests**
 
-Run: `cd frontend && npx vitest run src/__tests__/utils/taskDraft.test.ts && npx tsc --noEmit && cd ..`
+Run: `cd frontend && npx vitest run src/__tests__/utils/taskDraft.test.ts && npx tsc --noEmit -p tsconfig.app.json && cd ..`
 Expected: PASS.
 
 - [ ] **Step 5: Prove the flats test can fail**
@@ -807,7 +807,7 @@ add `tasks?: AitoTaskCreate[]` to `createAitoProject`'s parameter type, and:
 
 - [ ] **Step 8: Verify and commit**
 
-Run: `cd frontend && npx tsc --noEmit && cd ..`
+Run: `cd frontend && npx tsc --noEmit -p tsconfig.app.json && cd ..`
 
 ```bash
 git add backend/app/schemas/aito.py backend/app/api/routes/aito.py backend/tests/unit/test_aito_routes.py frontend/src/api/client.ts
@@ -1074,7 +1074,7 @@ Key requirements:
 
 - [ ] **Step 3: Verify**
 
-Run: `cd frontend && npx tsc --noEmit && npm run build && cd ..`
+Run: `cd frontend && npx tsc --noEmit -p tsconfig.app.json && npm run build && cd ..`
 Expected: no errors. These components are covered by Task 7's tests.
 
 - [ ] **Step 4: Commit**
@@ -1202,7 +1202,7 @@ In `AitoPage.tsx`, widen the create mutation's variables to carry `tasks`, and m
 
 - [ ] **Step 4: Verify and commit**
 
-Run: `cd frontend && npx tsc --noEmit && npm run build && cd .. && ./test_frontend.sh`
+Run: `cd frontend && npx tsc --noEmit -p tsconfig.app.json && npm run build && cd .. && ./test_frontend.sh`
 
 ```bash
 git add frontend/src/components/aito/NewProjectModal.tsx frontend/src/pages/AitoPage.tsx frontend/src/__tests__/components/NewProjectModal.test.tsx
@@ -1234,7 +1234,7 @@ Fetch with `useQuery(['aito-tasks', project.id], () => api.getAitoTasks(project.
 
 - [ ] **Step 3: Verify and commit**
 
-Run: `cd frontend && npx tsc --noEmit && npm run build && cd .. && ./test_frontend.sh`, plus `./venv/bin/python3 -m pytest backend/tests/unit/ -q`.
+Run: `cd frontend && npx tsc --noEmit -p tsconfig.app.json && npm run build && cd .. && ./test_frontend.sh`, plus `./venv/bin/python3 -m pytest backend/tests/unit/ -q`.
 
 ```bash
 git add frontend/src/components/aito/ProjectDetailPanel.tsx frontend/src/__tests__/components/ProjectDetailPanel.test.tsx
