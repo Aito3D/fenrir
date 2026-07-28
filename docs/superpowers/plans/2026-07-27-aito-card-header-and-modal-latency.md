@@ -65,7 +65,7 @@ Verified against `0d4bfd858` (2026-07-27), immediately after the client-input pl
 | `frontend/src/components/aito/BoardColumn.tsx` | `setActivatorNodeRef` wiring |
 | `frontend/src/pages/AitoPage.tsx` | `activationConstraint` distance 8 → 4 |
 | `frontend/src/index.css` | Two `::view-transition-group` z-index rules |
-| `frontend/src/__tests__/pages/AitoPage.test.tsx` | Update 3 invalidated tests |
+| `frontend/src/__tests__/pages/AitoPage.test.tsx` | Update 11 invalidated tests (8 via a shared `openCard` helper) |
 | `frontend/src/i18n/locales/*.ts` (12) | Add `aito.dragHandle`, remove `aito.showDetails` |
 
 ---
@@ -608,9 +608,38 @@ The original 8px existed to tell a click from a drag when the *whole card* was t
 Run: `cd frontend && npx vitest run src/__tests__/components/AitoCardView.test.tsx && cd ..`
 Expected: PASS — five tests.
 
-- [ ] **Step 8: Update the three invalidated tests in `AitoPage.test.tsx`**
+- [ ] **Step 8: Update the eleven invalidated tests in `AitoPage.test.tsx`**
 
-These break by design. **Do not delete coverage** — retarget it:
+**Eight of them are not obvious.** Lines 166, 187, 201, 218, 236, 254, 272 and
+286 all open the panel with `await user.click(await screen.findByText('ACME
+SARL'))` — clicking the *client name* as a stand-in for "the card", which worked
+only because the whole card used to be clickable. The client name now lives in
+the header, which deliberately does not open the card, so all eight break.
+
+Retarget them through one shared helper rather than editing eight call sites.
+Add this after the `project` fixture:
+
+```tsx
+/** The card opens from its body only — the header carrying the client name is
+ *  deliberately not a click target. Tests that just need the panel open go
+ *  through here rather than clicking the client name as a stand-in for "the
+ *  card", which is what they did when the whole card was clickable. */
+const openCard = async (user: ReturnType<typeof userEvent.setup>) =>
+  user.click(await screen.findByRole('button', { name: /Support GoPro/ }));
+```
+
+and replace each of those eight lines with `await openCard(user);`.
+
+Target the **role**, not the text: `findByText('Support GoPro')` returns the
+inner `<span>` and works by bubbling, but the role query is unambiguous once the
+panel is open rendering the same description, and it asserts the body really is
+a button.
+
+Leave the four `findByText('ACME SARL')` calls that only *await* the card
+without clicking it (lines 146, 156, 179, 330) alone — the client name still
+renders, just in the header.
+
+The remaining three break by design too. **Do not delete coverage** — retarget:
 
 1. `leads with the client name and a tel: phone link, without the row id` → rename to `leads with the client name in the header, without the row id or a phone link`. Keep the client-name and no-row-id assertions; replace the `tel:` assertion with `expect(document.querySelector('a[href^="tel:"]')).toBeNull()`.
 2. `does not expand the card when the phone link is clicked` → **delete it**. The card has no phone link any more, and the equivalent guard (the header does not expand) is covered by `AitoCardView.test.tsx`.
