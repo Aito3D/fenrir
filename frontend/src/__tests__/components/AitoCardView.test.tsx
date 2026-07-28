@@ -102,6 +102,28 @@ describe('CardView', () => {
     expect(screen.queryByText('Impression3D')).not.toBeInTheDocument();
   });
 
+  it('shows the same summary in the drag overlay, which has no body button', async () => {
+    // CardView inserts the summary at two points — inside the body <button>
+    // when `onExpand` is passed, and inside a plain <div> for the DragOverlay
+    // clone, which gets neither `onExpand` nor `onDelete`. Every other summary
+    // test above passes `onExpand`, so without this one the overlay's
+    // insertion point could be dropped and the suite would stay green while a
+    // dragged card visibly lost its badges, count and total.
+    render(
+      <CardView
+        project={{ ...project, task_count: 2, tasks_total: 20200, task_services: ['modelisation', 'impression'] }}
+        overlay
+      />,
+    );
+    expect(await screen.findByText('Modelisation3D')).toBeInTheDocument();
+    expect(screen.getByText('Impression3D')).toBeInTheDocument();
+    expect(screen.getByText(/2 tasks|2 tâches/i)).toBeInTheDocument();
+    expect(screen.getByText(/20[,\s.]?200/)).toBeInTheDocument();
+    // The overlay clone really is the no-onExpand branch: nothing here is a
+    // button, so this cannot have been the body-button path in disguise.
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+  });
+
   it('keeps the summary inside the body button, so it opens the panel', async () => {
     const onExpand = vi.fn();
     const user = userEvent.setup();
