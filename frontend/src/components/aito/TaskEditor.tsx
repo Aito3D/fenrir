@@ -42,7 +42,27 @@ export function TaskEditor({ value, onChange, onRemove }: TaskEditorProps) {
       <div className="space-y-3">
         {value.map((task, index) => (
           <TaskRow
-            key={index}
+            // A stable identity, not the row's position: keying by index
+            // hands a deleted row's slot — and the mounted ImpressionFields
+            // instance in it, `hasEdited` included — down to whichever row
+            // slides up into it, silently recomputing and freeing that row's
+            // frozen cost. `id` is stable and unique once a task is
+            // persisted; `uid` (see TaskDraft) covers it before then. The
+            // `persisted:`/`draft:` prefixes keep the two id spaces from ever
+            // colliding (a draft's `id` is always null, never a real row id,
+            // but nothing stops a future draft uid from formatting the same
+            // as some row's numeric id without the prefix).
+            // A stable identity, not the row's position: keying by index
+            // hands a deleted row's slot — and the mounted ImpressionFields
+            // instance in it, `hasEdited` included — down to whichever row
+            // slides up into it, silently recomputing and freeing that row's
+            // frozen cost. `id` is stable and unique once a task is
+            // persisted; `uid` (see TaskDraft) covers it before then. The
+            // `persisted:`/`draft:` prefixes keep the two id spaces from ever
+            // colliding (a draft's `id` is always null, never a real row id,
+            // but nothing stops a future draft uid from formatting the same
+            // as some row's numeric id without the prefix).
+            key={task.id !== null ? `persisted:${task.id}` : `draft:${task.uid}`}
             task={task}
             index={index}
             onChange={(next) => onChange(value.map((existing, i) => (i === index ? next : existing)))}

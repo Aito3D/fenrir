@@ -100,6 +100,34 @@ const mockTask2: AitoTask = {
   title: 'Second bracket',
 };
 
+// A task with a real, resolvable Impression3D service and a frozen cost that
+// today's `mockDefaults` would NOT reproduce if recomputed — the same shape
+// TaskEditor.test.tsx uses to pin the provenance gate, ported here because no
+// committed panel test exercised this path (every other fixture above has
+// `impression_cost: null` and no printer/filament, so the gate this guards
+// was never actually reached from the panel).
+const mockImpressionTask: AitoTask = {
+  ...mockTask,
+  id: 111,
+  impression_printer_id: 1,
+  impression_filament_id: 1,
+  impression_weight_g: 40,
+  impression_time_min: 60,
+  impression_quantity: 1,
+  impression_color: 'Noir',
+  impression_cost: 12345,
+};
+
+// Same, but the printer reference is dangling — absent from `mockPrinters`
+// (which only has id 1). `impression_printer_id` isn't a foreign key (see
+// aito_task.py), so a printer later deleted from the calculator must not
+// corrupt a frozen historical quote.
+const mockDanglingPrinterTask: AitoTask = {
+  ...mockImpressionTask,
+  id: 112,
+  impression_printer_id: 999,
+};
+
 beforeEach(() => {
   server.use(
     http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(mockFilaments)),
@@ -406,5 +434,114 @@ describe('ProjectDetailPanel tasks', () => {
     // panel — the client details rendered outside TaskEditor — is untouched.
     expect(screen.getByLabelText('Scan3D')).toHaveValue(700);
     expect(screen.getByText('ACME SARL')).toBeInTheDocument();
+  });
+
+  it('opening a task with a stored impression cost and valid printer/filament references, touching nothing, issues zero PATCHes', async () => {
+    // The Critical this whole feature round revolved around: merely opening
+    // the panel must never recompute and PATCH a frozen, real quote. No
+    // committed panel test reached this path before — every fixture above
+    // has `impression_cost: null` and no printer/filament, so ImpressionFields
+    // never had a resolvable Impression3D service to recompute in the first
+    // place.
+    let patched = false;
+    server.use(
+      http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([mockImpressionTask])),
+      http.patch('/api/v1/aito/tasks/:id', () => {
+        patched = true;
+        return HttpResponse.json(mockImpressionTask);
+      }),
+    );
+
+    show();
+
+    // Give every query (filaments, printers, defaults, settings, tasks)
+    // every chance to resolve and the recompute effect every chance to fire.
+    await screen.findByRole('combobox', { name: /printer/i });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(patched).toBe(false);
+  });
+
+  it('opening a task whose printer reference is dangling (absent from the calculator list) issues zero PATCHes', async () => {
+    let patched = false;
+    server.use(
+      http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([mockDanglingPrinterTask])),
+      http.patch('/api/v1/aito/tasks/:id', () => {
+        patched = true;
+        return HttpResponse.json(mockDanglingPrinterTask);
+      }),
+    );
+
+    show();
+
+    await screen.findByRole('combobox', { name: /material/i });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(patched).toBe(false);
+  });
+
+  it('editing one row then deleting it does not leak its edited state onto the row that slides into its slot', async () => {
+    // The residual this file exists to close: TaskEditor used to key rows by
+    // array index. Editing row A's print inputs sets `hasEdited` on the
+    // ImpressionFields instance mounted at index 0; hold-deleting row A then
+    // slides row B up into index 0, and with an index key React reuses that
+    // same mounted instance — `hasEdited: true` included — for row B's data.
+    // B's untouched, frozen `impression_cost` then gets recomputed and
+    // PATCHed over the stored figure despite nobody ever having touched B.
+    const patches: { id: string; body: Record<string, unknown> }[] = [];
+    let currentTasks: AitoTask[] = [mockTask, mockImpressionTask];
+    server.use(
+      http.get('/api/v1/aito/12/tasks', () => HttpResponse.json(currentTasks)),
+      http.delete('/api/v1/aito/tasks/:id', ({ params }) => {
+        currentTasks = currentTasks.filter((t) => String(t.id) !== (params.id as string));
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http.patch('/api/v1/aito/tasks/:id', async ({ request, params }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        patches.push({ id: params.id as string, body });
+        return HttpResponse.json({ ...mockTask, ...body });
+      }),
+    );
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    show();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // Row A (task 101, index 0): edit a print input, setting `hasEdited` on
+    // the ImpressionFields instance mounted at index 0.
+    const weightInputs = await screen.findAllByLabelText(/weight/i);
+    expect(weightInputs).toHaveLength(2);
+    fireEvent.change(weightInputs[0], { target: { value: '40' } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // Hold-delete row A. Its removal triggers a refetch that resyncs `tasks`
+    // to just [task 111] — sliding row B (task 111, the surviving row) up
+    // into index 0, the slot row A's instance just vacated.
+    const removeButtons = screen.getAllByLabelText('Remove task');
+    await act(async () => {
+      fireEvent.pointerDown(removeButtons[0]);
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // Row B is now the only row, showing its own (untouched) data.
+    await screen.findByDisplayValue('Bracket mount');
+
+    vi.useRealTimers();
+
+    // Any PATCH row A's own weight edit produced is for id 101 and is
+    // irrelevant here — the row itself is gone. The assertion is that the
+    // surviving row, task 111, never gets patched.
+    expect(patches.some((p) => p.id === '111')).toBe(false);
   });
 });

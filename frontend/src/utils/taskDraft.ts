@@ -16,6 +16,14 @@ export interface ImpressionDraft {
  *  panel (persisted rows). */
 export interface TaskDraft {
   id: number | null;
+  /** Stable client-side identity for a not-yet-persisted row (`id === null`),
+   *  set once at creation. This is what TaskEditor keys rows on instead of
+   *  array index, so deleting an earlier row can't hand a later row's mounted
+   *  `ImpressionFields` instance down into a lower slot — along with whatever
+   *  provenance state (`hasEdited`) that instance was carrying. Meaningless
+   *  once `id` is non-null; a persisted row's `id` is already a stable,
+   *  collision-free identity on its own. */
+  uid: string;
   title: string;
   description: string;
   /** null = the service is disabled. 0 stays meaningful as "free". */
@@ -27,9 +35,20 @@ export interface TaskDraft {
   impressionCost: number | null;
 }
 
+/** Generates the client-side uid a fresh draft is stamped with. Mirrors the
+ *  fallback SliceModal.tsx uses for `previewRequestId`: `crypto.randomUUID`
+ *  where available, a timestamp+random string otherwise (older browsers /
+ *  non-secure contexts don't expose `crypto.randomUUID`). */
+function makeDraftUid(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 export function emptyTaskDraft(): TaskDraft {
   return {
     id: null,
+    uid: makeDraftUid(),
     title: '',
     description: '',
     scanCost: null,
@@ -103,6 +122,11 @@ export function computeImpressionCost(
 export function taskDraftFromAitoTask(task: AitoTask): TaskDraft {
   return {
     id: task.id,
+    // `id` is already stable and unique for a persisted row, so `uid` is
+    // never read for one (see the field doc) — this value is filler only,
+    // deliberately not `makeDraftUid()`, so a persisted row never resembles
+    // a draft.
+    uid: `server-${task.id}`,
     title: task.title ?? '',
     description: task.description ?? '',
     scanCost: task.scan_cost,

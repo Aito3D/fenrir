@@ -135,7 +135,11 @@ describe('TaskEditor', () => {
     expect(onChange).toHaveBeenCalledTimes(1);
     const next = onChange.mock.calls[0][0] as TaskDraft[];
     expect(next).toHaveLength(1);
-    expect(next[0]).toEqual(emptyTaskDraft());
+    // `uid` is a fresh client-side identity per draft (see taskDraft.ts), so
+    // it deliberately differs from a second, independent `emptyTaskDraft()`
+    // call — compare it structurally instead, then check every other field.
+    expect(next[0].uid).toEqual(expect.any(String));
+    expect(next[0]).toEqual({ ...emptyTaskDraft(), uid: next[0].uid });
   });
 
   it('never mutates the input array — onChange receives a new array', () => {
