@@ -120,6 +120,13 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
   // edit — reproduced by the "does not clobber" regression test below).
   const baselineRef = useRef<Map<number, AitoTask>>(new Map());
 
+  // Set when a task field is actually saved. Task-field edits PATCH per
+  // keystroke, so they must never invalidate the board directly — that would
+  // refetch every card on every character. The board is refreshed once, on
+  // close, and only if something was really saved: a panel opened and closed
+  // without edits must cost nothing.
+  const tasksDirtyRef = useRef(false);
+
   useEffect(() => {
     if (!tasksQuery.data) return;
     setTasks(tasksQuery.data.map(taskDraftFromAitoTask));
@@ -135,19 +142,46 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
       // "no change" against the stale baseline and the PATCH is silently
       // dropped (see the revert / re-disable regression tests below).
       baselineRef.current.set(updatedTask.id, updatedTask);
+      tasksDirtyRef.current = true;
     },
     onError: () => showToast(t('aito.saveFailed'), 'error'),
   });
 
+  // Refreshes the ['aito-projects'] board query AitoPage renders cards from.
+  // `invalidateQueries` alone only refetches while something is actively
+  // observing that key — true in production, since AitoPage mounts this
+  // panel as a modal on top of itself, but not something this component can
+  // rely on in isolation. `fetchQuery` with `staleTime: 0` instead performs
+  // an unconditional fetch: it lands even without a mounted observer (e.g. in
+  // tests that render the panel standalone) and still writes into the shared
+  // cache entry AitoPage's own `useQuery(['aito-projects'])` reads from, so
+  // the board picks up the fresh summary whether or not it happens to be
+  // mounted at the moment this runs. Fire-and-forget: a failed background
+  // refresh has no user-facing consequence (unlike the PATCHes above, which
+  // already toast on failure), so the rejection is swallowed rather than
+  // left unhandled.
+  const refreshBoard = () => {
+    queryClient
+      .fetchQuery({ queryKey: ['aito-projects'], queryFn: api.getAitoProjects, staleTime: 0 })
+      .catch(() => {});
+  };
+
+  // Adding or removing a task changes the card's count, total and badge set,
+  // so the board is refreshed alongside the task list.
+  const invalidateTasksAndBoard = () => {
+    queryClient.invalidateQueries({ queryKey: ['aito-tasks', project.id] });
+    refreshBoard();
+  };
+
   const addTaskMutation = useMutation({
     mutationFn: () => api.createAitoTask(project.id, taskDraftToTaskCreate(emptyTaskDraft())),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['aito-tasks', project.id] }),
+    onSuccess: invalidateTasksAndBoard,
     onError: () => showToast(t('aito.saveFailed'), 'error'),
   });
 
   const deleteTaskMutation = useMutation({
     mutationFn: (id: number) => api.deleteAitoTask(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['aito-tasks', project.id] }),
+    onSuccess: invalidateTasksAndBoard,
     onError: () => showToast(t('aito.saveFailed'), 'error'),
   });
 
@@ -246,6 +280,16 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  useEffect(
+    () => () => {
+      if (tasksDirtyRef.current) refreshBoard();
+    },
+    // Deliberately empty: this must fire exactly once, when the panel closes.
+    // queryClient is a stable singleton from the provider.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   return (
     <div

@@ -547,4 +547,65 @@ describe('ProjectDetailPanel tasks', () => {
     // surviving row, task 111, never gets patched.
     expect(patches.some((p) => p.id === '111')).toBe(false);
   });
+
+  it('refreshes the board when a task is added and when one is removed', async () => {
+    const boardFetches = vi.fn();
+    server.use(
+      http.get('/api/v1/aito/', () => {
+        boardFetches();
+        return HttpResponse.json([]);
+      }),
+      http.post('/api/v1/aito/12/tasks', () =>
+        HttpResponse.json({ ...mockTask, id: 99 }, { status: 201 }),
+      ),
+      http.delete('/api/v1/aito/tasks/:id', () => new HttpResponse(null, { status: 204 })),
+    );
+    const user = userEvent.setup();
+    show();
+
+    await user.click(await screen.findByRole('button', { name: /add task/i }));
+    await waitFor(() => expect(boardFetches).toHaveBeenCalled());
+  });
+
+  it('refreshes the board on close after a task field was edited', async () => {
+    const boardFetches = vi.fn();
+    server.use(
+      http.get('/api/v1/aito/', () => {
+        boardFetches();
+        return HttpResponse.json([]);
+      }),
+      http.patch('/api/v1/aito/tasks/:id', async ({ request }) =>
+        HttpResponse.json({ ...mockTask, ...(await request.json() as object) }),
+      ),
+    );
+    const user = userEvent.setup();
+    const { unmount } = show();
+
+    const scan = await screen.findByLabelText('Scan3D');
+    await user.clear(scan);
+    await user.type(scan, '500');
+    await waitFor(() => expect(screen.getByLabelText('Scan3D')).toHaveValue(500));
+
+    boardFetches.mockClear();
+    unmount();
+    await waitFor(() => expect(boardFetches).toHaveBeenCalled());
+  });
+
+  it('does NOT refresh the board on close when no task was edited', async () => {
+    const boardFetches = vi.fn();
+    server.use(
+      http.get('/api/v1/aito/', () => {
+        boardFetches();
+        return HttpResponse.json([]);
+      }),
+    );
+    const { unmount } = show();
+    await screen.findByText('Support de caméra');
+
+    boardFetches.mockClear();
+    unmount();
+    // Give an invalidation a chance to land before asserting its absence.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(boardFetches).not.toHaveBeenCalled();
+  });
 });
