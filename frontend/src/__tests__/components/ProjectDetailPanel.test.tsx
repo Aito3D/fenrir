@@ -620,14 +620,17 @@ describe('ProjectDetailPanel tasks', () => {
 
   it('refreshes the board on close after a task field was edited', async () => {
     const boardFetches = vi.fn();
+    const patches: Record<string, unknown>[] = [];
     server.use(
       http.get('/api/v1/aito/', () => {
         boardFetches();
         return HttpResponse.json([]);
       }),
-      http.patch('/api/v1/aito/tasks/:id', async ({ request }) =>
-        HttpResponse.json({ ...mockTask, ...(await request.json() as object) }),
-      ),
+      http.patch('/api/v1/aito/tasks/:id', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        patches.push(body);
+        return HttpResponse.json({ ...mockTask, ...body });
+      }),
     );
     const user = userEvent.setup();
     const { rerender } = render(<BoardHost showPanel />);
@@ -638,6 +641,17 @@ describe('ProjectDetailPanel tasks', () => {
     await user.clear(scan);
     await user.type(scan, '500');
     await waitFor(() => expect(screen.getByLabelText('Scan3D')).toHaveValue(500));
+
+    // Await the write, not just the input's value: the value is local state
+    // and is set before the PATCH it triggers has been sent, let alone
+    // answered. Typing sends one PATCH per keystroke (null, 5, 50, 500), and
+    // closing while any of them is open is the deferral's other branch, tested
+    // separately below — this test is about the everything-has-landed path, so
+    // it waits for the last body to arrive and for its response to be applied.
+    await waitFor(() => expect(patches.at(-1)).toEqual({ scan_cost: 500 }));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
 
     boardFetches.mockClear();
     // Close only the panel — BoardHost (standing in for AitoPage) stays
