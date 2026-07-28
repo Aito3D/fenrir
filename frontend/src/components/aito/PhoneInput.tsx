@@ -73,7 +73,7 @@ export function PhoneInput({
         id={id}
         type="tel"
         inputMode="tel"
-        autoComplete="off"
+        autoComplete="new-password"
         disabled={disabled}
         value={nationalNumber}
         onChange={(e) => onChange({ countryCode, nationalNumber: e.target.value }, 'nationalNumber')}

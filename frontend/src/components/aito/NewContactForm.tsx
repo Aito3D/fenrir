@@ -50,7 +50,7 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
   // Required here, but NOT in the shared validator: ClientSection uses
   // validatePhone to edit an existing client, where an empty value is valid and
   // clearing a number is a supported edit.
-  const phoneError = nationalNumber.trim()
+  const phoneError = nationalNumber.replace(/\D/g, '')
     ? validatePhone({ countryCode, nationalNumber })
     : 'aito.phoneRequired';
   const emailError = validateEmail(email);
@@ -97,7 +97,7 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
           <input
             id="aito-company"
             type="text"
-            autoComplete="off"
+            autoComplete="new-password"
             value={companyName}
             disabled={hasPerson}
             onChange={(e) => setCompanyName(e.target.value)}
@@ -113,7 +113,7 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
             <input
               id="aito-first-name"
               type="text"
-              autoComplete="off"
+              autoComplete="new-password"
               value={firstName}
               disabled={hasCompany}
               onChange={(e) => setFirstName(e.target.value)}
@@ -128,7 +128,7 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
             <input
               id="aito-last-name"
               type="text"
-              autoComplete="off"
+              autoComplete="new-password"
               value={lastName}
               disabled={hasCompany}
               onChange={(e) => setLastName(e.target.value)}
@@ -139,7 +139,7 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
         </div>
 
         <p className="text-xs text-bambu-gray">
-          {preview ? t('aito.displayNamePreview', { name: preview }) : t('aito.clientNameRequired')}
+          {hasName ? t('aito.displayNamePreview', { name: preview }) : t('aito.clientNameRequired')}
         </p>
 
         <div>
@@ -169,7 +169,7 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
           <input
             id="aito-new-email"
             type="email"
-            autoComplete="off"
+            autoComplete="new-password"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             onBlur={() => setBlurred((b) => ({ ...b, email: true }))}

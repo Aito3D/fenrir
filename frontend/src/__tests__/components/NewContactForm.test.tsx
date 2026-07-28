@@ -99,6 +99,9 @@ describe('NewContactForm', () => {
     await user.clear(screen.getByLabelText(/^email/i));
     await user.type(screen.getByLabelText(/^email/i), 'hi@acme.pf');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    // The phone is empty but never blurred, so its error stays masked: a real
+    // but invisible error must not disable the button.
+    expect(screen.getByRole('button', { name: /create client/i })).toBeEnabled();
   });
 
   it('rejects a too-short phone number and never calls the API', async () => {
@@ -158,5 +161,46 @@ describe('NewContactForm', () => {
   it('marks the phone field as required', () => {
     render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
     expect(screen.getByLabelText(/^phone/i)).toHaveAttribute('aria-required', 'true');
+  });
+
+  it('rejects a non-digit phone submitted via Enter and never calls the API', async () => {
+    const onCreated = vi.fn();
+    let called = false;
+    server.use(
+      http.post('/api/v1/zoho/contacts', () => {
+        called = true;
+        return HttpResponse.json(created, { status: 201 });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<NewContactForm onCancel={vi.fn()} onCreated={onCreated} />);
+    await user.type(screen.getByLabelText(/company name/i), 'ACME SARL');
+    // Typing a non-digit value like "n/a" leaves the phone field non-empty by
+    // `.trim()` but empty once stripped to digits. Enter submits the form
+    // implicitly without blurring the field, which is exactly the path a
+    // mouse click on the button does not take.
+    await user.type(screen.getByLabelText(/^phone/i), 'n/a');
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('alert')).toHaveTextContent(/required/i);
+    expect(called).toBe(false);
+    expect(onCreated).not.toHaveBeenCalled();
+  });
+
+  it('disables submission with only a first name and explains why', async () => {
+    const user = userEvent.setup();
+    render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
+    await user.type(screen.getByLabelText(/first name/i), 'Paul');
+    await user.type(screen.getByLabelText(/^phone/i), '87123456');
+    await user.tab();
+    expect(screen.getByRole('button', { name: /create client/i })).toBeDisabled();
+    expect(screen.getByText(/enter a company name, or a first and last name/i)).toBeInTheDocument();
+  });
+
+  it('disables browser autocomplete on the new-client inputs', () => {
+    render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
+    expect(screen.getByLabelText(/company name/i)).toHaveAttribute('autocomplete', 'new-password');
+    expect(screen.getByLabelText(/first name/i)).toHaveAttribute('autocomplete', 'new-password');
+    expect(screen.getByLabelText(/last name/i)).toHaveAttribute('autocomplete', 'new-password');
+    expect(screen.getByLabelText(/^email/i)).toHaveAttribute('autocomplete', 'new-password');
   });
 });

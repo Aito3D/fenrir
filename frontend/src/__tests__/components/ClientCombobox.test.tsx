@@ -65,6 +65,11 @@ describe('ClientCombobox', () => {
     expect(onCreateNew).toHaveBeenCalledWith();
   });
 
+  it('disables browser autocomplete on the search input', () => {
+    render(<ClientCombobox {...props} />);
+    expect(screen.getByRole('combobox')).toHaveAttribute('autocomplete', 'new-password');
+  });
+
   it('hides the reset control unless showReset is set', async () => {
     const onReset = vi.fn();
     const user = userEvent.setup();
