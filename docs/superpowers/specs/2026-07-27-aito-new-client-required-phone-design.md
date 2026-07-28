@@ -50,13 +50,24 @@ This design closes it rather than working around it.
 ### The check
 
 ```tsx
-const phoneError = nationalNumber.trim()
+const phoneError = nationalNumber.replace(/\D/g, '')
   ? validatePhone({ countryCode, nationalNumber })
   : 'aito.phoneRequired';
 ```
 
 Empty is now an error in this form; every other rule (4–14 digits, country-code
 shape) still comes from the shared validator.
+
+**The guard strips to digits, not `.trim()`.** An earlier draft of this spec said
+`.trim()`, which is a *different* notion of empty from the one the rest of the
+stack uses — `validatePhone` and `formatPhone` both call `digitsOnly` first. A
+value like `n/a` or `--` was therefore non-empty for the guard and empty for the
+validator, so `validatePhone` returned `null`, `canSubmit` was true, and pressing
+**Enter** (implicit submission, which does not blur the field) created a contact
+with `phone: ''`. Mouse-clicking Create was safe, because the click blurs and
+strips first — which is why it survived every test. Since this form is the only
+enforcement point (the API is deliberately permissive), the guard must use the
+same transform as the formatter.
 
 ### The gating
 
