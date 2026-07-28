@@ -336,7 +336,7 @@ const KO_COGNATES = [
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'EC984C,#6CD4BC,A66EB9,D87694',
-  '{{weight}} г',                                      // unit suffix format string
+  '{{weight}}g',                                      // unit suffix format string
   'MakerWorld: {{designer}}',                         // brand + placeholder
   'email',                                            // OIDC claim name placeholder
   '{{printer}}: {{error}}',                           // pure placeholders
@@ -379,7 +379,7 @@ const TR_COGNATES = [
   'N/A', 'email',
   'STARTTLS (Port 587)', 'SSL/TLS (Port 465)',
   '({{count}}/8)', 'Hex: #{{hex}}', 'MakerWorld: {{designer}}',
-  '{{count}} filament', '{{printer}}: {{error}}', '{{weight}} г',
+  '{{count}} filament', '{{printer}}: {{error}}', '{{weight}}g',
   'Filament {{index}} ({{type}})',
   'EC984C,#6CD4BC,A66EB9,D87694',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
