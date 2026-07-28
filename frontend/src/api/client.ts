@@ -3445,6 +3445,8 @@ export interface ZohoContact {
   id: string;
   name: string;
   company_name: string;
+  /** "business" | "individual" from Zoho; "" when the field was absent. */
+  customer_sub_type: string;
   phone: string;
   mobile: string;
   email: string;

@@ -130,7 +130,15 @@ async def test_contacts_search_and_upstream_error(async_client):
     zoho_service.transport = httpx.MockTransport(ok_handler)
     r = await async_client.get("/api/v1/zoho/contacts?q=acm")
     assert r.status_code == 200
-    assert r.json()[0] == {"id": "z1", "name": "ACME", "company_name": "", "phone": "01", "mobile": "", "email": ""}
+    assert r.json()[0] == {
+        "id": "z1",
+        "name": "ACME",
+        "company_name": "",
+        "customer_sub_type": "",
+        "phone": "01",
+        "mobile": "",
+        "email": "",
+    }
 
     zoho_service.invalidate_token()
     zoho_service.transport = httpx.MockTransport(lambda request: httpx.Response(500))

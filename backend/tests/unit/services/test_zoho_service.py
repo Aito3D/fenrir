@@ -107,6 +107,7 @@ async def test_search_contacts_maps_fields_and_retries_401_once(async_client, db
             "id": "z1",
             "name": "ACME SARL",
             "company_name": "ACME",
+            "customer_sub_type": "",
             "phone": "",
             "mobile": "+33 6 12 34 56 78",
             "email": "hi@acme.fr",
@@ -254,6 +255,7 @@ async def test_create_contact_person_path(async_client, db_session):
         "id": "new1",
         "name": "Jean-Pierre DUPONT",
         "company_name": "",
+        "customer_sub_type": "",
         "phone": "",
         "mobile": "+689-87123456",
         "email": "jp@example.pf",
@@ -367,3 +369,51 @@ async def test_create_contact_company_path_without_person(async_client, db_sessi
     assert seen["body"]["company_name"] == "ACME SARL"
     assert seen["body"]["customer_sub_type"] == "business"
     assert "contact_persons" not in seen["body"]  # nothing to put in it
+
+
+@pytest.mark.asyncio
+async def test_search_contacts_carries_customer_sub_type(async_client, db_session):
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+        return httpx.Response(
+            200,
+            json={
+                "contacts": [
+                    {"contact_id": "b1", "contact_name": "ACME SARL", "customer_sub_type": "business"},
+                    {"contact_id": "i1", "contact_name": "Paul THEIS", "customer_sub_type": "individual"},
+                    {"contact_id": "u1", "contact_name": "Legacy"},
+                ]
+            },
+        )
+
+    zoho_service.transport = _transport(handler)
+    results = await zoho_service.search_contacts(db_session, "a")
+    assert [c["customer_sub_type"] for c in results] == ["business", "individual", ""]
+
+
+@pytest.mark.asyncio
+async def test_create_contact_response_carries_customer_sub_type(async_client, db_session):
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+        return httpx.Response(
+            201,
+            json={
+                "contact": {
+                    "contact_id": "n1",
+                    "contact_name": "ACME SARL",
+                    "customer_sub_type": "business",
+                }
+            },
+        )
+
+    zoho_service.transport = _transport(handler)
+    result = await zoho_service.create_contact(
+        db_session, company_name="ACME SARL", first_name="", last_name="", email="", phone=""
+    )
+    assert result["customer_sub_type"] == "business"

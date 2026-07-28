@@ -12,6 +12,7 @@ const DEFAULT_NAME = 'Client de passage';
 
 const acme = {
   id: 'z1', name: 'ACME SARL', company_name: 'ACME',
+  customer_sub_type: 'business',
   phone: '', mobile: '89645864', email: 'hi@acme.pf',
 };
 

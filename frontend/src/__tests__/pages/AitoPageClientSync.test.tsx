@@ -19,6 +19,7 @@ const OTHER_CONTACT = {
   id: '66407000009999001',
   name: 'Jean DUPONT',
   company_name: '',
+  customer_sub_type: 'individual',
   phone: '+33-179753070',
   mobile: '',
   email: 'jean@example.com',

@@ -7,8 +7,24 @@ import { render } from '../utils';
 import { ClientCombobox } from '../../components/aito/ClientCombobox';
 
 const contacts = [
-  { id: 'z1', name: 'ACME SARL', company_name: 'ACME', phone: '', mobile: '89645864', email: 'hi@acme.pf' },
-  { id: 'z2', name: 'Acmé Industrie', company_name: '', phone: '40864225', mobile: '', email: '' },
+  {
+    id: 'z1',
+    name: 'ACME SARL',
+    company_name: 'ACME',
+    customer_sub_type: 'business',
+    phone: '',
+    mobile: '89645864',
+    email: 'hi@acme.pf',
+  },
+  {
+    id: 'z2',
+    name: 'Acmé Industrie',
+    company_name: '',
+    customer_sub_type: 'business',
+    phone: '40864225',
+    mobile: '',
+    email: '',
+  },
 ];
 
 beforeEach(() => {

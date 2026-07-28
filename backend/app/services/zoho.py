@@ -49,6 +49,11 @@ def _map_contact(contact: dict) -> dict:
         "id": contact.get("contact_id", ""),
         "name": contact.get("contact_name", ""),
         "company_name": contact.get("company_name", ""),
+        # "business" | "individual". Aito stores this as a boolean at attach
+        # time so the detail panel can say "Company name" instead of "Client
+        # name" — it cannot be inferred from company_name, which is empty on
+        # some business contacts in the live directory.
+        "customer_sub_type": contact.get("customer_sub_type", ""),
         "phone": contact.get("phone", ""),
         "mobile": contact.get("mobile", ""),
         "email": contact.get("email", ""),

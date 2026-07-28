@@ -31,6 +31,7 @@ class ZohoContact(BaseModel):
     id: str
     name: str
     company_name: str
+    customer_sub_type: str
     phone: str
     mobile: str
     email: str

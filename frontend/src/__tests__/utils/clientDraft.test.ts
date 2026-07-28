@@ -209,7 +209,15 @@ describe('visibleClientDraftErrors', () => {
 });
 
 describe('draftFromContact', () => {
-  const base = { id: 'z1', name: 'ACME SARL', company_name: 'ACME', phone: '', mobile: '', email: '' };
+  const base = {
+    id: 'z1',
+    name: 'ACME SARL',
+    company_name: 'ACME',
+    customer_sub_type: 'business',
+    phone: '',
+    mobile: '',
+    email: '',
+  };
 
   it('prefers mobile and records it as the write target', () => {
     const draft = draftFromContact({ ...base, mobile: '89645864', phone: '40864225' }, 'default-id');

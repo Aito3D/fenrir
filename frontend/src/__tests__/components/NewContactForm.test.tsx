@@ -8,6 +8,7 @@ import { NewContactForm } from '../../components/aito/NewContactForm';
 
 const created = {
   id: 'n1', name: 'Jean-Pierre DUPONT', company_name: '',
+  customer_sub_type: 'individual',
   phone: '', mobile: '+689-87123456', email: '',
 };
 

@@ -94,6 +94,7 @@ describe('NewProjectModal', () => {
     // field had never actually been blurred by the user.
     const badContact = {
       id: 'bad1', name: 'Bad Contact', company_name: '',
+      customer_sub_type: 'individual',
       phone: '', mobile: '+689-876543210987654', email: 'ok@example.pf',
     };
     server.use(http.get('/api/v1/zoho/contacts', () => HttpResponse.json([badContact])));
