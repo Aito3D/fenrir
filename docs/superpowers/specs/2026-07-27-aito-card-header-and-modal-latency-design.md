@@ -74,7 +74,7 @@ observed behaviour; if closing is also wrong, this diagnosis is incomplete.
 | Keyboard expand | The description area becomes a `<button>` |
 | Footer placement | Elapsed time + delete sit **outside** the clickable body |
 | Header colour | Neutral band (`bg-bambu-dark-tertiary`), no per-column tint |
-| Drag activation | Handle only, via `setActivatorNodeRef` |
+| Drag activation | Handle only, via `setActivatorNodeRef`; sensor threshold 8px → 4px |
 | Phone/email on card | Removed; the detail panel keeps them |
 | Morph z-order | Explicit `z-index` on both view-transition groups |
 
@@ -192,10 +192,16 @@ does not open the card.
 
 ### Drag activation
 
-`activationConstraint: { distance: 8 }` is dropped from the `PointerSensor`. It
-exists to distinguish a click from a drag on a whole-card handle; with a
-dedicated handle there is nothing to disambiguate, and dropping it makes the
-handle respond immediately.
+`activationConstraint` on the `PointerSensor` drops from `{ distance: 8 }` to
+`{ distance: 4 }` — tightened, not removed.
+
+The 8px existed to distinguish a click from a drag when the whole card was the
+handle, and that job disappears with a dedicated grip. But it cannot go to zero:
+without any threshold, a plain click on the grip starts and immediately ends a
+drag, which fires `setActiveId` and flashes the card to `opacity-30` with the
+`DragOverlay` rendered for a frame. Nothing is persisted — `computeMoveTarget`
+returns `noop` and `handleDragEnd` returns early — so the cost is purely visual,
+but it is visible. 4px removes it while still engaging almost immediately.
 
 `DeleteHoldButton`'s and the `tel:` link's `stopPropagation` guards were there
 because the whole card was a drag handle and an expand target. The delete
