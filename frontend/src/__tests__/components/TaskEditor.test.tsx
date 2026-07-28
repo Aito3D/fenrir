@@ -279,4 +279,89 @@ describe('TaskRow', () => {
 
     expect(onChangeSpy.mock.calls.length).toBe(settledCallCount);
   });
+
+  it('opening a task with a stored cost and touching nothing issues zero onChange calls, even though today\'s rates would recompute a different total', async () => {
+    // Regression for the "opening the detail panel silently rewrites every
+    // saved impression_cost" bug: ImpressionFields used to report its
+    // recomputed total on every mount, and TaskRow forwarded it whenever it
+    // differed from the frozen figure — so merely opening a task with a real
+    // printer/filament and a stored cost that no longer matches today's rates
+    // (mockDefaults here differ sharply from a plausible frozen quote) would
+    // silently PATCH the new number over the frozen one. Nothing here is a
+    // user edit, so onChange must never fire.
+    const onChangeSpy = vi.fn();
+    const task: TaskDraft = {
+      ...emptyTaskDraft(),
+      id: 42,
+      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: 12345,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
+
+    // Give every query (filaments, printers, defaults, settings) every chance
+    // to resolve and the recompute effect every chance to fire.
+    await screen.findByRole('combobox', { name: /printer/i });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(onChangeSpy).not.toHaveBeenCalled();
+  });
+
+  it('opening a task whose printer reference is absent from the calculator list issues zero onChange calls and leaves the stored cost untouched', async () => {
+    // The `impression_printer_id` isn't a foreign key (see aito_task.py's
+    // docstring): a printer deleted from the calculator must not corrupt a
+    // frozen historical quote. computeImpressionCost returns null forever for
+    // a dangling reference, so the old unguarded effect would report `null`
+    // on mount and destroy the stored figure.
+    const onChangeSpy = vi.fn();
+    const task: TaskDraft = {
+      ...emptyTaskDraft(),
+      id: 43,
+      impression: { printerId: 999, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: 12345,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
+
+    await screen.findByRole('combobox', { name: /material/i });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(onChangeSpy).not.toHaveBeenCalled();
+  });
+
+  it('reports the quantity-multiplied total (total_ttc_qty), not the per-unit total_ttc', async () => {
+    // Pins the decision at ImpressionFields.tsx: which PricingResult field
+    // gets hoisted through onCostChange. Every other test that reaches
+    // impressionCost uses quantity 1, where total_ttc and total_ttc_qty are
+    // equal, so this is the only test that would go red if that line were
+    // changed to report the per-unit figure instead.
+    const onChangeSpy = vi.fn();
+    const user = userEvent.setup();
+    render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={onChangeSpy} />);
+
+    await user.click(await screen.findByRole('combobox', { name: /printer/i }));
+    await user.click(await screen.findByRole('option', { name: 'H2S' }));
+    await user.click(screen.getByRole('combobox', { name: /material/i }));
+    await user.click(await screen.findByRole('option', { name: 'Sunlu PA6-CF' }));
+    await user.type(screen.getByLabelText(/weight/i), '40');
+    await user.type(screen.getByLabelText(/print time/i), '1');
+
+    await waitFor(() => {
+      const lastTasks = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft[] | undefined;
+      expect(lastTasks?.[0].impressionCost).not.toBeNull();
+    });
+    const quantityOneCost = (onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft[])[0].impressionCost as number;
+
+    onChangeSpy.mockClear();
+    const quantityInput = screen.getByLabelText('Quantity');
+    fireEvent.change(quantityInput, { target: { value: '2' } });
+
+    await waitFor(() => {
+      const lastTasks = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft[] | undefined;
+      expect(lastTasks?.[0].impressionCost).not.toBeNull();
+      expect(lastTasks?.[0].impressionCost).toBeCloseTo(quantityOneCost * 2, 6);
+    });
+  });
 });

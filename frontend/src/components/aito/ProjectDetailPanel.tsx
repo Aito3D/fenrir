@@ -10,59 +10,13 @@ import {
   type AitoProject,
   type AitoProjectUpdate,
   type AitoTask,
-  type AitoTaskCreate,
   type AitoTaskUpdate,
 } from '../../api/client';
 import { parseUTCDate } from '../../utils/date';
 import { inputCls } from '../formStyles';
 import { useToast } from '../../contexts/ToastContext';
-import { emptyTaskDraft } from '../../utils/taskDraft';
+import { emptyTaskDraft, taskDraftFromAitoTask, taskDraftToTaskCreate } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
-
-/** Wire shape -> client shape, the read half of the conversion. `?? 1` on
- *  quantity is defensive only: a saved row always carries a real number (see
- *  `taskDraftToTaskCreate`), never `null`. */
-function taskDraftFromAitoTask(task: AitoTask): TaskDraft {
-  return {
-    id: task.id,
-    title: task.title ?? '',
-    description: task.description ?? '',
-    scanCost: task.scan_cost,
-    modelisationCost: task.modelisation_cost,
-    usinageCost: task.usinage_cost,
-    impression: {
-      printerId: task.impression_printer_id,
-      filamentId: task.impression_filament_id,
-      weightG: task.impression_weight_g,
-      timeMin: task.impression_time_min,
-      quantity: task.impression_quantity ?? 1,
-      color: task.impression_color ?? '',
-    },
-    impressionCost: task.impression_cost,
-  };
-}
-
-/** Client shape -> wire shape, matching the conventions the create modal
- *  established (AitoPage.tsx's create mutation): `title`, `description` and
- *  `impression_color` collapse blank to `null` rather than `''`; every
- *  numeric field passes straight through so a `0` cost stays `0` (free)
- *  rather than becoming `null` (disabled). */
-function taskDraftToTaskCreate(t: TaskDraft): AitoTaskCreate {
-  return {
-    title: t.title.trim() || null,
-    description: t.description.trim() || null,
-    scan_cost: t.scanCost,
-    modelisation_cost: t.modelisationCost,
-    usinage_cost: t.usinageCost,
-    impression_printer_id: t.impression.printerId,
-    impression_filament_id: t.impression.filamentId,
-    impression_weight_g: t.impression.weightG,
-    impression_time_min: t.impression.timeMin,
-    impression_quantity: t.impression.quantity,
-    impression_color: t.impression.color.trim() || null,
-    impression_cost: t.impressionCost,
-  };
-}
 
 /** The narrow patch: only the wire fields that actually differ between the
  *  persisted row and the edited draft. Comparing the two *wire* shapes

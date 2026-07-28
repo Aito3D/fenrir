@@ -6,8 +6,11 @@ import {
   computeImpressionCost,
   taskTotal,
   projectTotal,
+  taskDraftFromAitoTask,
+  taskDraftToTaskCreate,
 } from '../../utils/taskDraft';
 import type { PricingDefaults, PricingFilament, PricingPrinter } from '../../utils/pricing';
+import type { AitoTask } from '../../api/client';
 
 const filament: PricingFilament = { cost_per_kg: 3000, sale_price_per_kg: 6000, difficulty_pct: 100 };
 const printer: PricingPrinter = {
@@ -130,5 +133,61 @@ describe('taskTotal / projectTotal', () => {
 
   it('sums tasks', () => {
     expect(projectTotal([{ ...base, scanCost: 1000 }, { ...base, usinageCost: 2000 }])).toBe(3000);
+  });
+});
+
+describe('taskDraftFromAitoTask / taskDraftToTaskCreate', () => {
+  // Both directions used to be written out twice — once in AitoPage.tsx (the
+  // create modal's inline mapping) and once in ProjectDetailPanel.tsx — and
+  // agreed only because one was copy-pasted from the other. Now both callers
+  // share this pair, so this round trip is the single place the wire contract
+  // is pinned.
+  const row: AitoTask = {
+    id: 7,
+    project_id: 3,
+    position: 0,
+    title: 'Bracket',
+    description: 'Custom bracket',
+    scan_cost: 0,
+    modelisation_cost: null,
+    usinage_cost: 1500,
+    impression_printer_id: 1,
+    impression_filament_id: 2,
+    impression_weight_g: 120,
+    impression_time_min: 270,
+    impression_quantity: 3,
+    impression_color: 'Noir',
+    impression_cost: 4200,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  };
+
+  it('reproduces a persisted row\'s wire fields after a round trip through the draft shape', () => {
+    const wireBack = taskDraftToTaskCreate(taskDraftFromAitoTask(row));
+    expect(wireBack).toEqual({
+      title: row.title,
+      description: row.description,
+      scan_cost: row.scan_cost,
+      modelisation_cost: row.modelisation_cost,
+      usinage_cost: row.usinage_cost,
+      impression_printer_id: row.impression_printer_id,
+      impression_filament_id: row.impression_filament_id,
+      impression_weight_g: row.impression_weight_g,
+      impression_time_min: row.impression_time_min,
+      impression_quantity: row.impression_quantity,
+      impression_color: row.impression_color,
+      impression_cost: row.impression_cost,
+    });
+  });
+
+  it('a 0 cost survives the round trip as 0, and a null cost survives as null', () => {
+    // 0 (free) and null (disabled) must never collapse into each other —
+    // `t.scanCost || null` would type-check here and silently turn a free
+    // service into a disabled one.
+    expect(taskDraftFromAitoTask(row).scanCost).toBe(0);
+    expect(taskDraftToTaskCreate(taskDraftFromAitoTask(row)).scan_cost).toBe(0);
+
+    expect(taskDraftFromAitoTask(row).modelisationCost).toBeNull();
+    expect(taskDraftToTaskCreate(taskDraftFromAitoTask(row)).modelisation_cost).toBeNull();
   });
 });

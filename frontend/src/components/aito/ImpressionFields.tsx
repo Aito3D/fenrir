@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -26,21 +26,25 @@ export function ImpressionFields({ value, onChange, onCostChange }: ImpressionFi
   const { t } = useTranslation();
   const reactId = useId();
 
-  const { data: filaments = [] } = useQuery({
+  const filamentsQuery = useQuery({
     queryKey: ['calculatorFilaments'],
     queryFn: api.getCalculatorFilaments,
     staleTime: 60_000,
   });
-  const { data: printers = [] } = useQuery({
+  const printersQuery = useQuery({
     queryKey: ['calculatorPrinters'],
     queryFn: api.getCalculatorPrinters,
     staleTime: 60_000,
   });
-  const { data: defaults } = useQuery({
+  const defaultsQuery = useQuery({
     queryKey: ['calculatorDefaults'],
     queryFn: api.getCalculatorDefaults,
     staleTime: 60_000,
   });
+  const filaments = filamentsQuery.data ?? [];
+  const printers = printersQuery.data ?? [];
+  const defaults = defaultsQuery.data;
+  const referenceDataLoading = filamentsQuery.isLoading || printersQuery.isLoading || defaultsQuery.isLoading;
   // Same cache key CalculatorPage uses for the app's configured currency, so
   // this and the calculator page share one fetch instead of two.
   const { data: settings } = useQuery({
@@ -60,11 +64,29 @@ export function ImpressionFields({ value, onChange, onCostChange }: ImpressionFi
     [value, filament, printer, defaults],
   );
 
+  // Whether the *user* has changed a print input in this mount. Recomputing
+  // and reporting on mount — before any edit — is exactly the bug this guards
+  // against: a saved task opens with a frozen `impression_cost`, this effect
+  // would otherwise report today's recompute (which may differ, or may be
+  // `null` while `defaults` is still resolving, or `null` forever for a
+  // dangling printer/filament reference), and the panel would PATCH that over
+  // the frozen figure just because the row was looked at. Only a genuine
+  // edit — routed through `handleChange` below — may cause a report.
+  const [hasEdited, setHasEdited] = useState(false);
+  const handleChange = (next: ImpressionDraft) => {
+    setHasEdited(true);
+    onChange(next);
+  };
+
   // Reporting the total is a side effect on the parent, not something that's
-  // safe to do while rendering — it has to happen after commit.
+  // safe to do while rendering — it has to happen after commit. Gated on
+  // `hasEdited` (see above) and held back until printer/filament/defaults
+  // have all resolved, so a still-loading `defaults` query can't momentarily
+  // report `null` and clobber a stored cost mid-fetch.
   useEffect(() => {
+    if (!hasEdited || referenceDataLoading) return;
     onCostChange(result?.total_ttc_qty ?? null);
-  }, [result, onCostChange]);
+  }, [result, onCostChange, hasEdited, referenceDataLoading]);
 
   if (printers.length === 0) {
     return (
@@ -97,7 +119,7 @@ export function ImpressionFields({ value, onChange, onCostChange }: ImpressionFi
           <SearchableSelect
             id={`${reactId}-printer`}
             value={value.printerId === null ? '' : String(value.printerId)}
-            onChange={(v) => onChange({ ...value, printerId: v === '' ? null : Number(v) })}
+            onChange={(v) => handleChange({ ...value, printerId: v === '' ? null : Number(v) })}
             options={printers.map((p) => ({ value: String(p.id), label: p.name }))}
             allowCustom={false}
           />
@@ -109,7 +131,7 @@ export function ImpressionFields({ value, onChange, onCostChange }: ImpressionFi
           <SearchableSelect
             id={`${reactId}-material`}
             value={value.filamentId === null ? '' : String(value.filamentId)}
-            onChange={(v) => onChange({ ...value, filamentId: v === '' ? null : Number(v) })}
+            onChange={(v) => handleChange({ ...value, filamentId: v === '' ? null : Number(v) })}
             options={filaments.map((f) => ({ value: String(f.id), label: f.name }))}
             allowCustom={false}
           />
@@ -125,7 +147,7 @@ export function ImpressionFields({ value, onChange, onCostChange }: ImpressionFi
             inputMode="decimal"
             value={value.weightG ?? ''}
             onChange={(e) =>
-              onChange({
+              handleChange({
                 ...value,
                 weightG: e.target.value === '' ? null : Math.max(0, Number(e.target.value)),
               })
@@ -140,7 +162,7 @@ export function ImpressionFields({ value, onChange, onCostChange }: ImpressionFi
           <DurationInput
             id={`${reactId}-time`}
             minutes={value.timeMin}
-            onChange={(timeMin) => onChange({ ...value, timeMin })}
+            onChange={(timeMin) => handleChange({ ...value, timeMin })}
           />
         </div>
         <div>
@@ -151,7 +173,7 @@ export function ImpressionFields({ value, onChange, onCostChange }: ImpressionFi
             id={`${reactId}-color`}
             type="text"
             value={value.color}
-            onChange={(e) => onChange({ ...value, color: e.target.value })}
+            onChange={(e) => handleChange({ ...value, color: e.target.value })}
             className={inputCls}
           />
         </div>
@@ -167,7 +189,7 @@ export function ImpressionFields({ value, onChange, onCostChange }: ImpressionFi
             inputMode="numeric"
             value={value.quantity}
             onChange={(e) =>
-              onChange({
+              handleChange({
                 ...value,
                 quantity: e.target.value === '' ? 1 : Math.max(1, Math.floor(Number(e.target.value) || 1)),
               })
@@ -196,8 +218,14 @@ export function ImpressionFields({ value, onChange, onCostChange }: ImpressionFi
           ))}
           <div className="flex justify-between gap-2 text-sm font-medium pt-1">
             <span className="text-white">{t('calculator.totalTTC')}</span>
-            <Money currency={currency} value={result.total_ttc_qty} className="text-bambu-green" />
+            <Money currency={currency} value={result.total_ttc} className="text-bambu-green" />
           </div>
+          {value.quantity > 1 && (
+            <div className="flex justify-between gap-2 text-sm font-medium">
+              <span className="text-white">{t('calculator.forQuantity', { count: value.quantity })}</span>
+              <Money currency={currency} value={result.total_ttc_qty} className="text-bambu-green" />
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -1,5 +1,6 @@
 import { computePricing } from './pricing';
 import type { PricingDefaults, PricingFilament, PricingPrinter, PricingResult } from './pricing';
+import type { AitoTask, AitoTaskCreate } from '../api/client';
 
 export interface ImpressionDraft {
   printerId: number | null;
@@ -94,6 +95,53 @@ export function computeImpressionCost(
     printer,
     { ...defaults, base_fee_flat: 0, consumables_packaging_flat: 0 },
   );
+}
+
+/** Wire shape -> client shape, the read half of the conversion. `?? 1` on
+ *  quantity is defensive only: a saved row always carries a real number (see
+ *  `taskDraftToTaskCreate`), never `null`. */
+export function taskDraftFromAitoTask(task: AitoTask): TaskDraft {
+  return {
+    id: task.id,
+    title: task.title ?? '',
+    description: task.description ?? '',
+    scanCost: task.scan_cost,
+    modelisationCost: task.modelisation_cost,
+    usinageCost: task.usinage_cost,
+    impression: {
+      printerId: task.impression_printer_id,
+      filamentId: task.impression_filament_id,
+      weightG: task.impression_weight_g,
+      timeMin: task.impression_time_min,
+      quantity: task.impression_quantity ?? 1,
+      color: task.impression_color ?? '',
+    },
+    impressionCost: task.impression_cost,
+  };
+}
+
+/** Client shape -> wire shape, matching the conventions the create modal
+ *  established: `title`, `description` and `impression_color` collapse blank
+ *  to `null` rather than `''`; every numeric field passes straight through so
+ *  a `0` cost stays `0` (free) rather than becoming `null` (disabled). This is
+ *  the one place both the create modal (POST) and the detail panel (diffed
+ *  into a PATCH) build the wire shape, so the two flows cannot drift apart —
+ *  see the design doc finding this fixes. */
+export function taskDraftToTaskCreate(t: TaskDraft): AitoTaskCreate {
+  return {
+    title: t.title.trim() || null,
+    description: t.description.trim() || null,
+    scan_cost: t.scanCost,
+    modelisation_cost: t.modelisationCost,
+    usinage_cost: t.usinageCost,
+    impression_printer_id: t.impression.printerId,
+    impression_filament_id: t.impression.filamentId,
+    impression_weight_g: t.impression.weightG,
+    impression_time_min: t.impression.timeMin,
+    impression_quantity: t.impression.quantity,
+    impression_color: t.impression.color.trim() || null,
+    impression_cost: t.impressionCost,
+  };
 }
 
 const orZero = (n: number | null) => n ?? 0;

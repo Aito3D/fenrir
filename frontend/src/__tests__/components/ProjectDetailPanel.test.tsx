@@ -188,12 +188,18 @@ describe('ProjectDetailPanel tasks', () => {
   });
 
   it('editing a value back to its original after a successful save still issues a second PATCH', async () => {
-    // Regression: updateTaskMutation must write the server's response back
-    // into the ['aito-tasks', project.id] cache on success. If it doesn't,
-    // the diff baseline stays frozen at initial load, so reverting a field
-    // to its originally-loaded value looks like "no change" against that
-    // stale baseline and the second PATCH is silently dropped — the server
-    // is left holding the intermediate value with no toast, no indicator.
+    // Regression: `updateTaskMutation`'s onSuccess must advance `baselineRef`
+    // (the diff baseline) for the patched row to the server's response —
+    // deliberately outside the `['aito-tasks', project.id]` query cache,
+    // which a single-field PATCH must never rewrite (see the comments above
+    // `baselineRef` and `updateTaskMutation` in ProjectDetailPanel.tsx: doing
+    // so would change that query's data identity and trigger the resync
+    // effect, clobbering every other row's unsaved or in-flight edit). If
+    // `baselineRef` isn't advanced, it stays frozen at initial load, so
+    // reverting a field to its originally-loaded value looks like "no
+    // change" against that stale baseline and the second PATCH is silently
+    // dropped — the server is left holding the intermediate value with no
+    // toast, no indicator.
     const bodies: Record<string, unknown>[] = [];
     let current: AitoTask = { ...mockTask };
     server.use(

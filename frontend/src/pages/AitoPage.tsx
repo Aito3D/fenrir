@@ -28,6 +28,7 @@ import { useToast } from '../contexts/ToastContext';
 import { formatElapsedTime } from '../utils/date';
 import { formatPhone } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
+import { taskDraftToTaskCreate } from '../utils/taskDraft';
 import type { TaskDraft } from '../utils/taskDraft';
 import { prefersReducedMotion } from '../utils/motion';
 import { useCardMorph } from '../hooks/useCardMorph';
@@ -322,20 +323,7 @@ export function AitoPage() {
         client_phone: formatPhone(draft) || null,
         client_email: draft.email.trim() || null,
         client_is_company: draft.isCompany,
-        tasks: tasks.map((t) => ({
-          title: t.title.trim() || null,
-          description: t.description.trim() || null,
-          scan_cost: t.scanCost,
-          modelisation_cost: t.modelisationCost,
-          usinage_cost: t.usinageCost,
-          impression_printer_id: t.impression.printerId,
-          impression_filament_id: t.impression.filamentId,
-          impression_weight_g: t.impression.weightG,
-          impression_time_min: t.impression.timeMin,
-          impression_quantity: t.impression.quantity,
-          impression_color: t.impression.color.trim() || null,
-          impression_cost: t.impressionCost,
-        })),
+        tasks: tasks.map(taskDraftToTaskCreate),
       }),
     onSuccess: (_data, { draft }) => {
       queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
