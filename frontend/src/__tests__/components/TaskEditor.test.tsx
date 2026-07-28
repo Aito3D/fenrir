@@ -1,0 +1,214 @@
+/**
+ * Tests for TaskRow and TaskEditor — the presentational task-list UI for an
+ * Aito project. Both components are fully controlled (no internal state, no
+ * persistence), so most tests either drive a stateful harness that mirrors
+ * what a real caller (create modal / detail panel) would do, or assert
+ * directly on the arguments passed to `onChange`.
+ */
+
+import { useState } from 'react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { screen, fireEvent, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
+import { server } from '../mocks/server';
+import { render } from '../utils';
+import { TaskRow } from '../../components/aito/TaskRow';
+import { TaskEditor } from '../../components/aito/TaskEditor';
+import { emptyTaskDraft, taskTotal } from '../../utils/taskDraft';
+import type { TaskDraft } from '../../utils/taskDraft';
+import { formatMoney } from '../../utils/pricing';
+
+const mockFilaments = [
+  {
+    id: 1,
+    name: 'Sunlu PA6-CF',
+    brand: 'Sunlu',
+    material: 'PA6-CF',
+    cost_per_kg: 3731,
+    sale_price_per_kg: 5597,
+    difficulty_pct: 150,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  },
+];
+
+const mockPrinters = [
+  {
+    id: 1,
+    name: 'H2S',
+    purchase_price: 347000,
+    lifetime_years: 2,
+    daily_usage_hours: 5,
+    power_watts: 400,
+    repair_rate_pct: 30,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  },
+];
+
+const mockDefaults = {
+  id: 1,
+  electricity_tariff: 120,
+  labor_rate_per_hour: 3000,
+  consumables_packaging_flat: 30,
+  failure_rate_pct: 30,
+  prototype_rate_pct: 30,
+  ads_rate_pct: 5,
+  filament_markup_pct: 5,
+  global_markup_pct: 50,
+  tax_pct: 13,
+  default_difficulty_pct: 100,
+  default_margin_over_cost_pct: 50,
+  stuff_markup_pct: 20,
+  updated_at: '2026-01-01T00:00:00Z',
+};
+
+beforeEach(() => {
+  // TaskRow always renders ImpressionFields (Impression3D is one of the four
+  // services on every task), so every test needs these three queries mocked,
+  // per the brief. Non-empty lists so ImpressionFields renders its real
+  // fields instead of the "not configured" fallback message.
+  server.use(
+    http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(mockFilaments)),
+    http.get('/api/v1/calculator/printers/', () => HttpResponse.json(mockPrinters)),
+    http.get('/api/v1/calculator/defaults', () => HttpResponse.json(mockDefaults)),
+  );
+});
+
+/** Mirrors how a real caller would wire TaskRow: state lives outside the
+ *  component, `onChange` replaces it wholesale. */
+function ControlledTaskRow({
+  initial,
+  onChangeSpy,
+}: {
+  initial: TaskDraft;
+  onChangeSpy: (next: TaskDraft) => void;
+}) {
+  const [task, setTask] = useState(initial);
+  return (
+    <TaskRow
+      task={task}
+      index={0}
+      onChange={(next) => {
+        onChangeSpy(next);
+        setTask(next);
+      }}
+      onRemove={vi.fn()}
+    />
+  );
+}
+
+describe('TaskEditor', () => {
+  it('"Add task" appends a draft with all four services empty', async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    render(<TaskEditor value={[]} onChange={onChange} onRemove={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: /add task/i }));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const next = onChange.mock.calls[0][0] as TaskDraft[];
+    expect(next).toHaveLength(1);
+    expect(next[0]).toEqual(emptyTaskDraft());
+  });
+
+  it('never mutates the input array — onChange receives a new array', () => {
+    const value: TaskDraft[] = [emptyTaskDraft()];
+    const onChange = vi.fn();
+    render(<TaskEditor value={value} onChange={onChange} onRemove={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('Scan3D'), { target: { value: '7' } });
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const result = onChange.mock.calls[0][0] as TaskDraft[];
+    expect(result).not.toBe(value);
+    // The original array and its entries are untouched.
+    expect(value[0].scanCost).toBeNull();
+    expect(result[0].scanCost).toBe(7);
+  });
+
+  it('holding the remove button for 2s calls onRemove with that index', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const onRemove = vi.fn();
+    render(
+      <TaskEditor value={[emptyTaskDraft(), emptyTaskDraft()]} onChange={vi.fn()} onRemove={onRemove} />,
+    );
+    const removeButtons = screen.getAllByLabelText('Remove task');
+
+    await act(async () => {
+      fireEvent.pointerDown(removeButtons[1]);
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+
+    expect(onRemove).toHaveBeenCalledWith(1);
+    vi.useRealTimers();
+  });
+
+  it('a short press on the remove button does not call onRemove', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const onRemove = vi.fn();
+    render(<TaskEditor value={[emptyTaskDraft()]} onChange={vi.fn()} onRemove={onRemove} />);
+    const removeButton = screen.getByLabelText('Remove task');
+
+    await act(async () => {
+      fireEvent.pointerDown(removeButton);
+      await vi.advanceTimersByTimeAsync(200);
+      fireEvent.pointerUp(removeButton);
+    });
+
+    expect(onRemove).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+});
+
+describe('TaskRow', () => {
+  it('renders the fallback name for an empty title, then the typed title', () => {
+    const onChangeSpy = vi.fn();
+    render(<ControlledTaskRow initial={emptyTaskDraft()} onChangeSpy={onChangeSpy} />);
+
+    expect(screen.getByRole('heading', { name: 'Task 1' })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Optional title'), { target: { value: 'Bracket mount' } });
+
+    expect(screen.getByRole('heading', { name: 'Bracket mount' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Task 1' })).not.toBeInTheDocument();
+  });
+
+  it('the task total reflects the enabled services', () => {
+    const task: TaskDraft = {
+      ...emptyTaskDraft(),
+      scanCost: 1000,
+      modelisationCost: 500,
+      usinageCost: null,
+      impressionCost: null,
+    };
+    render(<TaskRow task={task} index={0} onChange={vi.fn()} onRemove={vi.fn()} />);
+
+    expect(taskTotal(task)).toBe(1500);
+    // getByText's default normalizer collapses all whitespace (including the
+    // thin space formatMoney uses as a thousands separator) to a single
+    // ASCII space before matching — do the same to the expected string, or
+    // an exact-looking match still misses.
+    const expected = formatMoney(taskTotal(task), 'USD').replace(/\s+/g, ' ');
+    expect(screen.getByText(expected)).toBeInTheDocument();
+  });
+
+  it('typing a Scan3D cost emits scanCost set; clearing it emits null, not 0', () => {
+    // This is the test Step 5 of the brief requires proving can fail: making
+    // the clear path in TaskRow's CostInput emit `0` instead of `null` must
+    // turn this test red, since `0` (a free service) and `null` (a disabled
+    // one) are not interchangeable anywhere else in the stack.
+    const onChangeSpy = vi.fn();
+    render(<ControlledTaskRow initial={emptyTaskDraft()} onChangeSpy={onChangeSpy} />);
+    const scanInput = screen.getByLabelText('Scan3D');
+
+    fireEvent.change(scanInput, { target: { value: '15' } });
+    expect(onChangeSpy).toHaveBeenLastCalledWith(expect.objectContaining({ scanCost: 15 }));
+
+    fireEvent.change(scanInput, { target: { value: '' } });
+    const lastCall = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft;
+    expect(lastCall.scanCost).toBeNull();
+    expect(lastCall.scanCost).not.toBe(0);
+  });
+});
