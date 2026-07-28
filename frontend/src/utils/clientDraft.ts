@@ -181,6 +181,9 @@ export function defaultClientDraft(id: string, name: string): ClientDraft {
     id,
     name,
     isDefault: true,
+    // Assumed, not derived: `zoho_default_contact_id` is a setting, so it
+    // could point at a business contact — this isn't knowable without a Zoho
+    // call, which the docstring above says we deliberately never make here.
     isCompany: false,
     countryCode: DEFAULT_COUNTRY_CODE,
     nationalNumber: '',

@@ -24,6 +24,15 @@ const OTHER_CONTACT = {
   mobile: '',
   email: 'jean@example.com',
 };
+const COMPANY_CONTACT = {
+  id: '66407000009999002',
+  name: 'ACME SARL',
+  company_name: 'ACME SARL',
+  customer_sub_type: 'business',
+  phone: '+33-179753071',
+  mobile: '',
+  email: 'contact@acme.fr',
+};
 
 function createdProject(overrides: Record<string, unknown>) {
   return {
@@ -109,6 +118,7 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
           client_id: DEFAULT_ID,
           description: 'Support de caméra',
           client_phone: expect.stringContaining('612345678'),
+          client_is_company: false,
         }),
       ),
     );
@@ -159,6 +169,44 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
     // the stored value in Zoho, sending the unedited value would be a no-op at
     // best and a stale overwrite at worst).
     expect(body).not.toHaveProperty('email');
+  });
+
+  it('sends client_is_company: true when the selected contact is a business', async () => {
+    // The true branch is the one that actually matters: it is what the panel
+    // reads to decide between "Client name:" and "Company name:". The other
+    // tests in this file only ever select the individual OTHER_CONTACT, so
+    // without this test the false-branch assertion above could pass even if
+    // `draft.isCompany` were never wired to `client_is_company` at all.
+    const user = userEvent.setup();
+    const createSpy = vi.fn();
+    server.use(
+      http.get('/api/v1/zoho/contacts', () => HttpResponse.json([COMPANY_CONTACT])),
+      http.post('/api/v1/aito/', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        createSpy(body);
+        return HttpResponse.json(createdProject(body), { status: 201 });
+      }),
+      http.patch('/api/v1/zoho/contacts/:id', async ({ request }) => {
+        await request.json();
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    await openModal(user);
+    await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
+
+    const combobox = screen.getByRole('combobox', { name: /client/i });
+    await user.clear(combobox);
+    await user.type(combobox, 'ACME');
+    await user.click(await screen.findByRole('option', { name: /ACME SARL/i }, { timeout: 3000 }));
+
+    await user.click(screen.getByRole('button', { name: /create project/i }));
+
+    await waitFor(() =>
+      expect(createSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ client_id: COMPANY_CONTACT.id, client_is_company: true }),
+      ),
+    );
   });
 
   it('still creates the card and closes the modal when the Zoho sync fails, showing a warning toast instead of an error', async () => {

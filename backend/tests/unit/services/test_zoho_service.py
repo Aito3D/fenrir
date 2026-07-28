@@ -251,11 +251,14 @@ async def test_create_contact_person_path(async_client, db_session):
         email="jp@example.pf",
         phone="+689-87123456",
     )
+    # The mocked response omits customer_sub_type entirely; create_contact
+    # overrides it with the sub_type it computed and sent ("individual" here),
+    # so the response can't disagree with the request.
     assert result == {
         "id": "new1",
         "name": "Jean-Pierre DUPONT",
         "company_name": "",
-        "customer_sub_type": "",
+        "customer_sub_type": "individual",
         "phone": "",
         "mobile": "+689-87123456",
         "email": "jp@example.pf",
@@ -362,12 +365,16 @@ async def test_create_contact_company_path_without_person(async_client, db_sessi
         return httpx.Response(201, json={"contact": {"contact_id": "c1", "contact_name": "ACME SARL"}})
 
     zoho_service.transport = _transport(handler)
-    await zoho_service.create_contact(
+    result = await zoho_service.create_contact(
         db_session, company_name="ACME SARL", first_name="", last_name="", email="", phone=""
     )
     assert seen["body"]["contact_name"] == "ACME SARL"
     assert seen["body"]["company_name"] == "ACME SARL"
     assert seen["body"]["customer_sub_type"] == "business"
+    # The mocked response omits customer_sub_type entirely (Books not echoing
+    # it back); the mapped result must still carry the "business" we sent,
+    # not the "" _map_contact would otherwise default to.
+    assert result["customer_sub_type"] == "business"
     assert "contact_persons" not in seen["body"]  # nothing to put in it
 
 

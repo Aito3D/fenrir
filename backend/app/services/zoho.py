@@ -216,7 +216,13 @@ class ZohoService:
             payload["contact_persons"] = [{**person, "is_primary_contact": True}]
 
         body = await self._request(db, "POST", "/contacts", json=payload)
-        return _map_contact(body.get("contact", {}))
+        contact = _map_contact(body.get("contact", {}))
+        # Books is expected to echo `customer_sub_type` back, but the value we
+        # just sent is already known and authoritative — don't let a response
+        # that omits (or disagrees with) it silently downgrade a company to
+        # `isCompany: false` in the UI.
+        contact["customer_sub_type"] = sub_type
+        return contact
 
     async def update_contact_person(
         self,
