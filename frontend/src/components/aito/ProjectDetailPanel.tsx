@@ -295,14 +295,23 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
   }, []);
 
   useEffect(
-    () => () => {
-      closedRef.current = true;
-      // Only when every PATCH has already landed. If any is still open, the
-      // refresh is `onSettled`'s job (see the counter's comment above):
-      // invalidating now would race the write it is supposed to reflect.
-      if (tasksDirtyRef.current && inFlightTaskPatches.current === 0) {
-        queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
-      }
+    () => {
+      // StrictMode runs setup -> cleanup -> setup on mount in development, and
+      // a ref survives that simulated remount because the component instance
+      // does not. Without this reset the panel would sit at closed=true from
+      // its first render, so every keystroke's `onSettled` would satisfy the
+      // guard and invalidate the board — the exact per-keystroke refetch the
+      // counter exists to prevent, in dev only, where no test would see it.
+      closedRef.current = false;
+      return () => {
+        closedRef.current = true;
+        // Only when every PATCH has already landed. If any is still open, the
+        // refresh is `onSettled`'s job (see the counter's comment above):
+        // invalidating now would race the write it is supposed to reflect.
+        if (tasksDirtyRef.current && inFlightTaskPatches.current === 0) {
+          queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+        }
+      };
     },
     // Deliberately empty: this must fire exactly once, when the panel closes.
     // queryClient is a stable singleton from the provider.

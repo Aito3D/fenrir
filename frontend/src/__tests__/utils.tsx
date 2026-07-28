@@ -2,7 +2,7 @@
  * Test utilities and wrapper components.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { render } from '@testing-library/react';
 import type { RenderOptions } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -32,7 +32,14 @@ interface AllProvidersProps {
 }
 
 function AllProviders({ children }: AllProvidersProps) {
-  const queryClient = createTestQueryClient();
+  // One client per mounted tree, not one per render. Constructing it inline
+  // handed a brand-new client through context on every re-render — including
+  // every `rerender()` and every StrictMode double-render — while any hook
+  // that had already mounted stayed pinned to the client it was created with.
+  // Tests that re-render then have some code talking to one client and the
+  // rest to another, so a cache write or invalidation can silently reach
+  // nothing. `useState` with a lazy initializer keeps the original.
+  const [queryClient] = useState(createTestQueryClient);
 
   return (
     <QueryClientProvider client={queryClient}>
