@@ -21,7 +21,8 @@ router = APIRouter(prefix="/zoho", tags=["zoho"])
 
 class ZohoStatus(BaseModel):
     configured: bool
-    reachable: bool
+    # None means "not probed" — distinct from False ("probed and unreachable").
+    reachable: bool | None
     default_contact_id: str
     default_contact_name: str
 
@@ -37,29 +38,36 @@ class ZohoContact(BaseModel):
 
 @router.get("/status", response_model=ZohoStatus)
 async def zoho_status(
+    probe: bool = False,
     db: AsyncSession = Depends(get_db),
     # Any-of: the Aito create modal (aito:create) AND the settings Test button
     # (settings:read) both need this endpoint.
     _: User | None = RequireAnyPermissionIfAuthEnabled(Permission.AITO_CREATE, Permission.SETTINGS_READ),
 ):
+    """Connection state for the Zoho integration.
+
+    ``configured`` and the default contact are settings-table reads. ``reachable``
+    costs an OAuth round trip, so it is only established when ``probe`` is set —
+    the Aito modal gates its client block on this call and never reads it.
+    """
     default_id, default_name = await zoho_service.get_default_contact(db)
-    if not await zoho_service.is_configured(db):
+    configured = await zoho_service.is_configured(db)
+    if not configured or not probe:
         return ZohoStatus(
-            configured=False,
-            reachable=False,
+            configured=configured,
+            reachable=None,
             default_contact_id=default_id,
             default_contact_name=default_name,
         )
     try:
         await zoho_service.get_access_token(db)
         reachable = True
-        configured = True
     except ZohoNotConfiguredError:
         # Settings were cleared between the is_configured() check above and here.
-        configured, reachable = False, False
+        configured, reachable = False, None
     except ZohoUpstreamError as e:
         logger.warning("Zoho unreachable: %s", e)
-        configured, reachable = True, False
+        reachable = False
     return ZohoStatus(
         configured=configured,
         reachable=reachable,

@@ -35,7 +35,7 @@ async def test_status_unconfigured_still_returns_default_contact(async_client):
     assert r.status_code == 200
     assert r.json() == {
         "configured": False,
-        "reachable": False,
+        "reachable": None,
         "default_contact_id": "66407000001237340",
         "default_contact_name": "Client de passage",
     }
@@ -53,17 +53,44 @@ async def test_status_uses_configured_default_contact(async_client):
 
 
 @pytest.mark.asyncio
-async def test_status_configured_reachable(async_client):
+async def test_status_without_probe_makes_no_upstream_request(async_client):
+    """The Aito modal blocks its client block on this call, so it must never
+    wait on a Zoho round trip it does not read."""
+    await _configure(async_client)
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+
+    zoho_service.transport = httpx.MockTransport(handler)
+    body = (await async_client.get("/api/v1/zoho/status")).json()
+    assert calls["n"] == 0
+    assert body["configured"] is True
+    assert body["reachable"] is None
+
+
+@pytest.mark.asyncio
+async def test_status_with_probe_reports_reachable(async_client):
     await _configure(async_client)
     zoho_service.transport = httpx.MockTransport(
         lambda request: httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
     )
-    assert (await async_client.get("/api/v1/zoho/status")).json() == {
+    assert (await async_client.get("/api/v1/zoho/status?probe=true")).json() == {
         "configured": True,
         "reachable": True,
         "default_contact_id": "66407000001237340",
         "default_contact_name": "Client de passage",
     }
+
+
+@pytest.mark.asyncio
+async def test_status_with_probe_reports_unreachable_on_upstream_error(async_client):
+    await _configure(async_client)
+    zoho_service.transport = httpx.MockTransport(lambda request: httpx.Response(500, text="boom"))
+    body = (await async_client.get("/api/v1/zoho/status?probe=true")).json()
+    assert body["configured"] is True
+    assert body["reachable"] is False
 
 
 @pytest.mark.asyncio
