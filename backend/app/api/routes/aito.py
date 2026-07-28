@@ -1,9 +1,10 @@
 """Aito production board: DB-backed Kanban with soft delete."""
 
 import logging
+from dataclasses import dataclass
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
@@ -28,7 +29,81 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/aito", tags=["aito"])
 
 
-def _to_response(p: AitoProject) -> AitoProjectResponse:
+# Canonical order for `task_services`, fixed here so the card's badge row is
+# stable across refetches regardless of the order tasks were created in.
+_SERVICE_COLUMNS = (
+    ("scan", AitoTask.scan_cost),
+    ("modelisation", AitoTask.modelisation_cost),
+    ("impression", AitoTask.impression_cost),
+    ("usinage", AitoTask.usinage_cost),
+)
+
+
+@dataclass(frozen=True)
+class _TaskSummary:
+    count: int = 0
+    total: float = 0.0
+    services: tuple[str, ...] = ()
+
+
+_EMPTY_SUMMARY = _TaskSummary()
+
+
+async def _task_summaries(db: AsyncSession, project_ids: list[int]) -> dict[int, _TaskSummary]:
+    """Task count, total and enabled-service set per project, in ONE query.
+
+    Membership is tested with IS NOT NULL, never `> 0`: NULL means the service
+    is disabled and 0 means it is free, and a service quoted at zero must still
+    show its badge.
+
+    The SUM() below mirrors `taskTotal` in frontend/src/utils/taskDraft.ts. The
+    two are in different languages and cannot share code — if the definition of
+    a task's total changes, it must be changed in both places.
+
+    Projects with no tasks are absent from the result; callers fall back to
+    ``_EMPTY_SUMMARY``.
+    """
+    if not project_ids:
+        return {}
+    stmt = (
+        select(
+            AitoTask.project_id,
+            func.count().label("n"),
+            func.sum(
+                func.coalesce(AitoTask.scan_cost, 0.0)
+                + func.coalesce(AitoTask.modelisation_cost, 0.0)
+                + func.coalesce(AitoTask.usinage_cost, 0.0)
+                + func.coalesce(AitoTask.impression_cost, 0.0)
+            ).label("total"),
+            *[
+                func.max(case((column.is_not(None), 1), else_=0)).label(f"svc_{name}")
+                for name, column in _SERVICE_COLUMNS
+            ],
+        )
+        .where(AitoTask.project_id.in_(project_ids))
+        .group_by(AitoTask.project_id)
+    )
+    return {
+        row.project_id: _TaskSummary(
+            count=row.n,
+            total=float(row.total or 0.0),
+            services=tuple(name for name, _ in _SERVICE_COLUMNS if getattr(row, f"svc_{name}")),
+        )
+        for row in (await db.execute(stmt)).all()
+    }
+
+
+async def _one_summary(db: AsyncSession, project_id: int) -> _TaskSummary:
+    """Summary for a single project, for the endpoints that return one card."""
+    return (await _task_summaries(db, [project_id])).get(project_id, _EMPTY_SUMMARY)
+
+
+def _to_response(p: AitoProject, summary: _TaskSummary) -> AitoProjectResponse:
+    """`summary` is required, never defaulted. The detail panel writes PATCH
+    responses straight into the board cache with setQueryData, replacing the
+    row — so an endpoint that quietly returned zeros would blank a card's
+    badges and nothing would fail. Requiring it makes every call site state
+    its intent."""
     return AitoProjectResponse(
         id=p.id,
         description=p.description,
@@ -40,6 +115,9 @@ def _to_response(p: AitoProject) -> AitoProjectResponse:
         client_phone=p.client_phone,
         client_email=p.client_email,
         client_is_company=p.client_is_company,
+        task_count=summary.count,
+        tasks_total=summary.total,
+        task_services=list(summary.services),
         created_at=p.created_at,
         updated_at=p.updated_at,
     )
@@ -87,7 +165,9 @@ async def list_projects(
         .where(AitoProject.status == "active")
         .order_by(AitoProject.board_column, AitoProject.position, AitoProject.id)
     )
-    return [_to_response(p) for p in (await db.execute(stmt)).scalars().all()]
+    projects = list((await db.execute(stmt)).scalars().all())
+    summaries = await _task_summaries(db, [p.id for p in projects])
+    return [_to_response(p, summaries.get(p.id, _EMPTY_SUMMARY)) for p in projects]
 
 
 @router.get("/trash", response_model=list[AitoProjectResponse])
@@ -101,7 +181,9 @@ async def list_trash(
         .where(AitoProject.status == "deleted")
         .order_by(AitoProject.updated_at.desc(), AitoProject.id.desc())
     )
-    return [_to_response(p) for p in (await db.execute(stmt)).scalars().all()]
+    projects = list((await db.execute(stmt)).scalars().all())
+    summaries = await _task_summaries(db, [p.id for p in projects])
+    return [_to_response(p, summaries.get(p.id, _EMPTY_SUMMARY)) for p in projects]
 
 
 @router.post("/", response_model=AitoProjectResponse, status_code=201)
@@ -131,7 +213,7 @@ async def create_project(
         db.add(AitoTask(project_id=project.id, position=position, **task_payload.model_dump()))
     await db.commit()
     await db.refresh(project)
-    return _to_response(project)
+    return _to_response(project, await _one_summary(db, project.id))
 
 
 @router.get("/{project_id}/tasks", response_model=list[AitoTaskResponse])
@@ -218,7 +300,9 @@ async def import_legacy_projects(
     await db.commit()
     for p in created:
         await db.refresh(p)
-    return [_to_response(p) for p in created]
+    # Imported projects are task-free by construction: the legacy localStorage
+    # board had no concept of tasks.
+    return [_to_response(p, _EMPTY_SUMMARY) for p in created]
 
 
 @router.patch("/{project_id}/move", response_model=AitoProjectResponse)
@@ -246,7 +330,7 @@ async def move_project(
             row.position = i
     await db.commit()
     await db.refresh(project)
-    return _to_response(project)
+    return _to_response(project, await _one_summary(db, project.id))
 
 
 @router.patch("/{project_id}", response_model=AitoProjectResponse)
@@ -282,7 +366,7 @@ async def update_project(
             setattr(project, key, fields[key])
     await db.commit()
     await db.refresh(project)
-    return _to_response(project)
+    return _to_response(project, await _one_summary(db, project.id))
 
 
 @router.post("/{project_id}/restore", response_model=AitoProjectResponse)
@@ -304,7 +388,7 @@ async def restore_project(
     project.position = position
     await db.commit()
     await db.refresh(project)
-    return _to_response(project)
+    return _to_response(project, await _one_summary(db, project.id))
 
 
 @router.delete("/{project_id}", status_code=204)

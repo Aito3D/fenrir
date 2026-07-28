@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from backend.app.models.aito_project import AitoProject
+from backend.app.models.aito_task import AitoTask
 
 
 async def _create(client, **overrides):
@@ -295,7 +296,9 @@ async def test_create_project_without_tasks_is_still_valid(async_client):
 @pytest.mark.asyncio
 async def test_project_list_does_not_include_tasks(async_client):
     """GET /aito/ drives the whole board and is refetched on every WebSocket
-    invalidation; loading every task of every card would bloat it."""
+    invalidation; loading every task of every card would bloat it. The card's
+    summary is served instead by three aggregate fields from one grouped query
+    — see test_project_list_summarises_tasks."""
     await _create(async_client, tasks=[_task()])
     body = (await async_client.get("/api/v1/aito/")).json()
     assert "tasks" not in body[0]
@@ -355,3 +358,139 @@ async def test_soft_deleting_a_project_keeps_its_tasks(async_client):
     await async_client.delete(f"/api/v1/aito/{project_id}")
     await async_client.post(f"/api/v1/aito/{project_id}/restore")
     assert len((await async_client.get(f"/api/v1/aito/{project_id}/tasks")).json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_project_list_summarises_tasks(async_client):
+    r = await _create(
+        async_client,
+        tasks=[
+            _task(title="Un", scan_cost=4000.0),
+            _task(title="Deux", scan_cost=None, usinage_cost=12000.0),
+        ],
+    )
+    project_id = r.json()["id"]
+
+    body = (await async_client.get("/api/v1/aito/")).json()
+    card = next(p for p in body if p["id"] == project_id)
+    assert card["task_count"] == 2
+    assert card["tasks_total"] == 16000.0
+    assert card["task_services"] == ["scan", "usinage"]
+
+
+@pytest.mark.asyncio
+async def test_project_without_tasks_summarises_to_zero(async_client):
+    r = await _create(async_client)
+    body = (await async_client.get("/api/v1/aito/")).json()
+    card = next(p for p in body if p["id"] == r.json()["id"])
+    assert card["task_count"] == 0
+    assert card["tasks_total"] == 0.0
+    assert card["task_services"] == []
+
+
+@pytest.mark.asyncio
+async def test_a_free_service_still_counts_as_enabled(async_client):
+    """0 is a price, NULL is a disabled service. A service quoted at zero must
+    still appear in task_services — an aggregate testing `> 0` instead of
+    IS NOT NULL would silently drop it, and the total would look identical."""
+    r = await _create(async_client, tasks=[_task(scan_cost=0.0)])
+    body = (await async_client.get("/api/v1/aito/")).json()
+    card = next(p for p in body if p["id"] == r.json()["id"])
+    assert card["task_services"] == ["scan"]
+    assert card["tasks_total"] == 0.0
+    assert card["task_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_task_services_use_canonical_order_not_insertion_order(async_client):
+    r = await _create(
+        async_client,
+        tasks=[
+            _task(title="Un", scan_cost=None, usinage_cost=100.0),
+            _task(title="Deux", scan_cost=None, modelisation_cost=200.0),
+            _task(title="Trois", scan_cost=1.0),
+        ],
+    )
+    body = (await async_client.get("/api/v1/aito/")).json()
+    card = next(p for p in body if p["id"] == r.json()["id"])
+    assert card["task_services"] == ["scan", "modelisation", "usinage"]
+
+
+@pytest.mark.asyncio
+async def test_tasks_total_sums_exactly_the_four_cost_columns(async_client):
+    """Pins the arithmetic. This mirrors `taskTotal` in
+    frontend/src/utils/taskDraft.ts; the two are in different languages and
+    cannot share code, so a change to one must be made in the other."""
+    r = await _create(
+        async_client,
+        tasks=[
+            _task(
+                scan_cost=1.0,
+                modelisation_cost=20.0,
+                usinage_cost=300.0,
+                impression_cost=4000.0,
+            )
+        ],
+    )
+    body = (await async_client.get("/api/v1/aito/")).json()
+    card = next(p for p in body if p["id"] == r.json()["id"])
+    assert card["tasks_total"] == 4321.0
+
+
+@pytest.mark.asyncio
+async def test_patch_response_carries_the_task_summary(async_client):
+    """The detail panel writes the PATCH response straight into the board cache
+    (setQueryData replaces the row), so a response missing the aggregate would
+    blank the card's badges until the next fetch."""
+    r = await _create(async_client, tasks=[_task(scan_cost=4000.0)])
+    project_id = r.json()["id"]
+    patched = await async_client.patch(f"/api/v1/aito/{project_id}", json={"description": "Nouveau"})
+    assert patched.status_code == 200
+    assert patched.json()["task_count"] == 1
+    assert patched.json()["tasks_total"] == 4000.0
+    assert patched.json()["task_services"] == ["scan"]
+
+
+@pytest.mark.asyncio
+async def test_create_response_carries_the_task_summary(async_client):
+    r = await _create(async_client, tasks=[_task(title="Un"), _task(title="Deux")])
+    assert r.status_code == 201
+    assert r.json()["task_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_move_and_restore_responses_carry_the_task_summary(async_client):
+    r = await _create(async_client, tasks=[_task(scan_cost=4000.0)])
+    project_id = r.json()["id"]
+
+    moved = await async_client.patch(f"/api/v1/aito/{project_id}/move", json={"column": "print", "position": 0})
+    assert moved.json()["task_count"] == 1
+
+    await async_client.delete(f"/api/v1/aito/{project_id}")
+    restored = await async_client.post(f"/api/v1/aito/{project_id}/restore")
+    assert restored.json()["task_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_task_summaries_handles_many_projects_and_an_empty_list(db_session):
+    from backend.app.api.routes.aito import _task_summaries
+
+    assert await _task_summaries(db_session, []) == {}
+
+    db_session.add_all(
+        [
+            AitoTask(project_id=1, position=0, scan_cost=10.0),
+            AitoTask(project_id=1, position=1, usinage_cost=5.0),
+            AitoTask(project_id=2, position=0, modelisation_cost=7.0),
+        ]
+    )
+    await db_session.commit()
+
+    summaries = await _task_summaries(db_session, [1, 2, 3])
+    assert summaries[1].count == 2
+    assert summaries[1].total == 15.0
+    assert summaries[1].services == ("scan", "usinage")
+    assert summaries[2].services == ("modelisation",)
+    # A project with no tasks is simply absent — callers fall back to the empty
+    # summary rather than paying for a row per task-free card.
+    assert 3 not in summaries

@@ -98,5 +98,11 @@ class AitoProjectResponse(BaseModel):
     client_phone: str | None
     client_email: str | None
     client_is_company: bool | None
+    # Aggregates over the project's tasks, so the board card can show a summary
+    # without GET /aito/ shipping every task row. Required, never defaulted:
+    # see _to_response in the routes module.
+    task_count: int
+    tasks_total: float
+    task_services: list[str]
     created_at: datetime
     updated_at: datetime

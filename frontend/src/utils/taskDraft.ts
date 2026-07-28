@@ -170,6 +170,12 @@ export function taskDraftToTaskCreate(t: TaskDraft): AitoTaskCreate {
 
 const orZero = (n: number | null) => n ?? 0;
 
+/** Sums a task's four cost fields, treating a disabled service (`null`) as 0.
+ *
+ *  Mirrored by the SUM(COALESCE(...)) in `_task_summaries`
+ *  (backend/app/api/routes/aito.py), which computes the same figure for the
+ *  board card. The two are in different languages and cannot share code — if
+ *  this definition changes, change that one too. */
 export function taskTotal(task: TaskDraft): number {
   return orZero(task.scanCost) + orZero(task.modelisationCost) + orZero(task.usinageCost)
     + orZero(task.impressionCost);
