@@ -242,6 +242,15 @@ describe('draftFromContact', () => {
   it('flags the default contact', () => {
     expect(draftFromContact({ ...base, id: 'default-id' }, 'default-id').isDefault).toBe(true);
   });
+
+  it.each([
+    ['business', true],
+    ['individual', false],
+    ['', false],
+    ['something-else', false],
+  ])('maps customer_sub_type %s to isCompany %s', (subType, expected) => {
+    expect(draftFromContact({ ...base, customer_sub_type: subType }, 'default-id').isCompany).toBe(expected);
+  });
 });
 
 describe('defaultClientDraft', () => {
@@ -250,6 +259,7 @@ describe('defaultClientDraft', () => {
       id: 'd1',
       name: 'Client de passage',
       isDefault: true,
+      isCompany: false,
       countryCode: '+689',
       nationalNumber: '',
       email: '',

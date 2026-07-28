@@ -17,6 +17,9 @@ export interface ClientDraft {
   name: string;
   /** The shared walk-in contact — its phone/email are card-only, never synced. */
   isDefault: boolean;
+  /** Zoho's customer_sub_type was "business". Drives the detail panel's
+   *  "Company name" vs "Client name" label. */
+  isCompany: boolean;
   countryCode: string;
   nationalNumber: string;
   email: string;
@@ -162,6 +165,7 @@ export function draftFromContact(contact: ZohoContact, defaultContactId: string)
     id: contact.id,
     name: contact.name,
     isDefault: contact.id === defaultContactId,
+    isCompany: contact.customer_sub_type === 'business',
     countryCode: parsed.countryCode,
     nationalNumber: parsed.nationalNumber,
     email: contact.email ?? '',
@@ -177,6 +181,7 @@ export function defaultClientDraft(id: string, name: string): ClientDraft {
     id,
     name,
     isDefault: true,
+    isCompany: false,
     countryCode: DEFAULT_COUNTRY_CODE,
     nationalNumber: '',
     email: '',

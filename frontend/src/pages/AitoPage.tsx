@@ -320,6 +320,7 @@ export function AitoPage() {
         client_name: draft.name,
         client_phone: formatPhone(draft) || null,
         client_email: draft.email.trim() || null,
+        client_is_company: draft.isCompany,
       }),
     onSuccess: (_data, { draft }) => {
       queryClient.invalidateQueries({ queryKey: ['aito-projects'] });

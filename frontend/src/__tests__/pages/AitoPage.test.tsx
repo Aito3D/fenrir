@@ -163,9 +163,9 @@ describe('AitoPage (backend board)', () => {
 
     const panel = await screen.findByRole('dialog');
     expect(within(panel).getByText('Support GoPro')).toBeInTheDocument();
-    expect(within(panel).getByText('Created')).toBeInTheDocument();
-    expect(within(panel).getByText('Last activity')).toBeInTheDocument();
-    expect(within(panel).getByText('Stage')).toBeInTheDocument();
+    expect(within(panel).getByText('Created:')).toBeInTheDocument();
+    expect(within(panel).getByText('Last activity:')).toBeInTheDocument();
+    expect(within(panel).getByText('Stage:')).toBeInTheDocument();
     expect(within(panel).getByText('Quote')).toBeInTheDocument();
   });
 
@@ -284,7 +284,7 @@ describe('AitoPage (backend board)', () => {
     await user.click(within(panel).getByText('Support GoPro'));
     const textarea = within(panel).getByRole('textbox');
     expect(textarea).toHaveFocus();
-    const lastActivityBefore = within(panel).getByText('Last activity').nextElementSibling?.textContent;
+    const lastActivityBefore = within(panel).getByText('Last activity:').nextElementSibling?.textContent;
 
     // React Query's tracked-properties + structural sharing means a refetch
     // that returns byte-identical data causes NO re-render at all -- the
@@ -301,7 +301,7 @@ describe('AitoPage (backend board)', () => {
     // Wait for the fresh data to actually land (proves AitoPage re-rendered)
     // before asserting focus was preserved.
     await waitFor(() =>
-      expect(within(panel).getByText('Last activity').nextElementSibling?.textContent).not.toBe(lastActivityBefore),
+      expect(within(panel).getByText('Last activity:').nextElementSibling?.textContent).not.toBe(lastActivityBefore),
     );
 
     expect(textarea).toHaveFocus();

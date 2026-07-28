@@ -127,24 +127,9 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
         className="bg-bambu-dark-secondary rounded-xl w-full max-w-md border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)]"
       >
         <div className="p-4 border-b border-bambu-dark-tertiary flex items-start justify-between gap-3 flex-shrink-0">
-          <div className="min-w-0">
-            <h2 className={`text-lg font-semibold truncate ${project.client_name ? 'text-white' : 'text-bambu-gray'}`}>
-              {project.client_name ?? t('aito.noClient')}
-            </h2>
-            {project.client_phone && (
-              <a href={`tel:${project.client_phone}`} className="text-sm text-bambu-gray hover:text-bambu-green">
-                {project.client_phone}
-              </a>
-            )}
-            {project.client_email && (
-              <a
-                href={`mailto:${project.client_email}`}
-                className="block text-sm text-bambu-gray hover:text-bambu-green"
-              >
-                {project.client_email}
-              </a>
-            )}
-          </div>
+          <h2 className="text-lg font-semibold text-white truncate min-w-0">
+            {t('aito.projectRef', { id: project.id })}
+          </h2>
           <button
             type="button"
             ref={closeRef}
@@ -197,17 +182,52 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
             <SaveIndicator state={descState} />
           </div>
 
+          {/* One description list for the whole record. <dt>/<dd> gives
+              assistive technology the label-to-value association for free; the
+              colon is markup, so no locale string carries punctuation. Client
+              rows with no value are omitted entirely — an empty "Email:" is
+              noise, not information. The mid-list border separates the client
+              group from the project metadata. */}
           <dl className="border-t border-bambu-dark-tertiary pt-4 space-y-2 text-sm">
-            <div className="flex items-baseline justify-between gap-4">
-              <dt className="text-bambu-gray">{t('aito.createdLabel')}</dt>
-              <dd className="text-white text-right">{created ? created.toLocaleString(i18n.language) : '—'}</dd>
+            <div className="flex items-baseline gap-2">
+              <dt className="text-bambu-gray flex-shrink-0">
+                {project.client_is_company ? t('aito.companyNameLabel') : t('aito.clientNameLabel')}:
+              </dt>
+              <dd className={`min-w-0 truncate ${project.client_name ? 'text-white' : 'text-bambu-gray'}`}>
+                {project.client_name ?? t('aito.noClient')}
+              </dd>
             </div>
-            <div className="flex items-baseline justify-between gap-4">
-              <dt className="text-bambu-gray">{t('aito.lastActivity')}</dt>
-              <dd className="text-white text-right">{updated ? updated.toLocaleString(i18n.language) : '—'}</dd>
+            {project.client_phone && (
+              <div className="flex items-baseline gap-2">
+                <dt className="text-bambu-gray flex-shrink-0">{t('aito.phoneLabel')}:</dt>
+                <dd className="min-w-0 truncate">
+                  <a href={`tel:${project.client_phone}`} className="text-white hover:text-bambu-green">
+                    {project.client_phone}
+                  </a>
+                </dd>
+              </div>
+            )}
+            {project.client_email && (
+              <div className="flex items-baseline gap-2">
+                <dt className="text-bambu-gray flex-shrink-0">{t('aito.emailLabel')}:</dt>
+                <dd className="min-w-0 truncate">
+                  <a href={`mailto:${project.client_email}`} className="text-white hover:text-bambu-green">
+                    {project.client_email}
+                  </a>
+                </dd>
+              </div>
+            )}
+
+            <div className="flex items-baseline gap-2 border-t border-bambu-dark-tertiary pt-2 mt-2">
+              <dt className="text-bambu-gray flex-shrink-0">{t('aito.createdLabel')}:</dt>
+              <dd className="text-white min-w-0">{created ? created.toLocaleString(i18n.language) : '—'}</dd>
             </div>
-            <div className="flex items-baseline justify-between gap-4">
-              <dt className="text-bambu-gray">{t('aito.stage')}</dt>
+            <div className="flex items-baseline gap-2">
+              <dt className="text-bambu-gray flex-shrink-0">{t('aito.lastActivity')}:</dt>
+              <dd className="text-white min-w-0">{updated ? updated.toLocaleString(i18n.language) : '—'}</dd>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <dt className="text-bambu-gray flex-shrink-0">{t('aito.stage')}:</dt>
               <dd className="text-white flex items-center gap-2">
                 {column && <span className={`w-2 h-2 rounded-full ${column.dot}`} />}
                 {column ? t(column.labelKey) : project.column}
