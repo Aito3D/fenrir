@@ -33,7 +33,11 @@ export function ClientSection({
   defaultContactName,
 }: ClientSectionProps) {
   const { t } = useTranslation();
-  const statusQuery = useQuery({ queryKey: ['zoho-status'], queryFn: api.getZohoStatus, staleTime: 60_000 });
+  const statusQuery = useQuery({
+    queryKey: ['zoho-status', { probe: false }],
+    queryFn: () => api.getZohoStatus(),
+    staleTime: 60_000,
+  });
 
   if (statusQuery.data?.configured === false) {
     return (

@@ -3452,7 +3452,8 @@ export interface ZohoContact {
 
 export interface ZohoStatus {
   configured: boolean;
-  reachable: boolean;
+  /** null when the caller did not ask for a reachability probe. */
+  reachable: boolean | null;
   default_contact_id: string;
   default_contact_name: string;
 }
@@ -6216,7 +6217,8 @@ export const api = {
   restoreAitoProject: (id: number) => request<AitoProject>(`/aito/${id}/restore`, { method: 'POST' }),
 
   // Zoho Books integration
-  getZohoStatus: () => request<ZohoStatus>('/zoho/status'),
+  getZohoStatus: (probe = false) =>
+    request<ZohoStatus>(`/zoho/status${probe ? '?probe=true' : ''}`),
   searchZohoContacts: (q: string) => request<ZohoContact[]>(`/zoho/contacts?q=${encodeURIComponent(q)}`),
   createZohoContact: (data: {
     company_name?: string;

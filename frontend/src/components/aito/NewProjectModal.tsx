@@ -26,7 +26,11 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
   const [creatingClient, setCreatingClient] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const statusQuery = useQuery({ queryKey: ['zoho-status'], queryFn: api.getZohoStatus, staleTime: 60_000 });
+  const statusQuery = useQuery({
+    queryKey: ['zoho-status', { probe: false }],
+    queryFn: () => api.getZohoStatus(),
+    staleTime: 60_000,
+  });
   const defaultId = statusQuery.data?.default_contact_id ?? '';
   const defaultName = statusQuery.data?.default_contact_name ?? '';
   // The status endpoint always returns a default contact — even a fallback one

@@ -37,8 +37,8 @@ export function ZohoSettings() {
   });
 
   const { data: zohoStatus } = useQuery<ZohoStatus>({
-    queryKey: ['zoho-status'],
-    queryFn: api.getZohoStatus,
+    queryKey: ['zoho-status', { probe: false }],
+    queryFn: () => api.getZohoStatus(),
   });
 
   useEffect(() => {
@@ -98,8 +98,8 @@ export function ZohoSettings() {
     setTestResult(null);
     try {
       const result = await queryClient.fetchQuery({
-        queryKey: ['zoho-status'],
-        queryFn: api.getZohoStatus,
+        queryKey: ['zoho-status', { probe: true }],
+        queryFn: () => api.getZohoStatus(true),
         staleTime: 0,
       });
       setTestResult(result);
