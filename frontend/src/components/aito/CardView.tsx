@@ -54,7 +54,7 @@ export function CardView({
           : 'border-bambu-dark-tertiary card-shadow transition-[border-color,box-shadow] duration-100 hover:border-bambu-green/40 hover:shadow-lg'
       }`}
     >
-      <div className="flex items-center gap-2 px-3 py-2 bg-bambu-dark-tertiary rounded-t-xl border-b border-bambu-dark-tertiary">
+      <div className="flex items-center gap-2 px-3 py-2 bg-bambu-dark-tertiary rounded-t-xl border-b border-bambu-dark-secondary">
         <p
           className={`flex-1 text-sm font-medium truncate ${
             project.client_name ? 'text-white' : 'text-bambu-gray'
@@ -70,7 +70,7 @@ export function CardView({
             {...dragHandleProps}
             // touch-none belongs on the grip, not the card: on the card it
             // would block touch-scrolling the column from anywhere on a card.
-            className="touch-none flex-shrink-0 p-1 -m-1 rounded-md text-bambu-gray cursor-grab active:cursor-grabbing hover:text-white hover:bg-bambu-dark-secondary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
+            className="touch-none flex-shrink-0 p-2 -m-2 rounded-md text-bambu-gray cursor-grab active:cursor-grabbing hover:text-white hover:bg-bambu-dark-secondary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
           >
             <GripVertical className="w-4 h-4" />
           </button>
@@ -83,7 +83,7 @@ export function CardView({
         <button
           type="button"
           onClick={onExpand}
-          className="w-full text-left px-3 pt-2.5 pb-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bambu-green/40"
+          className="block w-full text-left px-3 pt-2.5 pb-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bambu-green/40"
         >
           <span className="block text-sm text-white whitespace-pre-wrap break-words line-clamp-3">
             {project.description}

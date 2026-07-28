@@ -81,7 +81,9 @@ export function DeleteHoldButton({
         onClick={(e) => {
           // The hold timer owns deletion; this only stops the native click —
           // which pointer-event stopPropagation does not suppress — from
-          // bubbling to the card root and expanding the panel.
+          // bubbling further. The card root has no click handler any more
+          // (the footer sits outside the body button), so there is nothing
+          // for this to reach today; kept as a guard against future nesting.
           e.stopPropagation();
         }}
         onPointerUp={(e) => {
