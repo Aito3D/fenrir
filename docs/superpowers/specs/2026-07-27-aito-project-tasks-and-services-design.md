@@ -236,7 +236,7 @@ same editor can serve two quite different data flows.
 |---|---|
 | `components/aito/TaskEditor.tsx` | The list, the "+ Add task" control, ordering |
 | `components/aito/TaskRow.tsx` | One task: title, description, the four service blocks, total, remove |
-| `components/aito/ImpressionFields.tsx` | The five inputs plus the live breakdown |
+| `components/aito/ImpressionFields.tsx` | The six inputs plus the live breakdown |
 | `components/aito/DurationInput.tsx` | Days / hours / minutes, emitting total minutes |
 | `utils/taskDraft.ts` | `TaskDraft` type and all pure logic |
 
