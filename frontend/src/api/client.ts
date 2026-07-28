@@ -2744,6 +2744,16 @@ export interface ObicoStatus {
   external_url_configured: boolean;
 }
 
+// Lightweight subset served under printers:read for the printer-card badge (#1546)
+export interface ObicoPrinterStatus {
+  enabled: boolean;
+  // null = all printers are monitored
+  monitored_printers: number[] | null;
+  per_printer: Record<string, { class: string; frame_count: number; score: number }>;
+  // null = no error, or the viewer lacks settings:read (error strings can embed config URLs)
+  last_error: string | null;
+}
+
 export interface ObicoTestConnection {
   ok: boolean;
   status_code: number | null;
@@ -6467,6 +6477,9 @@ export const api = {
   // Obico AI failure detection
   getObicoStatus: () =>
     request<ObicoStatus>('/obico/status'),
+
+  getObicoPrinterStatus: () =>
+    request<ObicoPrinterStatus>('/obico/printer-status'),
 
   testObicoConnection: (url: string) =>
     request<ObicoTestConnection>('/obico/test-connection', {

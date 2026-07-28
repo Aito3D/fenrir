@@ -174,6 +174,7 @@ const DE_COGNATES = [
   'China', 'Proxy', 'Start',
   'Diagnose',  // DE: same spelling/meaning as EN — camera diagnostic button label
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
+  'Score',  // #1546 AI detection modal — established DE loanword (Duden)
 ];
 
 // French cognates — many UI labels overlap with English exactly.
@@ -188,6 +189,7 @@ const FR_COGNATES = [
   'Copies', '{{n}} copies', 'max {{n}}',  // #1425 PR C — French uses these forms verbatim
   'round robin',  // borrowed English term used as-is in French tech contexts
   'Action', 'Actions', 'Date', 'Type', 'Cache', 'Service', 'Configuration',
+  'Score',  // #1546 AI detection modal — "le score" is standard French
   'Archives', 'Maintenance', 'Notifications', 'Notification', 'Position',
   'Pause', 'Solution', 'Source', 'Version', 'Format', 'Documentation',
   'Mode', 'Format', 'Default', 'Auto', 'Image', 'Audio', 'Video', 'Hex',

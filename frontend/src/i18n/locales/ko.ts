@@ -628,6 +628,21 @@ export default {
       chamber: '챔버 팬'
     },
     clickToViewHmsErrors: 'HMS 오류 보기 클릭',
+    aiDetection: {
+      safe: '안전',
+      warning: '경고',
+      failure: '실패',
+      idle: '대기 중',
+      tooltip: 'AI 실패 감지: {{status}} (점수 {{score}}) - 클릭하여 자세히 보기',
+      tooltipIdle: 'AI 실패 감지 활성화됨 - 다음 인쇄부터 모니터링을 시작합니다 - 클릭하여 자세히 보기',
+      modalTitle: 'AI 실패 감지 - {{name}}',
+      currentStatus: '상태',
+      score: '점수',
+      framesAnalyzed: '분석된 프레임',
+      idleHint: '현재 모니터링 중인 인쇄가 없습니다. 다음 인쇄부터 자동으로 모니터링을 시작합니다.',
+      lastError: '마지막 오류',
+      openSettings: '설정 열기'
+    },
     estimatedCompletion: '예상 완료 시간',
     plateNumber: '플레이트 {{number}}',
     slotOptions: '슬롯 옵션',
