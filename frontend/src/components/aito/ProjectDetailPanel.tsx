@@ -158,6 +158,18 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
 
   const updateTaskMutation = useMutation({
     mutationFn: ({ id, patch }: { id: number; patch: AitoTaskUpdate }) => api.updateAitoTask(id, patch),
+    onSuccess: (updatedTask) => {
+      // Advance the diff baseline: without this, tasksQuery.data stays
+      // frozen at initial load, so reverting a field to its originally-
+      // loaded value diffs as "no change" against the stale baseline and the
+      // PATCH is silently dropped. Replacing only the matching row (not
+      // invalidating) is what keeps this from clobbering other rows with
+      // in-flight edits — the same concern the resync effect above guards
+      // against for single-field PATCHes.
+      queryClient.setQueryData<AitoTask[]>(['aito-tasks', project.id], (prev) =>
+        prev?.map((row) => (row.id === updatedTask.id ? updatedTask : row)) ?? prev,
+      );
+    },
     onError: () => showToast(t('aito.saveFailed'), 'error'),
   });
 

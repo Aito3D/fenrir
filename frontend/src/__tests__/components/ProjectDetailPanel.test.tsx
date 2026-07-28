@@ -181,6 +181,67 @@ describe('ProjectDetailPanel tasks', () => {
     expect(capturedBody).toEqual({ scan_cost: 700 });
   });
 
+  it('editing a value back to its original after a successful save still issues a second PATCH', async () => {
+    // Regression: updateTaskMutation must write the server's response back
+    // into the ['aito-tasks', project.id] cache on success. If it doesn't,
+    // the diff baseline stays frozen at initial load, so reverting a field
+    // to its originally-loaded value looks like "no change" against that
+    // stale baseline and the second PATCH is silently dropped — the server
+    // is left holding the intermediate value with no toast, no indicator.
+    const bodies: Record<string, unknown>[] = [];
+    let current: AitoTask = { ...mockTask };
+    server.use(
+      http.patch('/api/v1/aito/tasks/:id', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        bodies.push(body);
+        current = { ...current, ...body };
+        return HttpResponse.json(current);
+      }),
+    );
+
+    show();
+    const scanInput = await screen.findByLabelText('Scan3D');
+
+    fireEvent.change(scanInput, { target: { value: '700' } });
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({ scan_cost: 700 });
+
+    fireEvent.change(scanInput, { target: { value: '500' } });
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toEqual({ scan_cost: 500 });
+  });
+
+  it('re-disabling a service after enabling it sends an explicit null, not a dropped patch', async () => {
+    // The damaging instance of the same bug: null (disabled) -> 0 (free,
+    // saved) -> null (disabled again) must reach the server as two PATCHes,
+    // the second carrying an explicit `null`. Silently dropping it leaves
+    // the server billing for a service the UI shows as off.
+    const noScanTask: AitoTask = { ...mockTask, scan_cost: null };
+    const bodies: Record<string, unknown>[] = [];
+    let current: AitoTask = { ...noScanTask };
+    server.use(
+      http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([noScanTask])),
+      http.patch('/api/v1/aito/tasks/:id', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        bodies.push(body);
+        current = { ...current, ...body };
+        return HttpResponse.json(current);
+      }),
+    );
+
+    show();
+    const scanInput = await screen.findByLabelText('Scan3D');
+    expect(scanInput).toHaveValue(null);
+
+    fireEvent.change(scanInput, { target: { value: '0' } });
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({ scan_cost: 0 });
+
+    fireEvent.change(scanInput, { target: { value: '' } });
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toEqual({ scan_cost: null });
+  });
+
   it('editing the title issues a PATCH with only title, sending null (not empty string) when blank', async () => {
     let capturedBody: unknown;
     server.use(
