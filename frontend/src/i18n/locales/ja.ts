@@ -3784,6 +3784,9 @@ export default {
     targetParts: '目標パーツ数',
     targetPartsPlaceholder: '例: 50',
     targetPartsHelp: '必要なオブジェクトの総数',
+    targetSets: 'ファイルごとの部数',
+    targetSetsPlaceholder: '例: 10',
+    targetSetsHelp: '各印刷可能ファイルを印刷する回数',
     tagsLabel: 'タグ（カンマ区切り）',
     tagsPlaceholder: 'カンマ区切りのタグ',
     dueDate: '期限',
@@ -3859,6 +3862,9 @@ export default {
     progress: {
       platesProgress: 'プレート進捗',
       partsProgress: 'パーツ進捗',
+      setsProgress: '完成セット',
+      sets: 'セット',
+      setsHint: 'すべての印刷可能ファイルがこの回数に達するとセットが完成します',
       printJobs: '印刷ジョブ',
       parts: 'パーツ',
       percentComplete: '{{percent}}% 完了',
@@ -3897,6 +3903,8 @@ export default {
       forQuickAccess: 'してクイックアクセスできるようにします。',
       fileCount: '{{count}}ファイル',
       empty: '<空>',
+      printedCount: '{{count}}回印刷済み',
+      progressTooltip: '{{target}}回中{{done}}回の印刷が完了',
       noFiles: 'このフォルダにファイルはありません。',
     },
     bom: {

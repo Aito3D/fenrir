@@ -3773,6 +3773,9 @@ export default {
     targetParts: 'Pièces cibles',
     targetPartsPlaceholder: 'ex: 150',
     targetPartsHelp: 'Nombre total d\'objets',
+    targetSets: 'Copies par fichier',
+    targetSetsPlaceholder: 'ex. 10',
+    targetSetsHelp: 'Nombre d\'impressions de chaque fichier imprimable',
     tagsLabel: 'Tags (séparés par virgules)',
     tagsPlaceholder: 'ex: voron, cadeau',
     dueDate: 'Échéance',
@@ -3848,6 +3851,9 @@ export default {
     progress: {
       platesProgress: 'Progression Plateaux',
       partsProgress: 'Progression Pièces',
+      setsProgress: 'Jeux complets',
+      sets: 'jeux',
+      setsHint: 'Un jeu est complet quand chaque fichier imprimable atteint ce nombre',
       printJobs: 'jobs d\'impression',
       parts: 'pièces',
       percentComplete: '{{percent}}% terminé',
@@ -3886,6 +3892,8 @@ export default {
       forQuickAccess: 'pour un accès rapide.',
       fileCount: '{{count}} fichier(s)',
       empty: 'Aucun dossier lié.',
+      printedCount: 'Imprimé {{count}} fois',
+      progressTooltip: '{{done}} sur {{target}} impressions terminées',
       noFiles: 'Aucun fichier dans ce dossier.',
     },
     bom: {

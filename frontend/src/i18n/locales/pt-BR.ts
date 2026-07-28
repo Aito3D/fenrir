@@ -3772,6 +3772,9 @@ export default {
     targetParts: 'Peças Alvo',
     targetPartsPlaceholder: 'ex., 150',
     targetPartsHelp: 'Total de objetos necessários',
+    targetSets: 'Cópias por arquivo',
+    targetSetsPlaceholder: 'ex.: 10',
+    targetSetsHelp: 'Quantas vezes cada arquivo imprimível deve ser impresso',
     tagsLabel: 'Tags (separadas por vírgula)',
     tagsPlaceholder: 'ex., voron, funcional, presente',
     dueDate: 'Data de Vencimento',
@@ -3847,6 +3850,9 @@ export default {
     progress: {
       platesProgress: 'Progresso das Placas',
       partsProgress: 'Progresso das Peças',
+      setsProgress: 'Conjuntos completos',
+      sets: 'conjuntos',
+      setsHint: 'Um conjunto está completo quando cada arquivo imprimível atinge esse número',
       printJobs: 'Trabalhos de Impressão',
       parts: 'Peças',
       percentComplete: '{{percent}}% concluído',
@@ -3885,6 +3891,8 @@ export default {
       forQuickAccess: 'a este projeto para acesso rápido.',
       fileCount: '{{count}} arquivo(s)',
       empty: 'Nenhuma pasta vinculada. Vá para o Gerenciador de Arquivos e vincule uma pasta a este projeto.',
+      printedCount: 'Impresso {{count}} vez(es)',
+      progressTooltip: '{{done}} de {{target}} impressões concluídas',
       noFiles: 'Nenhum arquivo nesta pasta.',
     },
     bom: {

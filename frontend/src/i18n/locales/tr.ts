@@ -3779,6 +3779,9 @@ export default {
     targetParts: 'Hedef Parçalar',
     targetPartsPlaceholder: 'örn., 150',
     targetPartsHelp: 'Gereken toplam nesne',
+    targetSets: 'Dosya başına kopya',
+    targetSetsPlaceholder: 'örn. 10',
+    targetSetsHelp: 'Her yazdırılabilir dosyanın kaç kez yazdırılacağı',
     tagsLabel: 'Etiketler (virgülle ayrılmış)',
     tagsPlaceholder: 'örn., voron, fonksiyonel, hediye',
     dueDate: 'Son Tarih',
@@ -3849,6 +3852,9 @@ export default {
     progress: {
       platesProgress: 'Plaka İlerlemesi',
       partsProgress: 'Parça İlerlemesi',
+      setsProgress: 'Tamamlanan setler',
+      sets: 'set',
+      setsHint: 'Her yazdırılabilir dosya bu sayıya ulaştığında bir set tamamlanır',
       printJobs: 'baskı işi',
       parts: 'parça',
       percentComplete: '%{{percent}} tamamlandı',
@@ -3887,6 +3893,8 @@ export default {
       forQuickAccess: 'hızlı erişim için bu projeye.',
       fileCount: '{{count}} dosya',
       empty: 'Bağlı klasör yok. Dosya Yöneticisine gidin ve bu projeye bir klasör bağlayın.',
+      printedCount: '{{count}} kez yazdırıldı',
+      progressTooltip: '{{target}} yazdırmadan {{done}} tanesi tamamlandı',
       noFiles: 'Bu klasörde dosya yok.',
     },
     bom: {

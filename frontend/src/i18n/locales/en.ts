@@ -3813,6 +3813,9 @@ export default {
     targetParts: 'Target Parts',
     targetPartsPlaceholder: 'e.g., 150',
     targetPartsHelp: 'Total objects needed',
+    targetSets: 'Copies per File',
+    targetSetsPlaceholder: 'e.g., 10',
+    targetSetsHelp: 'Times each printable file should be printed',
     tagsLabel: 'Tags (comma-separated)',
     tagsPlaceholder: 'e.g., voron, functional, gift',
     dueDate: 'Due Date',
@@ -3888,6 +3891,9 @@ export default {
     progress: {
       platesProgress: 'Plates Progress',
       partsProgress: 'Parts Progress',
+      setsProgress: 'Complete Sets',
+      sets: 'sets',
+      setsHint: 'A set is complete once every printable file has reached this count',
       printJobs: 'print jobs',
       parts: 'parts',
       percentComplete: '{{percent}}% complete',
@@ -3926,6 +3932,8 @@ export default {
       forQuickAccess: 'to this project for quick access.',
       fileCount: '{{count}} file(s)',
       empty: 'No folders linked. Go to File Manager and link a folder to this project.',
+      printedCount: 'Printed {{count}} time(s)',
+      progressTooltip: '{{done}} of {{target}} completed prints',
       noFiles: 'No files in this folder.',
     },
     bom: {

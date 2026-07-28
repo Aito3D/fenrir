@@ -3592,6 +3592,9 @@ export default {
     targetParts: '목표 부품',
     targetPartsPlaceholder: '예: 150',
     targetPartsHelp: '필요한 총 개체 수',
+    targetSets: '파일당 복사본 수',
+    targetSetsPlaceholder: '예: 10',
+    targetSetsHelp: '각 인쇄 가능한 파일을 인쇄할 횟수',
     tagsLabel: '태그 (쉼표로 구분)',
     tagsPlaceholder: '예: voron, 기능성, 선물',
     dueDate: '마감일',
@@ -3660,6 +3663,9 @@ export default {
     progress: {
       platesProgress: '플레이트 진행률',
       partsProgress: '부품 진행률',
+      setsProgress: '완성된 세트',
+      sets: '세트',
+      setsHint: '모든 인쇄 가능한 파일이 이 횟수에 도달하면 세트가 완성됩니다',
       printJobs: '인쇄 작업',
       parts: '부품',
       percentComplete: '{{percent}}% 완료',
@@ -3698,6 +3704,8 @@ export default {
       forQuickAccess: '빠른 접근을 위해 이 프로젝트에 연결합니다.',
       fileCount: '{{count}}개 파일',
       empty: '연결된 폴더가 없습니다. 파일 관리자로 이동하여 폴더를 이 프로젝트에 연결하세요.',
+      printedCount: '{{count}}회 인쇄됨',
+      progressTooltip: '{{target}}회 중 {{done}}회 인쇄 완료',
       noFiles: '이 폴더에 파일이 없습니다.'
     },
     bom: {

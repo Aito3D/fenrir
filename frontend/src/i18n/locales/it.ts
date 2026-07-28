@@ -3772,6 +3772,9 @@ export default {
     targetParts: 'Parti target',
     targetPartsPlaceholder: 'es., 150',
     targetPartsHelp: 'Totale oggetti necessari',
+    targetSets: 'Copie per file',
+    targetSetsPlaceholder: 'es. 10',
+    targetSetsHelp: 'Quante volte stampare ogni file stampabile',
     tagsLabel: 'Tag (separati da virgola)',
     tagsPlaceholder: 'es., voron, funzionale, regalo',
     dueDate: 'Data scadenza',
@@ -3847,6 +3850,9 @@ export default {
     progress: {
       platesProgress: 'Avanzamento piatti',
       partsProgress: 'Avanzamento parti',
+      setsProgress: 'Set completi',
+      sets: 'set',
+      setsHint: 'Un set è completo quando ogni file stampabile raggiunge questo numero',
       printJobs: 'job di stampa',
       parts: 'parti',
       percentComplete: '{{percent}}% completato',
@@ -3885,6 +3891,8 @@ export default {
       forQuickAccess: 'a questo progetto per accesso rapido.',
       fileCount: '{{count}} file',
       empty: 'Nessuna cartella collegata. Vai a Gestore file e collega una cartella a questo progetto.',
+      printedCount: 'Stampato {{count}} volte',
+      progressTooltip: '{{done}} di {{target}} stampe completate',
       noFiles: 'Nessun file in questa cartella.',
     },
     bom: {

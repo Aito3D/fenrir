@@ -3787,6 +3787,9 @@ export default {
     targetParts: 'Piezas objetivo',
     targetPartsPlaceholder: 'p. ej., 150',
     targetPartsHelp: 'Total de objetos necesarios',
+    targetSets: 'Copias por archivo',
+    targetSetsPlaceholder: 'p. ej., 10',
+    targetSetsHelp: 'Veces que debe imprimirse cada archivo imprimible',
     tagsLabel: 'Etiquetas (separadas por comas)',
     tagsPlaceholder: 'p. ej., voron, funcional, regalo',
     dueDate: 'Fecha límite',
@@ -3862,6 +3865,9 @@ export default {
     progress: {
       platesProgress: 'Progreso de camas',
       partsProgress: 'Progreso de piezas',
+      setsProgress: 'Juegos completos',
+      sets: 'juegos',
+      setsHint: 'Un juego está completo cuando cada archivo imprimible alcanza este número',
       printJobs: 'trabajos de impresión',
       parts: 'piezas',
       percentComplete: '{{percent}}% completado',
@@ -3900,6 +3906,8 @@ export default {
       forQuickAccess: 'a este proyecto para un acceso rápido.',
       fileCount: '{{count}} archivo(s)',
       empty: 'No hay carpetas vinculadas. Vaya al gestor de archivos y vincule una carpeta a este proyecto.',
+      printedCount: 'Impreso {{count}} veces',
+      progressTooltip: '{{done}} de {{target}} impresiones completadas',
       noFiles: 'No hay archivos en esta carpeta.',
     },
     bom: {

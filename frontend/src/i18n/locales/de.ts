@@ -3784,6 +3784,9 @@ export default {
     targetParts: 'Ziel-Teile',
     targetPartsPlaceholder: 'z.B. 150',
     targetPartsHelp: 'Benötigte Objekte insgesamt',
+    targetSets: 'Kopien pro Datei',
+    targetSetsPlaceholder: 'z. B. 10',
+    targetSetsHelp: 'Wie oft jede druckbare Datei gedruckt werden soll',
     tagsLabel: 'Tags (kommagetrennt)',
     tagsPlaceholder: 'z.B. voron, funktional, geschenk',
     dueDate: 'Fälligkeitsdatum',
@@ -3859,6 +3862,9 @@ export default {
     progress: {
       platesProgress: 'Platten-Fortschritt',
       partsProgress: 'Teile-Fortschritt',
+      setsProgress: 'Vollständige Sätze',
+      sets: 'Sätze',
+      setsHint: 'Ein Satz ist vollständig, wenn jede druckbare Datei diese Anzahl erreicht hat',
       printJobs: 'Druckaufträge',
       parts: 'Teile',
       percentComplete: '{{percent}}% abgeschlossen',
@@ -3897,6 +3903,8 @@ export default {
       forQuickAccess: 'für schnellen Zugriff auf dieses Projekt.',
       fileCount: '{{count}} Datei(en)',
       empty: 'Keine Ordner verknüpft. Gehen Sie zum Dateimanager und verknüpfen Sie einen Ordner mit diesem Projekt.',
+      printedCount: '{{count}}-mal gedruckt',
+      progressTooltip: '{{done}} von {{target}} abgeschlossenen Drucken',
       noFiles: 'Keine Dateien in diesem Ordner.',
     },
     bom: {

@@ -203,8 +203,17 @@ async def async_client(test_engine, db_session) -> AsyncGenerator[AsyncClient, N
     test_async_session = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
 
     async def override_get_db():
+        # Mirror production get_db (core/database.py): commit on success,
+        # rollback on error. Endpoints that rely on the request-scoped
+        # implicit commit (e.g. create_project, which only flushes) would
+        # otherwise silently lose their writes in tests (#1897).
         async with test_async_session() as session:
-            yield session
+            try:
+                yield session
+                await session.commit()
+            except BaseException:
+                await session.rollback()
+                raise
 
     app.dependency_overrides[get_db] = override_get_db
 

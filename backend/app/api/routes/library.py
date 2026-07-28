@@ -2659,6 +2659,17 @@ async def add_files_to_queue(
     result = await db.execute(LibraryFile.active().where(LibraryFile.id.in_(request.file_ids)))
     files = {f.id: f for f in result.scalars().all()}
 
+    # Project attribution (#1897): a file queued from a project-linked folder
+    # inherits that project, so the resulting archive counts toward the
+    # project's progress. A file's own project link wins over its folder's.
+    folder_ids = {f.folder_id for f in files.values() if f.folder_id is not None}
+    folder_projects: dict[int, int | None] = {}
+    if folder_ids:
+        folder_result = await db.execute(
+            select(LibraryFolder.id, LibraryFolder.project_id).where(LibraryFolder.id.in_(folder_ids))
+        )
+        folder_projects = dict(folder_result.all())
+
     # Get max position for queue ordering
     pos_result = await db.execute(select(func.coalesce(func.max(PrintQueueItem.position), 0)))
     max_position = pos_result.scalar() or 0
@@ -2696,6 +2707,8 @@ async def add_files_to_queue(
             queue_item = PrintQueueItem(
                 printer_id=None,  # Unassigned
                 library_file_id=file_id,
+                project_id=lib_file.project_id
+                or (folder_projects.get(lib_file.folder_id) if lib_file.folder_id is not None else None),
                 position=max_position,
                 status="pending",
             )

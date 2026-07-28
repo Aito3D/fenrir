@@ -3772,6 +3772,9 @@ export default {
     targetParts: '目標零件數',
     targetPartsPlaceholder: '例如：150',
     targetPartsHelp: '所需零件總數',
+    targetSets: '每個檔案的份數',
+    targetSetsPlaceholder: '例如 10',
+    targetSetsHelp: '每個可列印檔案需要列印的次數',
     tagsLabel: '標籤（逗號分隔）',
     tagsPlaceholder: '例如：voron、功能件、禮物',
     dueDate: '截止日期',
@@ -3847,6 +3850,9 @@ export default {
     progress: {
       platesProgress: '板進度',
       partsProgress: '零件進度',
+      setsProgress: '完整套數',
+      sets: '套',
+      setsHint: '當每個可列印檔案都達到此次數時，即完成一套',
       printJobs: '列印任務',
       parts: '零件',
       percentComplete: '{{percent}}% 完成',
@@ -3885,6 +3891,8 @@ export default {
       forQuickAccess: '到此項目以便快速存取。',
       fileCount: '{{count}} 個檔案',
       empty: '未連結資料夾。前往檔案管理器將資料夾連結到此項目。',
+      printedCount: '已列印 {{count}} 次',
+      progressTooltip: '已完成 {{done}}/{{target}} 次列印',
       noFiles: '此資料夾中沒有檔案。',
     },
     bom: {

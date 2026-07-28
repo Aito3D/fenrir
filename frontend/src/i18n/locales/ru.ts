@@ -3584,6 +3584,9 @@ export default {
     targetParts: "План по деталям",
     targetPartsPlaceholder: "например, 150",
     targetPartsHelp: "Общее требуемое количество объектов",
+    targetSets: "Копий на файл",
+    targetSetsPlaceholder: "напр. 10",
+    targetSetsHelp: "Сколько раз нужно напечатать каждый печатаемый файл",
     tagsLabel: "Метки (через запятую)",
     tagsPlaceholder: "например, voron, функциональное, подарок",
     dueDate: "Срок",
@@ -3652,6 +3655,9 @@ export default {
     progress: {
       platesProgress: "Выполнение по пластинам",
       partsProgress: "Выполнение по деталям",
+      setsProgress: "Полные комплекты",
+      sets: "комплектов",
+      setsHint: "Комплект готов, когда каждый печатаемый файл достиг этого количества",
       printJobs: "заданий печати",
       parts: "деталей",
       percentComplete: "Выполнено {{percent}}%",
@@ -3690,6 +3696,8 @@ export default {
       forQuickAccess: "с этим проектом для быстрого доступа.",
       fileCount: "Файлов: {{count}}",
       empty: "Связанных папок нет. Откройте файловый менеджер и свяжите папку с проектом.",
+      printedCount: "Напечатано {{count}} раз",
+      progressTooltip: "{{done}} из {{target}} завершённых печатей",
       noFiles: "В этой папке нет файлов.",
     },
     bom: {
