@@ -110,7 +110,7 @@ export function ImpressionFields({ value, onChange, onCostChange }: ImpressionFi
   }
 
   return (
-    <div className="space-y-3">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label htmlFor={`${reactId}-printer`} className={labelCls}>
@@ -199,7 +199,7 @@ export function ImpressionFields({ value, onChange, onCostChange }: ImpressionFi
         </div>
       </div>
       {result && (
-        <div className="space-y-1 pt-2 border-t border-bambu-dark-tertiary">
+        <div className="space-y-1 pt-2 border-t border-bambu-dark-tertiary lg:border-t-0 lg:pt-0 lg:border-l lg:border-bambu-dark-tertiary lg:pl-4">
           {(
             [
               ['calculator.costFilament', result.filament_cost],
