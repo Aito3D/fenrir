@@ -3428,6 +3428,7 @@ export interface AitoProject {
   client_name: string | null;
   client_phone: string | null;
   client_email: string | null;
+  client_is_company: boolean | null;
   created_at: string;
   updated_at: string;
 }
@@ -3438,6 +3439,7 @@ export interface AitoProjectUpdate {
   client_name?: string;
   client_phone?: string | null;
   client_email?: string | null;
+  client_is_company?: boolean | null;
 }
 
 // Zoho Books integration
@@ -6193,6 +6195,7 @@ export const api = {
     client_name: string;
     client_phone?: string | null;
     client_email?: string | null;
+    client_is_company?: boolean | null;
   }) =>
     request<AitoProject>('/aito/', {
       method: 'POST',

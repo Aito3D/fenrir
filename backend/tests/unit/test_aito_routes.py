@@ -230,3 +230,34 @@ async def test_update_project_writes_and_clears_client_email(async_client):
 
     r = await async_client.patch(f"/api/v1/aito/{project_id}", json={"description": "Autre pièce"})
     assert r.json()["client_email"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_project_persists_client_is_company(async_client):
+    r = await _create(async_client, client_is_company=True)
+    assert r.status_code == 201
+    assert r.json()["client_is_company"] is True
+    listed = (await async_client.get("/api/v1/aito/")).json()
+    assert listed[0]["client_is_company"] is True
+
+
+@pytest.mark.asyncio
+async def test_create_project_defaults_client_is_company_to_null(async_client):
+    """Legacy rows and callers that omit the flag are indistinguishable from
+    'not a company' at render time, but stay distinguishable in the data."""
+    r = await _create(async_client)
+    assert r.json()["client_is_company"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_project_writes_and_clears_client_is_company(async_client):
+    project_id = (await _create(async_client)).json()["id"]
+
+    r = await async_client.patch(f"/api/v1/aito/{project_id}", json={"client_is_company": True})
+    assert r.json()["client_is_company"] is True
+
+    r = await async_client.patch(f"/api/v1/aito/{project_id}", json={"client_is_company": None})
+    assert r.json()["client_is_company"] is None
+
+    r = await async_client.patch(f"/api/v1/aito/{project_id}", json={"description": "Autre pièce"})
+    assert r.json()["client_is_company"] is None

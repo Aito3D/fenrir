@@ -35,6 +35,7 @@ def _to_response(p: AitoProject) -> AitoProjectResponse:
         client_name=p.client_name,
         client_phone=p.client_phone,
         client_email=p.client_email,
+        client_is_company=p.client_is_company,
         created_at=p.created_at,
         updated_at=p.updated_at,
     )
@@ -94,6 +95,7 @@ async def create_project(
         client_name=payload.client_name,
         client_phone=payload.client_phone,
         client_email=payload.client_email,
+        client_is_company=payload.client_is_company,
     )
     db.add(project)
     await db.commit()
@@ -179,7 +181,7 @@ async def update_project(
 
     if "description" in fields:
         project.description = fields["description"].strip()
-    for key in ("client_id", "client_name", "client_phone", "client_email"):
+    for key in ("client_id", "client_name", "client_phone", "client_email", "client_is_company"):
         if key in fields:
             setattr(project, key, fields[key])
     await db.commit()

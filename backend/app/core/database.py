@@ -3869,6 +3869,13 @@ async def run_migrations(conn):
     # deliberately not written back to Zoho.
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN client_email VARCHAR(200)")
 
+    # Migration: Aito cards record whether the attached client is a company, so
+    # the detail panel can label the name "Company name" rather than "Client
+    # name". Nullable on purpose — a legacy row that predates the flag stays
+    # distinguishable from one deliberately marked "not a company", though both
+    # render the same label.
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN client_is_company BOOLEAN")
+
 
 _USER_PRINT_TEMPLATE_RENAMES: tuple[tuple[str, str, str], ...] = (
     ("user_print_start", "User Print Started", "User Print Started Email"),
