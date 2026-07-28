@@ -18,7 +18,9 @@ from backend.app.schemas.aito import (
     AitoProjectMove,
     AitoProjectResponse,
     AitoProjectUpdate,
+    AitoTaskCreate,
     AitoTaskResponse,
+    AitoTaskUpdate,
 )
 
 logger = logging.getLogger(__name__)
@@ -140,6 +142,61 @@ async def list_tasks(
 ):
     stmt = select(AitoTask).where(AitoTask.project_id == project_id).order_by(AitoTask.position, AitoTask.id)
     return [_task_to_response(t) for t in (await db.execute(stmt)).scalars().all()]
+
+
+async def _get_task_or_404(db: AsyncSession, task_id: int) -> AitoTask:
+    task = (await db.execute(select(AitoTask).where(AitoTask.id == task_id))).scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
+@router.post("/{project_id}/tasks", response_model=AitoTaskResponse, status_code=201)
+async def add_task(
+    project_id: int,
+    payload: AitoTaskCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
+):
+    project = (await db.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    highest = await db.scalar(select(func.max(AitoTask.position)).where(AitoTask.project_id == project_id))
+    task = AitoTask(project_id=project_id, position=(highest + 1) if highest is not None else 0, **payload.model_dump())
+    db.add(task)
+    await db.commit()
+    await db.refresh(task)
+    return _task_to_response(task)
+
+
+@router.patch("/tasks/{task_id}", response_model=AitoTaskResponse)
+async def update_task(
+    task_id: int,
+    payload: AitoTaskUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Only fields present in the body are written, so an omitted key is left
+    alone and an explicit null disables that service."""
+    task = await _get_task_or_404(db, task_id)
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(task, key, value)
+    await db.commit()
+    await db.refresh(task)
+    return _task_to_response(task)
+
+
+@router.delete("/tasks/{task_id}", status_code=204)
+async def delete_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_DELETE),
+):
+    """Hard delete, unlike projects: tasks need no stable visible number, and
+    hold-to-remove is already a deliberate gesture."""
+    task = await _get_task_or_404(db, task_id)
+    await db.delete(task)
+    await db.commit()
 
 
 @router.post("/import", response_model=list[AitoProjectResponse], status_code=201)

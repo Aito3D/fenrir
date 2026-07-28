@@ -305,3 +305,53 @@ async def test_project_list_does_not_include_tasks(async_client):
 async def test_create_project_rejects_a_negative_cost(async_client):
     r = await _create(async_client, tasks=[_task(scan_cost=-1)])
     assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_add_task_appends_at_the_end(async_client):
+    project_id = (await _create(async_client, tasks=[_task(title="Un")])).json()["id"]
+    r = await async_client.post(f"/api/v1/aito/{project_id}/tasks", json=_task(title="Deux"))
+    assert r.status_code == 201
+    assert r.json()["position"] == 1
+
+
+@pytest.mark.asyncio
+async def test_patch_task_writes_clears_and_leaves_alone(async_client):
+    project_id = (await _create(async_client, tasks=[_task(scan_cost=4000.0)])).json()["id"]
+    task_id = (await async_client.get(f"/api/v1/aito/{project_id}/tasks")).json()[0]["id"]
+
+    r = await async_client.patch(f"/api/v1/aito/tasks/{task_id}", json={"usinage_cost": 12000.0})
+    assert r.json()["usinage_cost"] == 12000.0
+    assert r.json()["scan_cost"] == 4000.0  # untouched sibling
+
+    r = await async_client.patch(f"/api/v1/aito/tasks/{task_id}", json={"scan_cost": None})
+    assert r.json()["scan_cost"] is None  # explicit null disables the service
+    assert r.json()["usinage_cost"] == 12000.0
+
+    r = await async_client.patch(f"/api/v1/aito/tasks/{task_id}", json={"title": "Autre"})
+    assert r.json()["usinage_cost"] == 12000.0  # omitted key left alone
+
+
+@pytest.mark.asyncio
+async def test_delete_task_removes_only_that_task(async_client):
+    project_id = (await _create(async_client, tasks=[_task(title="Un"), _task(title="Deux")])).json()["id"]
+    tasks = (await async_client.get(f"/api/v1/aito/{project_id}/tasks")).json()
+
+    assert (await async_client.delete(f"/api/v1/aito/tasks/{tasks[0]['id']}")).status_code == 204
+    remaining = (await async_client.get(f"/api/v1/aito/{project_id}/tasks")).json()
+    assert [t["title"] for t in remaining] == ["Deux"]
+
+
+@pytest.mark.asyncio
+async def test_task_endpoints_404_on_unknown_ids(async_client):
+    assert (await async_client.patch("/api/v1/aito/tasks/9999", json={"title": "x"})).status_code == 404
+    assert (await async_client.delete("/api/v1/aito/tasks/9999")).status_code == 404
+    assert (await async_client.post("/api/v1/aito/9999/tasks", json=_task())).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_soft_deleting_a_project_keeps_its_tasks(async_client):
+    project_id = (await _create(async_client, tasks=[_task()])).json()["id"]
+    await async_client.delete(f"/api/v1/aito/{project_id}")
+    await async_client.post(f"/api/v1/aito/{project_id}/restore")
+    assert len((await async_client.get(f"/api/v1/aito/{project_id}/tasks")).json()) == 1
