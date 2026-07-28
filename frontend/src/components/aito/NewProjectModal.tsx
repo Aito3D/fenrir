@@ -100,7 +100,15 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
         if (e.target === e.currentTarget) dismiss();
       }}
     >
-      <div className="bg-bambu-dark-secondary rounded-xl w-full max-w-md border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)] animate-modal-in">
+      <div
+        className={`bg-bambu-dark-secondary rounded-xl w-full border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)] animate-modal-in ${
+          // The new-contact form is a short single-column form; at 1024px it
+          // would sit marooned in whitespace. The width follows the mode, which
+          // already changes the title too, so the resize reads as a mode switch
+          // rather than a glitch.
+          creatingClient ? 'max-w-md' : 'max-w-5xl'
+        }`}
+      >
         <div className="p-4 border-b border-bambu-dark-tertiary flex items-center justify-between flex-shrink-0">
           <h2 className="text-lg font-semibold text-white">
             {creatingClient ? t('aito.newClientTitle') : t('aito.modalTitle')}
@@ -126,39 +134,46 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
             }}
             className="flex flex-col flex-1 min-h-0"
           >
-            <div className="p-4 overflow-y-auto flex-1 space-y-4">
-              {draft && (
-                <ClientSection
-                  value={draft}
-                  onChange={setDraft}
-                  onCreateNew={() => setCreatingClient(true)}
-                  defaultContactId={defaultId}
-                  defaultContactName={defaultName}
-                />
-              )}
-              <div>
-                <label htmlFor="aito-description" className={labelCls}>
-                  {t('aito.productDescription')}
-                </label>
-                <textarea
-                  id="aito-description"
-                  ref={textareaRef}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  onKeyDown={(e) => {
-                    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submit();
-                  }}
-                  placeholder={t('aito.descriptionPlaceholder')}
-                  rows={4}
-                  required
-                  className={`${inputCls} resize-none`}
-                />
+            <div className="p-4 overflow-y-auto flex-1">
+              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] gap-4 lg:gap-6">
+                <div className="space-y-4 min-w-0">
+                  {draft && (
+                    <ClientSection
+                      value={draft}
+                      onChange={setDraft}
+                      onCreateNew={() => setCreatingClient(true)}
+                      defaultContactId={defaultId}
+                      defaultContactName={defaultName}
+                    />
+                  )}
+                  <div>
+                    <label htmlFor="aito-description" className={labelCls}>
+                      {t('aito.productDescription')}
+                    </label>
+                    <textarea
+                      id="aito-description"
+                      ref={textareaRef}
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      onKeyDown={(e) => {
+                        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submit();
+                      }}
+                      placeholder={t('aito.descriptionPlaceholder')}
+                      rows={4}
+                      required
+                      className={`${inputCls} resize-none`}
+                    />
+                  </div>
+                </div>
+
+                <div className="min-w-0">
+                  <TaskEditor
+                    value={tasks}
+                    onChange={setTasks}
+                    onRemove={(index) => setTasks(tasks.filter((_, i) => i !== index))}
+                  />
+                </div>
               </div>
-              <TaskEditor
-                value={tasks}
-                onChange={setTasks}
-                onRemove={(index) => setTasks(tasks.filter((_, i) => i !== index))}
-              />
             </div>
 
             <div className="p-4 border-t border-bambu-dark-tertiary flex justify-end gap-2 flex-shrink-0">

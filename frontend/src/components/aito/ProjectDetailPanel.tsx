@@ -284,7 +284,7 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
         aria-modal="true"
         aria-label={project.client_name ?? t('aito.noClient')}
         style={{ viewTransitionName: AITO_CARD_VT_NAME }}
-        className="bg-bambu-dark-secondary rounded-xl w-full max-w-md border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)]"
+        className="bg-bambu-dark-secondary rounded-xl w-full max-w-5xl border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)]"
       >
         <div className="p-4 border-b border-bambu-dark-tertiary flex items-start justify-between gap-3 flex-shrink-0">
           <h2 className="text-lg font-semibold text-white truncate min-w-0">
@@ -301,102 +301,106 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
           </button>
         </div>
 
-        <div className="p-4 overflow-y-auto flex-1 space-y-4">
-          <div className="flex items-start justify-between gap-2">
-            {editingDesc ? (
-              <textarea
-                autoFocus
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onBlur={saveDescription}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    // Stop the panel's window-level Escape handler: the first
-                    // Escape abandons the edit, it does not close the panel.
-                    e.stopPropagation();
-                    setDraft(project.description);
-                    setEditingDesc(false);
-                  }
-                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') saveDescription();
-                }}
-                rows={5}
-                className={`${inputCls} resize-none flex-1`}
-              />
-            ) : (
-              <p
-                role="button"
-                tabIndex={0}
-                aria-label={t('aito.editDescription')}
-                onClick={() => setEditingDesc(true)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    setEditingDesc(true);
-                  }
-                }}
-                className="flex-1 text-sm text-white whitespace-pre-wrap break-words cursor-text rounded-md -m-1 p-1 hover:bg-bambu-dark-tertiary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
-              >
-                {project.description}
-              </p>
-            )}
-            <SaveIndicator state={descState} />
-          </div>
-
-          {/* One description list for the whole record. <dt>/<dd> gives
-              assistive technology the label-to-value association for free; the
-              colon is markup, so no locale string carries punctuation. Client
-              rows with no value are omitted entirely — an empty "Email:" is
-              noise, not information. The mid-list border separates the client
-              group from the project metadata. */}
-          <dl className="border-t border-bambu-dark-tertiary pt-4 space-y-2 text-sm">
-            <div className="flex items-baseline gap-2">
-              <dt className="text-bambu-gray flex-shrink-0">
-                {project.client_is_company ? t('aito.companyNameLabel') : t('aito.clientNameLabel')}:
-              </dt>
-              <dd className={`min-w-0 truncate ${project.client_name ? 'text-white' : 'text-bambu-gray'}`}>
-                {project.client_name ?? t('aito.noClient')}
-              </dd>
-            </div>
-            {project.client_phone && (
-              <div className="flex items-baseline gap-2">
-                <dt className="text-bambu-gray flex-shrink-0">{t('aito.phoneLabel')}:</dt>
-                <dd className="min-w-0 truncate">
-                  <a href={`tel:${project.client_phone}`} className="text-white hover:text-bambu-green">
-                    {project.client_phone}
-                  </a>
-                </dd>
+        <div className="p-4 overflow-y-auto flex-1">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] gap-4 lg:gap-6">
+            <div className="space-y-4 min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                {editingDesc ? (
+                  <textarea
+                    autoFocus
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onBlur={saveDescription}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        // Stop the panel's window-level Escape handler: the first
+                        // Escape abandons the edit, it does not close the panel.
+                        e.stopPropagation();
+                        setDraft(project.description);
+                        setEditingDesc(false);
+                      }
+                      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') saveDescription();
+                    }}
+                    rows={5}
+                    className={`${inputCls} resize-none flex-1`}
+                  />
+                ) : (
+                  <p
+                    role="button"
+                    tabIndex={0}
+                    aria-label={t('aito.editDescription')}
+                    onClick={() => setEditingDesc(true)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setEditingDesc(true);
+                      }
+                    }}
+                    className="flex-1 text-sm text-white whitespace-pre-wrap break-words cursor-text rounded-md -m-1 p-1 hover:bg-bambu-dark-tertiary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
+                  >
+                    {project.description}
+                  </p>
+                )}
+                <SaveIndicator state={descState} />
               </div>
-            )}
-            {project.client_email && (
-              <div className="flex items-baseline gap-2">
-                <dt className="text-bambu-gray flex-shrink-0">{t('aito.emailLabel')}:</dt>
-                <dd className="min-w-0 truncate">
-                  <a href={`mailto:${project.client_email}`} className="text-white hover:text-bambu-green">
-                    {project.client_email}
-                  </a>
-                </dd>
-              </div>
-            )}
 
-            <div className="flex items-baseline gap-2 border-t border-bambu-dark-tertiary pt-2 mt-2">
-              <dt className="text-bambu-gray flex-shrink-0">{t('aito.createdLabel')}:</dt>
-              <dd className="text-white min-w-0">{created ? created.toLocaleString(i18n.language) : '—'}</dd>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <dt className="text-bambu-gray flex-shrink-0">{t('aito.lastActivity')}:</dt>
-              <dd className="text-white min-w-0">{updated ? updated.toLocaleString(i18n.language) : '—'}</dd>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <dt className="text-bambu-gray flex-shrink-0">{t('aito.stage')}:</dt>
-              <dd className="text-white flex items-center gap-2">
-                {column && <span className={`w-2 h-2 rounded-full ${column.dot}`} />}
-                {column ? t(column.labelKey) : project.column}
-              </dd>
-            </div>
-          </dl>
+              {/* One description list for the whole record. <dt>/<dd> gives
+                  assistive technology the label-to-value association for free; the
+                  colon is markup, so no locale string carries punctuation. Client
+                  rows with no value are omitted entirely — an empty "Email:" is
+                  noise, not information. The mid-list border separates the client
+                  group from the project metadata. */}
+              <dl className="border-t border-bambu-dark-tertiary pt-4 space-y-2 text-sm">
+                <div className="flex items-baseline gap-2">
+                  <dt className="text-bambu-gray flex-shrink-0">
+                    {project.client_is_company ? t('aito.companyNameLabel') : t('aito.clientNameLabel')}:
+                  </dt>
+                  <dd className={`min-w-0 truncate ${project.client_name ? 'text-white' : 'text-bambu-gray'}`}>
+                    {project.client_name ?? t('aito.noClient')}
+                  </dd>
+                </div>
+                {project.client_phone && (
+                  <div className="flex items-baseline gap-2">
+                    <dt className="text-bambu-gray flex-shrink-0">{t('aito.phoneLabel')}:</dt>
+                    <dd className="min-w-0 truncate">
+                      <a href={`tel:${project.client_phone}`} className="text-white hover:text-bambu-green">
+                        {project.client_phone}
+                      </a>
+                    </dd>
+                  </div>
+                )}
+                {project.client_email && (
+                  <div className="flex items-baseline gap-2">
+                    <dt className="text-bambu-gray flex-shrink-0">{t('aito.emailLabel')}:</dt>
+                    <dd className="min-w-0 truncate">
+                      <a href={`mailto:${project.client_email}`} className="text-white hover:text-bambu-green">
+                        {project.client_email}
+                      </a>
+                    </dd>
+                  </div>
+                )}
 
-          <div className="border-t border-bambu-dark-tertiary pt-4">
-            <TaskEditor value={tasks} onChange={handleTasksChange} onRemove={handleRemoveTask} />
+                <div className="flex items-baseline gap-2 border-t border-bambu-dark-tertiary pt-2 mt-2">
+                  <dt className="text-bambu-gray flex-shrink-0">{t('aito.createdLabel')}:</dt>
+                  <dd className="text-white min-w-0">{created ? created.toLocaleString(i18n.language) : '—'}</dd>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <dt className="text-bambu-gray flex-shrink-0">{t('aito.lastActivity')}:</dt>
+                  <dd className="text-white min-w-0">{updated ? updated.toLocaleString(i18n.language) : '—'}</dd>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <dt className="text-bambu-gray flex-shrink-0">{t('aito.stage')}:</dt>
+                  <dd className="text-white flex items-center gap-2">
+                    {column && <span className={`w-2 h-2 rounded-full ${column.dot}`} />}
+                    {column ? t(column.labelKey) : project.column}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            <div className="min-w-0 border-t border-bambu-dark-tertiary pt-4 lg:border-t-0 lg:pt-0">
+              <TaskEditor value={tasks} onChange={handleTasksChange} onRemove={handleRemoveTask} />
+            </div>
           </div>
         </div>
       </div>
