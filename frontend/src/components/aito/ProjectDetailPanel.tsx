@@ -142,33 +142,45 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
   });
 
   // Tasks. `tasks` is the editable view TaskEditor is controlled with; it is
-  // resynced from the server whenever the query's data identity changes
-  // (initial load, and after add/remove invalidate it) but NOT after a
-  // single-field PATCH, which would otherwise overwrite whatever the user is
-  // mid-typing into a different field.
+  // resynced from the server whenever the query's data identity changes —
+  // which must only ever happen on a genuine fetch (initial load, and after
+  // add/remove invalidate it), never as a side effect of a single-field
+  // PATCH. Resyncing the whole array on every PATCH response would overwrite
+  // whatever any *other* row is mid-typing (or still waiting on its own
+  // in-flight PATCH) with whatever was last actually fetched — see
+  // `updateTaskMutation` below for why the diff baseline therefore lives
+  // outside the query cache entirely.
   const tasksQuery = useQuery({
     queryKey: ['aito-tasks', project.id],
     queryFn: () => api.getAitoTasks(project.id),
   });
   const [tasks, setTasks] = useState<TaskDraft[]>([]);
 
+  // The diff baseline: the last-known-persisted row per task id. Seeded from
+  // every genuine fetch below and advanced in `updateTaskMutation`'s
+  // `onSuccess`. Deliberately NOT the query cache — writing a PATCH response
+  // into `['aito-tasks', project.id]` would change that query's data
+  // identity, which is exactly what the resync effect above must not react
+  // to for a single-field save (it would resync every row, not just the one
+  // that was patched, stomping any other row's unsaved or still-in-flight
+  // edit — reproduced by the "does not clobber" regression test below).
+  const baselineRef = useRef<Map<number, AitoTask>>(new Map());
+
   useEffect(() => {
-    if (tasksQuery.data) setTasks(tasksQuery.data.map(taskDraftFromAitoTask));
+    if (!tasksQuery.data) return;
+    setTasks(tasksQuery.data.map(taskDraftFromAitoTask));
+    baselineRef.current = new Map(tasksQuery.data.map((row) => [row.id, row]));
   }, [tasksQuery.data]);
 
   const updateTaskMutation = useMutation({
     mutationFn: ({ id, patch }: { id: number; patch: AitoTaskUpdate }) => api.updateAitoTask(id, patch),
     onSuccess: (updatedTask) => {
-      // Advance the diff baseline: without this, tasksQuery.data stays
-      // frozen at initial load, so reverting a field to its originally-
-      // loaded value diffs as "no change" against the stale baseline and the
-      // PATCH is silently dropped. Replacing only the matching row (not
-      // invalidating) is what keeps this from clobbering other rows with
-      // in-flight edits — the same concern the resync effect above guards
-      // against for single-field PATCHes.
-      queryClient.setQueryData<AitoTask[]>(['aito-tasks', project.id], (prev) =>
-        prev?.map((row) => (row.id === updatedTask.id ? updatedTask : row)) ?? prev,
-      );
+      // Advance the diff baseline for this row only, without touching the
+      // query cache: without this, `baselineRef` stays frozen at initial
+      // load, so reverting a field to its originally-loaded value diffs as
+      // "no change" against the stale baseline and the PATCH is silently
+      // dropped (see the revert / re-disable regression tests below).
+      baselineRef.current.set(updatedTask.id, updatedTask);
     },
     onError: () => showToast(t('aito.saveFailed'), 'error'),
   });
@@ -205,7 +217,7 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
 
     const edited = next[changedIndex];
     if (edited.id === null) return; // not yet persisted server-side; nothing to PATCH
-    const baselineRow = tasksQuery.data?.find((row) => row.id === edited.id);
+    const baselineRow = baselineRef.current.get(edited.id);
     if (!baselineRow) return;
     const patch = diffTaskDraft(taskDraftFromAitoTask(baselineRow), edited);
     if (Object.keys(patch).length === 0) return;

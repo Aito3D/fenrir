@@ -94,6 +94,12 @@ const mockTask: AitoTask = {
   updated_at: '2026-07-27T00:00:00',
 };
 
+const mockTask2: AitoTask = {
+  ...mockTask,
+  id: 102,
+  title: 'Second bracket',
+};
+
 beforeEach(() => {
   server.use(
     http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(mockFilaments)),
@@ -240,6 +246,59 @@ describe('ProjectDetailPanel tasks', () => {
     fireEvent.change(scanInput, { target: { value: '' } });
     await waitFor(() => expect(bodies).toHaveLength(2));
     expect(bodies[1]).toEqual({ scan_cost: null });
+  });
+
+  it('a different row resolving its PATCH does not clobber this row\'s in-flight edit', async () => {
+    // Regression for the invariant documented at :144-148: the tasks list
+    // must resync from a genuine fetch, never from a single-field PATCH
+    // response. Task 101's PATCH is held open; task 102's resolves
+    // immediately. If the panel resyncs the *whole* local array whenever
+    // any row's PATCH settles (e.g. by writing the response into the
+    // ['aito-tasks', project.id] query cache and letting the resync effect
+    // react to that), task 101's still-in-flight, not-yet-persisted edit
+    // gets overwritten by the stale value from the last real fetch.
+    let resolvePatch101: (task: AitoTask) => void = () => {};
+    const patch101 = new Promise<AitoTask>((resolve) => {
+      resolvePatch101 = resolve;
+    });
+    server.use(
+      http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([mockTask, mockTask2])),
+      http.patch('/api/v1/aito/tasks/:id', async ({ request, params }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        if ((params.id as string) === '101') {
+          const base = await patch101; // held open until the test resolves it
+          return HttpResponse.json({ ...base, ...body });
+        }
+        return HttpResponse.json({ ...mockTask2, ...body });
+      }),
+    );
+
+    show();
+    const scanInputs = await screen.findAllByLabelText('Scan3D');
+    expect(scanInputs).toHaveLength(2);
+
+    // Row 101: edit, PATCH fires but hangs (never resolved in this test).
+    fireEvent.change(scanInputs[0], { target: { value: '900' } });
+    expect(scanInputs[0]).toHaveValue(900);
+
+    // Row 102: edit, PATCH fires and resolves immediately.
+    fireEvent.change(scanInputs[1], { target: { value: '700' } });
+
+    // Give row 102's PATCH (and any resulting cache write / resync effect)
+    // time to fully settle.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(scanInputs[1]).toHaveValue(700);
+
+    // Row 101's typed-but-unsaved value must still be showing.
+    expect(scanInputs[0]).toHaveValue(900);
+
+    resolvePatch101({ ...mockTask, scan_cost: 900 });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(scanInputs[0]).toHaveValue(900);
   });
 
   it('editing the title issues a PATCH with only title, sending null (not empty string) when blank', async () => {
