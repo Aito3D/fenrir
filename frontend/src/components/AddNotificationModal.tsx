@@ -12,7 +12,7 @@ interface AddNotificationModalProps {
   onClose: () => void;
 }
 
-const PROVIDER_VALUES: ProviderType[] = ['email', 'telegram', 'discord', 'ntfy', 'pushover', 'callmebot', 'webhook', 'homeassistant'];
+const PROVIDER_VALUES: ProviderType[] = ['email', 'telegram', 'discord', 'ntfy', 'pushover', 'bark', 'callmebot', 'webhook', 'homeassistant'];
 
 export function AddNotificationModal({ provider, onClose }: AddNotificationModalProps) {
   const { t } = useTranslation();
@@ -281,6 +281,20 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
         return [
           { key: 'service', label: 'Home Assistant Service', placeholder: 'notify.mobile_app_myphone', type: 'text', required: false },
           { key: 'data', label: 'Data (JSON, optional)', placeholder: '{"priority": "high", "ttl": 0, "channel": "3D Printing"}', type: 'textarea', required: false },
+        ];
+      case 'bark':
+        return [
+          { key: 'device_key', label: 'Device Key', placeholder: 'Your Bark device key', type: 'text', required: true },
+          { key: 'server', label: 'Server URL', placeholder: 'https://api.day.app', type: 'text', required: false },
+          { key: 'group', label: 'Group', placeholder: 'Bambuddy', type: 'text', required: false },
+          { key: 'sound', label: 'Sound', placeholder: 'minuet', type: 'text', required: false },
+          { key: 'level', label: 'Interruption Level', type: 'select', required: false, options: [
+            { value: '', label: 'Default' },
+            { value: 'active', label: 'Active' },
+            { value: 'timeSensitive', label: 'Time Sensitive' },
+            { value: 'critical', label: 'Critical (bypasses Silent/Focus)' },
+            { value: 'passive', label: 'Passive (no sound)' },
+          ]},
         ];
       default:
         return [];

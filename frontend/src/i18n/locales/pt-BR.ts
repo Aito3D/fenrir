@@ -5410,6 +5410,7 @@ export default {
       discord: 'Discord',
       webhook: 'Webhook',
       homeassistant: 'Home Assistant',
+      bark: 'Bark',
     },
     // Provider descriptions
     providerDescriptions: {
@@ -5421,6 +5422,7 @@ export default {
       callmebot: 'Notificações gratuitas via WhatsApp pelo CallMeBot',
       webhook: 'POST HTTP genérico para qualquer URL',
       homeassistant: 'Notificações persistentes no painel do Home Assistant',
+      bark: 'Notificações push do iOS via Bark (auto-hospedável)',
     },
     // NotificationProviderCard
     lastSuccess: 'Último: {{date}}',

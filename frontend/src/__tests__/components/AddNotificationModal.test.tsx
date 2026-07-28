@@ -449,3 +449,54 @@ describe('AddNotificationModal — Home Assistant custom data (#1441)', () => {
     });
   });
 });
+
+describe('AddNotificationModal — Bark provider (#1495)', () => {
+  it('offers Bark in the provider select and renders its config fields', async () => {
+    render(
+      <AddNotificationModal
+        provider={buildProvider({ provider_type: 'bark', config: { device_key: 'abc123' } })}
+        onClose={() => undefined}
+      />,
+    );
+
+    await screen.findByDisplayValue('My ntfy');
+    expect(screen.getByRole('option', { name: 'Bark' })).toBeInTheDocument();
+    expect(screen.getByText(/device key/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('https://api.day.app')).toBeInTheDocument();
+    expect(screen.getByText(/interruption level/i)).toBeInTheDocument();
+  });
+
+  it('round-trips Bark options into config on save', async () => {
+    let captured: { config: Record<string, unknown> } | null = null;
+    server.use(
+      http.patch('*/api/v1/notifications/1', async ({ request }) => {
+        captured = (await request.json()) as { config: Record<string, unknown> };
+        return HttpResponse.json({ id: 1 });
+      }),
+    );
+
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <AddNotificationModal
+        provider={buildProvider({ provider_type: 'bark', config: { device_key: 'abc123' } })}
+        onClose={onClose}
+      />,
+    );
+
+    const groupInput = await screen.findByPlaceholderText('Bambuddy');
+    await user.type(groupInput, 'Printers');
+    const levelRow = screen.getByText(/interruption level/i).closest('div')!;
+    await user.selectOptions(within(levelRow).getByRole('combobox'), 'critical');
+
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(captured).not.toBeNull();
+    expect(captured!.config).toMatchObject({
+      device_key: 'abc123',
+      group: 'Printers',
+      level: 'critical',
+    });
+  });
+});

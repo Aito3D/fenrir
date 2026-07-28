@@ -5410,6 +5410,7 @@ export default {
       discord: 'Discord',
       webhook: 'Webhook',
       homeassistant: 'Home Assistant',
+      bark: 'Bark',
     },
     // Provider descriptions
     providerDescriptions: {
@@ -5421,6 +5422,7 @@ export default {
       callmebot: '透過 CallMeBot 免費傳送 WhatsApp 通知',
       webhook: '通用 HTTP POST 到任意 URL',
       homeassistant: 'Home Assistant 儀表板中的持久通知',
+      bark: '透過 Bark 推送 iOS 通知（可自架伺服器）',
     },
     // NotificationProviderCard
     lastSuccess: '上次：{{date}}',

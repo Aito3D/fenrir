@@ -5383,6 +5383,7 @@ export default {
       discord: 'Discord',
       webhook: 'Webhook',
       homeassistant: 'Home Assistant',
+      bark: 'Bark',
     },
     providerDescriptions: {
       email: 'SMTP e-posta bildirimleri',
@@ -5393,6 +5394,7 @@ export default {
       callmebot: "CallMeBot üzerinden ücretsiz WhatsApp bildirimleri",
       webhook: 'Herhangi bir URL\'ye genel HTTP POST',
       homeassistant: 'Home Assistant gösterge panelinde kalıcı bildirimler',
+      bark: 'Bark ile iOS anlık bildirimleri (kendi sunucunuzda barındırılabilir)',
     },
     lastSuccess: 'Son: {{date}}',
     error: 'Hata',

@@ -5146,7 +5146,8 @@ export default {
       email: '이메일',
       discord: 'Discord',
       webhook: 'Webhook',
-      homeassistant: 'Home Assistant'
+      homeassistant: 'Home Assistant',
+      bark: 'Bark'
     },
     providerDescriptions: {
       email: 'SMTP 이메일 알림',
@@ -5156,7 +5157,8 @@ export default {
       pushover: '간단하고 신뢰할 수 있는 푸시 알림',
       callmebot: 'CallMeBot을 통한 무료 WhatsApp 알림',
       webhook: '모든 URL에 일반 HTTP POST',
-      homeassistant: 'Home Assistant 대시보드의 지속적인 알림'
+      homeassistant: 'Home Assistant 대시보드의 지속적인 알림',
+      bark: 'Bark를 통한 iOS 푸시 알림(셀프 호스팅 가능)'
     },
     lastSuccess: '마지막: {{date}}',
     error: '오류',

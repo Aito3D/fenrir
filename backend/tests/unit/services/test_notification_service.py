@@ -1090,6 +1090,121 @@ class TestHomeAssistantProvider:
         mock_send.assert_called_once()
 
 
+class TestBarkProvider:
+    """Bark (iOS push) provider (#1495)."""
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    def _client_returning(self, status_code: int, json_body=None, text: str = ""):
+        mock_response = MagicMock()
+        mock_response.status_code = status_code
+        mock_response.text = text
+        if json_body is not None:
+            mock_response.json = MagicMock(return_value=json_body)
+        else:
+            mock_response.json = MagicMock(side_effect=ValueError("not json"))
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        return mock_client
+
+    @pytest.mark.asyncio
+    async def test_send_bark_success_default_server(self, service):
+        """Minimal config posts to the official relay with device_key/title/body."""
+        mock_client = self._client_returning(200, {"code": 200, "message": "success"})
+
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+            success, _ = await service._send_bark({"device_key": "abc123"}, "Title", "Body")
+
+        assert success is True
+        call_args = mock_client.post.call_args
+        assert call_args[0][0] == "https://api.day.app/push"
+        payload = call_args.kwargs.get("json")
+        assert payload == {"device_key": "abc123", "title": "Title", "body": "Body"}
+
+    @pytest.mark.asyncio
+    async def test_send_bark_options_and_custom_server(self, service):
+        """group/sound/level are forwarded; an unknown level is dropped rather
+        than sent; a self-hosted server URL (with trailing slash) is used."""
+        mock_client = self._client_returning(200, {"code": 200})
+
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+            config = {
+                "device_key": "abc123",
+                "server": "https://bark.example.com/",
+                "group": "Bambuddy",
+                "sound": "minuet",
+                "level": "timeSensitive",
+            }
+            success, _ = await service._send_bark(config, "Title", "Body")
+
+        assert success is True
+        call_args = mock_client.post.call_args
+        assert call_args[0][0] == "https://bark.example.com/push"
+        payload = call_args.kwargs.get("json")
+        assert payload["group"] == "Bambuddy"
+        assert payload["sound"] == "minuet"
+        assert payload["level"] == "timeSensitive"
+
+        mock_client.post.reset_mock()
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+            await service._send_bark({"device_key": "abc123", "level": "shouty"}, "Title", "Body")
+        assert "level" not in mock_client.post.call_args.kwargs.get("json")
+
+    @pytest.mark.asyncio
+    async def test_send_bark_missing_device_key(self, service):
+        mock_client = self._client_returning(200, {"code": 200})
+
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+            success, message = await service._send_bark({}, "Title", "Body")
+
+        assert success is False
+        assert "Device key" in message
+        mock_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_send_bark_error_in_200_body(self, service):
+        """bark-server can wrap a failure in HTTP 200; the body code must win."""
+        mock_client = self._client_returning(200, {"code": 400, "message": "device token invalid"})
+
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+            success, message = await service._send_bark({"device_key": "bad"}, "Title", "Body")
+
+        assert success is False
+        assert "device token invalid" in message
+
+    @pytest.mark.asyncio
+    async def test_send_bark_http_error(self, service):
+        mock_client = self._client_returning(400, None, text="failed to get device token")
+
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+            success, message = await service._send_bark({"device_key": "bad"}, "Title", "Body")
+
+        assert success is False
+        assert "HTTP 400" in message
+
+    @pytest.mark.asyncio
+    async def test_send_to_provider_dispatches_bark(self, service):
+        provider = MagicMock()
+        provider.provider_type = "bark"
+        provider.config = json.dumps({"device_key": "abc123"})
+        provider.quiet_hours_enabled = False
+
+        with patch.object(service, "_send_bark", new_callable=AsyncMock) as mock_send:
+            mock_send.return_value = (True, "OK")
+            success, _ = await service._send_to_provider(provider, "Title", "Message", db=AsyncMock())
+
+        assert success is True
+        mock_send.assert_called_once()
+
+
 class TestNotificationVariableFallbacks:
     """Tests for notification variable fallback values."""
 

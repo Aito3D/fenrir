@@ -5134,6 +5134,7 @@ export default {
       discord: "Discord",
       webhook: "Вебхук",
       homeassistant: "Home Assistant",
+      bark: "Bark",
     },
     providerDescriptions: {
       email: "Уведомления по электронной почте через SMTP",
@@ -5144,6 +5145,7 @@ export default {
       callmebot: "Бесплатные уведомления WhatsApp через CallMeBot",
       webhook: "Универсальный HTTP POST-запрос на любой URL",
       homeassistant: "Постоянные уведомления на панели Home Assistant",
+      bark: "iOS push-уведомления через Bark (можно разместить у себя)",
     },
     lastSuccess: "Последняя отправка: {{date}}",
     error: "Ошибка",
