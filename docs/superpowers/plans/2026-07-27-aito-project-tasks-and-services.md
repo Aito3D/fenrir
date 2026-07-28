@@ -1110,7 +1110,16 @@ export interface TaskEditorProps {
 export function TaskEditor(props: TaskEditorProps): JSX.Element;
 ```
 
-`TaskEditor` is **presentational** — it knows nothing about persistence. That is what lets the create modal hold an array in state while the detail panel wires each change to a PATCH.
+`TaskEditor` is **presentational** — it knows nothing about **persistence**. No
+`useMutation`, no POST/PATCH/DELETE: writes belong to the two callers, which is
+what lets the create modal hold an array in state while the detail panel wires
+each change to a PATCH.
+
+Read-only queries for *display* data are fine and expected. `ImpressionFields`
+must fetch filaments, printers and calculator defaults — they are its data
+source — so the subtree already requires a QueryClient; a cached settings read
+for the currency symbol adds no new coupling. The rule is about who owns
+writes, not about avoiding `api` entirely.
 
 - [ ] **Step 1: Write the failing tests**
 
