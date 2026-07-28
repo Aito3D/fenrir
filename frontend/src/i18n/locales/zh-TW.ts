@@ -1468,6 +1468,7 @@ export default {
     periodCost: '期間成本',
     avgPerPrint: '每次列印平均',
     usageOverTime: '隨時間的使用量',
+    energyOverTime: '隨時間的能耗',
     filamentByWeight: '重量',
     printDuration: '列印時長',
     printerUtilization: '印表機利用率',

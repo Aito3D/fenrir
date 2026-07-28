@@ -1395,6 +1395,7 @@ export default {
     periodCost: "Стоимость за период",
     avgPerPrint: "В среднем на печать",
     usageOverTime: "Расход по времени",
+    energyOverTime: "Энергия по времени",
     filamentByWeight: "По весу",
     printDuration: "Продолжительность печати",
     printerUtilization: "Загрузка принтеров",

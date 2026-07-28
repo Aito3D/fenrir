@@ -1469,6 +1469,7 @@ export default {
     periodCost: 'Dönem Maliyeti',
     avgPerPrint: 'Baskı Başına Ort.',
     usageOverTime: 'Zaman İçinde Kullanım',
+    energyOverTime: 'Zaman İçinde Enerji',
     filamentByWeight: 'Ağırlık',
     printDuration: 'Baskı Süresi',
     printerUtilization: 'Yazıcı Kullanımı',

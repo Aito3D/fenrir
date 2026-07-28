@@ -1467,6 +1467,7 @@ export default {
     periodCost: 'コスト',
     avgPerPrint: '1印刷あたりの平均',
     usageOverTime: '時間推移',
+    energyOverTime: 'エネルギー使用量の推移',
     filamentByWeight: '重量',
     printDuration: '印刷時間分布',
     printerUtilization: 'プリンター稼働率',

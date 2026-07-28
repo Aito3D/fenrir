@@ -1468,6 +1468,7 @@ export default {
     periodCost: 'Coste del periodo',
     avgPerPrint: 'Promedio por impresión',
     usageOverTime: 'Uso a lo largo del tiempo',
+    energyOverTime: 'Energía a lo largo del tiempo',
     filamentByWeight: 'Peso',
     printDuration: 'Duración de la impresión',
     printerUtilization: 'Uso de la impresora',

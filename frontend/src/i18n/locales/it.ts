@@ -1468,6 +1468,7 @@ export default {
     periodCost: 'Costo',
     avgPerPrint: 'Media per stampa',
     usageOverTime: 'Utilizzo nel tempo',
+    energyOverTime: 'Energia nel tempo',
     filamentByWeight: 'Peso',
     printDuration: 'Durata stampa',
     printerUtilization: 'Utilizzo stampante',
