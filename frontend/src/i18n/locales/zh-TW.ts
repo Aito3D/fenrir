@@ -55,6 +55,7 @@ export default {
     invalidEmail: '請輸入有效的電子郵件地址。',
     invalidPhone: '請輸入 4 到 14 位數字。',
     invalidCountryCode: '請輸入國碼，例如 +689。',
+    phoneRequired: '電話號碼為必填項目。',
     dragHandle: '拖曳以重新排序',
     createdLabel: '建立時間',
     lastActivity: '最近活動',

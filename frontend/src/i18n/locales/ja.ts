@@ -55,6 +55,7 @@ export default {
     invalidEmail: '有効なメールアドレスを入力してください。',
     invalidPhone: '4〜14桁の数字を入力してください。',
     invalidCountryCode: '+689 のような国番号を入力してください。',
+    phoneRequired: '電話番号は必須です。',
     dragHandle: 'ドラッグして並べ替え',
     createdLabel: '作成日',
     lastActivity: '最終更新',

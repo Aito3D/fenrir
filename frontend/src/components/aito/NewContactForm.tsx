@@ -47,14 +47,19 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
   const hasName = hasCompany || (firstName.trim().length > 0 && lastName.trim().length > 0);
   const preview = hasCompany ? companyName.trim() : formatDisplayName(firstName, lastName);
 
-  // Same two-stage rule as ClientSection, via the same shared mask: the message
-  // only becomes visible once the field has been left, but validity always
-  // gates the submit — this form's fields start blank, so there is no stored
-  // value that can be malformed before the user types anything.
-  const phoneError = validatePhone({ countryCode, nationalNumber });
+  // Required here, but NOT in the shared validator: ClientSection uses
+  // validatePhone to edit an existing client, where an empty value is valid and
+  // clearing a number is a supported edit.
+  const phoneError = nationalNumber.trim()
+    ? validatePhone({ countryCode, nationalNumber })
+    : 'aito.phoneRequired';
   const emailError = validateEmail(email);
   const visibleErrors = maskVisibleErrors({ phone: phoneError, email: emailError }, blurred);
-  const canSubmit = hasName && !phoneError && !emailError;
+  // The button gates on what the user can SEE, the submit handler on what is
+  // actually true — so a disabled button always has a message beside it, and an
+  // untouched empty phone reveals its message on the first press instead of
+  // disabling the button with no explanation.
+  const canSubmit = hasName && !visibleErrors.phone && !visibleErrors.email;
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -74,10 +79,11 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
       noValidate
       onSubmit={(e) => {
         e.preventDefault();
-        // Reveal any error the user never triggered by blurring, so a disabled
-        // button is always explained by a message on screen.
+        // Reveal anything the user never triggered by blurring. `canSubmit` was
+        // computed before this call, so the guard below re-checks the raw
+        // errors rather than re-reading it.
         setBlurred({ phone: true, email: true });
-        if (!canSubmit) return;
+        if (!hasName || phoneError || emailError) return;
         setError(null);
         createMutation.mutate();
       }}
@@ -138,10 +144,11 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
 
         <div>
           <label htmlFor="aito-new-phone" className={labelCls}>
-            {t('aito.clientPhone')}
+            {t('aito.clientPhone')} <span className="text-status-error">*</span>
           </label>
           <PhoneInput
             id="aito-new-phone"
+            required
             countryCode={countryCode}
             nationalNumber={nationalNumber}
             invalid={visibleErrors.phone !== null}

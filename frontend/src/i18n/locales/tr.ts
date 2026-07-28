@@ -55,6 +55,7 @@ export default {
     invalidEmail: 'Lütfen geçerli bir e-posta adresi girin.',
     invalidPhone: '4 ile 14 hane arasında girin.',
     invalidCountryCode: '+689 gibi bir ülke kodu girin.',
+    phoneRequired: 'Telefon numarası zorunludur.',
     dragHandle: 'Yeniden sıralamak için sürükleyin',
     createdLabel: 'Oluşturuldu',
     lastActivity: 'Son etkinlik',

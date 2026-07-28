@@ -75,6 +75,7 @@ describe('NewContactForm', () => {
     const user = userEvent.setup();
     render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
     await user.type(screen.getByLabelText(/company name/i), 'ACME SARL');
+    await user.type(screen.getByLabelText(/^phone/i), '87123456');
     await user.click(screen.getByRole('button', { name: /create client/i }));
     expect(await screen.findByText(/already exists/i)).toBeInTheDocument();
   });
@@ -84,21 +85,20 @@ describe('NewContactForm', () => {
     expect(screen.getByRole('button', { name: /create client/i })).toBeDisabled();
   });
 
-  it('shows an email error only after the field is left, and disables submit', async () => {
+  it('shows an email error only after the field is left', async () => {
     const user = userEvent.setup();
     render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
     await user.type(screen.getByLabelText(/company name/i), 'ACME SARL');
     await user.type(screen.getByLabelText(/^email/i), 'nope');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /create client/i })).toBeDisabled();
 
     await user.tab();
     expect(screen.getByRole('alert')).toHaveTextContent(/valid email/i);
+    expect(screen.getByRole('button', { name: /create client/i })).toBeDisabled();
 
     await user.clear(screen.getByLabelText(/^email/i));
     await user.type(screen.getByLabelText(/^email/i), 'hi@acme.pf');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /create client/i })).toBeEnabled();
   });
 
   it('rejects a too-short phone number and never calls the API', async () => {
@@ -111,5 +111,52 @@ describe('NewContactForm', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/4 and 14 digits/i);
     expect(screen.getByRole('button', { name: /create client/i })).toBeDisabled();
     expect(onCreated).not.toHaveBeenCalled();
+  });
+
+  it('blocks submission with an empty phone and reveals the requirement on submit', async () => {
+    let called = false;
+    server.use(
+      http.post('/api/v1/zoho/contacts', () => {
+        called = true;
+        return HttpResponse.json(created, { status: 201 });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
+    await user.type(screen.getByLabelText(/company name/i), 'ACME SARL');
+
+    // A name alone used to be enough; the phone is required now.
+    await user.click(screen.getByRole('button', { name: /create client/i }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/required/i);
+    expect(called).toBe(false);
+  });
+
+  it('accepts the submission once a valid phone is supplied', async () => {
+    const onCreated = vi.fn();
+    const user = userEvent.setup();
+    render(<NewContactForm onCancel={vi.fn()} onCreated={onCreated} />);
+    await user.type(screen.getByLabelText(/company name/i), 'ACME SARL');
+    await user.click(screen.getByRole('button', { name: /create client/i }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/required/i);
+
+    await user.type(screen.getByLabelText(/^phone/i), '87123456');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /create client/i }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalled());
+  });
+
+  it('reports the length error, not the required error, for a short phone', async () => {
+    const user = userEvent.setup();
+    render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
+    await user.type(screen.getByLabelText(/company name/i), 'ACME SARL');
+    await user.type(screen.getByLabelText(/^phone/i), '12');
+    await user.tab();
+    expect(screen.getByRole('alert')).toHaveTextContent(/4 and 14 digits/i);
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/required/i);
+  });
+
+  it('marks the phone field as required', () => {
+    render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
+    expect(screen.getByLabelText(/^phone/i)).toHaveAttribute('aria-required', 'true');
   });
 });

@@ -55,6 +55,7 @@ export default {
     invalidEmail: 'Enter a valid email address.',
     invalidPhone: 'Enter between 4 and 14 digits.',
     invalidCountryCode: 'Enter a country code such as +689.',
+    phoneRequired: 'Phone number is required.',
     dragHandle: 'Drag to reorder',
     createdLabel: 'Created',
     lastActivity: 'Last activity',

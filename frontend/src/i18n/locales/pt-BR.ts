@@ -55,6 +55,7 @@ export default {
     invalidEmail: 'Digite um endereço de email válido.',
     invalidPhone: 'Digite entre 4 e 14 dígitos.',
     invalidCountryCode: 'Digite um DDI como +689.',
+    phoneRequired: 'O número de telefone é obrigatório.',
     dragHandle: 'Arraste para reordenar',
     createdLabel: 'Criado',
     lastActivity: 'Última atividade',

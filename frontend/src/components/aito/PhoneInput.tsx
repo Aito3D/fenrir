@@ -14,6 +14,9 @@ export interface PhoneInputProps {
   onChange: (next: { countryCode: string; nationalNumber: string }, changed: 'countryCode' | 'nationalNumber') => void;
   onBlur?: (next: { countryCode: string; nationalNumber: string }) => void;
   invalid?: boolean;
+  /** Sets aria-required on the national-number input. The country code always
+   *  has a value, so the requirement only concerns the number. */
+  required?: boolean;
   id?: string;
   disabled?: boolean;
 }
@@ -39,6 +42,7 @@ export function PhoneInput({
   onChange,
   onBlur,
   invalid,
+  required,
   id,
   disabled,
 }: PhoneInputProps) {
@@ -80,6 +84,7 @@ export function PhoneInput({
         }}
         placeholder={t('aito.phonePlaceholder')}
         aria-invalid={invalid ? true : undefined}
+        aria-required={required ? true : undefined}
         className={invalid ? inputErrorCls : inputCls}
       />
     </div>
