@@ -397,20 +397,18 @@ const RU_COGNATES = [
   '(25%, 50%, 75%)',
 ];
 
+// Ukrainian keeps only Latin brand names and placeholder/punctuation-only
+// formats verbatim; every prose string in uk.ts is translated.
 const UK_COGNATES = [
-  '{{weight}} г',
-  'MakerWorld: {{designer}}',
-  '{{printer}}: {{error}}',
-  'Bambu Cloud',
-  'Orca Cloud',
-  'Sport (124%)',
-  'Ludicrous (166%)',
-  'email',
+  'MakerWorld: {{designer}}',                         // brand + placeholder
+  '{{printer}}: {{error}}',                           // pure placeholders
+  'Bambu Cloud', 'Orca Cloud',                        // brand names — same in every locale
+  'Sport (124%)', 'Ludicrous (166%)',                 // official Bambu speed-mode names
+  'email',                                            // OIDC claim name placeholder
   '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}',
   'EC984C,#6CD4BC,A66EB9,D87694',
   '({{count}}/8)',
   '(25%, 50%, 75%)',
-  'Obico ML API URL',
 ];
 
 const IDENTICAL_TO_EN_ALLOWED = {
