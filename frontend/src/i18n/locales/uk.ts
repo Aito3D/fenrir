@@ -6557,7 +6557,7 @@ export default {
     pasteUrlHeader: "Імпортувати з MakerWorld",
     pasteUrlPlaceholder: "https://makerworld.com/en/models/… або вставте будь-яке посилання MakerWorld.",
     resolveButton: "Розв'язати",
-    signInRequiredTitle: "Для завантаження потрібно ввійти в Bambu Cloud",
+    signInRequiredTitle: "Для завантаження потрібно увійти в Bambu Cloud",
     signInRequiredBody: "Ви можете переглядати деталі моделі анонімно, але для MakerWorld потрібен обліковий запис Bambu Cloud для завантаження файлів 3MF.",
     signInExpiredTitle: "Термін входу в Bambu Cloud минув",
     signInExpiredBody: "Ви все ще ввійшли в Bambuddy, але Bambu Lab більше не приймає збережений токен, тому завантаження не вдасться. Знову ввійдіть у Bambu Cloud.",
