@@ -142,7 +142,13 @@ is already exported from `utils/clientDraft.ts` and already used by this form.
 
 ## Testing
 
-**Three existing tests assert the seeding and must be flipped, not deleted:**
+**Correction made while planning: twelve existing tests are affected, not three.**
+All eight tests in `NewContactForm.test.tsx` pass `initialQuery`, and four of
+them need more than a prop removal — three took their client name from the seed,
+and one asserts a button-disabled state that inverts under visible-error gating.
+The plan carries the full enumeration.
+
+**The three that assert the seeding directly must be flipped, not deleted:**
 
 - `NewContactForm.test.tsx` — "seeds the company field from the search query"
   becomes "starts with an empty company field".
