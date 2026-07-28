@@ -155,7 +155,7 @@ describe('NewProjectModal', () => {
     await user.clear(combobox);
     await user.type(combobox, 'zzz');
     await user.click(await screen.findByRole('button', { name: /create new client/i }));
-    expect(screen.getByLabelText(/company name/i)).toHaveValue('zzz');
+    expect(screen.getByLabelText(/company name/i)).toHaveValue('');
     await user.click(screen.getByRole('button', { name: /back/i }));
     expect(screen.getByLabelText(/product description/i)).toBeInTheDocument();
   });
@@ -168,8 +168,8 @@ describe('NewProjectModal', () => {
     await user.clear(combobox);
     await user.type(combobox, 'zzz');
     await user.click(await screen.findByRole('button', { name: /create new client/i }));
-    await user.type(screen.getByLabelText(/company name/i), ' Corp');
-    expect(screen.getByLabelText(/company name/i)).toHaveValue('zzz Corp');
+    await user.type(screen.getByLabelText(/company name/i), 'ACME Corp');
+    expect(screen.getByLabelText(/company name/i)).toHaveValue('ACME Corp');
 
     await user.keyboard('{Escape}');
 
@@ -186,8 +186,8 @@ describe('NewProjectModal', () => {
     await user.clear(combobox);
     await user.type(combobox, 'zzz');
     await user.click(await screen.findByRole('button', { name: /create new client/i }));
-    await user.type(screen.getByLabelText(/company name/i), ' Corp');
-    expect(screen.getByLabelText(/company name/i)).toHaveValue('zzz Corp');
+    await user.type(screen.getByLabelText(/company name/i), 'ACME Corp');
+    expect(screen.getByLabelText(/company name/i)).toHaveValue('ACME Corp');
 
     const backdrop = container.querySelector('.fixed.inset-0');
     if (!backdrop) throw new Error('Backdrop not found');

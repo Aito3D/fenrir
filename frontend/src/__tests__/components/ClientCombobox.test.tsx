@@ -62,7 +62,7 @@ describe('ClientCombobox', () => {
     await user.clear(input);
     await user.type(input, 'zzz');
     await user.click(await screen.findByRole('button', { name: /create new client/i }));
-    expect(onCreateNew).toHaveBeenCalledWith('zzz');
+    expect(onCreateNew).toHaveBeenCalledWith();
   });
 
   it('hides the reset control unless showReset is set', async () => {

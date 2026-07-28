@@ -19,7 +19,6 @@ import {
 } from '../../utils/clientDraft';
 
 export interface NewContactFormProps {
-  initialQuery: string;
   onCancel: () => void;
   onCreated: (contact: ZohoContact) => void;
 }
@@ -32,9 +31,9 @@ export interface NewContactFormProps {
  *  "Jean-Pierre" while they are still being typed — and re-applied server-side.
  *  This writes to Zoho immediately on submit because the real contact_id is
  *  needed before the contact can be attached to a project. */
-export function NewContactForm({ initialQuery, onCancel, onCreated }: NewContactFormProps) {
+export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
   const { t } = useTranslation();
-  const [companyName, setCompanyName] = useState(initialQuery);
+  const [companyName, setCompanyName] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY_CODE);

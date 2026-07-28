@@ -16,14 +16,14 @@ beforeEach(() => {
 });
 
 describe('NewContactForm', () => {
-  it('seeds the company field from the search query', () => {
-    render(<NewContactForm initialQuery="ACME SARL" onCancel={vi.fn()} onCreated={vi.fn()} />);
-    expect(screen.getByLabelText(/company name/i)).toHaveValue('ACME SARL');
+  it('starts with an empty company field', () => {
+    render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
+    expect(screen.getByLabelText(/company name/i)).toHaveValue('');
   });
 
   it('disables the name fields while a company name is present, and vice versa', async () => {
     const user = userEvent.setup();
-    render(<NewContactForm initialQuery="" onCancel={vi.fn()} onCreated={vi.fn()} />);
+    render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
     await user.type(screen.getByLabelText(/company name/i), 'ACME');
     expect(screen.getByLabelText(/first name/i)).toBeDisabled();
     expect(screen.getByLabelText(/last name/i)).toBeDisabled();
@@ -35,7 +35,7 @@ describe('NewContactForm', () => {
 
   it('previews the enforced display name on blur', async () => {
     const user = userEvent.setup();
-    render(<NewContactForm initialQuery="" onCancel={vi.fn()} onCreated={vi.fn()} />);
+    render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
     await user.type(screen.getByLabelText(/first name/i), 'jean-pierre');
     await user.type(screen.getByLabelText(/last name/i), 'dupont');
     await user.tab();
@@ -52,7 +52,7 @@ describe('NewContactForm', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<NewContactForm initialQuery="" onCancel={vi.fn()} onCreated={onCreated} />);
+    render(<NewContactForm onCancel={vi.fn()} onCreated={onCreated} />);
     await user.type(screen.getByLabelText(/first name/i), 'jean-pierre');
     await user.type(screen.getByLabelText(/last name/i), 'dupont');
     await user.type(screen.getByLabelText(/^phone/i), '87123456');
@@ -73,19 +73,21 @@ describe('NewContactForm', () => {
       ),
     );
     const user = userEvent.setup();
-    render(<NewContactForm initialQuery="ACME SARL" onCancel={vi.fn()} onCreated={vi.fn()} />);
+    render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
+    await user.type(screen.getByLabelText(/company name/i), 'ACME SARL');
     await user.click(screen.getByRole('button', { name: /create client/i }));
     expect(await screen.findByText(/already exists/i)).toBeInTheDocument();
   });
 
   it('blocks submission until a name is present', () => {
-    render(<NewContactForm initialQuery="" onCancel={vi.fn()} onCreated={vi.fn()} />);
+    render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
     expect(screen.getByRole('button', { name: /create client/i })).toBeDisabled();
   });
 
   it('shows an email error only after the field is left, and disables submit', async () => {
     const user = userEvent.setup();
-    render(<NewContactForm initialQuery="ACME SARL" onCancel={vi.fn()} onCreated={vi.fn()} />);
+    render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
+    await user.type(screen.getByLabelText(/company name/i), 'ACME SARL');
     await user.type(screen.getByLabelText(/^email/i), 'nope');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /create client/i })).toBeDisabled();
@@ -102,7 +104,8 @@ describe('NewContactForm', () => {
   it('rejects a too-short phone number and never calls the API', async () => {
     const onCreated = vi.fn();
     const user = userEvent.setup();
-    render(<NewContactForm initialQuery="ACME SARL" onCancel={vi.fn()} onCreated={onCreated} />);
+    render(<NewContactForm onCancel={vi.fn()} onCreated={onCreated} />);
+    await user.type(screen.getByLabelText(/company name/i), 'ACME SARL');
     await user.type(screen.getByLabelText(/^phone/i), '12');
     await user.tab();
     expect(screen.getByRole('alert')).toHaveTextContent(/4 and 14 digits/i);

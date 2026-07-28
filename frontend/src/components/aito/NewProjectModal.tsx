@@ -23,7 +23,10 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
   const { t } = useTranslation();
   const [description, setDescription] = useState('');
   const [draft, setDraft] = useState<ClientDraft | null>(null);
-  const [creatingClient, setCreatingClient] = useState<string | null>(null);
+  // Was `string | null`, doing double duty as "which view is showing" and "the
+  // seed for the company field". The company field starts empty now, so this is
+  // only ever the former.
+  const [creatingClient, setCreatingClient] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const statusQuery = useQuery({
@@ -49,7 +52,7 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
   // form (same as its Back button), never discarding whatever the user typed
   // into it. Only when the main form itself is showing do they close the modal.
   const dismiss = () => {
-    if (creatingClient !== null) setCreatingClient(null);
+    if (creatingClient) setCreatingClient(false);
     else onClose();
   };
 
@@ -84,7 +87,7 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
 
   const onClientCreated = (contact: ZohoContact) => {
     setDraft(draftFromContact(contact, defaultId));
-    setCreatingClient(null);
+    setCreatingClient(false);
   };
 
   return (
@@ -97,7 +100,7 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
       <div className="bg-bambu-dark-secondary rounded-xl w-full max-w-md border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)] animate-modal-in">
         <div className="p-4 border-b border-bambu-dark-tertiary flex items-center justify-between flex-shrink-0">
           <h2 className="text-lg font-semibold text-white">
-            {creatingClient === null ? t('aito.modalTitle') : t('aito.newClientTitle')}
+            {creatingClient ? t('aito.newClientTitle') : t('aito.modalTitle')}
           </h2>
           <button
             type="button"
@@ -109,12 +112,8 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
           </button>
         </div>
 
-        {creatingClient !== null ? (
-          <NewContactForm
-            initialQuery={creatingClient}
-            onCancel={() => setCreatingClient(null)}
-            onCreated={onClientCreated}
-          />
+        {creatingClient ? (
+          <NewContactForm onCancel={() => setCreatingClient(false)} onCreated={onClientCreated} />
         ) : (
           <form
             noValidate
@@ -129,7 +128,7 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
                 <ClientSection
                   value={draft}
                   onChange={setDraft}
-                  onCreateNew={setCreatingClient}
+                  onCreateNew={() => setCreatingClient(true)}
                   defaultContactId={defaultId}
                   defaultContactName={defaultName}
                 />

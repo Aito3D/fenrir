@@ -14,7 +14,7 @@ import { focusRingCls, inputCls, inputErrorCls, labelCls } from '../formStyles';
 export interface ClientSectionProps {
   value: ClientDraft;
   onChange: (next: ClientDraft) => void;
-  onCreateNew: (initialQuery: string) => void;
+  onCreateNew: () => void;
   defaultContactId: string;
   defaultContactName: string;
 }
