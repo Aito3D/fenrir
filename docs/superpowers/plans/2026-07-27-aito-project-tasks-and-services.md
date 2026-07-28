@@ -90,9 +90,6 @@ Inside the `aito` block of `frontend/src/i18n/locales/en.ts`:
     printTime: 'Print time',
     color: 'Colour',
     quantity: 'Quantity',
-    days: 'd',
-    hours: 'h',
-    minutes: 'min',
     taskTotal: 'Task total',
     projectTotal: 'Project total',
     noPrintersConfigured: 'No printers configured in the calculator yet.',
@@ -119,14 +116,19 @@ Inside the `aito` block of `frontend/src/i18n/locales/en.ts`:
     printTime: 'Temps d’impression',
     color: 'Couleur',
     quantity: 'Quantité',
-    days: 'j',
-    hours: 'h',
-    minutes: 'min',
     taskTotal: 'Total tâche',
     projectTotal: 'Total projet',
     noPrintersConfigured: 'Aucune imprimante configurée dans la calculatrice.',
     noFilamentsConfigured: 'Aucun filament configuré dans la calculatrice.',
 ```
+
+> **Do not add `days` / `hours` / `minutes` keys.** `calculator.durationDaysShort`,
+> `durationHoursShort` and `durationMinutesShort` already exist in all 12 locale
+> files, already translated, and are already used by `CalculatorInputsCard` and
+> `CalculatorLaborCard` for exactly this purpose — a compact unit suffix beside
+> a numeric input. `DurationInput` consumes those. Duplicating them under
+> `aito.*` is how the first attempt at this task ended up with `ja` rendering
+> `時間` where the calculator renders `時`.
 
 - [ ] **Step 3: Translate into the remaining ten locales**
 
@@ -1014,6 +1016,12 @@ export interface DurationInputProps {
 /** Days / hours / minutes in, one integer of minutes out. The split is a UI
  *  concern only — storing three columns would invite "90 minutes" and "1h30"
  *  disagreeing. */
+const UNIT_KEYS = {
+  days: 'calculator.durationDaysShort',
+  hours: 'calculator.durationHoursShort',
+  minutes: 'calculator.durationMinutesShort',
+} as const;
+
 export function DurationInput({ minutes, onChange, id }: DurationInputProps) {
   const { t } = useTranslation();
   const parts = splitMinutes(minutes ?? 0);
@@ -1039,7 +1047,11 @@ export function DurationInput({ minutes, onChange, id }: DurationInputProps) {
             onChange={(e) => set(key, e.target.value)}
             className={`${inputCls} w-16 text-right`}
           />
-          <span className="text-xs text-bambu-gray">{t(`aito.${key}`)}</span>
+          {/* Reuses the calculator's existing per-locale duration suffixes
+              rather than duplicating them under aito.* — they are already
+              translated in all 12 files and already used for this exact
+              purpose by CalculatorInputsCard. */}
+          <span className="text-xs text-bambu-gray">{t(UNIT_KEYS[key])}</span>
         </div>
       ))}
     </div>
