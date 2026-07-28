@@ -111,17 +111,7 @@ export function ImpressionFields({ value, onChange, onCostChange }: ImpressionFi
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
-      {/* One column again at `lg`, where the breakdown moves alongside: the
-          half this grid gets there is 303px (1024px dialog cap - 32 body
-          padding - 320 left column - 24 gap - 26 TaskRow padding/border - 16
-          inner gap, halved), so a second column would cut each input to 145px
-          — narrower than the 189px they had before this layout existed, and
-          the printer/material selects (px-3 + pr-9 for the chevron) would be
-          left ~96px of text, truncating "Bambu Lab X1 Carbon". No `xl:`
-          override for the same reason: the dialog is capped at max-w-5xl at
-          every viewport, so a wider screen buys this grid no extra width and
-          an xl two-column rule would simply restore the 145px columns. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label htmlFor={`${reactId}-printer`} className={labelCls}>
             {t('aito.printer')}
