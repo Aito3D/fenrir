@@ -8,7 +8,7 @@
 
 import { useState } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { screen, fireEvent, act } from '@testing-library/react';
+import { screen, fireEvent, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
@@ -93,6 +93,31 @@ function ControlledTaskRow({
       onChange={(next) => {
         onChangeSpy(next);
         setTask(next);
+      }}
+      onRemove={vi.fn()}
+    />
+  );
+}
+
+/** Same wiring, one level up: state lives outside `TaskEditor`, `onChange`
+ *  replaces the whole array. Needed (rather than the single-task
+ *  `ControlledTaskRow`) whenever a test must actually see a selection stick
+ *  in ImpressionFields — an uncontrolled harness would let the UI flash the
+ *  new value and immediately snap back to the old prop. */
+function ControlledTaskEditor({
+  initial,
+  onChangeSpy,
+}: {
+  initial: TaskDraft[];
+  onChangeSpy: (next: TaskDraft[]) => void;
+}) {
+  const [tasks, setTasks] = useState(initial);
+  return (
+    <TaskEditor
+      value={tasks}
+      onChange={(next) => {
+        onChangeSpy(next);
+        setTasks(next);
       }}
       onRemove={vi.fn()}
     />
@@ -210,5 +235,48 @@ describe('TaskRow', () => {
     const lastCall = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft;
     expect(lastCall.scanCost).toBeNull();
     expect(lastCall.scanCost).not.toBe(0);
+  });
+
+  it('drives Impression3D end to end and settles without a runaway onChange loop', async () => {
+    // Regression test for the loop guard in TaskRow's handleImpressionCostChange
+    // (`if (total === task.impressionCost) return;`). ImpressionFields reports
+    // its recomputed total through a fresh callback identity on every TaskRow
+    // render, so without that bail, wiring printer/material/weight/time
+    // through to a real cost recurses: onChange -> new `task` -> new callback
+    // identity -> effect fires again -> onChange -> ... None of the other
+    // tests in this file drive ImpressionFields' own inputs, so none of them
+    // would go red if the guard were removed or weakened — this one does.
+    const onChangeSpy = vi.fn();
+    const user = userEvent.setup();
+    render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={onChangeSpy} />);
+
+    await user.click(await screen.findByRole('combobox', { name: /printer/i }));
+    await user.click(await screen.findByRole('option', { name: 'H2S' }));
+
+    await user.click(screen.getByRole('combobox', { name: /material/i }));
+    await user.click(await screen.findByRole('option', { name: 'Sunlu PA6-CF' }));
+
+    await user.type(screen.getByLabelText(/weight/i), '40');
+    // DurationInput only gives its `id` (and therefore an accessible name) to
+    // the days field — see the note against querying hours/minutes by name.
+    // One day is far more than enough to make `timeMin` non-null.
+    await user.type(screen.getByLabelText(/print time/i), '1');
+
+    await waitFor(() => {
+      const lastTasks = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft[] | undefined;
+      expect(lastTasks?.[0].impressionCost).not.toBeNull();
+    });
+
+    const settledCallCount = onChangeSpy.mock.calls.length;
+
+    // With the guard in place, giving the tree more time to flush is a no-op.
+    // Without it, onChange keeps firing here — the count grows instead of
+    // holding steady (or the test times out first, in an unguarded infinite
+    // synchronous loop).
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(onChangeSpy.mock.calls.length).toBe(settledCallCount);
   });
 });
