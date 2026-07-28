@@ -19,7 +19,15 @@ function SortableCard({
   transitionConfig: { duration: number; easing: string } | null;
   animateIn: boolean;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
     id: project.id,
     transition: transitionConfig,
   });
@@ -28,11 +36,15 @@ function SortableCard({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      {...attributes}
-      {...listeners}
-      className={`touch-none ${animateIn ? 'animate-rise' : ''} ${isDragging ? 'opacity-30' : ''}`}
+      className={`${animateIn ? 'animate-rise' : ''} ${isDragging ? 'opacity-30' : ''}`}
     >
-      <CardView project={project} onDelete={onDelete} onExpand={onExpand} />
+      <CardView
+        project={project}
+        onDelete={onDelete}
+        onExpand={onExpand}
+        dragHandleRef={setActivatorNodeRef}
+        dragHandleProps={{ ...attributes, ...listeners }}
+      />
     </div>
   );
 }

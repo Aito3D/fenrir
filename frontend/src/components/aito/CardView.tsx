@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { ChevronDown } from 'lucide-react';
+import { GripVertical } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import type { AitoProject } from '../../api/client';
 import { formatElapsedTime, parseUTCDate } from '../../utils/date';
@@ -9,11 +9,30 @@ export interface CardViewProps {
   overlay?: boolean;
   onDelete?: () => void;
   onExpand?: () => void;
+  /** dnd-kit's setActivatorNodeRef — omitted by the DragOverlay clone. */
+  dragHandleRef?: (element: HTMLElement | null) => void;
+  /** dnd-kit's attributes + listeners, spread onto the grip. */
+  dragHandleProps?: Record<string, unknown>;
 }
 
-// Presentational card, shared by the in-column sortable wrapper and the
-// DragOverlay clone (which must not carry sortable listeners/transform).
-export function CardView({ project, overlay = false, onDelete, onExpand }: CardViewProps) {
+/** Presentational card, shared by the in-column sortable wrapper and the
+ *  DragOverlay clone.
+ *
+ *  Three zones with distinct jobs: the header carries the client name and is
+ *  the ONLY drag source (via the grip); the body is the only thing that opens
+ *  the detail panel; the footer holds the timestamp and delete. Phone and email
+ *  live in the detail panel, not here.
+ *
+ *  The footer sits outside the body button because a <button> may not contain
+ *  another button — the delete control could not otherwise exist. */
+export function CardView({
+  project,
+  overlay = false,
+  onDelete,
+  onExpand,
+  dragHandleRef,
+  dragHandleProps,
+}: CardViewProps) {
   const { t, i18n } = useTranslation();
   const created = parseUTCDate(project.created_at);
   const updated = parseUTCDate(project.updated_at);
@@ -29,47 +48,56 @@ export function CardView({ project, overlay = false, onDelete, onExpand }: CardV
     <div
       data-aito-card
       data-aito-card-id={project.id}
-      onClick={onExpand}
-      className={`group relative rounded-xl border bg-bambu-dark-secondary p-3 select-none ${
+      className={`group relative rounded-xl border bg-bambu-dark-secondary select-none ${
         overlay
           ? 'rotate-1 scale-[1.02] border-bambu-green/40 shadow-2xl cursor-grabbing'
-          : 'border-bambu-dark-tertiary card-shadow cursor-grab active:cursor-grabbing transition-[border-color,box-shadow] duration-100 hover:border-bambu-green/40 hover:shadow-lg'
+          : 'border-bambu-dark-tertiary card-shadow transition-[border-color,box-shadow] duration-100 hover:border-bambu-green/40 hover:shadow-lg'
       }`}
     >
-      {onExpand && (
-        <button
-          type="button"
-          aria-label={t('aito.showDetails')}
-          onPointerDown={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            onExpand();
-          }}
-          className="absolute top-2 right-2 p-1 rounded-md text-bambu-gray opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-white hover:bg-bambu-dark-tertiary transition-[color,background-color,opacity] duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
+      <div className="flex items-center gap-2 px-3 py-2 bg-bambu-dark-tertiary rounded-t-xl border-b border-bambu-dark-tertiary">
+        <p
+          className={`flex-1 text-sm font-medium truncate ${
+            project.client_name ? 'text-white' : 'text-bambu-gray'
+          }`}
         >
-          <ChevronDown className="w-3.5 h-3.5" />
-        </button>
-      )}
-      <div>
-        {project.client_name ? (
-          <p className="text-sm font-medium text-white truncate">{project.client_name}</p>
-        ) : (
-          <p className="text-sm font-medium text-bambu-gray truncate">{t('aito.noClient')}</p>
-        )}
-        {project.client_phone && (
-          <a
-            href={`tel:${project.client_phone}`}
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-            className="text-xs text-bambu-gray hover:text-bambu-green"
+          {project.client_name ?? t('aito.noClient')}
+        </p>
+        {dragHandleProps ? (
+          <button
+            type="button"
+            ref={dragHandleRef}
+            aria-label={t('aito.dragHandle')}
+            {...dragHandleProps}
+            // touch-none belongs on the grip, not the card: on the card it
+            // would block touch-scrolling the column from anywhere on a card.
+            className="touch-none flex-shrink-0 p-1 -m-1 rounded-md text-bambu-gray cursor-grab active:cursor-grabbing hover:text-white hover:bg-bambu-dark-secondary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
           >
-            {project.client_phone}
-          </a>
+            <GripVertical className="w-4 h-4" />
+          </button>
+        ) : (
+          <GripVertical className="w-4 h-4 flex-shrink-0 text-bambu-gray" aria-hidden="true" />
         )}
       </div>
-      <p className="mt-1 text-sm text-white whitespace-pre-wrap break-words line-clamp-3">{project.description}</p>
-      <div className="mt-2 flex items-center justify-between">
+
+      {onExpand ? (
+        <button
+          type="button"
+          onClick={onExpand}
+          className="w-full text-left px-3 pt-2.5 pb-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bambu-green/40"
+        >
+          <span className="block text-sm text-white whitespace-pre-wrap break-words line-clamp-3">
+            {project.description}
+          </span>
+        </button>
+      ) : (
+        <div className="px-3 pt-2.5 pb-1.5">
+          <p className="text-sm text-white whitespace-pre-wrap break-words line-clamp-3">
+            {project.description}
+          </p>
+        </div>
+      )}
+
+      <div className="px-3 pb-2 flex items-center justify-between">
         <span className="text-xs text-bambu-gray" title={dateTitle}>
           {elapsed}
         </span>

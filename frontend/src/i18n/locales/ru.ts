@@ -55,7 +55,7 @@ export default {
     invalidEmail: 'Введите действительный адрес электронной почты.',
     invalidPhone: 'Введите от 4 до 14 цифр.',
     invalidCountryCode: 'Введите код страны, например +689.',
-    showDetails: 'Показать подробности',
+    dragHandle: 'Перетащите для изменения порядка',
     createdLabel: 'Создано',
     lastActivity: 'Последняя активность',
     stage: 'Этап',

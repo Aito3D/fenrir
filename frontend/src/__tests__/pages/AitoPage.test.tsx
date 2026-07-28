@@ -16,6 +16,13 @@ const project = {
   created_at: '2026-07-01T10:00:00Z', updated_at: '2026-07-02T10:00:00Z',
 };
 
+/** The card opens from its body only — the header carrying the client name is
+ *  deliberately not a click target. Tests that just need the panel open go
+ *  through here rather than clicking the client name as a stand-in for "the
+ *  card", which is what they did when the whole card was clickable. */
+const openCard = async (user: ReturnType<typeof userEvent.setup>) =>
+  user.click(await screen.findByRole('button', { name: /Support GoPro/ }));
+
 beforeEach(() => {
   vi.mocked(localStorage.getItem).mockReset();
   vi.mocked(localStorage.setItem).mockReset();
@@ -33,12 +40,11 @@ beforeEach(() => {
 });
 
 describe('AitoPage (backend board)', () => {
-  it('leads with the client name and a tel: phone link, without the row id', async () => {
+  it('leads with the client name in the header, without the row id or a phone link', async () => {
     render(<AitoPage />);
     expect(await screen.findByText('ACME SARL')).toBeInTheDocument();
     expect(screen.queryByText('#12')).not.toBeInTheDocument();
-    const tel = screen.getByRole('link', { name: '+33 6 12 34 56 78' });
-    expect(tel).toHaveAttribute('href', 'tel:+33 6 12 34 56 78');
+    expect(document.querySelector('a[href^="tel:"]')).toBeNull();
   });
 
   it('shows a placeholder title on clientless legacy cards', async () => {
@@ -150,20 +156,10 @@ describe('AitoPage (backend board)', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('does not expand the card when the phone link is clicked', async () => {
-    const user = userEvent.setup();
-    render(<AitoPage />);
-    await screen.findByText('ACME SARL');
-
-    await user.click(screen.getByRole('link', { name: '+33 6 12 34 56 78' }));
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  });
-
   it('opens the detail panel with the full description, dates and stage', async () => {
     const user = userEvent.setup();
     render(<AitoPage />);
-    await user.click(await screen.findByText('ACME SARL'));
+    await openCard(user);
 
     const panel = await screen.findByRole('dialog');
     expect(within(panel).getByText('Support GoPro')).toBeInTheDocument();
@@ -173,18 +169,17 @@ describe('AitoPage (backend board)', () => {
     expect(within(panel).getByText('Quote')).toBeInTheDocument();
   });
 
-  it('opens the panel from the keyboard via the details button', async () => {
+  it('opens the panel from the keyboard via the card body', async () => {
     const user = userEvent.setup();
     render(<AitoPage />);
-    await screen.findByText('ACME SARL');
-    await user.click(screen.getByRole('button', { name: 'Show details' }));
+    await openCard(user);
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 
   it('closes the panel on Escape', async () => {
     const user = userEvent.setup();
     render(<AitoPage />);
-    await user.click(await screen.findByText('ACME SARL'));
+    await openCard(user);
     await screen.findByRole('dialog');
     await user.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
@@ -198,7 +193,7 @@ describe('AitoPage (backend board)', () => {
     (document as { startViewTransition?: unknown }).startViewTransition = startViewTransition;
     const user = userEvent.setup();
     render(<AitoPage />);
-    await user.click(await screen.findByText('ACME SARL'));
+    await openCard(user);
     await screen.findByRole('dialog');
     expect(startViewTransition).toHaveBeenCalled();
     delete (document as { startViewTransition?: unknown }).startViewTransition;
@@ -215,7 +210,7 @@ describe('AitoPage (backend board)', () => {
     );
     const user = userEvent.setup();
     render(<AitoPage />);
-    await user.click(await screen.findByText('ACME SARL'));
+    await openCard(user);
 
     const panel = await screen.findByRole('dialog');
     await user.click(within(panel).getByText('Support GoPro'));
@@ -233,7 +228,7 @@ describe('AitoPage (backend board)', () => {
     server.use(http.patch('/api/v1/aito/:id', () => { patched(); return HttpResponse.json(project); }));
     const user = userEvent.setup();
     render(<AitoPage />);
-    await user.click(await screen.findByText('ACME SARL'));
+    await openCard(user);
 
     const panel = await screen.findByRole('dialog');
     await user.click(within(panel).getByText('Support GoPro'));
@@ -251,7 +246,7 @@ describe('AitoPage (backend board)', () => {
     server.use(http.patch('/api/v1/aito/:id', () => { patched(); return HttpResponse.json(project); }));
     const user = userEvent.setup();
     render(<AitoPage />);
-    await user.click(await screen.findByText('ACME SARL'));
+    await openCard(user);
 
     const panel = await screen.findByRole('dialog');
     await user.click(within(panel).getByText('Support GoPro'));
@@ -269,7 +264,7 @@ describe('AitoPage (backend board)', () => {
     server.use(http.patch('/api/v1/aito/:id', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })));
     const user = userEvent.setup();
     render(<AitoPage />);
-    await user.click(await screen.findByText('ACME SARL'));
+    await openCard(user);
 
     const panel = await screen.findByRole('dialog');
     await user.click(within(panel).getByText('Support GoPro'));
@@ -283,7 +278,7 @@ describe('AitoPage (backend board)', () => {
   it('keeps focus in the textarea when the board re-renders mid-edit', async () => {
     const user = userEvent.setup();
     render(<AitoPage />);
-    await user.click(await screen.findByText('ACME SARL'));
+    await openCard(user);
 
     const panel = await screen.findByRole('dialog');
     await user.click(within(panel).getByText('Support GoPro'));

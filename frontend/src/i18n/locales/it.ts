@@ -55,7 +55,7 @@ export default {
     invalidEmail: 'Inserisci un indirizzo email valido.',
     invalidPhone: 'Inserisci tra 4 e 14 cifre.',
     invalidCountryCode: 'Inserisci un prefisso internazionale come +689.',
-    showDetails: 'Mostra dettagli',
+    dragHandle: 'Trascina per riordinare',
     createdLabel: 'Creato',
     lastActivity: 'Ultima attività',
     stage: 'Fase',

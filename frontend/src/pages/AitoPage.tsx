@@ -340,7 +340,12 @@ export function AitoPage() {
   });
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    // A small threshold still earns its keep with a dedicated grip: without any
+    // constraint, a plain click on the grip starts and immediately ends a drag,
+    // which flashes the card to opacity-30 and renders the DragOverlay for a
+    // frame. `computeMoveTarget` returns 'noop' so nothing is persisted — the
+    // cost is purely visual, and 4px removes it while still feeling immediate.
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 

@@ -55,7 +55,7 @@ export default {
     invalidEmail: '유효한 이메일 주소를 입력하세요.',
     invalidPhone: '4~14자리 숫자를 입력하세요.',
     invalidCountryCode: '+689과 같은 국가 번호를 입력하세요.',
-    showDetails: '세부 정보 보기',
+    dragHandle: '드래그하여 순서 변경',
     createdLabel: '생성일',
     lastActivity: '최근 활동',
     stage: '단계',

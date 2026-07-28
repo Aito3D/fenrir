@@ -55,7 +55,7 @@ export default {
     invalidEmail: 'Gib eine gültige E-Mail-Adresse ein.',
     invalidPhone: 'Gib zwischen 4 und 14 Ziffern ein.',
     invalidCountryCode: 'Gib eine Landesvorwahl wie z. B. +689 ein.',
-    showDetails: 'Details anzeigen',
+    dragHandle: 'Ziehen zum Neuordnen',
     createdLabel: 'Erstellt',
     lastActivity: 'Letzte Aktivität',
     stage: 'Phase',
