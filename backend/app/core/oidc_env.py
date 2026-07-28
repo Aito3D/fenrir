@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import os
 
+from pydantic import ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -122,8 +123,19 @@ async def apply_env_oidc_provider(db: AsyncSession) -> None:
         # The same schema the API uses, so env config cannot reach a state the
         # UI would have refused (notably the SEC-1 auto-link check).
         validated = OIDCProviderCreate(**config)
+    except ValidationError as exc:
+        # errors(include_input=False) strips the submitted values -- str(exc)
+        # embeds input_value=... and would leak BAMBUDDY_OIDC_CLIENT_SECRET.
+        logger.error(
+            "BAMBUDDY_OIDC_* config rejected, provider not applied: %s",
+            exc.errors(include_input=False),
+        )
+        return
     except Exception as exc:  # noqa: BLE001 -- any rejection must be survivable
-        logger.error("BAMBUDDY_OIDC_* config rejected, provider not applied: %s", exc)
+        # Log only the exception class, never str(exc): an unexpected error here
+        # could carry a configured value in its message. Structural guarantee,
+        # not one contingent on which exceptions the schema validators raise.
+        logger.error("BAMBUDDY_OIDC_* config could not be applied: %s", type(exc).__name__)
         return
 
     if existing is None:

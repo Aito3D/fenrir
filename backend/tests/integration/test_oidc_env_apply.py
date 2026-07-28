@@ -7,6 +7,8 @@ recreating the provider would silently unlink every account bound to it.
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 from sqlalchemy import select
 
@@ -150,6 +152,48 @@ async def test_an_unsafe_auto_link_config_is_skipped_not_raised(db_session, monk
     await apply_env_oidc_provider(db_session)
 
     assert await _env_provider(db_session) is None
+
+
+@pytest.mark.asyncio
+async def test_a_rejected_config_never_logs_the_client_secret(db_session, monkeypatch, caplog):
+    """client_secret has max_length=512, so an over-long value raises
+    string_too_long. The rejection must be logged without the value: str(exc)
+    embeds input_value=..., which would leak the secret (no-secrets-in-logs)."""
+    secret = "S3CR3T" * 100  # > 512 chars -> ValidationError on client_secret
+    _configure(monkeypatch, BAMBUDDY_OIDC_CLIENT_SECRET=secret)
+
+    with caplog.at_level(logging.ERROR):
+        await apply_env_oidc_provider(db_session)
+
+    assert await _env_provider(db_session) is None  # rejected, not booted-through
+    assert "rejected" in caplog.text  # the rejection was actually logged
+    assert secret not in caplog.text
+    assert "S3CR3T" not in caplog.text  # not even a fragment of the value
+
+
+@pytest.mark.asyncio
+async def test_a_non_validation_error_is_survivable_and_leaks_nothing(db_session, monkeypatch, caplog):
+    """The generic except branch handles anything that isn't a ValidationError
+    (e.g. a library call raising mid-construction). It must not stop boot and,
+    since such a message could carry a configured value, must log only the
+    exception class -- never str(exc)."""
+    # oidc_env imports OIDCProviderCreate inside the function (to avoid an
+    # import cycle), so patch it at its source module, not on oidc_env.
+    import backend.app.schemas.auth as auth_schemas
+
+    def _raise(**_kwargs):
+        raise RuntimeError("boom leaked-secret")
+
+    monkeypatch.setattr(auth_schemas, "OIDCProviderCreate", _raise)
+    _configure(monkeypatch, BAMBUDDY_OIDC_CLIENT_SECRET="leaked-secret")
+
+    with caplog.at_level(logging.ERROR):
+        await apply_env_oidc_provider(db_session)  # must not raise
+
+    assert await _env_provider(db_session) is None
+    assert "could not be applied" in caplog.text
+    assert "RuntimeError" in caplog.text  # class is logged...
+    assert "leaked-secret" not in caplog.text  # ...but nothing from the message
 
 
 @pytest.mark.asyncio
