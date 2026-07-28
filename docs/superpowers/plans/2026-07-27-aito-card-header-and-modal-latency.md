@@ -63,7 +63,7 @@ Verified against `0d4bfd858` (2026-07-27), immediately after the client-input pl
 | `frontend/src/components/ZohoSettings.tsx` | Unprobed passive query; probed Test button |
 | `frontend/src/components/aito/CardView.tsx` | Header / body button / footer; grip; drop phone + chevron |
 | `frontend/src/components/aito/BoardColumn.tsx` | `setActivatorNodeRef` wiring |
-| `frontend/src/pages/AitoPage.tsx` | Drop `activationConstraint` |
+| `frontend/src/pages/AitoPage.tsx` | `activationConstraint` distance 8 → 4 |
 | `frontend/src/index.css` | Two `::view-transition-group` z-index rules |
 | `frontend/src/__tests__/pages/AitoPage.test.tsx` | Update 3 invalidated tests |
 | `frontend/src/i18n/locales/*.ts` (12) | Add `aito.dragHandle`, remove `aito.showDetails` |
