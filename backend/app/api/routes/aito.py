@@ -10,6 +10,7 @@ from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.aito_project import AitoProject
+from backend.app.models.aito_task import AitoTask
 from backend.app.models.user import User
 from backend.app.schemas.aito import (
     AitoProjectCreate,
@@ -17,6 +18,7 @@ from backend.app.schemas.aito import (
     AitoProjectMove,
     AitoProjectResponse,
     AitoProjectUpdate,
+    AitoTaskResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,6 +40,28 @@ def _to_response(p: AitoProject) -> AitoProjectResponse:
         client_is_company=p.client_is_company,
         created_at=p.created_at,
         updated_at=p.updated_at,
+    )
+
+
+def _task_to_response(t: AitoTask) -> AitoTaskResponse:
+    return AitoTaskResponse(
+        id=t.id,
+        project_id=t.project_id,
+        position=t.position,
+        title=t.title,
+        description=t.description,
+        scan_cost=t.scan_cost,
+        modelisation_cost=t.modelisation_cost,
+        usinage_cost=t.usinage_cost,
+        impression_printer_id=t.impression_printer_id,
+        impression_filament_id=t.impression_filament_id,
+        impression_weight_g=t.impression_weight_g,
+        impression_time_min=t.impression_time_min,
+        impression_quantity=t.impression_quantity,
+        impression_color=t.impression_color,
+        impression_cost=t.impression_cost,
+        created_at=t.created_at,
+        updated_at=t.updated_at,
     )
 
 
@@ -98,9 +122,24 @@ async def create_project(
         client_is_company=payload.client_is_company,
     )
     db.add(project)
+    # Flush so the project has an id the tasks can reference; one commit still
+    # covers both, so a failure creates neither.
+    await db.flush()
+    for position, task_payload in enumerate(payload.tasks):
+        db.add(AitoTask(project_id=project.id, position=position, **task_payload.model_dump()))
     await db.commit()
     await db.refresh(project)
     return _to_response(project)
+
+
+@router.get("/{project_id}/tasks", response_model=list[AitoTaskResponse])
+async def list_tasks(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+):
+    stmt = select(AitoTask).where(AitoTask.project_id == project_id).order_by(AitoTask.position, AitoTask.id)
+    return [_task_to_response(t) for t in (await db.execute(stmt)).scalars().all()]
 
 
 @router.post("/import", response_model=list[AitoProjectResponse], status_code=201)

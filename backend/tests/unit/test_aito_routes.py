@@ -261,3 +261,47 @@ async def test_update_project_writes_and_clears_client_is_company(async_client):
 
     r = await async_client.patch(f"/api/v1/aito/{project_id}", json={"description": "Autre pièce"})
     assert r.json()["client_is_company"] is None
+
+
+def _task(**overrides):
+    payload = {"title": "Boîtier", "scan_cost": 4000.0}
+    payload.update(overrides)
+    return payload
+
+
+@pytest.mark.asyncio
+async def test_create_project_with_tasks_creates_them_in_order(async_client):
+    r = await _create(
+        async_client,
+        tasks=[_task(title="Un"), _task(title="Deux", scan_cost=None, usinage_cost=12000.0)],
+    )
+    assert r.status_code == 201
+    project_id = r.json()["id"]
+
+    tasks = (await async_client.get(f"/api/v1/aito/{project_id}/tasks")).json()
+    assert [t["title"] for t in tasks] == ["Un", "Deux"]
+    assert [t["position"] for t in tasks] == [0, 1]
+    assert tasks[1]["scan_cost"] is None
+    assert tasks[1]["usinage_cost"] == 12000.0
+
+
+@pytest.mark.asyncio
+async def test_create_project_without_tasks_is_still_valid(async_client):
+    r = await _create(async_client)
+    assert r.status_code == 201
+    assert (await async_client.get(f"/api/v1/aito/{r.json()['id']}/tasks")).json() == []
+
+
+@pytest.mark.asyncio
+async def test_project_list_does_not_include_tasks(async_client):
+    """GET /aito/ drives the whole board and is refetched on every WebSocket
+    invalidation; loading every task of every card would bloat it."""
+    await _create(async_client, tasks=[_task()])
+    body = (await async_client.get("/api/v1/aito/")).json()
+    assert "tasks" not in body[0]
+
+
+@pytest.mark.asyncio
+async def test_create_project_rejects_a_negative_cost(async_client):
+    r = await _create(async_client, tasks=[_task(scan_cost=-1)])
+    assert r.status_code == 422

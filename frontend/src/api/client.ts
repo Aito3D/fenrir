@@ -3442,6 +3442,29 @@ export interface AitoProjectUpdate {
   client_is_company?: boolean | null;
 }
 
+export interface AitoTask {
+  id: number;
+  project_id: number;
+  position: number;
+  title: string | null;
+  description: string | null;
+  scan_cost: number | null;
+  modelisation_cost: number | null;
+  usinage_cost: number | null;
+  impression_printer_id: number | null;
+  impression_filament_id: number | null;
+  impression_weight_g: number | null;
+  impression_time_min: number | null;
+  impression_quantity: number | null;
+  impression_color: string | null;
+  impression_cost: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type AitoTaskCreate = Omit<AitoTask, 'id' | 'project_id' | 'position' | 'created_at' | 'updated_at'>;
+export type AitoTaskUpdate = Partial<AitoTaskCreate>;
+
 // Zoho Books integration
 export interface ZohoContact {
   id: string;
@@ -6196,6 +6219,7 @@ export const api = {
     client_phone?: string | null;
     client_email?: string | null;
     client_is_company?: boolean | null;
+    tasks?: AitoTaskCreate[];
   }) =>
     request<AitoProject>('/aito/', {
       method: 'POST',
@@ -6206,6 +6230,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  getAitoTasks: (projectId: number) => request<AitoTask[]>(`/aito/${projectId}/tasks`),
   moveAitoProject: (id: number, data: { column: AitoColumnId; position: number }) =>
     request<AitoProject>(`/aito/${id}/move`, {
       method: 'PATCH',
