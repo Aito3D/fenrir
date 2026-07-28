@@ -105,6 +105,25 @@ class TestLeftAuxFanParsing:
         mqtt_client._update_state(_airduct_device(parts))
         assert mqtt_client.state.left_aux_fan_speed == 100
 
+    def test_packed_state_decodes_from_low_8_bits(self, mqtt_client):
+        """`state` is bit-packed like its sibling `range` (end << 16 | start).
+
+        Bambu Studio decodes it with get_flag_bits(state, 0, 8), so only the low
+        byte carries the percentage. Without the mask a packed value would clamp
+        to 100 instead of decoding to the real speed.
+        """
+        packed = (60 << 16) | 45  # sibling field in the high bits, 45% in the low byte
+        parts = [{"func": 5, "id": 160, "range": 6553600, "state": packed, "tar_state": 0}]
+        mqtt_client._update_state(_airduct_device(parts))
+        assert mqtt_client.state.left_aux_fan_speed == 45
+
+    def test_unpacked_state_is_unaffected_by_the_mask(self, mqtt_client):
+        # Plain 0-100 values (what a P2S actually sends) must round-trip exactly.
+        for speed in (0, 30, 80, 100):
+            parts = [{"func": 5, "id": 160, "range": 6553600, "state": speed, "tar_state": speed}]
+            mqtt_client._update_state(_airduct_device(parts))
+            assert mqtt_client.state.left_aux_fan_speed == speed
+
     def test_malformed_part_entries_ignored(self, mqtt_client):
         parts = [
             "not-a-dict",

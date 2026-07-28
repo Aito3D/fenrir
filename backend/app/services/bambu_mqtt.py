@@ -3245,7 +3245,13 @@ class BambuMQTTClient:
                             continue
                         try:
                             part_id = int(part["id"]) >> 4
-                            part_state = int(part["state"])
+                            # `state` is bit-packed like its sibling `range`
+                            # (end << 16 | start), so take only the low 8 bits —
+                            # the same decode Bambu Studio does with
+                            # get_flag_bits(state, 0, 8). Without the mask a
+                            # packed value would clamp to 100 instead of
+                            # decoding to the real percentage.
+                            part_state = int(part["state"]) & 0xFF
                         except (KeyError, ValueError, TypeError):
                             continue
                         if part_id == 10:

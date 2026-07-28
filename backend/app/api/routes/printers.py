@@ -64,6 +64,7 @@ from backend.app.services.printer_manager import (
 )
 from backend.app.utils.filament_ids import filament_id_to_setting_id
 from backend.app.utils.http import build_content_disposition
+from backend.app.utils.printer_models import uses_exhaust_fan_label
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["printers"])
@@ -3229,8 +3230,6 @@ async def set_fan_speed(
     # The enclosure fan is called "Exhaust" on P2S/X2D and "Chamber" elsewhere;
     # match whatever the printer card badge shows so the toast agrees with the
     # control the user just clicked.
-    from backend.app.utils.printer_models import uses_exhaust_fan_label
-
     fan_names = {
         "part": "Part cooling fan",
         "aux": "Auxiliary fan",
