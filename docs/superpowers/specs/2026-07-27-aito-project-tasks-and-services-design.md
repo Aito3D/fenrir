@@ -10,8 +10,9 @@ description, and four optional **services**: Scan3D, Modelisation3D,
 Impression3D and Usinage. An empty service is a disabled one.
 
 Scan3D, Modelisation3D and Usinage each take a single cost. Impression3D takes
-printer, material, weight, print time and colour, and computes its cost through
-the existing pricing engine — the same algorithm the calculator page uses.
+printer, material, weight, print time, colour and quantity, and computes its
+cost through the existing pricing engine — the same algorithm the calculator
+page uses.
 
 Tasks are built in the create-project modal, saved with the project, and are
 fully editable from the detail panel afterwards.
@@ -104,7 +105,7 @@ aito_tasks
 
 Four services as columns rather than a `task_services` child table: the set is
 **fixed and known**, so an EAV table would add a join and a `service`
-discriminator to model something that never varies — and Impression3D's five
+discriminator to model something that never varies — and Impression3D's six
 inputs do not fit the shape the other three would need.
 
 `impression_printer_id` and `impression_filament_id` are plain integers, **not
