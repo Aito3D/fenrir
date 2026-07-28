@@ -8,6 +8,57 @@ import { NewProjectModal } from '../../components/aito/NewProjectModal';
 
 const DEFAULT_ID = '66407000001237340';
 
+// The modal now renders TaskEditor unconditionally under the description
+// field, and every TaskRow renders ImpressionFields, which always queries
+// these three endpoints regardless of whether a test touches Impression3D.
+// Mocked globally (mirrors TaskEditor.test.tsx) so every test in this file
+// gets deterministic, non-empty option lists instead of racing an unhandled
+// request.
+const mockFilaments = [
+  {
+    id: 1,
+    name: 'Sunlu PA6-CF',
+    brand: 'Sunlu',
+    material: 'PA6-CF',
+    cost_per_kg: 3731,
+    sale_price_per_kg: 5597,
+    difficulty_pct: 150,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  },
+];
+
+const mockPrinters = [
+  {
+    id: 1,
+    name: 'H2S',
+    purchase_price: 347000,
+    lifetime_years: 2,
+    daily_usage_hours: 5,
+    power_watts: 400,
+    repair_rate_pct: 30,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  },
+];
+
+const mockDefaults = {
+  id: 1,
+  electricity_tariff: 120,
+  labor_rate_per_hour: 3000,
+  consumables_packaging_flat: 30,
+  failure_rate_pct: 30,
+  prototype_rate_pct: 30,
+  ads_rate_pct: 5,
+  filament_markup_pct: 5,
+  global_markup_pct: 50,
+  tax_pct: 13,
+  default_difficulty_pct: 100,
+  default_margin_over_cost_pct: 50,
+  stuff_markup_pct: 20,
+  updated_at: '2026-01-01T00:00:00Z',
+};
+
 beforeEach(() => {
   server.use(
     http.get('/api/v1/zoho/status', () =>
@@ -17,6 +68,9 @@ beforeEach(() => {
       }),
     ),
     http.get('/api/v1/zoho/contacts', () => HttpResponse.json([])),
+    http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(mockFilaments)),
+    http.get('/api/v1/calculator/printers/', () => HttpResponse.json(mockPrinters)),
+    http.get('/api/v1/calculator/defaults', () => HttpResponse.json(mockDefaults)),
   );
 });
 
@@ -33,6 +87,28 @@ describe('NewProjectModal', () => {
     expect(onCreate).toHaveBeenCalledWith(
       'Support de caméra',
       expect.objectContaining({ id: DEFAULT_ID, isDefault: true }),
+      [],
+    );
+  });
+
+  it('adds a task and includes its Scan3D cost in the tasks array passed to onCreate', async () => {
+    const onCreate = vi.fn();
+    const user = userEvent.setup();
+    render(<NewProjectModal onClose={vi.fn()} onCreate={onCreate} />);
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: /client/i })).toHaveValue('Client de passage'),
+    );
+    await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
+
+    await user.click(screen.getByRole('button', { name: /add task/i }));
+    fireEvent.change(screen.getByLabelText('Scan3D'), { target: { value: '42' } });
+
+    await user.click(screen.getByRole('button', { name: /create project/i }));
+
+    expect(onCreate).toHaveBeenCalledWith(
+      'Support de caméra',
+      expect.objectContaining({ id: DEFAULT_ID, isDefault: true }),
+      [expect.objectContaining({ scanCost: 42 })],
     );
   });
 

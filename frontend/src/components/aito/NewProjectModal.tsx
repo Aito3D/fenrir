@@ -7,13 +7,15 @@ import type { ZohoContact } from '../../api/client';
 import { Button } from '../Button';
 import { ClientSection } from './ClientSection';
 import { NewContactForm } from './NewContactForm';
+import { TaskEditor } from './TaskEditor';
 import { defaultClientDraft, draftFromContact, visibleClientDraftErrors } from '../../utils/clientDraft';
 import type { ClientDraft } from '../../utils/clientDraft';
+import type { TaskDraft } from '../../utils/taskDraft';
 import { inputCls, labelCls } from '../formStyles';
 
 export interface NewProjectModalProps {
   onClose: () => void;
-  onCreate: (description: string, draft: ClientDraft) => void;
+  onCreate: (description: string, draft: ClientDraft, tasks: TaskDraft[]) => void;
 }
 
 /** Two-view modal: the project form, and a create-client sub-step that slides
@@ -27,6 +29,7 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
   // seed for the company field". The company field starts empty now, so this is
   // only ever the former.
   const [creatingClient, setCreatingClient] = useState(false);
+  const [tasks, setTasks] = useState<TaskDraft[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const statusQuery = useQuery({
@@ -82,7 +85,7 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
     setDraft(revealed);
     const revealedErrors = visibleClientDraftErrors(revealed);
     if (description.trim().length === 0 || revealedErrors.phone !== null || revealedErrors.email !== null) return;
-    onCreate(description.trim(), draft);
+    onCreate(description.trim(), draft, tasks);
   };
 
   const onClientCreated = (contact: ZohoContact) => {
@@ -151,6 +154,11 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
                   className={`${inputCls} resize-none`}
                 />
               </div>
+              <TaskEditor
+                value={tasks}
+                onChange={setTasks}
+                onRemove={(index) => setTasks(tasks.filter((_, i) => i !== index))}
+              />
             </div>
 
             <div className="p-4 border-t border-bambu-dark-tertiary flex justify-end gap-2 flex-shrink-0">

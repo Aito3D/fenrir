@@ -28,6 +28,7 @@ import { useToast } from '../contexts/ToastContext';
 import { formatElapsedTime } from '../utils/date';
 import { formatPhone } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
+import type { TaskDraft } from '../utils/taskDraft';
 import { prefersReducedMotion } from '../utils/motion';
 import { useCardMorph } from '../hooks/useCardMorph';
 import {
@@ -313,7 +314,7 @@ export function AitoPage() {
   };
 
   const createMutation = useMutation({
-    mutationFn: ({ description, draft }: { description: string; draft: ClientDraft }) =>
+    mutationFn: ({ description, draft, tasks }: { description: string; draft: ClientDraft; tasks: TaskDraft[] }) =>
       api.createAitoProject({
         description,
         client_id: draft.id,
@@ -321,6 +322,20 @@ export function AitoPage() {
         client_phone: formatPhone(draft) || null,
         client_email: draft.email.trim() || null,
         client_is_company: draft.isCompany,
+        tasks: tasks.map((t) => ({
+          title: t.title.trim() || null,
+          description: t.description.trim() || null,
+          scan_cost: t.scanCost,
+          modelisation_cost: t.modelisationCost,
+          usinage_cost: t.usinageCost,
+          impression_printer_id: t.impression.printerId,
+          impression_filament_id: t.impression.filamentId,
+          impression_weight_g: t.impression.weightG,
+          impression_time_min: t.impression.timeMin,
+          impression_quantity: t.impression.quantity,
+          impression_color: t.impression.color.trim() || null,
+          impression_cost: t.impressionCost,
+        })),
       }),
     onSuccess: (_data, { draft }) => {
       queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
@@ -431,8 +446,8 @@ export function AitoPage() {
     });
   };
 
-  const createProject = (description: string, draft: ClientDraft) => {
-    createMutation.mutate({ description, draft });
+  const createProject = (description: string, draft: ClientDraft, tasks: TaskDraft[]) => {
+    createMutation.mutate({ description, draft, tasks });
   };
 
   // While dragging, highlight the column currently holding the active card
