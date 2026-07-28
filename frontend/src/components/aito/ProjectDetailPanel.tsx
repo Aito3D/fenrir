@@ -127,6 +127,25 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
   // without edits must cost nothing.
   const tasksDirtyRef = useRef(false);
 
+  // "The panel closed" and "the last task PATCH landed" are two independent
+  // events and either can happen first — typing `4000` fires four PATCHes and
+  // closing immediately leaves some of them in flight. The board must be
+  // refreshed on whichever happens *last*, because:
+  //   - refreshing while a PATCH is still open races it: the GET and the PATCH
+  //     have no ordering guarantee, and a GET served first writes a
+  //     pre-PATCH total into the card that nothing corrects (staleTime is 60s
+  //     app-wide, so only a drag/create/delete/remount would fix it);
+  //   - refreshing on the dirty flag alone misses the mirror case, where the
+  //     one PATCH is still open at close so nothing was "saved" yet and the
+  //     card keeps its pre-edit total forever.
+  // Hence the counter: `onSettled` below owns the close-first case, the
+  // unmount effect at the bottom of this component owns the settle-first one,
+  // and both require the same two conditions (closed, nothing in flight) so
+  // exactly one of them fires. Neither can fire while the panel is open, which
+  // is what keeps per-keystroke edits off the board.
+  const closedRef = useRef(false);
+  const inFlightTaskPatches = useRef(0);
+
   useEffect(() => {
     if (!tasksQuery.data) return;
     setTasks(tasksQuery.data.map(taskDraftFromAitoTask));
@@ -135,6 +154,9 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
 
   const updateTaskMutation = useMutation({
     mutationFn: ({ id, patch }: { id: number; patch: AitoTaskUpdate }) => api.updateAitoTask(id, patch),
+    onMutate: () => {
+      inFlightTaskPatches.current += 1;
+    },
     onSuccess: (updatedTask) => {
       // Advance the diff baseline for this row only, without touching the
       // query cache: without this, `baselineRef` stays frozen at initial
@@ -145,6 +167,16 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
       tasksDirtyRef.current = true;
     },
     onError: () => showToast(t('aito.saveFailed'), 'error'),
+    // These are mutation-level callbacks, so React Query still runs them after
+    // this component unmounts (unlike the per-call callbacks passed to
+    // `mutate`) — which is the whole point: the write that lands *after* the
+    // panel closed is the one that has to trigger the refresh.
+    onSettled: () => {
+      inFlightTaskPatches.current -= 1;
+      if (closedRef.current && inFlightTaskPatches.current === 0 && tasksDirtyRef.current) {
+        queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+      }
+    },
   });
 
   // Adding or removing a task changes the card's count, total and badge set,
@@ -264,7 +296,13 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
 
   useEffect(
     () => () => {
-      if (tasksDirtyRef.current) queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+      closedRef.current = true;
+      // Only when every PATCH has already landed. If any is still open, the
+      // refresh is `onSettled`'s job (see the counter's comment above):
+      // invalidating now would race the write it is supposed to reflect.
+      if (tasksDirtyRef.current && inFlightTaskPatches.current === 0) {
+        queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+      }
     },
     // Deliberately empty: this must fire exactly once, when the panel closes.
     // queryClient is a stable singleton from the provider.

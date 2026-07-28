@@ -647,6 +647,100 @@ describe('ProjectDetailPanel tasks', () => {
     await waitFor(() => expect(boardFetches).toHaveBeenCalled());
   });
 
+  it('closing with a PATCH still in flight waits for it before refreshing the board', async () => {
+    // Race the "refresh once, on close" deferral used to lose. Task fields
+    // PATCH per keystroke, so typing `4000` fires four of them; an earlier one
+    // has already landed (the panel is "dirty") while a later one is still
+    // open when the user closes. Invalidating on the dirty flag alone fires
+    // the board GET concurrently with that open PATCH, with no ordering
+    // guarantee — served first, the GET writes a pre-PATCH total into the
+    // card, and staleTime (60s, App.tsx) means nothing corrects it.
+    const boardFetches = vi.fn();
+    const bodies: Record<string, unknown>[] = [];
+    let releaseSecondPatch: (task: AitoTask) => void = () => {};
+    const secondPatch = new Promise<AitoTask>((resolve) => {
+      releaseSecondPatch = resolve;
+    });
+    server.use(
+      http.get('/api/v1/aito/', () => {
+        boardFetches();
+        return HttpResponse.json([]);
+      }),
+      http.patch('/api/v1/aito/tasks/:id', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        bodies.push(body);
+        if (bodies.length === 1) return HttpResponse.json({ ...mockTask, ...body });
+        const base = await secondPatch; // held open until this test releases it
+        return HttpResponse.json({ ...base, ...body });
+      }),
+    );
+    const { rerender } = render(<BoardHost showPanel />);
+    await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
+
+    const scan = await screen.findByLabelText('Scan3D');
+
+    // Keystroke 1: PATCH fires and lands, so the panel is now dirty.
+    fireEvent.change(scan, { target: { value: '700' } });
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    // Keystroke 2: PATCH fires and stays open.
+    fireEvent.change(scan, { target: { value: '900' } });
+    await waitFor(() => expect(bodies).toHaveLength(2));
+
+    boardFetches.mockClear();
+    rerender(<BoardHost showPanel={false} />);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    // The write this refresh is meant to reflect has not landed yet.
+    expect(boardFetches).not.toHaveBeenCalled();
+
+    releaseSecondPatch({ ...mockTask, scan_cost: 900 });
+    await waitFor(() => expect(boardFetches).toHaveBeenCalled());
+  });
+
+  it('refreshes the board when the only PATCH lands after the panel already closed', async () => {
+    // The mirror case: one keystroke, closed before its PATCH returns. Nothing
+    // has been saved at unmount, so a dirty-flag-only trigger never fires at
+    // all and the card keeps its pre-edit total until something else
+    // invalidates the board. The late-landing write must still refresh it.
+    const boardFetches = vi.fn();
+    const bodies: Record<string, unknown>[] = [];
+    let releasePatch: (task: AitoTask) => void = () => {};
+    const heldPatch = new Promise<AitoTask>((resolve) => {
+      releasePatch = resolve;
+    });
+    server.use(
+      http.get('/api/v1/aito/', () => {
+        boardFetches();
+        return HttpResponse.json([]);
+      }),
+      http.patch('/api/v1/aito/tasks/:id', async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json(await heldPatch);
+      }),
+    );
+    const { rerender } = render(<BoardHost showPanel />);
+    await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
+
+    const scan = await screen.findByLabelText('Scan3D');
+    fireEvent.change(scan, { target: { value: '700' } });
+    await waitFor(() => expect(bodies).toHaveLength(1));
+
+    boardFetches.mockClear();
+    rerender(<BoardHost showPanel={false} />);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(boardFetches).not.toHaveBeenCalled();
+
+    releasePatch({ ...mockTask, scan_cost: 700 });
+    await waitFor(() => expect(boardFetches).toHaveBeenCalled());
+  });
+
   it('does NOT refresh the board on close when no task was edited', async () => {
     const boardFetches = vi.fn();
     server.use(
