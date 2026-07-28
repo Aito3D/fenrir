@@ -69,6 +69,8 @@ export default {
     saved: 'Salvo',
     saveFailed: 'Não foi possível salvar suas alterações. Tente novamente.',
     tasks: 'Tarefas',
+    taskCount_one: '{{count}} tarefa',
+    taskCount_other: '{{count}} tarefas',
     addTask: 'Adicionar tarefa',
     taskFallbackName: 'Tarefa {{n}}',
     taskTitlePlaceholder: 'Título (opcional)',

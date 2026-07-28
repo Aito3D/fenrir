@@ -69,6 +69,8 @@ export default {
     saved: 'Enregistré',
     saveFailed: 'Impossible d’enregistrer vos modifications. Veuillez réessayer.',
     tasks: 'Tâches',
+    taskCount_one: '{{count}} tâche',
+    taskCount_other: '{{count}} tâches',
     addTask: 'Ajouter une tâche',
     taskFallbackName: 'Tâche {{n}}',
     taskTitlePlaceholder: 'Titre (facultatif)',

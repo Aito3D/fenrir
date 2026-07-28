@@ -69,6 +69,8 @@ export default {
     saved: '已儲存',
     saveFailed: '無法儲存變更，請重試。',
     tasks: '任務',
+    taskCount_one: '{{count}} 項任務',
+    taskCount_other: '{{count}} 項任務',
     addTask: '新增任務',
     taskFallbackName: '任務 {{n}}',
     taskTitlePlaceholder: '標題（可選）',

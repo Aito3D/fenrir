@@ -3429,6 +3429,11 @@ export interface AitoProject {
   client_phone: string | null;
   client_email: string | null;
   client_is_company: boolean | null;
+  /** Aggregates over the project's tasks — see the Aito board response. The
+   *  board never ships task rows themselves. */
+  task_count: number;
+  tasks_total: number;
+  task_services: string[];
   created_at: string;
   updated_at: string;
 }

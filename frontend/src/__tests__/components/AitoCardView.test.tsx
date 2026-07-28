@@ -15,6 +15,10 @@ const project: AitoProject = {
   client_name: 'ACME SARL',
   client_phone: '+689-87123456',
   client_email: 'hi@acme.pf',
+  client_is_company: null,
+  task_count: 0,
+  tasks_total: 0,
+  task_services: [],
   created_at: '2026-07-27T00:00:00',
   updated_at: '2026-07-27T00:00:00',
 };
@@ -67,5 +71,47 @@ describe('CardView', () => {
   it('renders a static grip with no button in the drag overlay', () => {
     render(<CardView project={project} overlay />);
     expect(screen.queryByRole('button', { name: /drag|glisser/i })).not.toBeInTheDocument();
+  });
+
+  it('shows a badge per enabled service, the task count and the total', async () => {
+    render(
+      <CardView
+        project={{ ...project, task_count: 2, tasks_total: 20200, task_services: ['modelisation', 'impression'] }}
+        onExpand={vi.fn()}
+      />,
+    );
+    expect(await screen.findByText('Modelisation3D')).toBeInTheDocument();
+    expect(screen.getByText('Impression3D')).toBeInTheDocument();
+    expect(screen.queryByText('Scan3D')).not.toBeInTheDocument();
+    expect(screen.getByText(/2 tasks|2 tâches/i)).toBeInTheDocument();
+    // Matched on the digits, not the whole formatted string: the currency and
+    // separators come from formatMoney and the settings stub, and pinning them
+    // here would make this a test of formatMoney.
+    expect(screen.getByText(/20[,\s.]?200/)).toBeInTheDocument();
+  });
+
+  it('renders no summary row at all for a project with no tasks', () => {
+    render(
+      <CardView
+        project={{ ...project, task_count: 0, tasks_total: 0, task_services: [] }}
+        onExpand={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/0 tasks|0 tâches/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Scan3D')).not.toBeInTheDocument();
+    expect(screen.queryByText('Impression3D')).not.toBeInTheDocument();
+  });
+
+  it('keeps the summary inside the body button, so it opens the panel', async () => {
+    const onExpand = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <CardView
+        project={{ ...project, task_count: 1, tasks_total: 4000, task_services: ['scan'] }}
+        onExpand={onExpand}
+      />,
+    );
+    await user.click(await screen.findByText('Scan3D'));
+    expect(onExpand).toHaveBeenCalledTimes(1);
   });
 });

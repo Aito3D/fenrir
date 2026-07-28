@@ -18,6 +18,11 @@ const card = (id: number, column: AitoProject['column'], position: number): Aito
   client_id: null,
   client_name: null,
   client_phone: null,
+  client_email: null,
+  client_is_company: null,
+  task_count: 0,
+  tasks_total: 0,
+  task_services: [],
   created_at: '2026-07-01T10:00:00Z',
   updated_at: '2026-07-01T10:00:00Z',
 });

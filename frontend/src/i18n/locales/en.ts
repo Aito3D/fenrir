@@ -69,6 +69,8 @@ export default {
     saved: 'Saved',
     saveFailed: 'Could not save your changes. Please try again.',
     tasks: 'Tasks',
+    taskCount_one: '{{count}} task',
+    taskCount_other: '{{count}} tasks',
     addTask: 'Add task',
     taskFallbackName: 'Task {{n}}',
     taskTitlePlaceholder: 'Optional title',

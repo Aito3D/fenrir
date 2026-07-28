@@ -69,6 +69,8 @@ export default {
     saved: 'Сохранено',
     saveFailed: 'Не удалось сохранить изменения. Попробуйте ещё раз.',
     tasks: 'Задачи',
+    taskCount_one: '{{count}} задача',
+    taskCount_other: '{{count}} задач',
     addTask: 'Добавить задачу',
     taskFallbackName: 'Задача {{n}}',
     taskTitlePlaceholder: 'Заголовок (необязательно)',

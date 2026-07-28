@@ -69,6 +69,8 @@ export default {
     saved: '저장됨',
     saveFailed: '변경 사항을 저장하지 못했습니다. 다시 시도해 주세요.',
     tasks: '작업',
+    taskCount_one: '작업 {{count}}개',
+    taskCount_other: '작업 {{count}}개',
     addTask: '작업 추가',
     taskFallbackName: '작업 {{n}}',
     taskTitlePlaceholder: '제목 (선택사항)',

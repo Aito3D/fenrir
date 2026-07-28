@@ -18,6 +18,9 @@ const project: AitoProject = {
   client_phone: '+689-87123456',
   client_email: 'hi@acme.pf',
   client_is_company: true,
+  task_count: 0,
+  tasks_total: 0,
+  task_services: [],
   created_at: '2026-07-27T00:00:00',
   updated_at: '2026-07-27T00:00:00',
 };
