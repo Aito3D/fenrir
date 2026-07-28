@@ -3681,6 +3681,7 @@ export default {
     noPermissionRenameFolder: 'Non hai il permesso di rinominare cartelle',
     noPermissionLinkFolder: 'Non hai il permesso di collegare cartelle',
     noPermissionDeleteFolder: 'Non hai il permesso di eliminare cartelle',
+    onlyEmptyFoldersDeletable: 'Puoi eliminare solo cartelle vuote',
     noPermissionPrint: 'Non hai il permesso di stampare',
     noPermissionSlice: 'Non hai il permesso di sezionare i file',
     noPermissionAddToQueue: 'Non hai il permesso di aggiungere alla coda',

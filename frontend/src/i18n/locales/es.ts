@@ -3696,6 +3696,7 @@ export default {
     noPermissionRenameFolder: 'No tiene permiso para renombrar carpetas',
     noPermissionLinkFolder: 'No tiene permiso para vincular carpetas',
     noPermissionDeleteFolder: 'No tiene permiso para eliminar carpetas',
+    onlyEmptyFoldersDeletable: 'Solo puede eliminar carpetas vacías',
     noPermissionPrint: 'No tiene permiso para imprimir',
     noPermissionAddToQueue: 'No tiene permiso para añadir a la cola',
     noPermissionSlice: 'No tiene permiso para laminar archivos',

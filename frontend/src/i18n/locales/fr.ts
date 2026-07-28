@@ -3682,6 +3682,7 @@ export default {
     noPermissionRenameFolder: 'Pas d\'autorisation renommage',
     noPermissionLinkFolder: 'Pas d\'autorisation lien',
     noPermissionDeleteFolder: 'Pas d\'autorisation suppression dossier',
+    onlyEmptyFoldersDeletable: 'Vous ne pouvez supprimer que les dossiers vides',
     noPermissionPrint: 'Pas d\'autorisation impression',
     noPermissionSlice: 'Vous n\'avez pas la permission de découper des fichiers',
     noPermissionAddToQueue: 'Pas d\'autorisation file',

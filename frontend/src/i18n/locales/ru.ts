@@ -3497,6 +3497,7 @@ export default {
     noPermissionRenameFolder: "У вас нет прав на переименование папок",
     noPermissionLinkFolder: "У вас нет прав на связывание папок",
     noPermissionDeleteFolder: "У вас нет прав на удаление папок",
+    onlyEmptyFoldersDeletable: "Вы можете удалять только пустые папки",
     noPermissionPrint: "У вас нет прав на запуск печати",
     noPermissionAddToQueue: "У вас нет прав на добавление в очередь",
     noPermissionSlice: "У вас нет прав на нарезку файлов",

@@ -3505,6 +3505,7 @@ export default {
     noPermissionRenameFolder: '폴더 이름 변경 권한이 없습니다',
     noPermissionLinkFolder: '폴더 연결 권한이 없습니다',
     noPermissionDeleteFolder: '폴더 삭제 권한이 없습니다',
+    onlyEmptyFoldersDeletable: '빈 폴더만 삭제할 수 있습니다',
     noPermissionPrint: '인쇄 권한이 없습니다',
     noPermissionAddToQueue: '대기열 추가 권한이 없습니다',
     noPermissionSlice: '파일 슬라이싱 권한이 없습니다',

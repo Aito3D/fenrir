@@ -3693,6 +3693,7 @@ export default {
     noPermissionRenameFolder: 'フォルダー名を変更する権限がありません',
     noPermissionLinkFolder: 'フォルダーをリンクする権限がありません',
     noPermissionDeleteFolder: 'フォルダーを削除する権限がありません',
+    onlyEmptyFoldersDeletable: '空のフォルダーのみ削除できます',
     noPermissionPrint: '印刷する権限がありません',
     noPermissionSlice: 'ファイルをスライスする権限がありません',
     noPermissionAddToQueue: 'キューに追加する権限がありません',

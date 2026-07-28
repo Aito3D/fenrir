@@ -3681,6 +3681,7 @@ export default {
     noPermissionRenameFolder: '您沒有重新命名資料夾的權限',
     noPermissionLinkFolder: '您沒有連結資料夾的權限',
     noPermissionDeleteFolder: '您沒有刪除資料夾的權限',
+    onlyEmptyFoldersDeletable: '您只能刪除空資料夾',
     noPermissionPrint: '您沒有列印的權限',
     noPermissionSlice: '您沒有切片檔案的權限',
     noPermissionAddToQueue: '您沒有新增到佇列的權限',

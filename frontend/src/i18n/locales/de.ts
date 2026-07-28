@@ -3693,6 +3693,7 @@ export default {
     noPermissionRenameFolder: 'Sie haben keine Berechtigung, Ordner umzubenennen',
     noPermissionLinkFolder: 'Sie haben keine Berechtigung, Ordner zu verknüpfen',
     noPermissionDeleteFolder: 'Sie haben keine Berechtigung, Ordner zu löschen',
+    onlyEmptyFoldersDeletable: 'Sie können nur leere Ordner löschen',
     noPermissionPrint: 'Sie haben keine Berechtigung zum Drucken',
     noPermissionSlice: 'Sie haben keine Berechtigung, Dateien zu slicen',
     noPermissionAddToQueue: 'Sie haben keine Berechtigung, zur Warteschlange hinzuzufügen',

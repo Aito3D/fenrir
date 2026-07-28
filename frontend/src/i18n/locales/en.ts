@@ -3722,6 +3722,7 @@ export default {
     noPermissionRenameFolder: 'You do not have permission to rename folders',
     noPermissionLinkFolder: 'You do not have permission to link folders',
     noPermissionDeleteFolder: 'You do not have permission to delete folders',
+    onlyEmptyFoldersDeletable: 'You can only delete empty folders',
     noPermissionPrint: 'You do not have permission to print',
     noPermissionAddToQueue: 'You do not have permission to add to queue',
     noPermissionSlice: 'You do not have permission to slice files',

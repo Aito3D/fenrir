@@ -3689,6 +3689,7 @@ export default {
     noPermissionRenameFolder: 'Klasörleri yeniden adlandırma izniniz yok',
     noPermissionLinkFolder: 'Klasörleri bağlama izniniz yok',
     noPermissionDeleteFolder: 'Klasörleri silme izniniz yok',
+    onlyEmptyFoldersDeletable: 'Yalnızca boş klasörleri silebilirsiniz',
     noPermissionPrint: 'Yazdırma izniniz yok',
     noPermissionAddToQueue: 'Kuyruğa ekleme izniniz yok',
     noPermissionSlice: 'Dosyaları dilimleme izniniz yok',

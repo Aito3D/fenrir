@@ -3681,6 +3681,7 @@ export default {
     noPermissionRenameFolder: 'Você não tem permissão para renomear pastas',
     noPermissionLinkFolder: 'Você não tem permissão para vincular pastas',
     noPermissionDeleteFolder: 'Você não tem permissão para excluir pastas',
+    onlyEmptyFoldersDeletable: 'Você só pode excluir pastas vazias',
     noPermissionPrint: 'Você não tem permissão para imprimir',
     noPermissionSlice: 'Você não tem permissão para fatiar arquivos',
     noPermissionAddToQueue: 'Você não tem permissão para adicionar à fila',
