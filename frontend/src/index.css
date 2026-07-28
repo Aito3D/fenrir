@@ -713,6 +713,18 @@ html[data-vt='aito-card']::view-transition-new(page-title) {
   animation-duration: 350ms;
   animation-timing-function: var(--ease-signature);
 }
+/* Paint order for the card morph. Without an explicit z-index the browser falls
+   back to capture order, and on OPEN that order is wrong: `aito-card` already
+   exists in the old state (as the board card) and is captured first, while
+   `aito-backdrop` is new and appended after it — so the darkening backdrop
+   would paint over the morphing card for the whole 350ms and the panel would
+   snap to full brightness only when the real DOM took over. */
+::view-transition-group(aito-backdrop) {
+  z-index: 0;
+}
+::view-transition-group(aito-card) {
+  z-index: 1;
+}
 /* The backdrop is new in the post-transition state and has nothing to morph
    from, so it gets its own group and a plain fade. */
 ::view-transition-new(aito-backdrop) {
