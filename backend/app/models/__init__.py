@@ -1,4 +1,5 @@
 from backend.app.models.aito_project import AitoProject
+from backend.app.models.aito_task import AitoTask
 from backend.app.models.ams_history import AMSSensorHistory
 from backend.app.models.ams_label import AmsLabel
 from backend.app.models.api_key import APIKey
@@ -43,6 +44,7 @@ from backend.app.models.user_totp import UserTOTP
 
 __all__ = [
     "AitoProject",
+    "AitoTask",
     "Printer",
     "PrintArchive",
     "Filament",
