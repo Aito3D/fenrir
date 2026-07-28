@@ -114,7 +114,7 @@ describe('AitoPage (backend board)', () => {
 
       await act(async () => {
         fireEvent.pointerDown(deleteButton);
-        await vi.advanceTimersByTimeAsync(2000);
+        await vi.advanceTimersByTimeAsync(1000);
       });
 
       expect(deleteSpy).toHaveBeenCalledWith('12');
@@ -143,7 +143,7 @@ describe('AitoPage (backend board)', () => {
       });
 
       expect(deleteSpy).not.toHaveBeenCalled();
-      expect(await screen.findByText('Hold 2s to delete')).toBeInTheDocument();
+      expect(await screen.findByText('Hold 1s to delete')).toBeInTheDocument();
     });
   });
 

@@ -14,7 +14,7 @@ export default {
     emptyHint: 'Clique em “+ Projeto” para adicionar seu primeiro cartão ao quadro.',
     loadFailed: 'Não foi possível carregar o quadro.',
     deleteTitle: 'Excluir projeto',
-    holdToDelete: 'Mantenha pressionado por 2 s para excluir',
+    holdToDelete: 'Mantenha pressionado por 1 s para excluir',
     trash: 'Lixeira',
     trashTitle: 'Projetos excluídos',
     trashEmpty: 'A lixeira está vazia',

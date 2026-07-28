@@ -157,7 +157,7 @@ describe('TaskEditor', () => {
     expect(result[0].scanCost).toBe(7);
   });
 
-  it('holding the remove button for 2s calls onRemove with that index', async () => {
+  it('holding the remove button for 1s calls onRemove with that index', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const onRemove = vi.fn();
     render(
@@ -167,10 +167,33 @@ describe('TaskEditor', () => {
 
     await act(async () => {
       fireEvent.pointerDown(removeButtons[1]);
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(1000);
     });
 
     expect(onRemove).toHaveBeenCalledWith(1);
+    vi.useRealTimers();
+  });
+
+  it('does not fire before the full second has elapsed', async () => {
+    // Bounds the hold from below. The test above advances exactly 1000ms, so
+    // it already fails if the duration grows; without this one, shrinking it
+    // to a near-instant hold would keep the whole suite green while making
+    // accidental deletion easy.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const onRemove = vi.fn();
+    render(<TaskEditor value={[emptyTaskDraft()]} onChange={vi.fn()} onRemove={onRemove} />);
+    const removeButton = screen.getByLabelText('Remove task');
+
+    await act(async () => {
+      fireEvent.pointerDown(removeButton);
+      await vi.advanceTimersByTimeAsync(900);
+    });
+    expect(onRemove).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(onRemove).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
 

@@ -14,7 +14,7 @@ export default {
     emptyHint: '点击“+ 项目”将第一张卡片添加到看板。',
     loadFailed: '无法加载看板。',
     deleteTitle: '删除项目',
-    holdToDelete: '长按 2 秒删除',
+    holdToDelete: '长按 1 秒删除',
     trash: '回收站',
     trashTitle: '已删除的项目',
     trashEmpty: '回收站是空的',

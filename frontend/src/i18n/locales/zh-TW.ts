@@ -14,7 +14,7 @@ export default {
     emptyHint: '點擊「+ 專案」將第一張卡片加入看板。',
     loadFailed: '無法載入看板。',
     deleteTitle: '刪除專案',
-    holdToDelete: '長按 2 秒刪除',
+    holdToDelete: '長按 1 秒刪除',
     trash: '垃圾桶',
     trashTitle: '已刪除的專案',
     trashEmpty: '垃圾桶是空的',

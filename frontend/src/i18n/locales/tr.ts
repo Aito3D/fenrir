@@ -14,7 +14,7 @@ export default {
     emptyHint: 'İlk kartı panoya eklemek için “+ Proje” düğmesine tıklayın.',
     loadFailed: 'Pano yüklenemedi.',
     deleteTitle: 'Projeyi sil',
-    holdToDelete: 'Silmek için 2 sn basılı tutun',
+    holdToDelete: 'Silmek için 1 sn basılı tutun',
     trash: 'Çöp Kutusu',
     trashTitle: 'Silinen projeler',
     trashEmpty: 'Çöp kutusu boş',

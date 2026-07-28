@@ -434,7 +434,7 @@ describe('ProjectDetailPanel tasks', () => {
 
     await act(async () => {
       fireEvent.pointerDown(removeButton);
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(1000);
     });
 
     expect(deletedId).toBe('101');
@@ -550,7 +550,7 @@ describe('ProjectDetailPanel tasks', () => {
     const removeButtons = screen.getAllByLabelText('Remove task');
     await act(async () => {
       fireEvent.pointerDown(removeButtons[0]);
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(1000);
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
@@ -611,7 +611,7 @@ describe('ProjectDetailPanel tasks', () => {
     const removeButton = await screen.findByLabelText('Remove task');
     await act(async () => {
       fireEvent.pointerDown(removeButton);
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(1000);
     });
 
     await waitFor(() => expect(boardFetches).toHaveBeenCalled());

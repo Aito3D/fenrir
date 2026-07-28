@@ -14,7 +14,7 @@ export default {
     emptyHint: '“+ 프로젝트”를 클릭해 첫 카드를 보드에 추가하세요.',
     loadFailed: '보드를 불러올 수 없습니다.',
     deleteTitle: '프로젝트 삭제',
-    holdToDelete: '2초 길게 눌러 삭제',
+    holdToDelete: '1초 길게 눌러 삭제',
     trash: '휴지통',
     trashTitle: '삭제된 프로젝트',
     trashEmpty: '휴지통이 비어 있습니다',

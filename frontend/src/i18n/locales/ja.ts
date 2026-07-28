@@ -14,7 +14,7 @@ export default {
     emptyHint: '「+ プロジェクト」をクリックして、最初のカードをボードに追加しましょう。',
     loadFailed: 'ボードを読み込めませんでした。',
     deleteTitle: 'プロジェクトを削除',
-    holdToDelete: '2秒長押しで削除',
+    holdToDelete: '1秒長押しで削除',
     trash: 'ゴミ箱',
     trashTitle: '削除済みプロジェクト',
     trashEmpty: 'ゴミ箱は空です',

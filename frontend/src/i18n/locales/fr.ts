@@ -14,7 +14,7 @@ export default {
     emptyHint: 'Cliquez sur « + Projet » pour ajouter votre première carte au tableau.',
     loadFailed: 'Impossible de charger le tableau.',
     deleteTitle: 'Supprimer le projet',
-    holdToDelete: 'Maintenir 2 s pour supprimer',
+    holdToDelete: 'Maintenir 1 s pour supprimer',
     trash: 'Corbeille',
     trashTitle: 'Projets supprimés',
     trashEmpty: 'La corbeille est vide',

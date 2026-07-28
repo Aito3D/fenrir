@@ -14,7 +14,7 @@ export default {
     emptyHint: 'Haz clic en «+ Proyecto» para añadir tu primera tarjeta al tablero.',
     loadFailed: 'No se pudo cargar el tablero.',
     deleteTitle: 'Eliminar proyecto',
-    holdToDelete: 'Mantén pulsado 2 s para eliminar',
+    holdToDelete: 'Mantén pulsado 1 s para eliminar',
     trash: 'Papelera',
     trashTitle: 'Proyectos eliminados',
     trashEmpty: 'La papelera está vacía',

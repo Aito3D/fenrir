@@ -6,14 +6,19 @@ import { Trash2 } from 'lucide-react';
 // so the browser's own CSS transition timeline drives the fill.
 const HOLD_RADIUS = 9;
 const HOLD_CIRCUMFERENCE = 2 * Math.PI * HOLD_RADIUS;
-const HOLD_DURATION_MS = 2000;
+// Changing this means changing three other things in step, none of which the
+// compiler couples to it: the ring's `duration-[1000ms]` class below (Tailwind
+// needs a static string, so it cannot read this constant), and the
+// `aito.holdToDelete` hint in all twelve locale files, which names the
+// duration out loud.
+const HOLD_DURATION_MS = 1000;
 // A press released before this threshold counts as a "tap" and surfaces the
 // hold hint; anything longer (but still short of completing) is treated as
 // an intentional-but-abandoned hold and cancels silently.
 const HOLD_HINT_THRESHOLD_MS = 400;
 const HOLD_HINT_VISIBLE_MS = 1600;
 
-// Trash2 button that requires a 2s pointer/keyboard hold to fire delete,
+// Trash2 button that requires a 1s pointer/keyboard hold to fire delete,
 // replacing the old ConfirmModal flow. A short press instead shows a
 // "hold to delete" hint popover. See task-14-brief.md for the full spec.
 export function DeleteHoldButton({
@@ -127,7 +132,7 @@ export function DeleteHoldButton({
             strokeDashoffset={holding ? 0 : HOLD_CIRCUMFERENCE}
             className={
               holding
-                ? 'transition-[stroke-dashoffset] duration-[2000ms] ease-linear motion-reduce:duration-200'
+                ? 'transition-[stroke-dashoffset] duration-[1000ms] ease-linear motion-reduce:duration-200'
                 : 'transition-none'
             }
           />

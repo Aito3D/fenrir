@@ -14,7 +14,7 @@ export default {
     emptyHint: 'Klicke auf „+ Projekt“, um die erste Karte zum Board hinzuzufügen.',
     loadFailed: 'Das Board konnte nicht geladen werden.',
     deleteTitle: 'Projekt löschen',
-    holdToDelete: 'Zum Löschen 2 s gedrückt halten',
+    holdToDelete: 'Zum Löschen 1 s gedrückt halten',
     trash: 'Papierkorb',
     trashTitle: 'Gelöschte Projekte',
     trashEmpty: 'Papierkorb ist leer',

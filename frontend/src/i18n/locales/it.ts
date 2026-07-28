@@ -14,7 +14,7 @@ export default {
     emptyHint: 'Fai clic su «+ Progetto» per aggiungere la prima scheda alla bacheca.',
     loadFailed: 'Impossibile caricare la bacheca.',
     deleteTitle: 'Elimina progetto',
-    holdToDelete: 'Tieni premuto 2 s per eliminare',
+    holdToDelete: 'Tieni premuto 1 s per eliminare',
     trash: 'Cestino',
     trashTitle: 'Progetti eliminati',
     trashEmpty: 'Il cestino è vuoto',
