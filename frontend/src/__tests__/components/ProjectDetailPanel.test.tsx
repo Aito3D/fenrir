@@ -2,9 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
+import { useQuery } from '@tanstack/react-query';
 import { server } from '../mocks/server';
 import { render } from '../utils';
 import { ProjectDetailPanel } from '../../components/aito/ProjectDetailPanel';
+import { api } from '../../api/client';
 import type { AitoProject, AitoTask } from '../../api/client';
 
 const project: AitoProject = {
@@ -27,6 +29,23 @@ const project: AitoProject = {
 
 const show = (overrides: Partial<AitoProject> = {}) =>
   render(<ProjectDetailPanel project={{ ...project, ...overrides }} onClose={vi.fn()} />);
+
+// Mirrors AitoPage.tsx: `AitoPage` owns the sole `useQuery(['aito-projects'])`
+// (AitoPage.tsx:178) and renders `ProjectDetailPanel` as its own child,
+// conditionally, via `{expandedProject && <ProjectDetailPanel .../>}`
+// (AitoPage.tsx:532-534) — so the board query stays actively observed for the
+// panel's entire lifetime; only the panel itself unmounts on close, never the
+// page underneath it. `BoardHost` reproduces exactly that shape so the
+// board-refresh tests below exercise the real `invalidateQueries` mechanism
+// (a genuine HTTP GET the mocked handler can count), not a workaround for the
+// test harness lacking an observer. Toggle `showPanel` via `rerender`, not
+// `unmount`, to close the panel without also tearing down the board observer
+// — unmounting the whole tree would remove both at once and race their
+// cleanup order against each other, which is not how production works.
+function BoardHost({ showPanel }: { showPanel: boolean }) {
+  useQuery({ queryKey: ['aito-projects'], queryFn: api.getAitoProjects });
+  return showPanel ? <ProjectDetailPanel project={project} onClose={vi.fn()} /> : null;
+}
 
 // ProjectDetailPanel renders TaskEditor unconditionally, and every TaskRow
 // renders ImpressionFields, which always queries these three endpoints
@@ -548,7 +567,7 @@ describe('ProjectDetailPanel tasks', () => {
     expect(patches.some((p) => p.id === '111')).toBe(false);
   });
 
-  it('refreshes the board when a task is added and when one is removed', async () => {
+  it('refreshes the board when a task is added', async () => {
     const boardFetches = vi.fn();
     server.use(
       http.get('/api/v1/aito/', () => {
@@ -558,13 +577,45 @@ describe('ProjectDetailPanel tasks', () => {
       http.post('/api/v1/aito/12/tasks', () =>
         HttpResponse.json({ ...mockTask, id: 99 }, { status: 201 }),
       ),
-      http.delete('/api/v1/aito/tasks/:id', () => new HttpResponse(null, { status: 204 })),
     );
     const user = userEvent.setup();
-    show();
+    render(<BoardHost showPanel />);
+
+    // BoardHost's own mount fetches the board once; wait for it to settle and
+    // clear it so the assertion below is about the *add*, not the mount.
+    await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
+    boardFetches.mockClear();
 
     await user.click(await screen.findByRole('button', { name: /add task/i }));
     await waitFor(() => expect(boardFetches).toHaveBeenCalled());
+  });
+
+  it('refreshes the board when a task is removed', async () => {
+    const boardFetches = vi.fn();
+    server.use(
+      http.get('/api/v1/aito/', () => {
+        boardFetches();
+        return HttpResponse.json([]);
+      }),
+      http.delete('/api/v1/aito/tasks/:id', () => new HttpResponse(null, { status: 204 })),
+    );
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<BoardHost showPanel />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
+    boardFetches.mockClear();
+
+    const removeButton = await screen.findByLabelText('Remove task');
+    await act(async () => {
+      fireEvent.pointerDown(removeButton);
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+
+    await waitFor(() => expect(boardFetches).toHaveBeenCalled());
+    vi.useRealTimers();
   });
 
   it('refreshes the board on close after a task field was edited', async () => {
@@ -579,7 +630,9 @@ describe('ProjectDetailPanel tasks', () => {
       ),
     );
     const user = userEvent.setup();
-    const { unmount } = show();
+    const { rerender } = render(<BoardHost showPanel />);
+
+    await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
 
     const scan = await screen.findByLabelText('Scan3D');
     await user.clear(scan);
@@ -587,7 +640,10 @@ describe('ProjectDetailPanel tasks', () => {
     await waitFor(() => expect(screen.getByLabelText('Scan3D')).toHaveValue(500));
 
     boardFetches.mockClear();
-    unmount();
+    // Close only the panel — BoardHost (standing in for AitoPage) stays
+    // mounted, exactly as it does in production, so its ['aito-projects']
+    // observer is still there to receive the invalidation.
+    rerender(<BoardHost showPanel={false} />);
     await waitFor(() => expect(boardFetches).toHaveBeenCalled());
   });
 
@@ -599,11 +655,12 @@ describe('ProjectDetailPanel tasks', () => {
         return HttpResponse.json([]);
       }),
     );
-    const { unmount } = show();
+    const { rerender } = render(<BoardHost showPanel />);
     await screen.findByText('Support de caméra');
+    await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
 
     boardFetches.mockClear();
-    unmount();
+    rerender(<BoardHost showPanel={false} />);
     // Give an invalidation a chance to land before asserting its absence.
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(boardFetches).not.toHaveBeenCalled();
