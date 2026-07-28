@@ -1,13 +1,101 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Loader2, X } from 'lucide-react';
 import { COLUMNS } from './columns';
+import { TaskEditor } from './TaskEditor';
 import { AITO_CARD_VT_NAME } from '../../hooks/useCardMorph';
-import { api, type AitoProject, type AitoProjectUpdate } from '../../api/client';
+import {
+  api,
+  type AitoProject,
+  type AitoProjectUpdate,
+  type AitoTask,
+  type AitoTaskCreate,
+  type AitoTaskUpdate,
+} from '../../api/client';
 import { parseUTCDate } from '../../utils/date';
 import { inputCls } from '../formStyles';
 import { useToast } from '../../contexts/ToastContext';
+import { emptyTaskDraft } from '../../utils/taskDraft';
+import type { TaskDraft } from '../../utils/taskDraft';
+
+/** Wire shape -> client shape, the read half of the conversion. `?? 1` on
+ *  quantity is defensive only: a saved row always carries a real number (see
+ *  `taskDraftToTaskCreate`), never `null`. */
+function taskDraftFromAitoTask(task: AitoTask): TaskDraft {
+  return {
+    id: task.id,
+    title: task.title ?? '',
+    description: task.description ?? '',
+    scanCost: task.scan_cost,
+    modelisationCost: task.modelisation_cost,
+    usinageCost: task.usinage_cost,
+    impression: {
+      printerId: task.impression_printer_id,
+      filamentId: task.impression_filament_id,
+      weightG: task.impression_weight_g,
+      timeMin: task.impression_time_min,
+      quantity: task.impression_quantity ?? 1,
+      color: task.impression_color ?? '',
+    },
+    impressionCost: task.impression_cost,
+  };
+}
+
+/** Client shape -> wire shape, matching the conventions the create modal
+ *  established (AitoPage.tsx's create mutation): `title`, `description` and
+ *  `impression_color` collapse blank to `null` rather than `''`; every
+ *  numeric field passes straight through so a `0` cost stays `0` (free)
+ *  rather than becoming `null` (disabled). */
+function taskDraftToTaskCreate(t: TaskDraft): AitoTaskCreate {
+  return {
+    title: t.title.trim() || null,
+    description: t.description.trim() || null,
+    scan_cost: t.scanCost,
+    modelisation_cost: t.modelisationCost,
+    usinage_cost: t.usinageCost,
+    impression_printer_id: t.impression.printerId,
+    impression_filament_id: t.impression.filamentId,
+    impression_weight_g: t.impression.weightG,
+    impression_time_min: t.impression.timeMin,
+    impression_quantity: t.impression.quantity,
+    impression_color: t.impression.color.trim() || null,
+    impression_cost: t.impressionCost,
+  };
+}
+
+/** The narrow patch: only the wire fields that actually differ between the
+ *  persisted row and the edited draft. Comparing the two *wire* shapes
+ *  (rather than the drafts directly) means the blank -> null and 0-stays-0
+ *  rules above apply identically on both sides of the diff. */
+function diffTaskDraft(baseline: TaskDraft, next: TaskDraft): AitoTaskUpdate {
+  const before = taskDraftToTaskCreate(baseline);
+  const after = taskDraftToTaskCreate(next);
+  const patch: AitoTaskUpdate = {};
+  if (after.title !== before.title) patch.title = after.title;
+  if (after.description !== before.description) patch.description = after.description;
+  if (after.scan_cost !== before.scan_cost) patch.scan_cost = after.scan_cost;
+  if (after.modelisation_cost !== before.modelisation_cost) patch.modelisation_cost = after.modelisation_cost;
+  if (after.usinage_cost !== before.usinage_cost) patch.usinage_cost = after.usinage_cost;
+  if (after.impression_printer_id !== before.impression_printer_id) {
+    patch.impression_printer_id = after.impression_printer_id;
+  }
+  if (after.impression_filament_id !== before.impression_filament_id) {
+    patch.impression_filament_id = after.impression_filament_id;
+  }
+  if (after.impression_weight_g !== before.impression_weight_g) {
+    patch.impression_weight_g = after.impression_weight_g;
+  }
+  if (after.impression_time_min !== before.impression_time_min) {
+    patch.impression_time_min = after.impression_time_min;
+  }
+  if (after.impression_quantity !== before.impression_quantity) {
+    patch.impression_quantity = after.impression_quantity;
+  }
+  if (after.impression_color !== before.impression_color) patch.impression_color = after.impression_color;
+  if (after.impression_cost !== before.impression_cost) patch.impression_cost = after.impression_cost;
+  return patch;
+}
 
 interface ProjectDetailPanelProps {
   project: AitoProject;
@@ -52,6 +140,75 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
     },
     onError: () => showToast(t('aito.saveFailed'), 'error'),
   });
+
+  // Tasks. `tasks` is the editable view TaskEditor is controlled with; it is
+  // resynced from the server whenever the query's data identity changes
+  // (initial load, and after add/remove invalidate it) but NOT after a
+  // single-field PATCH, which would otherwise overwrite whatever the user is
+  // mid-typing into a different field.
+  const tasksQuery = useQuery({
+    queryKey: ['aito-tasks', project.id],
+    queryFn: () => api.getAitoTasks(project.id),
+  });
+  const [tasks, setTasks] = useState<TaskDraft[]>([]);
+
+  useEffect(() => {
+    if (tasksQuery.data) setTasks(tasksQuery.data.map(taskDraftFromAitoTask));
+  }, [tasksQuery.data]);
+
+  const updateTaskMutation = useMutation({
+    mutationFn: ({ id, patch }: { id: number; patch: AitoTaskUpdate }) => api.updateAitoTask(id, patch),
+    onError: () => showToast(t('aito.saveFailed'), 'error'),
+  });
+
+  const addTaskMutation = useMutation({
+    mutationFn: () => api.createAitoTask(project.id, taskDraftToTaskCreate(emptyTaskDraft())),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['aito-tasks', project.id] }),
+    onError: () => showToast(t('aito.saveFailed'), 'error'),
+  });
+
+  const deleteTaskMutation = useMutation({
+    mutationFn: (id: number) => api.deleteAitoTask(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['aito-tasks', project.id] }),
+    onError: () => showToast(t('aito.saveFailed'), 'error'),
+  });
+
+  // TaskEditor is fully controlled and reports the whole array back on every
+  // edit (see its own docstring). Growing the array is always "+ Add task" —
+  // nothing else appends through this callback — so that case is routed to
+  // the create endpoint rather than diffed. Otherwise, exactly one entry has
+  // a new object identity (TaskRow -> TaskEditor only replaces the row that
+  // changed), which pinpoints which task to diff and PATCH without needing
+  // to compare every field of every row.
+  const handleTasksChange = (next: TaskDraft[]) => {
+    if (next.length > tasks.length) {
+      addTaskMutation.mutate();
+      return;
+    }
+
+    const changedIndex = next.findIndex((task, i) => task !== tasks[i]);
+    if (changedIndex === -1) return;
+
+    setTasks(next);
+
+    const edited = next[changedIndex];
+    if (edited.id === null) return; // not yet persisted server-side; nothing to PATCH
+    const baselineRow = tasksQuery.data?.find((row) => row.id === edited.id);
+    if (!baselineRow) return;
+    const patch = diffTaskDraft(taskDraftFromAitoTask(baselineRow), edited);
+    if (Object.keys(patch).length === 0) return;
+    updateTaskMutation.mutate({ id: edited.id, patch });
+  };
+
+  const handleRemoveTask = (index: number) => {
+    const task = tasks[index];
+    if (!task) return;
+    if (task.id === null) {
+      setTasks(tasks.filter((_, i) => i !== index));
+      return;
+    }
+    deleteTaskMutation.mutate(task.id);
+  };
 
   const [editingDesc, setEditingDesc] = useState(false);
   const [draft, setDraft] = useState(project.description);
@@ -234,6 +391,10 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
               </dd>
             </div>
           </dl>
+
+          <div className="border-t border-bambu-dark-tertiary pt-4">
+            <TaskEditor value={tasks} onChange={handleTasksChange} onRemove={handleRemoveTask} />
+          </div>
         </div>
       </div>
     </div>
