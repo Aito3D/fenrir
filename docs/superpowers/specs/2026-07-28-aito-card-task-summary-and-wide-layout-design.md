@@ -198,9 +198,20 @@ forgetting the aggregate. That gap is real and is accepted, not papered over.
 
 ### Both surfaces
 
-`max-w-md` → `max-w-5xl` (1024px) on `NewProjectModal` and
+`max-w-md` → `max-w-7xl` (1280px) on `NewProjectModal` and
 `ProjectDetailPanel`. `max-h-[calc(100vh-2rem)]` is unchanged — the goal is to
 fill the height less often, not to allow more of it.
+
+**Revised from `max-w-5xl` after implementation.** At 1024px the composed
+layout starved the very controls it set out to widen: body `p-4` leaves 992,
+the `20rem` column and `gap-6` leave 648, `TaskRow`'s `p-3` and border leave
+622, and the Impression3D split leaves 303 per half — so the inner
+`sm:grid-cols-2` cut each print input to **145px**, against **189px** back when
+the panel was `max-w-md`. Collapsing those inputs to one column would have
+fixed the width at the cost of doubling the block's height (3 rows → 6), which
+is the opposite of the request. 1280px resolves both: 1248 → 904 → 878 → 431
+per half → **209px per input**, wider than the pre-feature baseline with the
+inputs still two-across and the block still three rows tall.
 
 The panel matches the modal at `max-w-5xl` rather than sitting narrower. The
 consequence is a more dramatic card→panel morph: the shared

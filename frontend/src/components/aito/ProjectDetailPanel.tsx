@@ -322,7 +322,7 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
         aria-modal="true"
         aria-label={project.client_name ?? t('aito.noClient')}
         style={{ viewTransitionName: AITO_CARD_VT_NAME }}
-        className="bg-bambu-dark-secondary rounded-xl w-full max-w-5xl border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)]"
+        className="bg-bambu-dark-secondary rounded-xl w-full max-w-7xl border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)]"
       >
         <div className="p-4 border-b border-bambu-dark-tertiary flex items-start justify-between gap-3 flex-shrink-0">
           <h2 className="text-lg font-semibold text-white truncate min-w-0">

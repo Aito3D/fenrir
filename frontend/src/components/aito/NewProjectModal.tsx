@@ -102,11 +102,11 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
     >
       <div
         className={`bg-bambu-dark-secondary rounded-xl w-full border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)] animate-modal-in ${
-          // The new-contact form is a short single-column form; at 1024px it
+          // The new-contact form is a short single-column form; at 1280px it
           // would sit marooned in whitespace. The width follows the mode, which
           // already changes the title too, so the resize reads as a mode switch
           // rather than a glitch.
-          creatingClient ? 'max-w-md' : 'max-w-5xl'
+          creatingClient ? 'max-w-md' : 'max-w-7xl'
         }`}
       >
         <div className="p-4 border-b border-bambu-dark-tertiary flex items-center justify-between flex-shrink-0">
