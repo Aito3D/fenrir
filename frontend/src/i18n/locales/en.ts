@@ -5609,6 +5609,7 @@ export default {
     add: 'Add',
     nameRequired: 'Name is required',
     fieldRequired: '{{field}} is required',
+    haDataInvalid: 'The Data field must be a valid JSON object, e.g. {"priority": "high", "ttl": 0}',
     // Config field labels
     phoneNumber: 'Phone Number',
     apiKey: 'API Key',

@@ -5266,6 +5266,7 @@ export default {
     add: "Добавить",
     nameRequired: "Укажите название",
     fieldRequired: "Поле «{{field}}» обязательно",
+    haDataInvalid: 'Поле Data должно быть корректным JSON-объектом, напр. {"priority": "high", "ttl": 0}',
     phoneNumber: "Номер телефона",
     apiKey: "Ключ API",
     serverUrl: "URL сервера",

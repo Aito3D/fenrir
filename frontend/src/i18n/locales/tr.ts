@@ -5515,6 +5515,7 @@ export default {
     add: 'Ekle',
     nameRequired: 'Ad gerekli',
     fieldRequired: '{{field}} gerekli',
+    haDataInvalid: 'Data alanı geçerli bir JSON nesnesi olmalıdır, örn. {"priority": "high", "ttl": 0}',
     phoneNumber: 'Telefon Numarası',
     apiKey: 'API Anahtarı',
     serverUrl: 'Sunucu URL',

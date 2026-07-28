@@ -5554,6 +5554,7 @@ export default {
     add: 'Aggiungi',
     nameRequired: 'Il nome è obbligatorio',
     fieldRequired: '{{field}} è obbligatorio',
+    haDataInvalid: 'Il campo Data deve essere un oggetto JSON valido, ad es. {"priority": "high", "ttl": 0}',
     // Config field labels
     phoneNumber: 'Numero di telefono',
     apiKey: 'Chiave API',

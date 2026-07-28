@@ -5566,6 +5566,7 @@ export default {
     add: '追加',
     nameRequired: '名前は必須です',
     fieldRequired: '{{field}}は必須です',
+    haDataInvalid: 'Dataフィールドは有効なJSONオブジェクトである必要があります（例: {"priority": "high", "ttl": 0}）',
     // Config field labels
     phoneNumber: '電話番号',
     apiKey: 'APIキー',

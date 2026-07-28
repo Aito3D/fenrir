@@ -5279,6 +5279,7 @@ export default {
     add: '추가',
     nameRequired: '이름이 필요합니다',
     fieldRequired: '{{field}}이(가) 필요합니다',
+    haDataInvalid: 'Data 필드는 유효한 JSON 객체여야 합니다(예: {"priority": "high", "ttl": 0})',
     phoneNumber: '전화번호',
     apiKey: 'API 키',
     serverUrl: '서버 URL',

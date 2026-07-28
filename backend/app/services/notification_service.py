@@ -741,6 +741,24 @@ class NotificationService:
             "message": message,
         }
 
+        # Optional custom service-data (#1441), forwarded as HA's nested "data"
+        # object so mobile-app push options (priority, ttl, channel, group, ...)
+        # reach the notify service. Only included when configured — the default
+        # persistent_notification.create schema rejects unknown keys.
+        raw_data = config.get("data")
+        if raw_data:
+            if isinstance(raw_data, str):
+                try:
+                    parsed_data = json.loads(raw_data)
+                except json.JSONDecodeError as e:
+                    return False, f"Invalid JSON in the Data field: {e}"
+            else:
+                parsed_data = raw_data
+            if not isinstance(parsed_data, dict):
+                return False, 'The Data field must be a JSON object, e.g. {"priority": "high", "ttl": 0}'
+            if parsed_data:
+                payload["data"] = parsed_data
+
         client = await self._get_client()
         response = await client.post(url, json=payload, headers=headers)
 

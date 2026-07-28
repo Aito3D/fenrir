@@ -386,3 +386,66 @@ describe('AddNotificationModal — AI Failure Detection toggle (#1794)', () => {
     expect(within(priorityRoot).getByText('AI Failure Detection')).toBeInTheDocument();
   });
 });
+
+describe('AddNotificationModal — Home Assistant custom data (#1441)', () => {
+  const haProvider = () =>
+    buildProvider({
+      provider_type: 'homeassistant',
+      config: { service: 'notify.mobile_app_myphone' },
+    });
+
+  it('renders the Data (JSON) textarea for the homeassistant provider', async () => {
+    render(<AddNotificationModal provider={haProvider()} onClose={() => undefined} />);
+
+    await screen.findByDisplayValue('My ntfy');
+    expect(screen.getByText(/data \(json, optional\)/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/"priority": "high"/)).toBeInTheDocument();
+  });
+
+  it('rejects malformed JSON in the Data field on save', async () => {
+    const patchSpy = vi.fn();
+    server.use(
+      http.patch('*/api/v1/notifications/1', () => {
+        patchSpy();
+        return HttpResponse.json({ id: 1 });
+      }),
+    );
+
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<AddNotificationModal provider={haProvider()} onClose={onClose} />);
+
+    const textarea = await screen.findByPlaceholderText(/"priority": "high"/);
+    await user.type(textarea, '{{priority: high}');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    expect(await screen.findByText(/must be a valid JSON object/i)).toBeInTheDocument();
+    expect(patchSpy).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('round-trips valid Data JSON into config on save', async () => {
+    let captured: { config: Record<string, unknown> } | null = null;
+    server.use(
+      http.patch('*/api/v1/notifications/1', async ({ request }) => {
+        captured = (await request.json()) as { config: Record<string, unknown> };
+        return HttpResponse.json({ id: 1 });
+      }),
+    );
+
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<AddNotificationModal provider={haProvider()} onClose={onClose} />);
+
+    const textarea = await screen.findByPlaceholderText(/"priority": "high"/);
+    await user.type(textarea, '{{"ttl": 0}');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(captured).not.toBeNull();
+    expect(captured!.config).toMatchObject({
+      service: 'notify.mobile_app_myphone',
+      data: '{"ttl": 0}',
+    });
+  });
+});

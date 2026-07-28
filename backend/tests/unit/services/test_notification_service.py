@@ -878,6 +878,113 @@ class TestHomeAssistantProvider:
             assert payload["message"] == "Test Message"
 
     @pytest.mark.asyncio
+    async def test_send_homeassistant_custom_data_merged(self, service):
+        """Custom service-data (#1441) is forwarded as HA's nested "data" object
+        so mobile-app push options (priority, ttl, channel, ...) reach the
+        notify service."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        mock_db = AsyncMock()
+
+        with (
+            patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client,
+            patch(
+                "backend.app.api.routes.settings.get_homeassistant_settings",
+                new_callable=AsyncMock,
+            ) as mock_ha_settings,
+        ):
+            mock_get_client.return_value = mock_client
+            mock_ha_settings.return_value = {
+                "ha_url": "http://ha.local:8123",
+                "ha_token": "test-token-123",
+                "ha_enabled": True,
+            }
+
+            config = {
+                "service": "notify.mobile_app_myphone",
+                "data": '{"priority": "high", "ttl": 0, "channel": "3D Printing"}',
+            }
+            success, _ = await service._send_homeassistant(config, "Title", "Body", db=mock_db)
+
+            assert success is True
+            call_args = mock_client.post.call_args
+            assert call_args[0][0] == "http://ha.local:8123/api/services/notify/mobile_app_myphone"
+            payload = call_args.kwargs.get("json") or call_args[1].get("json")
+            assert payload["data"] == {"priority": "high", "ttl": 0, "channel": "3D Printing"}
+            # ttl must survive as a number, not a string — that's why the
+            # field is JSON rather than key=value lines.
+            assert payload["data"]["ttl"] == 0
+
+    @pytest.mark.asyncio
+    async def test_send_homeassistant_without_data_omits_key(self, service):
+        """Without configured data the payload carries no "data" key — the
+        default persistent_notification.create schema rejects unknown keys."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        mock_db = AsyncMock()
+
+        with (
+            patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client,
+            patch(
+                "backend.app.api.routes.settings.get_homeassistant_settings",
+                new_callable=AsyncMock,
+            ) as mock_ha_settings,
+        ):
+            mock_get_client.return_value = mock_client
+            mock_ha_settings.return_value = {
+                "ha_url": "http://ha.local:8123",
+                "ha_token": "test-token-123",
+                "ha_enabled": True,
+            }
+
+            success, _ = await service._send_homeassistant({}, "Title", "Body", db=mock_db)
+
+            assert success is True
+            payload = mock_client.post.call_args.kwargs.get("json") or mock_client.post.call_args[1].get("json")
+            assert "data" not in payload
+
+    @pytest.mark.asyncio
+    async def test_send_homeassistant_invalid_data_rejected(self, service):
+        """Malformed JSON and non-object JSON in the data field fail loudly
+        instead of sending a half-built payload."""
+        mock_db = AsyncMock()
+
+        with (
+            patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client,
+            patch(
+                "backend.app.api.routes.settings.get_homeassistant_settings",
+                new_callable=AsyncMock,
+            ) as mock_ha_settings,
+        ):
+            mock_client = AsyncMock()
+            mock_get_client.return_value = mock_client
+            mock_ha_settings.return_value = {
+                "ha_url": "http://ha.local:8123",
+                "ha_token": "test-token-123",
+                "ha_enabled": True,
+            }
+
+            success, message = await service._send_homeassistant(
+                {"data": "{priority: high}"}, "Title", "Body", db=mock_db
+            )
+            assert success is False
+            assert "Invalid JSON" in message
+
+            success, message = await service._send_homeassistant({"data": '["a", "b"]'}, "Title", "Body", db=mock_db)
+            assert success is False
+            assert "JSON object" in message
+
+            mock_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_send_homeassistant_no_db_no_env(self, service):
         """Verify HA provider fails gracefully without DB or env vars."""
         with patch.dict("os.environ", {}, clear=True):

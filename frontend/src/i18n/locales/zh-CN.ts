@@ -5554,6 +5554,7 @@ export default {
     add: '添加',
     nameRequired: '名称为必填项',
     fieldRequired: '{{field}}为必填项',
+    haDataInvalid: 'Data 字段必须是有效的 JSON 对象，例如 {"priority": "high", "ttl": 0}',
     // Config field labels
     phoneNumber: '电话号码',
     apiKey: 'API 密钥',
