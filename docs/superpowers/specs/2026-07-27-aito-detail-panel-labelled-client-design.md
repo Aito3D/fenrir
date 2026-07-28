@@ -137,10 +137,24 @@ A contact created through `NewContactForm`'s company path comes back from
 ```
 
 - The `<h2>` title becomes `t('aito.projectRef', { id: project.id })`.
-- The client block moves out of the header into the body as a `<dl>`, with each
-  field a `<dt>`/`<dd>` pair. That is the honest markup for a labelled field
-  list and gives assistive technology the label-to-value association without
-  extra ARIA.
+- The client block moves out of the header and joins the **existing** `<dl>` in
+  the body — the one already carrying Created / Last activity / Stage. Each
+  field is a `<dt>`/`<dd>` pair, which is the honest markup for a labelled list
+  and gives assistive technology the label-to-value association without extra
+  ARIA.
+
+  **That existing list currently uses a different convention** — label left,
+  value right-aligned, no colon. Adding a second, colon-style list a few pixels
+  away would read as two half-finished designs, so the whole list adopts
+  `Label: value` left-aligned and the three metadata rows are restyled to
+  match. A mid-list border separates the client group from the project
+  metadata. This is the one place the change reaches beyond the client fields,
+  and it is deliberate.
+
+  Consequence: five assertions in `AitoPage.test.tsx` match those labels
+  exactly (`getByText('Created')` etc.) and stop matching once the `<dt>`
+  renders `Created:`. They are retargeted to the exact new string rather than
+  loosened to a regex, so an accidental label change is still caught.
 - Phone and email keep their `tel:` and `mailto:` links inside their `<dd>`.
 - A field with no value is **omitted entirely**, label included — an empty
   `Email:` row is noise, not information.
