@@ -4319,6 +4319,8 @@ export default {
     searchBrand: 'Chercher marque...',
     useCustomBrand: 'Utiliser "{{brand}}"',
     useCustomMaterial: 'Utiliser un matériau personnalisé : {{material}}',
+    suggestedOptions: 'Suggérés',
+    allOptions: 'Tous',
     colorName: 'Nom de couleur',
     colorNamePlaceholder: 'Blanc Jade, Rouge Feu...',
     color: 'Couleur',

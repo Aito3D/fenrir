@@ -4320,6 +4320,8 @@ export default {
     searchBrand: 'Marka ara...',
     useCustomBrand: '"{{brand}}" kullan',
     useCustomMaterial: 'Özel malzeme kullan: {{material}}',
+    suggestedOptions: 'Önerilen',
+    allOptions: 'Tümü',
     colorName: 'Renk Adı',
     colorNamePlaceholder: 'Yeşim Beyazı, Ateş Kırmızısı...',
     color: 'Renk',

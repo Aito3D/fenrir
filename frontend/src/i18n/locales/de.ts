@@ -4330,6 +4330,8 @@ export default {
     searchBrand: 'Marke suchen...',
     useCustomBrand: '"{{brand}}" verwenden',
     useCustomMaterial: 'Benutzerdefiniertes Material verwenden: {{material}}',
+    suggestedOptions: 'Vorgeschlagen',
+    allOptions: 'Alle',
     colorName: 'Farbname',
     colorNamePlaceholder: 'Jadeweiß, Feuerrot...',
     color: 'Farbe',

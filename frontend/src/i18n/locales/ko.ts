@@ -4119,6 +4119,8 @@ export default {
     searchBrand: '브랜드 검색...',
     useCustomBrand: '"{{brand}}" 사용',
     useCustomMaterial: '사용자 지정 재료 사용: {{material}}',
+    suggestedOptions: '추천',
+    allOptions: '전체',
     colorName: '색상 이름',
     colorNamePlaceholder: '제이드 화이트, 파이어 레드...',
     color: '색상',

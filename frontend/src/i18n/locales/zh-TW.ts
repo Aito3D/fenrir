@@ -4318,6 +4318,8 @@ export default {
     searchBrand: '搜尋品牌...',
     useCustomBrand: '使用"{{brand}}"',
     useCustomMaterial: '使用自訂材料：{{material}}',
+    suggestedOptions: '推薦',
+    allOptions: '全部',
     colorName: '顏色名稱',
     colorNamePlaceholder: '翡翠白、烈焰紅...',
     color: '顏色',

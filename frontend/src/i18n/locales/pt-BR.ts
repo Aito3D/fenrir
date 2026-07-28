@@ -4318,6 +4318,8 @@ export default {
     searchBrand: 'Pesquisar marca...',
     useCustomBrand: 'Usar "{{brand}}"',
     useCustomMaterial: 'Usar material personalizado: {{material}}',
+    suggestedOptions: 'Sugeridos',
+    allOptions: 'Todos',
     colorName: 'Nome da Cor',
     colorNamePlaceholder: 'Branco Jade, Vermelho Fogo...',
     color: 'Cor',

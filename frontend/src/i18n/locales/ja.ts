@@ -4330,6 +4330,8 @@ export default {
     searchBrand: 'ブランドを検索...',
     useCustomBrand: '「{{brand}}」を使用',
     useCustomMaterial: 'カスタム素材を使用: {{material}}',
+    suggestedOptions: 'おすすめ',
+    allOptions: 'すべて',
     colorName: '色名',
     colorNamePlaceholder: 'ジェイドホワイト、ファイアレッド...',
     color: '色',

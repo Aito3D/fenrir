@@ -4318,6 +4318,8 @@ export default {
     searchBrand: 'Cerca marchio...',
     useCustomBrand: 'Usa "{{brand}}"',
     useCustomMaterial: 'Usa materiale personalizzato: {{material}}',
+    suggestedOptions: 'Suggeriti',
+    allOptions: 'Tutti',
     colorName: 'Nome Colore',
     colorNamePlaceholder: 'Bianco Giada, Rosso Fuoco...',
     color: 'Colore',

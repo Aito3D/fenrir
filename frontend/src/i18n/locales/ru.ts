@@ -4109,6 +4109,8 @@ export default {
     searchBrand: "Поиск бренда…",
     useCustomBrand: "Использовать «{{brand}}»",
     useCustomMaterial: "Использовать свой материал: {{material}}",
+    suggestedOptions: "Рекомендуемые",
+    allOptions: "Все",
     colorName: "Название цвета",
     colorNamePlaceholder: "Jade White, Fire Red…",
     color: "Цвет",

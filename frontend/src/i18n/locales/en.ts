@@ -4364,6 +4364,8 @@ export default {
     searchBrand: 'Search brand...',
     useCustomBrand: 'Use "{{brand}}"',
     useCustomMaterial: 'Use custom material: {{material}}',
+    suggestedOptions: 'Suggested',
+    allOptions: 'All',
     colorName: 'Color Name',
     colorNamePlaceholder: 'Jade White, Fire Red...',
     color: 'Color',
