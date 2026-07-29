@@ -159,4 +159,33 @@ describe('ImportQuoteModal', () => {
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^import$/i })).toBeDisabled();
   });
+
+  it('shows nothing before a quote is picked and a spinner while the preview loads', async () => {
+    // The dialog holds its full height either way (the quote dropdown needs
+    // room to open below the input), so the empty area is genuinely empty
+    // until there is something real to put in it.
+    let releasePreview: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      releasePreview = resolve;
+    });
+    server.use(
+      http.get('/api/v1/zoho/estimates', () => HttpResponse.json([summary])),
+      http.get('/api/v1/zoho/estimates/:id/preview', async () => {
+        await held;
+        return HttpResponse.json(preview);
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<ImportQuoteModal onClose={vi.fn()} onImport={vi.fn()} />);
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    await pickTheQuote(user);
+    expect(await screen.findByRole('status')).toBeInTheDocument();
+
+    releasePreview();
+    expect(await screen.findByText('Helice grise')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
 });

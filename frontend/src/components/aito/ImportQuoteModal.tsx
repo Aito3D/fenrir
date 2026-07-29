@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, ExternalLink, FileInput, X } from 'lucide-react';
+import { AlertTriangle, ExternalLink, FileInput, Loader2, X } from 'lucide-react';
 import { api } from '../../api/client';
 import type { AitoTaskCreate, ZohoEstimateSummary, ZohoQuotePreview } from '../../api/client';
 import { Button } from '../Button';
@@ -99,7 +99,7 @@ export function ImportQuoteModal({ onClose, onImport, submitting = false }: Impo
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-bambu-dark-secondary rounded-xl w-full max-w-3xl border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)] animate-modal-in">
+      <div className="bg-bambu-dark-secondary rounded-xl w-full max-w-3xl border border-bambu-dark-tertiary flex flex-col h-[42rem] max-h-[calc(100vh-2rem)] animate-modal-in">
         <div className="p-4 border-b border-bambu-dark-tertiary flex items-center justify-between flex-shrink-0">
           <h2 className="text-lg font-semibold text-white">{t('aito.importTitle')}</h2>
           <button
@@ -137,6 +137,12 @@ export function ImportQuoteModal({ onClose, onImport, submitting = false }: Impo
 
             {previewQuery.isError && (
               <p className="text-sm text-status-error">{t('aito.quoteLoadFailed')}</p>
+            )}
+
+            {previewQuery.isFetching && !preview && (
+              <div role="status" aria-label={t('common.loading')} className="flex justify-center py-8">
+                <Loader2 className="w-6 h-6 text-bambu-gray animate-spin" />
+              </div>
             )}
 
             {preview && (
