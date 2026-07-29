@@ -5,11 +5,12 @@ import json
 
 import httpx
 import pytest
+from sqlalchemy import select
 
 from backend.app.api.routes.settings import set_setting
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
-from backend.app.services.aito_quote_sync import run_sync_once
+from backend.app.services.aito_quote_sync import SYNC_FAILURE_LIMIT, run_sync_once
 from backend.app.services.zoho import zoho_service
 
 
@@ -456,3 +457,253 @@ async def test_zoho_request_rejected_goes_straight_to_error(db_session):
     assert project.quote_sync_error == "Invalid customer_id"
     assert project.quote_sync_failures == 0
     assert project.quote_id is None
+
+
+async def _project_with_quote(db, **task_fields) -> AitoProject:
+    project = AitoProject(
+        description="Helice",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_id="E1",
+        quote_number="DEV26-9001",
+        quote_sync_state="pending",
+    )
+    db.add(project)
+    await db.flush()
+    db.add(AitoTask(project_id=project.id, position=0, title="Helice", **task_fields))
+    await db.commit()
+    return project
+
+
+@pytest.mark.asyncio
+async def test_update_preserves_foreign_lines_and_refreshes_status(db_session):
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    await _configure_zoho(db_session)
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "line_items": [
+                            {"line_item_id": "OLD", "sku": "P3DSCAN", "item_order": 1},
+                            {"line_item_id": "FOREIGN", "sku": "", "name": "Bobine", "item_order": 2},
+                        ],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "status": "sent",
+                        "total": 8500,
+                        "last_modified_time": "2026-07-29T11:00:00-1000",
+                    }
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "idle"
+    assert project.quote_status == "sent"
+    assert project.quote_total == 8500
+
+    put = next(entry for entry in seen if entry[0] == "PUT")
+    assert set(put[2]) == {"line_items"}  # partial PUT: nothing else is sent
+    assert put[2]["line_items"][-1] == {"line_item_id": "FOREIGN", "item_order": 2}
+
+
+@pytest.mark.asyncio
+async def test_invoiced_quote_is_locked_and_never_written(db_session):
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    await _configure_zoho(db_session)
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "accepted",
+                        "is_transaction_created": True,
+                        "invoiced_amount": 8500,
+                    }
+                }
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "locked"
+    assert not any(entry[0] == "PUT" for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_accepted_quote_still_pushes(db_session):
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    await _configure_zoho(db_session)
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {"estimate_id": "E1", "status": "accepted", "invoiced_amount": 0, "line_items": []}
+                },
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "accepted", "total": 5000}},
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "idle"
+    assert any(entry[0] == "PUT" for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_impression_cost_is_written_back_to_what_the_quote_can_express(db_session):
+    project = await _project_with_quote(db_session, impression_cost=2401, impression_quantity=2)
+    await _configure_zoho(db_session)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {"estimate_id": "E1", "status": "draft", "invoiced_amount": 0, "line_items": []}
+                },
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "draft", "total": 2400}},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    task_row = (await db_session.execute(select(AitoTask).where(AitoTask.project_id == project.id))).scalar_one()
+    # 2401 over 2 units cannot be expressed at price_precision 0; the project
+    # adopts the achievable figure so the two sides never disagree.
+    assert task_row.impression_cost == 2400
+
+
+@pytest.mark.asyncio
+async def test_upstream_failures_escalate_to_error_after_the_limit(db_session):
+    project = await _project_with_quote(db_session, scan_cost=1)
+    await _configure_zoho(db_session)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(503, json={"message": "down"})
+
+    zoho_service.transport = httpx.MockTransport(handler)
+    zoho_service.invalidate_token()
+
+    for _ in range(SYNC_FAILURE_LIMIT - 1):
+        await run_sync_once(db_session)
+        await db_session.refresh(project)
+        assert project.quote_sync_state == "pending"
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+
+
+@pytest.mark.asyncio
+async def test_project_row_vanished_before_the_loop_reaches_it_is_skipped(db_session, monkeypatch):
+    """The id was selected up front by run_sync_once's initial SELECT, but the
+    row is gone by the time the per-iteration db.get() runs for it — e.g. hard
+    deleted by something else in the same tick window. Must be skipped
+    silently: no Zoho call, and the (nonexistent) project is certainly never
+    flipped to 'error'."""
+    project = AitoProject(
+        description="Va disparaitre",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_sync_state="pending",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Task", scan_cost=5000))
+    await db_session.commit()
+    project_id = project.id
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(zoho_handler({}, seen))
+    zoho_service.invalidate_token()
+
+    original_get = db_session.get
+
+    async def get_as_if_deleted(model, ident, *args, **kwargs):
+        if model is AitoProject and ident == project_id:
+            return None
+        return await original_get(model, ident, *args, **kwargs)
+
+    monkeypatch.setattr(db_session, "get", get_as_if_deleted)
+
+    assert await run_sync_once(db_session) == 0
+    assert seen == []
+
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "pending"
+    assert project.quote_sync_error is None
+
+
+@pytest.mark.asyncio
+async def test_project_state_changed_away_from_pending_before_the_loop_reaches_it_is_skipped(db_session, monkeypatch):
+    """The id was selected up front, but something else already moved the
+    project's state on (e.g. a concurrent request handler) by the time the
+    loop's db.get() reaches it. Must be skipped, not reprocessed and not
+    flipped to 'error'."""
+    project = AitoProject(
+        description="Deja traite ailleurs",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_sync_state="pending",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Task", scan_cost=5000))
+    await db_session.commit()
+    project_id = project.id
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(zoho_handler({}, seen))
+    zoho_service.invalidate_token()
+
+    original_get = db_session.get
+
+    async def get_with_state_moved_on(model, ident, *args, **kwargs):
+        obj = await original_get(model, ident, *args, **kwargs)
+        if model is AitoProject and ident == project_id and obj is not None:
+            obj.quote_sync_state = "idle"
+        return obj
+
+    monkeypatch.setattr(db_session, "get", get_with_state_moved_on)
+
+    assert await run_sync_once(db_session) == 0
+    assert seen == []
+
+    # refresh() re-queries the DB and overwrites the in-memory attribute,
+    # discarding the uncommitted "idle" the monkeypatch set above — proving
+    # the guard never persisted anything for this project either.
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "pending"
+    assert project.quote_sync_error is None

@@ -125,13 +125,59 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         project.quote_url = await zoho_service.books_app_url(db, project.quote_id)
 
 
+def _is_locked(estimate: dict) -> bool:
+    """An estimate that has become an invoice is accounting, not a draft.
+
+    Zoho itself enforces nothing — sent, accepted and declined estimates all
+    accept a PUT — so this is the app's own guard and the only one there is.
+    Accepted deliberately does NOT lock: a client agreeing a price is no
+    reason a typo in the print weight cannot be corrected.
+    """
+    return bool(estimate.get("is_transaction_created")) or float(estimate.get("invoiced_amount") or 0) > 0
+
+
+async def _write_back_rounded_impression(db: AsyncSession, project_id: int) -> None:
+    """Adopt the total the quote can actually express.
+
+    impression_cost is a total for all units but a line is rate x quantity at
+    price_precision 0, so 2401 over 2 units is unrepresentable. Writing the
+    achievable figure back here means the project and the quote agree
+    immediately — rather than agreeing a tick later, as a visible jitter, when
+    the Phase 2 poller pulls the quote's number back.
+    """
+    rows = (await db.execute(select(AitoTask).where(AitoTask.project_id == project_id))).scalars().all()
+    for row in rows:
+        if row.impression_cost is None:
+            continue
+        quantity = max(1, int(row.impression_quantity or 1))
+        row.impression_cost = round(row.impression_cost / quantity) * quantity
+
+
+async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
+    estimate = await zoho_service.get_estimate(db, project.quote_id)
+    if _is_locked(estimate):
+        project.quote_sync_state = "locked"
+        project.quote_status = estimate.get("status") or project.quote_status
+        project.quote_sync_error = None
+        return
+    catalogue = await zoho_service.get_catalogue(db)
+    line_items = build_line_items(
+        await load_export_tasks(db, project.id),
+        estimate.get("line_items") or [],
+        catalogue,
+    )
+    updated = await zoho_service.update_estimate_lines(db, project.quote_id, line_items)
+    await _write_back_rounded_impression(db, project.id)
+    _apply_estimate(project, updated)
+
+
 async def sync_project(db: AsyncSession, project: AitoProject) -> None:
     """One project's whole state machine. Never raises: every outcome is a state."""
     try:
         if not project.quote_id:
             await _create_quote(db, project)
         else:
-            raise NotImplementedError("update path lands in Task 7")
+            await _update_quote(db, project)
     except ZohoNotConfiguredError:
         # Not a failure: sync is simply off. Leave the project pending so it
         # syncs the moment credentials are entered.
@@ -163,7 +209,11 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
 
 
 async def run_sync_once(db: AsyncSession) -> int:
-    """Drain every pending project. Returns how many were attempted.
+    """Drain every pending project. Returns how many were actually attempted.
+
+    Not the same as the number of ids selected up front: the skip guard below
+    can pass over an id whose row vanished or whose state moved on before the
+    loop reached it, and those never call sync_project, so they don't count.
 
     Active and soft-deleted alike: a trashed project still owes Books a status
     change. Serial by design — the board holds a handful of cards, and one
@@ -178,6 +228,7 @@ async def run_sync_once(db: AsyncSession) -> int:
         .scalars()
         .all()
     )
+    attempted = 0
     for project_id in project_ids:
         # Re-fetched fresh on every iteration rather than loaded once as a
         # list of instances before the loop. This looks like it trades away a
@@ -200,8 +251,10 @@ async def run_sync_once(db: AsyncSession) -> int:
         project = await db.get(AitoProject, project_id)
         if project is None or project.quote_sync_state != "pending":
             # Gone, or already handled by something else since the id was
-            # selected above — nothing left to sync.
+            # selected above — nothing left to sync. Not counted below: it was
+            # never actually attempted.
             continue
+        attempted += 1
         await sync_project(db, project)
         # Commit per project, not once after the loop. sync_project's own
         # catch-all keeps it from raising, but a single end-of-batch commit
@@ -237,4 +290,4 @@ async def run_sync_once(db: AsyncSession) -> int:
         except Exception:
             await db.rollback()
             logger.exception("Aito quote sync failed to commit project %s", project_id)
-    return len(project_ids)
+    return attempted
