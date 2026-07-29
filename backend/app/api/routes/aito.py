@@ -23,7 +23,7 @@ from backend.app.schemas.aito import (
     AitoTaskResponse,
     AitoTaskUpdate,
 )
-from backend.app.services.aito_board_rules import evaluate, pending_services
+from backend.app.services.aito_board_rules import SERVICES, evaluate, pending_services
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +172,10 @@ def _task_to_response(t: AitoTask) -> AitoTaskResponse:
         impression_quantity=t.impression_quantity,
         impression_color=t.impression_color,
         impression_cost=t.impression_cost,
+        scan_done=t.scan_done,
+        modelisation_done=t.modelisation_done,
+        impression_done=t.impression_done,
+        usinage_done=t.usinage_done,
         created_at=t.created_at,
         updated_at=t.updated_at,
     )
@@ -353,9 +357,32 @@ async def update_task(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Only fields present in the body are written, so an omitted key is left
-    alone and an explicit null disables that service."""
+    alone and an explicit null disables that service.
+
+    Two invariants hold across the write:
+
+    - Clearing a cost to NULL clears its done flag. The step no longer exists,
+      and leaving the flag set would bring the service back pre-ticked if it
+      were ever re-enabled.
+    - A done flag may not be set for a service with no cost. Checked against
+      the MERGED row rather than the stored one, so enabling a service and
+      ticking it in the same PATCH is legal while ticking a service that stays
+      absent is a 422.
+    """
     task = await _get_task_or_404(db, task_id)
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    fields = payload.model_dump(exclude_unset=True)
+
+    for service in SERVICES:
+        cost_key, done_key = f"{service}_cost", f"{service}_done"
+        merged_cost = fields.get(cost_key, getattr(task, cost_key))
+        merged_done = fields.get(done_key, getattr(task, done_key))
+        if merged_cost is None:
+            if fields.get(done_key):
+                raise HTTPException(status_code=422, detail=f"{service} has no cost, so it cannot be marked done")
+            if merged_done:
+                fields[done_key] = False
+
+    for key, value in fields.items():
         setattr(task, key, value)
     project = await _mark_project_pending_for_task(db, task.project_id)
     if project:

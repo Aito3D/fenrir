@@ -758,3 +758,51 @@ async def test_an_advancing_card_lands_at_the_end_of_its_new_column(async_client
     board = {row["id"]: row for row in (await async_client.get("/api/v1/aito/")).json()}
     assert board[sitting["id"]]["column"] == "print" and board[sitting["id"]]["position"] == 0
     assert board[arriving["id"]]["column"] == "print" and board[arriving["id"]]["position"] == 1
+
+
+@pytest.mark.asyncio
+async def test_clearing_a_cost_also_clears_its_done_flag(async_client):
+    """Otherwise re-enabling the service later would bring it back pre-ticked."""
+    p = (await _create(async_client, quote_status="accepted")).json()
+    t = (await _add_task(async_client, p["id"], scan_cost=1200.0, scan_done=True)).json()
+
+    r = await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_cost": None})
+    assert r.status_code == 200
+    assert r.json()["scan_done"] is False
+
+
+@pytest.mark.asyncio
+async def test_ticking_a_step_that_does_not_exist_is_422(async_client):
+    p = (await _create(async_client, quote_status="accepted")).json()
+    t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
+
+    r = await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"usinage_done": True})
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_enabling_a_service_and_ticking_it_in_one_patch_is_allowed(async_client):
+    """The check runs against the MERGED row, not the stored one."""
+    p = (await _create(async_client, quote_status="accepted")).json()
+    t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
+
+    r = await async_client.patch(
+        f"/api/v1/aito/tasks/{t['id']}",
+        json={"usinage_cost": 500.0, "usinage_done": True},
+    )
+    assert r.status_code == 200
+    assert r.json()["usinage_done"] is True
+
+
+@pytest.mark.asyncio
+async def test_unticking_a_step_pulls_the_card_back(async_client):
+    p = (await _create(async_client, quote_status="accepted")).json()
+    t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
+    await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
+
+    board = {row["id"]: row for row in (await async_client.get("/api/v1/aito/")).json()}
+    assert board[p["id"]]["column"] == "finish"
+
+    await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": False})
+    board = {row["id"]: row for row in (await async_client.get("/api/v1/aito/")).json()}
+    assert board[p["id"]]["column"] == "scan"
