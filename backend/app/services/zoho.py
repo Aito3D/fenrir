@@ -8,6 +8,7 @@ a 401 from the Books API invalidates the cache and retries exactly once.
 import asyncio
 import re
 import time
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,6 +58,19 @@ def _map_contact(contact: dict) -> dict:
         "phone": contact.get("phone", ""),
         "mobile": contact.get("mobile", ""),
         "email": contact.get("email", ""),
+    }
+
+
+def _map_estimate_summary(estimate: dict) -> dict:
+    """Zoho estimate -> the flat row the Aito quote picker lists."""
+    return {
+        "id": estimate.get("estimate_id", ""),
+        "number": estimate.get("estimate_number", ""),
+        "customer_name": estimate.get("customer_name", ""),
+        "date": estimate.get("date", ""),
+        "total": float(estimate.get("total") or 0),
+        "currency_code": estimate.get("currency_code", ""),
+        "status": estimate.get("status", ""),
     }
 
 
@@ -171,6 +185,39 @@ class ZohoService:
     async def search_contacts(self, db: AsyncSession, query: str) -> list[dict]:
         payload = await self._request(db, "GET", "/contacts", params={"search_text": query})
         return [_map_contact(c) for c in payload.get("contacts", [])]
+
+    async def search_estimates(self, db: AsyncSession, query: str) -> list[dict]:
+        """Quotes for the Aito import picker.
+
+        An empty query lists the most recent quotes, so the dropdown is useful
+        before the user types anything — a quote just written is at the top.
+        """
+        params: dict = {"per_page": 25}
+        if query:
+            params["search_text"] = query
+        else:
+            params.update({"sort_column": "date", "sort_order": "D"})
+        payload = await self._request(db, "GET", "/estimates", params=params)
+        return [_map_estimate_summary(e) for e in payload.get("estimates", [])]
+
+    async def get_estimate(self, db: AsyncSession, estimate_id: str) -> dict:
+        """The full estimate, line items included."""
+        return (await self._request(db, "GET", f"/estimates/{estimate_id}")).get("estimate", {})
+
+    async def get_contact(self, db: AsyncSession, contact_id: str) -> dict:
+        return _map_contact((await self._request(db, "GET", f"/contacts/{contact_id}")).get("contact", {}))
+
+    async def books_app_url(self, db: AsyncSession, estimate_id: str) -> str:
+        """Deep link into the Books web app for this org's region.
+
+        The API host is not the app host, so the region is taken from the
+        accounts URL: accounts.zoho.eu -> books.zoho.eu, and
+        accounts.zoho.com.au -> books.zoho.com.au.
+        """
+        config = await self._load_config(db)
+        host = urlparse(config["zoho_accounts_url"]).hostname or "accounts.zoho.eu"
+        suffix = host[len("accounts.") :] if host.startswith("accounts.") else host
+        return f"https://books.{suffix}/app/{config['zoho_organization_id']}#/estimates/{estimate_id}"
 
     async def create_contact(
         self,
