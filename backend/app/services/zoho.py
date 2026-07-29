@@ -13,6 +13,8 @@ from urllib.parse import urlparse
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.services.aito_quote_export import Catalogue
+
 _EXPIRY_MARGIN_SECONDS = 300
 _REQUIRED_KEYS = ("zoho_client_id", "zoho_client_secret", "zoho_refresh_token", "zoho_organization_id")
 DEFAULT_CONTACT_ID_FALLBACK = "66407000001237340"
@@ -29,6 +31,15 @@ class ZohoUpstreamError(Exception):
 
 class ZohoRequestRejected(ZohoUpstreamError):
     """Zoho rejected the payload (HTTP 400). The message is user-actionable."""
+
+
+class ZohoNotFound(ZohoUpstreamError):
+    """The document does not exist (HTTP 404).
+
+    A subclass of ZohoUpstreamError so every existing handler still catches it;
+    callers that care — the sync worker, which must tell "the quote was deleted
+    in Books" from "Books is down" — catch this first.
+    """
 
 
 def _title_case_segments(value: str) -> str:
@@ -175,6 +186,8 @@ class ZohoService:
                 payload = response.json() if response.content else {}
             except ValueError as e:
                 raise ZohoUpstreamError(f"Zoho returned a non-JSON response (HTTP {response.status_code})") from e
+            if response.status_code == 404:
+                raise ZohoNotFound(payload.get("message") or "Not found in Zoho Books")
             if response.status_code == 400:
                 raise ZohoRequestRejected(payload.get("message") or "Zoho rejected the request")
             if response.status_code >= 400:
@@ -203,6 +216,48 @@ class ZohoService:
     async def get_estimate(self, db: AsyncSession, estimate_id: str) -> dict:
         """The full estimate, line items included."""
         return (await self._request(db, "GET", f"/estimates/{estimate_id}")).get("estimate", {})
+
+    async def create_estimate(self, db: AsyncSession, payload: dict) -> dict:
+        """Create a draft estimate. Template, salesperson, notes, terms, expiry
+        and numbering are all left to the org defaults — this app sends only
+        what it owns."""
+        return (await self._request(db, "POST", "/estimates", json=payload)).get("estimate", {})
+
+    async def update_estimate_lines(self, db: AsyncSession, estimate_id: str, line_items: list[dict]) -> dict:
+        """Replace the line items and nothing else.
+
+        A partial PUT: Books preserves customer_id, notes, terms,
+        reference_number, template and salesperson when they are absent from
+        the body. Verified against the live org — do not "helpfully" resend
+        them, that is how a hand-edited note gets clobbered.
+        """
+        body = {"line_items": line_items}
+        return (await self._request(db, "PUT", f"/estimates/{estimate_id}", json=body)).get("estimate", {})
+
+    async def set_estimate_status(self, db: AsyncSession, estimate_id: str, status: str) -> None:
+        """`sent`, `accepted` or `declined`. There is no `draft`: Books offers
+        no way back, so declining an estimate is one-way through the API."""
+        await self._request(db, "POST", f"/estimates/{estimate_id}/status/{status}")
+
+    async def get_catalogue(self, db: AsyncSession) -> Catalogue:
+        """The AITO 3D item ids and the services tax, from settings.
+
+        Defaults are the live org's real ids, so a fresh install works without
+        configuration; overriding them in settings covers a catalogue change
+        without a redeploy.
+        """
+        from backend.app.api.routes.settings import get_setting
+
+        async def value(key: str, fallback: str) -> str:
+            return (await get_setting(db, key)) or fallback
+
+        return Catalogue(
+            scan_item_id=await value("zoho_item_scan_id", "66407000006501192"),
+            modelisation_item_id=await value("zoho_item_modelisation_id", "66407000006485001"),
+            impression_item_id=await value("zoho_item_impression_id", "66407000006485012"),
+            usinage_item_id=await value("zoho_item_usinage_id", "66407000006884825"),
+            tax_id=await value("zoho_service_tax_id", "66407000009281008"),
+        )
 
     async def get_contact(self, db: AsyncSession, contact_id: str) -> dict:
         return _map_contact((await self._request(db, "GET", f"/contacts/{contact_id}")).get("contact", {}))

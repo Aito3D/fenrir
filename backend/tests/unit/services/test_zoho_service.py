@@ -8,6 +8,7 @@ import pytest
 
 from backend.app.services.zoho import (
     ZohoNotConfiguredError,
+    ZohoNotFound,
     ZohoRequestRejected,
     ZohoUpstreamError,
     zoho_service,
@@ -424,3 +425,43 @@ async def test_create_contact_response_carries_customer_sub_type(async_client, d
         db_session, company_name="ACME SARL", first_name="", last_name="", email="", phone=""
     )
     assert result["customer_sub_type"] == "business"
+
+
+@pytest.mark.asyncio
+async def test_404_raises_zoho_not_found(async_client, db_session):
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(404, json={"message": "Devis introuvable"})
+
+    zoho_service.transport = _transport(handler)
+    with pytest.raises(ZohoNotFound):
+        await zoho_service.get_estimate(db_session, "gone")
+
+
+@pytest.mark.asyncio
+async def test_update_estimate_lines_sends_only_line_items(async_client, db_session):
+    await _configure(async_client)
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        seen["method"] = request.method
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"estimate": {"estimate_id": "e1", "status": "draft"}})
+
+    zoho_service.transport = _transport(handler)
+    result = await zoho_service.update_estimate_lines(db_session, "e1", [{"item_id": "x"}])
+    assert seen["method"] == "PUT"
+    assert seen["body"] == {"line_items": [{"item_id": "x"}]}
+    assert result["estimate_id"] == "e1"
+
+
+@pytest.mark.asyncio
+async def test_get_catalogue_falls_back_to_the_verified_defaults(db_session):
+    catalogue = await zoho_service.get_catalogue(db_session)
+    assert catalogue.scan_item_id == "66407000006501192"
+    assert catalogue.tax_id == "66407000009281008"
