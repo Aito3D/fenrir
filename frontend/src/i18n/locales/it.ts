@@ -118,8 +118,9 @@ export default {
     },
     columns: {
       devis: 'Preventivo',
-      model: 'Modello 3D',
-      print: 'Stampa 3D',
+      model: 'Modellazione',
+      print: 'Stampa e lavorazione',
+      pickup: 'Ritiro',
       finish: 'Finitura',
     },
   },

@@ -3416,7 +3416,7 @@ export interface CalculatorInsights {
 }
 
 // Aito kanban board
-export type AitoColumnId = 'devis' | 'model' | 'print' | 'finish';
+export type AitoColumnId = 'devis' | 'model' | 'print' | 'pickup' | 'finish';
 
 export interface AitoProject {
   id: number;

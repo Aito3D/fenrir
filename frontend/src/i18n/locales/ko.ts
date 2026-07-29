@@ -118,8 +118,9 @@ export default {
     },
     columns: {
       devis: '견적',
-      model: '3D 모델',
-      print: '3D 프린트',
+      model: '모델링',
+      print: '프린팅 및 가공',
+      pickup: '수령',
       finish: '마감',
     },
   },

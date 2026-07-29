@@ -118,8 +118,9 @@ export default {
     },
     columns: {
       devis: '見積もり',
-      model: '3Dモデル',
-      print: '3Dプリント',
+      model: 'モデリング',
+      print: 'プリント・機械加工',
+      pickup: '引き取り',
       finish: '仕上げ',
     },
   },

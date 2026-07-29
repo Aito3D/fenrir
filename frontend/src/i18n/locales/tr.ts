@@ -118,8 +118,9 @@ export default {
     },
     columns: {
       devis: 'Teklif',
-      model: '3B Model',
-      print: '3D Baskı',
+      model: 'Modelleme',
+      print: 'Baskı ve İşleme',
+      pickup: 'Teslim alma',
       finish: 'Son işlem',
     },
   },

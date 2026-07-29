@@ -118,8 +118,9 @@ export default {
     },
     columns: {
       devis: 'Смета',
-      model: '3D-модель',
-      print: '3D-печать',
+      model: 'Моделирование',
+      print: 'Печать и обработка',
+      pickup: 'Выдача',
       finish: 'Отделка',
     },
   },

@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-AitoColumn = Literal["devis", "model", "print", "finish"]
+AitoColumn = Literal["devis", "model", "print", "pickup", "finish"]
 
 
 class AitoTaskBase(BaseModel):

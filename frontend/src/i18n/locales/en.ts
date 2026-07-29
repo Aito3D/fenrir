@@ -118,8 +118,9 @@ export default {
     },
     columns: {
       devis: 'Quote',
-      model: '3D Model',
-      print: '3D Print',
+      model: 'Modeling',
+      print: 'Printing & Machining',
+      pickup: 'Pick up',
       finish: 'Finish',
     },
   },

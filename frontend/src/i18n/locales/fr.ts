@@ -118,8 +118,9 @@ export default {
     },
     columns: {
       devis: 'Devis',
-      model: 'Modèle 3D',
-      print: 'Impression 3D',
+      model: 'Modélisation',
+      print: 'Impression & Usinage',
+      pickup: 'Retrait',
       finish: 'Finition',
     },
   },

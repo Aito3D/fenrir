@@ -118,8 +118,9 @@ export default {
     },
     columns: {
       devis: '报价',
-      model: '3D 模型',
-      print: '3D 打印',
+      model: '建模',
+      print: '打印与加工',
+      pickup: '待取件',
       finish: '后处理',
     },
   },
