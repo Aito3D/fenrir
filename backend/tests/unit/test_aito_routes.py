@@ -678,3 +678,83 @@ async def test_create_records_the_authenticated_creator(async_client):
         assert r.json()["created_by"] == "paul"
     finally:
         app.dependency_overrides.pop(dep, None)
+
+
+async def _add_task(client, project_id, **fields):
+    return await client.post(f"/api/v1/aito/{project_id}/tasks", json=fields)
+
+
+@pytest.mark.asyncio
+async def test_a_new_card_is_locked_in_devis_by_its_quote(async_client):
+    p = (await _create(async_client)).json()
+    assert p["column"] == "devis"
+    assert p["move_lock"] == "quote"
+
+
+@pytest.mark.asyncio
+async def test_accepting_derives_the_first_stage_with_work(async_client):
+    p = (await _create(async_client, quote_status="draft")).json()
+    await _add_task(async_client, p["id"], modelisation_cost=900.0, impression_cost=2400.0)
+    await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "accepted"})
+
+    board = {row["id"]: row for row in (await async_client.get("/api/v1/aito/")).json()}
+    assert board[p["id"]]["column"] == "model"
+    assert board[p["id"]]["move_lock"] == "steps"
+
+
+@pytest.mark.asyncio
+async def test_ticking_the_last_step_of_a_stage_advances_the_card(async_client):
+    p = (await _create(async_client, quote_status="accepted")).json()
+    t = (await _add_task(async_client, p["id"], scan_cost=1200.0, impression_cost=2400.0)).json()
+
+    r = await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
+    assert r.status_code == 200
+
+    board = {row["id"]: row for row in (await async_client.get("/api/v1/aito/")).json()}
+    assert board[p["id"]]["column"] == "print"
+
+
+@pytest.mark.asyncio
+async def test_all_steps_ticked_lands_on_finish_and_unlocks(async_client):
+    p = (await _create(async_client, quote_status="accepted")).json()
+    t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
+    await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
+
+    board = {row["id"]: row for row in (await async_client.get("/api/v1/aito/")).json()}
+    assert board[p["id"]]["column"] == "finish"
+    assert board[p["id"]]["move_lock"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_zero_cost_step_still_holds_the_card(async_client):
+    """0 is quoted-free, not absent."""
+    p = (await _create(async_client, quote_status="accepted")).json()
+    await _add_task(async_client, p["id"], scan_cost=0.0)
+
+    board = {row["id"]: row for row in (await async_client.get("/api/v1/aito/")).json()}
+    assert board[p["id"]]["column"] == "scan"
+
+
+@pytest.mark.asyncio
+async def test_deleting_the_last_blocking_task_advances_the_card(async_client):
+    p = (await _create(async_client, quote_status="accepted")).json()
+    t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
+    await async_client.delete(f"/api/v1/aito/tasks/{t['id']}")
+
+    board = {row["id"]: row for row in (await async_client.get("/api/v1/aito/")).json()}
+    assert board[p["id"]]["column"] == "finish"
+
+
+@pytest.mark.asyncio
+async def test_an_advancing_card_lands_at_the_end_of_its_new_column(async_client):
+    """Work arriving at a stage joins the back of that stage's queue."""
+    sitting = (await _create(async_client, description="already printing", quote_status="accepted")).json()
+    await _add_task(async_client, sitting["id"], impression_cost=1.0)
+
+    arriving = (await _create(async_client, description="arriving", quote_status="accepted")).json()
+    t = (await _add_task(async_client, arriving["id"], scan_cost=1.0, impression_cost=1.0)).json()
+    await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
+
+    board = {row["id"]: row for row in (await async_client.get("/api/v1/aito/")).json()}
+    assert board[sitting["id"]]["column"] == "print" and board[sitting["id"]]["position"] == 0
+    assert board[arriving["id"]]["column"] == "print" and board[arriving["id"]]["position"] == 1

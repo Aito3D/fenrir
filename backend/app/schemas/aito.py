@@ -139,5 +139,10 @@ class AitoProjectResponse(BaseModel):
     task_count: int
     tasks_total: float
     task_services: list[str]
+    # Why this card cannot be dragged between columns, or None when it can
+    # (Finish <-> Done only). Derived, never stored — see
+    # services/aito_board_rules.evaluate. The frontend renders its lock badge
+    # and computes its allowed droppables from this and nothing else.
+    move_lock: Literal["quote", "waiting", "declined", "steps"] | None
     created_at: datetime
     updated_at: datetime
