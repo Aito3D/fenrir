@@ -6,12 +6,16 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator, model_validator
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequireAnyPermissionIfAuthEnabled, RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.models.aito_project import AitoProject
 from backend.app.models.user import User
+from backend.app.schemas.aito import AitoTaskCreate
+from backend.app.services.aito_quote_import import build_preview
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRequestRejected, ZohoUpstreamError, zoho_service
 
 logger = logging.getLogger(__name__)
@@ -202,3 +206,101 @@ async def patch_contact(
         raise HTTPException(status_code=409, detail="Zoho is not configured") from None
     except ZohoUpstreamError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+class ZohoEstimateSummary(BaseModel):
+    id: str
+    number: str
+    customer_name: str
+    date: str
+    total: float
+    currency_code: str
+    status: str
+
+
+class ZohoQuoteInfo(BaseModel):
+    id: str
+    number: str
+    date: str
+    status: str
+    total: float
+    currency_code: str
+    url: str
+
+
+class ZohoQuoteClient(BaseModel):
+    id: str
+    name: str
+    phone: str | None
+    email: str | None
+    is_company: bool | None
+
+
+class ZohoSkippedLine(BaseModel):
+    sku: str
+    name: str
+    amount: float
+
+
+class ZohoQuotePreview(BaseModel):
+    """Everything the Aito import modal renders, with `tasks` already in the
+    shape POST /aito/ accepts — what the user sees is what gets created."""
+
+    quote: ZohoQuoteInfo
+    client: ZohoQuoteClient
+    suggested_description: str
+    tasks: list[AitoTaskCreate]
+    skipped_lines: list[ZohoSkippedLine]
+    existing_project_id: int | None
+
+
+@router.get("/estimates", response_model=list[ZohoEstimateSummary])
+async def search_estimates(
+    q: str = Query(default="", max_length=100),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
+):
+    """Quotes for the import picker. An empty ``q`` lists the most recent."""
+    try:
+        return await zoho_service.search_estimates(db, q.strip())
+    except ZohoNotConfiguredError:
+        raise HTTPException(status_code=409, detail="Zoho is not configured") from None
+    except ZohoUpstreamError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+@router.get("/estimates/{estimate_id}/preview", response_model=ZohoQuotePreview)
+async def preview_estimate(
+    estimate_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
+):
+    try:
+        estimate = await zoho_service.get_estimate(db, estimate_id)
+        quote_url = await zoho_service.books_app_url(db, estimate_id)
+    except ZohoNotConfiguredError:
+        raise HTTPException(status_code=409, detail="Zoho is not configured") from None
+    except ZohoUpstreamError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    # The contact enriches the client snapshot with a phone and an email. It is
+    # a second round trip and a second thing that can fail — a failure here
+    # degrades to the estimate's own customer rather than losing the import.
+    contact = None
+    customer_id = estimate.get("customer_id") or ""
+    if customer_id:
+        try:
+            contact = await zoho_service.get_contact(db, customer_id)
+        except ZohoUpstreamError as e:
+            logger.warning("Quote preview: contact %s unavailable: %s", customer_id, e)
+
+    preview = build_preview(estimate, contact, quote_url)
+    # Soft-deleted cards do not count: re-importing a quote whose card was
+    # thrown away is not a duplicate.
+    existing = await db.scalar(
+        select(AitoProject.id)
+        .where(AitoProject.quote_id == estimate_id, AitoProject.status == "active")
+        .order_by(AitoProject.id.desc())
+        .limit(1)
+    )
+    return ZohoQuotePreview(**preview, existing_project_id=existing)
