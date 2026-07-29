@@ -146,3 +146,21 @@ class AitoProjectResponse(BaseModel):
     move_lock: Literal["quote", "waiting", "declined", "steps"] | None
     created_at: datetime
     updated_at: datetime
+
+
+class AitoQuoteStatusUpdate(BaseModel):
+    """The three transitions the board can drive. Zoho has no /status/draft, and
+    `viewed` and `expired` are things that happen TO a quote rather than
+    decisions anyone makes — they only ever arrive from Zoho."""
+
+    status: Literal["sent", "accepted", "declined"]
+
+
+class AitoQuoteStatusResponse(BaseModel):
+    """``zoho_synced`` is a transport detail, so it rides alongside the project
+    rather than on it: the frontend writes ``project`` straight into the board
+    cache with setQueryData, and a cached board row has no business carrying
+    the outcome of one request."""
+
+    project: AitoProjectResponse
+    zoho_synced: bool

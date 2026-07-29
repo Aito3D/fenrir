@@ -888,3 +888,113 @@ async def test_unticking_a_step_pulls_the_card_back(async_client):
     await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": False})
     board = {row["id"]: row for row in (await async_client.get("/api/v1/aito/")).json()}
     assert board[p["id"]]["column"] == "scan"
+
+
+@pytest.mark.asyncio
+async def test_declining_sends_the_card_to_done(async_client):
+    p = (await _create(async_client, quote_status="draft")).json()
+    await _add_task(async_client, p["id"], impression_cost=2400.0)
+
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "declined"})
+    assert r.status_code == 200
+    assert r.json()["project"]["column"] == "done"
+    assert r.json()["project"]["quote_status"] == "declined"
+    assert r.json()["project"]["move_lock"] == "declined"
+
+
+@pytest.mark.asyncio
+async def test_accepting_a_declined_quote_reopens_it(async_client):
+    p = (await _create(async_client, quote_status="draft")).json()
+    await _add_task(async_client, p["id"], impression_cost=2400.0)
+    await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "declined"})
+
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "accepted"})
+    assert r.json()["project"]["column"] == "print"
+
+
+@pytest.mark.asyncio
+async def test_marking_sent_parks_the_card_in_waiting(async_client):
+    """Locked there whatever the tasks say: the work is not authorised yet."""
+    p = (await _create(async_client)).json()
+    await _add_task(async_client, p["id"], impression_cost=2400.0)
+
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "sent"})
+    assert r.status_code == 200
+    assert r.json()["project"]["column"] == "waiting"
+    assert r.json()["project"]["move_lock"] == "waiting"
+
+
+@pytest.mark.asyncio
+async def test_accepting_from_waiting_lands_on_the_right_stage(async_client):
+    p = (await _create(async_client)).json()
+    t = (await _add_task(async_client, p["id"], scan_cost=1.0, impression_cost=1.0)).json()
+    await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "sent"})
+    # Ticking while the card is out with the client changes nothing on the board.
+    await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
+    board = {row["id"]: row for row in (await async_client.get("/api/v1/aito/")).json()}
+    assert board[p["id"]]["column"] == "waiting"
+
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "accepted"})
+    assert r.json()["project"]["column"] == "print"
+
+
+@pytest.mark.asyncio
+async def test_quote_status_rejects_an_unknown_status(async_client):
+    p = (await _create(async_client)).json()
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "viewed"})
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_a_card_with_no_quote_never_calls_zoho(async_client, monkeypatch):
+    from backend.app.services import zoho as zoho_module
+
+    calls = []
+
+    async def _spy(self, db, estimate_id, status):
+        calls.append((estimate_id, status))
+
+    monkeypatch.setattr(zoho_module.ZohoService, "set_estimate_status", _spy)
+
+    p = (await _create(async_client)).json()  # no quote_id
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "accepted"})
+    assert r.status_code == 200
+    assert r.json()["zoho_synced"] is False
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_a_linked_quote_is_pushed_to_zoho(async_client, monkeypatch):
+    from backend.app.services import zoho as zoho_module
+
+    calls = []
+
+    async def _spy(self, db, estimate_id, status):
+        calls.append((estimate_id, status))
+
+    monkeypatch.setattr(zoho_module.ZohoService, "set_estimate_status", _spy)
+
+    p = (await _create(async_client, quote_id="EST-9", quote_number="QT-9")).json()
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "accepted"})
+    assert r.json()["zoho_synced"] is True
+    assert calls == [("EST-9", "accepted")]
+
+
+@pytest.mark.asyncio
+async def test_a_zoho_failure_still_writes_locally(async_client, monkeypatch):
+    """The board must be right with Zoho down. Never a non-200."""
+    from backend.app.services import zoho as zoho_module
+
+    async def _boom(self, db, estimate_id, status):
+        raise RuntimeError("Zoho is down")
+
+    monkeypatch.setattr(zoho_module.ZohoService, "set_estimate_status", _boom)
+
+    p = (await _create(async_client, quote_id="EST-9")).json()
+    await _add_task(async_client, p["id"], impression_cost=1.0)
+
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "accepted"})
+    assert r.status_code == 200
+    assert r.json()["zoho_synced"] is False
+    assert r.json()["project"]["quote_status"] == "accepted"
+    assert r.json()["project"]["column"] == "print"

@@ -19,11 +19,14 @@ from backend.app.schemas.aito import (
     AitoProjectMove,
     AitoProjectResponse,
     AitoProjectUpdate,
+    AitoQuoteStatusResponse,
+    AitoQuoteStatusUpdate,
     AitoTaskCreate,
     AitoTaskResponse,
     AitoTaskUpdate,
 )
 from backend.app.services.aito_board_rules import SERVICES, evaluate, pending_services
+from backend.app.services.zoho import zoho_service
 
 logger = logging.getLogger(__name__)
 
@@ -561,6 +564,58 @@ async def update_project(
     await db.commit()
     await db.refresh(project)
     return _to_response(project, await _one_summary(db, project.id))
+
+
+@router.post("/{project_id}/quote-status", response_model=AitoQuoteStatusResponse)
+async def set_quote_status(
+    project_id: int,
+    payload: AitoQuoteStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Move a project's quote to sent, accepted or declined.
+
+    `sent` sends the card to Waiting, acceptance is the gate that releases it
+    onto the work columns, and a decline sends it straight to Done. `sent` is
+    accepted here because nothing else in the app produces that status — it
+    would otherwise only ever arrive by importing an already-sent Zoho quote,
+    leaving Waiting unreachable for a hand-made card.
+
+    The local write happens FIRST and
+    always: the board has to be correct with Zoho unreachable, which is the
+    rule the rest of the Aito code follows. The Zoho push is best-effort and
+    reported as ``zoho_synced`` — never a non-200, or a Books outage would
+    block the shop from recording a decision the client already made.
+    """
+    project = (
+        await db.execute(select(AitoProject).where(AitoProject.id == project_id, AitoProject.status == "active"))
+    ).scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    project.quote_status = payload.status
+    await _apply_rules(db, project)
+    await db.commit()
+    await db.refresh(project)
+
+    zoho_synced = False
+    if project.quote_id:
+        try:
+            await zoho_service.set_estimate_status(db, project.quote_id, payload.status)
+            zoho_synced = True
+        except Exception:
+            logger.warning(
+                "Could not set Zoho estimate %s to %s for project %s",
+                project.quote_id,
+                payload.status,
+                project.id,
+                exc_info=True,
+            )
+
+    return AitoQuoteStatusResponse(
+        project=_to_response(project, await _one_summary(db, project.id)),
+        zoho_synced=zoho_synced,
+    )
 
 
 @router.post("/{project_id}/restore", response_model=AitoProjectResponse)
