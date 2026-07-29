@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Loader2, X } from 'lucide-react';
+import { Check, ExternalLink, Loader2, X } from 'lucide-react';
 import { COLUMNS } from './columns';
 import { TaskEditor } from './TaskEditor';
 import { AITO_CARD_VT_NAME } from '../../hooks/useCardMorph';
@@ -81,6 +81,16 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
   const column = COLUMNS.find((c) => c.id === project.column);
   const created = parseUTCDate(project.created_at);
   const updated = parseUTCDate(project.updated_at);
+
+  // "28 Jul 2026 · 5 600 XPF" — the QUOTE's own date and total, which can
+  // exceed the project total when non-AITO lines were skipped at import.
+  const quoteDate = project.quote_date ? new Date(project.quote_date) : null;
+  const quoteDetail = [
+    quoteDate && !Number.isNaN(quoteDate.getTime()) ? quoteDate.toLocaleDateString(i18n.language) : '',
+    project.quote_total != null ? project.quote_total.toLocaleString(i18n.language) : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -396,20 +406,26 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
                   colon is markup, so no locale string carries punctuation. Client
                   rows with no value are omitted entirely — an empty "Email:" is
                   noise, not information. The mid-list border separates the client
-                  group from the project metadata. */}
+                  group from the project metadata. Rows are `justify-between` with
+                  right-aligned <dd>s, turning the block into a spec sheet: labels
+                  flush left, values flush right. */}
               <dl className="border-t border-bambu-dark-tertiary pt-4 space-y-2 text-sm">
-                <div className="flex items-baseline gap-2">
+                <div className="flex items-baseline justify-between gap-2">
                   <dt className="text-bambu-gray flex-shrink-0">
                     {project.client_is_company ? t('aito.companyNameLabel') : t('aito.clientNameLabel')}:
                   </dt>
-                  <dd className={`min-w-0 truncate ${project.client_name ? 'text-white' : 'text-bambu-gray'}`}>
+                  <dd
+                    className={`min-w-0 truncate text-right ${
+                      project.client_name ? 'text-white' : 'text-bambu-gray'
+                    }`}
+                  >
                     {project.client_name ?? t('aito.noClient')}
                   </dd>
                 </div>
                 {project.client_phone && (
-                  <div className="flex items-baseline gap-2">
+                  <div className="flex items-baseline justify-between gap-2">
                     <dt className="text-bambu-gray flex-shrink-0">{t('aito.phoneLabel')}:</dt>
-                    <dd className="min-w-0 truncate">
+                    <dd className="min-w-0 truncate text-right">
                       <a href={`tel:${project.client_phone}`} className="text-white hover:text-bambu-green">
                         {project.client_phone}
                       </a>
@@ -417,9 +433,9 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
                   </div>
                 )}
                 {project.client_email && (
-                  <div className="flex items-baseline gap-2">
+                  <div className="flex items-baseline justify-between gap-2">
                     <dt className="text-bambu-gray flex-shrink-0">{t('aito.emailLabel')}:</dt>
-                    <dd className="min-w-0 truncate">
+                    <dd className="min-w-0 truncate text-right">
                       <a href={`mailto:${project.client_email}`} className="text-white hover:text-bambu-green">
                         {project.client_email}
                       </a>
@@ -427,17 +443,48 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
                   </div>
                 )}
 
-                <div className="flex items-baseline gap-2 border-t border-bambu-dark-tertiary pt-2 mt-2">
+                {/* Imported projects only. The quote is a snapshot, so this row
+                    renders with Zoho unreachable; only the link needs Zoho. */}
+                {project.quote_number && (
+                  <div className="flex items-baseline justify-between gap-2 border-t border-bambu-dark-tertiary pt-2 mt-2">
+                    <dt className="text-bambu-gray flex-shrink-0">{t('aito.quoteSearchLabel')}:</dt>
+                    <dd className="text-white min-w-0 truncate text-right">
+                      {project.quote_url ? (
+                        <a
+                          href={project.quote_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={t('aito.quoteOpenInZoho')}
+                          className="text-white hover:text-bambu-green inline-flex items-center gap-1"
+                        >
+                          {project.quote_number}
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      ) : (
+                        project.quote_number
+                      )}
+                      {quoteDetail && <span className="text-bambu-gray"> · {quoteDetail}</span>}
+                    </dd>
+                  </div>
+                )}
+
+                <div className="flex items-baseline justify-between gap-2 border-t border-bambu-dark-tertiary pt-2 mt-2">
                   <dt className="text-bambu-gray flex-shrink-0">{t('aito.createdLabel')}:</dt>
-                  <dd className="text-white min-w-0">{created ? created.toLocaleString(i18n.language) : '—'}</dd>
+                  <dd className="text-white min-w-0 text-right">
+                    {created ? created.toLocaleString(i18n.language) : '—'}
+                  </dd>
                 </div>
-                <div className="flex items-baseline gap-2">
+                <div className="flex items-baseline justify-between gap-2">
                   <dt className="text-bambu-gray flex-shrink-0">{t('aito.lastActivity')}:</dt>
-                  <dd className="text-white min-w-0">{updated ? updated.toLocaleString(i18n.language) : '—'}</dd>
+                  <dd className="text-white min-w-0 text-right">
+                    {updated ? updated.toLocaleString(i18n.language) : '—'}
+                  </dd>
                 </div>
-                <div className="flex items-baseline gap-2">
+                <div className="flex items-baseline justify-between gap-2">
                   <dt className="text-bambu-gray flex-shrink-0">{t('aito.stage')}:</dt>
-                  <dd className="text-white flex items-center gap-2">
+                  {/* The dot lives inside the <dd> so it travels right with its
+                      label text instead of stranding mid-row. */}
+                  <dd className="text-white flex items-center justify-end gap-2 text-right">
                     {column && <span className={`w-2 h-2 rounded-full ${column.dot}`} />}
                     {column ? t(column.labelKey) : project.column}
                   </dd>

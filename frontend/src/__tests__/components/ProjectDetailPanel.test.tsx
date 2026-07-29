@@ -808,3 +808,30 @@ describe('ProjectDetailPanel tasks', () => {
     expect(boardFetches).not.toHaveBeenCalled();
   });
 });
+
+describe('ProjectDetailPanel quote row', () => {
+  it('right-aligns the metadata values', () => {
+    show();
+    const value = screen.getByText('ACME SARL');
+    expect(value.className).toContain('text-right');
+  });
+
+  it('shows nothing about a quote on a manually created project', () => {
+    show();
+    expect(document.querySelector('a[href*="books.zoho"]')).toBeNull();
+  });
+
+  it('links an imported project to its quote in Zoho Books', () => {
+    show({
+      quote_id: 'e2',
+      quote_number: 'DEV26-2462',
+      quote_date: '2026-07-28',
+      quote_total: 5600,
+      quote_url: 'https://books.zoho.eu/app/999#/estimates/e2',
+    });
+    const link = screen.getByRole('link', { name: /DEV26-2462/ });
+    expect(link).toHaveAttribute('href', 'https://books.zoho.eu/app/999#/estimates/e2');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+  });
+});
