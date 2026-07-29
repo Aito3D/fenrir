@@ -127,10 +127,12 @@ export default {
     retrySync: '再試行',
     columns: {
       devis: '見積もり',
+      waiting: '待機中',
+      scan: 'スキャン',
       model: 'モデリング',
       print: 'プリント・機械加工',
-      pickup: '引き取り',
       finish: '仕上げ',
+      done: '完了',
     },
   },
   // Navigation

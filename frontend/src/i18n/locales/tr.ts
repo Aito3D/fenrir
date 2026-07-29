@@ -127,10 +127,12 @@ export default {
     retrySync: 'Yeniden dene',
     columns: {
       devis: 'Teklif',
+      waiting: 'Bekliyor',
+      scan: 'Tarama',
       model: 'Modelleme',
       print: 'Baskı ve İşleme',
-      pickup: 'Teslim alma',
       finish: 'Son işlem',
+      done: 'Tamamlandı',
     },
   },
   // Navigasyon

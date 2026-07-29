@@ -3416,7 +3416,7 @@ export interface CalculatorInsights {
 }
 
 // Aito kanban board
-export type AitoColumnId = 'devis' | 'model' | 'print' | 'pickup' | 'finish';
+export type AitoColumnId = 'devis' | 'waiting' | 'scan' | 'model' | 'print' | 'finish' | 'done';
 
 export interface AitoProject {
   id: number;
@@ -3460,6 +3460,10 @@ export interface AitoProject {
   task_count: number;
   tasks_total: number;
   task_services: string[];
+  /** Why this card cannot be dragged between columns, or null when it can
+   *  (Finish <-> Done only). Derived server-side by the board rule engine —
+   *  the frontend never recomputes a column or a lock, it only renders these. */
+  move_lock: 'quote' | 'waiting' | 'declined' | 'steps' | null;
   created_at: string;
   updated_at: string;
 }
@@ -3489,11 +3493,31 @@ export interface AitoTask {
   impression_quantity: number | null;
   impression_color: string | null;
   impression_cost: number | null;
+  scan_done: boolean;
+  modelisation_done: boolean;
+  impression_done: boolean;
+  usinage_done: boolean;
   created_at: string;
   updated_at: string;
 }
 
-export type AitoTaskCreate = Omit<AitoTask, 'id' | 'project_id' | 'position' | 'created_at' | 'updated_at'>;
+export type AitoTaskCreate = Omit<
+  AitoTask,
+  | 'id'
+  | 'project_id'
+  | 'position'
+  | 'created_at'
+  | 'updated_at'
+  | 'scan_done'
+  | 'modelisation_done'
+  | 'impression_done'
+  | 'usinage_done'
+> & {
+  scan_done?: boolean;
+  modelisation_done?: boolean;
+  impression_done?: boolean;
+  usinage_done?: boolean;
+};
 export type AitoTaskUpdate = Partial<AitoTaskCreate>;
 
 // Zoho Books integration
@@ -6315,6 +6339,11 @@ export const api = {
   moveAitoProject: (id: number, data: { column: AitoColumnId; position: number }) =>
     request<AitoProject>(`/aito/${id}/move`, {
       method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  setAitoQuoteStatus: (id: number, data: { status: 'sent' | 'accepted' | 'declined' }) =>
+    request<{ project: AitoProject; zoho_synced: boolean }>(`/aito/${id}/quote-status`, {
+      method: 'POST',
       body: JSON.stringify(data),
     }),
   updateAitoProject: (id: number, data: AitoProjectUpdate) =>

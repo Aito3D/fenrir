@@ -127,10 +127,12 @@ export default {
     retrySync: '重试',
     columns: {
       devis: '报价',
+      waiting: '等待中',
+      scan: '扫描',
       model: '建模',
       print: '打印与加工',
-      pickup: '待取件',
       finish: '后处理',
+      done: '已完成',
     },
   },
   // Navigation

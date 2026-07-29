@@ -127,10 +127,12 @@ export default {
     retrySync: 'Повторить',
     columns: {
       devis: 'Смета',
+      waiting: 'Ожидание',
+      scan: 'Сканирование',
       model: 'Моделирование',
       print: 'Печать и обработка',
-      pickup: 'Выдача',
       finish: 'Отделка',
+      done: 'Готово',
     },
   },
   nav: {

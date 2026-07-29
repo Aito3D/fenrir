@@ -3,9 +3,17 @@ import type { AitoColumnId, AitoProject } from '../api/client';
 export type ColumnId = AitoColumnId;
 export type Board = Record<ColumnId, AitoProject[]>;
 
-export const COLUMN_IDS: ColumnId[] = ['devis', 'model', 'print', 'pickup', 'finish'];
+export const COLUMN_IDS: ColumnId[] = ['devis', 'waiting', 'scan', 'model', 'print', 'finish', 'done'];
 
-export const emptyBoard = (): Board => ({ devis: [], model: [], print: [], pickup: [], finish: [] });
+export const emptyBoard = (): Board => ({
+  devis: [],
+  waiting: [],
+  scan: [],
+  model: [],
+  print: [],
+  finish: [],
+  done: [],
+});
 
 /** dnd-kit's arrayMove, inlined so this module stays dependency-free. */
 function arrayMove<T>(items: T[], from: number, to: number): T[] {

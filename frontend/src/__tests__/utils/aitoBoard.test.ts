@@ -33,6 +33,7 @@ const card = (id: number, column: AitoProject['column'], position: number): Aito
   task_count: 0,
   tasks_total: 0,
   task_services: [],
+  move_lock: null,
   created_at: '2026-07-01T10:00:00Z',
   updated_at: '2026-07-01T10:00:00Z',
 });

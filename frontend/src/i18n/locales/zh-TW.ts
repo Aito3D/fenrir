@@ -127,10 +127,12 @@ export default {
     retrySync: '重試',
     columns: {
       devis: '報價',
+      waiting: '等待中',
+      scan: '掃描',
       model: '建模',
       print: '列印與加工',
-      pickup: '待取件',
       finish: '後處理',
+      done: '已完成',
     },
   },
   // Navigation

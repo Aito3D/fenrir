@@ -127,10 +127,12 @@ export default {
     retrySync: 'Réessayer',
     columns: {
       devis: 'Devis',
+      waiting: 'En attente',
+      scan: 'Scan',
       model: 'Modélisation',
       print: 'Impression & Usinage',
-      pickup: 'Retrait',
       finish: 'Finition',
+      done: 'Terminé',
     },
   },
   // Navigation

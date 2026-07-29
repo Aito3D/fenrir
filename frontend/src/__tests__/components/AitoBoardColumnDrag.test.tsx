@@ -88,6 +88,7 @@ const project: AitoProject = {
   task_count: 0,
   tasks_total: 0,
   task_services: [],
+  move_lock: null,
   created_at: '2026-07-27T00:00:00',
   updated_at: '2026-07-27T00:00:00',
 };
