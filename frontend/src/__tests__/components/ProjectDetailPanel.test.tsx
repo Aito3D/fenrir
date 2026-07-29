@@ -5,10 +5,11 @@ import { http, HttpResponse } from 'msw';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { server } from '../mocks/server';
 import { render } from '../utils';
-import { ProjectDetailPanel } from '../../components/aito/ProjectDetailPanel';
+import { diffTaskDraft, ProjectDetailPanel } from '../../components/aito/ProjectDetailPanel';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { api } from '../../api/client';
 import type { AitoProject, AitoTask } from '../../api/client';
+import { emptyTaskDraft, taskDraftToTaskCreate } from '../../utils/taskDraft';
 
 const project: AitoProject = {
   id: 12,
@@ -1050,5 +1051,63 @@ describe('ProjectDetailPanel sync row', () => {
     await user.click(await screen.findByRole('button', { name: 'Retry' }));
 
     await waitFor(() => expect(capturedBody).toEqual({ description: project.description }));
+  });
+});
+
+describe('diffTaskDraft', () => {
+  it('returns an empty patch for an unchanged draft', () => {
+    const draft = { ...emptyTaskDraft(), title: 'x', scanCost: 10 };
+    expect(diffTaskDraft(draft, draft)).toEqual({});
+  });
+
+  it('includes only the fields that changed', () => {
+    const before = { ...emptyTaskDraft(), title: 'x', scanCost: 10 };
+    const after = { ...before, scanCost: 20 };
+    expect(diffTaskDraft(before, after)).toEqual({ scan_cost: 20 });
+  });
+
+  it('carries a cost cleared to null', () => {
+    const before = { ...emptyTaskDraft(), scanCost: 10 };
+    const after = { ...before, scanCost: null };
+    expect(diffTaskDraft(before, after)).toEqual({ scan_cost: null });
+  });
+
+  it('carries a zero cost, which is free rather than absent', () => {
+    const before = emptyTaskDraft();
+    const after = { ...before, scanCost: 0 };
+    expect(diffTaskDraft(before, after)).toEqual({ scan_cost: 0 });
+  });
+
+  it('covers every field of the wire shape', () => {
+    // The regression guard for the old hand-written version: a field added to
+    // taskDraftToTaskCreate but forgotten in the diff would silently never
+    // save. Every key of the wire shape must be diffable.
+    //
+    // TaskDraft's four step flags are not their own top-level properties —
+    // they live under `done: { scan, modelisation, impression, usinage }`
+    // (see TaskDraft in utils/taskDraft.ts) — so all four are flipped there,
+    // not as scanDone/modelisationDone/impressionDone/usinageDone.
+    const before = emptyTaskDraft();
+    const after: typeof before = {
+      ...before,
+      title: 'T',
+      description: 'D',
+      scanCost: 1,
+      modelisationCost: 2,
+      usinageCost: 3,
+      impressionCost: 4,
+      done: { scan: true, modelisation: true, impression: true, usinage: true },
+      impression: {
+        printerId: 1,
+        filamentId: 2,
+        weightG: 3,
+        timeMin: 4,
+        quantity: 5,
+        color: 'Noir',
+      },
+    };
+    const patch = diffTaskDraft(before, after);
+    const wireKeys = Object.keys(taskDraftToTaskCreate(after));
+    expect(Object.keys(patch).sort()).toEqual(wireKeys.sort());
   });
 });

@@ -11,6 +11,7 @@ import {
   type AitoProject,
   type AitoProjectUpdate,
   type AitoTask,
+  type AitoTaskCreate,
   type AitoTaskUpdate,
 } from '../../api/client';
 import { parseUTCDate } from '../../utils/date';
@@ -22,40 +23,24 @@ import type { TaskDraft } from '../../utils/taskDraft';
 /** The narrow patch: only the wire fields that actually differ between the
  *  persisted row and the edited draft. Comparing the two *wire* shapes
  *  (rather than the drafts directly) means the blank -> null and 0-stays-0
- *  rules above apply identically on both sides of the diff. */
-function diffTaskDraft(baseline: TaskDraft, next: TaskDraft): AitoTaskUpdate {
+ *  rules apply identically on both sides of the diff.
+ *
+ *  Driven by the wire shape's own keys rather than a hand-written list of
+ *  comparisons. The previous version needed one line per field and had grown
+ *  to sixteen; a field added to `taskDraftToTaskCreate` and forgotten here
+ *  would silently never save, which is exactly what happened four times when
+ *  the `*_done` flags landed.
+ *
+ *  Exported for its unit test — the "covers every field" case is the guard
+ *  that keeps this honest. */
+export function diffTaskDraft(baseline: TaskDraft, next: TaskDraft): AitoTaskUpdate {
   const before = taskDraftToTaskCreate(baseline);
   const after = taskDraftToTaskCreate(next);
-  const patch: AitoTaskUpdate = {};
-  if (after.title !== before.title) patch.title = after.title;
-  if (after.description !== before.description) patch.description = after.description;
-  if (after.scan_cost !== before.scan_cost) patch.scan_cost = after.scan_cost;
-  if (after.modelisation_cost !== before.modelisation_cost) patch.modelisation_cost = after.modelisation_cost;
-  if (after.usinage_cost !== before.usinage_cost) patch.usinage_cost = after.usinage_cost;
-  if (after.impression_printer_id !== before.impression_printer_id) {
-    patch.impression_printer_id = after.impression_printer_id;
+  const patch: Record<string, unknown> = {};
+  for (const key of Object.keys(after) as (keyof AitoTaskCreate)[]) {
+    if (after[key] !== before[key]) patch[key] = after[key];
   }
-  if (after.impression_filament_id !== before.impression_filament_id) {
-    patch.impression_filament_id = after.impression_filament_id;
-  }
-  if (after.impression_weight_g !== before.impression_weight_g) {
-    patch.impression_weight_g = after.impression_weight_g;
-  }
-  if (after.impression_time_min !== before.impression_time_min) {
-    patch.impression_time_min = after.impression_time_min;
-  }
-  if (after.impression_quantity !== before.impression_quantity) {
-    patch.impression_quantity = after.impression_quantity;
-  }
-  if (after.impression_color !== before.impression_color) patch.impression_color = after.impression_color;
-  if (after.impression_cost !== before.impression_cost) patch.impression_cost = after.impression_cost;
-  if (after.scan_done !== before.scan_done) patch.scan_done = after.scan_done;
-  if (after.modelisation_done !== before.modelisation_done) {
-    patch.modelisation_done = after.modelisation_done;
-  }
-  if (after.impression_done !== before.impression_done) patch.impression_done = after.impression_done;
-  if (after.usinage_done !== before.usinage_done) patch.usinage_done = after.usinage_done;
-  return patch;
+  return patch as AitoTaskUpdate;
 }
 
 /** Explicit map rather than a template literal key: the i18n gate scans for
