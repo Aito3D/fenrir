@@ -3429,6 +3429,14 @@ export interface AitoProject {
   client_phone: string | null;
   client_email: string | null;
   client_is_company: boolean | null;
+  /** Snapshot of the Zoho quote this project was imported from; null on cards
+   *  created by hand. `quote_total` is the QUOTE's total, which can exceed the
+   *  project total when non-AITO lines were skipped. */
+  quote_id: string | null;
+  quote_number: string | null;
+  quote_date: string | null;
+  quote_total: number | null;
+  quote_url: string | null;
   /** Aggregates over the project's tasks — see the Aito board response. The
    *  board never ships task rows themselves. */
   task_count: number;
@@ -3488,6 +3496,42 @@ export interface ZohoStatus {
   reachable: boolean | null;
   default_contact_id: string;
   default_contact_name: string;
+}
+
+export interface ZohoEstimateSummary {
+  id: string;
+  number: string;
+  customer_name: string;
+  date: string;
+  total: number;
+  currency_code: string;
+  status: string;
+}
+
+export interface ZohoQuotePreview {
+  quote: {
+    id: string;
+    number: string;
+    date: string;
+    status: string;
+    total: number;
+    currency_code: string;
+    url: string;
+  };
+  client: {
+    id: string;
+    name: string;
+    phone: string | null;
+    email: string | null;
+    is_company: boolean | null;
+  };
+  suggested_description: string;
+  /** Already in the shape createAitoProject accepts — what the preview shows
+   *  is exactly what gets created. */
+  tasks: AitoTaskCreate[];
+  skipped_lines: { sku: string; name: string; amount: number }[];
+  /** The active project already imported from this quote, if any. */
+  existing_project_id: number | null;
 }
 
 // Permission type - all available permissions
@@ -6225,6 +6269,11 @@ export const api = {
     client_email?: string | null;
     client_is_company?: boolean | null;
     tasks?: AitoTaskCreate[];
+    quote_id?: string | null;
+    quote_number?: string | null;
+    quote_date?: string | null;
+    quote_total?: number | null;
+    quote_url?: string | null;
   }) =>
     request<AitoProject>('/aito/', {
       method: 'POST',
@@ -6261,6 +6310,12 @@ export const api = {
   getZohoStatus: (probe = false) =>
     request<ZohoStatus>(`/zoho/status${probe ? '?probe=true' : ''}`),
   searchZohoContacts: (q: string) => request<ZohoContact[]>(`/zoho/contacts?q=${encodeURIComponent(q)}`),
+  /** An empty query lists the most recent quotes, so the picker is useful
+   *  before the user types anything. */
+  searchZohoEstimates: (q: string) =>
+    request<ZohoEstimateSummary[]>(`/zoho/estimates${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  getZohoQuotePreview: (id: string) =>
+    request<ZohoQuotePreview>(`/zoho/estimates/${encodeURIComponent(id)}/preview`),
   createZohoContact: (data: {
     company_name?: string;
     first_name?: string;
