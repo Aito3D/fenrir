@@ -3993,6 +3993,7 @@ async def run_migrations(conn):
     # from sync rather than needing a rule to exclude it. quote_synced_at holds
     # the estimate's last_modified_time as Zoho reported it, which is how the
     # Phase 2 poller will tell our own write from someone else's edit.
+    _quote_sync_state_existed = await _column_exists(conn, "aito_projects", "quote_sync_state")
     await _safe_execute(
         conn, "ALTER TABLE aito_projects ADD COLUMN quote_sync_state VARCHAR(20) NOT NULL DEFAULT 'idle'"
     )
@@ -4017,23 +4018,42 @@ async def run_migrations(conn):
     # silently and permanently blocking restore + re-quote. So this must run
     # exactly once, gated by a settings marker, per `_column_exists`'s
     # docstring warning against repeating a backfill UPDATE on every startup.
-    # `AND status != 'deleted'` is defence in depth so even this one-shot
-    # pass never claims a trashed card that happens to match the legacy
-    # shape.
-    marker_row = await conn.execute(text("SELECT value FROM settings WHERE key = 'aito_unmanaged_backfill_done'"))
-    if marker_row.scalar_one_or_none() is None:
-        if is_sqlite():
-            marker_sql = "INSERT OR IGNORE INTO settings (key, value) VALUES (:key, :value)"
-        else:
-            marker_sql = "INSERT INTO settings (key, value) VALUES (:key, :value) ON CONFLICT (key) DO NOTHING"
+    #
+    # `_quote_sync_state_existed` (captured above, before the ALTER TABLE
+    # that adds the column) is the *reliable* signal, not the idle/quote_id
+    # shape. When the column did not previously exist, this is the first
+    # boot that has ever run this migration, so every row in the table —
+    # trashed or not — necessarily predates the feature: nothing could have
+    # taken ownership of a card before this migration ran. Filtering out
+    # trashed rows on that pass protects nothing and only leaves
+    # already-trashed legacy cards stuck at 'idle' forever. When the column
+    # already existed, the idle/quote_id-NULL shape is ambiguous again (it
+    # may be a live owned card mid-trash), so that path keeps both the
+    # settings-marker gate and the `status != 'deleted'` defence in depth.
+    if is_sqlite():
+        marker_sql = "INSERT OR IGNORE INTO settings (key, value) VALUES (:key, :value)"
+    else:
+        marker_sql = "INSERT INTO settings (key, value) VALUES (:key, :value) ON CONFLICT (key) DO NOTHING"
+    if not _quote_sync_state_existed:
         async with conn.begin_nested():
             await conn.execute(
                 text(
                     "UPDATE aito_projects SET quote_sync_state = 'unmanaged' "
-                    "WHERE quote_sync_state = 'idle' AND quote_id IS NULL AND status != 'deleted'"
+                    "WHERE quote_sync_state = 'idle' AND quote_id IS NULL"
                 )
             )
             await conn.execute(text(marker_sql), {"key": "aito_unmanaged_backfill_done", "value": "1"})
+    else:
+        marker_row = await conn.execute(text("SELECT value FROM settings WHERE key = 'aito_unmanaged_backfill_done'"))
+        if marker_row.scalar_one_or_none() is None:
+            async with conn.begin_nested():
+                await conn.execute(
+                    text(
+                        "UPDATE aito_projects SET quote_sync_state = 'unmanaged' "
+                        "WHERE quote_sync_state = 'idle' AND quote_id IS NULL AND status != 'deleted'"
+                    )
+                )
+                await conn.execute(text(marker_sql), {"key": "aito_unmanaged_backfill_done", "value": "1"})
 
     # Migration: per-step Done flags on Aito tasks (2026-07-29). One boolean per
     # service, mirroring the four cost columns; ticking them is what advances a

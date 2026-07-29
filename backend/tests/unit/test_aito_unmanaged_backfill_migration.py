@@ -1,12 +1,22 @@
-"""Critical 1 fix, backfill half: rows that are `quote_sync_state = 'idle'`
-AND `quote_id IS NULL` today are pre-feature legacy cards — the one-time
-migration in `run_migrations` (core/database.py) marks them 'unmanaged' so
-the (now explicit-ownership) sync guard leaves them alone forever, matching
-what the OLD, inferred-ownership guard already did for them by accident.
+"""Critical 1 fix, backfill half: the one-time migration in `run_migrations`
+(core/database.py) marks pre-feature legacy cards 'unmanaged' so the (now
+explicit-ownership) sync guard leaves them alone forever.
 
-Runs against a freshly created, already-current schema (so every ALTER TABLE
-`run_migrations` issues hits "duplicate column" and is swallowed) — this test
-only cares about the DML backfill, not the DDL around it.
+`quote_sync_state == 'idle' AND quote_id IS NULL` is NOT a reliable signal of
+"pre-feature legacy card" on its own — it is also the live shape a card of
+ours can be in (see `aito_quote_sync.sync_project`'s trashed-never-quoted
+branch). The only reliable signal is *when* the row is seen: if
+`quote_sync_state` did not exist as a column before this boot, every row in
+the table predates the feature and is unconditionally legacy, trashed or not.
+If the column already existed, the idle/quote_id-NULL shape is ambiguous and
+must be left alone.
+
+Most tests here run against a freshly created, already-current schema (so
+every ALTER TABLE `run_migrations` issues hits "duplicate column" and is
+swallowed, and the `quote_sync_state` column already exists) — these only
+care about the DML backfill's idempotency, not the DDL around it. The
+first-pass tests instead build the schema *without* `quote_sync_state` so the
+column-newness gate is exercised for real.
 """
 
 import pytest
@@ -87,6 +97,30 @@ async def _seed(conn, description, *, quote_sync_state, quote_id, status="active
             "VALUES (:d, 'devis', 0, :st, :s, :q)"
         ),
         {"d": description, "st": status, "s": quote_sync_state, "q": quote_id},
+    )
+    return (await conn.execute(text("SELECT MAX(id) FROM aito_projects"))).scalar_one()
+
+
+async def _make_pre_feature_engine():
+    """A schema shaped like a database that has never run this feature's
+    migration: everything current EXCEPT the `quote_sync_state` column
+    itself, so `run_migrations`'s own `ALTER TABLE ... ADD COLUMN` genuinely
+    adds it (rather than hitting "duplicate column" and being swallowed) and
+    the column-newness gate has something real to observe."""
+    engine = await _make_engine()
+    async with engine.begin() as conn:
+        await conn.execute(text("DROP INDEX IF EXISTS ix_aito_projects_quote_sync_state"))
+        await conn.execute(text("ALTER TABLE aito_projects DROP COLUMN quote_sync_state"))
+    return engine
+
+
+async def _seed_pre_feature(conn, description, *, quote_id, status="active"):
+    await conn.execute(
+        text(
+            "INSERT INTO aito_projects (description, board_column, position, status, quote_id) "
+            "VALUES (:d, 'devis', 0, :st, :q)"
+        ),
+        {"d": description, "st": status, "q": quote_id},
     )
     return (await conn.execute(text("SELECT MAX(id) FROM aito_projects"))).scalar_one()
 
@@ -234,25 +268,29 @@ async def test_a_card_that_reaches_idle_with_no_quote_id_after_the_first_boot_su
 
 
 @pytest.mark.asyncio
-async def test_a_trashed_card_is_never_marked_unmanaged_even_on_the_first_pass():
-    """Defence in depth: even on the one-shot backfill pass, a card sitting
-    in the trash must never be claimed — `status != 'deleted'` guards against
-    reclassifying a trashed card regardless of the idle/quote_id ambiguity
-    the rest of this migration resolves."""
-    engine = await _make_engine()
+async def test_a_trashed_legacy_card_is_marked_unmanaged_on_the_first_ever_migration():
+    """On the one and only boot where this backfill actually matters in
+    production — `quote_sync_state` did not exist before this call, so the
+    ALTER TABLE above just created it — every row in the table predates the
+    feature by definition, including cards already sitting in the trash: a
+    trashed card is legacy by definition too, since ownership could not have
+    existed before this migration ever ran. Excluding trashed rows here (the
+    old `AND status != 'deleted'` behaviour) protected nothing on this pass
+    and left every already-trashed legacy card stuck at 'idle' forever —
+    restoring and editing one would enqueue a real `POST /estimates` for a
+    card that was supposed to be untouchable."""
+    engine = await _make_pre_feature_engine()
     try:
         async with engine.begin() as conn:
-            trashed = await _seed(
-                conn, "Piece a la corbeille", quote_sync_state="idle", quote_id=None, status="deleted"
-            )
+            trashed = await _seed_pre_feature(conn, "Piece a la corbeille (legacy)", quote_id=None, status="deleted")
 
         async with engine.begin() as conn:
-            await run_migrations(conn)
+            await run_migrations(conn)  # first-ever migration: column newly added
 
         async with engine.connect() as conn:
             state = (
                 await conn.execute(text("SELECT quote_sync_state FROM aito_projects WHERE id = :p"), {"p": trashed})
             ).scalar_one()
-        assert state == "idle"
+        assert state == "unmanaged"
     finally:
         await engine.dispose()

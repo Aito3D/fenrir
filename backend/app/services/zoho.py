@@ -267,9 +267,13 @@ class ZohoService:
         to someone else's customer is a coincidence or corruption, never ours
         to touch. A falsy ``customer_id`` (nothing to verify against — e.g. a
         project whose ``client_id`` is unset) or a survivor with no
-        ``customer_id`` of its own is treated the same as a mismatch: without
-        both sides present there is nothing to verify, so adoption is refused
-        rather than silently skipping the check.
+        ``customer_id`` of its own each refuse adoption too — without both
+        sides present there is nothing to verify — but raise their own
+        message naming which side was missing, rather than reusing the
+        genuine-mismatch text: "belongs to a different customer" is false and
+        misleading when there was no customer to compare against at all, and
+        sends whoever reads ``quote_sync_error`` hunting for a mismatched
+        estimate that does not exist.
 
         Returns None when nothing survives — the expected, common case, not
         an error. Raises ``ZohoAmbiguousReferenceError`` when more than one
@@ -294,7 +298,18 @@ class ZohoService:
                 "refusing to guess which one is ours"
             )
         estimate = matches[0]
-        if not customer_id or not estimate.get("customer_id") or estimate.get("customer_id") != customer_id:
+        estimate_customer_id = estimate.get("customer_id")
+        if not customer_id:
+            raise ZohoAmbiguousReferenceError(
+                f"An estimate with reference_number {reference_number!r} exists in Zoho, but this project has "
+                "no linked Zoho customer to verify it against"
+            )
+        if not estimate_customer_id:
+            raise ZohoAmbiguousReferenceError(
+                f"An estimate with reference_number {reference_number!r} exists in Zoho, but Zoho did not "
+                "return a customer_id for it, so ownership could not be verified"
+            )
+        if estimate_customer_id != customer_id:
             raise ZohoAmbiguousReferenceError(
                 f"An estimate with reference_number {reference_number!r} exists in Zoho but belongs to a "
                 "different customer"
