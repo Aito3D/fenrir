@@ -664,6 +664,137 @@ async def test_project_row_vanished_before_the_loop_reaches_it_is_skipped(db_ses
 
 
 @pytest.mark.asyncio
+async def test_trashing_a_project_declines_its_quote_and_snapshots_the_status(db_session):
+    project = await _project_with_quote(db_session, scan_cost=1)
+    await _configure_zoho(db_session)
+    project.status = "deleted"
+    await db_session.commit()
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {"estimate_id": "E1", "status": "sent", "invoiced_amount": 0, "line_items": []}
+                },
+                ("POST", "/status/declined"): {"message": "ok"},
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_status_before_trash == "sent"
+    assert project.quote_status == "declined"
+    assert project.quote_sync_state == "idle"
+    assert any(entry[1].endswith("/status/declined") for entry in seen)
+    assert not any(entry[0] == "PUT" for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_restoring_reapplies_the_snapshotted_status(db_session):
+    project = await _project_with_quote(db_session, scan_cost=1)
+    await _configure_zoho(db_session)
+    project.quote_status = "declined"
+    project.quote_status_before_trash = "accepted"
+    await db_session.commit()
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {"estimate_id": "E1", "status": "declined", "invoiced_amount": 0, "line_items": []}
+                },
+                ("POST", "/status/accepted"): {"message": "ok"},
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_status_before_trash is None
+    assert any(entry[1].endswith("/status/accepted") for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_a_quote_that_was_a_draft_stays_declined_on_restore(db_session):
+    """Books offers no /status/draft. The snapshot is kept as the record of
+    what it was, and the panel explains it — nothing pretends otherwise."""
+    project = await _project_with_quote(db_session, scan_cost=1)
+    await _configure_zoho(db_session)
+    project.quote_status = "declined"
+    project.quote_status_before_trash = "draft"
+    await db_session.commit()
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {"estimate_id": "E1", "status": "declined", "invoiced_amount": 0, "line_items": []}
+                },
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "declined", "total": 1}},
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_status_before_trash == "draft"
+    assert not any("/status/" in entry[1] for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_an_invoiced_quote_is_never_declined_by_trashing(db_session):
+    project = await _project_with_quote(db_session, scan_cost=1)
+    await _configure_zoho(db_session)
+    project.status = "deleted"
+    await db_session.commit()
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {"estimate_id": "E1", "status": "accepted", "invoiced_amount": 900}
+                }
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "locked"
+    assert not any("/status/" in entry[1] for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_a_trashed_project_with_no_quote_costs_no_call(db_session):
+    await _configure_zoho(db_session)
+    db_session.add(
+        AitoProject(
+            description="Jamais devise",
+            board_column="devis",
+            position=0,
+            status="deleted",
+            quote_sync_state="pending",
+        )
+    )
+    await db_session.commit()
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(zoho_handler({}, seen))
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    assert seen == []
+
+
+@pytest.mark.asyncio
 async def test_project_state_changed_away_from_pending_before_the_loop_reaches_it_is_skipped(db_session, monkeypatch):
     """The id was selected up front, but something else already moved the
     project's state on (e.g. a concurrent request handler) by the time the

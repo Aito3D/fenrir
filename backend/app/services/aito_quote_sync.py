@@ -153,12 +153,49 @@ async def _write_back_rounded_impression(db: AsyncSession, project_id: int) -> N
         row.impression_cost = round(row.impression_cost / quantity) * quantity
 
 
+# Statuses Books can be put back into. There is no /status/draft, so a quote
+# that was still a draft when its project was trashed cannot be recovered.
+_RESTORABLE = ("sent", "accepted")
+
+
+async def _reconcile_status(db: AsyncSession, project: AitoProject, estimate: dict) -> bool:
+    """Bring the quote's status in line with whether the project is on the board.
+
+    Declarative rather than an action queue: the worker compares two facts it
+    can always read — is the project deleted, and what does Books say — so a
+    missed tick, a restart or a double-fire all converge on the same result
+    instead of replaying a stored intent.
+
+    Returns True when the project is trashed, meaning the caller must not go on
+    to rewrite the line items of a quote for a job that no longer exists.
+    """
+    status = estimate.get("status") or ""
+    if project.status == "deleted":
+        if status != "declined":
+            project.quote_status_before_trash = status
+            await zoho_service.set_estimate_status(db, project.quote_id, "declined")
+            project.quote_status = "declined"
+        project.quote_sync_state = "idle"
+        project.quote_sync_error = None
+        project.quote_sync_failures = 0
+        return True
+    if status == "declined" and project.quote_status_before_trash in _RESTORABLE:
+        await zoho_service.set_estimate_status(db, project.quote_id, project.quote_status_before_trash)
+        project.quote_status = project.quote_status_before_trash
+        project.quote_status_before_trash = None
+    return False
+
+
 async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
     estimate = await zoho_service.get_estimate(db, project.quote_id)
     if _is_locked(estimate):
         project.quote_sync_state = "locked"
-        project.quote_status = estimate.get("status") or project.quote_status
+        if estimate.get("status") is not None:
+            project.quote_status = estimate["status"]
         project.quote_sync_error = None
+        project.quote_sync_failures = 0
+        return
+    if await _reconcile_status(db, project, estimate):
         return
     catalogue = await zoho_service.get_catalogue(db)
     line_items = build_line_items(
@@ -175,6 +212,11 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
     """One project's whole state machine. Never raises: every outcome is a state."""
     try:
         if not project.quote_id:
+            if project.status == "deleted":
+                # Trashed before it was ever quoted. Nothing to create, nothing
+                # to decline; drop it from the queue without a Zoho call.
+                project.quote_sync_state = "idle"
+                return
             await _create_quote(db, project)
         else:
             await _update_quote(db, project)
