@@ -94,9 +94,19 @@ Established by probing and then writing to the shop's live Books org
 ## Data model
 
 Additive `ALTER TABLE` in `run_migrations()` (`backend/app/core/database.py`),
-the house pattern. The five `quote_*` columns added by the import feature
-(`quote_id`, `quote_number`, `quote_date`, `quote_total`, `quote_url`) are the
-link and are reused as-is. `aito_projects` gains six more:
+the house pattern. The import feature's `quote_*` columns are the link and are
+reused as-is: `quote_id`, `quote_number`, `quote_date`, `quote_total`,
+`quote_url`, `quote_salesperson` and — importantly — **`quote_status`
+(`String(30)`) already exists**, is already carried through
+`AitoProjectCreate`/`AitoProjectResponse`, and is already rendered on the card.
+This phase does not add it; it *writes* it.
+
+That is worth stating plainly, because it fixes a limitation the model
+currently documents: `quote_status` is a snapshot taken at import, so "accepting
+a quote in Zoho does not update the card". Every push now refreshes it, and
+Phase 2 refreshes it for quotes the app never wrote.
+
+`aito_projects` gains five genuinely new columns:
 
 | column | type | purpose |
 |---|---|---|
@@ -104,8 +114,7 @@ link and are reused as-is. `aito_projects` gains six more:
 | `quote_sync_error` | `Text`, nullable | last failure message, shown in the detail panel |
 | `quote_sync_failures` | `Integer`, default `0` | consecutive upstream failures; escalates to `error` at 5 |
 | `quote_synced_at` | `String(30)`, nullable | the `last_modified_time` we last wrote or read. Echo suppression, and Phase 2's change detection |
-| `quote_status` | `String(20)`, nullable | `draft`/`sent`/`accepted`/`declined` snapshot — drives the lock, the badge, and the restore |
-| `quote_status_before_trash` | `String(20)`, nullable | so restore can re-apply `sent`/`accepted` |
+| `quote_status_before_trash` | `String(30)`, nullable | so restore can re-apply `sent`/`accepted`. Widened to 30 to match `quote_status`, which it snapshots |
 
 No `dirty_at` column. The worker drains everything `pending` on each tick, so a
 burst of edits inside one interval coalesces on its own.
@@ -132,9 +141,9 @@ aito_quote_poll_seconds      (int,  default 60)
 
 ### Schemas
 
-`AitoProjectResponse` gains `quote_sync_state`, `quote_sync_error` and
-`quote_status`. The other new columns are internal to the worker and are not
-exposed.
+`AitoProjectResponse` gains `quote_sync_state` and `quote_sync_error`.
+`quote_status` is already exposed. `quote_synced_at`, `quote_sync_failures` and
+`quote_status_before_trash` are internal to the worker and stay unexposed.
 
 ## The quote builder
 
