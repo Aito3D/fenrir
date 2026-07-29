@@ -572,6 +572,95 @@ async def test_create_records_no_creator_when_auth_is_disabled(async_client):
     assert r.json()["created_by"] is None
 
 
+@pytest.fixture
+async def idle_project(async_client, db_session):
+    """A project with one task, forced to 'idle' so a test observes the
+    *transition* an endpoint makes rather than the value a fresh create
+    already leaves behind."""
+    created = (await _create(async_client, tasks=[_task()])).json()
+    task_id = (await async_client.get(f"/api/v1/aito/{created['id']}/tasks")).json()[0]["id"]
+    project = (await db_session.execute(select(AitoProject).where(AitoProject.id == created["id"]))).scalar_one()
+    project.quote_sync_state = "idle"
+    project.quote_sync_failures = 3
+    await db_session.commit()
+    return {"id": created["id"], "task_id": task_id}
+
+
+@pytest.mark.asyncio
+async def test_creating_a_project_marks_it_pending(async_client):
+    r = await _create(async_client, tasks=[_task()])
+    assert r.status_code == 201
+    assert r.json()["quote_sync_state"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_editing_a_project_marks_it_pending_and_clears_failures(async_client, idle_project, db_session):
+    r = await async_client.patch(f"/api/v1/aito/{idle_project['id']}", json={"description": "Nouveau"})
+    assert r.status_code == 200
+    assert r.json()["quote_sync_state"] == "pending"
+    row = (await db_session.execute(select(AitoProject).where(AitoProject.id == idle_project["id"]))).scalar_one()
+    assert row.quote_sync_failures == 0
+
+
+@pytest.mark.asyncio
+async def test_adding_a_task_marks_its_project_pending(async_client, idle_project):
+    r = await async_client.post(f"/api/v1/aito/{idle_project['id']}/tasks", json=_task(title="Deux"))
+    assert r.status_code == 201
+    board = (await async_client.get("/api/v1/aito/")).json()
+    row = next(p for p in board if p["id"] == idle_project["id"])
+    assert row["quote_sync_state"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_editing_a_task_marks_its_project_pending(async_client, idle_project):
+    r = await async_client.patch(f"/api/v1/aito/tasks/{idle_project['task_id']}", json={"scan_cost": 99})
+    assert r.status_code == 200
+    board = (await async_client.get("/api/v1/aito/")).json()
+    row = next(p for p in board if p["id"] == idle_project["id"])
+    assert row["quote_sync_state"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_task_marks_its_project_pending(async_client, idle_project):
+    r = await async_client.delete(f"/api/v1/aito/tasks/{idle_project['task_id']}")
+    assert r.status_code == 204
+    board = (await async_client.get("/api/v1/aito/")).json()
+    row = next(p for p in board if p["id"] == idle_project["id"])
+    assert row["quote_sync_state"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_project_marks_it_pending(async_client, idle_project, db_session):
+    r = await async_client.delete(f"/api/v1/aito/{idle_project['id']}")
+    assert r.status_code == 204
+    row = (await db_session.execute(select(AitoProject).where(AitoProject.id == idle_project["id"]))).scalar_one()
+    assert row.quote_sync_state == "pending"
+
+
+@pytest.mark.asyncio
+async def test_restoring_a_project_marks_it_pending(async_client, idle_project):
+    await async_client.delete(f"/api/v1/aito/{idle_project['id']}")
+    r = await async_client.post(f"/api/v1/aito/{idle_project['id']}/restore")
+    assert r.status_code == 200
+    assert r.json()["quote_sync_state"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_moving_a_project_does_not_mark_it_pending(async_client, idle_project):
+    """Which column a card sits in is production state, invisible to the quote."""
+    r = await async_client.patch(f"/api/v1/aito/{idle_project['id']}/move", json={"column": "print", "position": 0})
+    assert r.status_code == 200
+    assert r.json()["quote_sync_state"] == "idle"
+
+
+@pytest.mark.asyncio
+async def test_importing_legacy_projects_does_not_mark_them_pending(async_client):
+    payload = {"projects": [{"description": "legacy", "column": "print", "position": 0}]}
+    r = await async_client.post("/api/v1/aito/import", json=payload)
+    assert r.status_code == 201
+    assert r.json()[0]["quote_sync_state"] == "idle"
+
+
 @pytest.mark.asyncio
 async def test_create_records_the_authenticated_creator(async_client):
     # There is no authenticated-client fixture in this suite, so the route's

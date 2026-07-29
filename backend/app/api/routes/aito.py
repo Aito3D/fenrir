@@ -165,6 +165,26 @@ async def _active_in_column(db: AsyncSession, column: str, exclude_id: int | Non
     return [r for r in rows if r.id != exclude_id]
 
 
+def _mark_pending(project: AitoProject) -> None:
+    """Hand the project to the Zoho sync worker.
+
+    The only thing a request path ever does about Zoho. Clearing the failure
+    counter is what makes an edit the natural way to retry a project stuck in
+    'error' — the user fixes whatever Books objected to and saves.
+    """
+    project.quote_sync_state = "pending"
+    project.quote_sync_failures = 0
+
+
+async def _mark_project_pending_for_task(db: AsyncSession, project_id: int) -> None:
+    """Task endpoints address a task, not a project, so the parent has to be
+    loaded to be marked. A missing parent is not an error here: the task's own
+    404 already covers the case that matters."""
+    project = (await db.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one_or_none()
+    if project:
+        _mark_pending(project)
+
+
 @router.get("/", response_model=list[AitoProjectResponse])
 async def list_projects(
     db: AsyncSession = Depends(get_db),
@@ -226,6 +246,7 @@ async def create_project(
         created_by=current_user.username if current_user else None,
     )
     db.add(project)
+    _mark_pending(project)
     # Flush so the project has an id the tasks can reference; one commit still
     # covers both, so a failure creates neither.
     await db.flush()
@@ -263,6 +284,7 @@ async def add_task(
     project = (await db.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    _mark_pending(project)
     highest = await db.scalar(select(func.max(AitoTask.position)).where(AitoTask.project_id == project_id))
     task = AitoTask(project_id=project_id, position=(highest + 1) if highest is not None else 0, **payload.model_dump())
     db.add(task)
@@ -283,6 +305,7 @@ async def update_task(
     task = await _get_task_or_404(db, task_id)
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(task, key, value)
+    await _mark_project_pending_for_task(db, task.project_id)
     await db.commit()
     await db.refresh(task)
     return _task_to_response(task)
@@ -297,6 +320,7 @@ async def delete_task(
     """Hard delete, unlike projects: tasks need no stable visible number, and
     hold-to-remove is already a deliberate gesture."""
     task = await _get_task_or_404(db, task_id)
+    await _mark_project_pending_for_task(db, task.project_id)
     await db.delete(task)
     await db.commit()
 
@@ -384,6 +408,7 @@ async def update_project(
     for key in ("client_id", "client_name", "client_phone", "client_email", "client_is_company"):
         if key in fields:
             setattr(project, key, fields[key])
+    _mark_pending(project)
     await db.commit()
     await db.refresh(project)
     return _to_response(project, await _one_summary(db, project.id))
@@ -406,6 +431,7 @@ async def restore_project(
     position = len(await _active_in_column(db, project.board_column))
     project.status = "active"
     project.position = position
+    _mark_pending(project)
     await db.commit()
     await db.refresh(project)
     return _to_response(project, await _one_summary(db, project.id))
@@ -424,4 +450,5 @@ async def delete_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     project.status = "deleted"
+    _mark_pending(project)
     await db.commit()
