@@ -240,31 +240,39 @@ def _mark_pending_if_ours(project: AitoProject) -> None:
     """Like ``_mark_pending``, but only for a project this feature actually
     owns the quote lifecycle of.
 
-    ``quote_sync_state`` defaults to 'idle', and the product decision for the
-    legacy localStorage migration is that an imported quote-less card is left
-    alone, permanently: nothing about editing it should ever cause a NEW
-    estimate to be created in Books for a job that may already have been
-    quoted outside the app. But the worker's rule for what 'pending' means is
-    unconditional — pending + quote_id IS NULL means "create a quote" — so a
-    content handler that called the bare ``_mark_pending`` on a legacy card
-    would start quoting it the moment its description was edited.
+    Ownership is EXPLICIT, not inferred: ``quote_sync_state = "unmanaged"`` is
+    the only signal for "this feature must never touch this project's quote",
+    and the only places that value is ever written are
+    ``import_legacy_projects`` and the one-time migration backfill for rows
+    that predate this column (``run_migrations`` in core/database.py). Every
+    project this feature creates starts 'pending' (see ``create_project``'s
+    unconditional ``_mark_pending`` call) and can move through
+    'pending' / 'idle' / 'error' / 'locked' from there, but nothing in this
+    module ever writes 'unmanaged' onto a project after creation — so any of
+    those four states reliably means "yes, mark it", and the guard is a
+    single check.
 
-    The guard is `quote_id is not None or quote_sync_state != "idle"`:
+    This replaces an earlier, INCORRECT version of this guard that inferred
+    ownership from `quote_id is not None or quote_sync_state != "idle"`,
+    reasoning that a project of ours could never be simultaneously 'idle' and
+    quote_id-less. That reasoning was false, two ways:
 
-    - A legacy card is `idle` with `quote_id` NULL, so it fails the test and
-      is never marked — exactly "left alone, permanently".
-    - A project this feature created is marked 'pending' at creation time
-      (see ``create_project``, which calls the unconditional ``_mark_pending``
-      directly) and only ever reaches 'idle' again once a push has actually
-      succeeded — at which point it also carries a ``quote_id`` (from
-      ``_apply_estimate``). So a project of ours is never simultaneously
-      'idle' and quote_id-less at any point a later request could observe it,
-      except while its own creation request is still in flight — which is
-      this same request, not a future edit. A project whose first creation
-      attempt failed stays 'pending' or 'error', never drops back to 'idle',
-      so it still passes the test and keeps retrying on the next edit.
+    - A project trashed before its first sync tick had ever run was set to
+      'idle' by ``aito_quote_sync.sync_project``'s quote-less-deleted branch
+      while still carrying no ``quote_id`` — making it byte-identical to a
+      legacy card. Restoring it left it permanently unquotable, silently,
+      with no error and no UI signal.
+    - ``_apply_estimate`` set 'idle' unconditionally but only set ``quote_id``
+      when the response actually carried one, so a 200 whose body omitted it
+      could go 'idle' with a NULL ``quote_id`` while an estimate had, in
+      fact, just been created in Books — orphaning it.
+
+    Both are fixed at the source now (``sync_project``'s comment on that
+    branch, and ``_apply_estimate`` itself), but the guard no longer depends
+    on either invariant holding: explicit ownership has no equivalent blind
+    spot to find.
     """
-    if project.quote_id is not None or project.quote_sync_state != "idle":
+    if project.quote_sync_state != "unmanaged":
         _mark_pending(project)
 
 
@@ -350,7 +358,10 @@ async def create_project(
         # line_items array onto a real customer estimate nobody has touched
         # yet: hand-typed rows deleted, names/SKUs reverted to catalogue
         # values, tax forced onto every line. The user's first real edit
-        # marks it pending as normal and pushes exactly what changed.
+        # marks it pending as normal, and the worker's next tick regenerates
+        # the WHOLE line_items array from the project's current tasks —
+        # `_update_quote` always rebuilds the full array, it does not diff —
+        # and pushes that.
         _mark_pending(project)
     # Flush so the project has an id the tasks can reference; one commit still
     # covers both, so a failure creates neither.
@@ -474,7 +485,18 @@ async def import_legacy_projects(
         raise HTTPException(status_code=409, detail="Aito board is not empty")
     created = []
     for item in payload.projects:
-        p = AitoProject(description=item.description, board_column=item.column, position=item.position)
+        p = AitoProject(
+            description=item.description,
+            board_column=item.column,
+            position=item.position,
+            # Explicit ownership marker (see _mark_pending_if_ours): a legacy
+            # card must never be picked up by the Zoho sync worker, even after
+            # being edited, trashed and restored. 'idle' (the old default)
+            # does NOT mean this — it is also the state an ordinary project
+            # of ours can sit in — so this is spelled out here rather than
+            # inferred from quote_id being NULL.
+            quote_sync_state="unmanaged",
+        )
         db.add(p)
         created.append(p)
     await db.commit()

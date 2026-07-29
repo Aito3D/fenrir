@@ -4001,6 +4001,26 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_synced_at VARCHAR(30)")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_status_before_trash VARCHAR(30)")
 
+    # Migration: backfill the explicit 'unmanaged' ownership marker (Critical
+    # fix, 2026-07-29). Before this, `_mark_pending_if_ours` (routes/aito.py)
+    # INFERRED "this is a legacy card, never touch it" from
+    # `quote_sync_state == 'idle' AND quote_id IS NULL` — which is exactly
+    # the pre-feature card shape, so every row matching it today really is
+    # one. (It also happens to be the shape a project of ours could take if
+    # trashed before its first sync tick ran; that ambiguity was the bug
+    # being fixed, and going forward the ownership guard no longer infers
+    # from this shape at all — see `_mark_pending_if_ours` and
+    # `aito_quote_sync.sync_project`'s quote-less-deleted branch, which stays
+    # 'idle' on purpose. This is a one-time cleanup of rows written under the
+    # OLD, inferred-ownership world, not an ongoing invariant.)
+    async with conn.begin_nested():
+        await conn.execute(
+            text(
+                "UPDATE aito_projects SET quote_sync_state = 'unmanaged' "
+                "WHERE quote_sync_state = 'idle' AND quote_id IS NULL"
+            )
+        )
+
     # Migration: per-step Done flags on Aito tasks (2026-07-29). One boolean per
     # service, mirroring the four cost columns; ticking them is what advances a
     # project's board column. The data back-fill that reconstructs these flags

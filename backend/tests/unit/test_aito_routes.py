@@ -642,11 +642,12 @@ async def idle_project(async_client, db_session):
 
     Also given a quote_id, so this simulates a project that has genuinely
     completed a push (idle + quote_id set) rather than a legacy
-    localStorage-migrated card (idle + quote_id NULL) — the two are
-    deliberately indistinguishable to `_mark_pending_if_ours`, which must
-    never re-mark the latter pending. Without a quote_id here, this fixture
-    would itself be shaped exactly like a legacy card and every test built on
-    it would be asserting on behaviour the fix now (correctly) refuses to do.
+    localStorage-migrated card, which now carries the explicit
+    `quote_sync_state = 'unmanaged'` marker instead of 'idle' (see
+    `_mark_pending_if_ours`). The quote_id isn't load-bearing for the guard
+    any more — only the 'unmanaged' state is — but it's kept here so this
+    fixture still reads as "a real, previously-synced project", not a
+    freshly-created one.
     """
     created = (await _create(async_client, tasks=[_task()])).json()
     task_id = (await async_client.get(f"/api/v1/aito/{created['id']}/tasks")).json()[0]["id"]
@@ -737,10 +738,13 @@ async def test_moving_a_project_does_not_mark_it_pending(async_client, db_sessio
 
 @pytest.mark.asyncio
 async def test_importing_legacy_projects_does_not_mark_them_pending(async_client):
+    """Legacy cards get the explicit 'unmanaged' ownership marker (Critical 1
+    fix), not 'idle' — 'idle' is also the state an ordinary project of ours
+    can sit in, so it cannot double as "never touch this"."""
     payload = {"projects": [{"description": "legacy", "column": "print", "position": 0}]}
     r = await async_client.post("/api/v1/aito/import", json=payload)
     assert r.status_code == 201
-    assert r.json()[0]["quote_sync_state"] == "idle"
+    assert r.json()[0]["quote_sync_state"] == "unmanaged"
 
 
 @pytest.mark.asyncio

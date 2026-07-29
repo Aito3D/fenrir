@@ -42,6 +42,21 @@ class ZohoNotFound(ZohoUpstreamError):
     """
 
 
+class ZohoAmbiguousReferenceError(ZohoUpstreamError):
+    """``find_estimate_by_reference`` found more than one plausible match, or
+    the lone survivor belongs to a customer other than the one asked for.
+
+    Books does not enforce ``reference_number`` uniqueness, and its list
+    filter is not guaranteed to be an exact match — so a caller that trusted
+    ``estimates[0]`` without verifying it could silently adopt an arbitrary
+    LIVE customer's estimate, which the next sync tick would then overwrite
+    with this project's own line items. A subclass of ZohoUpstreamError so it
+    is still caught by any handler that only knows the base class, but the
+    sync worker catches it by name first to fail closed — record the
+    ambiguity and stop, never guess.
+    """
+
+
 def _title_case_segments(value: str) -> str:
     """Capitalize every space- or hyphen-separated segment: 'jean-pierre' -> 'Jean-Pierre'."""
     result = []
@@ -217,22 +232,51 @@ class ZohoService:
         """The full estimate, line items included."""
         return (await self._request(db, "GET", f"/estimates/{estimate_id}")).get("estimate", {})
 
-    async def find_estimate_by_reference(self, db: AsyncSession, reference_number: str) -> dict | None:
-        """The estimate carrying this exact ``reference_number``, if Books has
-        one — an exact-match filter the list endpoint accepts, unlike
-        ``search_estimates``'s free-text search.
+    async def find_estimate_by_reference(
+        self, db: AsyncSession, reference_number: str, customer_id: str
+    ) -> dict | None:
+        """The estimate carrying this exact ``reference_number`` AND
+        belonging to ``customer_id``, if Books has exactly one.
 
         Used to make quote creation idempotent: before POSTing a new estimate
         with ``reference_number = f"AITO-{project.id}"``, the caller checks
         whether one already exists (e.g. because a previous tick's POST
         succeeded but the commit that would have recorded its id failed) and
-        adopts it instead of creating a duplicate. Returns None rather than
-        raising when nothing matches — that is the expected, common case, not
-        an error.
+        adopts it instead of creating a duplicate.
+
+        Books' ``reference_number`` query param is not documented as an exact
+        match (and Books does not enforce the field's uniqueness at all), so
+        the raw response is filtered client-side to an EXACT string match
+        before anything from it is trusted — a contains-style match returning
+        "AITO-70" for a query of "AITO-7" must not be adopted as AITO-7's
+        quote. The survivor is further required to belong to ``customer_id``:
+        an estimate under our reference number that belongs to someone else's
+        customer is a coincidence or corruption, never ours to touch.
+
+        Returns None when nothing survives — the expected, common case, not
+        an error. Raises ``ZohoAmbiguousReferenceError`` when more than one
+        estimate survives the exact-match filter, or when the lone survivor's
+        customer does not match: silently resolving either case by picking
+        ``estimates[0]`` (the bug this replaces) risks adopting an arbitrary
+        live customer's estimate and then overwriting it with this project's
+        line items on the very next push.
         """
         payload = await self._request(db, "GET", "/estimates", params={"reference_number": reference_number})
-        estimates = payload.get("estimates") or []
-        return estimates[0] if estimates else None
+        matches = [e for e in (payload.get("estimates") or []) if e.get("reference_number") == reference_number]
+        if not matches:
+            return None
+        if len(matches) > 1:
+            raise ZohoAmbiguousReferenceError(
+                f"{len(matches)} Zoho estimates share reference_number {reference_number!r}; "
+                "refusing to guess which one is ours"
+            )
+        estimate = matches[0]
+        if estimate.get("customer_id") != customer_id:
+            raise ZohoAmbiguousReferenceError(
+                f"An estimate with reference_number {reference_number!r} exists in Zoho but belongs to a "
+                "different customer"
+            )
+        return estimate
 
     async def create_estimate(self, db: AsyncSession, payload: dict) -> dict:
         """Create a draft estimate. Template, salesperson, notes, terms, expiry

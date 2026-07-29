@@ -88,6 +88,7 @@ async def test_pending_project_without_a_quote_gets_one_created(db_session):
                         "status": "draft",
                         "total": 5000,
                         "last_modified_time": "2026-07-29T10:00:00-1000",
+                        "is_inclusive_tax": True,
                     }
                 },
             },
@@ -169,6 +170,7 @@ async def test_unexpected_bug_in_one_project_does_not_abort_the_next(db_session,
                         "status": "draft",
                         "total": 5000,
                         "last_modified_time": "2026-07-29T10:00:00-1000",
+                        "is_inclusive_tax": True,
                     }
                 },
             }
@@ -257,6 +259,7 @@ async def test_commit_failure_for_one_project_does_not_roll_back_a_good_ones_wri
                         "status": "draft",
                         "total": 5000,
                         "last_modified_time": "2026-07-29T10:00:00-1000",
+                        "is_inclusive_tax": True,
                     }
                 },
             }
@@ -358,6 +361,7 @@ async def test_commit_failure_for_middle_project_does_not_abort_the_last_one(db_
                         "status": "draft",
                         "total": 5000,
                         "last_modified_time": "2026-07-29T10:00:00-1000",
+                        "is_inclusive_tax": True,
                     }
                 },
             }
@@ -497,6 +501,7 @@ async def test_update_preserves_foreign_lines_and_refreshes_status(db_session):
                         "status": "sent",
                         "is_transaction_created": False,
                         "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
                         "line_items": [
                             {"line_item_id": "OLD", "sku": "P3DSCAN", "item_order": 1},
                             {"line_item_id": "FOREIGN", "sku": "", "name": "Bobine", "item_order": 2},
@@ -566,7 +571,13 @@ async def test_accepted_quote_still_pushes(db_session):
         zoho_handler(
             {
                 ("GET", "/estimates/E1"): {
-                    "estimate": {"estimate_id": "E1", "status": "accepted", "invoiced_amount": 0, "line_items": []}
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "accepted",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
                 },
                 ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "accepted", "total": 5000}},
             },
@@ -589,7 +600,13 @@ async def test_impression_cost_is_written_back_to_what_the_quote_can_express(db_
         zoho_handler(
             {
                 ("GET", "/estimates/E1"): {
-                    "estimate": {"estimate_id": "E1", "status": "draft", "invoiced_amount": 0, "line_items": []}
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "draft",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
                 },
                 ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "draft", "total": 2400}},
             }
@@ -739,7 +756,13 @@ async def test_a_quote_that_was_a_draft_stays_declined_on_restore(db_session):
         zoho_handler(
             {
                 ("GET", "/estimates/E1"): {
-                    "estimate": {"estimate_id": "E1", "status": "declined", "invoiced_amount": 0, "line_items": []}
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "declined",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
                 },
                 ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "declined", "total": 1}},
             },
@@ -902,6 +925,91 @@ async def test_tax_exclusive_estimate_is_locked_and_never_written(db_session):
 
 
 @pytest.mark.asyncio
+async def test_update_response_omitting_is_inclusive_tax_is_locked_not_pushed(db_session):
+    """Important 4: the fail-OPEN bug this replaces checked
+    `estimate.get("is_inclusive_tax") is False`, which lets a response that
+    OMITS the field entirely (None, not False) fall through to the PUT —
+    exactly what the existing test_update_preserves_foreign_lines... mock
+    used to do by accident. A guard protecting real customer money must fail
+    CLOSED: an absent field is treated the same as an explicit False."""
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    await _configure_zoho(db_session)
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "draft",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        # is_inclusive_tax deliberately absent.
+                        "line_items": [],
+                    }
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "locked"
+    assert project.quote_sync_error
+    assert not any(entry[0] == "PUT" for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_create_response_omitting_is_inclusive_tax_is_locked(db_session):
+    """Important 4, create path: the original code never checked the create
+    response at all, so in a tax-exclusive org (or on any response that omits
+    the field) `_create_quote` could produce a brand-new customer estimate
+    inflated by the tax rate with no lock and no error. The estimate already
+    exists in Books by the time the response is back, so its identity
+    (quote_id/url) is still captured — only further writes are blocked."""
+    project = AitoProject(
+        description="Helice",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_sync_state="pending",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Helice", scan_cost=5000))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {"estimates": []},
+                ("POST", "/estimates"): {
+                    "estimate": {
+                        "estimate_id": "E-EXCL",
+                        "estimate_number": "DEV26-9003",
+                        "status": "draft",
+                        "total": 5500,
+                        # is_inclusive_tax deliberately absent.
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "locked"
+    assert project.quote_sync_error
+    assert project.quote_id == "E-EXCL"
+    assert project.quote_url.startswith("https://books.")
+
+
+@pytest.mark.asyncio
 async def test_create_writes_back_rounded_impression_immediately(db_session):
     """I3: the write-back must happen on the CREATE path too, not just
     update — otherwise a brand new project shows a stale, unrounded figure on
@@ -951,7 +1059,14 @@ async def test_create_adopts_an_existing_estimate_with_the_same_reference_instea
     """I4: simulates the aftermath of a POST that succeeded but whose commit
     then failed — the project is still `pending` and quote_id-less, but Books
     already holds an estimate under this exact AITO-{id} reference. The next
-    tick must adopt that orphan, not POST a second one."""
+    tick must adopt that orphan's IDENTITY, not POST a second one.
+
+    Important 3: adopting must NOT declare the project in sync. The
+    looked-up object is a list summary, not the full estimate (no
+    line_items), and the project may have been edited since the orphaned
+    POST — so the project stays 'pending' rather than going 'idle'. See
+    ``test_adopted_orphan_is_brought_into_sync_by_the_following_tick`` for the
+    full scenario this protects, through to the next tick's push."""
     project = AitoProject(
         description="Helice",
         board_column="devis",
@@ -975,6 +1090,8 @@ async def test_create_adopts_an_existing_estimate_with_the_same_reference_instea
                         {
                             "estimate_id": "E-ORPHAN",
                             "estimate_number": "DEV26-9002",
+                            "reference_number": f"AITO-{project.id}",
+                            "customer_id": "C1",
                             "date": "2026-07-29",
                             "status": "draft",
                             "total": 5000,
@@ -991,8 +1108,109 @@ async def test_create_adopts_an_existing_estimate_with_the_same_reference_instea
     assert await run_sync_once(db_session) == 1
     await db_session.refresh(project)
     assert project.quote_id == "E-ORPHAN"
-    assert project.quote_sync_state == "idle"
+    assert project.quote_number == "DEV26-9002"
+    assert project.quote_url.startswith("https://books.")
+    # NOT 'idle': see the Important-3 note in the docstring above.
+    assert project.quote_sync_state == "pending"
     assert not any(entry[0] == "POST" for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_adopted_orphan_is_brought_into_sync_by_the_following_tick(db_session):
+    """Important 3: the exact scenario the fix targets. POST succeeds with a
+    scan-only line, the commit that would have recorded its estimate_id
+    fails, and — before the next tick — the user enables Impression3D on the
+    same task. The tick that finds the orphan must leave the project
+    'pending' (proven by the previous test); THIS test proves the payoff:
+    the immediately-following tick takes the normal update path, re-reads the
+    FULL estimate, and pushes BOTH services — not just the one Books already
+    had. Before the fix, the adopt branch declared the card 'idle' on the
+    first tick and this second tick never ran at all, leaving Books diverged
+    from the board forever."""
+    project = AitoProject(
+        description="Helice",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_sync_state="pending",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    task = AitoTask(project_id=project.id, position=0, title="Helice", scan_cost=5000)
+    db_session.add(task)
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {
+                    "estimates": [
+                        {
+                            "estimate_id": "E-ORPHAN",
+                            "reference_number": f"AITO-{project.id}",
+                            "customer_id": "C1",
+                            "status": "draft",
+                            "total": 5000,
+                        }
+                    ]
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_id == "E-ORPHAN"
+    assert project.quote_sync_state == "pending"
+    assert not any(entry[0] == "POST" for entry in seen)
+
+    # The edit that motivated this scenario, made before the adopting tick's
+    # POST-commit-failure could even be retried — the same task, now with a
+    # second service enabled.
+    task.impression_cost = 1000
+    task.impression_quantity = 1
+    await db_session.commit()
+
+    seen.clear()
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E-ORPHAN"): {
+                    "estimate": {
+                        "estimate_id": "E-ORPHAN",
+                        "status": "draft",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        # Books still holds only the scan line from the
+                        # orphaned POST — this is the divergence Important 3
+                        # exists to close, not paper over.
+                        "line_items": [{"line_item_id": "L1", "sku": "P3DSCAN", "item_order": 1}],
+                    }
+                },
+                ("PUT", "/estimates/E-ORPHAN"): {
+                    "estimate": {"estimate_id": "E-ORPHAN", "status": "draft", "total": 6000}
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "idle"
+    assert project.quote_total == 6000
+
+    put = next(entry for entry in seen if entry[0] == "PUT")
+    # Both services pushed, proving the divergence is closed: the scan line
+    # is regenerated fresh from the task (build_line_items never echoes an
+    # AITO-owned line, only foreign ones), and the impression line is new.
+    assert len(put[2]["line_items"]) == 2
 
 
 @pytest.mark.asyncio
@@ -1037,10 +1255,205 @@ async def test_create_lookup_failure_retries_rather_than_blindly_creating(db_ses
 
 
 @pytest.mark.asyncio
+async def test_create_does_not_adopt_when_the_reference_number_is_ambiguous(db_session):
+    """Critical 2: Books does not enforce reference_number uniqueness. If two
+    estimates both carry AITO-{id}, the unverified original code took
+    estimates[0] and adopted whichever one happened to sort first — this
+    project's tasks would then overwrite a real, unrelated customer estimate
+    on the very next push. The fix refuses to guess: no adoption, no POST
+    (which would risk a THIRD estimate under the same reference), a terminal
+    'error' state naming the ambiguity."""
+    project = AitoProject(
+        description="Helice",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_sync_state="pending",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Helice", scan_cost=5000))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {
+                    "estimates": [
+                        {
+                            "estimate_id": "E-MINE",
+                            "reference_number": f"AITO-{project.id}",
+                            "customer_id": "C1",
+                        },
+                        {
+                            "estimate_id": "E-SOMEONE-ELSES",
+                            "reference_number": f"AITO-{project.id}",
+                            "customer_id": "C1",
+                        },
+                    ]
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.quote_id is None
+    assert project.quote_sync_error
+    assert not any(entry[0] == "POST" for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_create_does_not_adopt_an_estimate_belonging_to_a_different_customer(db_session):
+    """Critical 2, the actual money-risk scenario: a single exact-reference
+    match exists, but its customer_id does not match this project's
+    client_id — Books' reference_number filter matched (or the query was
+    ignored and it fell through to a coincidental collision), and the
+    unverified original code would have adopted a LIVE, unrelated customer's
+    estimate. This project's line items would then overwrite it on the very
+    next push. Must be refused, not adopted, terminal 'error' recorded."""
+    project = AitoProject(
+        description="Helice",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_sync_state="pending",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Helice", scan_cost=5000))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {
+                    "estimates": [
+                        {
+                            "estimate_id": "E-STRANGER",
+                            "reference_number": f"AITO-{project.id}",
+                            "customer_id": "SOMEONE_ELSE",
+                        }
+                    ]
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.quote_id is None
+    assert project.quote_sync_error
+    assert not any(entry[0] == "POST" for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_create_with_no_priced_service_becomes_a_terminal_error(db_session):
+    """Minor 5: mirrors the update-path test of the same name, on the create
+    path. A project whose only task has every service disabled must not spin
+    forever re-attempting creation every tick — it lands in a terminal state,
+    and a second tick makes no Zoho call at all."""
+    project = AitoProject(
+        description="Vide",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_sync_state="pending",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Rien"))  # no cost fields set at all
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(zoho_handler({}, seen))
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.quote_sync_error
+    assert seen == []  # no Zoho call at all: caught before any lookup or POST
+
+    seen.clear()
+    assert await run_sync_once(db_session) == 0
+    assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_trashing_before_first_tick_then_restoring_and_editing_is_re_enqueued(db_session):
+    """Critical 1: the exact reported sequence — create, trash before the
+    first sync tick ever runs, tick, restore, edit — must end with the
+    project re-enqueued ('pending'), not permanently frozen like a legacy
+    card. Runs the REAL route handlers and a REAL sync tick (unlike the
+    hand-set-state version in test_aito_quote_protection.py), so this is the
+    end-to-end regression guard for Critical 1's first bug."""
+    from backend.app.api.routes.aito import create_project, delete_project, restore_project, update_project
+    from backend.app.schemas.aito import AitoProjectCreate, AitoProjectUpdate, AitoTaskCreate
+
+    payload = AitoProjectCreate(
+        description="Helice",
+        client_id="C1",
+        client_name="Client",
+        tasks=[AitoTaskCreate(title="Helice", scan_cost=5000)],
+    )
+    created = await create_project(payload=payload, db=db_session, current_user=None)
+    assert created.quote_sync_state == "pending"
+
+    await delete_project(project_id=created.id, db=db_session, _=None)
+    row = (await db_session.execute(select(AitoProject).where(AitoProject.id == created.id))).scalar_one()
+    assert row.status == "deleted"
+    assert row.quote_sync_state == "pending"  # still queued — the tick hasn't run yet
+
+    await _configure_zoho(db_session)
+    zoho_service.transport = httpx.MockTransport(zoho_handler({}))
+    zoho_service.invalidate_token()
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(row)
+    assert row.status == "deleted"
+    assert row.quote_id is None
+    # Ticked out of the pending queue, but NOT 'unmanaged': see
+    # sync_project's quote-less-deleted branch. Under the OLD, inferred-
+    # ownership guard this row and a true legacy card were indistinguishable
+    # from here on, and restoring left it frozen forever.
+    assert row.quote_sync_state != "pending"
+    assert row.quote_sync_state != "unmanaged"
+
+    restored = await restore_project(project_id=created.id, db=db_session, _=None)
+    assert restored.quote_sync_state == "pending"
+
+    edited = await update_project(
+        project_id=created.id,
+        payload=AitoProjectUpdate(description="Helice modifiee"),
+        db=db_session,
+        _=None,
+    )
+    assert edited.quote_sync_state == "pending"
+
+
+@pytest.mark.asyncio
 async def test_update_with_no_priced_service_does_not_wipe_the_quotes_lines(db_session):
     """I6: clearing the only priced service on the only task of an existing
     quote must not PUT an empty line_items array onto it — Books would delete
-    every Aito line the live estimate has."""
+    every Aito line the live estimate has.
+
+    Minor 5: also must not spin forever. Left as 'pending', this project
+    would be re-selected and re-GET every single tick indefinitely; it must
+    land in a terminal state instead, with the explanatory error kept."""
     project = await _project_with_quote(db_session)  # no cost fields set -> nothing priced
     await _configure_zoho(db_session)
     seen: list = []
@@ -1052,6 +1465,7 @@ async def test_update_with_no_priced_service_does_not_wipe_the_quotes_lines(db_s
                         "estimate_id": "E1",
                         "status": "sent",
                         "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
                         "line_items": [],
                     }
                 },
@@ -1065,6 +1479,15 @@ async def test_update_with_no_priced_service_does_not_wipe_the_quotes_lines(db_s
     await db_session.refresh(project)
     assert not any(entry[0] == "PUT" for entry in seen)
     assert project.quote_sync_error
+    assert project.quote_sync_state == "error"
+
+    # A second tick must not even attempt another Zoho call: 'error' is
+    # terminal, not re-selected by run_sync_once's `WHERE quote_sync_state ==
+    # 'pending'` — this is the actual regression guard for Minor 5's
+    # "unbounded GET every 60s" complaint.
+    seen.clear()
+    assert await run_sync_once(db_session) == 0
+    assert seen == []
 
 
 @pytest.mark.asyncio

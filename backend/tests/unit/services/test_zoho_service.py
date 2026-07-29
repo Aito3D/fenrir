@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from backend.app.services.zoho import (
+    ZohoAmbiguousReferenceError,
     ZohoNotConfiguredError,
     ZohoNotFound,
     ZohoRequestRejected,
@@ -476,12 +477,15 @@ async def test_find_estimate_by_reference_filters_by_the_exact_reference_number(
         if "/oauth/v2/token" in str(request.url):
             return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
         seen["params"] = dict(request.url.params)
-        return httpx.Response(200, json={"estimates": [{"estimate_id": "E1", "reference_number": "AITO-7"}]})
+        return httpx.Response(
+            200,
+            json={"estimates": [{"estimate_id": "E1", "reference_number": "AITO-7", "customer_id": "C1"}]},
+        )
 
     zoho_service.transport = _transport(handler)
-    result = await zoho_service.find_estimate_by_reference(db_session, "AITO-7")
+    result = await zoho_service.find_estimate_by_reference(db_session, "AITO-7", "C1")
     assert seen["params"]["reference_number"] == "AITO-7"
-    assert result == {"estimate_id": "E1", "reference_number": "AITO-7"}
+    assert result == {"estimate_id": "E1", "reference_number": "AITO-7", "customer_id": "C1"}
 
 
 @pytest.mark.asyncio
@@ -494,4 +498,73 @@ async def test_find_estimate_by_reference_returns_none_when_nothing_matches(asyn
         return httpx.Response(200, json={"estimates": []})
 
     zoho_service.transport = _transport(handler)
-    assert await zoho_service.find_estimate_by_reference(db_session, "AITO-999") is None
+    assert await zoho_service.find_estimate_by_reference(db_session, "AITO-999", "C1") is None
+
+
+@pytest.mark.asyncio
+async def test_find_estimate_by_reference_ignores_a_contains_style_false_match(async_client, db_session):
+    """Critical 2: Books' `reference_number` query param is not documented as
+    an exact match. If Books (or a proxy in front of it) ever returns a
+    contains-style match — "AITO-70" for a query of "AITO-7" — the unverified
+    original code took `estimates[0]` regardless and would have adopted
+    AITO-70's estimate as if it were AITO-7's. The fix filters client-side to
+    an EXACT string match first."""
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(
+            200,
+            json={"estimates": [{"estimate_id": "WRONG", "reference_number": "AITO-70", "customer_id": "C1"}]},
+        )
+
+    zoho_service.transport = _transport(handler)
+    assert await zoho_service.find_estimate_by_reference(db_session, "AITO-7", "C1") is None
+
+
+@pytest.mark.asyncio
+async def test_find_estimate_by_reference_raises_when_multiple_estimates_share_it(async_client, db_session):
+    """Critical 2: Books does not enforce reference_number uniqueness. Taking
+    `estimates[0]` when several exist (the unverified original bug) risks
+    adopting the WRONG one — the fix refuses to guess."""
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(
+            200,
+            json={
+                "estimates": [
+                    {"estimate_id": "E1", "reference_number": "AITO-7", "customer_id": "C1"},
+                    {"estimate_id": "E2", "reference_number": "AITO-7", "customer_id": "C1"},
+                ]
+            },
+        )
+
+    zoho_service.transport = _transport(handler)
+    with pytest.raises(ZohoAmbiguousReferenceError):
+        await zoho_service.find_estimate_by_reference(db_session, "AITO-7", "C1")
+
+
+@pytest.mark.asyncio
+async def test_find_estimate_by_reference_raises_on_a_customer_mismatch(async_client, db_session):
+    """Critical 2: the one bug this exists to prevent — an unverified
+    reference-number match adopting an ARBITRARY live customer's estimate,
+    which the next sync tick then overwrites with this project's line items.
+    A single exact-reference match belonging to a different customer must be
+    refused, never silently adopted."""
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(
+            200,
+            json={"estimates": [{"estimate_id": "E1", "reference_number": "AITO-7", "customer_id": "SOMEONE_ELSE"}]},
+        )
+
+    zoho_service.transport = _transport(handler)
+    with pytest.raises(ZohoAmbiguousReferenceError):
+        await zoho_service.find_estimate_by_reference(db_session, "AITO-7", "C1")

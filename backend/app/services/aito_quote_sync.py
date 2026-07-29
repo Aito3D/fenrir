@@ -23,6 +23,7 @@ from backend.app.models.aito_task import AitoTask
 from backend.app.models.filament import Filament
 from backend.app.services.aito_quote_export import ExportTask, build_line_items
 from backend.app.services.zoho import (
+    ZohoAmbiguousReferenceError,
     ZohoNotConfiguredError,
     ZohoNotFound,
     ZohoRequestRejected,
@@ -83,9 +84,21 @@ def _apply_estimate(project: AitoProject, estimate: dict) -> None:
 
     quote_status in particular: it used to be a snapshot frozen at import that
     went stale the moment a quote was accepted. Every push refreshes it.
+
+    A missing ``estimate_id`` is refused rather than silently marked 'idle':
+    ``create_estimate``/``update_estimate_lines`` return
+    ``payload.get("estimate", {})``, so a 200 whose body happens to omit the
+    "estimate" key yields ``{}`` here. Going 'idle' on that would freeze the
+    project as "in sync" forever while Books may already hold a write this
+    project never recorded an id for (an orphaned estimate on create, or an
+    unconfirmed line-item push on update). Raising routes through
+    ``sync_project``'s ``ZohoUpstreamError`` handling instead, which keeps the
+    project retrying (or escalates to 'error' after ``SYNC_FAILURE_LIMIT``)
+    rather than freezing it silently — this was Critical 1's second bug.
     """
-    if estimate.get("estimate_id") is not None:
-        project.quote_id = estimate["estimate_id"]
+    if estimate.get("estimate_id") is None:
+        raise ZohoUpstreamError("Zoho returned no estimate_id; the push cannot be confirmed")
+    project.quote_id = estimate["estimate_id"]
     if estimate.get("estimate_number") is not None:
         project.quote_number = estimate["estimate_number"]
     if estimate.get("date") is not None:
@@ -110,9 +123,14 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
     if not line_items:
         # Every project is meant to carry a priced service (the create modal
         # enforces it), but a project whose only task was emptied by hand would
-        # otherwise POST an estimate with no lines. Stay pending, say nothing:
-        # the next edit that adds a service fixes it.
+        # otherwise POST an estimate with no lines. A terminal state, not a
+        # silent no-op: leaving quote_sync_state alone here would have this
+        # project re-selected and re-checked every single tick forever. The
+        # user's next edit (which is required to fix this anyway) goes through
+        # _mark_pending_if_ours and re-marks it pending as normal.
+        project.quote_sync_state = "error"
         project.quote_sync_error = "Project has no priced service yet"
+        project.quote_sync_failures = 0
         return
     # Idempotency guard: a prior tick can have POSTed successfully and then
     # died before the commit that would have recorded the returned
@@ -120,24 +138,61 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
     # check, the next tick would POST a second estimate under the exact same
     # AITO-{id} reference, orphaning the first one in Books. A lookup failure
     # is NOT swallowed into "create anyway" — it propagates like any other
-    # ZohoUpstreamError, so sync_project's own handling retries next tick
-    # instead of risking a duplicate.
+    # ZohoUpstreamError (or ZohoAmbiguousReferenceError, which sync_project
+    # treats as an immediate, non-retried error — see there), so sync_project's
+    # own handling retries next tick instead of risking a duplicate.
     reference_number = f"AITO-{project.id}"
-    estimate = await zoho_service.find_estimate_by_reference(db, reference_number)
-    if estimate is None:
-        estimate = await zoho_service.create_estimate(
-            db,
-            {
-                "customer_id": project.client_id,
-                "reference_number": reference_number,
-                "is_inclusive_tax": True,
-                "line_items": line_items,
-            },
-        )
+    estimate = await zoho_service.find_estimate_by_reference(db, reference_number, project.client_id)
+    if estimate is not None:
+        # Adopt the orphan's IDENTITY only — never treat it as "in sync".
+        # This is a list-summary object, not the full estimate (no
+        # line_items), and the project may well have been edited since the
+        # tick whose POST succeeded but whose commit didn't (the exact
+        # scenario this lookup exists for): POST with a scan-only line ->
+        # commit fails -> user adds an Impression3D service -> this tick
+        # finds the orphan. Marking it 'idle' here (the bug this replaces)
+        # would declare the card in sync while Books still holds only the
+        # scan line. Leaving quote_sync_state at 'pending' (do not touch it)
+        # means the very next tick takes the normal _update_quote path
+        # instead, which re-reads the FULL estimate and pushes whatever the
+        # project's lines currently are. Also deliberately not writing
+        # quote_synced_at: this summary's last_modified_time is not the full
+        # estimate's and must not be trusted by the Phase 2 poller's echo
+        # suppression.
+        project.quote_id = estimate["estimate_id"]
+        if estimate.get("estimate_number") is not None:
+            project.quote_number = estimate["estimate_number"]
+        project.quote_url = await zoho_service.books_app_url(db, project.quote_id)
+        project.quote_sync_error = None
+        project.quote_sync_failures = 0
+        return
+    estimate = await zoho_service.create_estimate(
+        db,
+        {
+            "customer_id": project.client_id,
+            "reference_number": reference_number,
+            "is_inclusive_tax": True,
+            "line_items": line_items,
+        },
+    )
     await _write_back_rounded_impression(db, project.id)
     _apply_estimate(project, estimate)
     if project.quote_id:
         project.quote_url = await zoho_service.books_app_url(db, project.quote_id)
+    if estimate.get("is_inclusive_tax") is not True:
+        # Mirrors _update_quote's guard below (Important 4): the create
+        # request ASKED for is_inclusive_tax: True, but the org can force a
+        # tax-exclusive estimate anyway, and by the time the response is back
+        # the estimate — inflated by the tax rate — already exists in Books.
+        # _apply_estimate above already captured its identity (quote_id etc.),
+        # so the card links to the real estimate; lock it exactly like an
+        # invoiced quote so no further line items are ever written to it, and
+        # record why. `is not True` fails closed: an absent field is treated
+        # the same as an explicit False, never assumed safe.
+        project.quote_sync_state = "locked"
+        project.quote_sync_error = (
+            "This quote is tax-exclusive; Aito costs are tax-inclusive and cannot be pushed without inflating the total"
+        )
 
 
 def _is_locked(estimate: dict) -> bool:
@@ -200,6 +255,19 @@ async def _reconcile_status(db: AsyncSession, project: AitoProject, estimate: di
             # window: worst case a crash right after this commit still loses
             # nothing, because the snapshot is already durable even though the
             # decline call hasn't happened yet, so it simply retries next tick.
+            #
+            # Two things about this commit are load-bearing, not incidental:
+            # it commits whatever ELSE is dirty in this session too, not just
+            # this attribute — acceptable only because sync_project's caller
+            # (run_sync_once) processes one project per commit boundary, so
+            # nothing unrelated should be pending here to be swept along. And
+            # the `project.quote_id` read two lines below relies on this
+            # session's `expire_on_commit=False` (see async_session in
+            # core/database.py): a session with the SQLAlchemy default would
+            # expire every attribute on commit, and touching `project.quote_id`
+            # afterwards would attempt a lazy reload outside a greenlet
+            # context and raise, rather than simply returning the value still
+            # held in memory.
             await db.commit()
             await zoho_service.set_estimate_status(db, project.quote_id, "declined")
             project.quote_status = "declined"
@@ -225,7 +293,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         return
     if await _reconcile_status(db, project, estimate):
         return
-    if estimate.get("is_inclusive_tax") is False:
+    if estimate.get("is_inclusive_tax") is not True:
         # Board costs are stored TTC (tax-inclusive) and this module never
         # converts them. Writing our line items onto a tax-EXCLUSIVE estimate
         # would have Books add tax on top of a figure that already includes
@@ -233,6 +301,10 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         # Treated exactly like an invoiced quote (see _is_locked above): no
         # line items may be written, and the reason is recorded for the user
         # rather than retried, since nothing about a retry would change it.
+        # `is not True` (not `is False`): a response that OMITS the field
+        # must fail closed, not fall through to the PUT below — this guard
+        # protects real customer money and an absent field is not evidence
+        # of anything safe.
         project.quote_sync_state = "locked"
         if estimate.get("status") is not None:
             project.quote_status = estimate["status"]
@@ -250,10 +322,15 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
     if not line_items:
         # Mirrors the create-path guard: a project whose only priced service
         # was just cleared by hand would otherwise PUT an empty line_items
-        # array, and Books deletes every Aito line a live quote had. Stay
-        # pending, say nothing written: the next edit that adds a service
-        # back fixes it, same as create.
+        # array, and Books deletes every Aito line a live quote had. A
+        # terminal state, not a silent no-op: without one, this project would
+        # be re-selected every tick forever — an unbounded GET
+        # /estimates/{id} against Books every 60s for as long as it sits
+        # empty. The next edit that adds a service back re-marks it pending
+        # as normal, same as create.
+        project.quote_sync_state = "error"
         project.quote_sync_error = "Project has no priced service left; nothing was written to the quote"
+        project.quote_sync_failures = 0
         return
     updated = await zoho_service.update_estimate_lines(db, project.quote_id, line_items)
     await _write_back_rounded_impression(db, project.id)
@@ -267,6 +344,21 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
             if project.status == "deleted":
                 # Trashed before it was ever quoted. Nothing to create, nothing
                 # to decline; drop it from the queue without a Zoho call.
+                #
+                # Deliberately 'idle', NOT 'unmanaged': this project WAS
+                # created (and marked pending) by this feature — it just
+                # never got as far as a quote before being trashed. 'idle'
+                # carries no special meaning to the ownership guard
+                # (routes/aito.py:_mark_pending_if_ours checks only for
+                # 'unmanaged'), so restoring — or any later edit — re-enqueues
+                # it normally. 'unmanaged' is reserved exclusively for
+                # legacy/imported cards this feature must never touch again
+                # (see import_legacy_projects); using it here too would make
+                # this project indistinguishable from one of those and
+                # permanently block it from ever being marked pending again —
+                # which is exactly Critical 1's bug (a trashed, never-quoted
+                # project going 'idle' under the OLD, inferred-ownership
+                # guard), reproduced under a new name instead of fixed.
                 project.quote_sync_state = "idle"
                 return
             await _create_quote(db, project)
@@ -278,6 +370,15 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         return
     except ZohoRequestRejected as e:
         # Books rejected the payload. Retrying an identical body cannot help.
+        project.quote_sync_state = "error"
+        project.quote_sync_error = str(e)
+    except ZohoAmbiguousReferenceError as e:
+        # find_estimate_by_reference found more than one plausible match, or
+        # the lone survivor belongs to a different customer. Like a rejected
+        # payload, retrying the identical lookup cannot resolve it — it needs
+        # a human to sort out the duplicate/mismatched estimate in Books —
+        # and it must never be treated as "create anyway", which is exactly
+        # how a real customer's estimate would get adopted and overwritten.
         project.quote_sync_state = "error"
         project.quote_sync_error = str(e)
     except ZohoNotFound:

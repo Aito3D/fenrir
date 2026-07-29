@@ -49,10 +49,14 @@ class AitoProject(Base):
     # referenced so it survives that user being renamed or deleted. NULL when
     # auth is disabled, and for API-key requests, which carry no user identity.
     created_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    # Outbox state for the Zoho push. 'idle' (nothing to do) | 'pending' (the
-    # worker owes this project a write) | 'error' (gave up, see
-    # quote_sync_error) | 'locked' (the quote has been invoiced; edits stay
-    # local). 'pending' with a NULL quote_id means "create the quote".
+    # Outbox state for the Zoho push. 'idle' (ours, nothing to do right now —
+    # freshly created and not yet quoted, or synced and up to date) |
+    # 'pending' (the worker owes this project a write) | 'error' (gave up, see
+    # quote_sync_error) | 'locked' (the quote has been invoiced, or the org's
+    # tax setting makes further writes unsafe; edits stay local) | 'unmanaged'
+    # (a legacy/imported card this feature must never touch — see
+    # routes/aito.py:_mark_pending_if_ours, the ONLY state that guard treats
+    # as "not ours"). 'pending' with a NULL quote_id means "create the quote".
     quote_sync_state: Mapped[str] = mapped_column(String(20), default="idle", server_default="idle", index=True)
     quote_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     quote_sync_failures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
