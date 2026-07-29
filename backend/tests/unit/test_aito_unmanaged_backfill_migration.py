@@ -80,13 +80,13 @@ async def _make_engine():
     return engine
 
 
-async def _seed(conn, description, *, quote_sync_state, quote_id):
+async def _seed(conn, description, *, quote_sync_state, quote_id, status="active"):
     await conn.execute(
         text(
             "INSERT INTO aito_projects (description, board_column, position, status, quote_sync_state, quote_id) "
-            "VALUES (:d, 'devis', 0, 'active', :s, :q)"
+            "VALUES (:d, 'devis', 0, :st, :s, :q)"
         ),
-        {"d": description, "s": quote_sync_state, "q": quote_id},
+        {"d": description, "st": status, "s": quote_sync_state, "q": quote_id},
     )
     return (await conn.execute(text("SELECT MAX(id) FROM aito_projects"))).scalar_one()
 
@@ -193,5 +193,66 @@ async def test_backfill_is_idempotent_across_a_second_boot():
             )
         assert rows[legacy] == "unmanaged"
         assert rows[synced_after] == "idle"
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_a_card_that_reaches_idle_with_no_quote_id_after_the_first_boot_survives_a_second_boot():
+    """Critical: idle + quote_id-NULL is not only the pre-feature legacy
+    shape at migration time — it is ALSO the live shape `sync_project`'s
+    trashed-never-quoted branch deliberately leaves a project of ours in
+    (see `aito_quote_sync.sync_project`'s quote-less-deleted branch). A card
+    created, trashed before its first sync tick runs, and ticked to 'idle'
+    with `quote_id` still NULL — all of that happening AFTER the first boot's
+    backfill already ran — must not be swept into 'unmanaged' by a later
+    restart or deploy. Before the gate, this UPDATE re-ran on every call to
+    `run_migrations` and would reclassify this row on the second boot,
+    permanently blocking restore + re-quote with no error and no UI signal —
+    reopening the exact bug this backfill exists to close."""
+    engine = await _make_engine()
+    try:
+        async with engine.begin() as conn:
+            await run_migrations(conn)  # first boot: nothing to backfill yet
+
+        # Between boots: a card of ours is created, trashed before its first
+        # sync tick, and ticked to idle + quote_id-NULL by sync_project's
+        # quote-less-deleted branch — still ours, not legacy.
+        async with engine.begin() as conn:
+            owned = await _seed(conn, "Piece annulee avant tick", quote_sync_state="idle", quote_id=None)
+
+        async with engine.begin() as conn:
+            await run_migrations(conn)  # second boot: a restart/deploy
+
+        async with engine.connect() as conn:
+            state = (
+                await conn.execute(text("SELECT quote_sync_state FROM aito_projects WHERE id = :p"), {"p": owned})
+            ).scalar_one()
+        assert state == "idle"
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_a_trashed_card_is_never_marked_unmanaged_even_on_the_first_pass():
+    """Defence in depth: even on the one-shot backfill pass, a card sitting
+    in the trash must never be claimed — `status != 'deleted'` guards against
+    reclassifying a trashed card regardless of the idle/quote_id ambiguity
+    the rest of this migration resolves."""
+    engine = await _make_engine()
+    try:
+        async with engine.begin() as conn:
+            trashed = await _seed(
+                conn, "Piece a la corbeille", quote_sync_state="idle", quote_id=None, status="deleted"
+            )
+
+        async with engine.begin() as conn:
+            await run_migrations(conn)
+
+        async with engine.connect() as conn:
+            state = (
+                await conn.execute(text("SELECT quote_sync_state FROM aito_projects WHERE id = :p"), {"p": trashed})
+            ).scalar_one()
+        assert state == "idle"
     finally:
         await engine.dispose()

@@ -549,6 +549,73 @@ async def test_find_estimate_by_reference_raises_when_multiple_estimates_share_i
 
 
 @pytest.mark.asyncio
+async def test_find_estimate_by_reference_refuses_to_adopt_when_customer_id_is_falsy_on_both_sides(
+    async_client, db_session
+):
+    """Minor: `AitoProject.client_id` is nullable and can be cleared, so a
+    falsy ``customer_id`` can reach this lookup. If a Books list summary also
+    omits ``customer_id``, comparing with plain ``!=`` treats `None != None`
+    as False and would adopt the estimate with NO customer verification at
+    all — the exact adoption this whole function exists to prevent. A falsy
+    value on either side must refuse to adopt, the same as a real mismatch."""
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(
+            200,
+            json={"estimates": [{"estimate_id": "E1", "reference_number": "AITO-7"}]},
+        )
+
+    zoho_service.transport = _transport(handler)
+    with pytest.raises(ZohoAmbiguousReferenceError):
+        await zoho_service.find_estimate_by_reference(db_session, "AITO-7", None)
+
+
+@pytest.mark.asyncio
+async def test_find_estimate_by_reference_matches_despite_whitespace_and_case_differences(async_client, db_session):
+    """Minor: an exact `==` on the reference number is brittle in the
+    duplicate-creation direction — if Books echoes the value back trimmed,
+    padded or case-changed, a raw string compare drops the real match, the
+    lookup returns None, and a SECOND estimate gets POSTed under the same
+    reference. Whitespace/case must be normalized away before comparing."""
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(
+            200,
+            json={"estimates": [{"estimate_id": "E1", "reference_number": " aito-7 ", "customer_id": "C1"}]},
+        )
+
+    zoho_service.transport = _transport(handler)
+    result = await zoho_service.find_estimate_by_reference(db_session, "AITO-7", "C1")
+    assert result is not None
+    assert result["estimate_id"] == "E1"
+
+
+@pytest.mark.asyncio
+async def test_find_estimate_by_reference_still_rejects_aito_7_vs_aito_70_after_normalizing(async_client, db_session):
+    """Normalizing whitespace/case for the fix above must not weaken the
+    original contains-style protection: 'AITO-7' and 'AITO-70' differ by more
+    than case or whitespace and must still compare unequal."""
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(
+            200,
+            json={"estimates": [{"estimate_id": "WRONG", "reference_number": " AITO-70 ", "customer_id": "C1"}]},
+        )
+
+    zoho_service.transport = _transport(handler)
+    assert await zoho_service.find_estimate_by_reference(db_session, "AITO-7", "C1") is None
+
+
+@pytest.mark.asyncio
 async def test_find_estimate_by_reference_raises_on_a_customer_mismatch(async_client, db_session):
     """Critical 2: the one bug this exists to prevent — an unverified
     reference-number match adopting an ARBITRARY live customer's estimate,

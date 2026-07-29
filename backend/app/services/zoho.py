@@ -57,6 +57,17 @@ class ZohoAmbiguousReferenceError(ZohoUpstreamError):
     """
 
 
+def _normalize_reference_number(value: str | None) -> str:
+    """Collapse incidental whitespace/case differences for reference-number comparison.
+
+    Books may echo a reference number back trimmed, padded, or case-changed; comparing
+    raw strings would then miss our own estimate and let a duplicate get POSTed. This
+    only normalizes whitespace and case — it does not do substring or prefix matching,
+    so 'AITO-7' and 'AITO-70' still compare unequal.
+    """
+    return (value or "").strip().casefold()
+
+
 def _title_case_segments(value: str) -> str:
     """Capitalize every space- or hyphen-separated segment: 'jean-pierre' -> 'Jean-Pierre'."""
     result = []
@@ -246,23 +257,35 @@ class ZohoService:
 
         Books' ``reference_number`` query param is not documented as an exact
         match (and Books does not enforce the field's uniqueness at all), so
-        the raw response is filtered client-side to an EXACT string match
+        the raw response is filtered client-side to a normalized exact-string
+        match (whitespace-trimmed, casefolded — see ``_normalize_reference_number``)
         before anything from it is trusted — a contains-style match returning
         "AITO-70" for a query of "AITO-7" must not be adopted as AITO-7's
-        quote. The survivor is further required to belong to ``customer_id``:
-        an estimate under our reference number that belongs to someone else's
-        customer is a coincidence or corruption, never ours to touch.
+        quote, and normalizing case/whitespace does not change that: the two
+        still compare unequal. The survivor is further required to belong to
+        ``customer_id``: an estimate under our reference number that belongs
+        to someone else's customer is a coincidence or corruption, never ours
+        to touch. A falsy ``customer_id`` (nothing to verify against — e.g. a
+        project whose ``client_id`` is unset) or a survivor with no
+        ``customer_id`` of its own is treated the same as a mismatch: without
+        both sides present there is nothing to verify, so adoption is refused
+        rather than silently skipping the check.
 
         Returns None when nothing survives — the expected, common case, not
         an error. Raises ``ZohoAmbiguousReferenceError`` when more than one
         estimate survives the exact-match filter, or when the lone survivor's
-        customer does not match: silently resolving either case by picking
-        ``estimates[0]`` (the bug this replaces) risks adopting an arbitrary
-        live customer's estimate and then overwriting it with this project's
-        line items on the very next push.
+        customer does not match (or cannot be verified): silently resolving
+        either case by picking ``estimates[0]`` (the bug this replaces) risks
+        adopting an arbitrary live customer's estimate and then overwriting
+        it with this project's line items on the very next push.
         """
         payload = await self._request(db, "GET", "/estimates", params={"reference_number": reference_number})
-        matches = [e for e in (payload.get("estimates") or []) if e.get("reference_number") == reference_number]
+        wanted = _normalize_reference_number(reference_number)
+        matches = [
+            e
+            for e in (payload.get("estimates") or [])
+            if _normalize_reference_number(e.get("reference_number")) == wanted
+        ]
         if not matches:
             return None
         if len(matches) > 1:
@@ -271,7 +294,7 @@ class ZohoService:
                 "refusing to guess which one is ours"
             )
         estimate = matches[0]
-        if estimate.get("customer_id") != customer_id:
+        if not customer_id or not estimate.get("customer_id") or estimate.get("customer_id") != customer_id:
             raise ZohoAmbiguousReferenceError(
                 f"An estimate with reference_number {reference_number!r} exists in Zoho but belongs to a "
                 "different customer"

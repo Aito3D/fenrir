@@ -727,9 +727,16 @@ async def test_restoring_reapplies_the_snapshotted_status(db_session):
         zoho_handler(
             {
                 ("GET", "/estimates/E1"): {
-                    "estimate": {"estimate_id": "E1", "status": "declined", "invoiced_amount": 0, "line_items": []}
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "declined",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
                 },
                 ("POST", "/status/accepted"): {"message": "ok"},
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "accepted", "total": 1}},
             },
             seen,
         )
@@ -740,6 +747,12 @@ async def test_restoring_reapplies_the_snapshotted_status(db_session):
     await db_session.refresh(project)
     assert project.quote_status_before_trash is None
     assert any(entry[1].endswith("/status/accepted") for entry in seen)
+    # The status restore is only half the tick: with is_inclusive_tax present,
+    # the worker must fall through to the normal push afterwards. Without this
+    # field a fail-closed guard would lock the project here and skip the PUT
+    # entirely, which is exactly the coverage gap this test now closes.
+    assert any(entry[0] == "PUT" for entry in seen)
+    assert project.quote_sync_state == "idle"
 
 
 @pytest.mark.asyncio
@@ -1040,6 +1053,7 @@ async def test_create_writes_back_rounded_impression_immediately(db_session):
                         "estimate_number": "DEV26-9001",
                         "status": "draft",
                         "total": 2400,
+                        "is_inclusive_tax": True,
                     }
                 },
             }
@@ -1048,10 +1062,16 @@ async def test_create_writes_back_rounded_impression_immediately(db_session):
     zoho_service.invalidate_token()
 
     await run_sync_once(db_session)
+    await db_session.refresh(project)
     task_row = (await db_session.execute(select(AitoTask).where(AitoTask.project_id == project.id))).scalar_one()
     # 2401 over 2 units cannot be expressed at price_precision 0, same as the
     # update-path test above — this one exercises the create path instead.
     assert task_row.impression_cost == 2400
+    # With is_inclusive_tax present, the create must land 'idle', not fall
+    # through to the tax-exclusive lock guard — proving the create-success
+    # path is still exercised end to end, not just the write-back that
+    # happens before the guard runs.
+    assert project.quote_sync_state == "idle"
 
 
 @pytest.mark.asyncio

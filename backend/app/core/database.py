@@ -4005,21 +4005,35 @@ async def run_migrations(conn):
     # fix, 2026-07-29). Before this, `_mark_pending_if_ours` (routes/aito.py)
     # INFERRED "this is a legacy card, never touch it" from
     # `quote_sync_state == 'idle' AND quote_id IS NULL` — which is exactly
-    # the pre-feature card shape, so every row matching it today really is
-    # one. (It also happens to be the shape a project of ours could take if
-    # trashed before its first sync tick ran; that ambiguity was the bug
-    # being fixed, and going forward the ownership guard no longer infers
-    # from this shape at all — see `_mark_pending_if_ours` and
-    # `aito_quote_sync.sync_project`'s quote-less-deleted branch, which stays
-    # 'idle' on purpose. This is a one-time cleanup of rows written under the
-    # OLD, inferred-ownership world, not an ongoing invariant.)
-    async with conn.begin_nested():
-        await conn.execute(
-            text(
-                "UPDATE aito_projects SET quote_sync_state = 'unmanaged' "
-                "WHERE quote_sync_state = 'idle' AND quote_id IS NULL"
+    # the pre-feature card shape, so every row matching it at migration time
+    # really is one. But `quote_sync_state == 'idle' AND quote_id IS NULL` is
+    # ALSO the legitimate live shape of a project this feature owns —
+    # `sync_project`'s trashed-never-quoted branch deliberately leaves a
+    # trashed, never-quoted card in exactly that state (see
+    # `aito_quote_sync.sync_project`'s quote-less-deleted branch and
+    # `_mark_pending_if_ours`). Re-running this UPDATE on every boot would
+    # therefore reclassify a live, owned card as 'unmanaged' the moment it
+    # was trashed and a restart happened to land before its next sync tick —
+    # silently and permanently blocking restore + re-quote. So this must run
+    # exactly once, gated by a settings marker, per `_column_exists`'s
+    # docstring warning against repeating a backfill UPDATE on every startup.
+    # `AND status != 'deleted'` is defence in depth so even this one-shot
+    # pass never claims a trashed card that happens to match the legacy
+    # shape.
+    marker_row = await conn.execute(text("SELECT value FROM settings WHERE key = 'aito_unmanaged_backfill_done'"))
+    if marker_row.scalar_one_or_none() is None:
+        if is_sqlite():
+            marker_sql = "INSERT OR IGNORE INTO settings (key, value) VALUES (:key, :value)"
+        else:
+            marker_sql = "INSERT INTO settings (key, value) VALUES (:key, :value) ON CONFLICT (key) DO NOTHING"
+        async with conn.begin_nested():
+            await conn.execute(
+                text(
+                    "UPDATE aito_projects SET quote_sync_state = 'unmanaged' "
+                    "WHERE quote_sync_state = 'idle' AND quote_id IS NULL AND status != 'deleted'"
+                )
             )
-        )
+            await conn.execute(text(marker_sql), {"key": "aito_unmanaged_backfill_done", "value": "1"})
 
     # Migration: per-step Done flags on Aito tasks (2026-07-29). One boolean per
     # service, mirroring the four cost columns; ticking them is what advances a
