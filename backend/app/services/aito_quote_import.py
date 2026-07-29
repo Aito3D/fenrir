@@ -11,6 +11,7 @@ did not match.
 
 import re
 import unicodedata
+from dataclasses import dataclass
 
 # The four Aito services, in the canonical order the board renders badges in
 # (mirrors _SERVICE_COLUMNS in backend/app/api/routes/aito.py).
@@ -121,3 +122,104 @@ def parse_time_min(value: str | None) -> int | None:
             total += number
         found = True
     return round(total) if found else None
+
+
+# SKU prefixes, longest-discriminating first. The catalogue grows variants
+# (U3DIMP-VENTE), so this matches on prefix rather than equality. L3DIMP
+# (laser) and P3D2024 (legacy generic) deliberately match nothing: they have
+# no Aito service, and a line that cannot be represented is reported as
+# skipped rather than silently mapped onto the closest neighbour.
+_SKU_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("P3DSCAN", "scan"),
+    ("P3DMOD", "modelisation"),
+    ("P3DIMP", "impression"),
+    ("U3DIMP", "usinage"),
+)
+
+
+def service_for_sku(sku: str | None) -> str | None:
+    normalized = (sku or "").strip().upper()
+    if not normalized:
+        return None
+    for prefix, service in _SKU_PREFIXES:
+        if normalized.startswith(prefix):
+            return service
+    return None
+
+
+@dataclass(frozen=True)
+class ParsedLine:
+    """One recognised AITO 3D line, with its description already split."""
+
+    service: str
+    labels: dict[str, str]
+    free_text: tuple[str, ...]
+    amount: float
+    quantity: float
+
+
+def _line_amount(line: dict, *, inclusive: bool, precision: int) -> float:
+    """The line's tax-inclusive total, which is what an Aito task stores.
+
+    When the quote is tax-inclusive, `rate` is already the TTC unit price and
+    `item_total` is the pre-tax figure — so the TTC total is rate x quantity.
+    When it is tax-exclusive, `item_total` is the TTC-less total and the line's
+    own taxes are added back.
+    """
+    quantity = float(line.get("quantity") or 0)
+    if inclusive:
+        amount = float(line.get("rate") or 0) * quantity
+    else:
+        taxes = sum(float(tax.get("tax_amount") or 0) for tax in (line.get("line_item_taxes") or []))
+        amount = float(line.get("item_total") or 0) + taxes
+    # Clamp: an Aito cost is validated ge=0, and a stray negative (a discount
+    # line typed as a service) would otherwise 422 the create request.
+    return round(max(0.0, amount), precision)
+
+
+def parse_lines(estimate: dict) -> tuple[list[ParsedLine], list[dict]]:
+    """Split an estimate's line items into recognised services and skipped rows."""
+    inclusive = bool(estimate.get("is_inclusive_tax"))
+    precision = int(estimate.get("price_precision") or 0)
+    recognised: list[ParsedLine] = []
+    skipped: list[dict] = []
+    for line in sorted(estimate.get("line_items") or [], key=lambda item: item.get("item_order") or 0):
+        amount = _line_amount(line, inclusive=inclusive, precision=precision)
+        service = service_for_sku(line.get("sku"))
+        if service is None:
+            skipped.append({"sku": line.get("sku") or "", "name": line.get("name") or "", "amount": amount})
+            continue
+        labels, free_text = parse_description(line.get("description"))
+        recognised.append(
+            ParsedLine(
+                service=service,
+                labels=labels,
+                free_text=free_text,
+                amount=amount,
+                quantity=float(line.get("quantity") or 0),
+            )
+        )
+    return recognised, skipped
+
+
+def group_lines(lines: list[ParsedLine]) -> list[list[ParsedLine]]:
+    """Consecutive lines whose service rank strictly rises describe one job.
+
+    A quote that walks scan -> model -> impression -> usinage is one physical part
+    passing through four stations, and an Aito task carries several services.
+    A rank that repeats or goes backwards means a new part, so it opens a new
+    group. Gaps are fine: model -> usinage still rises.
+    """
+    groups: list[list[ParsedLine]] = []
+    current: list[ParsedLine] = []
+    seen: set[int] = set()
+    for line in lines:
+        rank = SERVICE_RANK[line.service]
+        if current and any(rank <= previous for previous in seen):
+            groups.append(current)
+            current, seen = [], set()
+        current.append(line)
+        seen.add(rank)
+    if current:
+        groups.append(current)
+    return groups

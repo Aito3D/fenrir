@@ -5,9 +5,12 @@ import json
 from pathlib import Path
 
 from backend.app.services.aito_quote_import import (
+    group_lines,
     parse_description,
+    parse_lines,
     parse_time_min,
     parse_weight_g,
+    service_for_sku,
 )
 
 _FIXTURES = Path(__file__).parent.parent / "fixtures" / "zoho_estimates"
@@ -81,3 +84,71 @@ def test_parse_time_min_units():
     assert parse_time_min("90") == 90  # bare number = minutes
     assert parse_time_min("") is None
     assert parse_time_min("à définir") is None
+
+
+def test_service_for_sku_matches_by_prefix():
+    assert service_for_sku("P3DSCAN") == "scan"
+    assert service_for_sku("P3DMOD") == "modelisation"
+    assert service_for_sku("P3DIMP") == "impression"
+    assert service_for_sku("U3DIMP") == "usinage"
+    # The -VENTE variant rides the same prefix.
+    assert service_for_sku("U3DIMP-VENTE") == "usinage"
+    assert service_for_sku(" p3dimp ") == "impression"
+    # Laser, the legacy generic, retail and blank SKUs are not Aito services.
+    assert service_for_sku("L3DIMP") is None
+    assert service_for_sku("P3D2024") is None
+    assert service_for_sku("PB05016") is None
+    assert service_for_sku("") is None
+
+
+def test_parse_lines_amounts_are_ttc_when_the_quote_is_inclusive():
+    lines, skipped = parse_lines(load_estimate("dev-2462-two-tasks"))
+    assert skipped == []
+    assert [line.service for line in lines] == ["modelisation", "impression", "impression"]
+    # rate x quantity: 800 x 3. item_total (2124) is the pre-tax figure.
+    assert lines[1].amount == 2400
+    assert lines[1].quantity == 3
+    assert lines[0].amount == 3000
+
+
+def test_parse_lines_amounts_add_tax_when_the_quote_is_exclusive():
+    lines, _skipped = parse_lines(load_estimate("dev-2448-vente"))
+    # item_total 4000 + tax 520
+    assert [line.amount for line in lines] == [4520, 4520]
+
+
+def test_parse_lines_reports_unrecognised_lines():
+    lines, skipped = parse_lines(load_estimate("dev-2463-retail"))
+    assert lines == []
+    assert [s["sku"] for s in skipped] == ["PB05016", "L3DIMP"]
+    assert skipped[0]["amount"] == 8000  # 4000 x 2, tax-inclusive quote
+    assert skipped[1]["name"].startswith("Découpe")
+
+
+def test_group_lines_merges_a_strictly_rising_run():
+    lines, _skipped = parse_lines(load_estimate("dev-2461-three-services"))
+    groups = group_lines(lines)
+    assert len(groups) == 1
+    assert [line.service for line in groups[0]] == ["scan", "modelisation", "impression"]
+
+
+def test_group_lines_starts_a_new_group_on_a_repeated_service():
+    lines, _skipped = parse_lines(load_estimate("dev-2462-two-tasks"))
+    groups = group_lines(lines)
+    assert [[line.service for line in g] for g in groups] == [
+        ["modelisation", "impression"],
+        ["impression"],
+    ]
+
+
+def test_group_lines_merges_all_four_services():
+    lines, _skipped = parse_lines(load_estimate("dev-2467-template"))
+    groups = group_lines(lines)
+    assert len(groups) == 1
+    assert [line.service for line in groups[0]] == ["scan", "modelisation", "impression", "usinage"]
+
+
+def test_group_lines_merges_a_gap_in_the_run():
+    lines, _skipped = parse_lines(load_estimate("dev-2448-vente"))
+    # modelisation (rank 1) then usinage (rank 3) still rises, so one task.
+    assert len(group_lines(lines)) == 1
