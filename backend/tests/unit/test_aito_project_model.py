@@ -37,9 +37,15 @@ async def test_aito_project_ids_increment(db_session):
     assert ids[1] > ids[0]
 
 
-def test_sync_columns_default_to_idle_and_zero():
+@pytest.mark.asyncio
+async def test_sync_columns_default_to_idle_and_zero(db_session):
     project = AitoProject(description="x", board_column="devis", position=0)
-    assert project.quote_sync_state is None or project.quote_sync_state == "idle"
-    assert project.quote_status_before_trash is None
+    db_session.add(project)
+    await db_session.flush()
+    await db_session.refresh(project)
+
+    assert project.quote_sync_state == "idle"
+    assert project.quote_sync_failures == 0
     assert project.quote_synced_at is None
     assert project.quote_sync_error is None
+    assert project.quote_status_before_trash is None
