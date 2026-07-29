@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, ExternalLink, Loader2, X } from 'lucide-react';
 import { COLUMNS } from './columns';
+import { QuoteStatusActions } from './QuoteStatusActions';
 import { TaskEditor } from './TaskEditor';
 import { AITO_CARD_VT_NAME } from '../../hooks/useCardMorph';
 import {
@@ -563,6 +564,8 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
                   </dd>
                 </div>
               </dl>
+
+              <QuoteStatusActions project={project} />
             </div>
 
             <div className="min-w-0 border-t border-bambu-dark-tertiary pt-4 lg:border-t-0 lg:pt-0">
