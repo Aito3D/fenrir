@@ -494,7 +494,9 @@ describe('TaskRow', () => {
     render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
 
     // Give every query (filaments, printers, defaults, settings) every chance
-    // to resolve and the recompute effect every chance to fire.
+    // to resolve. Pricing only happens inside ImpressionFields' change
+    // handler now, so mounting alone should never report anything — this
+    // window is here to be sure nothing async sneaks in after mount either.
     await screen.findByRole('combobox', { name: /printer/i });
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -528,10 +530,11 @@ describe('TaskRow', () => {
 
   it('reports the quantity-multiplied total (total_ttc_qty), not the per-unit total_ttc', async () => {
     // Pins the decision at ImpressionFields.tsx: which PricingResult field
-    // gets hoisted through onCostChange. Every other test that reaches
-    // impressionCost uses quantity 1, where total_ttc and total_ttc_qty are
-    // equal, so this is the only test that would go red if that line were
-    // changed to report the per-unit figure instead.
+    // gets reported as `computedCost` through its `onChange` prop. Every
+    // other test that reaches impressionCost uses quantity 1, where
+    // total_ttc and total_ttc_qty are equal, so this is the only test that
+    // would go red if that line were changed to report the per-unit figure
+    // instead.
     const onChangeSpy = vi.fn();
     const user = userEvent.setup();
     render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={onChangeSpy} />);

@@ -3,7 +3,7 @@ import { GripVertical } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ServiceBadges } from './ServiceBadges';
-import { QUOTE_STATUS_NEUTRAL, QUOTE_STATUS_STYLES, quoteStatusLabelKey } from './quoteStatus';
+import { quoteStatusLabelKey, quoteStatusStyle } from './quoteStatus';
 import type { AitoProject } from '../../api/client';
 import { api } from '../../api/client';
 import { Money } from '../calculator/shared';
@@ -146,9 +146,9 @@ export function CardView({
               rely on it. */}
           {project.quote_status && (
             <span
-              className={`text-[10px] leading-tight rounded px-1.5 py-0.5 flex-shrink-0 ${
-                QUOTE_STATUS_STYLES[project.quote_status] ?? QUOTE_STATUS_NEUTRAL
-              }`}
+              className={`text-[10px] leading-tight rounded px-1.5 py-0.5 flex-shrink-0 ${quoteStatusStyle(
+                project.quote_status,
+              )}`}
             >
               {(() => {
                 const key = quoteStatusLabelKey(project.quote_status);

@@ -233,6 +233,11 @@ def group_lines(lines: list[ParsedLine]) -> list[list[ParsedLine]]:
 
 _TITLE_MAX = 200
 _COLOR_MAX = 100
+# Matches AitoProjectCreate.quote_salesperson's max_length=200. Unlike
+# impression_color, there is nowhere to preserve the untruncated value — the
+# salesperson is not part of the quote's prose — so this just clips it rather
+# than 422ing the whole import over a name Zoho happened to store long.
+_SALESPERSON_MAX = 200
 _COST_FIELD: dict[str, str] = {
     "scan": "scan_cost",
     "modelisation": "modelisation_cost",
@@ -404,7 +409,7 @@ def build_preview(estimate: dict, contact: dict | None, quote_url: str) -> dict:
             "total": float(estimate.get("total") or 0),
             "currency_code": estimate.get("currency_code") or "",
             "url": quote_url,
-            "salesperson": (estimate.get("salesperson_name") or "").strip() or None,
+            "salesperson": (estimate.get("salesperson_name") or "").strip()[:_SALESPERSON_MAX] or None,
         },
         "client": _client_snapshot(estimate, contact),
         "suggested_description": "\n".join(titles) or number,

@@ -508,7 +508,9 @@ describe('ProjectDetailPanel tasks', () => {
     await expandAllTasks();
 
     // Give every query (filaments, printers, defaults, settings, tasks)
-    // every chance to resolve and the recompute effect every chance to fire.
+    // every chance to resolve. Pricing only happens inside ImpressionFields'
+    // change handler now, so mounting alone should never PATCH anything —
+    // this window is here to be sure nothing async sneaks in after mount.
     await screen.findByRole('combobox', { name: /printer/i });
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -541,12 +543,13 @@ describe('ProjectDetailPanel tasks', () => {
 
   it('editing one row then deleting it does not leak its edited state onto the row that slides into its slot', async () => {
     // The residual this file exists to close: TaskEditor used to key rows by
-    // array index. Editing row A's print inputs sets `hasEdited` on the
+    // array index. Editing row A's print inputs types into the
     // ImpressionFields instance mounted at index 0; hold-deleting row A then
     // slides row B up into index 0, and with an index key React reuses that
-    // same mounted instance — `hasEdited: true` included — for row B's data.
-    // B's untouched, frozen `impression_cost` then gets recomputed and
-    // PATCHed over the stored figure despite nobody ever having touched B.
+    // same mounted instance — DOM nodes and all — for row B's data instead of
+    // remounting it. B's untouched, frozen `impression_cost` then gets
+    // recomputed from leftover row-A state and PATCHed over the stored figure
+    // despite nobody ever having touched B.
     const patches: { id: string; body: Record<string, unknown> }[] = [];
     let currentTasks: AitoTask[] = [mockTask, mockImpressionTask];
     server.use(
@@ -568,8 +571,8 @@ describe('ProjectDetailPanel tasks', () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
-    // Row A (task 101, index 0): edit a print input, setting `hasEdited` on
-    // the ImpressionFields instance mounted at index 0.
+    // Row A (task 101, index 0): edit a print input on the ImpressionFields
+    // instance mounted at index 0.
     await expandAllTasks();
     const weightInputs = await screen.findAllByLabelText(/weight/i);
     expect(weightInputs).toHaveLength(2);

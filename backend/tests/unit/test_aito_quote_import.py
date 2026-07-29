@@ -367,6 +367,15 @@ def test_build_preview_salesperson_is_none_when_the_quote_has_none():
     assert preview["quote"]["salesperson"] is None
 
 
+def test_build_preview_truncates_a_salesperson_name_longer_than_the_field_limit():
+    # AitoProjectCreate.quote_salesperson has max_length=200; an unclipped
+    # value here would 422 the entire import rather than degrade gracefully.
+    long_name = "A" * 250
+    estimate = load_estimate("dev-2462-two-tasks") | {"salesperson_name": long_name}
+    preview = build_preview(estimate, None, "https://books.zoho.eu/app/1#/estimates/e2")
+    assert preview["quote"]["salesperson"] == "A" * 200
+
+
 def test_build_preview_preserves_a_colour_longer_than_the_field_limit():
     estimate = load_estimate("dev-2461-three-services")
     long_color = (

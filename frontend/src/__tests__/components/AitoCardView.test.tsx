@@ -3,6 +3,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { CardView } from '../../components/aito/CardView';
+import { QUOTE_STATUS_NEUTRAL } from '../../components/aito/quoteStatus';
 import type { AitoProject } from '../../api/client';
 
 const project: AitoProject = {
@@ -188,6 +189,26 @@ describe('CardView', () => {
       />,
     );
     expect(screen.getByText('partially_invoiced')).toBeInTheDocument();
+  });
+
+  it('renders a status named after an Object.prototype member verbatim, in the neutral style', () => {
+    // `quote_status` is a free string up to 30 chars accepted from the client
+    // (POST /aito/), so an unguarded object-literal lookup — `map[status]` —
+    // would resolve 'toString' to Object.prototype.toString instead of
+    // falling through to the neutral default. Same fallback path as any
+    // other unrecognised status; this pins that the guard is actually there.
+    render(
+      <CardView
+        project={{ ...project, quote_number: 'DEV26-2462', quote_status: 'toString' }}
+        onExpand={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    const chip = screen.getByText('toString');
+    expect(chip).toBeInTheDocument();
+    for (const cls of QUOTE_STATUS_NEUTRAL.split(' ')) {
+      expect(chip.className).toContain(cls);
+    }
   });
 
   it('shows no status chip on a card with no quote status', () => {

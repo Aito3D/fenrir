@@ -19,10 +19,13 @@ export interface TaskDraft {
   /** Stable client-side identity for a not-yet-persisted row (`id === null`),
    *  set once at creation. This is what TaskEditor keys rows on instead of
    *  array index, so deleting an earlier row can't hand a later row's mounted
-   *  `ImpressionFields` instance down into a lower slot — along with whatever
-   *  provenance state (`hasEdited`) that instance was carrying. Meaningless
-   *  once `id` is non-null; a persisted row's `id` is already a stable,
-   *  collision-free identity on its own. */
+   *  component tree — the `ImpressionFields` instance and every other input
+   *  in the row — down into a lower slot. That key also gates the row's
+   *  expanded/collapsed state (see TaskEditor's `rowKey`), so reusing it
+   *  across rows would carry that open/closed state, and whatever a user was
+   *  mid-typing into an uncontrolled input, into the wrong row's data.
+   *  Meaningless once `id` is non-null; a persisted row's `id` is already a
+   *  stable, collision-free identity on its own. */
   uid: string;
   title: string;
   description: string;

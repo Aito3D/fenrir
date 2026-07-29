@@ -175,7 +175,7 @@ export function TaskRow({ task, index, onChange, onRemove, expanded, onToggle }:
                 printers or filaments configured — and an imported cost still
                 has to be readable and editable on such an installation. */}
             <div className="flex items-end justify-between gap-3 mb-1">
-              <label htmlFor={`${reactId}-impression`} className={`${labelCls} mb-0`}>
+              <label htmlFor={`${reactId}-impression`} className="block text-sm text-bambu-gray">
                 {t('aito.serviceImpression3D')}
               </label>
               <div className="w-32 flex-shrink-0">

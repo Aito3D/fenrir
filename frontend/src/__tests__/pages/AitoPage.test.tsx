@@ -9,6 +9,7 @@ import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { render } from '../utils';
 import { AitoPage } from '../../pages/AitoPage';
+import type { ZohoQuotePreview } from '../../api/client';
 
 const project = {
   id: 12, description: 'Support GoPro', column: 'devis', position: 0, status: 'active',
@@ -306,6 +307,93 @@ describe('AitoPage (backend board)', () => {
     );
 
     expect(textarea).toHaveFocus();
+  });
+
+  describe('quote import', () => {
+    const emptyTask = {
+      title: '',
+      description: '',
+      scan_cost: null,
+      modelisation_cost: null,
+      usinage_cost: null,
+      impression_printer_id: null,
+      impression_filament_id: null,
+      impression_weight_g: null,
+      impression_time_min: null,
+      impression_quantity: null,
+      impression_color: null,
+      impression_cost: null,
+    };
+
+    const summary = {
+      id: 'e2',
+      number: 'DEV26-2462',
+      customer_name: 'Marie EXEMPLE',
+      date: '2026-07-27',
+      total: 5600,
+      currency_code: 'XPF',
+      status: 'draft',
+    };
+
+    const preview: ZohoQuotePreview = {
+      quote: {
+        id: 'e2',
+        number: 'DEV26-2462',
+        date: '2026-07-27',
+        status: 'draft',
+        total: 5600,
+        currency_code: 'XPF',
+        url: 'https://books.zoho.eu/app/999#/estimates/e2',
+        salesperson: 'Marie VENDEUSE',
+      },
+      client: { id: 'c2', name: 'Marie EXEMPLE', phone: '87123456', email: null, is_company: false },
+      suggested_description: 'Helice grise',
+      tasks: [{ ...emptyTask, title: 'Helice grise', impression_cost: 2400 }],
+      skipped_lines: [],
+      existing_project_id: null,
+    };
+
+    it('POSTs the full quote snapshot to /aito/, not just the fields the modal itself renders', async () => {
+      // AitoPage.tsx is the only place that ever writes quote_salesperson and
+      // quote_status (and, before them, the five earlier quote_* fields) —
+      // both are frozen snapshots from the moment of import, unrecoverable if
+      // dropped short of re-importing. ImportQuoteModal only calls onImport
+      // with the preview it fetched; this pins the shape of what AitoPage
+      // actually sends over the wire from that preview.
+      let captured: Record<string, unknown> | null = null;
+      server.use(
+        http.get('/api/v1/zoho/estimates', () => HttpResponse.json([summary])),
+        http.get('/api/v1/zoho/estimates/:id/preview', () => HttpResponse.json(preview)),
+        http.post('/api/v1/aito/', async ({ request }) => {
+          captured = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...project, id: 99, description: 'Helice grise' }, { status: 201 });
+        }),
+      );
+
+      const user = userEvent.setup();
+      render(<AitoPage />);
+      await user.click(await screen.findByRole('button', { name: /^import$/i }));
+
+      const modal = (await screen.findByText('Import a quote')).closest('div.animate-modal-in') as HTMLElement;
+      await user.click(within(modal).getByRole('combobox'));
+      await user.click(await screen.findByText('DEV26-2462'));
+
+      // Waits for the preview to render (not just the description textarea,
+      // which is seeded with the same text) before submitting.
+      await within(modal).findByText('Printing');
+      await user.click(within(modal).getByRole('button', { name: /^import$/i }));
+
+      await waitFor(() => expect(captured).not.toBeNull());
+      expect(captured).toMatchObject({
+        quote_id: 'e2',
+        quote_number: 'DEV26-2462',
+        quote_date: '2026-07-27',
+        quote_total: 5600,
+        quote_url: 'https://books.zoho.eu/app/999#/estimates/e2',
+        quote_salesperson: 'Marie VENDEUSE',
+        quote_status: 'draft',
+      });
+    });
   });
 
   describe('trash view', () => {

@@ -29,8 +29,22 @@ const LABEL_KEYS: Record<string, string> = {
   expired: 'aito.quoteStatus.expired',
 };
 
+/** The Tailwind classes for a status, or the neutral fallback when we have no
+ *  style for it. `quote_status` is a free string up to 30 chars accepted from
+ *  the client (see `POST /aito/`), so a plain-object index must be guarded
+ *  with `Object.hasOwn` — an unguarded `QUOTE_STATUS_STYLES[status]` would
+ *  fall through to `Object.prototype` for a status like `'toString'` and
+ *  return a function instead of `undefined`. */
+export function quoteStatusStyle(status: string): string {
+  return Object.hasOwn(QUOTE_STATUS_STYLES, status) ? QUOTE_STATUS_STYLES[status] : QUOTE_STATUS_NEUTRAL;
+}
+
 /** The i18n key for a status, or null when we have no translation for it —
- *  in which case the caller renders the raw status string. */
+ *  in which case the caller renders the raw status string. Guarded the same
+ *  way as `quoteStatusStyle`, and for the same reason: `status` is
+ *  client-influenced, so a bare `LABEL_KEYS[status]` could resolve to an
+ *  inherited `Object.prototype` member (e.g. `status === 'toString'`) rather
+ *  than `undefined`. */
 export function quoteStatusLabelKey(status: string): string | null {
-  return LABEL_KEYS[status] ?? null;
+  return Object.hasOwn(LABEL_KEYS, status) ? LABEL_KEYS[status] : null;
 }

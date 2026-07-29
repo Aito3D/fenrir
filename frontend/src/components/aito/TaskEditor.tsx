@@ -11,18 +11,21 @@ import type { TaskDraft } from '../../utils/taskDraft';
 
 /** A stable identity for a row, not its position.
  *
- *  Keying by index hands a deleted row's slot — and the mounted
- *  ImpressionFields instance in it, `hasEdited` included — down to whichever
- *  row slides up into it, silently recomputing and freeing that row's frozen
- *  cost. `id` is stable and unique once a task is persisted; `uid` (see
- *  TaskDraft) covers it before then. The `persisted:`/`draft:` prefixes keep
- *  the two id spaces from ever colliding (a draft's `id` is always null, never
- *  a real row id, but nothing stops a future draft uid from formatting the
- *  same as some row's numeric id without the prefix).
+ *  Keying by index hands a deleted row's slot — and everything mounted in
+ *  it, the ImpressionFields instance included — down to whichever row slides
+ *  up into it: same component identities, same DOM nodes, now showing a
+ *  different row's data without ever remounting. `id` is stable and unique
+ *  once a task is persisted; `uid` (see TaskDraft) covers it before then. The
+ *  `persisted:`/`draft:` prefixes keep the two id spaces from ever colliding
+ *  (a draft's `id` is always null, never a real row id, but nothing stops a
+ *  future draft uid from formatting the same as some row's numeric id
+ *  without the prefix).
  *
- *  Doubles as the key for a row's expanded/collapsed state, which is why it is
- *  a named function rather than an expression inlined into the `key` prop:
- *  those two must agree, or toggling one row would open another. */
+ *  Doubles as the key for a row's expanded/collapsed state and every
+ *  uncontrolled input inside the row — one more reason `key` and toggle state
+ *  must use the exact same string, which is why it is a named function
+ *  rather than an expression inlined into the `key` prop: those two must
+ *  agree, or toggling one row would open another. */
 function rowKey(task: TaskDraft): string {
   return task.id !== null ? `persisted:${task.id}` : `draft:${task.uid}`;
 }

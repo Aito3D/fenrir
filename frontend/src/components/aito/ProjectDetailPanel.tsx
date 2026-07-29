@@ -368,43 +368,43 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
                     <p>/<textarea> swap below is not a <dd>. */}
                 <p className={labelCls}>{t('aito.productDescription')}</p>
                 <div className="flex items-start justify-between gap-2">
-                {editingDesc ? (
-                  <textarea
-                    autoFocus
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onBlur={saveDescription}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') {
-                        // Stop the panel's window-level Escape handler: the first
-                        // Escape abandons the edit, it does not close the panel.
-                        e.stopPropagation();
-                        setDraft(project.description);
-                        setEditingDesc(false);
-                      }
-                      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') saveDescription();
-                    }}
-                    rows={5}
-                    className={`${inputCls} resize-none flex-1`}
-                  />
-                ) : (
-                  <p
-                    role="button"
-                    tabIndex={0}
-                    aria-label={t('aito.editDescription')}
-                    onClick={() => setEditingDesc(true)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setEditingDesc(true);
-                      }
-                    }}
-                    className="flex-1 text-sm text-white whitespace-pre-wrap break-words cursor-text rounded-md -m-1 p-1 hover:bg-bambu-dark-tertiary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
-                  >
-                    {project.description}
-                  </p>
-                )}
-                <SaveIndicator state={descState} />
+                  {editingDesc ? (
+                    <textarea
+                      autoFocus
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onBlur={saveDescription}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                          // Stop the panel's window-level Escape handler: the first
+                          // Escape abandons the edit, it does not close the panel.
+                          e.stopPropagation();
+                          setDraft(project.description);
+                          setEditingDesc(false);
+                        }
+                        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') saveDescription();
+                      }}
+                      rows={5}
+                      className={`${inputCls} resize-none flex-1`}
+                    />
+                  ) : (
+                    <p
+                      role="button"
+                      tabIndex={0}
+                      aria-label={t('aito.editDescription')}
+                      onClick={() => setEditingDesc(true)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setEditingDesc(true);
+                        }
+                      }}
+                      className="flex-1 text-sm text-white whitespace-pre-wrap break-words cursor-text rounded-md -m-1 p-1 hover:bg-bambu-dark-tertiary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
+                    >
+                      {project.description}
+                    </p>
+                  )}
+                  <SaveIndicator state={descState} />
                 </div>
               </div>
 
