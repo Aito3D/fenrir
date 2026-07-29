@@ -33,10 +33,17 @@ describe('QuoteStatusActions', () => {
     await waitFor(() => expect(spy).toHaveBeenCalledWith(12, { status: 'accepted' }));
   });
 
-  it('disables the action matching the current status', () => {
+  it('renders nothing at all once the quote is accepted', () => {
     render(<QuoteStatusActions project={{ ...project, quote_status: 'accepted' }} />);
-    expect(screen.getByRole('button', { name: /accept quote/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /decline quote/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /accept quote/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /decline quote/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /mark as sent/i })).not.toBeInTheDocument();
+  });
+
+  it('disables the action matching the current status, short of acceptance', () => {
+    render(<QuoteStatusActions project={{ ...project, quote_status: 'declined' }} />);
+    expect(screen.getByRole('button', { name: /decline quote/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /accept quote/i })).toBeEnabled();
     expect(screen.getByRole('button', { name: /mark as sent/i })).toBeEnabled();
   });
 

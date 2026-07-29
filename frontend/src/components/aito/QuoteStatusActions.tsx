@@ -21,11 +21,17 @@ const TOAST_KEYS = {
  *  reversible (accepting a declined quote reopens it), so the gesture only has
  *  to prove intent, not discourage.
  *
- *  Whichever action matches the current status is disabled rather than hidden:
- *  a control that vanishes reads as a bug, and its check mark is how the panel
- *  says where the quote already stands. Mark-as-sent stays live on a `viewed`
- *  or `expired` quote — those are Zoho's words for what happened next, not a
- *  different decision, and re-sending is a real thing to do. */
+ *  Once the quote is ACCEPTED the whole block disappears: acceptance is the
+ *  gate that authorises the work, and past it the quote is settled — the card
+ *  is on the work columns and its steps drive it from there. Un-sending or
+ *  declining accepted work is a correction to make in Books, not a button to
+ *  leave sitting next to a job in progress.
+ *
+ *  Before that, whichever action matches the current status is disabled rather
+ *  than hidden: a control that vanishes reads as a bug, and its check mark is
+ *  how the panel says where the quote already stands. Mark-as-sent stays live
+ *  on a `viewed` or `expired` quote — those are Zoho's words for what happened
+ *  next, not a different decision, and re-sending is a real thing to do. */
 export function QuoteStatusActions({ project }: { project: AitoProject }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -44,8 +50,11 @@ export function QuoteStatusActions({ project }: { project: AitoProject }) {
     onError: () => showToast(t('aito.saveFailed'), 'error'),
   });
 
+  // After every hook, so the hook order is identical on the render where the
+  // quote flips to accepted and the block goes away.
+  if (project.quote_status === 'accepted') return null;
+
   const isSent = project.quote_status === 'sent';
-  const isAccepted = project.quote_status === 'accepted';
   const isDeclined = project.quote_status === 'declined';
 
   return (
@@ -65,12 +74,13 @@ export function QuoteStatusActions({ project }: { project: AitoProject }) {
       <HoldButton
         onHold={() => mutation.mutate('accepted')}
         durationMs={500}
-        disabled={isAccepted || mutation.isPending}
+        disabled={mutation.isPending}
         label={t('aito.acceptQuote')}
         hint={t('aito.holdToConfirm')}
         className="flex-1 justify-center border p-1.5 border-bambu-green/40 text-bambu-green hover:bg-bambu-green/10"
       >
-        {isAccepted ? <Check className="w-3.5 h-3.5" /> : <ThumbsUp className="w-3.5 h-3.5" />}
+        {/* Never a check mark: an accepted quote renders no block at all. */}
+        <ThumbsUp className="w-3.5 h-3.5" />
         <span className="text-sm">{t('aito.acceptQuote')}</span>
       </HoldButton>
       <HoldButton
