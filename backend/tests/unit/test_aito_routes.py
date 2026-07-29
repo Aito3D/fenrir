@@ -748,6 +748,22 @@ async def test_importing_legacy_projects_does_not_mark_them_pending(async_client
 
 
 @pytest.mark.asyncio
+async def test_importing_legacy_projects_derives_column_from_the_rules(async_client):
+    """Important 5: import_legacy_projects used to write board_column straight
+    from item.column with quote_status left NULL, so a card could land in
+    `print` while the rules say `devis` — the same self-contradictory row
+    Critical 2 fixes for the sync worker. An imported card must land wherever
+    the rules put it, not wherever the legacy payload claims it was: with no
+    quote_status and no tasks, that is always `devis`, locked on `quote`."""
+    payload = {"projects": [{"description": "legacy", "column": "print", "position": 0}]}
+    r = await async_client.post("/api/v1/aito/import", json=payload)
+    assert r.status_code == 201
+    body = r.json()[0]
+    assert body["column"] == "devis"
+    assert body["move_lock"] == "quote"
+
+
+@pytest.mark.asyncio
 async def test_create_records_the_authenticated_creator(async_client):
     # There is no authenticated-client fixture in this suite, so the route's
     # own User dependency is overridden directly. Locating it by parameter

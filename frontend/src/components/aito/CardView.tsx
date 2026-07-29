@@ -9,6 +9,16 @@ import { api } from '../../api/client';
 import { Money } from '../calculator/shared';
 import { formatElapsedTime, parseUTCDate } from '../../utils/date';
 
+// Module scope: a plain object literal, identical on every render, so it
+// need not be reconstructed (and re-diffed by anything memoizing on it)
+// each time the card renders.
+const LOCK_LABEL_KEYS = {
+  quote: 'aito.lockedQuote',
+  waiting: 'aito.lockedWaiting',
+  declined: 'aito.lockedDeclined',
+  steps: 'aito.lockedSteps',
+} as const;
+
 export interface CardViewProps {
   project: AitoProject;
   overlay?: boolean;
@@ -61,12 +71,6 @@ export function CardView({
 
   // The grip stays a grip even when locked: the card is still reorderable
   // inside its column. The badge says what it CANNOT do — leave.
-  const LOCK_LABEL_KEYS = {
-    quote: 'aito.lockedQuote',
-    waiting: 'aito.lockedWaiting',
-    declined: 'aito.lockedDeclined',
-    steps: 'aito.lockedSteps',
-  } as const;
   const lockTitle = project.move_lock ? t(LOCK_LABEL_KEYS[project.move_lock]) : null;
 
   // Every element here is phrasing content (<span>, and Money renders a
@@ -103,7 +107,12 @@ export function CardView({
           {project.client_name ?? t('aito.noClient')}
         </p>
         {lockTitle && (
-          <span title={lockTitle} className="flex-shrink-0 text-bambu-gray" aria-label={lockTitle}>
+          <span
+            title={lockTitle}
+            role="img"
+            aria-label={lockTitle}
+            className="flex-shrink-0 text-bambu-gray"
+          >
             <Lock className="w-3 h-3" aria-hidden="true" />
           </span>
         )}

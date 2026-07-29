@@ -53,7 +53,17 @@ interface LegacyProject {
   description: string;
   createdAt?: string;
 }
-type LegacyBoard = Partial<Record<ColumnId, LegacyProject[]>>;
+// 'pickup' predates the 2026-07-29 rename (see COLUMN_ORDER's comment in
+// aito_board_rules.py) and no longer exists server-side, so it is not in
+// ColumnId — but a board saved to localStorage before that rename can still
+// carry it, and it must not be silently dropped.
+type LegacyColumnId = ColumnId | 'pickup';
+type LegacyBoard = Partial<Record<LegacyColumnId, LegacyProject[]>>;
+// Every column a legacy localStorage board could have used. AitoProjectImportItem.column
+// only accepts the current AitoColumn literal, so 'pickup' is mapped to 'finish' below —
+// mirroring step 3 of the server-side migration (_migrate_aito_board_columns in database.py)
+// — rather than sent as-is, which would 422 the whole import request.
+const LEGACY_COLUMN_IDS: LegacyColumnId[] = [...COLUMN_IDS, 'pickup'];
 
 const STORAGE_KEY = 'aito-board-v1';
 
@@ -227,12 +237,13 @@ export function AitoPage() {
         if (!raw) return;
         const parsed = JSON.parse(raw) as LegacyBoard;
         const projects: { description: string; column: ColumnId; position: number }[] = [];
-        for (const col of COLUMN_IDS) {
+        for (const col of LEGACY_COLUMN_IDS) {
           const items = parsed[col];
           if (!Array.isArray(items)) continue;
+          const column: ColumnId = col === 'pickup' ? 'finish' : col;
           items.forEach((item, index) => {
             if (item && typeof item.description === 'string') {
-              projects.push({ description: item.description, column: col, position: index });
+              projects.push({ description: item.description, column, position: index });
             }
           });
         }

@@ -499,6 +499,14 @@ async def import_legacy_projects(
         )
         db.add(p)
         created.append(p)
+    await db.flush()  # so _apply_rules' SELECT sees each new row's id
+    for p in created:
+        # A legacy card's imported column is a hint, not a fact: with
+        # quote_status NULL and no tasks, the rules may derive somewhere else
+        # entirely (e.g. `devis`), and without this the card would land with
+        # board_column == item.column while move_lock says otherwise — the
+        # same self-contradictory row Critical 2 fixes for the sync worker.
+        await _apply_rules(db, p)
     await db.commit()
     for p in created:
         await db.refresh(p)
@@ -620,6 +628,14 @@ async def set_quote_status(
     await db.commit()
     await db.refresh(project)
 
+    # Built BEFORE the Zoho call, not after: the project's data cannot change
+    # in between, and a DB-layer failure inside set_estimate_status's
+    # _request (a token-refresh write, a settings read) can leave the session
+    # needing a rollback — a following _one_summary/_to_response call would
+    # then raise PendingRollbackError instead of the intended best-effort
+    # zoho_synced=False response.
+    project_response = _to_response(project, await _one_summary(db, project.id))
+
     zoho_synced = False
     if project.quote_id:
         try:
@@ -633,9 +649,14 @@ async def set_quote_status(
                 project.id,
                 exc_info=True,
             )
+            # A DB-layer failure inside set_estimate_status can leave this
+            # session needing a rollback; without it, get_db's own implicit
+            # commit() after this handler returns would raise
+            # PendingRollbackError and turn this best-effort push into a 500.
+            await db.rollback()
 
     return AitoQuoteStatusResponse(
-        project=_to_response(project, await _one_summary(db, project.id)),
+        project=project_response,
         zoho_synced=zoho_synced,
     )
 

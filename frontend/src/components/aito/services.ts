@@ -35,6 +35,13 @@ export function enabledServices(task: TaskDraft): string[] {
 
 export type ServiceId = 'scan' | 'modelisation' | 'impression' | 'usinage';
 
+// Canonical iteration order for the four services. Kept as its own typed
+// tuple rather than `Object.keys(AITO_SERVICE_LABEL_KEYS) as ServiceId[]`:
+// that record is typed `Record<string, string>`, so a fifth entry added
+// there wouldn't widen ServiceId, and COSTS[service] would be `undefined`
+// and throw at runtime with no compile error to catch it.
+const SERVICE_IDS = ['scan', 'modelisation', 'impression', 'usinage'] as const;
+
 const COSTS: Record<ServiceId, (task: TaskDraft) => number | null> = {
   scan: (t) => t.scanCost,
   modelisation: (t) => t.modelisationCost,
@@ -46,9 +53,11 @@ const COSTS: Record<ServiceId, (task: TaskDraft) => number | null> = {
  *  A cost of 0 is a step quoted free, not an absent one, so membership is a
  *  null check and never a truthiness test. */
 export function taskSteps(task: TaskDraft): { service: ServiceId; cost: number; done: boolean }[] {
-  return (Object.keys(AITO_SERVICE_LABEL_KEYS) as ServiceId[])
-    .filter((service) => COSTS[service](task) !== null)
-    .map((service) => ({ service, cost: COSTS[service](task) as number, done: task.done[service] }));
+  return SERVICE_IDS.filter((service) => COSTS[service](task) !== null).map((service) => ({
+    service,
+    cost: COSTS[service](task) as number,
+    done: task.done[service],
+  }));
 }
 
 /** True once every step on the task is ticked. A task with no steps at all is

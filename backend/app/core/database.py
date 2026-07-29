@@ -937,6 +937,17 @@ async def _migrate_aito_board_columns(conn) -> None:
 
     Order matters: the flags are read off ``board_column`` (step 1) before
     ``pickup`` is rewritten away (step 3).
+
+    Note on step 2: writing ``quote_status = 'accepted'`` here is a local,
+    fabricated fact — Zoho Books is never told about it. This is intentional:
+    pushing it to Books would silently make a real acceptance decision on a
+    customer estimate that nobody actually made. The fabrication is
+    non-destructive as long as the quote sync worker recomputes and stores
+    board_column after every write (see aito_quote_sync.run_sync_once): the
+    next sync tick corrects quote_status from Books' real status, the card
+    moves to wherever the rules put it (e.g. Waiting), the `*_done` flags
+    survive untouched, and re-accepting in Books restores the card to where
+    it was.
     """
     from sqlalchemy import text
 
@@ -951,10 +962,15 @@ async def _migrate_aito_board_columns(conn) -> None:
             "finish": ("scan", "modelisation", "impression", "usinage"),
         }
         for column, services in backfill.items():
-            assignments = ", ".join(f"{s}_done = 1" for s in services)
+            # ANSI TRUE literal — SQLite has supported it since 3.23; Postgres
+            # rejects the integer 1 default/literal on BOOLEAN columns.
+            assignments = ", ".join(f"{s}_done = TRUE" for s in services)
+            # nosec B608 — assignments is built from the in-repo `backfill` dict's
+            # service names above, never request data; the row filter itself is
+            # bound via :col
             await conn.execute(
                 text(
-                    f"UPDATE aito_tasks SET {assignments} WHERE project_id IN "  # noqa: S608  # nosec B608 — assignments is built from the in-repo `backfill` dict's service names above, never request data; the row filter itself is bound via :col
+                    f"UPDATE aito_tasks SET {assignments} WHERE project_id IN "  # noqa: S608
                     "(SELECT id FROM aito_projects WHERE board_column = :col)"
                 ),
                 {"col": column},
@@ -988,10 +1004,10 @@ async def _migrate_aito_board_columns(conn) -> None:
             await conn.execute(
                 text(
                     "SELECT project_id, "
-                    "MAX(CASE WHEN scan_cost IS NOT NULL AND scan_done = 0 THEN 1 ELSE 0 END), "
-                    "MAX(CASE WHEN modelisation_cost IS NOT NULL AND modelisation_done = 0 THEN 1 ELSE 0 END), "
-                    "MAX(CASE WHEN impression_cost IS NOT NULL AND impression_done = 0 THEN 1 ELSE 0 END), "
-                    "MAX(CASE WHEN usinage_cost IS NOT NULL AND usinage_done = 0 THEN 1 ELSE 0 END) "
+                    "MAX(CASE WHEN scan_cost IS NOT NULL AND scan_done = FALSE THEN 1 ELSE 0 END), "
+                    "MAX(CASE WHEN modelisation_cost IS NOT NULL AND modelisation_done = FALSE THEN 1 ELSE 0 END), "
+                    "MAX(CASE WHEN impression_cost IS NOT NULL AND impression_done = FALSE THEN 1 ELSE 0 END), "
+                    "MAX(CASE WHEN usinage_cost IS NOT NULL AND usinage_done = FALSE THEN 1 ELSE 0 END) "
                     "FROM aito_tasks GROUP BY project_id"
                 )
             )
@@ -4061,11 +4077,14 @@ async def run_migrations(conn):
     # from each card's existing column is `_migrate_aito_board_columns`, defined
     # above this function, and is invoked a few lines below — gated on the
     # columns not having existed.
+    # Postgres rejects `DEFAULT 0` for BOOLEAN — branch on dialect (matches
+    # filament_short / skip_filament_check above).
+    _aito_done_default = "0" if is_sqlite() else "false"
     _aito_steps_existed = await _column_exists(conn, "aito_tasks", "scan_done")
     for _service in ("scan", "modelisation", "impression", "usinage"):
         await _safe_execute(
             conn,
-            f"ALTER TABLE aito_tasks ADD COLUMN {_service}_done BOOLEAN NOT NULL DEFAULT 0",
+            f"ALTER TABLE aito_tasks ADD COLUMN {_service}_done BOOLEAN NOT NULL DEFAULT {_aito_done_default}",
         )
     if not _aito_steps_existed:
         # Gated on the columns not having existed: re-running this would undo

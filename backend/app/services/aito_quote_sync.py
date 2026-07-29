@@ -481,6 +481,22 @@ async def run_sync_once(db: AsyncSession) -> int:
         # iteration re-fetches its project fresh via db.get() rather than
         # reusing an expired one.
         try:
+            # Recompute and store board_column here too, not just on request
+            # paths. sync_project can rewrite project.quote_status
+            # (_apply_estimate, the invoiced-lock and tax-exclusive-lock
+            # branches in _update_quote, and _reconcile_status) without
+            # touching board_column, and _to_response derives move_lock from
+            # the LIVE quote_status while returning the STORED board_column —
+            # so skipping this leaves a self-contradictory row (e.g. a card
+            # sitting in Printing but locked as "Waiting on the client").
+            # Inside this try so a failure here is handled exactly like a
+            # commit failure: roll back, log, leave the project pending, and
+            # retry next tick. Function-level import: no circular import
+            # today (routes/aito.py does not import this module), but this
+            # keeps it that way if that ever changes.
+            from backend.app.api.routes.aito import _apply_rules
+
+            await _apply_rules(db, project)
             await db.commit()
         except Exception:
             await db.rollback()

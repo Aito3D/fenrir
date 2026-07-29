@@ -18,16 +18,18 @@ import { useToast } from '../../contexts/ToastContext';
  *  says where the quote already stands. Mark-as-sent stays live on a `viewed`
  *  or `expired` quote — those are Zoho's words for what happened next, not a
  *  different decision, and re-sending is a real thing to do. */
+// Module scope: a plain object literal, identical on every render, so it
+// need not be reconstructed each time the panel renders.
+const TOAST_KEYS = {
+  sent: 'aito.quoteSent',
+  accepted: 'aito.quoteAccepted',
+  declined: 'aito.quoteDeclined',
+} as const;
+
 export function QuoteStatusActions({ project }: { project: AitoProject }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-
-  const TOAST_KEYS = {
-    sent: 'aito.quoteSent',
-    accepted: 'aito.quoteAccepted',
-    declined: 'aito.quoteDeclined',
-  } as const;
 
   const mutation = useMutation({
     mutationFn: (status: 'sent' | 'accepted' | 'declined') => api.setAitoQuoteStatus(project.id, { status }),

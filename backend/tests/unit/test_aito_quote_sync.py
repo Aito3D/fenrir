@@ -535,6 +535,54 @@ async def test_update_preserves_foreign_lines_and_refreshes_status(db_session):
 
 
 @pytest.mark.asyncio
+async def test_sync_recomputes_board_column_so_the_card_does_not_go_stale(db_session):
+    """Critical 2: sync_project writes quote_status straight onto the project
+    but has no notion of board_column, and _to_response derives move_lock from
+    the LIVE quote_status while returning the STORED board_column. Without
+    run_sync_once also recomputing and storing board_column, a card sitting in
+    Printing whose quote comes back `sent` renders self-contradictory: parked
+    in Printing but locked with a "waiting on the client" badge. A project
+    that was accepted and moved to `print` before Books flips its estimate
+    back to `sent` must end the sync tick relocated to `waiting`."""
+    project = await _project_with_quote(db_session, impression_cost=5000, impression_done=True)
+    project.board_column = "print"
+    project.quote_status = "accepted"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "status": "sent",
+                        "total": 5000,
+                        "last_modified_time": "2026-07-29T11:00:00-1000",
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_status == "sent"
+    assert project.board_column == "waiting"
+
+
+@pytest.mark.asyncio
 async def test_invoiced_quote_is_locked_and_never_written(db_session):
     project = await _project_with_quote(db_session, scan_cost=5000)
     await _configure_zoho(db_session)
