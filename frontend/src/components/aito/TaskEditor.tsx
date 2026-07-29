@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
@@ -7,6 +8,24 @@ import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
 import { emptyTaskDraft, projectTotal } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
+
+/** A stable identity for a row, not its position.
+ *
+ *  Keying by index hands a deleted row's slot — and the mounted
+ *  ImpressionFields instance in it, `hasEdited` included — down to whichever
+ *  row slides up into it, silently recomputing and freeing that row's frozen
+ *  cost. `id` is stable and unique once a task is persisted; `uid` (see
+ *  TaskDraft) covers it before then. The `persisted:`/`draft:` prefixes keep
+ *  the two id spaces from ever colliding (a draft's `id` is always null, never
+ *  a real row id, but nothing stops a future draft uid from formatting the
+ *  same as some row's numeric id without the prefix).
+ *
+ *  Doubles as the key for a row's expanded/collapsed state, which is why it is
+ *  a named function rather than an expression inlined into the `key` prop:
+ *  those two must agree, or toggling one row would open another. */
+function rowKey(task: TaskDraft): string {
+  return task.id !== null ? `persisted:${task.id}` : `draft:${task.uid}`;
+}
 
 export interface TaskEditorProps {
   value: TaskDraft[];
@@ -29,6 +48,40 @@ export function TaskEditor({ value, onChange, onRemove }: TaskEditorProps) {
   });
   const currency = settings?.currency || 'USD';
 
+  // Which rows are open. Everything starts collapsed — a project with several
+  // tasks is exactly the case this exists for, so the space win has to land on
+  // open rather than after the user collapses each row by hand.
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
+
+  // ...except a row the user just added, which opens so they can fill it in.
+  // Spotting it takes a flag plus a diff, because the key of the new row is
+  // not knowable at the moment "+ Add task" is pressed: the create modal
+  // appends a draft (key `draft:<uid>`), while the detail panel routes the
+  // same click to a POST and only learns the row's real key (`persisted:<id>`)
+  // when the refetch lands. Diffing against the previous keys covers both, and
+  // gating on the flag keeps the initial fetch — which also grows the array
+  // from nothing — from opening every task on the project.
+  const addRequestedRef = useRef(false);
+  const previousKeysRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    const keys = value.map(rowKey);
+    const previous = previousKeysRef.current;
+    previousKeysRef.current = keys;
+    if (!addRequestedRef.current) return;
+    const added = keys.filter((key) => !previous.includes(key));
+    if (added.length === 0) return; // the add is still in flight
+    addRequestedRef.current = false;
+    setExpandedKeys((current) => new Set([...current, ...added]));
+  }, [value]);
+
+  const toggle = (key: string) =>
+    setExpandedKeys((current) => {
+      const next = new Set(current);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
@@ -42,28 +95,23 @@ export function TaskEditor({ value, onChange, onRemove }: TaskEditorProps) {
       <div className="space-y-3">
         {value.map((task, index) => (
           <TaskRow
-            // A stable identity, not the row's position: keying by index
-            // hands a deleted row's slot — and the mounted ImpressionFields
-            // instance in it, `hasEdited` included — down to whichever row
-            // slides up into it, silently recomputing and freeing that row's
-            // frozen cost. `id` is stable and unique once a task is
-            // persisted; `uid` (see TaskDraft) covers it before then. The
-            // `persisted:`/`draft:` prefixes keep the two id spaces from ever
-            // colliding (a draft's `id` is always null, never a real row id,
-            // but nothing stops a future draft uid from formatting the same
-            // as some row's numeric id without the prefix).
-            key={task.id !== null ? `persisted:${task.id}` : `draft:${task.uid}`}
+            key={rowKey(task)}
             task={task}
             index={index}
             onChange={(next) => onChange(value.map((existing, i) => (i === index ? next : existing)))}
             onRemove={() => onRemove(index)}
+            expanded={expandedKeys.has(rowKey(task))}
+            onToggle={() => toggle(rowKey(task))}
           />
         ))}
       </div>
 
       <button
         type="button"
-        onClick={() => onChange([...value, emptyTaskDraft()])}
+        onClick={() => {
+          addRequestedRef.current = true;
+          onChange([...value, emptyTaskDraft()]);
+        }}
         className={`inline-flex items-center gap-1 text-sm text-bambu-green hover:text-bambu-green/80 transition-colors rounded-md ${focusRingCls}`}
       >
         <Plus className="w-4 h-4" />

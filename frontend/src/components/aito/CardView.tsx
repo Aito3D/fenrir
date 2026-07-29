@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { GripVertical } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { DeleteHoldButton } from './DeleteHoldButton';
+import { ServiceBadges } from './ServiceBadges';
 import type { AitoProject } from '../../api/client';
 import { api } from '../../api/client';
 import { Money } from '../calculator/shared';
@@ -18,17 +19,6 @@ export interface CardViewProps {
   dragHandleProps?: Record<string, unknown>;
 }
 
-/** The four service ids the board response can return, mapped to the labels
- *  the task editor already uses. These are the shop's service names and are
- *  byte-identical in all twelve locales, so there is nothing new to translate.
- *  An unknown id falls back to itself rather than rendering blank, so a
- *  server-side addition shows up instead of disappearing. */
-const SERVICE_LABEL_KEYS: Record<string, string> = {
-  scan: 'aito.serviceScan3D',
-  modelisation: 'aito.serviceModelisation3D',
-  impression: 'aito.serviceImpression3D',
-  usinage: 'aito.serviceUsinage',
-};
 
 /** Presentational card, shared by the in-column sortable wrapper and the
  *  DragOverlay clone.
@@ -75,16 +65,7 @@ export function CardView({
   const summary =
     project.task_count > 0 ? (
       <span className="mt-2 block">
-        <span className="flex flex-wrap gap-1">
-          {project.task_services.map((service) => (
-            <span
-              key={service}
-              className="rounded px-1.5 py-0.5 text-[10px] leading-tight bg-bambu-dark-tertiary text-bambu-gray-light"
-            >
-              {SERVICE_LABEL_KEYS[service] ? t(SERVICE_LABEL_KEYS[service]) : service}
-            </span>
-          ))}
-        </span>
+        <ServiceBadges services={project.task_services} />
         <span className="mt-1 flex items-baseline justify-between gap-2">
           <span className="text-xs text-bambu-gray">{t('aito.taskCount', { count: project.task_count })}</span>
           <Money currency={currency} value={project.tasks_total} className="text-xs font-medium text-bambu-green" />

@@ -86,6 +86,9 @@ function ControlledTaskRow({
   onChangeSpy: (next: TaskDraft) => void;
 }) {
   const [task, setTask] = useState(initial);
+  // Open, because these tests are about the fields inside a row, not about
+  // the disclosure. Collapsing is covered by its own tests below.
+  const [expanded, setExpanded] = useState(true);
   return (
     <TaskRow
       task={task}
@@ -95,6 +98,8 @@ function ControlledTaskRow({
         setTask(next);
       }}
       onRemove={vi.fn()}
+      expanded={expanded}
+      onToggle={() => setExpanded((v) => !v)}
     />
   );
 }
@@ -124,6 +129,15 @@ function ControlledTaskEditor({
   );
 }
 
+/** Rows render collapsed, so any test that drives the fields inside one has to
+ *  open it first. The row heading is the toggle; its accessible name starts
+ *  with the task's title, or "Task N" while the title is still blank, and also
+ *  carries the badges and total shown while collapsed — hence a regex rather
+ *  than an exact string. */
+async function expandTask(name: RegExp = /^Task 1/i) {
+  fireEvent.click(await screen.findByRole('button', { name, expanded: false }));
+}
+
 describe('TaskEditor', () => {
   it('"Add task" appends a draft with all four services empty', async () => {
     const onChange = vi.fn();
@@ -142,10 +156,11 @@ describe('TaskEditor', () => {
     expect(next[0]).toEqual({ ...emptyTaskDraft(), uid: next[0].uid });
   });
 
-  it('never mutates the input array — onChange receives a new array', () => {
+  it('never mutates the input array — onChange receives a new array', async () => {
     const value: TaskDraft[] = [emptyTaskDraft()];
     const onChange = vi.fn();
     render(<TaskEditor value={value} onChange={onChange} onRemove={vi.fn()} />);
+    await expandTask();
 
     fireEvent.change(screen.getByLabelText('Scan3D'), { target: { value: '7' } });
 
@@ -155,6 +170,87 @@ describe('TaskEditor', () => {
     // The original array and its entries are untouched.
     expect(value[0].scanCost).toBeNull();
     expect(result[0].scanCost).toBe(7);
+  });
+
+  it('renders rows collapsed, showing only the name, services and total', async () => {
+    const task: TaskDraft = { ...emptyTaskDraft(), title: 'Boîtier', scanCost: 4000, usinageCost: 500 };
+    render(<TaskEditor value={[task]} onChange={vi.fn()} onRemove={vi.fn()} />);
+
+    // Visible while collapsed: the name, a badge per enabled service, the
+    // total, and the remove control.
+    const heading = await screen.findByRole('button', { name: /^Boîtier/, expanded: false });
+    expect(screen.getByText('Scan3D')).toBeInTheDocument();
+    expect(screen.getByText('Usinage')).toBeInTheDocument();
+    // Scoped to the heading: the project total above shows the same figure
+    // while this is the only task, so a page-wide text match is ambiguous.
+    expect(heading).toHaveTextContent(/4\D?500/);
+    expect(screen.getByLabelText('Remove task')).toBeInTheDocument();
+
+    // A service left disabled gets no badge — and nothing from the body is
+    // reachable, which is the whole point of collapsing.
+    expect(screen.queryByText('Modelisation3D')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Scan3D')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Optional title')).not.toBeInTheDocument();
+  });
+
+  it('a free service still gets a badge on a collapsed row', async () => {
+    // null disables a service, 0 prices it at nothing. A badge row built on
+    // truthiness instead of a null check would silently drop this one.
+    const task: TaskDraft = { ...emptyTaskDraft(), title: 'Gratuit', scanCost: 0 };
+    render(<TaskEditor value={[task]} onChange={vi.fn()} onRemove={vi.fn()} />);
+
+    expect(await screen.findByText('Scan3D')).toBeInTheDocument();
+  });
+
+  it('clicking a row heading expands it, and clicking again collapses it', async () => {
+    const user = userEvent.setup();
+    render(<TaskEditor value={[emptyTaskDraft()]} onChange={vi.fn()} onRemove={vi.fn()} />);
+
+    await user.click(await screen.findByRole('button', { name: /^Task 1/, expanded: false }));
+    expect(screen.getByLabelText('Optional title')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Task 1/, expanded: true }));
+    expect(screen.queryByLabelText('Optional title')).not.toBeInTheDocument();
+  });
+
+  it('expanding one row leaves its neighbours collapsed', async () => {
+    // Guards the agreement between a row's React key and its expansion key:
+    // if those ever diverge, toggling one row opens a different one.
+    const user = userEvent.setup();
+    const tasks = [
+      { ...emptyTaskDraft(), title: 'Un' },
+      { ...emptyTaskDraft(), title: 'Deux' },
+    ];
+    render(<TaskEditor value={tasks} onChange={vi.fn()} onRemove={vi.fn()} />);
+
+    await user.click(await screen.findByRole('button', { name: /^Deux/, expanded: false }));
+
+    expect(screen.getByRole('button', { name: /^Un/, expanded: false })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Deux/, expanded: true })).toBeInTheDocument();
+    // Exactly one body is mounted.
+    expect(screen.getAllByLabelText('Optional title')).toHaveLength(1);
+  });
+
+  it('a task added with "+ Add task" opens expanded', async () => {
+    const user = userEvent.setup();
+    render(<ControlledTaskEditor initial={[]} onChangeSpy={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: /add task/i }));
+
+    expect(await screen.findByRole('button', { name: /^Task 1/, expanded: true })).toBeInTheDocument();
+    expect(screen.getByLabelText('Optional title')).toBeInTheDocument();
+  });
+
+  it('adding a second task leaves the first one as the user left it', async () => {
+    const user = userEvent.setup();
+    render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={vi.fn()} />);
+
+    // The pre-existing row starts collapsed and must stay that way; only the
+    // new one opens.
+    await user.click(screen.getByRole('button', { name: /add task/i }));
+
+    expect(await screen.findByRole('button', { name: /^Task 2/, expanded: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Task 1/, expanded: false })).toBeInTheDocument();
   });
 
   it('holding the remove button for 1s calls onRemove with that index', async () => {
@@ -235,7 +331,7 @@ describe('TaskRow', () => {
       usinageCost: null,
       impressionCost: null,
     };
-    render(<TaskRow task={task} index={0} onChange={vi.fn()} onRemove={vi.fn()} />);
+    render(<TaskRow task={task} index={0} onChange={vi.fn()} onRemove={vi.fn()} expanded onToggle={vi.fn()} />);
 
     expect(taskTotal(task)).toBe(1500);
     // getByText's default normalizer collapses all whitespace (including the
@@ -276,6 +372,7 @@ describe('TaskRow', () => {
     const onChangeSpy = vi.fn();
     const user = userEvent.setup();
     render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={onChangeSpy} />);
+    await expandTask();
 
     await user.click(await screen.findByRole('combobox', { name: /printer/i }));
     await user.click(await screen.findByRole('option', { name: 'H2S' }));
@@ -367,6 +464,7 @@ describe('TaskRow', () => {
     const onChangeSpy = vi.fn();
     const user = userEvent.setup();
     render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={onChangeSpy} />);
+    await expandTask();
 
     await user.click(await screen.findByRole('combobox', { name: /printer/i }));
     await user.click(await screen.findByRole('option', { name: 'H2S' }));

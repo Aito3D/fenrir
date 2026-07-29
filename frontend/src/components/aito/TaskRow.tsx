@@ -1,11 +1,14 @@
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
+import { ChevronRight } from 'lucide-react';
 import { api } from '../../api/client';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ImpressionFields } from './ImpressionFields';
+import { ServiceBadges } from './ServiceBadges';
+import { enabledServices } from './services';
 import { Money } from '../calculator/shared';
-import { inputCls, labelCls } from '../formStyles';
+import { focusRingCls, inputCls, labelCls } from '../formStyles';
 import { taskTotal } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
 
@@ -14,6 +17,8 @@ export interface TaskRowProps {
   index: number;
   onChange: (next: TaskDraft) => void;
   onRemove: () => void;
+  expanded: boolean;
+  onToggle: () => void;
 }
 
 /** One numeric cost input for a flat-rate service. Empty means the service is
@@ -49,8 +54,20 @@ function CostInput({
  *  hold-to-remove control. Purely presentational: every edit is reported
  *  upward through `onChange` with a new object, never applied in place, so
  *  the same row serves a local draft array (create modal) or a row wired to
- *  a PATCH (detail panel) without knowing which. */
-export function TaskRow({ task, index, onChange, onRemove }: TaskRowProps) {
+ *  a PATCH (detail panel) without knowing which.
+ *
+ *  Collapsible, because a project with several tasks otherwise fills the
+ *  surface. Collapsed, the row keeps its name, its service badges, its total
+ *  and the remove control — enough to scan and prune a list without opening
+ *  anything. `expanded` is owned by TaskEditor, which decides what a freshly
+ *  added row starts as.
+ *
+ *  The body is unmounted rather than hidden when collapsed. That resets the
+ *  `hasEdited` provenance gate inside ImpressionFields, which is the safe
+ *  direction: the gate only ever *permits* a recomputed cost to be reported,
+ *  so a fresh instance re-locks a frozen `impressionCost` until the user
+ *  edits a print field again. */
+export function TaskRow({ task, index, onChange, onRemove, expanded, onToggle }: TaskRowProps) {
   const { t } = useTranslation();
   const reactId = useId();
   // Same query key ImpressionFields and the calculator page use for the
@@ -77,74 +94,107 @@ export function TaskRow({ task, index, onChange, onRemove }: TaskRowProps) {
   };
 
   return (
-    <div className="group rounded-lg border border-bambu-dark-tertiary p-3 space-y-3">
-      <div className="flex items-start justify-between gap-2">
-        <h4 className="text-sm font-medium text-white truncate min-w-0">{name}</h4>
+    <div className="group rounded-lg border border-bambu-dark-tertiary">
+      <div className="flex items-center gap-2 p-3">
+        {/* The heading IS the toggle, so the whole row is one target rather
+            than a chevron-sized one. Delete stays a sibling — a <button> may
+            not contain another button. */}
+        <h4 className="flex-1 min-w-0">
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={expanded}
+            aria-controls={`${reactId}-body`}
+            className={`flex w-full items-center gap-2 text-left rounded-md ${focusRingCls}`}
+          >
+            <ChevronRight
+              className={`w-4 h-4 flex-shrink-0 text-bambu-gray transition-transform duration-150 ${
+                expanded ? 'rotate-90' : ''
+              }`}
+              aria-hidden="true"
+            />
+            <span className="text-sm font-medium text-white truncate min-w-0">{name}</span>
+            {!expanded && (
+              <>
+                <ServiceBadges services={enabledServices(task)} className="flex-shrink-0" />
+                <Money
+                  currency={currency}
+                  value={taskTotal(task)}
+                  className="ml-auto flex-shrink-0 text-sm text-white"
+                />
+              </>
+            )}
+          </button>
+        </h4>
         <DeleteHoldButton onDelete={onRemove} label={t('aito.removeTask')} hint={t('aito.holdToDelete')} />
       </div>
 
-      <input
-        aria-label={t('aito.taskTitlePlaceholder')}
-        value={task.title}
-        onChange={(e) => onChange({ ...task, title: e.target.value })}
-        placeholder={t('aito.taskTitlePlaceholder')}
-        className={inputCls}
-      />
-      <textarea
-        aria-label={t('aito.taskDescriptionPlaceholder')}
-        value={task.description}
-        onChange={(e) => onChange({ ...task, description: e.target.value })}
-        placeholder={t('aito.taskDescriptionPlaceholder')}
-        rows={2}
-        className={`${inputCls} resize-none`}
-      />
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div>
-          <label htmlFor={`${reactId}-scan`} className={labelCls}>
-            {t('aito.serviceScan3D')}
-          </label>
-          <CostInput
-            id={`${reactId}-scan`}
-            value={task.scanCost}
-            onChange={(next) => onChange({ ...task, scanCost: next })}
+      {expanded && (
+        <div id={`${reactId}-body`} className="px-3 pb-3 space-y-3">
+          <input
+            aria-label={t('aito.taskTitlePlaceholder')}
+            value={task.title}
+            onChange={(e) => onChange({ ...task, title: e.target.value })}
+            placeholder={t('aito.taskTitlePlaceholder')}
+            className={inputCls}
           />
-        </div>
-        <div>
-          <label htmlFor={`${reactId}-modelisation`} className={labelCls}>
-            {t('aito.serviceModelisation3D')}
-          </label>
-          <CostInput
-            id={`${reactId}-modelisation`}
-            value={task.modelisationCost}
-            onChange={(next) => onChange({ ...task, modelisationCost: next })}
+          <textarea
+            aria-label={t('aito.taskDescriptionPlaceholder')}
+            value={task.description}
+            onChange={(e) => onChange({ ...task, description: e.target.value })}
+            placeholder={t('aito.taskDescriptionPlaceholder')}
+            rows={2}
+            className={`${inputCls} resize-none`}
           />
-        </div>
-        <div>
-          <label htmlFor={`${reactId}-usinage`} className={labelCls}>
-            {t('aito.serviceUsinage')}
-          </label>
-          <CostInput
-            id={`${reactId}-usinage`}
-            value={task.usinageCost}
-            onChange={(next) => onChange({ ...task, usinageCost: next })}
-          />
-        </div>
-      </div>
 
-      <div>
-        <p className={labelCls}>{t('aito.serviceImpression3D')}</p>
-        <ImpressionFields
-          value={task.impression}
-          onChange={(next) => onChange({ ...task, impression: next })}
-          onCostChange={handleImpressionCostChange}
-        />
-      </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label htmlFor={`${reactId}-scan`} className={labelCls}>
+                {t('aito.serviceScan3D')}
+              </label>
+              <CostInput
+                id={`${reactId}-scan`}
+                value={task.scanCost}
+                onChange={(next) => onChange({ ...task, scanCost: next })}
+              />
+            </div>
+            <div>
+              <label htmlFor={`${reactId}-modelisation`} className={labelCls}>
+                {t('aito.serviceModelisation3D')}
+              </label>
+              <CostInput
+                id={`${reactId}-modelisation`}
+                value={task.modelisationCost}
+                onChange={(next) => onChange({ ...task, modelisationCost: next })}
+              />
+            </div>
+            <div>
+              <label htmlFor={`${reactId}-usinage`} className={labelCls}>
+                {t('aito.serviceUsinage')}
+              </label>
+              <CostInput
+                id={`${reactId}-usinage`}
+                value={task.usinageCost}
+                onChange={(next) => onChange({ ...task, usinageCost: next })}
+              />
+            </div>
+          </div>
 
-      <div className="flex items-center justify-between border-t border-bambu-dark-tertiary pt-2">
-        <span className="text-sm text-bambu-gray">{t('aito.taskTotal')}</span>
-        <Money currency={currency} value={taskTotal(task)} className="text-white font-medium" />
-      </div>
+          <div>
+            <p className={labelCls}>{t('aito.serviceImpression3D')}</p>
+            <ImpressionFields
+              value={task.impression}
+              onChange={(next) => onChange({ ...task, impression: next })}
+              onCostChange={handleImpressionCostChange}
+            />
+          </div>
+
+          <div className="flex items-center justify-between border-t border-bambu-dark-tertiary pt-2">
+            <span className="text-sm text-bambu-gray">{t('aito.taskTotal')}</span>
+            <Money currency={currency} value={taskTotal(task)} className="text-white font-medium" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
