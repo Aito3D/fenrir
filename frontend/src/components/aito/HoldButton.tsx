@@ -7,10 +7,14 @@ import type { ReactNode } from 'react';
 // the fill.
 const HOLD_RADIUS = 9;
 const HOLD_CIRCUMFERENCE = 2 * Math.PI * HOLD_RADIUS;
-// Tailwind needs static class strings, so the duration cannot be interpolated
-// from the prop. Every duration a caller may pass must have an entry here, and
-// each one is also named out loud in its caller's locale hint string.
-const RING_DURATION_CLS: Record<number, string> = {
+// Every duration a caller may pass must have an entry here, and each one is
+// also named out loud in its caller's locale hint string. Keying this (and
+// `durationMs` below) on the literal union rather than `number` means a
+// future caller passing an unlisted duration fails to compile instead of
+// silently rendering no ring animation — Tailwind needs static class
+// strings, so the duration cannot be interpolated from the prop.
+type HoldDurationMs = 500 | 1000;
+const RING_DURATION_CLS: Record<HoldDurationMs, string> = {
   500: 'transition-[stroke-dashoffset] duration-[500ms] ease-linear motion-reduce:duration-200',
   1000: 'transition-[stroke-dashoffset] duration-[1000ms] ease-linear motion-reduce:duration-200',
 };
@@ -25,8 +29,12 @@ const HOLD_HINT_VISIBLE_MS = 1600;
  *  surfacing a "hold to confirm" hint popover on a too-short tap. Extracted
  *  from the original hold-to-delete button so the same timer/hint/ring
  *  machinery can back both delete and the quote status actions — see
- *  task-12-brief.md. `border`, padding and rounding live in the base classes
- *  below; `className` adds colour and layout on top. */
+ *  task-12-brief.md. Border *width*, padding and rounding live in the base
+ *  classes below; `className` supplies border *colour* (every caller must
+ *  set one — Tailwind compiles same-specificity utilities in a fixed order
+ *  regardless of source position, so a colour baked into the base here would
+ *  never be reliably overridable by a caller's className) plus any other
+ *  colour and layout on top. */
 export function HoldButton({
   onHold,
   durationMs,
@@ -37,7 +45,7 @@ export function HoldButton({
   children,
 }: {
   onHold: () => void;
-  durationMs: number;
+  durationMs: HoldDurationMs;
   label: string;
   hint: string;
   disabled?: boolean;
@@ -131,7 +139,7 @@ export function HoldButton({
           e.stopPropagation();
           cancelHold();
         }}
-        className={`relative inline-flex items-center gap-1.5 rounded-md border border-transparent p-1.5 transition-[color,background-color,opacity,border-color] duration-100 focus-visible:outline-none focus-visible:ring-2 disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
+        className={`relative inline-flex items-center gap-1.5 rounded-md border p-1.5 transition-[color,background-color,opacity,border-color] duration-100 focus-visible:outline-none focus-visible:ring-2 disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
       >
         <svg className="absolute inset-0 -rotate-90 w-full h-full" viewBox="0 0 24 24" aria-hidden="true">
           <circle
