@@ -139,7 +139,7 @@ export function ImportQuoteModal({ onClose, onImport, submitting = false }: Impo
               <p className="text-sm text-status-error">{t('aito.quoteLoadFailed')}</p>
             )}
 
-            {previewQuery.isFetching && !preview && (
+            {previewQuery.isFetching && !preview && !previewQuery.isError && (
               <div role="status" aria-label={t('common.loading')} className="flex justify-center py-8">
                 <Loader2 className="w-6 h-6 text-bambu-gray animate-spin" />
               </div>

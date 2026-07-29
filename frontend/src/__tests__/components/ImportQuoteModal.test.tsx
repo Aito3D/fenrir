@@ -142,6 +142,22 @@ describe('ImportQuoteModal', () => {
     expect(await screen.findByText(/could not load this quote/i)).toBeInTheDocument();
   });
 
+  it('does not show the spinner over the error message when a preview fails to load', async () => {
+    // TanStack Query v5 keeps isError true while a query is settled in error state.
+    // The spinner's condition must exclude isError so it does not render on top of
+    // the error message, which would be confusing to the user.
+    server.use(
+      http.get('/api/v1/zoho/estimates', () => HttpResponse.json([summary])),
+      http.get('/api/v1/zoho/estimates/:id/preview', () => new HttpResponse(null, { status: 502 })),
+    );
+    const user = userEvent.setup();
+    render(<ImportQuoteModal onClose={vi.fn()} onImport={vi.fn()} />);
+    await pickTheQuote(user);
+
+    await screen.findByText(/could not load this quote/i);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
   it('shows the not-configured state instead of the combobox when Zoho is not set up', async () => {
     server.use(
       http.get('/api/v1/zoho/status', () =>
