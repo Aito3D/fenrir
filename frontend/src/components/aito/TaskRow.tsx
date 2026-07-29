@@ -28,6 +28,10 @@ export interface TaskRowProps {
    *  same split as `expanded`/`onToggle`. */
   editing: boolean;
   onToggleEdit: () => void;
+  /** Called when focus leaves this row, so a debounced save can flush early
+   *  rather than waiting out its timer. Optional: the create modal holds its
+   *  tasks locally and has nothing to flush. */
+  onRowBlur?: (task: TaskDraft) => void;
 }
 
 /** One task of a project: title/description, the four services (each
@@ -55,6 +59,7 @@ export function TaskRow({
   onToggle,
   editing,
   onToggleEdit,
+  onRowBlur,
 }: TaskRowProps) {
   const { t } = useTranslation();
   const reactId = useId();
@@ -71,7 +76,15 @@ export function TaskRow({
   const finished = isTaskFinished(task);
 
   return (
-    <div className={`group rounded-lg border ${finished ? 'border-bambu-green/40 bg-bambu-green/5' : 'border-bambu-dark-tertiary'}`}>
+    <div
+      className={`group rounded-lg border ${finished ? 'border-bambu-green/40 bg-bambu-green/5' : 'border-bambu-dark-tertiary'}`}
+      onBlur={(e) => {
+        // focusout bubbles in React, so one handler covers every input in the
+        // row. relatedTarget is where focus went: inside the row means the
+        // user is still editing it, so there is nothing to flush yet.
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) onRowBlur?.(task);
+      }}
+    >
       <div className="flex items-center gap-2 p-3">
         {/* The heading IS the toggle, so the whole row is one target rather
             than a chevron-sized one. Delete stays a sibling — a <button> may

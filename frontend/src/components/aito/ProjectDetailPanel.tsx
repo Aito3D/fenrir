@@ -1,47 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, ExternalLink, Loader2, X } from 'lucide-react';
 import { COLUMNS } from './columns';
 import { QuoteStatusActions } from './QuoteStatusActions';
 import { TaskEditor } from './TaskEditor';
 import { AITO_CARD_VT_NAME } from '../../hooks/useCardMorph';
-import {
-  api,
-  type AitoProject,
-  type AitoProjectUpdate,
-  type AitoTask,
-  type AitoTaskCreate,
-  type AitoTaskUpdate,
-} from '../../api/client';
+import { useProjectTasks } from '../../hooks/useProjectTasks';
+import { api, type AitoProject, type AitoProjectUpdate } from '../../api/client';
 import { parseUTCDate } from '../../utils/date';
 import { inputCls, labelCls } from '../formStyles';
 import { useToast } from '../../contexts/ToastContext';
-import { emptyTaskDraft, taskDraftFromAitoTask, taskDraftToTaskCreate } from '../../utils/taskDraft';
-import type { TaskDraft } from '../../utils/taskDraft';
-
-/** The narrow patch: only the wire fields that actually differ between the
- *  persisted row and the edited draft. Comparing the two *wire* shapes
- *  (rather than the drafts directly) means the blank -> null and 0-stays-0
- *  rules apply identically on both sides of the diff.
- *
- *  Driven by the wire shape's own keys rather than a hand-written list of
- *  comparisons. The previous version needed one line per field and had grown
- *  to sixteen; a field added to `taskDraftToTaskCreate` and forgotten here
- *  would silently never save, which is exactly what happened four times when
- *  the `*_done` flags landed.
- *
- *  Exported for its unit test — the "covers every field" case is the guard
- *  that keeps this honest. */
-export function diffTaskDraft(baseline: TaskDraft, next: TaskDraft): AitoTaskUpdate {
-  const before = taskDraftToTaskCreate(baseline);
-  const after = taskDraftToTaskCreate(next);
-  const patch: Record<string, unknown> = {};
-  for (const key of Object.keys(after) as (keyof AitoTaskCreate)[]) {
-    if (after[key] !== before[key]) patch[key] = after[key];
-  }
-  return patch as AitoTaskUpdate;
-}
 
 /** Explicit map rather than a template literal key: the i18n gate scans for
  *  literal `t('...')` calls, and a dynamic key is invisible to it. */
@@ -105,166 +74,7 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
     onError: () => showToast(t('aito.saveFailed'), 'error'),
   });
 
-  // Tasks. `tasks` is the editable view TaskEditor is controlled with; it is
-  // resynced from the server whenever the query's data identity changes —
-  // which must only ever happen on a genuine fetch (initial load, and after
-  // add/remove invalidate it), never as a side effect of a single-field
-  // PATCH. Resyncing the whole array on every PATCH response would overwrite
-  // whatever any *other* row is mid-typing (or still waiting on its own
-  // in-flight PATCH) with whatever was last actually fetched — see
-  // `updateTaskMutation` below for why the diff baseline therefore lives
-  // outside the query cache entirely.
-  const tasksQuery = useQuery({
-    queryKey: ['aito-tasks', project.id],
-    queryFn: () => api.getAitoTasks(project.id),
-  });
-  const [tasks, setTasks] = useState<TaskDraft[]>([]);
-
-  // The diff baseline: the last-known-persisted row per task id. Seeded from
-  // every genuine fetch below and advanced in `updateTaskMutation`'s
-  // `onSuccess`. Deliberately NOT the query cache — writing a PATCH response
-  // into `['aito-tasks', project.id]` would change that query's data
-  // identity, which is exactly what the resync effect above must not react
-  // to for a single-field save (it would resync every row, not just the one
-  // that was patched, stomping any other row's unsaved or still-in-flight
-  // edit — reproduced by the "does not clobber" regression test below).
-  const baselineRef = useRef<Map<number, AitoTask>>(new Map());
-
-  // Set when a task field is actually saved. Task-field edits PATCH per
-  // keystroke, so they must never invalidate the board directly — that would
-  // refetch every card on every character. The board is refreshed once, on
-  // close, and only if something was really saved: a panel opened and closed
-  // without edits must cost nothing.
-  const tasksDirtyRef = useRef(false);
-
-  // "The panel closed" and "the last task PATCH landed" are two independent
-  // events and either can happen first — typing `4000` fires four PATCHes and
-  // closing immediately leaves some of them in flight. The board must be
-  // refreshed on whichever happens *last*, because:
-  //   - refreshing while a PATCH is still open races it: the GET and the PATCH
-  //     have no ordering guarantee, and a GET served first writes a
-  //     pre-PATCH total into the card that nothing corrects (staleTime is 60s
-  //     app-wide, so only a drag/create/delete/remount would fix it);
-  //   - refreshing on the dirty flag alone misses the mirror case, where the
-  //     one PATCH is still open at close so nothing was "saved" yet and the
-  //     card keeps its pre-edit total forever.
-  // Hence the counter: `onSettled` below owns the close-first case, the
-  // unmount effect at the bottom of this component owns the settle-first one,
-  // and both require the same two conditions (closed, nothing in flight) so
-  // exactly one of them fires. Neither can fire while the panel is open, which
-  // is what keeps per-keystroke edits off the board.
-  const closedRef = useRef(false);
-  const inFlightTaskPatches = useRef(0);
-
-  useEffect(() => {
-    if (!tasksQuery.data) return;
-    setTasks(tasksQuery.data.map(taskDraftFromAitoTask));
-    baselineRef.current = new Map(tasksQuery.data.map((row) => [row.id, row]));
-  }, [tasksQuery.data]);
-
-  // Adding or removing a task changes the card's count, total and badge set,
-  // so the board is invalidated alongside the task list.
-  //
-  // Also what a closing panel calls once its edits have landed, and the task
-  // list matters there as much as the board: the panel rehydrates its rows
-  // from `['aito-tasks', id]` on the next open, and with the app-wide 60s
-  // staleTime (App.tsx) reopening a card inside that window is served from
-  // cache with no GET. Without this the cached rows stay frozen at their
-  // pre-edit values — a step un-ticked a moment ago comes back ticked, while
-  // the card sits in the column the un-tick correctly moved it to.
-  //
-  // Safe only because every caller either has no panel open or has already
-  // closed it with no PATCH outstanding: refetching the list while a row is
-  // mid-edit is what the resync effect above must never see (it would replace
-  // every row, not just the saved one).
-  const invalidateTasksAndBoard = () => {
-    queryClient.invalidateQueries({ queryKey: ['aito-tasks', project.id] });
-    queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
-  };
-
-  const updateTaskMutation = useMutation({
-    mutationFn: ({ id, patch }: { id: number; patch: AitoTaskUpdate }) => api.updateAitoTask(id, patch),
-    onMutate: () => {
-      inFlightTaskPatches.current += 1;
-    },
-    onSuccess: (updatedTask, { patch }) => {
-      // Advance the diff baseline for this row only, without touching the
-      // query cache: without this, `baselineRef` stays frozen at initial
-      // load, so reverting a field to its originally-loaded value diffs as
-      // "no change" against the stale baseline and the PATCH is silently
-      // dropped (see the revert / re-disable regression tests below).
-      baselineRef.current.set(updatedTask.id, updatedTask);
-      tasksDirtyRef.current = true;
-      // Cost fields PATCH per keystroke, which is why this component defers
-      // the board refresh to close (see the counter above). A tick is one
-      // deliberate click and can change the project's COLUMN, so it refreshes
-      // now — the panel's Stage row and the card behind it move together.
-      const tickedAStep = ['scan_done', 'modelisation_done', 'impression_done', 'usinage_done'].some(
-        (key) => key in patch,
-      );
-      if (tickedAStep) queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
-    },
-    onError: () => showToast(t('aito.saveFailed'), 'error'),
-    // These are mutation-level callbacks, so React Query still runs them after
-    // this component unmounts (unlike the per-call callbacks passed to
-    // `mutate`) — which is the whole point: the write that lands *after* the
-    // panel closed is the one that has to trigger the refresh.
-    onSettled: () => {
-      inFlightTaskPatches.current -= 1;
-      if (closedRef.current && inFlightTaskPatches.current === 0 && tasksDirtyRef.current) {
-        invalidateTasksAndBoard();
-      }
-    },
-  });
-
-  const addTaskMutation = useMutation({
-    mutationFn: () => api.createAitoTask(project.id, taskDraftToTaskCreate(emptyTaskDraft())),
-    onSuccess: invalidateTasksAndBoard,
-    onError: () => showToast(t('aito.saveFailed'), 'error'),
-  });
-
-  const deleteTaskMutation = useMutation({
-    mutationFn: (id: number) => api.deleteAitoTask(id),
-    onSuccess: invalidateTasksAndBoard,
-    onError: () => showToast(t('aito.saveFailed'), 'error'),
-  });
-
-  // TaskEditor is fully controlled and reports the whole array back on every
-  // edit (see its own docstring). Growing the array is always "+ Add task" —
-  // nothing else appends through this callback — so that case is routed to
-  // the create endpoint rather than diffed. Otherwise, exactly one entry has
-  // a new object identity (TaskRow -> TaskEditor only replaces the row that
-  // changed), which pinpoints which task to diff and PATCH without needing
-  // to compare every field of every row.
-  const handleTasksChange = (next: TaskDraft[]) => {
-    if (next.length > tasks.length) {
-      addTaskMutation.mutate();
-      return;
-    }
-
-    const changedIndex = next.findIndex((task, i) => task !== tasks[i]);
-    if (changedIndex === -1) return;
-
-    setTasks(next);
-
-    const edited = next[changedIndex];
-    if (edited.id === null) return; // not yet persisted server-side; nothing to PATCH
-    const baselineRow = baselineRef.current.get(edited.id);
-    if (!baselineRow) return;
-    const patch = diffTaskDraft(taskDraftFromAitoTask(baselineRow), edited);
-    if (Object.keys(patch).length === 0) return;
-    updateTaskMutation.mutate({ id: edited.id, patch });
-  };
-
-  const handleRemoveTask = (index: number) => {
-    const task = tasks[index];
-    if (!task) return;
-    if (task.id === null) {
-      setTasks(tasks.filter((_, i) => i !== index));
-      return;
-    }
-    deleteTaskMutation.mutate(task.id);
-  };
+  const { tasks, onTasksChange, onRemoveTask, onRowBlur, markClosed } = useProjectTasks(project.id);
 
   const [editingDesc, setEditingDesc] = useState(false);
   const [draft, setDraft] = useState(project.description);
@@ -325,32 +135,10 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  useEffect(
-    () => {
-      // StrictMode runs setup -> cleanup -> setup on mount in development, and
-      // a ref survives that simulated remount because the component instance
-      // does not. Without this reset the panel would sit at closed=true from
-      // its first render, so every keystroke's `onSettled` would satisfy the
-      // guard and invalidate the board — the exact per-keystroke refetch the
-      // counter exists to prevent, in dev only, where no test would see it.
-      closedRef.current = false;
-      return () => {
-        closedRef.current = true;
-        // Only when every PATCH has already landed. If any is still open, the
-        // refresh is `onSettled`'s job (see the counter's comment above):
-        // invalidating now would race the write it is supposed to reflect.
-        // `project.id` here is the one this panel mounted with, which is the
-        // only one it can ever have — a card is opened from a closed board.
-        if (tasksDirtyRef.current && inFlightTaskPatches.current === 0) {
-          invalidateTasksAndBoard();
-        }
-      };
-    },
-    // Deliberately empty: this must fire exactly once, when the panel closes.
-    // queryClient is a stable singleton from the provider.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+  // Flushes any pending task-field debounce and arbitrates the board refresh
+  // against still-in-flight PATCHes — see useProjectTasks' own unmount effect
+  // for the close-vs-settle race this defers to.
+  useEffect(() => markClosed, [markClosed]);
 
   return (
     <div
@@ -569,7 +357,14 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
             </div>
 
             <div className="min-w-0 border-t border-bambu-dark-tertiary pt-4 lg:border-t-0 lg:pt-0">
-              <TaskEditor value={tasks} onChange={handleTasksChange} onRemove={handleRemoveTask} />
+              <TaskEditor
+                value={tasks}
+                onChange={onTasksChange}
+                onRemove={onRemoveTask}
+                onRowBlur={(task) => {
+                  if (task.id !== null) onRowBlur(task.id);
+                }}
+              />
             </div>
           </div>
         </div>

@@ -39,6 +39,10 @@ export interface TaskEditorProps {
    *  and then be told "no" is worse than not offering it. Defaults to 0 so the
    *  detail panel is unaffected. */
   minRows?: number;
+  /** Called when focus leaves a row, so a debounced save can flush early
+   *  rather than waiting out its timer. Optional: the create modal holds its
+   *  tasks locally and has nothing to flush. */
+  onRowBlur?: (task: TaskDraft) => void;
 }
 
 /** The task list for one Aito project: a heading, each task's `TaskRow`, "+
@@ -47,7 +51,7 @@ export interface TaskEditorProps {
  *  new array. That split is what lets the create modal hold this array in
  *  local state and POST it with the project, while the detail panel wires
  *  each change to a PATCH; neither caller is visible from here. */
-export function TaskEditor({ value, onChange, onRemove, minRows = 0 }: TaskEditorProps) {
+export function TaskEditor({ value, onChange, onRemove, minRows = 0, onRowBlur }: TaskEditorProps) {
   const { t } = useTranslation();
   const { data: settings } = useQuery({
     queryKey: ['settings'],
@@ -130,6 +134,7 @@ export function TaskEditor({ value, onChange, onRemove, minRows = 0 }: TaskEdito
             onToggle={() => toggle(rowKey(task))}
             editing={editingKeys.has(rowKey(task))}
             onToggleEdit={() => toggleEdit(rowKey(task))}
+            onRowBlur={onRowBlur}
           />
         ))}
       </div>
