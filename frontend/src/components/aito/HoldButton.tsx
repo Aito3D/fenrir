@@ -29,12 +29,18 @@ const HOLD_HINT_VISIBLE_MS = 1600;
  *  surfacing a "hold to confirm" hint popover on a too-short tap. Extracted
  *  from the original hold-to-delete button so the same timer/hint/ring
  *  machinery can back both delete and the quote status actions — see
- *  task-12-brief.md. Border *width*, padding and rounding live in the base
- *  classes below; `className` supplies border *colour* (every caller must
- *  set one — Tailwind compiles same-specificity utilities in a fixed order
- *  regardless of source position, so a colour baked into the base here would
- *  never be reliably overridable by a caller's className) plus any other
- *  colour and layout on top. */
+ *  task-12-brief.md. The base below carries only what both callers
+ *  genuinely share — positioning, the ring wrapper, focus ring, transition,
+ *  disabled handling — never padding or border-width. Those two set the
+ *  rendered box size, and each caller wants a different box (delete's is
+ *  icon-sized to match its sibling edit button; the quote actions are
+ *  roomier pills); baking either into the base and expecting a caller's
+ *  `className` to override it doesn't work; Tailwind compiles
+ *  same-specificity utilities in a fixed order regardless of source
+ *  position, so whichever value lands later in the compiled stylesheet always
+ *  wins, not whichever the caller supplies. So every caller's `className`
+ *  supplies its own padding, border (width and colour), and any other box or
+ *  colour styling in full. */
 export function HoldButton({
   onHold,
   durationMs,
@@ -139,7 +145,7 @@ export function HoldButton({
           e.stopPropagation();
           cancelHold();
         }}
-        className={`relative inline-flex items-center gap-1.5 rounded-md border p-1.5 transition-[color,background-color,opacity,border-color] duration-100 focus-visible:outline-none focus-visible:ring-2 disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
+        className={`relative inline-flex items-center gap-1.5 rounded-md transition-[color,background-color,opacity,border-color] duration-100 focus-visible:outline-none focus-visible:ring-2 disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
       >
         <svg className="absolute inset-0 -rotate-90 w-full h-full" viewBox="0 0 24 24" aria-hidden="true">
           <circle

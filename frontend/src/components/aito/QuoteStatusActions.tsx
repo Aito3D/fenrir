@@ -54,7 +54,7 @@ export function QuoteStatusActions({ project }: { project: AitoProject }) {
         disabled={isSent || mutation.isPending}
         label={t('aito.markSent')}
         hint={t('aito.holdToConfirm')}
-        className="justify-center border-amber-400/40 text-amber-400 hover:bg-amber-400/10"
+        className="justify-center border p-1.5 border-amber-400/40 text-amber-400 hover:bg-amber-400/10"
       >
         {isSent ? <Check className="w-3.5 h-3.5" /> : <Send className="w-3.5 h-3.5" />}
         <span className="text-sm">{t('aito.markSent')}</span>
@@ -66,7 +66,7 @@ export function QuoteStatusActions({ project }: { project: AitoProject }) {
         disabled={isAccepted || mutation.isPending}
         label={t('aito.acceptQuote')}
         hint={t('aito.holdToConfirm')}
-        className="flex-1 justify-center border-bambu-green/40 text-bambu-green hover:bg-bambu-green/10"
+        className="flex-1 justify-center border p-1.5 border-bambu-green/40 text-bambu-green hover:bg-bambu-green/10"
       >
         {isAccepted ? <Check className="w-3.5 h-3.5" /> : <ThumbsUp className="w-3.5 h-3.5" />}
         <span className="text-sm">{t('aito.acceptQuote')}</span>
@@ -77,7 +77,7 @@ export function QuoteStatusActions({ project }: { project: AitoProject }) {
         disabled={isDeclined || mutation.isPending}
         label={t('aito.declineQuote')}
         hint={t('aito.holdToConfirm')}
-        className="flex-1 justify-center border-status-error/40 text-status-error hover:bg-status-error/10"
+        className="flex-1 justify-center border p-1.5 border-status-error/40 text-status-error hover:bg-status-error/10"
       >
         {isDeclined ? <Check className="w-3.5 h-3.5" /> : <ThumbsDown className="w-3.5 h-3.5" />}
         <span className="text-sm">{t('aito.declineQuote')}</span>
