@@ -66,13 +66,24 @@ def enabled_services(task: ExportTask) -> tuple[str, ...]:
 def format_weight(grams: float | None) -> str | None:
     """210 -> '210 gr', 1.5 -> '1.5 gr'. Read back by ``parse_weight_g``.
 
-    ``:g`` drops the trailing '.0' on whole numbers so the common case reads
-    like a human wrote it, and leaves a dot decimal otherwise — which
-    ``_WEIGHT_RE`` accepts alongside the comma form used in older quotes.
+    A whole number drops the trailing '.0' so the common case reads like a
+    human wrote it. A fractional value is rendered with ``repr()``, which is
+    Python's shortest decimal string that round-trips back to the exact same
+    float — unlike ``:g``, which caps at 6 significant digits and switches to
+    scientific notation past 1e6, silently corrupting the round trip through
+    ``_WEIGHT_RE`` (which has no exponent support at all).
+
+    ``repr()`` itself only stays in plain decimal for
+    ``0.0001 <= abs(grams) < 1e16``; outside that range it too turns
+    exponential. That is a far wider domain than any real print weight, so it
+    is not worth guarding against here.
     """
     if grams is None:
         return None
-    return f"{grams:g} gr"
+    grams = float(grams)
+    if grams.is_integer():
+        return f"{int(grams)} gr"
+    return f"{grams!r} gr"
 
 
 def format_time(minutes: int | None) -> str | None:

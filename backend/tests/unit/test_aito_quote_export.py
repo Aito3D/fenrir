@@ -5,8 +5,11 @@ module writes, `aito_quote_import` must read back unchanged.
 """
 
 from backend.app.services.aito_quote_export import (
+    SERVICES,
     ExportTask,
     build_description,
+    cost_of,
+    enabled_services,
     format_time,
     format_weight,
 )
@@ -37,6 +40,15 @@ def test_format_weight_round_trips_through_the_importer():
     assert format_weight(1.5) == "1.5 gr"
     assert format_weight(None) is None
     for grams in (2, 210, 1.5, 950):
+        assert parse_weight_g(format_weight(grams)) == grams
+
+
+def test_format_weight_survives_high_precision_and_large_values():
+    # ':g' caps at 6 significant digits and flips to scientific notation past
+    # 1e6 -- both silently corrupt the round trip through parse_weight_g,
+    # whose regex has no exponent support. These are the exact failure modes
+    # from the review finding.
+    for grams in (1234.5678, 100000.5, 1_000_000):
         assert parse_weight_g(format_weight(grams)) == grams
 
 
@@ -84,3 +96,23 @@ def test_placeholders_are_never_emitted():
     text = build_description("impression", task(title=None), include_free_text=False)
     assert "[" not in text
     assert "Projet:" not in text
+
+
+def test_cost_of_treats_zero_as_enabled_and_free():
+    # 0 must stay meaningful as "free" -- a truthiness check would collapse it
+    # into "disabled", same as None, and silently drop the quote line.
+    t = task(scan_cost=0, modelisation_cost=None, impression_cost=15.5, usinage_cost=None)
+    assert cost_of(t, "scan") == 0
+    assert cost_of(t, "modelisation") is None
+    assert cost_of(t, "impression") == 15.5
+    assert cost_of(t, "usinage") is None
+
+
+def test_enabled_services_includes_zero_cost_and_excludes_none():
+    t = task(scan_cost=0, modelisation_cost=None, impression_cost=15.5, usinage_cost=None)
+    assert enabled_services(t) == ("scan", "impression")
+    # Every service enabled, canonical order preserved.
+    all_on = task(scan_cost=0, modelisation_cost=0, impression_cost=0, usinage_cost=0)
+    assert enabled_services(all_on) == SERVICES
+    # Nothing enabled.
+    assert enabled_services(task()) == ()
