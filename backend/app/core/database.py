@@ -954,7 +954,7 @@ async def _migrate_aito_board_columns(conn) -> None:
             assignments = ", ".join(f"{s}_done = 1" for s in services)
             await conn.execute(
                 text(
-                    f"UPDATE aito_tasks SET {assignments} WHERE project_id IN "
+                    f"UPDATE aito_tasks SET {assignments} WHERE project_id IN "  # noqa: S608  # nosec B608 — assignments is built from the in-repo `backfill` dict's service names above, never request data; the row filter itself is bound via :col
                     "(SELECT id FROM aito_projects WHERE board_column = :col)"
                 ),
                 {"col": column},
