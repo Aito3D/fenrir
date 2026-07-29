@@ -6686,6 +6686,11 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logging.warning("Failed to sync virtual printers: %s", e)
 
+    # Start the Aito -> Zoho Books quote sync worker
+    from backend.app.services.aito_quote_sync import start_aito_quote_sync
+
+    start_aito_quote_sync()
+
     yield
 
     # Shutdown

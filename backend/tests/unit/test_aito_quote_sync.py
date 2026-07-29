@@ -838,3 +838,19 @@ async def test_project_state_changed_away_from_pending_before_the_loop_reaches_i
     await db_session.refresh(project)
     assert project.quote_sync_state == "pending"
     assert project.quote_sync_error is None
+
+
+@pytest.mark.asyncio
+async def test_sync_interval_falls_back_to_sixty_seconds(db_session):
+    from backend.app.services.aito_quote_sync import sync_interval_seconds
+
+    assert await sync_interval_seconds(db_session) == 60
+
+
+@pytest.mark.asyncio
+async def test_sync_is_skipped_when_disabled_in_settings(db_session):
+    from backend.app.services.aito_quote_sync import sync_enabled
+
+    assert await sync_enabled(db_session) is True
+    await set_setting(db_session, "aito_quote_sync_enabled", "false")
+    assert await sync_enabled(db_session) is False

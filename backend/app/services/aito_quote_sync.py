@@ -10,11 +10,14 @@ Phase 1 is push-only. ``quote_synced_at`` is written here and read by the
 Phase 2 poller.
 """
 
+import asyncio
 import logging
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.database import async_session
+from backend.app.core.tasks import spawn_background_task
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.filament import Filament
@@ -169,7 +172,7 @@ async def _reconcile_status(db: AsyncSession, project: AitoProject, estimate: di
     Returns True when the project is trashed, meaning the caller must not go on
     to rewrite the line items of a quote for a job that no longer exists.
     """
-    status = estimate.get("status") or ""
+    status = estimate.get("status") if estimate.get("status") is not None else ""
     if project.status == "deleted":
         if status != "declined":
             project.quote_status_before_trash = status
@@ -333,3 +336,50 @@ async def run_sync_once(db: AsyncSession) -> int:
             await db.rollback()
             logger.exception("Aito quote sync failed to commit project %s", project_id)
     return attempted
+
+
+_DEFAULT_INTERVAL_SECONDS = 60
+
+
+async def sync_interval_seconds(db: AsyncSession) -> int:
+    from backend.app.api.routes.settings import get_setting
+
+    raw = await get_setting(db, "aito_quote_poll_seconds")
+    try:
+        # Floor of 10s: the setting is an operator dial, not a foot-gun that
+        # can be turned into a hot loop against Books.
+        return max(10, int(raw)) if raw else _DEFAULT_INTERVAL_SECONDS
+    except ValueError:
+        return _DEFAULT_INTERVAL_SECONDS
+
+
+async def sync_enabled(db: AsyncSession) -> bool:
+    from backend.app.api.routes.settings import get_setting
+
+    raw = await get_setting(db, "aito_quote_sync_enabled")
+    return (raw or "true").strip().lower() not in ("false", "0", "no")
+
+
+async def run_sync_loop() -> None:
+    """Drain the outbox forever. Cancellation is the only way out.
+
+    Every iteration takes its own session and swallows its own errors: one bad
+    tick must not kill the loop, or a single transient failure would silently
+    end syncing until the next restart.
+    """
+    while True:
+        interval = _DEFAULT_INTERVAL_SECONDS
+        try:
+            async with async_session() as db:
+                interval = await sync_interval_seconds(db)
+                if await sync_enabled(db) and await zoho_service.is_configured(db):
+                    await run_sync_once(db)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Aito quote sync tick failed")
+        await asyncio.sleep(interval)
+
+
+def start_aito_quote_sync() -> None:
+    spawn_background_task(run_sync_loop(), name="aito-quote-sync")
