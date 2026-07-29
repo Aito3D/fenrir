@@ -1,0 +1,121 @@
+"""Convert an Aito project's tasks into Zoho Books estimate line items.
+
+The mirror of ``aito_quote_import``. Every function here is pure: no database,
+no HTTP. The caller resolves the filament to a material string and hands over
+plain ``ExportTask`` values, which keeps the whole formatting surface — the
+fiddliest part — testable without fixtures of live payloads.
+
+Governing rule: whatever this module writes, ``aito_quote_import`` must read
+back unchanged. The formatters below are written against ``parse_weight_g``
+and ``parse_time_min`` for exactly that reason, and the round-trip tests are
+the guard.
+"""
+
+from dataclasses import dataclass
+
+# Canonical service order — the same order the board renders badges in and the
+# order lines are emitted within a task. Mirrors SERVICE_RANK in
+# aito_quote_import and _SERVICE_COLUMNS in api/routes/aito.py.
+SERVICES: tuple[str, ...] = ("scan", "modelisation", "impression", "usinage")
+
+# The boilerplate row the scan and modelisation catalogue items carry. Written
+# exactly as the catalogue spells it; the importer strips it case- and
+# accent-insensitively, so it never round-trips into a task description.
+_FICHIER_NON_CEDE = "*Fichier non cédé*"
+
+
+@dataclass(frozen=True)
+class ExportTask:
+    """One Aito task, flattened for export.
+
+    ``material`` is the filament's ``type`` (``PETG``, ``PLA``, ``ASA``),
+    resolved by the caller — this module never touches the database. It is the
+    bare type rather than the brand-prefixed inventory name because that is
+    what the shop's real quotes say, and because the importer cannot map a
+    brand back onto an inventory row.
+    """
+
+    title: str | None
+    description: str | None
+    scan_cost: float | None
+    modelisation_cost: float | None
+    usinage_cost: float | None
+    impression_cost: float | None
+    impression_quantity: int | None
+    impression_weight_g: float | None
+    impression_time_min: int | None
+    impression_color: str | None
+    material: str | None
+
+
+def cost_of(task: ExportTask, service: str) -> float | None:
+    """The task's cost for one service. NULL means the service is disabled;
+    0 stays meaningful as 'free', so callers must test for None, not falsiness."""
+    return {
+        "scan": task.scan_cost,
+        "modelisation": task.modelisation_cost,
+        "impression": task.impression_cost,
+        "usinage": task.usinage_cost,
+    }[service]
+
+
+def enabled_services(task: ExportTask) -> tuple[str, ...]:
+    return tuple(service for service in SERVICES if cost_of(task, service) is not None)
+
+
+def format_weight(grams: float | None) -> str | None:
+    """210 -> '210 gr', 1.5 -> '1.5 gr'. Read back by ``parse_weight_g``.
+
+    ``:g`` drops the trailing '.0' on whole numbers so the common case reads
+    like a human wrote it, and leaves a dot decimal otherwise — which
+    ``_WEIGHT_RE`` accepts alongside the comma form used in older quotes.
+    """
+    if grams is None:
+        return None
+    return f"{grams:g} gr"
+
+
+def format_time(minutes: int | None) -> str | None:
+    """780 -> '13h', 26 -> '26min', 150 -> '2h30', 125 -> '2h05'.
+
+    Read back by ``parse_time_min``, which accumulates tokens — so the
+    zero-padded minutes in '2h05' sum to 120 + 5 rather than being misread.
+    """
+    if minutes is None:
+        return None
+    if minutes < 60:
+        return f"{minutes}min"
+    hours, remainder = divmod(minutes, 60)
+    return f"{hours}h" if remainder == 0 else f"{hours}h{remainder:02d}"
+
+
+def _rows(service: str, task: ExportTask) -> list[tuple[str, str | None]]:
+    """(label, value) pairs for a service line, in catalogue-template order."""
+    if service in ("scan", "modelisation"):
+        return [("Info", task.title)]
+    if service == "usinage":
+        return [("Usinage", task.title)]
+    return [
+        ("Projet", task.title),
+        ("Matériau", task.material),
+        ("Poids", format_weight(task.impression_weight_g)),
+        ("Temps", format_time(task.impression_time_min)),
+        ("Couleur", task.impression_color),
+    ]
+
+
+def build_description(service: str, task: ExportTask, *, include_free_text: bool) -> str:
+    """The catalogue template with its placeholders filled.
+
+    A row whose value is empty is dropped whole rather than emitted as a bare
+    ``Poids:`` — and the unfilled markers themselves ([TITLE], [MATERIAL], ...)
+    are never written, because the importer treats them as absent data. So an
+    empty field round-trips to an empty field either way; dropping the row is
+    simply what a human would have typed.
+    """
+    lines = [f"{label}: {value.strip()}" for label, value in _rows(service, task) if value and str(value).strip()]
+    if service in ("scan", "modelisation"):
+        lines.append(_FICHIER_NON_CEDE)
+    if include_free_text and task.description and task.description.strip():
+        lines.append(task.description.strip())
+    return "\n".join(lines)
