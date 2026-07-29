@@ -552,3 +552,40 @@ async def test_create_project_without_quote_leaves_quote_fields_null(async_clien
     assert body["quote_date"] is None
     assert body["quote_total"] is None
     assert body["quote_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_stores_the_quote_salesperson_and_status(async_client):
+    r = await _create(async_client, quote_salesperson="Marie VENDEUSE", quote_status="accepted")
+    assert r.status_code == 201
+    assert r.json()["quote_salesperson"] == "Marie VENDEUSE"
+    assert r.json()["quote_status"] == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_create_records_no_creator_when_auth_is_disabled(async_client):
+    # The permission dependency returns None when auth is off — and also for
+    # API-key requests, which deliberately carry no user identity. A project
+    # created either way has no creator to record, and that is not an error.
+    r = await _create(async_client)
+    assert r.status_code == 201
+    assert r.json()["created_by"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_records_the_authenticated_creator(async_client):
+    # There is no authenticated-client fixture in this suite, so the route's
+    # own User dependency is overridden directly. Locating it by parameter
+    # name is stable: `create_project` names it `current_user`.
+    from backend.app.main import app
+    from backend.app.models.user import User
+
+    route = next(r for r in app.routes if getattr(r, "name", "") == "create_project")
+    dep = next(d.call for d in route.dependant.dependencies if d.name == "current_user")
+    app.dependency_overrides[dep] = lambda: User(id=1, username="paul")
+    try:
+        r = await _create(async_client, description="Made by Paul")
+        assert r.status_code == 201
+        assert r.json()["created_by"] == "paul"
+    finally:
+        app.dependency_overrides.pop(dep, None)

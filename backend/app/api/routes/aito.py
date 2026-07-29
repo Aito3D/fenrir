@@ -120,6 +120,9 @@ def _to_response(p: AitoProject, summary: _TaskSummary) -> AitoProjectResponse:
         quote_date=p.quote_date,
         quote_total=p.quote_total,
         quote_url=p.quote_url,
+        quote_salesperson=p.quote_salesperson,
+        quote_status=p.quote_status,
+        created_by=p.created_by,
         task_count=summary.count,
         tasks_total=summary.total,
         task_services=list(summary.services),
@@ -195,7 +198,7 @@ async def list_trash(
 async def create_project(
     payload: AitoProjectCreate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     # New cards land on top of the quote column: shift existing cards down.
     for row in await _active_in_column(db, "devis"):
@@ -214,6 +217,11 @@ async def create_project(
         quote_date=payload.quote_date,
         quote_total=payload.quote_total,
         quote_url=payload.quote_url,
+        quote_salesperson=payload.quote_salesperson,
+        quote_status=payload.quote_status,
+        # None when auth is disabled, and for API-key requests — the dependency
+        # returns None for both rather than a synthetic user.
+        created_by=current_user.username if current_user else None,
     )
     db.add(project)
     # Flush so the project has an id the tasks can reference; one commit still

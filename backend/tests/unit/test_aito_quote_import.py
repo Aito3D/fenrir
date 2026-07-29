@@ -289,6 +289,7 @@ def test_build_preview_maps_the_contact_snapshot():
         "total": 18000,
         "currency_code": "XPF",
         "url": URL,
+        "salesperson": None,
     }
 
 
@@ -353,6 +354,17 @@ def test_build_preview_preserves_the_second_token_of_a_multi_token_weight():
     # stripping every match -- the whole row is preserved in the body too.
     assert task["impression_weight_g"] == 210
     assert "Poids: 210 gr 50 gr" in task["description"]
+
+
+def test_build_preview_carries_the_quote_salesperson():
+    estimate = load_estimate("dev-2462-two-tasks") | {"salesperson_name": "Marie VENDEUSE"}
+    preview = build_preview(estimate, None, "https://books.zoho.eu/app/1#/estimates/e2")
+    assert preview["quote"]["salesperson"] == "Marie VENDEUSE"
+
+
+def test_build_preview_salesperson_is_none_when_the_quote_has_none():
+    preview = build_preview(load_estimate("dev-2462-two-tasks"), None, "https://books.zoho.eu/app/1#/estimates/e2")
+    assert preview["quote"]["salesperson"] is None
 
 
 def test_build_preview_preserves_a_colour_longer_than_the_field_limit():

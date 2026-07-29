@@ -55,6 +55,8 @@ class AitoProjectCreate(BaseModel):
     quote_date: str | None = Field(default=None, max_length=10)
     quote_total: float | None = Field(default=None, ge=0)
     quote_url: str | None = Field(default=None, max_length=300)
+    quote_salesperson: str | None = Field(default=None, max_length=200)
+    quote_status: str | None = Field(default=None, max_length=30)
     tasks: list[AitoTaskCreate] = Field(default_factory=list)
 
     @field_validator("quote_url")
@@ -122,6 +124,9 @@ class AitoProjectResponse(BaseModel):
     quote_date: str | None
     quote_total: float | None
     quote_url: str | None
+    quote_salesperson: str | None
+    quote_status: str | None
+    created_by: str | None
     # Aggregates over the project's tasks, so the board card can show a summary
     # without GET /aito/ shipping every task row. Required, never defaulted:
     # see _to_response in the routes module.

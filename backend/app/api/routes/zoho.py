@@ -226,6 +226,7 @@ class ZohoQuoteInfo(BaseModel):
     total: float
     currency_code: str
     url: str
+    salesperson: str | None
 
 
 class ZohoQuoteClient(BaseModel):

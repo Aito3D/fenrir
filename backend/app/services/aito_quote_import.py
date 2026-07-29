@@ -404,6 +404,7 @@ def build_preview(estimate: dict, contact: dict | None, quote_url: str) -> dict:
             "total": float(estimate.get("total") or 0),
             "currency_code": estimate.get("currency_code") or "",
             "url": quote_url,
+            "salesperson": (estimate.get("salesperson_name") or "").strip() or None,
         },
         "client": _client_snapshot(estimate, contact),
         "suggested_description": "\n".join(titles) or number,

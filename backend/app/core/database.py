@@ -3888,6 +3888,9 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_total FLOAT")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_url VARCHAR(300)")
     await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_aito_projects_quote_id ON aito_projects (quote_id)")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_salesperson VARCHAR(200)")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_status VARCHAR(30)")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN created_by VARCHAR(100)")
 
 
 _USER_PRINT_TEMPLATE_RENAMES: tuple[tuple[str, str, str], ...] = (
