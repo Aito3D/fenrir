@@ -32,3 +32,30 @@ export function enabledServices(task: TaskDraft): string[] {
   if (task.usinageCost !== null) enabled.push('usinage');
   return enabled;
 }
+
+export type ServiceId = 'scan' | 'modelisation' | 'impression' | 'usinage';
+
+const COSTS: Record<ServiceId, (task: TaskDraft) => number | null> = {
+  scan: (t) => t.scanCost,
+  modelisation: (t) => t.modelisationCost,
+  impression: (t) => t.impressionCost,
+  usinage: (t) => t.usinageCost,
+};
+
+/** The task's steps, in canonical order — one per service whose cost is set.
+ *  A cost of 0 is a step quoted free, not an absent one, so membership is a
+ *  null check and never a truthiness test. */
+export function taskSteps(task: TaskDraft): { service: ServiceId; cost: number; done: boolean }[] {
+  return (Object.keys(AITO_SERVICE_LABEL_KEYS) as ServiceId[])
+    .filter((service) => COSTS[service](task) !== null)
+    .map((service) => ({ service, cost: COSTS[service](task) as number, done: task.done[service] }));
+}
+
+/** True once every step on the task is ticked. A task with no steps at all is
+ *  NOT finished here — an empty row is unstarted, not complete — even though
+ *  the board's rule engine treats "nothing pending" as nothing to do. The two
+ *  answer different questions: this one decides whether the row goes green. */
+export function isTaskFinished(task: TaskDraft): boolean {
+  const steps = taskSteps(task);
+  return steps.length > 0 && steps.every((step) => step.done);
+}

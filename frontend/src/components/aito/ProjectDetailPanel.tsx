@@ -48,6 +48,12 @@ function diffTaskDraft(baseline: TaskDraft, next: TaskDraft): AitoTaskUpdate {
   }
   if (after.impression_color !== before.impression_color) patch.impression_color = after.impression_color;
   if (after.impression_cost !== before.impression_cost) patch.impression_cost = after.impression_cost;
+  if (after.scan_done !== before.scan_done) patch.scan_done = after.scan_done;
+  if (after.modelisation_done !== before.modelisation_done) {
+    patch.modelisation_done = after.modelisation_done;
+  }
+  if (after.impression_done !== before.impression_done) patch.impression_done = after.impression_done;
+  if (after.usinage_done !== before.usinage_done) patch.usinage_done = after.usinage_done;
   return patch;
 }
 
@@ -175,7 +181,7 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
     onMutate: () => {
       inFlightTaskPatches.current += 1;
     },
-    onSuccess: (updatedTask) => {
+    onSuccess: (updatedTask, { patch }) => {
       // Advance the diff baseline for this row only, without touching the
       // query cache: without this, `baselineRef` stays frozen at initial
       // load, so reverting a field to its originally-loaded value diffs as
@@ -183,6 +189,14 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
       // dropped (see the revert / re-disable regression tests below).
       baselineRef.current.set(updatedTask.id, updatedTask);
       tasksDirtyRef.current = true;
+      // Cost fields PATCH per keystroke, which is why this component defers
+      // the board refresh to close (see the counter above). A tick is one
+      // deliberate click and can change the project's COLUMN, so it refreshes
+      // now — the panel's Stage row and the card behind it move together.
+      const tickedAStep = ['scan_done', 'modelisation_done', 'impression_done', 'usinage_done'].some(
+        (key) => key in patch,
+      );
+      if (tickedAStep) queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
     },
     onError: () => showToast(t('aito.saveFailed'), 'error'),
     // These are mutation-level callbacks, so React Query still runs them after

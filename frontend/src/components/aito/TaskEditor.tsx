@@ -61,6 +61,19 @@ export function TaskEditor({ value, onChange, onRemove, minRows = 0 }: TaskEdito
   // open rather than after the user collapses each row by hand.
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
 
+  // Which rows are open for editing (showing the form instead of the
+  // read-only step list), keyed exactly like `expandedKeys` — the two must
+  // agree, or toggling one row's form would open another's. `TaskStepFields`
+  // (Task 11) is what actually renders differently for an editing row; until
+  // then this only drives the Edit button's pressed state.
+  const [editingKeys, setEditingKeys] = useState<Set<string>>(new Set());
+  const toggleEdit = (key: string) =>
+    setEditingKeys((current) => {
+      const next = new Set(current);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+
   // ...except a row the user just added, which opens so they can fill it in.
   // Spotting it takes a flag plus a diff, because the key of the new row is
   // not knowable at the moment "+ Add task" is pressed: the create modal
@@ -110,6 +123,8 @@ export function TaskEditor({ value, onChange, onRemove, minRows = 0 }: TaskEdito
             onRemove={value.length > minRows ? () => onRemove(index) : undefined}
             expanded={expandedKeys.has(rowKey(task))}
             onToggle={() => toggle(rowKey(task))}
+            editing={editingKeys.has(rowKey(task))}
+            onToggleEdit={() => toggleEdit(rowKey(task))}
           />
         ))}
       </div>

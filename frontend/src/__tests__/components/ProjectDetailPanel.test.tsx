@@ -123,6 +123,10 @@ const mockTask: AitoTask = {
   impression_quantity: 1,
   impression_color: null,
   impression_cost: null,
+  scan_done: false,
+  modelisation_done: false,
+  impression_done: false,
+  usinage_done: false,
   created_at: '2026-07-27T00:00:00',
   updated_at: '2026-07-27T00:00:00',
 };
@@ -261,6 +265,58 @@ describe('ProjectDetailPanel tasks', () => {
     await waitFor(() => expect(capturedBody).toBeDefined());
     expect(capturedId).toBe('101');
     expect(capturedBody).toEqual({ scan_cost: 700 });
+  });
+
+  it('ticking a step\'s Done toggle issues PATCH /aito/tasks/{id} with only that field in the body', async () => {
+    // Guards the wiring `diffTaskDraft` needs for a tick specifically: it is
+    // easy to add a cost field to the diff and forget the *_done sibling, in
+    // which case the click above does nothing on the wire (see the doc on
+    // `diffTaskDraft` in ProjectDetailPanel.tsx).
+    let capturedBody: unknown;
+    let capturedId: string | undefined;
+    server.use(
+      http.patch('/api/v1/aito/tasks/:id', async ({ request, params }) => {
+        capturedBody = await request.json();
+        capturedId = params.id as string;
+        return HttpResponse.json({ ...mockTask, scan_done: true });
+      }),
+    );
+
+    const user = userEvent.setup();
+    show();
+    await expandAllTasks();
+
+    await user.click(await screen.findByRole('button', { name: /mark done/i }));
+
+    await waitFor(() => expect(capturedBody).toBeDefined());
+    expect(capturedId).toBe('101');
+    expect(capturedBody).toEqual({ scan_done: true });
+  });
+
+  it('refreshes the board immediately when a step is ticked, unlike a plain cost edit', async () => {
+    // The panel defers the board refresh to close for per-keystroke cost
+    // PATCHes (see `updateTaskMutation`'s doc), but a tick can move the
+    // project to a different COLUMN, so it must not wait — the Stage row and
+    // the card behind the panel have to move together, while the panel is
+    // still open.
+    const boardFetches = vi.fn();
+    server.use(
+      http.get('/api/v1/aito/', () => {
+        boardFetches();
+        return HttpResponse.json([]);
+      }),
+      http.patch('/api/v1/aito/tasks/:id', () => HttpResponse.json({ ...mockTask, scan_done: true })),
+    );
+    const user = userEvent.setup();
+    render(<BoardHost showPanel />);
+
+    await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
+    boardFetches.mockClear();
+
+    await expandAllTasks();
+    await user.click(await screen.findByRole('button', { name: /mark done/i }));
+
+    await waitFor(() => expect(boardFetches).toHaveBeenCalled());
   });
 
   it('editing a value back to its original after a successful save still issues a second PATCH', async () => {
@@ -441,6 +497,10 @@ describe('ProjectDetailPanel tasks', () => {
       impression_quantity: 1,
       impression_color: null,
       impression_cost: null,
+      scan_done: false,
+      modelisation_done: false,
+      impression_done: false,
+      usinage_done: false,
     });
   });
 

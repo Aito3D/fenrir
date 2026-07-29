@@ -36,6 +36,10 @@ export interface TaskDraft {
   impression: ImpressionDraft;
   /** Frozen total for a saved task; recomputed while the task is being edited. */
   impressionCost: number | null;
+  /** One flag per service, keyed by the same ids the backend and
+   *  AITO_SERVICE_LABEL_KEYS use. A flag is only meaningful when its cost is
+   *  not null — the backend clears it otherwise, and refuses to set it. */
+  done: Record<'scan' | 'modelisation' | 'impression' | 'usinage', boolean>;
 }
 
 /** Generates the client-side uid a fresh draft is stamped with. Mirrors the
@@ -59,6 +63,7 @@ export function emptyTaskDraft(): TaskDraft {
     usinageCost: null,
     impression: { printerId: null, filamentId: null, weightG: null, timeMin: null, quantity: 1, color: '' },
     impressionCost: null,
+    done: { scan: false, modelisation: false, impression: false, usinage: false },
   };
 }
 
@@ -144,6 +149,12 @@ export function taskDraftFromAitoTask(task: AitoTask): TaskDraft {
       color: task.impression_color ?? '',
     },
     impressionCost: task.impression_cost,
+    done: {
+      scan: task.scan_done,
+      modelisation: task.modelisation_done,
+      impression: task.impression_done,
+      usinage: task.usinage_done,
+    },
   };
 }
 
@@ -168,6 +179,10 @@ export function taskDraftToTaskCreate(t: TaskDraft): AitoTaskCreate {
     impression_quantity: t.impression.quantity,
     impression_color: t.impression.color.trim() || null,
     impression_cost: t.impressionCost,
+    scan_done: t.done.scan,
+    modelisation_done: t.done.modelisation,
+    impression_done: t.done.impression,
+    usinage_done: t.done.usinage,
   };
 }
 

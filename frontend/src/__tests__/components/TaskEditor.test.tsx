@@ -100,6 +100,8 @@ function ControlledTaskRow({
       onRemove={vi.fn()}
       expanded={expanded}
       onToggle={() => setExpanded((v) => !v)}
+      editing={false}
+      onToggleEdit={vi.fn()}
     />
   );
 }
@@ -331,7 +333,18 @@ describe('TaskRow', () => {
       usinageCost: null,
       impressionCost: null,
     };
-    render(<TaskRow task={task} index={0} onChange={vi.fn()} onRemove={vi.fn()} expanded onToggle={vi.fn()} />);
+    render(
+      <TaskRow
+        task={task}
+        index={0}
+        onChange={vi.fn()}
+        onRemove={vi.fn()}
+        expanded
+        onToggle={vi.fn()}
+        editing={false}
+        onToggleEdit={vi.fn()}
+      />,
+    );
 
     expect(taskTotal(task)).toBe(1500);
     // getByText's default normalizer collapses all whitespace (including the

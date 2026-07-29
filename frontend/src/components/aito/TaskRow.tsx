@@ -1,12 +1,13 @@
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronRight } from 'lucide-react';
+import { Check, ChevronRight, Pencil } from 'lucide-react';
 import { api } from '../../api/client';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ImpressionFields } from './ImpressionFields';
 import { ServiceBadges } from './ServiceBadges';
-import { enabledServices } from './services';
+import { TaskStepList } from './TaskStepList';
+import { enabledServices, isTaskFinished, taskSteps } from './services';
 import { Money } from '../calculator/shared';
 import { focusRingCls, inputCls, labelCls } from '../formStyles';
 import { taskTotal } from '../../utils/taskDraft';
@@ -22,6 +23,11 @@ export interface TaskRowProps {
   onRemove?: () => void;
   expanded: boolean;
   onToggle: () => void;
+  /** Whether the row's body is showing the edit form (`TaskStepFields`,
+   *  Task 11) instead of the read-only `TaskStepList`. Owned by the caller,
+   *  same split as `expanded`/`onToggle`. */
+  editing: boolean;
+  onToggleEdit: () => void;
 }
 
 /** One numeric cost input for a flat-rate service. Empty means the service is
@@ -68,7 +74,16 @@ function CostInput({
  *  The body is unmounted rather than hidden when collapsed, which keeps the
  *  collapsed row cheap: a closed row runs none of ImpressionFields' three
  *  reference-data queries. */
-export function TaskRow({ task, index, onChange, onRemove, expanded, onToggle }: TaskRowProps) {
+export function TaskRow({
+  task,
+  index,
+  onChange,
+  onRemove,
+  expanded,
+  onToggle,
+  editing,
+  onToggleEdit,
+}: TaskRowProps) {
   const { t } = useTranslation();
   const reactId = useId();
   // Same query key ImpressionFields and the calculator page use for the
@@ -81,9 +96,10 @@ export function TaskRow({ task, index, onChange, onRemove, expanded, onToggle }:
   const currency = settings?.currency || 'USD';
 
   const name = task.title.trim() || t('aito.taskFallbackName', { n: index + 1 });
+  const finished = isTaskFinished(task);
 
   return (
-    <div className="group rounded-lg border border-bambu-dark-tertiary">
+    <div className={`group rounded-lg border ${finished ? 'border-bambu-green/40 bg-bambu-green/5' : 'border-bambu-dark-tertiary'}`}>
       <div className="flex items-center gap-2 p-3">
         {/* The heading IS the toggle, so the whole row is one target rather
             than a chevron-sized one. Delete stays a sibling — a <button> may
@@ -103,9 +119,16 @@ export function TaskRow({ task, index, onChange, onRemove, expanded, onToggle }:
               aria-hidden="true"
             />
             <span className="text-sm font-medium text-white truncate min-w-0">{name}</span>
+            {finished && (
+              <Check className="w-3.5 h-3.5 flex-shrink-0 text-bambu-green" aria-label={t('aito.taskFinished')} />
+            )}
             {!expanded && (
               <>
-                <ServiceBadges services={enabledServices(task)} className="flex-shrink-0" />
+                <ServiceBadges
+                  services={enabledServices(task)}
+                  done={taskSteps(task).filter((s) => s.done).map((s) => s.service)}
+                  className="flex-shrink-0"
+                />
                 <Money
                   currency={currency}
                   value={taskTotal(task)}
@@ -115,6 +138,18 @@ export function TaskRow({ task, index, onChange, onRemove, expanded, onToggle }:
             )}
           </button>
         </h4>
+        <button
+          type="button"
+          aria-label={t('aito.editTask')}
+          aria-pressed={editing}
+          title={t('aito.editTask')}
+          onClick={onToggleEdit}
+          className={`flex-shrink-0 p-1 -m-1 rounded-md transition-colors ${focusRingCls} ${
+            editing ? 'text-bambu-green' : 'text-bambu-gray hover:text-white'
+          }`}
+        >
+          <Pencil className="w-3.5 h-3.5" />
+        </button>
         {onRemove && (
           <DeleteHoldButton onDelete={onRemove} label={t('aito.removeTask')} hint={t('aito.holdToDelete')} />
         )}
@@ -122,6 +157,7 @@ export function TaskRow({ task, index, onChange, onRemove, expanded, onToggle }:
 
       {expanded && (
         <div id={`${reactId}-body`} className="px-3 pb-3 space-y-3">
+          <TaskStepList task={task} onChange={onChange} />
           <input
             aria-label={t('aito.taskTitlePlaceholder')}
             value={task.title}
