@@ -27,6 +27,8 @@ const project: AitoProject = {
   quote_url: null,
   quote_salesperson: null,
   quote_status: null,
+  quote_sync_state: 'idle',
+  quote_sync_error: null,
   created_by: null,
   task_count: 0,
   tasks_total: 0,
@@ -861,5 +863,64 @@ describe('ProjectDetailPanel quote row', () => {
     await screen.findByText('DEV26-2462');
     expect(screen.queryByText('Seller:')).not.toBeInTheDocument();
     expect(screen.getByText('Created by:')).toBeInTheDocument();
+  });
+});
+
+describe('ProjectDetailPanel sync row', () => {
+  it('shows no sync row at all for an idle project', async () => {
+    // Idle is the normal case for the overwhelming majority of cards; a row
+    // reading "up to date" on every single one would be noise, not
+    // information — the opposite of the omission rule the seller row above
+    // follows.
+    show({ quote_sync_state: 'idle' });
+    await screen.findByText('ACME SARL');
+    expect(screen.queryByText('Sync:')).not.toBeInTheDocument();
+  });
+
+  it('shows the pending label while the worker has not caught up yet', async () => {
+    show({ quote_sync_state: 'pending' });
+    expect(await screen.findByText('Pending')).toBeInTheDocument();
+  });
+
+  it('shows the push error and a retry control', async () => {
+    show({ quote_sync_state: 'error', quote_sync_error: 'Zoho: invalid customer_id' });
+    expect(await screen.findByText('Sync failed')).toBeInTheDocument();
+    expect(screen.getByText('Zoho: invalid customer_id')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
+  it('shows the locked help text and no retry control once the quote is invoiced', async () => {
+    show({ quote_sync_state: 'locked' });
+    expect(await screen.findByText('Quote invoiced')).toBeInTheDocument();
+    expect(
+      screen.getByText('This quote has been invoiced: changes stay local.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
+
+  it('shows a note that Zoho refuses to revert a declined quote to draft', async () => {
+    show({ quote_sync_state: 'error', quote_sync_error: 'boom', quote_status: 'declined' });
+    expect(
+      await screen.findByText('Zoho does not allow reverting a quote back to draft.'),
+    ).toBeInTheDocument();
+  });
+
+  it('retrying re-saves the unchanged description, which is what re-marks the project pending', async () => {
+    // There is deliberately no dedicated retry endpoint — see _mark_pending in
+    // api/routes/aito.py, which every content PATCH handler calls. Re-saving
+    // the description unchanged IS the retry.
+    let capturedBody: unknown;
+    server.use(
+      http.patch('/api/v1/aito/12', async ({ request }) => {
+        capturedBody = await request.json();
+        return HttpResponse.json({ ...project, quote_sync_state: 'pending', quote_sync_error: null });
+      }),
+    );
+
+    const user = userEvent.setup();
+    show({ quote_sync_state: 'error', quote_sync_error: 'Zoho: invalid customer_id' });
+    await user.click(await screen.findByRole('button', { name: 'Retry' }));
+
+    await waitFor(() => expect(capturedBody).toEqual({ description: project.description }));
   });
 });

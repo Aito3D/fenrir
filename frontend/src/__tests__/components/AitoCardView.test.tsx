@@ -24,6 +24,8 @@ const project: AitoProject = {
   quote_url: null,
   quote_salesperson: null,
   quote_status: null,
+  quote_sync_state: 'idle',
+  quote_sync_error: null,
   created_by: null,
   task_count: 0,
   tasks_total: 0,
@@ -163,6 +165,66 @@ describe('CardView', () => {
   it('shows no quote chip on a manually created card', () => {
     render(<CardView project={project} onExpand={vi.fn()} onDelete={vi.fn()} />);
     expect(screen.queryByText(/DEV26-/)).not.toBeInTheDocument();
+  });
+
+  it('shows a placeholder chip while the quote is being created', () => {
+    render(
+      <CardView
+        project={{ ...project, quote_number: null, quote_sync_state: 'pending' }}
+        onExpand={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/devis…|quote…/i)).toBeInTheDocument();
+  });
+
+  it('shows no pending placeholder once the quote exists', () => {
+    // 'pending' also covers an EDIT to an already-imported card mid-push —
+    // the card must keep showing the real quote number, not fall back to
+    // the "quote is coming" placeholder meant for brand-new cards.
+    render(
+      <CardView
+        project={{ ...project, quote_number: 'DEV26-2462', quote_sync_state: 'pending' }}
+        onExpand={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('DEV26-2462')).toBeInTheDocument();
+    expect(screen.queryByText(/devis en cours|quote…/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the error state when the push failed', () => {
+    render(
+      <CardView
+        project={{ ...project, quote_number: 'DEV26-2471', quote_sync_state: 'error', quote_sync_error: 'boom' }}
+        onExpand={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText(/sync/i)).toBeInTheDocument();
+  });
+
+  it('shows a lock indicator once the quote is invoiced', () => {
+    render(
+      <CardView
+        project={{ ...project, quote_number: 'DEV26-2471', quote_sync_state: 'locked' }}
+        onExpand={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('DEV26-2471')).toBeInTheDocument();
+    expect(screen.getByLabelText(/facturé|invoiced|locked/i)).toBeInTheDocument();
+  });
+
+  it('shows neither error nor lock indicator when the sync state is idle', () => {
+    render(
+      <CardView
+        project={{ ...project, quote_number: 'DEV26-2462', quote_sync_state: 'idle' }}
+        onExpand={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.queryByLabelText(/sync|facturé|invoiced|locked/i)).not.toBeInTheDocument();
   });
 
   it('shows the quote status next to the quote number', () => {

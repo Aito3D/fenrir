@@ -82,6 +82,8 @@ const project: AitoProject = {
   quote_url: null,
   quote_salesperson: null,
   quote_status: null,
+  quote_sync_state: 'idle',
+  quote_sync_error: null,
   created_by: null,
   task_count: 0,
   tasks_total: 0,

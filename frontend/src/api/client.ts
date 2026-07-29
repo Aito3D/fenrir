@@ -3443,6 +3443,15 @@ export interface AitoProject {
   /** The quote's Zoho status as it stood at import — it can go stale, since
    *  the board never re-queries Zoho. */
   quote_status: string | null;
+  /** The worker's push state for this project's quote. Always present —
+   *  never null — even on hand-made cards that have never had a quote
+   *  ('idle'). 'pending' while the worker has not yet caught up with the
+   *  latest edit, 'error' when the last push failed, 'locked' once the
+   *  quote has been invoiced and Zoho refuses further edits. */
+  quote_sync_state: 'idle' | 'pending' | 'error' | 'locked';
+  /** The last push failure, or null. Only meaningful when quote_sync_state
+   *  is 'error'; stale/ignored otherwise. */
+  quote_sync_error: string | null;
   /** Username of the webapp user who created the card. Null when auth is
    *  disabled and for API-key requests, which carry no user identity. */
   created_by: string | null;

@@ -51,6 +51,14 @@ function diffTaskDraft(baseline: TaskDraft, next: TaskDraft): AitoTaskUpdate {
   return patch;
 }
 
+/** Explicit map rather than a template literal key: the i18n gate scans for
+ *  literal `t('...')` calls, and a dynamic key is invisible to it. */
+const SYNC_LABEL_KEY: Record<string, string> = {
+  pending: 'aito.syncPendingLabel',
+  error: 'aito.syncError',
+  locked: 'aito.quoteLocked',
+};
+
 interface ProjectDetailPanelProps {
   project: AitoProject;
   onClose: () => void;
@@ -478,6 +486,37 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
                   <div className="flex items-baseline justify-between gap-2">
                     <dt className="text-bambu-gray flex-shrink-0">{t('aito.sellerLabel')}:</dt>
                     <dd className="text-white min-w-0 truncate text-right">{project.quote_salesperson}</dd>
+                  </div>
+                )}
+
+                {/* Only when there is something to say. An idle project is the
+                    normal case and a row reading "up to date" on every card
+                    would be noise. */}
+                {SYNC_LABEL_KEY[project.quote_sync_state] && (
+                  <div className="flex items-baseline justify-between gap-2">
+                    <dt className="text-bambu-gray flex-shrink-0">{t('aito.sync')}:</dt>
+                    <dd className="text-white min-w-0 text-right">
+                      {t(SYNC_LABEL_KEY[project.quote_sync_state])}
+                      {project.quote_sync_error && (
+                        <span className="block text-xs text-bambu-gray">{project.quote_sync_error}</span>
+                      )}
+                      {project.quote_sync_state === 'locked' && (
+                        <span className="block text-xs text-bambu-gray">{t('aito.quoteLockedHelp')}</span>
+                      )}
+                      {project.quote_status === 'declined' && (
+                        <span className="block text-xs text-bambu-gray">{t('aito.quoteDeclinedNoDraft')}</span>
+                      )}
+                      {project.quote_sync_state === 'error' && (
+                        <button
+                          type="button"
+                          onClick={() => updateMutation.mutate({ description: project.description })}
+                          disabled={updateMutation.isPending}
+                          className="block ml-auto mt-1 text-xs text-bambu-green hover:text-bambu-green/80 disabled:opacity-50"
+                        >
+                          {t('aito.retrySync')}
+                        </button>
+                      )}
+                    </dd>
                   </div>
                 )}
 

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { GripVertical } from 'lucide-react';
+import { AlertTriangle, GripVertical, Lock } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ServiceBadges } from './ServiceBadges';
@@ -139,6 +139,26 @@ export function CardView({
               already holds hold-to-delete. */}
           {project.quote_number && (
             <span className="text-xs text-bambu-gray truncate">{project.quote_number}</span>
+          )}
+          {/* A project whose quote the worker has not created yet. Without
+              this the card is indistinguishable from one that will never have
+              a quote, which is exactly the wrong thing to say for a few
+              seconds after every create. */}
+          {!project.quote_number && project.quote_sync_state === 'pending' && (
+            <span className="text-xs text-bambu-gray/70 truncate italic">{t('aito.quotePending')}</span>
+          )}
+          {(project.quote_sync_state === 'error' || project.quote_sync_state === 'locked') && (
+            <span
+              aria-label={project.quote_sync_state === 'error' ? t('aito.syncError') : t('aito.quoteLocked')}
+              title={project.quote_sync_error || undefined}
+              className="flex-shrink-0 text-bambu-gray"
+            >
+              {project.quote_sync_state === 'error' ? (
+                <AlertTriangle className="w-3.5 h-3.5" />
+              ) : (
+                <Lock className="w-3.5 h-3.5" />
+              )}
+            </span>
           )}
           {/* The status as it stood at import — a snapshot, like the rest of
               the quote fields, so it can lag what Zoho says today. Colour
