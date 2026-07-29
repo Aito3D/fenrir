@@ -970,7 +970,7 @@ async def _migrate_aito_board_columns(conn) -> None:
             # bound via :col
             await conn.execute(
                 text(
-                    f"UPDATE aito_tasks SET {assignments} WHERE project_id IN "  # noqa: S608
+                    f"UPDATE aito_tasks SET {assignments} WHERE project_id IN "  # noqa: S608  # nosec B608
                     "(SELECT id FROM aito_projects WHERE board_column = :col)"
                 ),
                 {"col": column},
