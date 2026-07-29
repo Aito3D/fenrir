@@ -5,11 +5,12 @@ This module is the ONLY definition of that, deliberately: it is pure (no
 FastAPI, no SQLAlchemy, no models), so it can be unit-tested exhaustively, and
 it is never mirrored in TypeScript. The frontend renders `column` and
 `move_lock` as the server computes them and derives nothing of its own, which
-is what keeps the two languages from drifting the way `taskTotal` and
-`_task_summaries` do.
+is what keeps the two languages from drifting the way `taskTotal` in
+taskDraft.ts and `TaskSummary.total` here do.
 """
 
 from collections.abc import Collection, Iterable
+from dataclasses import dataclass
 from typing import Any
 
 # Board order, left to right. `waiting`, `scan` and `done` were added and
@@ -35,21 +36,61 @@ STAGES: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-def pending_services(tasks: Iterable[Any]) -> set[str]:
-    """Services with at least one enabled-but-unticked step across ``tasks``.
+@dataclass(frozen=True)
+class TaskSummary:
+    """Everything a project's tasks say about it, in one value.
+
+    ``services`` and ``pending`` are in ``SERVICES`` order so the card's badge
+    row is stable across refetches regardless of the order tasks were created
+    in. ``total`` is the definition mirrored by ``taskTotal`` in
+    frontend/src/utils/taskDraft.ts — the two are in different languages and
+    cannot share code, so a change here must be made there too.
+    """
+
+    count: int = 0
+    total: float = 0.0
+    services: tuple[str, ...] = ()
+    pending: tuple[str, ...] = ()
+
+
+def summarise(tasks: Iterable[Any]) -> TaskSummary:
+    """Count, total, enabled services and pending services in one pass.
 
     Duck-typed over anything exposing ``<service>_cost`` and ``<service>_done``
     — an ``AitoTask`` row in practice — so this module never imports a model.
 
-    A cost of ``None`` means the service is absent from the job and is skipped;
-    ``0`` means it is quoted free, which is a real step and is NOT skipped.
+    A cost of ``None`` means the service is absent from the job and is skipped
+    entirely; ``0`` means it is quoted free, which is a real step that must
+    show its badge and hold its column.
     """
-    pending: set[str] = set()
-    for task in tasks:
+    rows = list(tasks)
+    total = 0.0
+    enabled: set[str] = set()
+    unticked: set[str] = set()
+    for task in rows:
         for service in SERVICES:
-            if getattr(task, f"{service}_cost") is not None and not getattr(task, f"{service}_done"):
-                pending.add(service)
-    return pending
+            cost = getattr(task, f"{service}_cost")
+            if cost is None:
+                continue
+            enabled.add(service)
+            total += cost
+            if not getattr(task, f"{service}_done"):
+                unticked.add(service)
+    return TaskSummary(
+        count=len(rows),
+        total=total,
+        services=tuple(service for service in SERVICES if service in enabled),
+        pending=tuple(service for service in SERVICES if service in unticked),
+    )
+
+
+def pending_services(tasks: Iterable[Any]) -> set[str]:
+    """Deprecated: use ``summarise(tasks).pending``.
+
+    Kept only so this commit still imports — ``routes/aito.py`` has two call
+    sites, both replaced in the following commit, which deletes this.
+    """
+    return set(summarise(tasks).pending)
 
 
 def evaluate(quote_status: str | None, stored_column: str, pending: Collection[str]) -> tuple[str, str | None]:

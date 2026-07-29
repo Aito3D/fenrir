@@ -2,7 +2,7 @@
 
 import pytest
 
-from backend.app.services.aito_board_rules import evaluate, pending_services
+from backend.app.services.aito_board_rules import evaluate, summarise
 
 
 class _Task:
@@ -68,19 +68,19 @@ def test_pending_is_enabled_and_unticked_only():
         _Task(scan_cost=1200.0, scan_done=True, modelisation_cost=900.0),
         _Task(impression_cost=2400.0, impression_done=True),
     ]
-    assert pending_services(tasks) == {"modelisation"}
+    assert summarise(tasks).pending == ("modelisation",)
 
 
 def test_a_zero_cost_step_is_a_real_step():
     """0 means quoted free, not absent: it still holds the card."""
-    assert pending_services([_Task(modelisation_cost=0.0)]) == {"modelisation"}
+    assert summarise([_Task(modelisation_cost=0.0)]).pending == ("modelisation",)
 
 
 def test_a_null_cost_is_not_a_step_even_when_its_flag_is_set():
     """Defensive: a stale done flag on an absent service must not resurrect it,
     and must not be reported as pending either."""
-    assert pending_services([_Task(scan_cost=None, scan_done=True)]) == set()
+    assert summarise([_Task(scan_cost=None, scan_done=True)]).pending == ()
 
 
 def test_no_tasks_means_nothing_pending():
-    assert pending_services([]) == set()
+    assert summarise([]).pending == ()
