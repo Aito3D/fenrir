@@ -192,5 +192,22 @@ async def run_sync_once(db: AsyncSession) -> int:
         # an estimate_id and this commit landing, in which case the next tick
         # re-creates the quote. Closing that needs a distributed transaction
         # (or an idempotency key Books doesn't offer); noted, not solved here.
-        await db.commit()
+        #
+        # The commit itself can also fail (a DB hiccup, a lock timeout). Left
+        # unguarded, that exception would propagate out of this loop exactly
+        # like the pre-fix batch commit did: it aborts every remaining
+        # project for the tick, and leaves the session mid-transaction and
+        # unusable until something rolls it back. So this is caught too: roll
+        # back, log, move on. The rollback discards this project's in-memory
+        # changes, but its row was never written, so it is still `pending` —
+        # sync_project's "idle"/"error" update never made it to the DB — and
+        # the next tick retries it from scratch, same as any other transient
+        # failure. Projects already committed earlier in this loop are
+        # unaffected: each has its own commit boundary.
+        project_id = project.id  # captured before rollback expires the instance
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            logger.exception("Aito quote sync failed to commit project %s", project_id)
     return len(projects)

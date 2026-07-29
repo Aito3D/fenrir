@@ -120,14 +120,17 @@ async def test_idle_project_is_never_touched(db_session):
 
 
 @pytest.mark.asyncio
-async def test_one_bad_project_does_not_roll_back_a_good_ones_write(db_session, monkeypatch):
-    """Regression guard for the duplicate-quote bug: an unexpected exception in
-    one project must not discard another project's already-successful write.
+async def test_unexpected_bug_in_one_project_does_not_abort_the_next(db_session, monkeypatch):
+    """The catch-all in ``sync_project`` isolates one project's unexpected bug
+    from its neighbours: a plain, non-Zoho exception (here a ``TypeError``
+    from ``build_line_items``) is caught and recorded on that project alone,
+    and ``run_sync_once`` still processes the rest of the batch.
 
-    Pre-fix, ``run_sync_once`` committed once after the whole batch, so the
-    good project's in-memory ``quote_id`` was lost when the bad project's
-    exception unwound the loop before ``db.commit()`` — and the next tick
-    would POST a second, duplicate estimate for the good project.
+    This does NOT exercise per-project commit placement — the exception is
+    caught inside ``sync_project``'s own try block, so it never reaches
+    ``run_sync_once``'s loop at all. See
+    ``test_commit_failure_for_one_project_does_not_roll_back_a_good_ones_write``
+    for that guarantee.
     """
     good = AitoProject(
         description="Bonne piece",
@@ -193,6 +196,100 @@ async def test_one_bad_project_does_not_roll_back_a_good_ones_write(db_session, 
     assert bad.quote_sync_state == "error"
     assert bad.quote_id is None
     assert "simulated bug" in (bad.quote_sync_error or "")
+
+
+@pytest.mark.asyncio
+async def test_commit_failure_for_one_project_does_not_roll_back_a_good_ones_write(db_session, monkeypatch):
+    """Regression guard for the duplicate-quote bug: committing per project
+    means an unexpected failure that escapes ``sync_project`` entirely — a
+    failure in ``db.commit()`` itself, not one ``sync_project``'s catch-all
+    can intercept — must not discard an earlier project's already-successful,
+    already-committed write.
+
+    Unlike a bug in ``build_line_items``, a broken commit is NOT caught by
+    ``sync_project``'s try/except (commit happens in ``run_sync_once``, after
+    ``sync_project`` returns), so this is the only scenario that actually
+    exercises per-project vs. batch commit placement. To prove that, this
+    test is written to fail if ``run_sync_once`` is reverted to a single
+    ``if projects: await db.commit()`` after the loop: under a batch commit,
+    the second project's failure would take the first project's write down
+    with it, because both are still sitting in one uncommitted transaction
+    when the failure hits.
+    """
+    good = AitoProject(
+        description="Bonne piece",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client OK",
+        quote_sync_state="pending",
+    )
+    bad = AitoProject(
+        description="Piece cassee",
+        board_column="devis",
+        position=1,
+        client_id="C2",
+        client_name="Client KO",
+        quote_sync_state="pending",
+    )
+    db_session.add_all([good, bad])
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=good.id, position=0, title="Good", scan_cost=5000))
+    db_session.add(AitoTask(project_id=bad.id, position=0, title="Bad", scan_cost=5000))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    # Both projects sync cleanly through the real code path — no injected bug
+    # in the export step this time. What fails is the second project's
+    # commit itself.
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("POST", "/estimates"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "date": "2026-07-29",
+                        "status": "draft",
+                        "total": 5000,
+                        "last_modified_time": "2026-07-29T10:00:00-1000",
+                    }
+                }
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    # Fail commit once "bad" has been synced (its in-memory quote_id is set by
+    # sync_project, no DB round-trip needed to see that). Under per-project
+    # commits this is specifically the second commit call: "good"'s own
+    # commit already landed before "bad" was even touched. Under a reverted
+    # batch commit there is only one call, and by the time it runs both
+    # projects' in-memory state already includes "bad"'s quote_id — so this
+    # same condition fails that single call too, taking "good" down with it.
+    original_commit = db_session.commit
+
+    async def flaky_commit():
+        if bad.quote_id is not None:
+            raise RuntimeError("simulated commit failure")
+        await original_commit()
+
+    monkeypatch.setattr(db_session, "commit", flaky_commit)
+
+    assert await run_sync_once(db_session) == 2
+
+    await db_session.refresh(good)
+    await db_session.refresh(bad)
+    # Under per-project commits, good's write already landed before bad's
+    # commit ever failed — it survives untouched.
+    assert good.quote_id == "E1"
+    assert good.quote_sync_state == "idle"
+    # bad's commit failed, so run_sync_once's own guard rolled it back: its
+    # in-memory "idle"/quote_id update was discarded, and its row is exactly
+    # as it was before this tick started — still pending, ready to be
+    # retried on the next tick rather than stuck in a broken state.
+    assert bad.quote_sync_state == "pending"
+    assert bad.quote_id is None
 
 
 @pytest.mark.asyncio
