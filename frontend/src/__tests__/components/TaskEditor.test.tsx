@@ -178,7 +178,7 @@ describe('TaskEditor', () => {
     await expandTask();
     await editTask();
 
-    fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '7' } });
+    fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '7' } });
 
     expect(onChange).toHaveBeenCalledTimes(1);
     const result = onChange.mock.calls[0][0] as TaskDraft[];
@@ -205,7 +205,7 @@ describe('TaskEditor', () => {
     // A service left disabled gets no badge — and nothing from the body is
     // reachable, which is the whole point of collapsing.
     expect(screen.queryByText('Modeling')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Scan')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Scan Cost')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Optional title')).not.toBeInTheDocument();
   });
 
@@ -386,7 +386,7 @@ describe('TaskRow', () => {
     // one) are not interchangeable anywhere else in the stack.
     const onChangeSpy = vi.fn();
     render(<ControlledTaskRow initial={emptyTaskDraft()} onChangeSpy={onChangeSpy} />);
-    const scanInput = screen.getByLabelText('Scan');
+    const scanInput = screen.getByLabelText('Scan Cost');
 
     fireEvent.change(scanInput, { target: { value: '15' } });
     expect(onChangeSpy).toHaveBeenLastCalledWith(expect.objectContaining({ scanCost: 15 }));
@@ -403,7 +403,7 @@ describe('TaskRow', () => {
     // services: empty means the service is disabled, 0 means it is free.
     const onChangeSpy = vi.fn();
     render(<ControlledTaskRow initial={emptyTaskDraft()} onChangeSpy={onChangeSpy} />);
-    const costInput = screen.getByLabelText('Printing');
+    const costInput = screen.getByLabelText('Printing Cost');
 
     fireEvent.change(costInput, { target: { value: '4200' } });
     expect(onChangeSpy).toHaveBeenLastCalledWith(expect.objectContaining({ impressionCost: 4200 }));
@@ -460,7 +460,7 @@ describe('TaskRow', () => {
       expect(tasks?.[0].impressionCost).not.toBeNull();
     });
 
-    fireEvent.change(screen.getByLabelText('Printing'), { target: { value: '999' } });
+    fireEvent.change(screen.getByLabelText('Printing Cost'), { target: { value: '999' } });
 
     // Give every pending render and query a chance to flush. Under the old
     // effect the computed total lands here and 999 is gone.

@@ -4,12 +4,12 @@ import { useQuery } from '@tanstack/react-query';
 import { Check, ChevronRight, Pencil } from 'lucide-react';
 import { api } from '../../api/client';
 import { DeleteHoldButton } from './DeleteHoldButton';
-import { ImpressionFields } from './ImpressionFields';
 import { ServiceBadges } from './ServiceBadges';
+import { TaskStepFields } from './TaskStepFields';
 import { TaskStepList } from './TaskStepList';
 import { enabledServices, isTaskFinished, taskSteps } from './services';
 import { Money } from '../calculator/shared';
-import { focusRingCls, inputCls, labelCls } from '../formStyles';
+import { focusRingCls } from '../formStyles';
 import { taskTotal } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
 
@@ -28,34 +28,6 @@ export interface TaskRowProps {
    *  same split as `expanded`/`onToggle`. */
   editing: boolean;
   onToggleEdit: () => void;
-}
-
-/** One numeric cost input for a flat-rate service. Empty means the service is
- *  disabled, not free — clearing the field must emit `null`, never `0`; once
- *  that distinction is lost here nothing else in the stack recovers it. */
-function CostInput({
-  id,
-  value,
-  onChange,
-}: {
-  id: string;
-  value: number | null;
-  onChange: (next: number | null) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <input
-      id={id}
-      type="number"
-      min={0}
-      step="0.01"
-      inputMode="decimal"
-      value={value ?? ''}
-      onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
-      placeholder={t('aito.serviceCost')}
-      className={inputCls}
-    />
-  );
 }
 
 /** One task of a project: title/description, the four services (each
@@ -158,105 +130,7 @@ export function TaskRow({
       {expanded && (
         <div id={`${reactId}-body`} className="px-3 pb-3 space-y-3">
           {editing ? (
-            // The raw fields below are staying exactly where they are for
-            // now — Task 11 moves them into TaskStepFields verbatim and
-            // deletes them from here, completing this branch. Gating them on
-            // `editing` here (rather than always rendering them under
-            // TaskStepList) is what makes the Edit button and its
-            // aria-pressed state actually mean something today, instead of
-            // toggling only a colour while the same cost shows twice.
-            <>
-              <input
-                aria-label={t('aito.taskTitlePlaceholder')}
-                value={task.title}
-                onChange={(e) => onChange({ ...task, title: e.target.value })}
-                placeholder={t('aito.taskTitlePlaceholder')}
-                className={inputCls}
-              />
-              <textarea
-                aria-label={t('aito.taskDescriptionPlaceholder')}
-                value={task.description}
-                onChange={(e) => onChange({ ...task, description: e.target.value })}
-                placeholder={t('aito.taskDescriptionPlaceholder')}
-                rows={2}
-                className={`${inputCls} resize-none`}
-              />
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label htmlFor={`${reactId}-scan`} className={labelCls}>
-                    {t('aito.serviceScan3D')}
-                  </label>
-                  <CostInput
-                    id={`${reactId}-scan`}
-                    value={task.scanCost}
-                    onChange={(next) => onChange({ ...task, scanCost: next })}
-                  />
-                </div>
-                <div>
-                  <label htmlFor={`${reactId}-modelisation`} className={labelCls}>
-                    {t('aito.serviceModelisation3D')}
-                  </label>
-                  <CostInput
-                    id={`${reactId}-modelisation`}
-                    value={task.modelisationCost}
-                    onChange={(next) => onChange({ ...task, modelisationCost: next })}
-                  />
-                </div>
-                <div>
-                  <label htmlFor={`${reactId}-usinage`} className={labelCls}>
-                    {t('aito.serviceUsinage')}
-                  </label>
-                  <CostInput
-                    id={`${reactId}-usinage`}
-                    value={task.usinageCost}
-                    onChange={(next) => onChange({ ...task, usinageCost: next })}
-                  />
-                </div>
-              </div>
-
-              <div>
-                {/* The label and the Cost input share a row: Impression3D is
-                    the one service whose cost has parameters under it, so its
-                    input cannot sit in the three-column grid with the
-                    flat-rate ones. It lives HERE rather than inside
-                    ImpressionFields because ImpressionFields returns early
-                    when the calculator has no printers or filaments
-                    configured — and an imported cost still has to be readable
-                    and editable on such an installation. */}
-                <div className="flex items-end justify-between gap-3 mb-1">
-                  <label htmlFor={`${reactId}-impression`} className="block text-sm text-bambu-gray">
-                    {t('aito.serviceImpression3D')}
-                  </label>
-                  <div className="w-32 flex-shrink-0">
-                    <CostInput
-                      id={`${reactId}-impression`}
-                      value={task.impressionCost}
-                      onChange={(next) => onChange({ ...task, impressionCost: next })}
-                    />
-                  </div>
-                </div>
-                <ImpressionFields
-                  value={task.impression}
-                  onChange={(next, computedCost) =>
-                    onChange({
-                      ...task,
-                      impression: next,
-                      // Only when the calculator actually priced it — see
-                      // ImpressionFields' `onChange` doc. `undefined` means
-                      // "leave the stored cost alone", which is not the same
-                      // as `null`.
-                      ...(computedCost !== undefined ? { impressionCost: computedCost } : {}),
-                    })
-                  }
-                />
-              </div>
-
-              <div className="flex items-center justify-between border-t border-bambu-dark-tertiary pt-2">
-                <span className="text-sm text-bambu-gray">{t('aito.taskTotal')}</span>
-                <Money currency={currency} value={taskTotal(task)} className="text-white font-medium" />
-              </div>
-            </>
+            <TaskStepFields task={task} onChange={onChange} />
           ) : (
             <TaskStepList task={task} onChange={onChange} />
           )}

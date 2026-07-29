@@ -85,7 +85,7 @@ async function openModal(user: ReturnType<typeof userEvent.setup>) {
   // doesn't auto-open in edit mode — Edit has to be clicked explicitly.
   await user.click(screen.getByText('Task 1'));
   await user.click(screen.getByRole('button', { name: /edit task/i }));
-  fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '10' } });
+  fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
 }
 
 describe('AitoPage: create-project → Zoho sync wiring', () => {
@@ -292,7 +292,7 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
     // openModal already primed the seeded task's Scan field; overwrite it to
     // 0 (a free service) and leave the title and every other service
     // untouched (disabled) — the two states the mapping must never conflate.
-    fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '0' } });
+    fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '0' } });
 
     await user.click(screen.getByRole('button', { name: /create project/i }));
 

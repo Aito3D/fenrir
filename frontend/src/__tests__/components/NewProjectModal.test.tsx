@@ -115,7 +115,7 @@ describe('NewProjectModal', () => {
     // to reach its cost fields.
     await user.click(screen.getByText('Task 1'));
     await user.click(screen.getByRole('button', { name: /edit task/i }));
-    fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '10' } });
+    fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
     expect(screen.getByRole('button', { name: /create project/i })).not.toBeDisabled();
 
     // Adding a second task makes both rows removable again.
@@ -137,7 +137,7 @@ describe('NewProjectModal', () => {
     // so it starts read-only; Edit reveals the cost fields.
     await user.click(screen.getByText('Task 1'));
     await user.click(screen.getByRole('button', { name: /edit task/i }));
-    fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '10' } });
+    fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
 
     await user.click(screen.getByRole('button', { name: /create project/i }));
     expect(onCreate).toHaveBeenCalledWith(
@@ -161,14 +161,14 @@ describe('NewProjectModal', () => {
     // task", so Edit has to be clicked explicitly to reach its cost fields.
     await user.click(screen.getByText('Task 1'));
     await user.click(screen.getByRole('button', { name: /edit task/i }));
-    fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '10' } });
+    fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
     await user.click(screen.getByText('Task 1')); // collapse, so "Scan" stays unique below
 
     // The new row DOES open in edit mode automatically (a freshly added task
     // has no steps yet, so read mode would show nothing to price) — no Edit
     // click needed here.
     await user.click(screen.getByRole('button', { name: /add task/i }));
-    fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '42' } });
+    fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '42' } });
 
     await user.click(screen.getByRole('button', { name: /create project/i }));
 
@@ -193,7 +193,7 @@ describe('NewProjectModal', () => {
     // explicitly to reach its cost fields.
     await user.click(screen.getByText('Task 1'));
     await user.click(screen.getByRole('button', { name: /edit task/i }));
-    fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '10' } });
+    fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
 
     await user.type(screen.getByLabelText(/^email/i), 'nope');
     // Never blurred, so no message yet — and submit is not blocked by a hidden
@@ -262,7 +262,7 @@ describe('NewProjectModal', () => {
     // explicitly to reach its cost fields.
     await user.click(screen.getByText('Task 1'));
     await user.click(screen.getByRole('button', { name: /edit task/i }));
-    fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '10' } });
+    fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
 
     const combobox = screen.getByRole('combobox', { name: /client/i });
     await user.clear(combobox);
