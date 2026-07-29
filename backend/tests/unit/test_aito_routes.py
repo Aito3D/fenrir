@@ -37,15 +37,57 @@ async def test_create_and_list(async_client):
 
 
 @pytest.mark.asyncio
-async def test_move_reindexes_both_columns(async_client):
+async def test_move_reindexes_within_a_column(async_client):
+    """Reordering is always allowed, whatever a card's lock: it changes
+    priority, not state."""
     a = (await _create(async_client, description="a")).json()
     b = (await _create(async_client, description="b")).json()  # devis order: b(0), a(1)
-    r = await async_client.patch(f"/api/v1/aito/{a['id']}/move", json={"column": "print", "position": 0})
+
+    r = await async_client.patch(f"/api/v1/aito/{a['id']}/move", json={"column": "devis", "position": 0})
     assert r.status_code == 200
-    board = (await async_client.get("/api/v1/aito/")).json()
-    by_id = {p["id"]: p for p in board}
-    assert by_id[a["id"]]["column"] == "print" and by_id[a["id"]]["position"] == 0
-    assert by_id[b["id"]]["column"] == "devis" and by_id[b["id"]]["position"] == 0
+
+    board = {p["id"]: p for p in (await async_client.get("/api/v1/aito/")).json()}
+    assert board[a["id"]]["position"] == 0
+    assert board[b["id"]]["position"] == 1
+
+
+@pytest.mark.asyncio
+async def test_move_to_another_column_is_409_when_locked(async_client):
+    a = (await _create(async_client)).json()
+    r = await async_client.patch(f"/api/v1/aito/{a['id']}/move", json={"column": "print", "position": 0})
+    assert r.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_finish_to_done_is_allowed_when_unlocked(async_client):
+    p = (await _create(async_client, quote_status="accepted")).json()
+    t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
+    await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
+
+    r = await async_client.patch(f"/api/v1/aito/{p['id']}/move", json={"column": "done", "position": 0})
+    assert r.status_code == 200
+    assert r.json()["column"] == "done"
+
+    back = await async_client.patch(f"/api/v1/aito/{p['id']}/move", json={"column": "finish", "position": 0})
+    assert back.status_code == 200
+    assert back.json()["column"] == "finish"
+
+
+@pytest.mark.asyncio
+async def test_an_unlocked_card_still_cannot_move_to_a_work_column(async_client):
+    p = (await _create(async_client, quote_status="accepted")).json()
+    t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
+    await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
+
+    r = await async_client.patch(f"/api/v1/aito/{p['id']}/move", json={"column": "scan", "position": 0})
+    assert r.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_move_rejects_a_column_that_no_longer_exists(async_client):
+    a = (await _create(async_client)).json()
+    r = await async_client.patch(f"/api/v1/aito/{a['id']}/move", json={"column": "pickup", "position": 0})
+    assert r.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -182,13 +224,15 @@ async def test_update_rejects_blank_description(async_client):
 
 @pytest.mark.asyncio
 async def test_update_never_touches_column_or_position(async_client):
-    a = (await _create(async_client)).json()
-    await async_client.patch(f"/api/v1/aito/{a['id']}/move", json={"column": "print", "position": 0})
+    # quote_status="accepted" with no tasks lands the card in 'finish' unlocked,
+    # so the Finish -> Done move below is legal under the cross-column guard.
+    a = (await _create(async_client, quote_status="accepted")).json()
+    await async_client.patch(f"/api/v1/aito/{a['id']}/move", json={"column": "done", "position": 0})
     r = await async_client.patch(
         f"/api/v1/aito/{a['id']}", json={"description": "moved then edited", "column": "devis", "position": 7}
     )
     assert r.status_code == 200
-    assert r.json()["column"] == "print" and r.json()["position"] == 0
+    assert r.json()["column"] == "done" and r.json()["position"] == 0
 
 
 @pytest.mark.asyncio
@@ -463,7 +507,10 @@ async def test_move_and_restore_responses_carry_the_task_summary(async_client):
     r = await _create(async_client, tasks=[_task(scan_cost=4000.0)])
     project_id = r.json()["id"]
 
-    moved = await async_client.patch(f"/api/v1/aito/{project_id}/move", json={"column": "print", "position": 0})
+    # An unaccepted quote is locked into 'devis', so only a within-column
+    # reorder is legal here — that's all this test needs to exercise the
+    # move response's task summary anyway.
+    moved = await async_client.patch(f"/api/v1/aito/{project_id}/move", json={"column": "devis", "position": 0})
     assert moved.json()["task_count"] == 1
 
     await async_client.delete(f"/api/v1/aito/{project_id}")
@@ -647,8 +694,11 @@ async def test_restoring_a_project_marks_it_pending(async_client, idle_project):
 
 @pytest.mark.asyncio
 async def test_moving_a_project_does_not_mark_it_pending(async_client, idle_project):
-    """Which column a card sits in is production state, invisible to the quote."""
-    r = await async_client.patch(f"/api/v1/aito/{idle_project['id']}/move", json={"column": "print", "position": 0})
+    """Which column a card sits in is production state, invisible to the quote.
+
+    idle_project's quote is unaccepted, so it is locked into 'devis' — only a
+    within-column reorder is legal, which is all this test needs."""
+    r = await async_client.patch(f"/api/v1/aito/{idle_project['id']}/move", json={"column": "devis", "position": 0})
     assert r.status_code == 200
     assert r.json()["quote_sync_state"] == "idle"
 

@@ -446,6 +446,18 @@ async def move_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    # Reordering inside a column is always allowed: it changes priority, not
+    # state. Crossing columns is allowed only for a card the rules have
+    # released, and only between Finish and Done — every other placement is
+    # derived, so honouring a drag there would just be overwritten by the next
+    # recompute. The UI already disables those droppables; this is the guard
+    # for anything that reaches the API another way.
+    if payload.column != project.board_column:
+        tasks = (await db.execute(select(AitoTask).where(AitoTask.project_id == project.id))).scalars().all()
+        _, lock = evaluate(project.quote_status, project.board_column, pending_services(tasks))
+        if lock is not None or payload.column not in ("finish", "done"):
+            raise HTTPException(status_code=409, detail="This project's column is set by its quote and task steps")
+
     source_column = project.board_column
     destination = await _active_in_column(db, payload.column, exclude_id=project.id)
     insert_at = min(payload.position, len(destination))
