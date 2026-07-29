@@ -455,7 +455,11 @@ async def move_project(
     if payload.column != project.board_column:
         tasks = (await db.execute(select(AitoTask).where(AitoTask.project_id == project.id))).scalars().all()
         _, lock = evaluate(project.quote_status, project.board_column, pending_services(tasks))
-        if lock is not None or payload.column not in ("finish", "done"):
+        if (
+            lock is not None
+            or project.board_column not in ("finish", "done")
+            or payload.column not in ("finish", "done")
+        ):
             raise HTTPException(status_code=409, detail="This project's column is set by its quote and task steps")
 
     source_column = project.board_column

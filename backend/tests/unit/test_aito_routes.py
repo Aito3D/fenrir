@@ -74,6 +74,21 @@ async def test_finish_to_done_is_allowed_when_unlocked(async_client):
 
 
 @pytest.mark.asyncio
+async def test_move_renumbers_the_column_left_behind(async_client):
+    """Two unlocked cards in finish; moving one to done must renumber the
+    card left behind, not just append the mover to its new column."""
+    p1 = (await _create(async_client, description="p1", quote_status="accepted")).json()  # finish, position 0
+    p2 = (await _create(async_client, description="p2", quote_status="accepted")).json()  # finish, position 1
+
+    r = await async_client.patch(f"/api/v1/aito/{p1['id']}/move", json={"column": "done", "position": 0})
+    assert r.status_code == 200
+
+    board = {p["id"]: p for p in (await async_client.get("/api/v1/aito/")).json()}
+    assert board[p1["id"]]["column"] == "done" and board[p1["id"]]["position"] == 0
+    assert board[p2["id"]]["column"] == "finish" and board[p2["id"]]["position"] == 0
+
+
+@pytest.mark.asyncio
 async def test_an_unlocked_card_still_cannot_move_to_a_work_column(async_client):
     p = (await _create(async_client, quote_status="accepted")).json()
     t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
@@ -693,12 +708,19 @@ async def test_restoring_a_project_marks_it_pending(async_client, idle_project):
 
 
 @pytest.mark.asyncio
-async def test_moving_a_project_does_not_mark_it_pending(async_client, idle_project):
+async def test_moving_a_project_does_not_mark_it_pending(async_client, db_session):
     """Which column a card sits in is production state, invisible to the quote.
 
-    idle_project's quote is unaccepted, so it is locked into 'devis' — only a
-    within-column reorder is legal, which is all this test needs."""
-    r = await async_client.patch(f"/api/v1/aito/{idle_project['id']}/move", json={"column": "devis", "position": 0})
+    Uses a real cross-column move (Finish -> Done), not a same-column reorder:
+    a same-column move never enters the branch that could regress and start
+    marking the project pending on move."""
+    p = (await _create(async_client, quote_status="accepted")).json()  # lands unlocked in 'finish', no tasks
+    project = (await db_session.execute(select(AitoProject).where(AitoProject.id == p["id"]))).scalar_one()
+    project.quote_sync_state = "idle"
+    project.quote_sync_failures = 3
+    await db_session.commit()
+
+    r = await async_client.patch(f"/api/v1/aito/{p['id']}/move", json={"column": "done", "position": 0})
     assert r.status_code == 200
     assert r.json()["quote_sync_state"] == "idle"
 
