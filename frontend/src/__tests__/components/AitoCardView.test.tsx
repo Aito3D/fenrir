@@ -141,4 +141,23 @@ describe('CardView', () => {
     await user.click(await screen.findByText('Scan3D'));
     expect(onExpand).toHaveBeenCalledTimes(1);
   });
+
+  it('shows the quote number in the footer for an imported card', () => {
+    render(
+      <CardView
+        project={{ ...project, quote_number: 'DEV26-2462', quote_id: 'e2' }}
+        onExpand={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('DEV26-2462')).toBeInTheDocument();
+    // The chip is not a link — the card body is a <button> and the footer
+    // already carries hold-to-delete.
+    expect(document.querySelector('a[href*="zoho"]')).toBeNull();
+  });
+
+  it('shows no quote chip on a manually created card', () => {
+    render(<CardView project={project} onExpand={vi.fn()} onDelete={vi.fn()} />);
+    expect(screen.queryByText(/DEV26-/)).not.toBeInTheDocument();
+  });
 });

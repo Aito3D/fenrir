@@ -128,9 +128,17 @@ export function CardView({
         </div>
       )}
 
-      <div className="px-3 pb-2 flex items-center justify-between">
-        <span className="text-xs text-bambu-gray" title={dateTitle}>
-          {elapsed}
+      <div className="px-3 pb-2 flex items-center justify-between gap-2">
+        <span className="flex items-baseline gap-2 min-w-0">
+          <span className="text-xs text-bambu-gray flex-shrink-0" title={dateTitle}>
+            {elapsed}
+          </span>
+          {/* Imported cards carry their quote number here. A plain span, not a
+              link: the deep link lives in the detail panel, and the footer
+              already holds hold-to-delete. */}
+          {project.quote_number && (
+            <span className="text-xs text-bambu-gray truncate">{project.quote_number}</span>
+          )}
         </span>
         {onDelete && (
           <DeleteHoldButton onDelete={onDelete} label={t('aito.deleteTitle')} hint={t('aito.holdToDelete')} />
