@@ -108,6 +108,14 @@ export default {
     projectTotal: 'Total proyecto',
     noPrintersConfigured: 'Aún no hay impresoras configuradas en la calculadora.',
     noFilamentsConfigured: 'Aún no hay filamentos configurados en la calculadora.',
+    quoteStatus: {
+      draft: 'Borrador',
+      sent: 'Enviado',
+      viewed: 'Visto',
+      accepted: 'Aceptado',
+      declined: 'Rechazado',
+      expired: 'Caducado',
+    },
     columns: {
       devis: 'Presupuesto',
       model: 'Modelo 3D',

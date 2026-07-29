@@ -108,6 +108,14 @@ export default {
     projectTotal: '專案總計',
     noPrintersConfigured: '計算器中尚未設定印表機。',
     noFilamentsConfigured: '計算器中尚未設定耗材。',
+    quoteStatus: {
+      draft: '草稿',
+      sent: '已傳送',
+      viewed: '已檢視',
+      accepted: '已接受',
+      declined: '已拒絕',
+      expired: '已過期',
+    },
     columns: {
       devis: '報價',
       model: '3D 模型',

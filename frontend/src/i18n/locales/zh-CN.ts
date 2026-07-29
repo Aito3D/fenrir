@@ -108,6 +108,14 @@ export default {
     projectTotal: '项目总计',
     noPrintersConfigured: '计算器中尚未配置打印机。',
     noFilamentsConfigured: '计算器中尚未配置耗材。',
+    quoteStatus: {
+      draft: '草稿',
+      sent: '已发送',
+      viewed: '已查看',
+      accepted: '已接受',
+      declined: '已拒绝',
+      expired: '已过期',
+    },
     columns: {
       devis: '报价',
       model: '3D 模型',

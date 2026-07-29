@@ -108,6 +108,14 @@ export default {
     projectTotal: 'Итого по проекту',
     noPrintersConfigured: 'Принтеры в калькуляторе пока не настроены.',
     noFilamentsConfigured: 'Филаменты в калькуляторе пока не настроены.',
+    quoteStatus: {
+      draft: 'Черновик',
+      sent: 'Отправлено',
+      viewed: 'Просмотрено',
+      accepted: 'Принято',
+      declined: 'Отклонено',
+      expired: 'Истекло',
+    },
     columns: {
       devis: 'Смета',
       model: '3D-модель',

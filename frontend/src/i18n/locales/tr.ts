@@ -108,6 +108,14 @@ export default {
     projectTotal: 'Proje toplamı',
     noPrintersConfigured: 'Hesaplayıcıda henüz yapılandırılmış yazıcı yok.',
     noFilamentsConfigured: 'Hesaplayıcıda henüz yapılandırılmış filament yok.',
+    quoteStatus: {
+      draft: 'Taslak',
+      sent: 'Gönderildi',
+      viewed: 'Görüntülendi',
+      accepted: 'Kabul edildi',
+      declined: 'Reddedildi',
+      expired: 'Süresi doldu',
+    },
     columns: {
       devis: 'Teklif',
       model: '3B Model',

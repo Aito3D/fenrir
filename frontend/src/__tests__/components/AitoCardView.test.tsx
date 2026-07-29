@@ -163,4 +163,42 @@ describe('CardView', () => {
     render(<CardView project={project} onExpand={vi.fn()} onDelete={vi.fn()} />);
     expect(screen.queryByText(/DEV26-/)).not.toBeInTheDocument();
   });
+
+  it('shows the quote status next to the quote number', () => {
+    render(
+      <CardView
+        project={{ ...project, quote_number: 'DEV26-2462', quote_status: 'accepted' }}
+        onExpand={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('DEV26-2462')).toBeInTheDocument();
+    expect(screen.getByText('Accepted')).toBeInTheDocument();
+  });
+
+  it('renders an unrecognised status verbatim rather than dropping it', () => {
+    // Zoho can add statuses. A card that silently drops one is worse than a
+    // card showing a word we have no translation for — same fallback rule
+    // ServiceBadges uses for an unknown service id.
+    render(
+      <CardView
+        project={{ ...project, quote_number: 'DEV26-2462', quote_status: 'partially_invoiced' }}
+        onExpand={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('partially_invoiced')).toBeInTheDocument();
+  });
+
+  it('shows no status chip on a card with no quote status', () => {
+    render(
+      <CardView
+        project={{ ...project, quote_number: 'DEV26-2462', quote_status: null }}
+        onExpand={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('DEV26-2462')).toBeInTheDocument();
+    expect(screen.queryByText('Accepted')).not.toBeInTheDocument();
+  });
 });

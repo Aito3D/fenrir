@@ -108,6 +108,14 @@ export default {
     projectTotal: '프로젝트 합계',
     noPrintersConfigured: '계산기에 아직 설정된 프린터가 없습니다.',
     noFilamentsConfigured: '계산기에 아직 설정된 필라멘트가 없습니다.',
+    quoteStatus: {
+      draft: '초안',
+      sent: '발송됨',
+      viewed: '열람됨',
+      accepted: '수락됨',
+      declined: '거절됨',
+      expired: '만료됨',
+    },
     columns: {
       devis: '견적',
       model: '3D 모델',

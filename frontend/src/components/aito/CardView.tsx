@@ -3,6 +3,7 @@ import { GripVertical } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ServiceBadges } from './ServiceBadges';
+import { QUOTE_STATUS_NEUTRAL, QUOTE_STATUS_STYLES, quoteStatusLabelKey } from './quoteStatus';
 import type { AitoProject } from '../../api/client';
 import { api } from '../../api/client';
 import { Money } from '../calculator/shared';
@@ -138,6 +139,22 @@ export function CardView({
               already holds hold-to-delete. */}
           {project.quote_number && (
             <span className="text-xs text-bambu-gray truncate">{project.quote_number}</span>
+          )}
+          {/* The status as it stood at import — a snapshot, like the rest of
+              the quote fields, so it can lag what Zoho says today. Colour
+              carries the meaning; the label is there for anyone who cannot
+              rely on it. */}
+          {project.quote_status && (
+            <span
+              className={`text-[10px] leading-tight rounded px-1.5 py-0.5 flex-shrink-0 ${
+                QUOTE_STATUS_STYLES[project.quote_status] ?? QUOTE_STATUS_NEUTRAL
+              }`}
+            >
+              {(() => {
+                const key = quoteStatusLabelKey(project.quote_status);
+                return key ? t(key) : project.quote_status;
+              })()}
+            </span>
           )}
         </span>
         {onDelete && (

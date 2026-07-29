@@ -108,6 +108,14 @@ export default {
     projectTotal: 'プロジェクト合計',
     noPrintersConfigured: '計算機にはまだプリンターが設定されていません。',
     noFilamentsConfigured: '計算機にはまだフィラメントが設定されていません。',
+    quoteStatus: {
+      draft: '下書き',
+      sent: '送信済み',
+      viewed: '閲覧済み',
+      accepted: '承認済み',
+      declined: '却下',
+      expired: '期限切れ',
+    },
     columns: {
       devis: '見積もり',
       model: '3Dモデル',
