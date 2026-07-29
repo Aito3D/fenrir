@@ -220,7 +220,7 @@ the intended workflow, but without warning it reads as the board having frozen.
 
 - `AitoTaskCreate`, `AitoTaskUpdate`, `AitoTaskResponse` gain the four
   `*_done` booleans. On create they default to `false`.
-- `AitoProjectResponse` gains `move_lock: 'quote' | 'declined' | 'steps' | null`.
+- `AitoProjectResponse` gains `move_lock: 'quote' | 'waiting' | 'declined' | 'steps' | null`.
 
 ### `POST /aito/{project_id}/quote-status`
 
@@ -333,7 +333,7 @@ that all three controls share, rather than copying the timer twice.
 ## Edge cases
 
 - **A project with no tasks, or no enabled steps, once accepted → Finish.**
-  Rule 4, and it is correct: there is no work to do. Adding a task with a cost
+  Rule 5, and it is correct: there is no work to do. Adding a task with a cost
   derives it back to that stage, pulling it out of Finish or Done.
 - **A step ticked, then its cost cleared.** The done flag is cleared with it,
   and the step no longer holds the card — it does not exist any more.
