@@ -308,3 +308,46 @@ def test_build_preview_truncates_a_long_title_and_keeps_the_full_text():
     task = preview["tasks"][0]
     assert len(task["title"]) <= 200
     assert long_title.strip() in task["description"]
+
+
+def test_build_preview_preserves_a_poids_or_temps_that_fails_to_parse():
+    estimate = load_estimate("dev-2461-three-services")
+    estimate["line_items"][2]["description"] = (
+        "Projet: Tapis souple X4 bloc\nPoids: à définir\nTemps: à définir\nCouleur: NOIR"
+    )
+    preview = build_preview(estimate, None, URL)
+    task = preview["tasks"][0]
+    # Neither label parsed to a number, so both fields stay null and both
+    # rows are preserved verbatim in the body rather than being dropped.
+    assert task["impression_weight_g"] is None
+    assert task["impression_time_min"] is None
+    assert "Poids: à définir" in task["description"]
+    assert "Temps: à définir" in task["description"]
+
+
+def test_build_preview_preserves_the_prose_around_a_partially_parsed_weight():
+    estimate = load_estimate("dev-2461-three-services")
+    estimate["line_items"][2]["description"] = (
+        "Projet: Tapis souple X4 bloc\nPoids: 210 gr par piece, 4 pieces\nTemps: 13h\nCouleur: NOIR"
+    )
+    preview = build_preview(estimate, None, URL)
+    task = preview["tasks"][0]
+    # The number was found, so the field is populated — but the sentence
+    # around it is not part of the number, so it must survive too.
+    assert task["impression_weight_g"] == 210
+    assert "Poids: 210 gr par piece, 4 pieces" in task["description"]
+
+
+def test_build_preview_preserves_a_colour_longer_than_the_field_limit():
+    estimate = load_estimate("dev-2461-three-services")
+    long_color = (
+        "Bleu menthe pantone 3255C sur la face avant et Noir RAL 9005 sur le fond avec un liseré doré sur le pourtour"
+    )
+    assert len(long_color) > 100
+    estimate["line_items"][2]["description"] = f"Projet: Tapis souple X4 bloc\nCouleur: {long_color}"
+    preview = build_preview(estimate, None, URL)
+    task = preview["tasks"][0]
+    # The field is truncated to fit, but the full value must still appear
+    # in the body rather than losing its tail silently.
+    assert task["impression_color"] == long_color[:100]
+    assert f"Couleur: {long_color}" in task["description"]

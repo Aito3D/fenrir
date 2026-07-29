@@ -264,6 +264,15 @@ def _dedupe(rows: list[str]) -> list[str]:
     return out
 
 
+def _fully_consumed(value: str, pattern: re.Pattern[str]) -> bool:
+    """True when stripping every span `pattern` matched leaves no letters or
+    digits behind — i.e. the parser accounted for the whole row, not just a
+    number embedded in a longer sentence ('210 gr par piece, 4 pieces') that
+    must still be preserved verbatim alongside the parsed field."""
+    remainder = pattern.sub("", value)
+    return not any(ch.isalpha() or ch.isdigit() for ch in remainder)
+
+
 def _build_task(group: list[ParsedLine]) -> dict:
     """One Aito task from one group of quote lines."""
     ordered = sorted(group, key=lambda line: SERVICE_RANK[line.service])
@@ -284,9 +293,17 @@ def _build_task(group: list[ParsedLine]) -> dict:
     raw_title = title_line.labels[title_key].strip() if title_line and title_key else ""
     title, truncated = _truncate_words(raw_title, _TITLE_MAX)
 
-    weight = parse_weight_g(impression.labels.get("poids", "")) if impression else None
-    minutes = parse_time_min(impression.labels.get("temps", "")) if impression else None
+    poids_value = impression.labels.get("poids", "").strip() if impression else ""
+    temps_value = impression.labels.get("temps", "").strip() if impression else ""
+    weight = parse_weight_g(poids_value) if poids_value else None
+    minutes = parse_time_min(temps_value) if temps_value else None
     color = (impression.labels.get("couleur", "").strip() or None) if impression else None
+    # A field only absorbs the whole row when it accounts for the whole row —
+    # a number found inside a longer sentence, or a colour longer than the
+    # field allows, must still show up in the body alongside the field.
+    weight_consumed = weight is not None and _fully_consumed(poids_value, _WEIGHT_RE)
+    time_consumed = minutes is not None and _fully_consumed(temps_value, _TIME_TOKEN_RE)
+    color_consumed = bool(color) and len(color) <= _COLOR_MAX
 
     rows: list[str] = []
     # A truncated title would otherwise lose its tail — keep the full line.
@@ -300,12 +317,13 @@ def _build_task(group: list[ParsedLine]) -> dict:
             if line is title_line and label == title_key:
                 continue  # became the task title
             if line is impression and label in _IMPRESSION_LABELS:
-                # Consumed into a field — unless the value could not be parsed,
-                # in which case it is preserved rather than dropped.
+                # Consumed into a field — unless the value was only partially
+                # parsed (or not at all), in which case it is preserved
+                # rather than dropped or silently truncated.
                 if (
-                    label == "couleur"
-                    or (label == "poids" and weight is not None)
-                    or (label == "temps" and minutes is not None)
+                    (label == "couleur" and color_consumed)
+                    or (label == "poids" and weight_consumed)
+                    or (label == "temps" and time_consumed)
                 ):
                     continue
             prefix = SERVICE_LABEL[line.service] if label in TITLE_LABELS else LABEL_DISPLAY[label]
