@@ -59,6 +59,8 @@ export default {
     dragHandle: 'Trascina per riordinare',
     createdLabel: 'Creato',
     lastActivity: 'Ultima attività',
+    sellerLabel: 'Venditore',
+    createdByLabel: 'Creato da',
     stage: 'Fase',
     clientNameLabel: 'Nome del cliente',
     companyNameLabel: 'Nome dell’azienda',

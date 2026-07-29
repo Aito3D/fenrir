@@ -3437,6 +3437,15 @@ export interface AitoProject {
   quote_date: string | null;
   quote_total: number | null;
   quote_url: string | null;
+  /** The quote's salesperson, snapshotted at import. Null on hand-made cards
+   *  and on projects imported before this field existed. */
+  quote_salesperson: string | null;
+  /** The quote's Zoho status as it stood at import — it can go stale, since
+   *  the board never re-queries Zoho. */
+  quote_status: string | null;
+  /** Username of the webapp user who created the card. Null when auth is
+   *  disabled and for API-key requests, which carry no user identity. */
+  created_by: string | null;
   /** Aggregates over the project's tasks — see the Aito board response. The
    *  board never ships task rows themselves. */
   task_count: number;
@@ -3517,6 +3526,7 @@ export interface ZohoQuotePreview {
     total: number;
     currency_code: string;
     url: string;
+    salesperson: string | null;
   };
   client: {
     id: string;
@@ -6274,6 +6284,8 @@ export const api = {
     quote_date?: string | null;
     quote_total?: number | null;
     quote_url?: string | null;
+    quote_salesperson?: string | null;
+    quote_status?: string | null;
   }) =>
     request<AitoProject>('/aito/', {
       method: 'POST',

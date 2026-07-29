@@ -59,6 +59,8 @@ export default {
     dragHandle: 'ドラッグして並べ替え',
     createdLabel: '作成日',
     lastActivity: '最終更新',
+    sellerLabel: '担当者',
+    createdByLabel: '作成者',
     stage: 'ステージ',
     clientNameLabel: '顧客名',
     companyNameLabel: '会社名',

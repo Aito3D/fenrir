@@ -59,6 +59,8 @@ export default {
     dragHandle: 'Перетащите для изменения порядка',
     createdLabel: 'Создано',
     lastActivity: 'Последняя активность',
+    sellerLabel: 'Продавец',
+    createdByLabel: 'Создал',
     stage: 'Этап',
     clientNameLabel: 'Имя клиента',
     companyNameLabel: 'Название компании',

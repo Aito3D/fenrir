@@ -59,6 +59,8 @@ export default {
     dragHandle: '拖曳以重新排序',
     createdLabel: '建立時間',
     lastActivity: '最近活動',
+    sellerLabel: '銷售人員',
+    createdByLabel: '建立者',
     stage: '階段',
     clientNameLabel: '客戶姓名',
     companyNameLabel: '公司名稱',

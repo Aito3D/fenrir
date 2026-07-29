@@ -41,6 +41,7 @@ const preview: ZohoQuotePreview = {
     total: 5600,
     currency_code: 'XPF',
     url: 'https://books.zoho.eu/app/999#/estimates/e2',
+    salesperson: null,
   },
   client: { id: 'c2', name: 'Marie EXEMPLE', phone: '87123456', email: null, is_company: false },
   suggested_description: 'Helice grise\nhelice',

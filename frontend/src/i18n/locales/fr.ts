@@ -59,6 +59,8 @@ export default {
     dragHandle: 'Glisser pour réordonner',
     createdLabel: 'Créé',
     lastActivity: 'Dernière activité',
+    sellerLabel: 'Vendeur',
+    createdByLabel: 'Créé par',
     stage: 'Étape',
     clientNameLabel: 'Nom du client',
     companyNameLabel: 'Nom de la société',

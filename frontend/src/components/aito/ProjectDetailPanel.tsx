@@ -13,7 +13,7 @@ import {
   type AitoTaskUpdate,
 } from '../../api/client';
 import { parseUTCDate } from '../../utils/date';
-import { inputCls } from '../formStyles';
+import { inputCls, labelCls } from '../formStyles';
 import { useToast } from '../../contexts/ToastContext';
 import { emptyTaskDraft, taskDraftFromAitoTask, taskDraftToTaskCreate } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
@@ -361,7 +361,13 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
         <div className="p-4 overflow-y-auto flex-1">
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] gap-4 lg:gap-6">
             <div className="space-y-4 min-w-0">
-              <div className="flex items-start justify-between gap-2">
+              <div>
+                {/* The same name the create modal gives this field, so the
+                    create surface and the edit surface agree on what it is.
+                    Not a <dt>: the description sits above the <dl>, and the
+                    <p>/<textarea> swap below is not a <dd>. */}
+                <p className={labelCls}>{t('aito.productDescription')}</p>
+                <div className="flex items-start justify-between gap-2">
                 {editingDesc ? (
                   <textarea
                     autoFocus
@@ -399,6 +405,7 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
                   </p>
                 )}
                 <SaveIndicator state={descState} />
+                </div>
               </div>
 
               {/* One description list for the whole record. <dt>/<dd> gives
@@ -467,12 +474,25 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
                     </dd>
                   </div>
                 )}
+                {project.quote_salesperson && (
+                  <div className="flex items-baseline justify-between gap-2">
+                    <dt className="text-bambu-gray flex-shrink-0">{t('aito.sellerLabel')}:</dt>
+                    <dd className="text-white min-w-0 truncate text-right">{project.quote_salesperson}</dd>
+                  </div>
+                )}
 
                 <div className="flex items-baseline justify-between gap-2 border-t border-bambu-dark-tertiary pt-2 mt-2">
                   <dt className="text-bambu-gray flex-shrink-0">{t('aito.createdLabel')}:</dt>
                   <dd className="text-white min-w-0 text-right">
                     {created ? created.toLocaleString(i18n.language) : '—'}
                   </dd>
+                </div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <dt className="text-bambu-gray flex-shrink-0">{t('aito.createdByLabel')}:</dt>
+                  {/* An em dash rather than an omitted row: a card created
+                      with auth disabled, by an API key, or before this column
+                      existed has no creator, and saying so is information. */}
+                  <dd className="text-white min-w-0 truncate text-right">{project.created_by ?? '—'}</dd>
                 </div>
                 <div className="flex items-baseline justify-between gap-2">
                   <dt className="text-bambu-gray flex-shrink-0">{t('aito.lastActivity')}:</dt>

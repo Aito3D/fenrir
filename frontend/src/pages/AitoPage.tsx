@@ -356,6 +356,8 @@ export function AitoPage() {
         quote_date: preview.quote.date,
         quote_total: preview.quote.total,
         quote_url: preview.quote.url,
+        quote_salesperson: preview.quote.salesperson,
+        quote_status: preview.quote.status,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['aito-projects'] });

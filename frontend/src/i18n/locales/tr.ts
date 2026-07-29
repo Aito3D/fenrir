@@ -59,6 +59,8 @@ export default {
     dragHandle: 'Yeniden sıralamak için sürükleyin',
     createdLabel: 'Oluşturuldu',
     lastActivity: 'Son etkinlik',
+    sellerLabel: 'Satıcı',
+    createdByLabel: 'Oluşturan',
     stage: 'Aşama',
     clientNameLabel: 'Müşteri adı',
     companyNameLabel: 'Şirket adı',

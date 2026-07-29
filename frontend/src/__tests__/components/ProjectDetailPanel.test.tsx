@@ -25,6 +25,9 @@ const project: AitoProject = {
   quote_date: null,
   quote_total: null,
   quote_url: null,
+  quote_salesperson: null,
+  quote_status: null,
+  created_by: null,
   task_count: 0,
   tasks_total: 0,
   task_services: [],
@@ -833,5 +836,27 @@ describe('ProjectDetailPanel quote row', () => {
     expect(link).toHaveAttribute('href', 'https://books.zoho.eu/app/999#/estimates/e2');
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+  });
+
+  it('labels the description field', async () => {
+    show();
+    expect(await screen.findByText('Product description')).toBeInTheDocument();
+  });
+
+  it('shows the seller and the creator', async () => {
+    show({ quote_number: 'DEV26-2462', quote_salesperson: 'Marie VENDEUSE', created_by: 'paul' });
+    expect(await screen.findByText('Marie VENDEUSE')).toBeInTheDocument();
+    expect(screen.getByText('paul')).toBeInTheDocument();
+  });
+
+  it('omits the seller row entirely when the project has no seller', async () => {
+    // An empty "Seller:" is noise, not information — the same rule the phone
+    // and email rows follow. Created by is different: it renders an em dash,
+    // because "nobody is recorded" is itself worth stating for a card that
+    // predates the column or was made with auth off.
+    show({ quote_number: 'DEV26-2462', quote_salesperson: null, created_by: null });
+    await screen.findByText('DEV26-2462');
+    expect(screen.queryByText('Seller:')).not.toBeInTheDocument();
+    expect(screen.getByText('Created by:')).toBeInTheDocument();
   });
 });

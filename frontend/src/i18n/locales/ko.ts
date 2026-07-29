@@ -59,6 +59,8 @@ export default {
     dragHandle: '드래그하여 순서 변경',
     createdLabel: '생성일',
     lastActivity: '최근 활동',
+    sellerLabel: '담당자',
+    createdByLabel: '작성자',
     stage: '단계',
     clientNameLabel: '고객명',
     companyNameLabel: '회사명',
