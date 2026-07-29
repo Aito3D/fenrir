@@ -294,3 +294,76 @@ async def test_a_trashed_legacy_card_is_marked_unmanaged_on_the_first_ever_migra
         assert state == "unmanaged"
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_first_ever_migration_sets_the_backfill_marker_and_a_later_boot_leaves_an_owned_project_alone():
+    """The settings marker write on the newly-added-column path (the
+    `if not _quote_sync_state_existed:` branch's `INSERT ... INTO settings
+    (key, value) VALUES ('aito_unmanaged_backfill_done', '1')`) is the ONLY
+    thing that stops the unfiltered `WHERE quote_sync_state = 'idle' AND
+    quote_id IS NULL` UPDATE from running again on every subsequent boot.
+    Without it, a project of ours that legitimately reaches idle +
+    quote_id-NULL after the first boot (see `sync_project`'s
+    trashed-never-quoted branch) would be silently and permanently
+    reclassified 'unmanaged' by the very next restart, blocking it from ever
+    being quoted again — exactly the bug this whole backfill exists to
+    prevent, just reached from the other gate."""
+    engine = await _make_pre_feature_engine()
+    try:
+        async with engine.begin() as conn:
+            await run_migrations(conn)  # first-ever boot: column newly added
+
+        async with engine.connect() as conn:
+            marker = (
+                await conn.execute(text("SELECT value FROM settings WHERE key = 'aito_unmanaged_backfill_done'"))
+            ).scalar_one_or_none()
+        assert marker == "1"
+
+        # Between boots: an owned, live project reaches idle + quote_id-NULL
+        # (sync_project's trashed-never-quoted branch) — still ours, not legacy.
+        async with engine.begin() as conn:
+            owned = await _seed(conn, "Piece possedee", quote_sync_state="idle", quote_id=None, status="active")
+
+        async with engine.begin() as conn:
+            await run_migrations(conn)  # second boot: a restart
+
+        async with engine.connect() as conn:
+            state = (
+                await conn.execute(text("SELECT quote_sync_state FROM aito_projects WHERE id = :p"), {"p": owned})
+            ).scalar_one()
+        assert state == "idle"
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_owned_trashed_card_survives_the_column_present_marker_unset_backfill():
+    """On the column-already-present / marker-unset path, the backfill
+    UPDATE is additionally guarded by `AND status != 'deleted'`. A trashed
+    card here is NOT guaranteed to predate the feature the way it is on the
+    first-ever-migration path, because ownership could already exist by the
+    time this path runs: an owned, live project can be trashed by
+    `sync_project` while sitting at idle + quote_id-NULL (its
+    trashed-never-quoted branch) before this backfill ever gets to run.
+    Without the status filter, this UPDATE would sweep it into 'unmanaged'
+    anyway, permanently blocking restore + re-quote."""
+    engine = await _make_engine()
+    try:
+        async with engine.begin() as conn:
+            trashed_owned = await _seed(
+                conn, "Piece possedee et jetee", quote_sync_state="idle", quote_id=None, status="deleted"
+            )
+
+        async with engine.begin() as conn:
+            await run_migrations(conn)
+
+        async with engine.connect() as conn:
+            state = (
+                await conn.execute(
+                    text("SELECT quote_sync_state FROM aito_projects WHERE id = :p"), {"p": trashed_owned}
+                )
+            ).scalar_one()
+        assert state == "idle"
+    finally:
+        await engine.dispose()

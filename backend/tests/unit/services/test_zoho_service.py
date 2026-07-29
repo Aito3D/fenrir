@@ -569,8 +569,43 @@ async def test_find_estimate_by_reference_refuses_to_adopt_when_customer_id_is_f
         )
 
     zoho_service.transport = _transport(handler)
-    with pytest.raises(ZohoAmbiguousReferenceError):
+    with pytest.raises(ZohoAmbiguousReferenceError) as excinfo:
         await zoho_service.find_estimate_by_reference(db_session, "AITO-7", None)
+    assert str(excinfo.value) == (
+        "An estimate with reference_number 'AITO-7' exists in Zoho, but this project has "
+        "no linked Zoho customer to verify it against"
+    )
+
+
+@pytest.mark.asyncio
+async def test_find_estimate_by_reference_refuses_to_adopt_when_customer_id_is_falsy_on_their_side(
+    async_client, db_session
+):
+    """Minor: the mirror image of the "our side falsy" case above — our
+    project has a real ``customer_id``, but the single exact-reference
+    survivor Zoho returned carries no ``customer_id`` of its own. This is
+    the branch the "both sides falsy" test (customer_id=None) can never
+    reach, because that test short-circuits on the "our side falsy" check
+    first. Without both sides present there is nothing to verify, so this
+    must refuse to adopt too — with its own distinct wording naming Zoho's
+    side as the one missing the data, not the genuine-mismatch text."""
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(
+            200,
+            json={"estimates": [{"estimate_id": "E1", "reference_number": "AITO-7"}]},
+        )
+
+    zoho_service.transport = _transport(handler)
+    with pytest.raises(ZohoAmbiguousReferenceError) as excinfo:
+        await zoho_service.find_estimate_by_reference(db_session, "AITO-7", "C1")
+    assert str(excinfo.value) == (
+        "An estimate with reference_number 'AITO-7' exists in Zoho, but Zoho did not "
+        "return a customer_id for it, so ownership could not be verified"
+    )
 
 
 @pytest.mark.asyncio
@@ -633,5 +668,8 @@ async def test_find_estimate_by_reference_raises_on_a_customer_mismatch(async_cl
         )
 
     zoho_service.transport = _transport(handler)
-    with pytest.raises(ZohoAmbiguousReferenceError):
+    with pytest.raises(ZohoAmbiguousReferenceError) as excinfo:
         await zoho_service.find_estimate_by_reference(db_session, "AITO-7", "C1")
+    assert str(excinfo.value) == (
+        "An estimate with reference_number 'AITO-7' exists in Zoho but belongs to a different customer"
+    )
