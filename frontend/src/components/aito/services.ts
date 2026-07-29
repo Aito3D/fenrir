@@ -9,8 +9,9 @@ import type { TaskDraft } from '../../utils/taskDraft';
  *  backend/app/api/routes/aito.py — so a derived badge row reads the same way
  *  as a server-supplied one.
  *
- *  These are the shop's own service names and are identical in all twelve
- *  locales, so the keys carry no translation burden. */
+ *  The labels are translated per locale (Scan / Modeling / Printing /
+ *  Machining in English), so nothing may render a service by hardcoding its
+ *  id or an English name — always go through the key. */
 export const AITO_SERVICE_LABEL_KEYS: Record<string, string> = {
   scan: 'aito.serviceScan3D',
   modelisation: 'aito.serviceModelisation3D',

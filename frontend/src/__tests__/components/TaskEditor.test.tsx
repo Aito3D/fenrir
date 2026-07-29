@@ -162,7 +162,7 @@ describe('TaskEditor', () => {
     render(<TaskEditor value={value} onChange={onChange} onRemove={vi.fn()} />);
     await expandTask();
 
-    fireEvent.change(screen.getByLabelText('Scan3D'), { target: { value: '7' } });
+    fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '7' } });
 
     expect(onChange).toHaveBeenCalledTimes(1);
     const result = onChange.mock.calls[0][0] as TaskDraft[];
@@ -179,8 +179,8 @@ describe('TaskEditor', () => {
     // Visible while collapsed: the name, a badge per enabled service, the
     // total, and the remove control.
     const heading = await screen.findByRole('button', { name: /^Boîtier/, expanded: false });
-    expect(screen.getByText('Scan3D')).toBeInTheDocument();
-    expect(screen.getByText('Usinage')).toBeInTheDocument();
+    expect(screen.getByText('Scan')).toBeInTheDocument();
+    expect(screen.getByText('Machining')).toBeInTheDocument();
     // Scoped to the heading: the project total above shows the same figure
     // while this is the only task, so a page-wide text match is ambiguous.
     expect(heading).toHaveTextContent(/4\D?500/);
@@ -188,8 +188,8 @@ describe('TaskEditor', () => {
 
     // A service left disabled gets no badge — and nothing from the body is
     // reachable, which is the whole point of collapsing.
-    expect(screen.queryByText('Modelisation3D')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Scan3D')).not.toBeInTheDocument();
+    expect(screen.queryByText('Modeling')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Scan')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Optional title')).not.toBeInTheDocument();
   });
 
@@ -199,7 +199,7 @@ describe('TaskEditor', () => {
     const task: TaskDraft = { ...emptyTaskDraft(), title: 'Gratuit', scanCost: 0 };
     render(<TaskEditor value={[task]} onChange={vi.fn()} onRemove={vi.fn()} />);
 
-    expect(await screen.findByText('Scan3D')).toBeInTheDocument();
+    expect(await screen.findByText('Scan')).toBeInTheDocument();
   });
 
   it('clicking a row heading expands it, and clicking again collapses it', async () => {
@@ -342,14 +342,14 @@ describe('TaskRow', () => {
     expect(screen.getByText(expected)).toBeInTheDocument();
   });
 
-  it('typing a Scan3D cost emits scanCost set; clearing it emits null, not 0', () => {
+  it('typing a Scan cost emits scanCost set; clearing it emits null, not 0', () => {
     // This is the test Step 5 of the brief requires proving can fail: making
     // the clear path in TaskRow's CostInput emit `0` instead of `null` must
     // turn this test red, since `0` (a free service) and `null` (a disabled
     // one) are not interchangeable anywhere else in the stack.
     const onChangeSpy = vi.fn();
     render(<ControlledTaskRow initial={emptyTaskDraft()} onChangeSpy={onChangeSpy} />);
-    const scanInput = screen.getByLabelText('Scan3D');
+    const scanInput = screen.getByLabelText('Scan');
 
     fireEvent.change(scanInput, { target: { value: '15' } });
     expect(onChangeSpy).toHaveBeenLastCalledWith(expect.objectContaining({ scanCost: 15 }));

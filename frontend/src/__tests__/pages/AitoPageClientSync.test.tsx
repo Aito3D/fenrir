@@ -280,10 +280,10 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
     await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
 
     await user.click(screen.getByRole('button', { name: /add task/i }));
-    // Explicitly fill Scan3D with 0 (a free service) and leave the title and
+    // Explicitly fill Scan with 0 (a free service) and leave the title and
     // every other service untouched (disabled) — the two states the mapping
     // must never conflate.
-    fireEvent.change(screen.getByLabelText('Scan3D'), { target: { value: '0' } });
+    fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '0' } });
 
     await user.click(screen.getByRole('button', { name: /create project/i }));
 

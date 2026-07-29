@@ -91,7 +91,7 @@ describe('NewProjectModal', () => {
     );
   });
 
-  it('adds a task and includes its Scan3D cost in the tasks array passed to onCreate', async () => {
+  it('adds a task and includes its Scan cost in the tasks array passed to onCreate', async () => {
     const onCreate = vi.fn();
     const user = userEvent.setup();
     render(<NewProjectModal onClose={vi.fn()} onCreate={onCreate} />);
@@ -101,7 +101,7 @@ describe('NewProjectModal', () => {
     await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
 
     await user.click(screen.getByRole('button', { name: /add task/i }));
-    fireEvent.change(screen.getByLabelText('Scan3D'), { target: { value: '42' } });
+    fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '42' } });
 
     await user.click(screen.getByRole('button', { name: /create project/i }));
 

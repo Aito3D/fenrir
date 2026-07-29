@@ -233,7 +233,7 @@ describe('ProjectDetailPanel tasks', () => {
     await expandAllTasks();
     expect(screen.getByDisplayValue('Bracket mount')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Print in PA6-CF')).toBeInTheDocument();
-    expect(screen.getByLabelText('Scan3D')).toHaveValue(500);
+    expect(screen.getByLabelText('Scan')).toHaveValue(500);
   });
 
   it('editing a service cost issues PATCH /aito/tasks/{id} with only that field in the body', async () => {
@@ -249,7 +249,7 @@ describe('ProjectDetailPanel tasks', () => {
 
     show();
     await expandAllTasks();
-    const scanInput = await screen.findByLabelText('Scan3D');
+    const scanInput = await screen.findByLabelText('Scan');
     fireEvent.change(scanInput, { target: { value: '700' } });
 
     await waitFor(() => expect(capturedBody).toBeDefined());
@@ -283,7 +283,7 @@ describe('ProjectDetailPanel tasks', () => {
 
     show();
     await expandAllTasks();
-    const scanInput = await screen.findByLabelText('Scan3D');
+    const scanInput = await screen.findByLabelText('Scan');
 
     fireEvent.change(scanInput, { target: { value: '700' } });
     await waitFor(() => expect(bodies).toHaveLength(1));
@@ -314,7 +314,7 @@ describe('ProjectDetailPanel tasks', () => {
 
     show();
     await expandAllTasks();
-    const scanInput = await screen.findByLabelText('Scan3D');
+    const scanInput = await screen.findByLabelText('Scan');
     expect(scanInput).toHaveValue(null);
 
     fireEvent.change(scanInput, { target: { value: '0' } });
@@ -353,7 +353,7 @@ describe('ProjectDetailPanel tasks', () => {
 
     show();
     await expandAllTasks();
-    const scanInputs = await screen.findAllByLabelText('Scan3D');
+    const scanInputs = await screen.findAllByLabelText('Scan');
     expect(scanInputs).toHaveLength(2);
 
     // Row 101: edit, PATCH fires but hangs (never resolved in this test).
@@ -472,14 +472,14 @@ describe('ProjectDetailPanel tasks', () => {
 
     show();
     await expandAllTasks();
-    const scanInput = await screen.findByLabelText('Scan3D');
+    const scanInput = await screen.findByLabelText('Scan');
     fireEvent.change(scanInput, { target: { value: '700' } });
 
     expect(await screen.findByText(/could not save your changes/i)).toBeInTheDocument();
 
     // The edited value stays on screen (not rolled back), and the rest of the
     // panel — the client details rendered outside TaskEditor — is untouched.
-    expect(screen.getByLabelText('Scan3D')).toHaveValue(700);
+    expect(screen.getByLabelText('Scan')).toHaveValue(700);
     expect(screen.getByText('ACME SARL')).toBeInTheDocument();
   });
 
@@ -669,10 +669,10 @@ describe('ProjectDetailPanel tasks', () => {
     await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
 
     await expandAllTasks();
-    const scan = await screen.findByLabelText('Scan3D');
+    const scan = await screen.findByLabelText('Scan');
     await user.clear(scan);
     await user.type(scan, '500');
-    await waitFor(() => expect(screen.getByLabelText('Scan3D')).toHaveValue(500));
+    await waitFor(() => expect(screen.getByLabelText('Scan')).toHaveValue(500));
 
     // Await the write, not just the input's value: the value is local state
     // and is set before the PATCH it triggers has been sent, let alone
@@ -724,7 +724,7 @@ describe('ProjectDetailPanel tasks', () => {
     await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
 
     await expandAllTasks();
-    const scan = await screen.findByLabelText('Scan3D');
+    const scan = await screen.findByLabelText('Scan');
 
     // Keystroke 1: PATCH fires and lands, so the panel is now dirty.
     fireEvent.change(scan, { target: { value: '700' } });
@@ -774,7 +774,7 @@ describe('ProjectDetailPanel tasks', () => {
     await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
 
     await expandAllTasks();
-    const scan = await screen.findByLabelText('Scan3D');
+    const scan = await screen.findByLabelText('Scan');
     fireEvent.change(scan, { target: { value: '700' } });
     await waitFor(() => expect(bodies).toHaveLength(1));
 

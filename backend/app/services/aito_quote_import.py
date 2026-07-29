@@ -17,9 +17,10 @@ from dataclasses import dataclass
 # (mirrors _SERVICE_COLUMNS in backend/app/api/routes/aito.py).
 SERVICE_RANK: dict[str, int] = {"scan": 0, "modelisation": 1, "impression": 2, "usinage": 3}
 
-# Shop's own service names — identical in all twelve locales (see
-# frontend/src/components/aito/services.ts), so writing them into the task
-# description carries no translation burden.
+# The shop's own service names, written into an imported task's description as
+# preserved quote wording. Deliberately NOT the translated UI labels (see
+# frontend/src/components/aito/services.ts): this text is a record of what the
+# quote said, and renaming it would make old and new imports read differently.
 SERVICE_LABEL: dict[str, str] = {
     "scan": "Scan3D",
     "modelisation": "Modelisation3D",

@@ -85,9 +85,9 @@ describe('CardView', () => {
         onExpand={vi.fn()}
       />,
     );
-    expect(await screen.findByText('Modelisation3D')).toBeInTheDocument();
-    expect(screen.getByText('Impression3D')).toBeInTheDocument();
-    expect(screen.queryByText('Scan3D')).not.toBeInTheDocument();
+    expect(await screen.findByText('Modeling')).toBeInTheDocument();
+    expect(screen.getByText('Printing')).toBeInTheDocument();
+    expect(screen.queryByText('Scan')).not.toBeInTheDocument();
     expect(screen.getByText(/2 tasks|2 tâches/i)).toBeInTheDocument();
     // Matched on the digits, not the whole formatted string: the currency and
     // separators come from formatMoney and the settings stub, and pinning them
@@ -103,8 +103,8 @@ describe('CardView', () => {
       />,
     );
     expect(screen.queryByText(/0 tasks|0 tâches/i)).not.toBeInTheDocument();
-    expect(screen.queryByText('Scan3D')).not.toBeInTheDocument();
-    expect(screen.queryByText('Impression3D')).not.toBeInTheDocument();
+    expect(screen.queryByText('Scan')).not.toBeInTheDocument();
+    expect(screen.queryByText('Printing')).not.toBeInTheDocument();
   });
 
   it('shows the same summary in the drag overlay, which has no body button', async () => {
@@ -120,8 +120,8 @@ describe('CardView', () => {
         overlay
       />,
     );
-    expect(await screen.findByText('Modelisation3D')).toBeInTheDocument();
-    expect(screen.getByText('Impression3D')).toBeInTheDocument();
+    expect(await screen.findByText('Modeling')).toBeInTheDocument();
+    expect(screen.getByText('Printing')).toBeInTheDocument();
     expect(screen.getByText(/2 tasks|2 tâches/i)).toBeInTheDocument();
     expect(screen.getByText(/20[,\s.]?200/)).toBeInTheDocument();
     // The overlay clone really is the no-onExpand branch: nothing here is a
@@ -138,7 +138,7 @@ describe('CardView', () => {
         onExpand={onExpand}
       />,
     );
-    await user.click(await screen.findByText('Scan3D'));
+    await user.click(await screen.findByText('Scan'));
     expect(onExpand).toHaveBeenCalledTimes(1);
   });
 
