@@ -363,11 +363,16 @@ accounting above trivial to reason about. No concurrency.
 
 ### `NewProjectModal` and `TaskEditor`
 
-The modal seeds **one task row** on open, and submit stays disabled until at
-least one service on at least one task is priced. `TaskEditor` refuses to
-remove the last remaining task. A project with no task is not a project, and a
-task with no service produces no line item — the two rules together guarantee
-every project yields a non-empty quote.
+The modal seeds **one task row** on open, and submit stays disabled until
+**every** task has at least one service priced. `TaskEditor` refuses to remove
+the last remaining task. A project with no task is not a project, and a task
+with no service produces no line item — the two rules together guarantee every
+project yields a non-empty quote, and that no task is silently absent from it.
+
+Every task, not merely one of them: a service-less task emits no line, so under
+the weaker rule it would sit on the board and be invisible in Books, its header
+included. That is the state the builder's header gate would otherwise have to
+have an opinion about.
 
 ### `CardView`
 
