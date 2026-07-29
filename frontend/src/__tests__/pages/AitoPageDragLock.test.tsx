@@ -172,7 +172,13 @@ describe('AitoPage — cross-column drag lock (over a card, not just an empty co
     expect(within(waitingColumn).queryByText('Support GoPro')).not.toBeInTheDocument();
   });
 
-  it('still reorders a locked card inside its own column', async () => {
+  // A locked card can no longer be picked up at all — `BoardColumn` passes
+  // `disabled` to its `useSortable` and renders no grip (see
+  // AitoBoardColumnDrag.test.tsx), so these handlers never fire for one in the
+  // real UI. The gate is still asserted not to OVER-block: were it to reject a
+  // card's own column, an unlocked card sharing a column with a locked one, or
+  // any later relaxation of the grip rule, would silently stop reordering.
+  it('does not treat a locked card\'s own column as a forbidden destination', async () => {
     render(<AitoPage />);
     await screen.findByText('Support GoPro');
 

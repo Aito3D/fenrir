@@ -19,6 +19,13 @@ function SortableCard({
   transitionConfig: { duration: number; easing: string } | null;
   animateIn: boolean;
 }) {
+  // A locked card cannot go anywhere its rules do not already put it, so it is
+  // not draggable at all — not even to reorder inside its own column. A grip
+  // that lifts the card and then refuses every destination reads as broken;
+  // better to offer no grip. `disabled` also covers the keyboard sensor, so
+  // there is no second way in. CardView renders the lock in the grip's place.
+  const locked = project.move_lock !== null;
+
   const {
     attributes,
     listeners,
@@ -30,6 +37,7 @@ function SortableCard({
   } = useSortable({
     id: project.id,
     transition: transitionConfig,
+    disabled: locked,
   });
 
   return (
@@ -42,8 +50,8 @@ function SortableCard({
         project={project}
         onDelete={onDelete}
         onExpand={onExpand}
-        dragHandleRef={setActivatorNodeRef}
-        dragHandleProps={{ ...attributes, ...listeners }}
+        dragHandleRef={locked ? undefined : setActivatorNodeRef}
+        dragHandleProps={locked ? undefined : { ...attributes, ...listeners }}
       />
     </div>
   );

@@ -55,20 +55,26 @@ import type { AitoProject } from '../../api/client';
 // no-op ref with no error — confirmed the hard way while writing this test.
 const mockSetActivatorNodeRef = vi.fn();
 const mockUseDroppable = vi.fn();
+const mockUseSortable = vi.fn();
 
 vi.mock('@dnd-kit/sortable', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@dnd-kit/sortable')>();
   return {
     ...actual,
-    useSortable: () => ({
-      attributes: { 'data-dnd-mock-attr': 'grip-only' },
-      listeners: {},
-      setNodeRef: vi.fn(),
-      setActivatorNodeRef: mockSetActivatorNodeRef,
-      transform: null,
-      transition: undefined,
-      isDragging: false,
-    }),
+    useSortable: (args: Parameters<typeof actual.useSortable>[0]) => {
+      // Recorded rather than forwarded: `disabled` is the whole of what makes
+      // a locked card undraggable, and it is invisible in the rendered output.
+      mockUseSortable(args);
+      return {
+        attributes: { 'data-dnd-mock-attr': 'grip-only' },
+        listeners: {},
+        setNodeRef: vi.fn(),
+        setActivatorNodeRef: mockSetActivatorNodeRef,
+        transform: null,
+        transition: undefined,
+        isDragging: false,
+      };
+    },
   };
 });
 
@@ -112,12 +118,15 @@ const project: AitoProject = {
   updated_at: '2026-07-27T00:00:00',
 };
 
-function Harness({ dropDisabled }: { dropDisabled?: boolean } = {}) {
+function Harness({
+  dropDisabled,
+  moveLock = null,
+}: { dropDisabled?: boolean; moveLock?: AitoProject['move_lock'] } = {}) {
   return (
     <DndContext>
       <BoardColumn
         column={COLUMNS[0]}
-        projects={[project]}
+        projects={[{ ...project, move_lock: moveLock }]}
         isDropTarget={false}
         onDeleteCard={vi.fn()}
         onExpandCard={vi.fn()}
@@ -157,6 +166,32 @@ describe('BoardColumn — drag handle wiring', () => {
     expect(grip).toHaveAttribute('data-dnd-mock-attr', 'grip-only');
     expect(cardWrapper).not.toHaveAttribute('data-dnd-mock-attr');
     expect(body).not.toHaveAttribute('data-dnd-mock-attr');
+  });
+});
+
+describe('BoardColumn — a locked card is not grabbable at all', () => {
+  beforeEach(() => {
+    mockUseSortable.mockClear();
+    mockSetActivatorNodeRef.mockClear();
+  });
+
+  it('disables the sortable and renders no grip when the rules lock the card', () => {
+    render(<Harness moveLock="quote" />);
+
+    // `disabled` is what stops the pointer AND keyboard sensors; without it a
+    // grip-less card could still be picked up with the keyboard.
+    expect(mockUseSortable).toHaveBeenCalledWith(expect.objectContaining({ id: project.id, disabled: true }));
+    expect(screen.queryByRole('button', { name: /drag|glisser/i })).not.toBeInTheDocument();
+    // The lock takes the grip's place, so the header still says something.
+    expect(screen.getByRole('img', { name: /locked to quote/i })).toBeInTheDocument();
+    // No activator either — nothing for dnd-kit to treat as a handle.
+    expect(mockSetActivatorNodeRef).not.toHaveBeenCalled();
+  });
+
+  it('leaves an unlocked card draggable', () => {
+    render(<Harness />);
+    expect(mockUseSortable).toHaveBeenCalledWith(expect.objectContaining({ id: project.id, disabled: false }));
+    expect(screen.getByRole('button', { name: /drag|glisser/i })).toBeInTheDocument();
   });
 });
 

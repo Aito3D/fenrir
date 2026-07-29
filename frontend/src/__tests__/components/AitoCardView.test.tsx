@@ -301,6 +301,28 @@ describe('CardView', () => {
     expect(screen.getByTitle("This card's column is set by its task steps")).toBeInTheDocument();
   });
 
+  it('gives a locked card no grip — the lock stands where the handle would be', () => {
+    render(
+      <CardView
+        project={{ ...project, move_lock: 'quote' }}
+        onExpand={vi.fn()}
+        onDelete={vi.fn()}
+        dragHandleProps={{}}
+      />,
+    );
+    // Even handed a drag handle, a locked card must not offer one: a grip that
+    // lifts the card and refuses every destination is a promise the rules break.
+    expect(screen.queryByRole('button', { name: /drag|glisser/i })).not.toBeInTheDocument();
+    expect(screen.getByTitle('Locked to Quote until the quote is accepted')).toBeInTheDocument();
+  });
+
+  it('keeps the grip on an unlocked card', () => {
+    render(
+      <CardView project={{ ...project, move_lock: null }} onExpand={vi.fn()} onDelete={vi.fn()} dragHandleProps={{}} />,
+    );
+    expect(screen.getByRole('button', { name: /drag|glisser/i })).toBeInTheDocument();
+  });
+
   it('shows no lock on a card free to move between Finish and Done', () => {
     render(<CardView project={{ ...project, move_lock: null }} onExpand={vi.fn()} onDelete={vi.fn()} />);
     expect(screen.queryByTitle(/Locked|set by its task steps|declined/)).not.toBeInTheDocument();
