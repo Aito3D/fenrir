@@ -9,6 +9,7 @@ from sqlalchemy import event, select
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
+from backend.app.schemas.aito import AitoProjectImportItem
 from backend.app.services.aito_board_rules import summarise
 
 
@@ -26,10 +27,11 @@ async def _create(client, **overrides):
 _GOLDEN = Path(__file__).parent.parent / "fixtures" / "aito_board_payload.json"
 
 
-async def _seed_golden_board(client, db_session):
-    """Four projects covering every shape the board payload can take: no tasks,
-    a zero-cost service, mixed done flags, and a project in a non-default
-    column."""
+async def _seed_golden_board(client):
+    """Five projects covering every shape the board payload can take: no
+    tasks, a zero-cost service, mixed done flags, a project in a non-default
+    column, and an accepted project pinned in place by a single unticked
+    zero-cost step (the "0 is pending" half of the None-vs-0 rule)."""
     await client.post(
         "/api/v1/aito/",
         json={"description": "no tasks", "client_id": "C1", "client_name": "One", "tasks": []},
@@ -65,6 +67,16 @@ async def _seed_golden_board(client, db_session):
         },
     )
     await client.post(f"/api/v1/aito/{accepted.json()['id']}/quote-status", json={"status": "accepted"})
+    zero_pending = await client.post(
+        "/api/v1/aito/",
+        json={
+            "description": "accepted zero pending",
+            "client_id": "C5",
+            "client_name": "Five",
+            "tasks": [{"title": "d", "scan_cost": 0}],
+        },
+    )
+    await client.post(f"/api/v1/aito/{zero_pending.json()['id']}/quote-status", json={"status": "accepted"})
 
 
 def _stable(payload: list[dict]) -> list[dict]:
@@ -77,7 +89,7 @@ async def test_board_payload_matches_the_golden_fixture(async_client, db_session
     """The load-bearing test for the summarise() swap: the board's JSON must be
     byte-identical to what the SQL aggregate produced. Regenerate deliberately
     with REGENERATE_GOLDEN=1 and read the diff before committing it."""
-    await _seed_golden_board(async_client, db_session)
+    await _seed_golden_board(async_client)
     actual = _stable((await async_client.get("/api/v1/aito/")).json())
 
     if os.environ.get("REGENERATE_GOLDEN") == "1":
@@ -828,6 +840,19 @@ async def test_importing_legacy_projects_derives_column_from_the_rules(async_cli
     assert body["move_lock"] == "quote"
 
 
+def test_import_item_schema_has_no_tasks_field():
+    """import_legacy_projects passes TaskSummary() unconditionally, which is
+    only correct because AitoProjectImportItem cannot carry tasks — imported
+    projects are task-free by construction. If someone adds a `tasks` field
+    to let legacy imports carry tasks, _to_response(p, TaskSummary()) would
+    silently report task_count=0, tasks_total=0.0, task_services=[] for cards
+    that do have tasks, and since the frontend writes that straight into the
+    board cache, badges would blank without any error. This test is the trip
+    wire: it must fail the day that field is added, pointing here so the
+    import loop gets updated to build a real TaskSummary."""
+    assert "tasks" not in AitoProjectImportItem.model_fields
+
+
 @pytest.mark.asyncio
 async def test_create_records_the_authenticated_creator(async_client):
     # There is no authenticated-client fixture in this suite, so the route's
@@ -1091,12 +1116,15 @@ async def test_importing_ten_projects_runs_no_task_queries(async_client, db_sess
     task SELECT per project — for rows that cannot exist, since imported
     projects are task-free by construction."""
     task_selects = 0
+    project_selects = 0
 
     def count_task_selects(conn, cursor, statement, parameters, context, executemany):
-        nonlocal task_selects
+        nonlocal task_selects, project_selects
         normalised = " ".join(statement.split()).lower()
         if normalised.startswith("select") and "from aito_tasks" in normalised:
             task_selects += 1
+        if normalised.startswith("select") and "from aito_projects" in normalised:
+            project_selects += 1
 
     # db_session.get_bind() already resolves to the underlying sync Engine
     # (identical to test_engine.sync_engine) rather than a Connection or
@@ -1116,3 +1144,8 @@ async def test_importing_ten_projects_runs_no_task_queries(async_client, db_sess
         event.remove(engine, "before_cursor_execute", count_task_selects)
 
     assert task_selects == 0, f"expected no aito_tasks SELECT, saw {task_selects}"
+    # Positive control: proves the listener actually observes the request's
+    # traffic. Without this, a conftest change that gave the HTTP client its
+    # own engine would silence the listener entirely and task_selects == 0
+    # would pass vacuously forever, hiding a real N+1 regression.
+    assert project_selects > 0, "expected the listener to observe aito_projects SELECTs, saw none"

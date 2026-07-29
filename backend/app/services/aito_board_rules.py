@@ -23,7 +23,8 @@ COLUMN_ORDER: tuple[str, ...] = ("devis", "waiting", "scan", "model", "print", "
 AWAY_STATUSES: frozenset[str] = frozenset({"sent", "viewed", "expired"})
 
 # The four services a task can carry, in the canonical order the rest of the
-# Aito code emits them (see _SERVICE_COLUMNS in api/routes/aito.py).
+# Aito code emits them. This is the canonical order — api/routes/aito.py
+# imports SERVICES from here rather than defining its own.
 SERVICES: tuple[str, ...] = ("scan", "modelisation", "impression", "usinage")
 
 # Which services each work stage covers, in board order. Printing and machining

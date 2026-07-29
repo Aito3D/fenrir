@@ -17,7 +17,7 @@ from backend.app.services.aito_quote_import import service_for_sku
 
 # Canonical service order — the same order the board renders badges in and the
 # order lines are emitted within a task. Mirrors SERVICE_RANK in
-# aito_quote_import and _SERVICE_COLUMNS in api/routes/aito.py.
+# aito_quote_import and SERVICES in aito_board_rules.py.
 SERVICES: tuple[str, ...] = ("scan", "modelisation", "impression", "usinage")
 
 # The boilerplate row the scan and modelisation catalogue items carry. Written

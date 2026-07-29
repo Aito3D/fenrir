@@ -14,7 +14,7 @@ import unicodedata
 from dataclasses import dataclass
 
 # The four Aito services, in the canonical order the board renders badges in
-# (mirrors _SERVICE_COLUMNS in backend/app/api/routes/aito.py).
+# (mirrors SERVICES in backend/app/services/aito_board_rules.py).
 SERVICE_RANK: dict[str, int] = {"scan": 0, "modelisation": 1, "impression": 2, "usinage": 3}
 
 # The shop's own service names, written into an imported task's description as

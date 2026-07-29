@@ -110,5 +110,33 @@
       "modelisation"
     ],
     "tasks_total": 3000.0
+  },
+  {
+    "client_email": null,
+    "client_id": "C5",
+    "client_is_company": null,
+    "client_name": "Five",
+    "client_phone": null,
+    "column": "scan",
+    "created_by": null,
+    "description": "accepted zero pending",
+    "id": 5,
+    "move_lock": "steps",
+    "position": 0,
+    "quote_date": null,
+    "quote_id": null,
+    "quote_number": null,
+    "quote_salesperson": null,
+    "quote_status": "accepted",
+    "quote_sync_error": null,
+    "quote_sync_state": "pending",
+    "quote_total": null,
+    "quote_url": null,
+    "status": "active",
+    "task_count": 1,
+    "task_services": [
+      "scan"
+    ],
+    "tasks_total": 0.0
   }
 ]

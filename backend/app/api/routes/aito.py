@@ -348,7 +348,7 @@ async def add_task(
     highest = await db.scalar(select(func.max(AitoTask.position)).where(AitoTask.project_id == project_id))
     task = AitoTask(project_id=project_id, position=(highest + 1) if highest is not None else 0, **payload.model_dump())
     db.add(task)
-    await db.flush()  # so _apply_rules' SELECT sees the new row
+    await db.flush()  # so _summary_for's SELECT sees the new row
     await _apply_rules(db, project, await _summary_for(db, project_id))
     await db.commit()
     await db.refresh(task)
@@ -409,7 +409,7 @@ async def delete_task(
     task = await _get_task_or_404(db, task_id)
     project = await _mark_project_pending_for_task(db, task.project_id)
     await db.delete(task)
-    await db.flush()  # so the deleted row is out of _apply_rules' SELECT
+    await db.flush()  # so the deleted row is out of _summary_for's SELECT
     if project:
         await _apply_rules(db, project, await _summary_for(db, task.project_id))
     await db.commit()
