@@ -16,14 +16,15 @@ import {
   type DropAnimation,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
-import { AlertTriangle, Kanban, Plus, Trash2, X } from 'lucide-react';
+import { AlertTriangle, FileInput, Kanban, Plus, Trash2, X } from 'lucide-react';
 import { Button } from '../components/Button';
 import { CardView } from '../components/aito/CardView';
 import { BoardColumn } from '../components/aito/BoardColumn';
 import { COLUMNS } from '../components/aito/columns';
+import { ImportQuoteModal } from '../components/aito/ImportQuoteModal';
 import { NewProjectModal } from '../components/aito/NewProjectModal';
 import { ProjectDetailPanel } from '../components/aito/ProjectDetailPanel';
-import { api, ApiError, type AitoProject } from '../api/client';
+import { api, ApiError, type AitoProject, type ZohoQuotePreview } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { formatElapsedTime } from '../utils/date';
 import { formatPhone } from '../utils/clientDraft';
@@ -179,6 +180,7 @@ export function AitoPage() {
 
   const [board, setBoard] = useState<Board>(emptyBoard);
   const [showModal, setShowModal] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -335,6 +337,35 @@ export function AitoPage() {
     },
   });
 
+  /** Import posts through the same create endpoint as a manual card, so the
+   *  board's ordering, defaults and landing column all behave identically —
+   *  the only difference is the quote snapshot riding along. Nothing is
+   *  written back to Zoho. */
+  const importMutation = useMutation({
+    mutationFn: ({ description, preview }: { description: string; preview: ZohoQuotePreview }) =>
+      api.createAitoProject({
+        description,
+        client_id: preview.client.id,
+        client_name: preview.client.name,
+        client_phone: preview.client.phone,
+        client_email: preview.client.email,
+        client_is_company: preview.client.is_company,
+        tasks: preview.tasks,
+        quote_id: preview.quote.id,
+        quote_number: preview.quote.number,
+        quote_date: preview.quote.date,
+        quote_total: preview.quote.total,
+        quote_url: preview.quote.url,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+      setShowImport(false);
+    },
+    onError: () => {
+      showToast(t('aito.createFailed'), 'error');
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteAitoProject(id),
     onSettled: () => {
@@ -458,6 +489,10 @@ export function AitoPage() {
             <Trash2 className="w-4 h-4 mr-2" />
             {t('aito.trash')}
           </Button>
+          <Button variant="secondary" onClick={() => setShowImport(true)} className="flex-1 sm:flex-none">
+            <FileInput className="w-4 h-4 mr-2" />
+            {t('aito.importQuote')}
+          </Button>
           <Button onClick={() => setShowModal(true)} className="flex-1 sm:flex-none">
             <Plus className="w-4 h-4 mr-2" />
             {t('aito.newProject')}
@@ -526,6 +561,14 @@ export function AitoPage() {
       </DndContext>
 
       {showModal && <NewProjectModal onClose={() => setShowModal(false)} onCreate={createProject} />}
+
+      {showImport && (
+        <ImportQuoteModal
+          onClose={() => setShowImport(false)}
+          onImport={(payload) => importMutation.mutate(payload)}
+          submitting={importMutation.isPending}
+        />
+      )}
 
       {showTrash && <TrashModal onClose={() => setShowTrash(false)} />}
 
