@@ -157,95 +157,109 @@ export function TaskRow({
 
       {expanded && (
         <div id={`${reactId}-body`} className="px-3 pb-3 space-y-3">
-          <TaskStepList task={task} onChange={onChange} />
-          <input
-            aria-label={t('aito.taskTitlePlaceholder')}
-            value={task.title}
-            onChange={(e) => onChange({ ...task, title: e.target.value })}
-            placeholder={t('aito.taskTitlePlaceholder')}
-            className={inputCls}
-          />
-          <textarea
-            aria-label={t('aito.taskDescriptionPlaceholder')}
-            value={task.description}
-            onChange={(e) => onChange({ ...task, description: e.target.value })}
-            placeholder={t('aito.taskDescriptionPlaceholder')}
-            rows={2}
-            className={`${inputCls} resize-none`}
-          />
+          {editing ? (
+            // The raw fields below are staying exactly where they are for
+            // now — Task 11 moves them into TaskStepFields verbatim and
+            // deletes them from here, completing this branch. Gating them on
+            // `editing` here (rather than always rendering them under
+            // TaskStepList) is what makes the Edit button and its
+            // aria-pressed state actually mean something today, instead of
+            // toggling only a colour while the same cost shows twice.
+            <>
+              <input
+                aria-label={t('aito.taskTitlePlaceholder')}
+                value={task.title}
+                onChange={(e) => onChange({ ...task, title: e.target.value })}
+                placeholder={t('aito.taskTitlePlaceholder')}
+                className={inputCls}
+              />
+              <textarea
+                aria-label={t('aito.taskDescriptionPlaceholder')}
+                value={task.description}
+                onChange={(e) => onChange({ ...task, description: e.target.value })}
+                placeholder={t('aito.taskDescriptionPlaceholder')}
+                rows={2}
+                className={`${inputCls} resize-none`}
+              />
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label htmlFor={`${reactId}-scan`} className={labelCls}>
-                {t('aito.serviceScan3D')}
-              </label>
-              <CostInput
-                id={`${reactId}-scan`}
-                value={task.scanCost}
-                onChange={(next) => onChange({ ...task, scanCost: next })}
-              />
-            </div>
-            <div>
-              <label htmlFor={`${reactId}-modelisation`} className={labelCls}>
-                {t('aito.serviceModelisation3D')}
-              </label>
-              <CostInput
-                id={`${reactId}-modelisation`}
-                value={task.modelisationCost}
-                onChange={(next) => onChange({ ...task, modelisationCost: next })}
-              />
-            </div>
-            <div>
-              <label htmlFor={`${reactId}-usinage`} className={labelCls}>
-                {t('aito.serviceUsinage')}
-              </label>
-              <CostInput
-                id={`${reactId}-usinage`}
-                value={task.usinageCost}
-                onChange={(next) => onChange({ ...task, usinageCost: next })}
-              />
-            </div>
-          </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label htmlFor={`${reactId}-scan`} className={labelCls}>
+                    {t('aito.serviceScan3D')}
+                  </label>
+                  <CostInput
+                    id={`${reactId}-scan`}
+                    value={task.scanCost}
+                    onChange={(next) => onChange({ ...task, scanCost: next })}
+                  />
+                </div>
+                <div>
+                  <label htmlFor={`${reactId}-modelisation`} className={labelCls}>
+                    {t('aito.serviceModelisation3D')}
+                  </label>
+                  <CostInput
+                    id={`${reactId}-modelisation`}
+                    value={task.modelisationCost}
+                    onChange={(next) => onChange({ ...task, modelisationCost: next })}
+                  />
+                </div>
+                <div>
+                  <label htmlFor={`${reactId}-usinage`} className={labelCls}>
+                    {t('aito.serviceUsinage')}
+                  </label>
+                  <CostInput
+                    id={`${reactId}-usinage`}
+                    value={task.usinageCost}
+                    onChange={(next) => onChange({ ...task, usinageCost: next })}
+                  />
+                </div>
+              </div>
 
-          <div>
-            {/* The label and the Cost input share a row: Impression3D is the
-                one service whose cost has parameters under it, so its input
-                cannot sit in the three-column grid with the flat-rate ones.
-                It lives HERE rather than inside ImpressionFields because
-                ImpressionFields returns early when the calculator has no
-                printers or filaments configured — and an imported cost still
-                has to be readable and editable on such an installation. */}
-            <div className="flex items-end justify-between gap-3 mb-1">
-              <label htmlFor={`${reactId}-impression`} className="block text-sm text-bambu-gray">
-                {t('aito.serviceImpression3D')}
-              </label>
-              <div className="w-32 flex-shrink-0">
-                <CostInput
-                  id={`${reactId}-impression`}
-                  value={task.impressionCost}
-                  onChange={(next) => onChange({ ...task, impressionCost: next })}
+              <div>
+                {/* The label and the Cost input share a row: Impression3D is
+                    the one service whose cost has parameters under it, so its
+                    input cannot sit in the three-column grid with the
+                    flat-rate ones. It lives HERE rather than inside
+                    ImpressionFields because ImpressionFields returns early
+                    when the calculator has no printers or filaments
+                    configured — and an imported cost still has to be readable
+                    and editable on such an installation. */}
+                <div className="flex items-end justify-between gap-3 mb-1">
+                  <label htmlFor={`${reactId}-impression`} className="block text-sm text-bambu-gray">
+                    {t('aito.serviceImpression3D')}
+                  </label>
+                  <div className="w-32 flex-shrink-0">
+                    <CostInput
+                      id={`${reactId}-impression`}
+                      value={task.impressionCost}
+                      onChange={(next) => onChange({ ...task, impressionCost: next })}
+                    />
+                  </div>
+                </div>
+                <ImpressionFields
+                  value={task.impression}
+                  onChange={(next, computedCost) =>
+                    onChange({
+                      ...task,
+                      impression: next,
+                      // Only when the calculator actually priced it — see
+                      // ImpressionFields' `onChange` doc. `undefined` means
+                      // "leave the stored cost alone", which is not the same
+                      // as `null`.
+                      ...(computedCost !== undefined ? { impressionCost: computedCost } : {}),
+                    })
+                  }
                 />
               </div>
-            </div>
-            <ImpressionFields
-              value={task.impression}
-              onChange={(next, computedCost) =>
-                onChange({
-                  ...task,
-                  impression: next,
-                  // Only when the calculator actually priced it — see
-                  // ImpressionFields' `onChange` doc. `undefined` means "leave
-                  // the stored cost alone", which is not the same as `null`.
-                  ...(computedCost !== undefined ? { impressionCost: computedCost } : {}),
-                })
-              }
-            />
-          </div>
 
-          <div className="flex items-center justify-between border-t border-bambu-dark-tertiary pt-2">
-            <span className="text-sm text-bambu-gray">{t('aito.taskTotal')}</span>
-            <Money currency={currency} value={taskTotal(task)} className="text-white font-medium" />
-          </div>
+              <div className="flex items-center justify-between border-t border-bambu-dark-tertiary pt-2">
+                <span className="text-sm text-bambu-gray">{t('aito.taskTotal')}</span>
+                <Money currency={currency} value={taskTotal(task)} className="text-white font-medium" />
+              </div>
+            </>
+          ) : (
+            <TaskStepList task={task} onChange={onChange} />
+          )}
         </div>
       )}
     </div>

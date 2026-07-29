@@ -86,9 +86,12 @@ function ControlledTaskRow({
   onChangeSpy: (next: TaskDraft) => void;
 }) {
   const [task, setTask] = useState(initial);
-  // Open, because these tests are about the fields inside a row, not about
-  // the disclosure. Collapsing is covered by its own tests below.
+  // Open and editing, because these tests are about the fields inside a row
+  // (title, description, the four cost inputs, ImpressionFields), which only
+  // render in edit mode — not about the disclosure or the read/edit split
+  // themselves. Both are covered by their own tests below.
   const [expanded, setExpanded] = useState(true);
+  const [editing, setEditing] = useState(true);
   return (
     <TaskRow
       task={task}
@@ -100,8 +103,8 @@ function ControlledTaskRow({
       onRemove={vi.fn()}
       expanded={expanded}
       onToggle={() => setExpanded((v) => !v)}
-      editing={false}
-      onToggleEdit={vi.fn()}
+      editing={editing}
+      onToggleEdit={() => setEditing((v) => !v)}
     />
   );
 }
@@ -140,6 +143,16 @@ async function expandTask(name: RegExp = /^Task 1/i) {
   fireEvent.click(await screen.findByRole('button', { name, expanded: false }));
 }
 
+/** Switches an already-expanded row into edit mode, revealing the raw
+ *  title/description/cost/ImpressionFields form in place of the read-only
+ *  step list. The Edit button is always rendered (it lives in the row header,
+ *  not the collapsible body), so this only disambiguates by index when more
+ *  than one row is on screen. */
+async function editTask(index = 0) {
+  const buttons = await screen.findAllByRole('button', { name: /edit task/i });
+  fireEvent.click(buttons[index]);
+}
+
 describe('TaskEditor', () => {
   it('"Add task" appends a draft with all four services empty', async () => {
     const onChange = vi.fn();
@@ -163,6 +176,7 @@ describe('TaskEditor', () => {
     const onChange = vi.fn();
     render(<TaskEditor value={value} onChange={onChange} onRemove={vi.fn()} />);
     await expandTask();
+    await editTask();
 
     fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '7' } });
 
@@ -209,6 +223,7 @@ describe('TaskEditor', () => {
     render(<TaskEditor value={[emptyTaskDraft()]} onChange={vi.fn()} onRemove={vi.fn()} />);
 
     await user.click(await screen.findByRole('button', { name: /^Task 1/, expanded: false }));
+    await user.click(screen.getByRole('button', { name: /edit task/i }));
     expect(screen.getByLabelText('Optional title')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^Task 1/, expanded: true }));
@@ -229,6 +244,11 @@ describe('TaskEditor', () => {
 
     expect(screen.getByRole('button', { name: /^Un/, expanded: false })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Deux/, expanded: true })).toBeInTheDocument();
+
+    // The Edit button lives in every row's header, not its collapsible body,
+    // so both rows have one — index 1 is Deux, the expanded one.
+    await editTask(1);
+
     // Exactly one body is mounted.
     expect(screen.getAllByLabelText('Optional title')).toHaveLength(1);
   });
@@ -341,7 +361,11 @@ describe('TaskRow', () => {
         onRemove={vi.fn()}
         expanded
         onToggle={vi.fn()}
-        editing={false}
+        // Edit mode, because the task-total row being asserted on below is
+        // part of the raw form (still in TaskRow verbatim until Task 11
+        // moves it into TaskStepFields) — the read-only TaskStepList shows
+        // per-step costs, not the aggregate.
+        editing
         onToggleEdit={vi.fn()}
       />,
     );
@@ -422,6 +446,7 @@ describe('TaskRow', () => {
     const user = userEvent.setup();
     render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={onChangeSpy} />);
     await expandTask();
+    await editTask();
 
     await user.click(await screen.findByRole('combobox', { name: /printer/i }));
     await user.click(await screen.findByRole('option', { name: 'H2S' }));
@@ -459,6 +484,7 @@ describe('TaskRow', () => {
     const user = userEvent.setup();
     render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={onChangeSpy} />);
     await expandTask();
+    await editTask();
 
     await user.click(await screen.findByRole('combobox', { name: /printer/i }));
     await user.click(await screen.findByRole('option', { name: 'H2S' }));
@@ -552,6 +578,7 @@ describe('TaskRow', () => {
     const user = userEvent.setup();
     render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={onChangeSpy} />);
     await expandTask();
+    await editTask();
 
     await user.click(await screen.findByRole('combobox', { name: /printer/i }));
     await user.click(await screen.findByRole('option', { name: 'H2S' }));

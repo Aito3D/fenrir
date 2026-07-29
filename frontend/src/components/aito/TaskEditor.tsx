@@ -82,6 +82,10 @@ export function TaskEditor({ value, onChange, onRemove, minRows = 0 }: TaskEdito
   // when the refetch lands. Diffing against the previous keys covers both, and
   // gating on the flag keeps the initial fetch — which also grows the array
   // from nothing — from opening every task on the project.
+  //
+  // It opens in EDIT mode too, not just expanded: a freshly added task has no
+  // steps yet, so read mode would show nothing but "No steps yet" — the user
+  // still needs the form to give it its first cost.
   const addRequestedRef = useRef(false);
   const previousKeysRef = useRef<string[]>([]);
 
@@ -94,6 +98,7 @@ export function TaskEditor({ value, onChange, onRemove, minRows = 0 }: TaskEdito
     if (added.length === 0) return; // the add is still in flight
     addRequestedRef.current = false;
     setExpandedKeys((current) => new Set([...current, ...added]));
+    setEditingKeys((current) => new Set([...current, ...added]));
   }, [value]);
 
   const toggle = (key: string) =>

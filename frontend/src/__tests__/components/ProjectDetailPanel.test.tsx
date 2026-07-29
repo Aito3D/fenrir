@@ -184,6 +184,20 @@ async function expandAllTasks() {
   }
 }
 
+/** Switches every expanded row into edit mode, revealing the raw
+ *  title/description/cost/ImpressionFields form in place of the read-only
+ *  step list. The Edit button lives in the row header, not the collapsible
+ *  body, so it is present (and clickable) whether or not the row is
+ *  expanded — call this only after `expandAllTasks`, which is what actually
+ *  mounts the fields these tests go on to touch. Deliberately not used by
+ *  tests that click a step's Done toggle: that button lives in the
+ *  read-only `TaskStepList`, which edit mode hides. */
+async function editAllTasks() {
+  for (const button of await screen.findAllByRole('button', { name: /edit task/i })) {
+    fireEvent.click(button);
+  }
+}
+
 describe('ProjectDetailPanel client fields', () => {
   it('titles the panel with the project reference, not the client', () => {
     // level: 2 disambiguates from TaskEditor's "Tasks" <h3> section heading,
@@ -241,6 +255,7 @@ describe('ProjectDetailPanel tasks', () => {
     // once it is open.
     expect(await screen.findByRole('button', { name: /^Bracket mount/ })).toBeInTheDocument();
     await expandAllTasks();
+    await editAllTasks();
     expect(screen.getByDisplayValue('Bracket mount')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Print in PA6-CF')).toBeInTheDocument();
     expect(screen.getByLabelText('Scan')).toHaveValue(500);
@@ -259,6 +274,7 @@ describe('ProjectDetailPanel tasks', () => {
 
     show();
     await expandAllTasks();
+    await editAllTasks();
     const scanInput = await screen.findByLabelText('Scan');
     fireEvent.change(scanInput, { target: { value: '700' } });
 
@@ -345,6 +361,7 @@ describe('ProjectDetailPanel tasks', () => {
 
     show();
     await expandAllTasks();
+    await editAllTasks();
     const scanInput = await screen.findByLabelText('Scan');
 
     fireEvent.change(scanInput, { target: { value: '700' } });
@@ -376,6 +393,7 @@ describe('ProjectDetailPanel tasks', () => {
 
     show();
     await expandAllTasks();
+    await editAllTasks();
     const scanInput = await screen.findByLabelText('Scan');
     expect(scanInput).toHaveValue(null);
 
@@ -415,6 +433,7 @@ describe('ProjectDetailPanel tasks', () => {
 
     show();
     await expandAllTasks();
+    await editAllTasks();
     const scanInputs = await screen.findAllByLabelText('Scan');
     expect(scanInputs).toHaveLength(2);
 
@@ -453,6 +472,7 @@ describe('ProjectDetailPanel tasks', () => {
 
     show();
     await expandAllTasks();
+    await editAllTasks();
     const titleInput = await screen.findByDisplayValue('Bracket mount');
     fireEvent.change(titleInput, { target: { value: '' } });
 
@@ -538,6 +558,7 @@ describe('ProjectDetailPanel tasks', () => {
 
     show();
     await expandAllTasks();
+    await editAllTasks();
     const scanInput = await screen.findByLabelText('Scan');
     fireEvent.change(scanInput, { target: { value: '700' } });
 
@@ -569,6 +590,7 @@ describe('ProjectDetailPanel tasks', () => {
     // Opening the row is the scenario under test: the user expands a task,
     // sees its stored quote, and touches nothing.
     await expandAllTasks();
+    await editAllTasks();
 
     // Give every query (filaments, printers, defaults, settings, tasks)
     // every chance to resolve. Pricing only happens inside ImpressionFields'
@@ -595,6 +617,7 @@ describe('ProjectDetailPanel tasks', () => {
     show();
     // Opening the row is the scenario under test.
     await expandAllTasks();
+    await editAllTasks();
 
     await screen.findByRole('combobox', { name: /material/i });
     await act(async () => {
@@ -637,6 +660,7 @@ describe('ProjectDetailPanel tasks', () => {
     // Row A (task 101, index 0): edit a print input on the ImpressionFields
     // instance mounted at index 0.
     await expandAllTasks();
+    await editAllTasks();
     const weightInputs = await screen.findAllByLabelText(/weight/i);
     expect(weightInputs).toHaveLength(2);
     fireEvent.change(weightInputs[0], { target: { value: '40' } });
@@ -738,6 +762,7 @@ describe('ProjectDetailPanel tasks', () => {
     await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
 
     await expandAllTasks();
+    await editAllTasks();
     const scan = await screen.findByLabelText('Scan');
     await user.clear(scan);
     await user.type(scan, '500');
@@ -793,6 +818,7 @@ describe('ProjectDetailPanel tasks', () => {
     await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
 
     await expandAllTasks();
+    await editAllTasks();
     const scan = await screen.findByLabelText('Scan');
 
     // Keystroke 1: PATCH fires and lands, so the panel is now dirty.
@@ -843,6 +869,7 @@ describe('ProjectDetailPanel tasks', () => {
     await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
 
     await expandAllTasks();
+    await editAllTasks();
     const scan = await screen.findByLabelText('Scan');
     fireEvent.change(scan, { target: { value: '700' } });
     await waitFor(() => expect(bodies).toHaveLength(1));

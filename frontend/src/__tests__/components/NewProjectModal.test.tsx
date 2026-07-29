@@ -109,8 +109,12 @@ describe('NewProjectModal', () => {
     await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
     expect(screen.getByRole('button', { name: /create project/i })).toBeDisabled();
 
-    // Pricing the seeded task's Scan service is what flips it on.
+    // Pricing the seeded task's Scan service is what flips it on. The seeded
+    // row was never added through "+ Add task" (see the comment above), so
+    // it doesn't auto-open in edit mode — Edit has to be clicked explicitly
+    // to reach its cost fields.
     await user.click(screen.getByText('Task 1'));
+    await user.click(screen.getByRole('button', { name: /edit task/i }));
     fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '10' } });
     expect(screen.getByRole('button', { name: /create project/i })).not.toBeDisabled();
 
@@ -129,8 +133,10 @@ describe('NewProjectModal', () => {
     await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
 
     // The project must carry a task with a priced service before it can be
-    // created — price the seeded row.
+    // created — price the seeded row. It wasn't added through "+ Add task",
+    // so it starts read-only; Edit reveals the cost fields.
     await user.click(screen.getByText('Task 1'));
+    await user.click(screen.getByRole('button', { name: /edit task/i }));
     fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '10' } });
 
     await user.click(screen.getByRole('button', { name: /create project/i }));
@@ -151,11 +157,16 @@ describe('NewProjectModal', () => {
     await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
 
     // Price the seeded first task too — every task must have a priced
-    // service, not just the one being added.
+    // service, not just the one being added. It wasn't added through "+ Add
+    // task", so Edit has to be clicked explicitly to reach its cost fields.
     await user.click(screen.getByText('Task 1'));
+    await user.click(screen.getByRole('button', { name: /edit task/i }));
     fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '10' } });
     await user.click(screen.getByText('Task 1')); // collapse, so "Scan" stays unique below
 
+    // The new row DOES open in edit mode automatically (a freshly added task
+    // has no steps yet, so read mode would show nothing to price) — no Edit
+    // click needed here.
     await user.click(screen.getByRole('button', { name: /add task/i }));
     fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '42' } });
 
@@ -177,8 +188,11 @@ describe('NewProjectModal', () => {
     );
     await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
     // Price the seeded task first so this test isolates the email-validation
-    // gate rather than tripping the (separate) priced-service gate.
+    // gate rather than tripping the (separate) priced-service gate. It
+    // wasn't added through "+ Add task", so Edit has to be clicked
+    // explicitly to reach its cost fields.
     await user.click(screen.getByText('Task 1'));
+    await user.click(screen.getByRole('button', { name: /edit task/i }));
     fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '10' } });
 
     await user.type(screen.getByLabelText(/^email/i), 'nope');
@@ -243,8 +257,11 @@ describe('NewProjectModal', () => {
     );
     await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
     // Price the seeded task first so this test isolates the phone-validation
-    // gate rather than tripping the (separate) priced-service gate.
+    // gate rather than tripping the (separate) priced-service gate. It
+    // wasn't added through "+ Add task", so Edit has to be clicked
+    // explicitly to reach its cost fields.
     await user.click(screen.getByText('Task 1'));
+    await user.click(screen.getByRole('button', { name: /edit task/i }));
     fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '10' } });
 
     const combobox = screen.getByRole('combobox', { name: /client/i });

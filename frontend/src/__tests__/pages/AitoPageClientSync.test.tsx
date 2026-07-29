@@ -79,9 +79,12 @@ async function openModal(user: ReturnType<typeof userEvent.setup>) {
   // A project needs a task with a priced service before it can be created
   // (see NewProjectModal.test.tsx / taskDraft.ts), and every test in this
   // file submits the form — so price the seeded task here once rather than
-  // in each test. The row is left expanded, so a test that cares about a
-  // specific cost (e.g. 0 vs disabled) can just overwrite this same field.
+  // in each test. The row is left expanded and in edit mode, so a test that
+  // cares about a specific cost (e.g. 0 vs disabled) can just overwrite this
+  // same field. The seeded row wasn't added through "+ Add task", so it
+  // doesn't auto-open in edit mode — Edit has to be clicked explicitly.
   await user.click(screen.getByText('Task 1'));
+  await user.click(screen.getByRole('button', { name: /edit task/i }));
   fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '10' } });
 }
 
