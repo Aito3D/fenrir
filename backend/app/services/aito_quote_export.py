@@ -13,6 +13,8 @@ the guard.
 
 from dataclasses import dataclass
 
+from backend.app.services.aito_quote_import import service_for_sku
+
 # Canonical service order — the same order the board renders badges in and the
 # order lines are emitted within a task. Mirrors SERVICE_RANK in
 # aito_quote_import and _SERVICE_COLUMNS in api/routes/aito.py.
@@ -130,3 +132,100 @@ def build_description(service: str, task: ExportTask, *, include_free_text: bool
     if include_free_text and task.description and task.description.strip():
         lines.append(task.description.strip())
     return "\n".join(lines)
+
+
+_TITLE_MAX = 200
+
+
+@dataclass(frozen=True)
+class Catalogue:
+    """The Books item ids the four services map onto, plus the services tax.
+
+    Loaded from the settings table rather than hardcoded so a catalogue change
+    in Books does not need a redeploy.
+    """
+
+    scan_item_id: str
+    modelisation_item_id: str
+    impression_item_id: str
+    usinage_item_id: str
+    tax_id: str
+
+    def item_id(self, service: str) -> str:
+        return {
+            "scan": self.scan_item_id,
+            "modelisation": self.modelisation_item_id,
+            "impression": self.impression_item_id,
+            "usinage": self.usinage_item_id,
+        }[service]
+
+
+def impression_rate_quantity(task: ExportTask) -> tuple[float, int]:
+    """(rate, quantity) for the Impression3D line.
+
+    ``impression_cost`` is the total for ALL units (the calculator reports
+    ``total_ttc_qty``), but a line item is ``rate x quantity`` at
+    ``price_precision: 0``. So the rate is the rounded per-unit figure, and
+    ``rate * quantity`` is the total the quote can actually express — which
+    the caller writes back to the task so the two sides never disagree.
+    """
+    quantity = max(1, int(task.impression_quantity or 1))
+    return round((task.impression_cost or 0) / quantity), quantity
+
+
+def is_foreign(line: dict) -> bool:
+    """True for a line this app does not own: not a header, and not one of the
+    four AITO service SKUs. Retail items, laser cuts, delivery fees.
+
+    A header row is deliberately NOT foreign. Headers are positional and carry
+    no identity, so one typed by hand in Books is indistinguishable from one we
+    wrote; both are re-derived on every push. That is a known limit of the
+    format, not an oversight.
+    """
+    if line.get("line_item_category") == "header":
+        return False
+    return service_for_sku(line.get("sku")) is None
+
+
+def build_line_items(
+    tasks: list[ExportTask],
+    existing_line_items: list[dict],
+    catalogue: Catalogue,
+) -> list[dict]:
+    """The full ``line_items`` array for a create or update.
+
+    Tasks first, in board order, each preceded by a header naming it when the
+    project has more than one task — a header over the only thing on the quote
+    is noise on the PDF. Then every foreign line, echoed as a bare
+    ``line_item_id``, which Books expands back into the untouched original.
+    Omitting a line deletes it, so anything not returned here is gone.
+    """
+    lines: list[dict] = []
+    emitted = [t for t in tasks if enabled_services(t)]
+    for task_row in emitted:
+        services = enabled_services(task_row)
+        if len(tasks) > 1 and task_row.title and task_row.title.strip():
+            lines.append({"line_item_category": "header", "name": task_row.title.strip()[:_TITLE_MAX]})
+        for index, service in enumerate(services):
+            if service == "impression":
+                rate, quantity = impression_rate_quantity(task_row)
+            else:
+                rate, quantity = cost_of(task_row, service), 1
+            lines.append(
+                {
+                    "item_id": catalogue.item_id(service),
+                    "tax_id": catalogue.tax_id,
+                    "unit": "Projet",
+                    "rate": rate,
+                    "quantity": quantity,
+                    # The task's own free text belongs on the line a reader
+                    # meets first, once — not repeated under all four services.
+                    "description": build_description(service, task_row, include_free_text=index == 0),
+                }
+            )
+    for line in sorted(existing_line_items, key=lambda item: item.get("item_order") or 0):
+        if is_foreign(line) and line.get("line_item_id"):
+            lines.append({"line_item_id": line["line_item_id"]})
+    for position, line in enumerate(lines, start=1):
+        line["item_order"] = position
+    return lines
