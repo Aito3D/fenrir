@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.database import Base
@@ -36,5 +36,13 @@ class AitoTask(Base):
     impression_quantity: Mapped[int | None] = mapped_column(Integer, nullable=True)
     impression_color: Mapped[str | None] = mapped_column(String(100), nullable=True)
     impression_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # One flag per service, mirroring the four cost columns above. A step
+    # exists when its cost is not NULL; ticking it is what advances the
+    # project's board column (see services/aito_board_rules.py). NOT NULL with
+    # a server default so rows predating this migration read False, not None.
+    scan_done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    modelisation_done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    impression_done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    usinage_done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

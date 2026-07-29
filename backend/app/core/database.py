@@ -491,24 +491,32 @@ async def _safe_execute(conn, sql):
             raise
 
 
-async def _api_keys_column_exists(conn, column_name: str) -> bool:
-    """Return True if the named column exists on ``api_keys``.
+async def _column_exists(conn, table: str, column_name: str) -> bool:
+    """Return True if the named column exists on ``table``.
 
     Used to gate one-shot data backfills that must run only on the migration
     that adds a column — without this, repeating the UPDATE on every startup
     would silently overwrite values the user later edited in the UI.
     Dialect-specific because SQLite has no information_schema.
+
+    ``table`` is always an in-repo literal, never user input: PRAGMA takes no
+    bind parameters, so it has to be interpolated.
     """
     from sqlalchemy import text
 
     if is_sqlite():
-        result = await conn.execute(text("PRAGMA table_info(api_keys)"))
+        result = await conn.execute(text(f"PRAGMA table_info({table})"))
         return any(row[1] == column_name for row in result)
     result = await conn.execute(
-        text("SELECT 1 FROM information_schema.columns WHERE table_name = 'api_keys' AND column_name = :col"),
-        {"col": column_name},
+        text("SELECT 1 FROM information_schema.columns WHERE table_name = :tbl AND column_name = :col"),
+        {"tbl": table, "col": column_name},
     )
     return result.scalar_one_or_none() is not None
+
+
+async def _api_keys_column_exists(conn, column_name: str) -> bool:
+    """Back-compat alias for the five api_keys backfill gates below."""
+    return await _column_exists(conn, "api_keys", column_name)
 
 
 async def _migrate_normalize_printer_ids(conn) -> None:
@@ -3905,6 +3913,17 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_sync_failures INTEGER NOT NULL DEFAULT 0")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_synced_at VARCHAR(30)")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_status_before_trash VARCHAR(30)")
+
+    # Migration: per-step Done flags on Aito tasks (2026-07-29). One boolean per
+    # service, mirroring the four cost columns; ticking them is what advances a
+    # project's board column. The data back-fill that reconstructs these flags
+    # from each card's existing column lives further down, gated on the columns
+    # not having existed.
+    for _service in ("scan", "modelisation", "impression", "usinage"):
+        await _safe_execute(
+            conn,
+            f"ALTER TABLE aito_tasks ADD COLUMN {_service}_done BOOLEAN NOT NULL DEFAULT 0",
+        )
     await _safe_execute(
         conn,
         "CREATE INDEX IF NOT EXISTS ix_aito_projects_quote_sync_state ON aito_projects (quote_sync_state)",

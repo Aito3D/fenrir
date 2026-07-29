@@ -20,7 +20,7 @@ class AitoProject(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     description: Mapped[str] = mapped_column(Text)
-    board_column: Mapped[str] = mapped_column(String(20), index=True)  # devis|model|print|pickup|finish
+    board_column: Mapped[str] = mapped_column(String(20), index=True)  # devis|waiting|scan|model|print|finish|done
     position: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(20), default="active", index=True)  # active|deleted
     client_id: Mapped[str | None] = mapped_column(String(50), nullable=True)

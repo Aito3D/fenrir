@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-AitoColumn = Literal["devis", "model", "print", "pickup", "finish"]
+AitoColumn = Literal["devis", "waiting", "scan", "model", "print", "finish", "done"]
 
 
 class AitoTaskBase(BaseModel):
@@ -23,6 +23,10 @@ class AitoTaskBase(BaseModel):
     impression_quantity: int | None = Field(default=None, ge=1)
     impression_color: str | None = Field(default=None, max_length=100)
     impression_cost: float | None = Field(default=None, ge=0)
+    scan_done: bool = False
+    modelisation_done: bool = False
+    impression_done: bool = False
+    usinage_done: bool = False
 
 
 class AitoTaskCreate(AitoTaskBase):

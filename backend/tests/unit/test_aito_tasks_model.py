@@ -32,3 +32,26 @@ async def test_task_row_round_trips(db_session):
     assert row.modelisation_cost is None
     assert row.usinage_cost is None
     assert row.impression_quantity == 2
+
+
+@pytest.mark.asyncio
+async def test_step_done_flags_default_to_false(db_session):
+    """Four booleans mirroring the four cost columns. NOT NULL with a server
+    default, so a row inserted without them reads False rather than None."""
+    task = AitoTask(project_id=1, position=0, scan_cost=1200.0)
+    db_session.add(task)
+    await db_session.commit()
+    await db_session.refresh(task)
+    assert task.scan_done is False
+    assert task.modelisation_done is False
+    assert task.impression_done is False
+    assert task.usinage_done is False
+
+
+@pytest.mark.asyncio
+async def test_step_done_flags_persist(db_session):
+    task = AitoTask(project_id=1, position=0, scan_cost=0.0, scan_done=True)
+    db_session.add(task)
+    await db_session.commit()
+    await db_session.refresh(task)
+    assert task.scan_done is True
