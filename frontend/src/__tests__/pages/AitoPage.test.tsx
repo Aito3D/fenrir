@@ -67,68 +67,6 @@ describe('AitoPage (backend board)', () => {
     expect(screen.queryByText('No projects yet')).not.toBeInTheDocument();
   });
 
-  it('migrates localStorage cards once when backend board is empty', async () => {
-    const imported = vi.fn();
-    server.use(
-      http.get('/api/v1/aito/', () => HttpResponse.json([])),
-      http.post('/api/v1/aito/import', async ({ request }) => {
-        imported(await request.json());
-        return HttpResponse.json([], { status: 201 });
-      }),
-    );
-    vi.mocked(localStorage.getItem).mockImplementation((key) =>
-      key === 'aito-board-v1'
-        ? JSON.stringify({
-            devis: [{ id: 'x', description: 'legacy card', createdAt: '2026-07-01T00:00:00Z' }],
-            model: [],
-            print: [],
-            finish: [],
-          })
-        : null,
-    );
-
-    render(<AitoPage />);
-
-    await waitFor(() => expect(imported).toHaveBeenCalledWith({
-      projects: [{ description: 'legacy card', column: 'devis', position: 0 }],
-    }));
-    expect(localStorage.removeItem).toHaveBeenCalledWith('aito-board-v1');
-  });
-
-  it('maps a legacy pickup card to finish instead of dropping it (Important 4)', async () => {
-    // 'pickup' predates the 2026-07-29 board rename and is no longer a valid
-    // ColumnId, so a legacy board saved before then can carry a 'pickup'
-    // bucket that the current COLUMN_IDS loop would silently skip — and
-    // localStorage is cleared on success either way, so those cards would be
-    // gone with no error. It must be mapped to 'finish' and imported.
-    const imported = vi.fn();
-    server.use(
-      http.get('/api/v1/aito/', () => HttpResponse.json([])),
-      http.post('/api/v1/aito/import', async ({ request }) => {
-        imported(await request.json());
-        return HttpResponse.json([], { status: 201 });
-      }),
-    );
-    vi.mocked(localStorage.getItem).mockImplementation((key) =>
-      key === 'aito-board-v1'
-        ? JSON.stringify({
-            devis: [],
-            model: [],
-            print: [],
-            pickup: [{ id: 'y', description: 'ready for pickup', createdAt: '2026-07-01T00:00:00Z' }],
-            finish: [],
-          })
-        : null,
-    );
-
-    render(<AitoPage />);
-
-    await waitFor(() => expect(imported).toHaveBeenCalledWith({
-      projects: [{ description: 'ready for pickup', column: 'finish', position: 0 }],
-    }));
-    expect(localStorage.removeItem).toHaveBeenCalledWith('aito-board-v1');
-  });
-
   describe('hold-to-delete', () => {
     afterEach(() => {
       vi.useRealTimers();

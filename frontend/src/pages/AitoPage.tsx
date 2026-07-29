@@ -25,7 +25,7 @@ import { ImportQuoteModal } from '../components/aito/ImportQuoteModal';
 import { NewProjectModal } from '../components/aito/NewProjectModal';
 import { ProjectDetailPanel } from '../components/aito/ProjectDetailPanel';
 import { TrashModal } from '../components/aito/TrashModal';
-import { api, ApiError, type AitoProject, type ZohoQuotePreview } from '../api/client';
+import { api, type AitoProject, type ZohoQuotePreview } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { formatPhone } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
@@ -45,27 +45,6 @@ import {
   type Board,
   type ColumnId,
 } from '../utils/aitoBoard';
-
-// Shape of the pre-Task-7 localStorage board, kept only for the one-time
-// migration into the DB-backed board.
-interface LegacyProject {
-  id?: string;
-  description: string;
-  createdAt?: string;
-}
-// 'pickup' predates the 2026-07-29 rename (see COLUMN_ORDER's comment in
-// aito_board_rules.py) and no longer exists server-side, so it is not in
-// ColumnId — but a board saved to localStorage before that rename can still
-// carry it, and it must not be silently dropped.
-type LegacyColumnId = ColumnId | 'pickup';
-type LegacyBoard = Partial<Record<LegacyColumnId, LegacyProject[]>>;
-// Every column a legacy localStorage board could have used. AitoProjectImportItem.column
-// only accepts the current AitoColumn literal, so 'pickup' is mapped to 'finish' below —
-// mirroring step 3 of the server-side migration (_migrate_aito_board_columns in database.py)
-// — rather than sent as-is, which would 422 the whole import request.
-const LEGACY_COLUMN_IDS: LegacyColumnId[] = [...COLUMN_IDS, 'pickup'];
-
-const STORAGE_KEY = 'aito-board-v1';
 
 // Shared with SortableCard so the dropped card and the neighbours closing
 // the gap around it settle on the same curve.
@@ -137,52 +116,6 @@ export function AitoPage() {
     if (pendingMoves.current > 0) return;
     setBoard(buildBoard(aitoQuery.data));
   }, [aitoQuery.data, activeId, syncGeneration]);
-
-  // One-time migration of the pre-Task-7 localStorage board: only runs when
-  // the backend board is confirmed empty, and only once per mount. Failures
-  // (network, bad JSON) leave the localStorage key in place so the next
-  // visit retries.
-  const migrationAttempted = useRef(false);
-  useEffect(() => {
-    if (aitoQuery.isError) return;
-    if (!aitoQuery.data || aitoQuery.data.length !== 0) return;
-    if (migrationAttempted.current) return;
-    migrationAttempted.current = true;
-
-    (async () => {
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) return;
-        const parsed = JSON.parse(raw) as LegacyBoard;
-        const projects: { description: string; column: ColumnId; position: number }[] = [];
-        for (const col of LEGACY_COLUMN_IDS) {
-          const items = parsed[col];
-          if (!Array.isArray(items)) continue;
-          const column: ColumnId = col === 'pickup' ? 'finish' : col;
-          items.forEach((item, index) => {
-            if (item && typeof item.description === 'string') {
-              projects.push({ description: item.description, column, position: index });
-            }
-          });
-        }
-        if (projects.length === 0) {
-          localStorage.removeItem(STORAGE_KEY);
-          return;
-        }
-        await api.importAitoProjects({ projects });
-        localStorage.removeItem(STORAGE_KEY);
-        queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
-      } catch (err) {
-        // A 409 (board not empty — another device already migrated, or
-        // everything is in the trash) is permanent: retrying forever is
-        // wrong, so drop the key. Other failures (network, bad JSON) keep
-        // it so the next visit retries.
-        if (err instanceof ApiError && err.status === 409) {
-          localStorage.removeItem(STORAGE_KEY);
-        }
-      }
-    })();
-  }, [aitoQuery.data, aitoQuery.isError, queryClient]);
 
   const moveMutation = useMutation({
     // Serializes overlapping moves in drop order: without a scope, two quick
