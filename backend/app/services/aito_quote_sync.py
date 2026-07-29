@@ -494,9 +494,9 @@ async def run_sync_once(db: AsyncSession) -> int:
             # retry next tick. Function-level import: no circular import
             # today (routes/aito.py does not import this module), but this
             # keeps it that way if that ever changes.
-            from backend.app.api.routes.aito import _apply_rules
+            from backend.app.api.routes.aito import _apply_rules, _summary_for
 
-            await _apply_rules(db, project)
+            await _apply_rules(db, project, await _summary_for(db, project.id))
             await db.commit()
         except Exception:
             await db.rollback()

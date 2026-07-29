@@ -84,15 +84,6 @@ def summarise(tasks: Iterable[Any]) -> TaskSummary:
     )
 
 
-def pending_services(tasks: Iterable[Any]) -> set[str]:
-    """Deprecated: use ``summarise(tasks).pending``.
-
-    Kept only so this commit still imports — ``routes/aito.py`` has two call
-    sites, both replaced in the following commit, which deletes this.
-    """
-    return set(summarise(tasks).pending)
-
-
 def evaluate(quote_status: str | None, stored_column: str, pending: Collection[str]) -> tuple[str, str | None]:
     """The whole rule set: ``(column, move_lock)``.
 

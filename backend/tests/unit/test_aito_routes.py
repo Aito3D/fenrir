@@ -5,10 +5,11 @@ import os
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
+from backend.app.services.aito_board_rules import summarise
 
 
 async def _create(client, **overrides):
@@ -603,28 +604,23 @@ async def test_move_and_restore_responses_carry_the_task_summary(async_client):
 
 
 @pytest.mark.asyncio
-async def test_task_summaries_handles_many_projects_and_an_empty_list(db_session):
-    from backend.app.api.routes.aito import _task_summaries
+async def test_tasks_by_project_handles_many_projects_and_an_empty_list(db_session):
+    from backend.app.api.routes.aito import _tasks_by_project
 
-    assert await _task_summaries(db_session, []) == {}
+    assert await _tasks_by_project(db_session, []) == {}
 
-    db_session.add_all(
-        [
-            AitoTask(project_id=1, position=0, scan_cost=10.0),
-            AitoTask(project_id=1, position=1, usinage_cost=5.0),
-            AitoTask(project_id=2, position=0, modelisation_cost=7.0),
-        ]
-    )
+    db_session.add(AitoProject(description="p1", board_column="devis", position=0))
+    db_session.add(AitoProject(description="p2", board_column="devis", position=1))
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=1, position=0, scan_cost=100.0))
+    db_session.add(AitoTask(project_id=1, position=1, usinage_cost=50.0))
     await db_session.commit()
 
-    summaries = await _task_summaries(db_session, [1, 2, 3])
-    assert summaries[1].count == 2
-    assert summaries[1].total == 15.0
-    assert summaries[1].services == ("scan", "usinage")
-    assert summaries[2].services == ("modelisation",)
-    # A project with no tasks is simply absent — callers fall back to the empty
-    # summary rather than paying for a row per task-free card.
-    assert 3 not in summaries
+    grouped = await _tasks_by_project(db_session, [1, 2, 3])
+    assert len(grouped[1]) == 2
+    assert 2 not in grouped  # a project with no tasks is absent
+    assert 3 not in grouped  # a nonexistent id is absent
+    assert summarise(grouped[1]).total == 150.0
 
 
 @pytest.mark.asyncio
@@ -1087,3 +1083,36 @@ async def test_a_zoho_failure_still_writes_locally(async_client, monkeypatch):
     assert r.json()["zoho_synced"] is False
     assert r.json()["project"]["quote_status"] == "accepted"
     assert r.json()["project"]["column"] == "print"
+
+
+@pytest.mark.asyncio
+async def test_importing_ten_projects_runs_no_task_queries(async_client, db_session):
+    """import_legacy_projects used to call _apply_rules in a loop, so it ran one
+    task SELECT per project — for rows that cannot exist, since imported
+    projects are task-free by construction."""
+    task_selects = 0
+
+    def count_task_selects(conn, cursor, statement, parameters, context, executemany):
+        nonlocal task_selects
+        normalised = " ".join(statement.split()).lower()
+        if normalised.startswith("select") and "from aito_tasks" in normalised:
+            task_selects += 1
+
+    # db_session.get_bind() already resolves to the underlying sync Engine
+    # (identical to test_engine.sync_engine) rather than a Connection or
+    # AsyncEngine, because get_bind() on an AsyncSession unwraps straight to
+    # the sync engine. The async_client fixture's own sessions are bound to
+    # that same test_engine, so listening here also sees the requests made
+    # through the HTTP client below.
+    engine = db_session.get_bind()
+    event.listen(engine, "before_cursor_execute", count_task_selects)
+    try:
+        response = await async_client.post(
+            "/api/v1/aito/import",
+            json={"projects": [{"description": f"legacy {i}", "column": "devis", "position": i} for i in range(10)]},
+        )
+        assert response.status_code == 201
+    finally:
+        event.remove(engine, "before_cursor_execute", count_task_selects)
+
+    assert task_selects == 0, f"expected no aito_tasks SELECT, saw {task_selects}"

@@ -1,10 +1,9 @@
 """Aito production board: DB-backed Kanban with soft delete."""
 
 import logging
-from dataclasses import dataclass
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import case, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
@@ -25,7 +24,7 @@ from backend.app.schemas.aito import (
     AitoTaskResponse,
     AitoTaskUpdate,
 )
-from backend.app.services.aito_board_rules import SERVICES, evaluate, pending_services
+from backend.app.services.aito_board_rules import SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.zoho import zoho_service
 
 logger = logging.getLogger(__name__)
@@ -33,95 +32,33 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/aito", tags=["aito"])
 
 
-# Canonical order for `task_services`, fixed here so the card's badge row is
-# stable across refetches regardless of the order tasks were created in.
-_SERVICE_COLUMNS = (
-    ("scan", AitoTask.scan_cost),
-    ("modelisation", AitoTask.modelisation_cost),
-    ("impression", AitoTask.impression_cost),
-    ("usinage", AitoTask.usinage_cost),
-)
+async def _tasks_by_project(db: AsyncSession, project_ids: list[int]) -> dict[int, list[AitoTask]]:
+    """Every task row for the given projects, in ONE query, grouped by project.
 
-# The same four services paired with their done flags, for the "pending"
-# aggregate. Kept separate from _SERVICE_COLUMNS so that tuple stays the
-# canonical badge order and nothing reading it has to skip a third element.
-_SERVICE_DONE_COLUMNS = (
-    ("scan", AitoTask.scan_cost, AitoTask.scan_done),
-    ("modelisation", AitoTask.modelisation_cost, AitoTask.modelisation_done),
-    ("impression", AitoTask.impression_cost, AitoTask.impression_done),
-    ("usinage", AitoTask.usinage_cost, AitoTask.usinage_done),
-)
+    Replaces a hand-written GROUP BY that computed count, total, services and
+    pending in SQL — a second definition of rules that already existed in
+    aito_board_rules. Same query count, and 250-odd rows for a full board is
+    not a volume worth a duplicate implementation.
 
-
-@dataclass(frozen=True)
-class _TaskSummary:
-    count: int = 0
-    total: float = 0.0
-    services: tuple[str, ...] = ()
-    # Services with at least one enabled-but-unticked step, which is all the
-    # rule engine needs to place the card. Aggregated in the same GROUP BY as
-    # the rest so the board still costs one query, not one per card.
-    pending: tuple[str, ...] = ()
-
-
-_EMPTY_SUMMARY = _TaskSummary()
-
-
-async def _task_summaries(db: AsyncSession, project_ids: list[int]) -> dict[int, _TaskSummary]:
-    """Task count, total and enabled-service set per project, in ONE query.
-
-    Membership is tested with IS NOT NULL, never `> 0`: NULL means the service
-    is disabled and 0 means it is free, and a service quoted at zero must still
-    show its badge.
-
-    The SUM() below mirrors `taskTotal` in frontend/src/utils/taskDraft.ts. The
-    two are in different languages and cannot share code — if the definition of
-    a task's total changes, it must be changed in both places.
-
-    Projects with no tasks are absent from the result; callers fall back to
-    ``_EMPTY_SUMMARY``.
+    Projects with no tasks are absent from the result; callers pass `()` to
+    `summarise`, which yields `TaskSummary()`.
     """
     if not project_ids:
         return {}
-    stmt = (
-        select(
-            AitoTask.project_id,
-            func.count().label("n"),
-            func.sum(
-                func.coalesce(AitoTask.scan_cost, 0.0)
-                + func.coalesce(AitoTask.modelisation_cost, 0.0)
-                + func.coalesce(AitoTask.usinage_cost, 0.0)
-                + func.coalesce(AitoTask.impression_cost, 0.0)
-            ).label("total"),
-            *[
-                func.max(case((column.is_not(None), 1), else_=0)).label(f"svc_{name}")
-                for name, column in _SERVICE_COLUMNS
-            ],
-            *[
-                func.max(case(((column.is_not(None)) & (done.is_(False)), 1), else_=0)).label(f"pend_{name}")
-                for name, column, done in _SERVICE_DONE_COLUMNS
-            ],
-        )
-        .where(AitoTask.project_id.in_(project_ids))
-        .group_by(AitoTask.project_id)
-    )
-    return {
-        row.project_id: _TaskSummary(
-            count=row.n,
-            total=float(row.total or 0.0),
-            services=tuple(name for name, _ in _SERVICE_COLUMNS if getattr(row, f"svc_{name}")),
-            pending=tuple(name for name, _, _ in _SERVICE_DONE_COLUMNS if getattr(row, f"pend_{name}")),
-        )
-        for row in (await db.execute(stmt)).all()
-    }
+    stmt = select(AitoTask).where(AitoTask.project_id.in_(project_ids)).order_by(AitoTask.position, AitoTask.id)
+    grouped: dict[int, list[AitoTask]] = {}
+    for row in (await db.execute(stmt)).scalars().all():
+        grouped.setdefault(row.project_id, []).append(row)
+    return grouped
 
 
-async def _one_summary(db: AsyncSession, project_id: int) -> _TaskSummary:
-    """Summary for a single project, for the endpoints that return one card."""
-    return (await _task_summaries(db, [project_id])).get(project_id, _EMPTY_SUMMARY)
+async def _summary_for(db: AsyncSession, project_id: int) -> TaskSummary:
+    """`summarise` over one project's tasks. The single-project shape every
+    handler that returns one card needs."""
+    return summarise((await _tasks_by_project(db, [project_id])).get(project_id, ()))
 
 
-def _to_response(p: AitoProject, summary: _TaskSummary) -> AitoProjectResponse:
+def _to_response(p: AitoProject, summary: TaskSummary) -> AitoProjectResponse:
     """`summary` is required, never defaulted. The detail panel writes PATCH
     responses straight into the board cache with setQueryData, replacing the
     row — so an endpoint that quietly returned zeros would blank a card's
@@ -194,8 +131,12 @@ async def _active_in_column(db: AsyncSession, column: str, exclude_id: int | Non
     return [r for r in rows if r.id != exclude_id]
 
 
-async def _apply_rules(db: AsyncSession, project: AitoProject) -> None:
+async def _apply_rules(db: AsyncSession, project: AitoProject, summary: TaskSummary) -> None:
     """Recompute ``project.board_column`` from the rules and relocate it.
+
+    Takes the summary rather than loading the tasks itself: several callers
+    already need it for their own response, and loading twice per request was
+    exactly the duplication this pass removes.
 
     An advancing project is appended to the END of its destination column —
     work arriving at a stage joins the back of that stage's queue — and the
@@ -205,8 +146,7 @@ async def _apply_rules(db: AsyncSession, project: AitoProject) -> None:
 
     Does not commit: every caller is already inside a request that does.
     """
-    rows = (await db.execute(select(AitoTask).where(AitoTask.project_id == project.id))).scalars().all()
-    column, _ = evaluate(project.quote_status, project.board_column, pending_services(rows))
+    column, _ = evaluate(project.quote_status, project.board_column, summary.pending)
     if column == project.board_column:
         return
 
@@ -298,8 +238,8 @@ async def list_projects(
         .order_by(AitoProject.board_column, AitoProject.position, AitoProject.id)
     )
     projects = list((await db.execute(stmt)).scalars().all())
-    summaries = await _task_summaries(db, [p.id for p in projects])
-    return [_to_response(p, summaries.get(p.id, _EMPTY_SUMMARY)) for p in projects]
+    task_rows = await _tasks_by_project(db, [p.id for p in projects])
+    return [_to_response(p, summarise(task_rows.get(p.id, ()))) for p in projects]
 
 
 @router.get("/trash", response_model=list[AitoProjectResponse])
@@ -314,8 +254,8 @@ async def list_trash(
         .order_by(AitoProject.updated_at.desc(), AitoProject.id.desc())
     )
     projects = list((await db.execute(stmt)).scalars().all())
-    summaries = await _task_summaries(db, [p.id for p in projects])
-    return [_to_response(p, summaries.get(p.id, _EMPTY_SUMMARY)) for p in projects]
+    task_rows = await _tasks_by_project(db, [p.id for p in projects])
+    return [_to_response(p, summarise(task_rows.get(p.id, ()))) for p in projects]
 
 
 @router.post("/", response_model=AitoProjectResponse, status_code=201)
@@ -368,10 +308,13 @@ async def create_project(
     await db.flush()
     for position, task_payload in enumerate(payload.tasks):
         db.add(AitoTask(project_id=project.id, position=position, **task_payload.model_dump()))
-    await _apply_rules(db, project)
+    # The tasks were just inserted from the payload, so they are already in
+    # hand: summarise them rather than reading them back.
+    summary = await _summary_for(db, project.id)
+    await _apply_rules(db, project, summary)
     await db.commit()
     await db.refresh(project)
-    return _to_response(project, await _one_summary(db, project.id))
+    return _to_response(project, summary)
 
 
 @router.get("/{project_id}/tasks", response_model=list[AitoTaskResponse])
@@ -406,7 +349,7 @@ async def add_task(
     task = AitoTask(project_id=project_id, position=(highest + 1) if highest is not None else 0, **payload.model_dump())
     db.add(task)
     await db.flush()  # so _apply_rules' SELECT sees the new row
-    await _apply_rules(db, project)
+    await _apply_rules(db, project, await _summary_for(db, project_id))
     await db.commit()
     await db.refresh(task)
     return _task_to_response(task)
@@ -449,7 +392,7 @@ async def update_task(
         setattr(task, key, value)
     project = await _mark_project_pending_for_task(db, task.project_id)
     if project:
-        await _apply_rules(db, project)
+        await _apply_rules(db, project, await _summary_for(db, task.project_id))
     await db.commit()
     await db.refresh(task)
     return _task_to_response(task)
@@ -468,7 +411,7 @@ async def delete_task(
     await db.delete(task)
     await db.flush()  # so the deleted row is out of _apply_rules' SELECT
     if project:
-        await _apply_rules(db, project)
+        await _apply_rules(db, project, await _summary_for(db, task.project_id))
     await db.commit()
 
 
@@ -499,20 +442,23 @@ async def import_legacy_projects(
         )
         db.add(p)
         created.append(p)
-    await db.flush()  # so _apply_rules' SELECT sees each new row's id
+    await db.flush()  # so each new row has an id for _apply_rules' column queries
     for p in created:
         # A legacy card's imported column is a hint, not a fact: with
         # quote_status NULL and no tasks, the rules may derive somewhere else
         # entirely (e.g. `devis`), and without this the card would land with
-        # board_column == item.column while move_lock says otherwise — the
-        # same self-contradictory row Critical 2 fixes for the sync worker.
-        await _apply_rules(db, p)
+        # board_column == item.column while move_lock says otherwise.
+        #
+        # TaskSummary() rather than a query: these projects are task-free by
+        # construction (the legacy localStorage board had no tasks), so the
+        # per-project SELECT this used to run could only ever return nothing.
+        await _apply_rules(db, p, TaskSummary())
     await db.commit()
     for p in created:
         await db.refresh(p)
     # Imported projects are task-free by construction: the legacy localStorage
     # board had no concept of tasks.
-    return [_to_response(p, _EMPTY_SUMMARY) for p in created]
+    return [_to_response(p, TaskSummary()) for p in created]
 
 
 @router.patch("/{project_id}/move", response_model=AitoProjectResponse)
@@ -528,6 +474,8 @@ async def move_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    summary = await _summary_for(db, project.id)
+
     # Reordering inside a column is always allowed: it changes priority, not
     # state. Crossing columns is allowed only for a card the rules have
     # released, and only between Finish and Done — every other placement is
@@ -535,8 +483,7 @@ async def move_project(
     # recompute. The UI already disables those droppables; this is the guard
     # for anything that reaches the API another way.
     if payload.column != project.board_column:
-        tasks = (await db.execute(select(AitoTask).where(AitoTask.project_id == project.id))).scalars().all()
-        _, lock = evaluate(project.quote_status, project.board_column, pending_services(tasks))
+        _, lock = evaluate(project.quote_status, project.board_column, summary.pending)
         if (
             lock is not None
             or project.board_column not in ("finish", "done")
@@ -556,7 +503,7 @@ async def move_project(
             row.position = i
     await db.commit()
     await db.refresh(project)
-    return _to_response(project, await _one_summary(db, project.id))
+    return _to_response(project, summary)
 
 
 @router.patch("/{project_id}", response_model=AitoProjectResponse)
@@ -593,7 +540,7 @@ async def update_project(
     _mark_pending_if_ours(project)
     await db.commit()
     await db.refresh(project)
-    return _to_response(project, await _one_summary(db, project.id))
+    return _to_response(project, await _summary_for(db, project.id))
 
 
 @router.post("/{project_id}/quote-status", response_model=AitoQuoteStatusResponse)
@@ -624,17 +571,18 @@ async def set_quote_status(
         raise HTTPException(status_code=404, detail="Project not found")
 
     project.quote_status = payload.status
-    await _apply_rules(db, project)
+    summary = await _summary_for(db, project.id)
+    await _apply_rules(db, project, summary)
     await db.commit()
     await db.refresh(project)
 
     # Built BEFORE the Zoho call, not after: the project's data cannot change
     # in between, and a DB-layer failure inside set_estimate_status's
     # _request (a token-refresh write, a settings read) can leave the session
-    # needing a rollback — a following _one_summary/_to_response call would
-    # then raise PendingRollbackError instead of the intended best-effort
+    # needing a rollback — a following _to_response call would then raise
+    # PendingRollbackError instead of the intended best-effort
     # zoho_synced=False response.
-    project_response = _to_response(project, await _one_summary(db, project.id))
+    project_response = _to_response(project, summary)
 
     zoho_synced = False
     if project.quote_id:
@@ -679,10 +627,11 @@ async def restore_project(
     project.status = "active"
     project.position = position
     _mark_pending_if_ours(project)
-    await _apply_rules(db, project)
+    summary = await _summary_for(db, project.id)
+    await _apply_rules(db, project, summary)
     await db.commit()
     await db.refresh(project)
-    return _to_response(project, await _one_summary(db, project.id))
+    return _to_response(project, summary)
 
 
 @router.delete("/{project_id}", status_code=204)
