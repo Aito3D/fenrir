@@ -69,7 +69,7 @@ async def load_export_tasks(db: AsyncSession, project_id: int) -> list[ExportTas
             impression_weight_g=row.impression_weight_g,
             impression_time_min=row.impression_time_min,
             impression_color=row.impression_color,
-            material=materials.get(row.impression_filament_id or -1),
+            material=materials.get(row.impression_filament_id),
         )
         for row in rows
     ]
@@ -81,12 +81,21 @@ def _apply_estimate(project: AitoProject, estimate: dict) -> None:
     quote_status in particular: it used to be a snapshot frozen at import that
     went stale the moment a quote was accepted. Every push refreshes it.
     """
-    project.quote_id = estimate.get("estimate_id") or project.quote_id
-    project.quote_number = estimate.get("estimate_number") or project.quote_number
-    project.quote_date = estimate.get("date") or project.quote_date
+    if estimate.get("estimate_id") is not None:
+        project.quote_id = estimate["estimate_id"]
+    if estimate.get("estimate_number") is not None:
+        project.quote_number = estimate["estimate_number"]
+    if estimate.get("date") is not None:
+        project.quote_date = estimate["date"]
+    # `or 0` is intentional here, not a bug: an absent/None total means the
+    # quote genuinely has no lines yet, and 0 is exactly the right value —
+    # unlike the string fields above, there's no falsy-but-valid float this
+    # could clobber.
     project.quote_total = float(estimate.get("total") or 0)
-    project.quote_status = estimate.get("status") or project.quote_status
-    project.quote_synced_at = estimate.get("last_modified_time") or project.quote_synced_at
+    if estimate.get("status") is not None:
+        project.quote_status = estimate["status"]
+    if estimate.get("last_modified_time") is not None:
+        project.quote_synced_at = estimate["last_modified_time"]
     project.quote_sync_state = "idle"
     project.quote_sync_error = None
     project.quote_sync_failures = 0
@@ -140,6 +149,17 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         if project.quote_sync_failures >= SYNC_FAILURE_LIMIT:
             project.quote_sync_state = "error"
         logger.warning("Aito quote sync failed for project %s: %s", project.id, e)
+    except Exception as e:
+        # Anything not already handled above: a DB error, a bug in
+        # build_line_items, an AttributeError on unexpected Zoho data. The
+        # docstring's "never raises" promise depends on this clause — without
+        # it, one project's unrelated bug unwinds out of run_sync_once's loop
+        # and skips the commit that persists every other project's write
+        # (including a just-created quote_id), which is how a retry turns
+        # into a duplicate estimate in Books. Fail this project only.
+        project.quote_sync_state = "error"
+        project.quote_sync_error = str(e)
+        logger.exception("Aito quote sync hit an unexpected error for project %s", project.id)
 
 
 async def run_sync_once(db: AsyncSession) -> int:
@@ -160,6 +180,17 @@ async def run_sync_once(db: AsyncSession) -> int:
     )
     for project in projects:
         await sync_project(db, project)
-    if projects:
+        # Commit per project, not once after the loop. sync_project's own
+        # catch-all keeps it from raising, but a single end-of-batch commit
+        # would still make every project's durability depend on none of its
+        # neighbours failing first — the whole point of the catch-all is
+        # defeated if a skipped commit can still discard a sibling's already-
+        # written quote_id. Committing here means the next project's work
+        # never risks the previous one's write.
+        #
+        # Residual window: the process can still die between Zoho returning
+        # an estimate_id and this commit landing, in which case the next tick
+        # re-creates the quote. Closing that needs a distributed transaction
+        # (or an idempotency key Books doesn't offer); noted, not solved here.
         await db.commit()
     return len(projects)
