@@ -3,6 +3,7 @@ import { screen, fireEvent, act, waitFor, render as rtlRender } from '@testing-l
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { BrowserRouter } from 'react-router-dom';
 import { server } from '../mocks/server';
 import { render } from '../utils';
 import { ProjectDetailPanel } from '../../components/aito/ProjectDetailPanel';
@@ -362,51 +363,58 @@ describe('ProjectDetailPanel tasks', () => {
     );
     const updateSpy = vi.spyOn(api, 'updateAitoTask').mockResolvedValue({ ...mockTask, scan_cost: 700 });
 
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    render(<BoardHost showPanel />);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
-    boardFetches.mockClear();
+    // The mocked `api.updateAitoTask` and fake timers must be torn down even
+    // if an assertion below throws — `afterEach` in setup.ts does not call
+    // `restoreAllMocks` / `useRealTimers`, so an early failure here would
+    // otherwise leak both into the other 40+ tests in this file, turning one
+    // failure into a cascade of unrelated-looking ones.
+    try {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      render(<BoardHost showPanel />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
+      boardFetches.mockClear();
 
-    await expandAllTasks();
-    await editAllTasks();
-    const scanInput = await screen.findByLabelText('Scan Cost');
+      await expandAllTasks();
+      await editAllTasks();
+      const scanInput = await screen.findByLabelText('Scan Cost');
 
-    fireEvent.change(scanInput, { target: { value: '700' } });
+      fireEvent.change(scanInput, { target: { value: '700' } });
 
-    // Give React a chance to re-render and run any effects the edit
-    // triggered — exactly the window in which a debounce whose cleanup
-    // fires on every render (rather than only on unmount) would flush
-    // immediately instead of waiting out the timer.
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(updateSpy).not.toHaveBeenCalled();
+      // Give React a chance to re-render and run any effects the edit
+      // triggered — exactly the window in which a debounce whose cleanup
+      // fires on every render (rather than only on unmount) would flush
+      // immediately instead of waiting out the timer.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(updateSpy).not.toHaveBeenCalled();
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-    });
-    expect(updateSpy).toHaveBeenCalledTimes(1);
-    expect(updateSpy).toHaveBeenCalledWith(101, { scan_cost: 700 });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+      expect(updateSpy).toHaveBeenCalledTimes(1);
+      expect(updateSpy).toHaveBeenCalledWith(101, { scan_cost: 700 });
 
-    // Let onSuccess/onSettled run.
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    // A plain cost edit defers the board refresh to close (see
-    // `updateTaskMutation`'s doc in useProjectTasks.ts) — the panel is still
-    // open here, so no board GET must have fired yet. The corrupted
-    // `closedRef` (stamped `true` from mount by the same bug) made every
-    // completed save look like a post-close settle and fire this GET on
-    // every keystroke; the existing board-refetch tests below all
-    // `mockClear()` after their edits land, so that spurious GET was
-    // invisible to them.
-    expect(boardFetches).not.toHaveBeenCalled();
-
-    updateSpy.mockRestore();
-    vi.useRealTimers();
+      // Let onSuccess/onSettled run.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      // A plain cost edit defers the board refresh to close (see
+      // `updateTaskMutation`'s doc in useProjectTasks.ts) — the panel is still
+      // open here, so no board GET must have fired yet. The corrupted
+      // `closedRef` (stamped `true` from mount by the same bug) made every
+      // completed save look like a post-close settle and fire this GET on
+      // every keystroke; the existing board-refetch tests below all
+      // `mockClear()` after their edits land, so that spurious GET was
+      // invisible to them.
+      expect(boardFetches).not.toHaveBeenCalled();
+    } finally {
+      updateSpy.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it('does not resurrect a step\'s old Done state when the card is reopened', async () => {
@@ -1003,6 +1011,70 @@ describe('ProjectDetailPanel tasks', () => {
 
     releasePatch({ ...mockTask, scan_cost: 700 });
     await waitFor(() => expect(boardFetches).toHaveBeenCalled());
+  });
+
+  it('does not resurrect the pre-edit cost when the card is reopened after a PATCH that lands post-close', async () => {
+    // Regression for the narrower fix that shipped alongside the debounce:
+    // `onSettled` invalidates BOTH ['aito-tasks', projectId] and
+    // ['aito-projects'] (see useProjectTasks.ts), because with the app-wide
+    // 60s staleTime a card reopened inside that window is served straight
+    // from the tasks cache. The sibling test above ("...lands after the
+    // panel already closed") only counts board GETs, so it would stay green
+    // even if the tasks half of that invalidation were narrowed back out —
+    // it can't see the tasks cache going stale.
+    //
+    // This is the "does not resurrect a step's old Done state" test's setup
+    // (production-shaped client, 60s staleTime, close-then-reopen within the
+    // window), but with the PATCH still in flight at close time, so the
+    // invalidation runs from the mutation's own `onSettled` (closedRef
+    // already true) rather than the unmount-cleanup branch the Done-state
+    // test exercises.
+    let stored: AitoTask = { ...mockTask };
+    let releasePatch: (task: AitoTask) => void = () => {};
+    const heldPatch = new Promise<AitoTask>((resolve) => {
+      releasePatch = resolve;
+    });
+    server.use(
+      http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([stored])),
+      http.patch('/api/v1/aito/tasks/:id', async () => HttpResponse.json(await heldPatch)),
+    );
+
+    // Wrapped in a Router: unlike the Done-state test above, this one enters
+    // edit mode (to read the Scan Cost input on reopen), which mounts
+    // ImpressionFields — it renders a react-router `Link` and throws without
+    // a router in the tree.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } });
+    const Host = ({ open }: { open: boolean }) => (
+      <QueryClientProvider client={client}>
+        <BrowserRouter>
+          <ToastProvider>{open ? <ProjectDetailPanel project={project} onClose={vi.fn()} /> : null}</ToastProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    );
+
+    const { rerender } = rtlRender(<Host open />);
+    await expandAllTasks();
+    await editAllTasks();
+    const scanInput = await screen.findByLabelText('Scan Cost');
+    fireEvent.change(scanInput, { target: { value: '700' } });
+
+    // Close before the PATCH resolves.
+    rerender(<Host open={false} />);
+
+    // Now let the PATCH land, well after the panel (and its tasks query
+    // observer) is gone — this is the settle-after-close ordering.
+    stored = { ...stored, scan_cost: 700 };
+    await act(async () => {
+      releasePatch(stored);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    // Reopen well inside the 60s staleTime window.
+    rerender(<Host open />);
+    await expandAllTasks();
+    await editAllTasks();
+
+    expect(await screen.findByLabelText('Scan Cost')).toHaveValue(700);
   });
 
   it('does NOT refresh the board on close when no task was edited', async () => {

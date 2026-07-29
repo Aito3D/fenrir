@@ -203,7 +203,10 @@ export function useProjectTasks(projectId: number) {
         timer: setTimeout(() => flush(taskId), DEBOUNCE_MS),
       });
     },
-    [tasks, addTaskMutation, flush],
+    // `addTaskMutation.mutate` specifically, not the mutation object — see
+    // `flush`'s comment above for why the object's identity isn't stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tasks, addTaskMutation.mutate, flush],
   );
 
   const onRemoveTask = useCallback(
@@ -222,7 +225,10 @@ export function useProjectTasks(projectId: number) {
       }
       deleteTaskMutation.mutate(task.id);
     },
-    [tasks, deleteTaskMutation],
+    // `deleteTaskMutation.mutate` specifically, not the mutation object — see
+    // `flush`'s comment above for why the object's identity isn't stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tasks, deleteTaskMutation.mutate],
   );
 
   const markClosed = useCallback(() => {
