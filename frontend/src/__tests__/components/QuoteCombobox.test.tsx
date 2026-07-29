@@ -76,4 +76,25 @@ describe('QuoteCombobox', () => {
     await user.click(screen.getByRole('combobox'));
     expect(await screen.findByText(/could not reach|zoho/i)).toBeInTheDocument();
   });
+
+  it('shows the quote date in the shop\'s own timezone, not shifted a day early by UTC parsing', async () => {
+    // French Polynesia is UTC-10. `new Date('2026-07-27')` parses as UTC
+    // midnight, which is still July 26 locally — the bug. Parsing as local
+    // midnight (`new Date('2026-07-27T00:00:00')`) is the fix under test.
+    vi.stubEnv('TZ', 'Pacific/Tahiti');
+    try {
+      const buggyRendering = new Date('2026-07-27').toLocaleDateString('en');
+      const fixedRendering = new Date('2026-07-27T00:00:00').toLocaleDateString('en');
+      expect(fixedRendering).not.toBe(buggyRendering); // sanity: the two must actually differ here
+
+      const user = userEvent.setup();
+      render(<QuoteCombobox selected={null} onSelect={vi.fn()} />);
+      await user.click(screen.getByRole('combobox'));
+      const row = (await screen.findByText('DEV26-2461')).closest('button')!;
+      expect(row).toHaveTextContent(fixedRendering);
+      expect(row).not.toHaveTextContent(buggyRendering);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });

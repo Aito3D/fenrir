@@ -84,7 +84,7 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
 
   // "28 Jul 2026 · 5 600 XPF" — the QUOTE's own date and total, which can
   // exceed the project total when non-AITO lines were skipped at import.
-  const quoteDate = project.quote_date ? new Date(project.quote_date) : null;
+  const quoteDate = project.quote_date ? new Date(project.quote_date + 'T00:00:00') : null;
   const quoteDetail = [
     quoteDate && !Number.isNaN(quoteDate.getTime()) ? quoteDate.toLocaleDateString(i18n.language) : '',
     project.quote_total != null ? project.quote_total.toLocaleString(i18n.language) : '',

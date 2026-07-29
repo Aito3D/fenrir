@@ -56,8 +56,11 @@ def test_parse_description_treats_unfilled_placeholders_as_empty():
 
 
 def test_parse_description_keeps_first_value_when_a_label_repeats():
-    labels, _free = parse_description("Info: first\nInfo: second")
+    labels, free = parse_description("Info: first\nInfo: second\nPoids: 210 gr\nPoids: 50 gr")
     assert labels["info"] == "first"
+    assert labels["poids"] == "210 gr"
+    # The losing rows must not vanish -- they survive verbatim as free text.
+    assert free == ("Info: second", "Poids: 50 gr")
 
 
 def test_parse_description_handles_empty_input():
@@ -336,6 +339,20 @@ def test_build_preview_preserves_the_prose_around_a_partially_parsed_weight():
     # around it is not part of the number, so it must survive too.
     assert task["impression_weight_g"] == 210
     assert "Poids: 210 gr par piece, 4 pieces" in task["description"]
+
+
+def test_build_preview_preserves_the_second_token_of_a_multi_token_weight():
+    estimate = load_estimate("dev-2461-three-services")
+    estimate["line_items"][2]["description"] = (
+        "Projet: Tapis souple X4 bloc\nPoids: 210 gr 50 gr\nTemps: 13h\nCouleur: NOIR"
+    )
+    preview = build_preview(estimate, None, URL)
+    task = preview["tasks"][0]
+    # Only the first token ("210 gr") was ever parsed into the field. The
+    # second token ("50 gr") must not be silently swallowed by `sub`
+    # stripping every match -- the whole row is preserved in the body too.
+    assert task["impression_weight_g"] == 210
+    assert "Poids: 210 gr 50 gr" in task["description"]
 
 
 def test_build_preview_preserves_a_colour_longer_than_the_field_limit():

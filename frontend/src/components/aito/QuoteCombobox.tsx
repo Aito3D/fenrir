@@ -154,7 +154,10 @@ export function QuoteCombobox({ selected, onSelect }: QuoteComboboxProps) {
                     />
                   </span>
                   <span className="block text-xs text-bambu-gray truncate">
-                    {[quote.customer_name, quote.date ? new Date(quote.date).toLocaleDateString(i18n.language) : '']
+                    {[
+                      quote.customer_name,
+                      quote.date ? new Date(quote.date + 'T00:00:00').toLocaleDateString(i18n.language) : '',
+                    ]
                       .filter(Boolean)
                       .join(' · ')}
                   </span>

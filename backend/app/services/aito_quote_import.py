@@ -74,7 +74,12 @@ def parse_description(text: str | None) -> tuple[dict[str, str], tuple[str, ...]
         match = _LABEL_RE.match(row)
         if match and _fold(match.group(1)) in LABEL_DISPLAY:
             key = _fold(match.group(1))
-            labels.setdefault(key, match.group(2).strip())
+            if key in labels:
+                # First value already won the field; the losing row must
+                # still survive somewhere rather than vanishing outright.
+                free.append(row)
+            else:
+                labels[key] = match.group(2).strip()
             continue
         free.append(row)
     return labels, tuple(free)
@@ -264,12 +269,20 @@ def _dedupe(rows: list[str]) -> list[str]:
     return out
 
 
-def _fully_consumed(value: str, pattern: re.Pattern[str]) -> bool:
-    """True when stripping every span `pattern` matched leaves no letters or
+def _fully_consumed(value: str, pattern: re.Pattern[str], count: int = 0) -> bool:
+    """True when stripping the span(s) `pattern` matched leaves no letters or
     digits behind — i.e. the parser accounted for the whole row, not just a
     number embedded in a longer sentence ('210 gr par piece, 4 pieces') that
-    must still be preserved verbatim alongside the parsed field."""
-    remainder = pattern.sub("", value)
+    must still be preserved verbatim alongside the parsed field.
+
+    `count` must mirror how many matches the caller's own parse actually
+    consumed: `parse_weight_g` uses `re.search` (one match), so `count=1`
+    here — otherwise a second, unparsed token ('210 gr 50 gr') would be
+    stripped by `sub` and silently judged "fully consumed" even though only
+    the first token was ever parsed. `parse_time_min` uses `findall` and
+    sums every token, so `count=0` (all) is correct for it.
+    """
+    remainder = pattern.sub("", value, count=count)
     return not any(ch.isalpha() or ch.isdigit() for ch in remainder)
 
 
@@ -301,8 +314,8 @@ def _build_task(group: list[ParsedLine]) -> dict:
     # A field only absorbs the whole row when it accounts for the whole row —
     # a number found inside a longer sentence, or a colour longer than the
     # field allows, must still show up in the body alongside the field.
-    weight_consumed = weight is not None and _fully_consumed(poids_value, _WEIGHT_RE)
-    time_consumed = minutes is not None and _fully_consumed(temps_value, _TIME_TOKEN_RE)
+    weight_consumed = weight is not None and _fully_consumed(poids_value, _WEIGHT_RE, count=1)
+    time_consumed = minutes is not None and _fully_consumed(temps_value, _TIME_TOKEN_RE, count=0)
     color_consumed = bool(color) and len(color) <= _COLOR_MAX
 
     rows: list[str] = []

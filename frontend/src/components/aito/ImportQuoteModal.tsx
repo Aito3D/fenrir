@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { AlertTriangle, ExternalLink, FileInput, X } from 'lucide-react';
 import { api } from '../../api/client';
 import type { AitoTaskCreate, ZohoEstimateSummary, ZohoQuotePreview } from '../../api/client';
@@ -47,6 +48,13 @@ export function ImportQuoteModal({ onClose, onImport, submitting = false }: Impo
   // Which quote's suggestion is currently in the textarea, so re-rendering
   // never overwrites what the user typed.
   const [seededFor, setSeededFor] = useState<string | null>(null);
+
+  const statusQuery = useQuery({
+    queryKey: ['zoho-status', { probe: false }],
+    queryFn: () => api.getZohoStatus(),
+    staleTime: 60_000,
+  });
+  const zohoNotConfigured = statusQuery.data?.configured === false;
 
   const previewQuery = useQuery({
     queryKey: ['zoho-quote-preview', selected?.id],
@@ -113,7 +121,19 @@ export function ImportQuoteModal({ onClose, onImport, submitting = false }: Impo
           className="flex flex-col flex-1 min-h-0"
         >
           <div className="p-4 overflow-y-auto flex-1 space-y-4">
-            <QuoteCombobox selected={selected} onSelect={setSelected} />
+            {zohoNotConfigured ? (
+              <div>
+                <label className={labelCls}>{t('aito.quoteSearchLabel')}</label>
+                <div className="p-3 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-sm text-bambu-gray">
+                  {t('aito.zohoNotConfigured')}{' '}
+                  <Link to="/settings?tab=zoho" className="text-bambu-green hover:underline">
+                    {t('aito.zohoConfigureLink')}
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <QuoteCombobox selected={selected} onSelect={setSelected} />
+            )}
 
             {previewQuery.isError && (
               <p className="text-sm text-status-error">{t('aito.quoteLoadFailed')}</p>
@@ -129,7 +149,7 @@ export function ImportQuoteModal({ onClose, onImport, submitting = false }: Impo
                     <p className="text-xs text-bambu-gray">
                       {[
                         preview.quote.date
-                          ? new Date(preview.quote.date).toLocaleDateString(i18n.language)
+                          ? new Date(preview.quote.date + 'T00:00:00').toLocaleDateString(i18n.language)
                           : '',
                         preview.quote.status,
                       ]
@@ -237,7 +257,9 @@ export function ImportQuoteModal({ onClose, onImport, submitting = false }: Impo
             </Button>
             <Button type="submit" disabled={!canImport}>
               <FileInput className="w-4 h-4 mr-2" />
-              {preview?.existing_project_id ? t('aito.quoteImportAgain') : t('aito.quoteImport')}
+              {preview !== null && preview.existing_project_id !== null
+                ? t('aito.quoteImportAgain')
+                : t('aito.quoteImport')}
             </Button>
           </div>
         </form>

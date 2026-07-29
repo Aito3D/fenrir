@@ -57,6 +57,20 @@ class AitoProjectCreate(BaseModel):
     quote_url: str | None = Field(default=None, max_length=300)
     tasks: list[AitoTaskCreate] = Field(default_factory=list)
 
+    @field_validator("quote_url")
+    @classmethod
+    def _quote_url_must_be_https(cls, value: str | None) -> str | None:
+        """The board renders this as a trustworthy-looking link labelled with
+        the quote number, so it must actually go where it looks like it goes.
+        The app itself only ever generates `https://books.zoho.<region>/...`
+        URLs, so restricting to https costs nothing legitimate while closing
+        off `javascript:`, `data:`, bare `http://` and relative values."""
+        if not value:
+            return value
+        if not value.startswith("https://"):
+            raise ValueError("quote_url must use the https scheme")
+        return value
+
 
 class AitoProjectImportItem(BaseModel):
     description: str = Field(min_length=1)

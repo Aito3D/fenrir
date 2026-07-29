@@ -141,4 +141,22 @@ describe('ImportQuoteModal', () => {
 
     expect(await screen.findByText(/could not load this quote/i)).toBeInTheDocument();
   });
+
+  it('shows the not-configured state instead of the combobox when Zoho is not set up', async () => {
+    server.use(
+      http.get('/api/v1/zoho/status', () =>
+        HttpResponse.json({
+          configured: false,
+          reachable: false,
+          default_contact_id: '',
+          default_contact_name: '',
+        }),
+      ),
+    );
+    render(<ImportQuoteModal onClose={vi.fn()} onImport={vi.fn()} />);
+
+    expect(await screen.findByRole('link')).toHaveAttribute('href', '/settings?tab=zoho');
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^import$/i })).toBeDisabled();
+  });
 });

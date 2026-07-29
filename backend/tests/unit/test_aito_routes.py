@@ -524,6 +524,22 @@ async def test_create_project_stores_quote_link(async_client):
 
 
 @pytest.mark.asyncio
+async def test_create_project_accepts_an_https_quote_url(async_client):
+    r = await _create(async_client, quote_url="https://books.zoho.eu/app/999#/estimates/664070000095")
+    assert r.status_code == 201
+    assert r.json()["quote_url"] == "https://books.zoho.eu/app/999#/estimates/664070000095"
+
+
+@pytest.mark.asyncio
+async def test_create_project_rejects_a_javascript_quote_url(async_client):
+    # quote_url is rendered as a trustworthy-looking anchor labelled with the
+    # quote number, so anything other than https (including a javascript:
+    # scheme, a bare http:, or a relative value) must be rejected outright.
+    r = await _create(async_client, quote_url="javascript:alert(1)")
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_create_project_without_quote_leaves_quote_fields_null(async_client):
     r = await async_client.post(
         "/api/v1/aito/",
