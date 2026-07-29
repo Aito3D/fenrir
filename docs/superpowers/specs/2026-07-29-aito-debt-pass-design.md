@@ -126,14 +126,21 @@ It has **seven** callers: `create_project`, `add_task`, `update_task`,
 `restore_project`. Each loads the project's tasks once and passes
 `summarise(rows)` through.
 
-Two of them get genuinely cheaper, because they already know the answer:
+Five of them get genuinely cheaper, because they currently ask twice:
 
-- **`import_legacy_projects` calls `_apply_rules` inside a loop**, so it
-  currently runs one task `SELECT` per imported project — an N+1 querying for
-  rows that cannot exist, since imported projects are task-free by
-  construction. It passes `TaskSummary()` instead and the N queries vanish.
-- **`create_project`** likewise knows the tasks it just inserted, so it
-  summarises them in memory rather than reading them back.
+- **`import_legacy_projects` calls `_apply_rules` inside a loop**, so it runs
+  one task `SELECT` per imported project — an N+1 querying for rows that cannot
+  exist, since imported projects are task-free by construction (the handler
+  already returns `_EMPTY_SUMMARY` for them). It passes `TaskSummary()` and the
+  N queries vanish.
+- **`create_project`, `set_quote_status` and `restore_project`** each call
+  `_apply_rules` — which `SELECT`s the tasks — and then `_one_summary`, which
+  aggregates the same rows again. One load serves both.
+- **`move_project`** loads the tasks for its cross-column guard and then calls
+  `_one_summary`. Same duplication, same fix.
+
+The remaining calls (`add_task`, `update_task`, `delete_task`, `list_projects`,
+`list_trash`, `update_project`) keep the same query count.
 
 Row volume is a non-issue: a board of 50 projects averaging 5 tasks is 250
 rows. The aggregate saved bytes that were never the bottleneck, at the cost of
