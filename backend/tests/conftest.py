@@ -189,6 +189,14 @@ async def test_engine():
 
 
 @pytest.fixture
+async def raw_conn(test_engine):
+    """A raw connection with the schema created, for migration tests that must
+    write columns the ORM no longer models."""
+    async with test_engine.begin() as conn:
+        yield conn
+
+
+@pytest.fixture
 async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
     """Create a test database session."""
     async_session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)

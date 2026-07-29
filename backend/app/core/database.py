@@ -927,6 +927,89 @@ async def _migrate_widen_spoolman_slot_ams_id_range(conn) -> None:
         raise
 
 
+async def _migrate_aito_board_columns(conn) -> None:
+    """One-shot: reconstruct Aito step history, then re-derive every column.
+
+    Runs once, gated by the caller on the ``*_done`` columns not having existed.
+    Without it, the first boot under the new rules derives every card to its
+    EARLIEST incomplete stage and collapses the board leftward — a card sitting
+    in Printing would snap back to Scan.
+
+    Order matters: the flags are read off ``board_column`` (step 1) before
+    ``pickup`` is rewritten away (step 3).
+    """
+    from sqlalchemy import text
+
+    from backend.app.services.aito_board_rules import evaluate
+
+    async with conn.begin_nested():
+        # 1. A card's position on the old board is evidence of what was done.
+        backfill = {
+            "model": ("scan",),
+            "print": ("scan", "modelisation"),
+            "pickup": ("scan", "modelisation", "impression", "usinage"),
+            "finish": ("scan", "modelisation", "impression", "usinage"),
+        }
+        for column, services in backfill.items():
+            assignments = ", ".join(f"{s}_done = 1" for s in services)
+            await conn.execute(
+                text(
+                    f"UPDATE aito_tasks SET {assignments} WHERE project_id IN "
+                    "(SELECT id FROM aito_projects WHERE board_column = :col)"
+                ),
+                {"col": column},
+            )
+
+        # 2. A card already past Quote was accepted in reality. A declined one
+        #    is left alone and will derive to Done in step 4.
+        await conn.execute(
+            text(
+                "UPDATE aito_projects SET quote_status = 'accepted' "
+                "WHERE board_column != 'devis' "
+                "AND (quote_status IS NULL OR quote_status NOT IN ('accepted', 'declined'))"
+            )
+        )
+
+        # 3. 'pickup' is gone from the board.
+        await conn.execute(text("UPDATE aito_projects SET board_column = 'finish' WHERE board_column = 'pickup'"))
+
+        # 4. Re-derive every project — soft-deleted rows included, so a later
+        #    restore lands correctly — and renumber positions per column.
+        rows = (
+            await conn.execute(
+                text("SELECT id, quote_status, board_column, status FROM aito_projects ORDER BY position, id")
+            )
+        ).all()
+        pending_rows = (
+            await conn.execute(
+                text(
+                    "SELECT project_id, "
+                    "MAX(CASE WHEN scan_cost IS NOT NULL AND scan_done = 0 THEN 1 ELSE 0 END), "
+                    "MAX(CASE WHEN modelisation_cost IS NOT NULL AND modelisation_done = 0 THEN 1 ELSE 0 END), "
+                    "MAX(CASE WHEN impression_cost IS NOT NULL AND impression_done = 0 THEN 1 ELSE 0 END), "
+                    "MAX(CASE WHEN usinage_cost IS NOT NULL AND usinage_done = 0 THEN 1 ELSE 0 END) "
+                    "FROM aito_tasks GROUP BY project_id"
+                )
+            )
+        ).all()
+        names = ("scan", "modelisation", "impression", "usinage")
+        pending_by_project = {
+            row[0]: {name for index, name in enumerate(names) if row[index + 1]} for row in pending_rows
+        }
+
+        next_position: dict[str, int] = {}
+        for project_id, quote_status, board_column, status in rows:
+            column, _ = evaluate(quote_status, board_column, pending_by_project.get(project_id, set()))
+            position = 0
+            if status == "active":
+                position = next_position.get(column, 0)
+                next_position[column] = position + 1
+            await conn.execute(
+                text("UPDATE aito_projects SET board_column = :col, position = :pos WHERE id = :id"),
+                {"col": column, "pos": position, "id": project_id},
+            )
+
+
 async def run_migrations(conn):
     """Run all schema migrations and data backfills on startup.
 
@@ -3919,11 +4002,16 @@ async def run_migrations(conn):
     # project's board column. The data back-fill that reconstructs these flags
     # from each card's existing column lives further down, gated on the columns
     # not having existed.
+    _aito_steps_existed = await _column_exists(conn, "aito_tasks", "scan_done")
     for _service in ("scan", "modelisation", "impression", "usinage"):
         await _safe_execute(
             conn,
             f"ALTER TABLE aito_tasks ADD COLUMN {_service}_done BOOLEAN NOT NULL DEFAULT 0",
         )
+    if not _aito_steps_existed:
+        # Gated on the columns not having existed: re-running this would undo
+        # every tick the user has made since, and re-accept quotes they declined.
+        await _migrate_aito_board_columns(conn)
     await _safe_execute(
         conn,
         "CREATE INDEX IF NOT EXISTS ix_aito_projects_quote_sync_state ON aito_projects (quote_sync_state)",
