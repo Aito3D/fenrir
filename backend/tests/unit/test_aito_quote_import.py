@@ -389,3 +389,40 @@ def test_build_preview_preserves_a_colour_longer_than_the_field_limit():
     # in the body rather than losing its tail silently.
     assert task["impression_color"] == long_color[:100]
     assert f"Couleur: {long_color}" in task["description"]
+
+
+def _estimate_with_headers() -> dict:
+    """Two tasks whose service ranks rise across the boundary (scan then
+    modelisation). Without header awareness the heuristic merges them."""
+    return {
+        "estimate_id": "e1",
+        "estimate_number": "DEV26-9001",
+        "is_inclusive_tax": True,
+        "price_precision": 0,
+        "line_items": [
+            {"item_order": 1, "line_item_category": "header", "name": "Premiere piece", "sku": ""},
+            {"item_order": 2, "sku": "P3DSCAN", "description": "Info: Premiere piece", "rate": 5000, "quantity": 1},
+            {"item_order": 3, "line_item_category": "header", "name": "Deuxieme piece", "sku": ""},
+            {"item_order": 4, "sku": "P3DMOD", "description": "Info: Deuxieme piece", "rate": 3000, "quantity": 1},
+        ],
+    }
+
+
+def test_header_row_is_not_reported_as_skipped():
+    _, skipped = parse_lines(_estimate_with_headers())
+    assert skipped == []
+
+
+def test_header_row_starts_a_new_group_even_when_rank_rises():
+    lines, _ = parse_lines(_estimate_with_headers())
+    assert [line.starts_group for line in lines] == [True, True]
+    groups = group_lines(lines)
+    assert len(groups) == 2
+    assert [line.service for group in groups for line in group] == ["scan", "modelisation"]
+
+
+def test_quote_without_headers_groups_exactly_as_before():
+    # dev-2461 walks scan -> model -> impression: one job, one task. Unchanged.
+    lines, _ = parse_lines(load_estimate("dev-2461-three-services"))
+    assert all(not line.starts_group for line in lines)
+    assert len(group_lines(lines)) == 1

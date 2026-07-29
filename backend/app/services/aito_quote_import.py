@@ -162,6 +162,11 @@ class ParsedLine:
     free_text: tuple[str, ...]
     amount: float
     quantity: float
+    # True when a header row immediately preceded this line. A header is an
+    # explicit task boundary written by whoever built the quote, which beats
+    # `group_lines`' rank heuristic guessing at one. Always False for quotes
+    # that use no headers, so their grouping is untouched.
+    starts_group: bool = False
 
 
 def _line_amount(line: dict, *, inclusive: bool, precision: int) -> float:
@@ -184,12 +189,21 @@ def _line_amount(line: dict, *, inclusive: bool, precision: int) -> float:
 
 
 def parse_lines(estimate: dict) -> tuple[list[ParsedLine], list[dict]]:
-    """Split an estimate's line items into recognised services and skipped rows."""
+    """Split an estimate's line items into recognised services and skipped rows.
+
+    A `line_item_category == "header"` row is neither: it is a boundary marker,
+    so it is dropped from the output and flagged onto the next recognised line
+    rather than being reported to the user as an unimportable line.
+    """
     inclusive = bool(estimate.get("is_inclusive_tax"))
     precision = int(estimate.get("price_precision") or 0)
     recognised: list[ParsedLine] = []
     skipped: list[dict] = []
+    pending_boundary = False
     for line in sorted(estimate.get("line_items") or [], key=lambda item: item.get("item_order") or 0):
+        if line.get("line_item_category") == "header":
+            pending_boundary = True
+            continue
         amount = _line_amount(line, inclusive=inclusive, precision=precision)
         service = service_for_sku(line.get("sku"))
         if service is None:
@@ -203,8 +217,10 @@ def parse_lines(estimate: dict) -> tuple[list[ParsedLine], list[dict]]:
                 free_text=free_text,
                 amount=amount,
                 quantity=float(line.get("quantity") or 0),
+                starts_group=pending_boundary,
             )
         )
+        pending_boundary = False
     return recognised, skipped
 
 
@@ -215,13 +231,17 @@ def group_lines(lines: list[ParsedLine]) -> list[list[ParsedLine]]:
     passing through four stations, and an Aito task carries several services.
     A rank that repeats or goes backwards means a new part, so it opens a new
     group. Gaps are fine: model -> usinage still rises.
+
+    An explicit header row overrides the heuristic entirely: `starts_group`
+    opens a new group whatever the ranks do. That is what lets a project
+    exported by `aito_quote_export` re-import with its task boundaries intact.
     """
     groups: list[list[ParsedLine]] = []
     current: list[ParsedLine] = []
     seen: set[int] = set()
     for line in lines:
         rank = SERVICE_RANK[line.service]
-        if current and any(rank <= previous for previous in seen):
+        if current and (line.starts_group or any(rank <= previous for previous in seen)):
             groups.append(current)
             current, seen = [], set()
         current.append(line)
