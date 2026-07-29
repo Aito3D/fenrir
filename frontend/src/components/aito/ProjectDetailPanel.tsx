@@ -138,7 +138,18 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
   // Flushes any pending task-field debounce and arbitrates the board refresh
   // against still-in-flight PATCHes — see useProjectTasks' own unmount effect
   // for the close-vs-settle race this defers to.
-  useEffect(() => markClosed, [markClosed]);
+  //
+  // markClosed must NOT be a dependency here: React Query's useMutation
+  // returns a fresh object every render, so markClosed (which closes over it)
+  // gets a new identity on every render too. `useEffect(() => markClosed, [markClosed])`
+  // would therefore re-run — and tear down, i.e. call markClosed — after every
+  // render instead of only on unmount, which is exactly what made the 500ms
+  // debounce a no-op: one PATCH per keystroke instead of one per pause. Route
+  // through a ref (same pattern the hook uses internally) and register the
+  // effect with an empty dependency array so it fires exactly once, on unmount.
+  const markClosedRef = useRef(markClosed);
+  markClosedRef.current = markClosed;
+  useEffect(() => () => markClosedRef.current(), []);
 
   return (
     <div

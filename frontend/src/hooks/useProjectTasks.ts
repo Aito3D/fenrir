@@ -116,7 +116,11 @@ export function useProjectTasks(projectId: number) {
     onSettled: () => {
       inFlightRef.current -= 1;
       if (closedRef.current && inFlightRef.current === 0 && tasksDirtyRef.current) {
-        queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+        // Both keys, via the same ref the unmount effect uses below: with the
+        // app-wide 60s staleTime, invalidating only the board would leave the
+        // tasks cache holding the pre-edit row, so reopening the card within
+        // that window would rehydrate stale data over this save.
+        invalidateRef.current();
       }
     },
   });
@@ -130,7 +134,15 @@ export function useProjectTasks(projectId: number) {
       if (Object.keys(entry.patch).length === 0) return;
       updateTaskMutation.mutate({ id: taskId, patch: entry.patch });
     },
-    [updateTaskMutation],
+    // `updateTaskMutation.mutate` specifically, not the mutation object: React
+    // Query's `useMutation` returns a fresh object literal every render, so
+    // depending on the whole object would give `flush` (and, transitively,
+    // `flushAll` and `markClosed`) a new identity on every render too. `mutate`
+    // itself comes from a `useCallback` bound to the mutation observer and is
+    // genuinely stable — see ProjectDetailPanel's markClosed effect for why
+    // that stability is load-bearing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [updateTaskMutation.mutate],
   );
 
   const flushAll = useCallback(() => {

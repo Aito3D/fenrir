@@ -338,6 +338,77 @@ describe('ProjectDetailPanel tasks', () => {
     await waitFor(() => expect(boardFetches).toHaveBeenCalled());
   });
 
+  it('debounces a task-field edit for the full 500ms window, and refetches neither the mutation nor the board before it elapses', async () => {
+    // Regression for a dead debounce: ProjectDetailPanel used to wire
+    // `markClosed` straight into a `useEffect` dependency array —
+    // `useEffect(() => markClosed, [markClosed])`. `markClosed` closes over
+    // React Query's `useMutation` object, which is a fresh identity every
+    // render, so the effect re-ran on every render and its cleanup (which
+    // *is* `markClosed`) fired after every render instead of only on
+    // unmount. In production that meant one PATCH per keystroke — the
+    // 500ms window never got a chance to elapse — and, because `closedRef`
+    // got stamped `true` from the very first render, every completed save
+    // also invalidated the board. A fix that merely restores the eventual
+    // PATCH (without restoring its *timing*) still passes every other test
+    // in this file, since they all use `waitFor`'s default 1000ms timeout,
+    // which a working 500ms debounce satisfies too — only asserting the
+    // call count *before* the timer advances catches the dead debounce.
+    const boardFetches = vi.fn();
+    server.use(
+      http.get('/api/v1/aito/', () => {
+        boardFetches();
+        return HttpResponse.json([]);
+      }),
+    );
+    const updateSpy = vi.spyOn(api, 'updateAitoTask').mockResolvedValue({ ...mockTask, scan_cost: 700 });
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<BoardHost showPanel />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
+    boardFetches.mockClear();
+
+    await expandAllTasks();
+    await editAllTasks();
+    const scanInput = await screen.findByLabelText('Scan Cost');
+
+    fireEvent.change(scanInput, { target: { value: '700' } });
+
+    // Give React a chance to re-render and run any effects the edit
+    // triggered — exactly the window in which a debounce whose cleanup
+    // fires on every render (rather than only on unmount) would flush
+    // immediately instead of waiting out the timer.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(updateSpy).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    expect(updateSpy).toHaveBeenCalledWith(101, { scan_cost: 700 });
+
+    // Let onSuccess/onSettled run.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // A plain cost edit defers the board refresh to close (see
+    // `updateTaskMutation`'s doc in useProjectTasks.ts) — the panel is still
+    // open here, so no board GET must have fired yet. The corrupted
+    // `closedRef` (stamped `true` from mount by the same bug) made every
+    // completed save look like a post-close settle and fire this GET on
+    // every keystroke; the existing board-refetch tests below all
+    // `mockClear()` after their edits land, so that spurious GET was
+    // invisible to them.
+    expect(boardFetches).not.toHaveBeenCalled();
+
+    updateSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
   it('does not resurrect a step\'s old Done state when the card is reopened', async () => {
     // Production runs a 60s app-wide staleTime (App.tsx), so reopening a card
     // within the minute is served from the `['aito-tasks', id]` cache with no
@@ -807,16 +878,23 @@ describe('ProjectDetailPanel tasks', () => {
     await editAllTasks();
     const scan = await screen.findByLabelText('Scan Cost');
     await user.clear(scan);
-    await user.type(scan, '500');
-    await waitFor(() => expect(screen.getByLabelText('Scan Cost')).toHaveValue(500));
+    // 700, not mockTask's own baseline (500): typing back to the persisted
+    // value would legitimately diff to an empty patch and send nothing (see
+    // "editing a value back to its original..." below), which would make
+    // this test about that edge case instead of the everything-has-landed
+    // path it is meant to cover.
+    await user.type(scan, '700');
+    await waitFor(() => expect(screen.getByLabelText('Scan Cost')).toHaveValue(700));
 
     // Await the write, not just the input's value: the value is local state
     // and is set before the PATCH it triggers has been sent, let alone
-    // answered. Typing sends one PATCH per keystroke (null, 5, 50, 500), and
-    // closing while any of them is open is the deferral's other branch, tested
-    // separately below — this test is about the everything-has-landed path, so
-    // it waits for the last body to arrive and for its response to be applied.
-    await waitFor(() => expect(patches.at(-1)).toEqual({ scan_cost: 500 }));
+    // answered. The debounce coalesces the whole keystroke burst (7, 70,
+    // 700) into one PATCH, sent DEBOUNCE_MS after the last keystroke —
+    // closing before that timer elapses is the deferral's other branch,
+    // tested separately below — this test is about the everything-has-landed
+    // path, so it waits for the body to arrive and for its response to be
+    // applied.
+    await waitFor(() => expect(patches.at(-1)).toEqual({ scan_cost: 700 }));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
