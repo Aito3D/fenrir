@@ -127,6 +127,8 @@ class AitoProjectResponse(BaseModel):
     quote_salesperson: str | None
     quote_status: str | None
     created_by: str | None
+    quote_sync_state: str
+    quote_sync_error: str | None
     # Aggregates over the project's tasks, so the board card can show a summary
     # without GET /aito/ shipping every task row. Required, never defaulted:
     # see _to_response in the routes module.

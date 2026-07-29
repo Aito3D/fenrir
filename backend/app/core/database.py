@@ -3892,6 +3892,24 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_status VARCHAR(30)")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN created_by VARCHAR(100)")
 
+    # Migration: the outbox for pushing a project into its Zoho quote. The
+    # DEFAULT 'idle' is load-bearing — the worker only ever picks up 'pending',
+    # so every project that existed before this feature is silently excluded
+    # from sync rather than needing a rule to exclude it. quote_synced_at holds
+    # the estimate's last_modified_time as Zoho reported it, which is how the
+    # Phase 2 poller will tell our own write from someone else's edit.
+    await _safe_execute(
+        conn, "ALTER TABLE aito_projects ADD COLUMN quote_sync_state VARCHAR(20) NOT NULL DEFAULT 'idle'"
+    )
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_sync_error TEXT")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_sync_failures INTEGER NOT NULL DEFAULT 0")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_synced_at VARCHAR(30)")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_status_before_trash VARCHAR(30)")
+    await _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_aito_projects_quote_sync_state ON aito_projects (quote_sync_state)",
+    )
+
 
 _USER_PRINT_TEMPLATE_RENAMES: tuple[tuple[str, str, str], ...] = (
     ("user_print_start", "User Print Started", "User Print Started Email"),

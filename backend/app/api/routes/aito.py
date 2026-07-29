@@ -123,6 +123,8 @@ def _to_response(p: AitoProject, summary: _TaskSummary) -> AitoProjectResponse:
         quote_salesperson=p.quote_salesperson,
         quote_status=p.quote_status,
         created_by=p.created_by,
+        quote_sync_state=p.quote_sync_state or "idle",
+        quote_sync_error=p.quote_sync_error,
         task_count=summary.count,
         tasks_total=summary.total,
         task_services=list(summary.services),

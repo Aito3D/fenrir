@@ -49,5 +49,19 @@ class AitoProject(Base):
     # referenced so it survives that user being renamed or deleted. NULL when
     # auth is disabled, and for API-key requests, which carry no user identity.
     created_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Outbox state for the Zoho push. 'idle' (nothing to do) | 'pending' (the
+    # worker owes this project a write) | 'error' (gave up, see
+    # quote_sync_error) | 'locked' (the quote has been invoiced; edits stay
+    # local). 'pending' with a NULL quote_id means "create the quote".
+    quote_sync_state: Mapped[str] = mapped_column(String(20), default="idle", server_default="idle", index=True)
+    quote_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    quote_sync_failures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # The estimate's last_modified_time as Zoho reported it on our last write.
+    # Written here, read by the Phase 2 poller to suppress our own echo.
+    quote_synced_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # quote_status as it stood before the project was trashed, so restoring can
+    # put it back. Zoho has no /status/draft, so a quote that was a draft
+    # cannot be recovered and this stays the record of what it was.
+    quote_status_before_trash: Mapped[str | None] = mapped_column(String(30), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
