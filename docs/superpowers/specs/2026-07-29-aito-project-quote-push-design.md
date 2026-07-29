@@ -181,6 +181,30 @@ every push. A header row typed by hand in Books is indistinguishable from one
 of ours and is therefore also dropped; this is a known, accepted limitation of
 headers being positional and identity-free.
 
+### 1b · The importer must learn about headers
+
+Writing headers exposes two flaws in the import direction, both of which this
+phase fixes because the round-trip invariant depends on them:
+
+- **A header row is currently "skipped".** `parse_lines` classifies by `sku`,
+  and a header has none, so every header the app writes would show up in the
+  import modal's *not imported* list.
+- **`group_lines` would merge tasks the app deliberately separated.** Its
+  heuristic opens a new group only when a service rank repeats or falls, so a
+  project of `[scan]` then `[modelisation]` — ranks 0 then 1, strictly rising —
+  re-imports as a *single* task. The board's task boundaries would not survive a
+  round trip.
+
+The fix is small and improves import on its own: `ParsedLine` gains
+`starts_group: bool` (default `False`), set on the first recognised line
+following a `line_item_category == "header"` row; `group_lines` opens a new
+group whenever `starts_group` is true. Header rows stop being reported as
+skipped.
+
+An explicit boundary written by whoever built the quote beats a rank heuristic
+guessing at one. Quotes with no headers — every quote that exists today — hit
+neither branch and group exactly as they do now.
+
 ### 2 · Money
 
 | service | `rate` | `quantity` |
@@ -380,10 +404,16 @@ gate rejects English placeholders.
 
 **The round-trip invariant.** Because both directions now exist as I/O-free
 modules, the strongest test is composition: build line items from a project,
-feed them straight into `aito_quote_import.build_preview`, and assert the same
-tasks come back — titles, costs, weight, time, colour and free text. This
-covers the weight and time formatters, placeholder omission, the free-text
-label collision, and the header grouping in one assertion per fixture.
+wrap them in a synthetic estimate (`is_inclusive_tax: true`,
+`price_precision: 0`, each line's `sku` derived from its `item_id`), feed that
+to `aito_quote_import.build_preview`, and assert the same tasks come back —
+titles, costs, weight, time, colour and free text. This covers the weight and
+time formatters, placeholder omission, the free-text label collision, and task
+boundaries in one assertion per fixture.
+
+It only holds once the importer is header-aware (§1b), which is why that change
+is part of this phase rather than a nicety. The test is therefore also the
+regression guard for it.
 
 - `backend/tests/unit/services/test_aito_quote_export.py` — fixtures for a
   single-task project (no header), a multi-task project (headers), a
