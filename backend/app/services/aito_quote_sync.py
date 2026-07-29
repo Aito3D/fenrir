@@ -169,16 +169,39 @@ async def run_sync_once(db: AsyncSession) -> int:
     change. Serial by design — the board holds a handful of cards, and one
     request at a time keeps the failure accounting above trivial.
     """
-    projects = list(
+    project_ids = list(
         (
             await db.execute(
-                select(AitoProject).where(AitoProject.quote_sync_state == "pending").order_by(AitoProject.id)
+                select(AitoProject.id).where(AitoProject.quote_sync_state == "pending").order_by(AitoProject.id)
             )
         )
         .scalars()
         .all()
     )
-    for project in projects:
+    for project_id in project_ids:
+        # Re-fetched fresh on every iteration rather than loaded once as a
+        # list of instances before the loop. This looks like it trades away a
+        # single SELECT for N of them, but that trade is load-bearing, not an
+        # accident: SQLAlchemy's rollback() expires every object in the
+        # session's identity map, not just the one whose commit failed —
+        # regardless of expire_on_commit, which only governs commit(). If a
+        # sibling project's instance were held from before the loop, the
+        # commit-failure guard below would expire it, and the next attribute
+        # touch on it (e.g. `if not project.quote_id:` in sync_project) would
+        # try to lazily reload outside a greenlet context and raise
+        # MissingGreenlet — crashing the whole tick, which is exactly the
+        # "one failure aborts the batch" failure mode this guard exists to
+        # prevent. Holding ids instead of instances closes that hole: nothing
+        # from before the loop survives a rollback for us to accidentally
+        # touch, because we ask for it again afterwards. Do not "optimise"
+        # this back into a single select of full rows — the board holds a
+        # handful of cards, and correctness beats saving a few primary-key
+        # lookups.
+        project = await db.get(AitoProject, project_id)
+        if project is None or project.quote_sync_state != "pending":
+            # Gone, or already handled by something else since the id was
+            # selected above — nothing left to sync.
+            continue
         await sync_project(db, project)
         # Commit per project, not once after the loop. sync_project's own
         # catch-all keeps it from raising, but a single end-of-batch commit
@@ -203,11 +226,15 @@ async def run_sync_once(db: AsyncSession) -> int:
         # sync_project's "idle"/"error" update never made it to the DB — and
         # the next tick retries it from scratch, same as any other transient
         # failure. Projects already committed earlier in this loop are
-        # unaffected: each has its own commit boundary.
-        project_id = project.id  # captured before rollback expires the instance
+        # unaffected on disk, and projects still to come are unaffected in
+        # memory too: the rollback expires every instance in the session,
+        # including ones loaded earlier in this loop, but nothing from a
+        # previous iteration is still referenced here, and the next
+        # iteration re-fetches its project fresh via db.get() rather than
+        # reusing an expired one.
         try:
             await db.commit()
         except Exception:
             await db.rollback()
             logger.exception("Aito quote sync failed to commit project %s", project_id)
-    return len(projects)
+    return len(project_ids)

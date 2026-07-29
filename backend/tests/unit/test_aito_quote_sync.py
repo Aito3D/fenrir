@@ -293,6 +293,110 @@ async def test_commit_failure_for_one_project_does_not_roll_back_a_good_ones_wri
 
 
 @pytest.mark.asyncio
+async def test_commit_failure_for_middle_project_does_not_abort_the_last_one(db_session, monkeypatch):
+    """Regression guard for the ``MissingGreenlet`` cascade: with three pending
+    projects, the middle one's ``db.commit()`` failing must not take the third
+    one down with it.
+
+    ``rollback()`` expires every object in the session's identity map, not
+    just the failing project's — so if ``run_sync_once`` still held a list of
+    ORM instances loaded before the loop, touching the third project's
+    already-expired attributes after the second project's rollback would
+    raise ``MissingGreenlet`` (a lazy-load attempted outside a greenlet
+    context), aborting the tick before the third project is ever synced.
+    First and last project (a two-project version of the existing commit-
+    failure test) can't reproduce this: nothing is left to expire once the
+    failing project is the last one processed.
+    """
+    first = AitoProject(
+        description="Premiere piece",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client A",
+        quote_sync_state="pending",
+    )
+    middle = AitoProject(
+        description="Piece du milieu",
+        board_column="devis",
+        position=1,
+        client_id="C2",
+        client_name="Client B",
+        quote_sync_state="pending",
+    )
+    last = AitoProject(
+        description="Derniere piece",
+        board_column="devis",
+        position=2,
+        client_id="C3",
+        client_name="Client C",
+        quote_sync_state="pending",
+    )
+    db_session.add_all([first, middle, last])
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=first.id, position=0, title="First", scan_cost=5000))
+    db_session.add(AitoTask(project_id=middle.id, position=0, title="Middle", scan_cost=5000))
+    db_session.add(AitoTask(project_id=last.id, position=0, title="Last", scan_cost=5000))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    # All three sync cleanly through the real code path — no injected bug in
+    # the export step. What fails is the middle project's commit itself.
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("POST", "/estimates"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "date": "2026-07-29",
+                        "status": "draft",
+                        "total": 5000,
+                        "last_modified_time": "2026-07-29T10:00:00-1000",
+                    }
+                }
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    # Fail exactly the second of the three per-project commits (the middle
+    # project's). Counting calls rather than inspecting project state avoids
+    # touching an already-expired instance after the rollback below, which
+    # would itself raise trying to lazily reload outside a greenlet context.
+    original_commit = db_session.commit
+    commit_calls = 0
+
+    async def flaky_commit():
+        nonlocal commit_calls
+        commit_calls += 1
+        if commit_calls == 2:
+            raise RuntimeError("simulated commit failure")
+        await original_commit()
+
+    monkeypatch.setattr(db_session, "commit", flaky_commit)
+
+    assert await run_sync_once(db_session) == 3
+
+    await db_session.refresh(first)
+    await db_session.refresh(middle)
+    await db_session.refresh(last)
+    # First project's write already landed before the middle one's commit
+    # ever failed — it survives untouched.
+    assert first.quote_id == "E1"
+    assert first.quote_sync_state == "idle"
+    # Middle project's commit failed, so run_sync_once's own guard rolled it
+    # back: still pending, ready for retry on the next tick.
+    assert middle.quote_sync_state == "pending"
+    assert middle.quote_id is None
+    # The point of the test: the last project must still be processed and
+    # committed, even though it was loaded before the rollback that expired
+    # every object in the session's identity map.
+    assert last.quote_id == "E1"
+    assert last.quote_sync_state == "idle"
+
+
+@pytest.mark.asyncio
 async def test_zoho_not_configured_leaves_project_pending(db_session):
     """No credentials entered yet: stay pending, not a failure."""
     project = AitoProject(
