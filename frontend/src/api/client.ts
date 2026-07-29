@@ -3448,7 +3448,10 @@ export interface AitoProject {
    *  ('idle'). 'pending' while the worker has not yet caught up with the
    *  latest edit, 'error' when the last push failed, 'locked' once the
    *  quote has been invoiced and Zoho refuses further edits. */
-  quote_sync_state: 'idle' | 'pending' | 'error' | 'locked';
+  /** 'unmanaged' is a legacy card this feature must never sync — the backend
+   *  returns it and SYNC_LABEL_KEY deliberately has no entry, so the detail
+   *  panel renders no sync row for one. */
+  quote_sync_state: 'unmanaged' | 'idle' | 'pending' | 'error' | 'locked';
   /** The last push failure, or null. Only meaningful when quote_sync_state
    *  is 'error'; stale/ignored otherwise. */
   quote_sync_error: string | null;

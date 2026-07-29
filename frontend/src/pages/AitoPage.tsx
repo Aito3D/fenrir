@@ -187,7 +187,18 @@ export function AitoPage() {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const aitoQuery = useQuery({ queryKey: ['aito-projects'], queryFn: api.getAitoProjects });
+  const aitoQuery = useQuery({
+    queryKey: ['aito-projects'],
+    queryFn: api.getAitoProjects,
+    // A card whose quote the worker has not created yet shows "Creating
+    // quote…", and the app-wide staleTime is 60s with no refetch while the
+    // window stays focused — so without this the placeholder sits there until
+    // the user blurs and returns. Bounded by construction: the sync worker
+    // ticks every 60s, so a card resolves within about six polls, and polling
+    // stops dead the moment nothing is in flight.
+    refetchInterval: (query) =>
+      query.state.data?.some((p) => p.quote_sync_state === 'pending') ? 10_000 : false,
+  });
 
   const [board, setBoard] = useState<Board>(emptyBoard);
   const [showModal, setShowModal] = useState(false);

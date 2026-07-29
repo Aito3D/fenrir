@@ -9,7 +9,7 @@ import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { render } from '../utils';
 import { AitoPage } from '../../pages/AitoPage';
-import type { ZohoQuotePreview } from '../../api/client';
+import { api, type AitoProject, type ZohoQuotePreview } from '../../api/client';
 
 const project = {
   id: 12, description: 'Support GoPro', column: 'devis', position: 0, status: 'active',
@@ -456,6 +456,61 @@ describe('AitoPage (backend board)', () => {
       await user.click(within(modal).getByRole('button', { name: 'Restore' }));
 
       await waitFor(() => expect(restoreSpy).toHaveBeenCalled());
+    });
+  });
+
+  describe('quote sync polling', () => {
+    const baseProject: AitoProject = {
+      id: 1,
+      description: 'Support GoPro',
+      column: 'devis',
+      position: 0,
+      status: 'active',
+      client_id: 'z1',
+      client_name: 'ACME SARL',
+      client_phone: '+33 6 12 34 56 78',
+      client_email: null,
+      client_is_company: null,
+      quote_id: null,
+      quote_number: null,
+      quote_date: null,
+      quote_total: null,
+      quote_url: null,
+      quote_salesperson: null,
+      quote_status: null,
+      quote_sync_state: 'idle',
+      quote_sync_error: null,
+      created_by: null,
+      task_count: 0,
+      tasks_total: 0,
+      task_services: [],
+      move_lock: null,
+      created_at: '2026-07-01T10:00:00Z',
+      updated_at: '2026-07-02T10:00:00Z',
+    };
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('polls while a quote is still being created, and stops when none is pending', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+
+      const pending = [{ ...baseProject, id: 1, quote_sync_state: 'pending' as const, quote_number: null }];
+      const settled = [{ ...baseProject, id: 1, quote_sync_state: 'idle' as const, quote_number: 'DEV26-1' }];
+      const getAitoProjects = vi.spyOn(api, 'getAitoProjects').mockResolvedValue(pending);
+
+      render(<AitoPage />);
+      await waitFor(() => expect(getAitoProjects).toHaveBeenCalledTimes(1));
+
+      getAitoProjects.mockResolvedValue(settled);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await waitFor(() => expect(getAitoProjects).toHaveBeenCalledTimes(2));
+
+      // Nothing pending now: no further polling.
+      const callsAfterSettle = getAitoProjects.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(getAitoProjects.mock.calls.length).toBe(callsAfterSettle);
     });
   });
 });
