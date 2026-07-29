@@ -194,17 +194,19 @@ def build_line_items(
 ) -> list[dict]:
     """The full ``line_items`` array for a create or update.
 
-    Tasks first, in board order, each preceded by a header naming it when the
-    project has more than one task — a header over the only thing on the quote
-    is noise on the PDF. Then every foreign line, echoed as a bare
-    ``line_item_id``, which Books expands back into the untouched original.
-    Omitting a line deletes it, so anything not returned here is gone.
+    Tasks first, in board order, each preceded by a header naming it when more
+    than one task actually reaches the quote — a header over the only thing on
+    the quote is noise on the PDF. A task with no priced service emits no
+    line, so it never counts toward that total: only tasks that produce a
+    line item can make the header appear. Then every foreign line, echoed as
+    a bare ``line_item_id``, which Books expands back into the untouched
+    original. Omitting a line deletes it, so anything not returned here is
+    gone.
     """
     lines: list[dict] = []
-    emitted = [t for t in tasks if enabled_services(t)]
-    for task_row in emitted:
-        services = enabled_services(task_row)
-        if len(tasks) > 1 and task_row.title and task_row.title.strip():
+    emitted = [(t, s) for t, s in ((t, enabled_services(t)) for t in tasks) if s]
+    for task_row, services in emitted:
+        if len(emitted) > 1 and task_row.title and task_row.title.strip():
             lines.append({"line_item_category": "header", "name": task_row.title.strip()[:_TITLE_MAX]})
         for index, service in enumerate(services):
             if service == "impression":

@@ -204,7 +204,8 @@ def test_foreign_lines_are_preserved_by_id_after_the_aito_block():
 
 def test_a_task_with_no_service_produces_nothing_not_even_a_header():
     lines = build_line_items([task(title="Vide"), task(title="Reelle", scan_cost=1)], [], CATALOGUE)
-    assert [line.get("name") for line in lines if line.get("line_item_category") == "header"] == ["Reelle"]
+    assert [line.get("line_item_category") for line in lines] == [None]
+    assert lines[0]["item_id"] == "ITEM_SCAN"
 
 
 from backend.app.services.aito_quote_import import build_preview  # noqa: E402
