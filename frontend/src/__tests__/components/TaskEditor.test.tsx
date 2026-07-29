@@ -360,15 +360,88 @@ describe('TaskRow', () => {
     expect(lastCall.scanCost).not.toBe(0);
   });
 
-  it('drives Impression3D end to end and settles without a runaway onChange loop', async () => {
-    // Regression test for the loop guard in TaskRow's handleImpressionCostChange
-    // (`if (total === task.impressionCost) return;`). ImpressionFields reports
-    // its recomputed total through a fresh callback identity on every TaskRow
-    // render, so without that bail, wiring printer/material/weight/time
-    // through to a real cost recurses: onChange -> new `task` -> new callback
-    // identity -> effect fires again -> onChange -> ... None of the other
-    // tests in this file drive ImpressionFields' own inputs, so none of them
-    // would go red if the guard were removed or weakened — this one does.
+  it('typing a Printing cost emits impressionCost set; clearing it emits null, not 0', () => {
+    // Impression3D's cost is now a field the user can type into, not only a
+    // figure the calculator derives. Same null-vs-zero rule as the other three
+    // services: empty means the service is disabled, 0 means it is free.
+    const onChangeSpy = vi.fn();
+    render(<ControlledTaskRow initial={emptyTaskDraft()} onChangeSpy={onChangeSpy} />);
+    const costInput = screen.getByLabelText('Printing');
+
+    fireEvent.change(costInput, { target: { value: '4200' } });
+    expect(onChangeSpy).toHaveBeenLastCalledWith(expect.objectContaining({ impressionCost: 4200 }));
+
+    fireEvent.change(costInput, { target: { value: '' } });
+    const lastCall = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft;
+    expect(lastCall.impressionCost).toBeNull();
+    expect(lastCall.impressionCost).not.toBe(0);
+  });
+
+  it('editing a print field on an imported task does not clear its cost', async () => {
+    // An imported task carries the quote's price but no printer or filament —
+    // the quote names a material in prose, not a calculator filament id. So
+    // computeImpressionCost returns null for it. Reporting that null would not
+    // blank the field, it would DISABLE the service: null is "off", which
+    // drops the badge and the amount from the project total. The calculator
+    // may only write a cost it was actually able to compute.
+    const onChangeSpy = vi.fn();
+    const imported: TaskDraft = {
+      ...emptyTaskDraft(),
+      id: 7,
+      impression: { printerId: null, filamentId: null, weightG: 210, timeMin: 780, quantity: 1, color: 'Noir' },
+      impressionCost: 2400,
+    };
+    render(<ControlledTaskRow initial={imported} onChangeSpy={onChangeSpy} />);
+
+    fireEvent.change(await screen.findByLabelText(/colou?r/i), { target: { value: 'Rouge' } });
+
+    const lastCall = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft;
+    expect(lastCall.impression.color).toBe('Rouge');
+    expect(lastCall.impressionCost).toBe(2400);
+  });
+
+  it('does not stomp a hand-typed cost after a print field was edited', async () => {
+    // The bug the old useEffect had: it re-fired on every render (TaskRow hands
+    // ImpressionFields a fresh callback identity each time), so once a print
+    // field had been touched, any later render reported the COMPUTED total and
+    // overwrote whatever the user had typed into Cost.
+    const onChangeSpy = vi.fn();
+    const user = userEvent.setup();
+    render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={onChangeSpy} />);
+    await expandTask();
+
+    await user.click(await screen.findByRole('combobox', { name: /printer/i }));
+    await user.click(await screen.findByRole('option', { name: 'H2S' }));
+    await user.click(screen.getByRole('combobox', { name: /material/i }));
+    await user.click(await screen.findByRole('option', { name: 'Sunlu PA6-CF' }));
+    await user.type(screen.getByLabelText(/weight/i), '40');
+    await user.type(screen.getByLabelText(/print time/i), '1');
+
+    await waitFor(() => {
+      const tasks = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft[] | undefined;
+      expect(tasks?.[0].impressionCost).not.toBeNull();
+    });
+
+    fireEvent.change(screen.getByLabelText('Printing'), { target: { value: '999' } });
+
+    // Give every pending render and query a chance to flush. Under the old
+    // effect the computed total lands here and 999 is gone.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    const tasks = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft[];
+    expect(tasks[0].impressionCost).toBe(999);
+  });
+
+  it('drives Printing end to end and settles without a runaway onChange loop', async () => {
+    // ImpressionFields reports its price from its change handler, once per
+    // edit — not from an effect that re-fires on every render. This test
+    // wires printer/material/weight/time through to a real cost and then
+    // proves the tree goes quiet: the onChange count must hold steady rather
+    // than grow. It is the only test here that drives ImpressionFields' own
+    // inputs, so it is the only one that would catch a regression back to
+    // effect-based reporting.
     const onChangeSpy = vi.fn();
     const user = userEvent.setup();
     render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={onChangeSpy} />);
@@ -406,12 +479,10 @@ describe('TaskRow', () => {
 
   it('opening a task with a stored cost and touching nothing issues zero onChange calls, even though today\'s rates would recompute a different total', async () => {
     // Regression for the "opening the detail panel silently rewrites every
-    // saved impression_cost" bug: ImpressionFields used to report its
-    // recomputed total on every mount, and TaskRow forwarded it whenever it
-    // differed from the frozen figure — so merely opening a task with a real
-    // printer/filament and a stored cost that no longer matches today's rates
-    // (mockDefaults here differ sharply from a plausible frozen quote) would
-    // silently PATCH the new number over the frozen one. Nothing here is a
+    // saved impression_cost" bug. Pricing now happens only in the change
+    // handler, so a mount cannot report anything — but this test is what
+    // pins that down: mockDefaults differ sharply from the stored 12345, so
+    // any recompute-on-mount would be visible immediately. Nothing here is a
     // user edit, so onChange must never fire.
     const onChangeSpy = vi.fn();
     const task: TaskDraft = {

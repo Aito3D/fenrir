@@ -62,11 +62,9 @@ function CostInput({
  *  anything. `expanded` is owned by TaskEditor, which decides what a freshly
  *  added row starts as.
  *
- *  The body is unmounted rather than hidden when collapsed. That resets the
- *  `hasEdited` provenance gate inside ImpressionFields, which is the safe
- *  direction: the gate only ever *permits* a recomputed cost to be reported,
- *  so a fresh instance re-locks a frozen `impressionCost` until the user
- *  edits a print field again. */
+ *  The body is unmounted rather than hidden when collapsed, which keeps the
+ *  collapsed row cheap: a closed row runs none of ImpressionFields' three
+ *  reference-data queries. */
 export function TaskRow({ task, index, onChange, onRemove, expanded, onToggle }: TaskRowProps) {
   const { t } = useTranslation();
   const reactId = useId();
@@ -80,18 +78,6 @@ export function TaskRow({ task, index, onChange, onRemove, expanded, onToggle }:
   const currency = settings?.currency || 'USD';
 
   const name = task.title.trim() || t('aito.taskFallbackName', { n: index + 1 });
-
-  // ImpressionFields reports its recomputed total through a fresh callback
-  // identity on every render (see its `onCostChange` prop), so the effect
-  // that calls it re-fires whenever this row re-renders — not only when the
-  // total itself changes. Left unguarded that loops: onChange -> new `task`
-  // -> new callback identity -> effect fires again -> onChange -> ...
-  // Bailing when the value hasn't actually moved breaks the cycle without
-  // requiring the callback to be referentially stable.
-  const handleImpressionCostChange = (total: number | null) => {
-    if (total === task.impressionCost) return;
-    onChange({ ...task, impressionCost: total });
-  };
 
   return (
     <div className="group rounded-lg border border-bambu-dark-tertiary">
@@ -181,11 +167,37 @@ export function TaskRow({ task, index, onChange, onRemove, expanded, onToggle }:
           </div>
 
           <div>
-            <p className={labelCls}>{t('aito.serviceImpression3D')}</p>
+            {/* The label and the Cost input share a row: Impression3D is the
+                one service whose cost has parameters under it, so its input
+                cannot sit in the three-column grid with the flat-rate ones.
+                It lives HERE rather than inside ImpressionFields because
+                ImpressionFields returns early when the calculator has no
+                printers or filaments configured — and an imported cost still
+                has to be readable and editable on such an installation. */}
+            <div className="flex items-end justify-between gap-3 mb-1">
+              <label htmlFor={`${reactId}-impression`} className={`${labelCls} mb-0`}>
+                {t('aito.serviceImpression3D')}
+              </label>
+              <div className="w-32 flex-shrink-0">
+                <CostInput
+                  id={`${reactId}-impression`}
+                  value={task.impressionCost}
+                  onChange={(next) => onChange({ ...task, impressionCost: next })}
+                />
+              </div>
+            </div>
             <ImpressionFields
               value={task.impression}
-              onChange={(next) => onChange({ ...task, impression: next })}
-              onCostChange={handleImpressionCostChange}
+              onChange={(next, computedCost) =>
+                onChange({
+                  ...task,
+                  impression: next,
+                  // Only when the calculator actually priced it — see
+                  // ImpressionFields' `onChange` doc. `undefined` means "leave
+                  // the stored cost alone", which is not the same as `null`.
+                  ...(computedCost !== undefined ? { impressionCost: computedCost } : {}),
+                })
+              }
             />
           </div>
 

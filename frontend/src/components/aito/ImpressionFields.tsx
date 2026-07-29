@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useId, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -12,9 +12,19 @@ import type { ImpressionDraft } from '../../utils/taskDraft';
 
 export interface ImpressionFieldsProps {
   value: ImpressionDraft;
-  onChange: (next: ImpressionDraft) => void;
-  /** The recomputed total, hoisted so the parent can store it. */
-  onCostChange: (total: number | null) => void;
+  /** Reports the edited draft, plus the recomputed price when — and only
+   *  when — the calculator could produce one.
+   *
+   *  Both travel in ONE call on purpose. Two sequential calls would each be
+   *  built from the same stale `task` snapshot in the parent's closures, and
+   *  the second would silently discard the first.
+   *
+   *  `computedCost` is left `undefined` when the reference data has not
+   *  resolved or the parameter set is incomplete — an imported task looks
+   *  exactly like that (a cost from the quote, no printer, no filament).
+   *  Reporting a `null` there would not blank the cost, it would DISABLE the
+   *  service. Clearing a cost is the Cost input's job. */
+  onChange: (next: ImpressionDraft, computedCost?: number) => void;
 }
 
 /** filament/printer + weight/time/color/quantity for one task's Impression3D
@@ -22,7 +32,7 @@ export interface ImpressionFieldsProps {
  *  `computeImpressionCost` (taskDraft.ts) — this component only collects
  *  inputs and renders the result, the same split the calculator page keeps
  *  between `pricing.ts` and its cards. */
-export function ImpressionFields({ value, onChange, onCostChange }: ImpressionFieldsProps) {
+export function ImpressionFields({ value, onChange }: ImpressionFieldsProps) {
   const { t } = useTranslation();
   const reactId = useId();
 
@@ -64,29 +74,23 @@ export function ImpressionFields({ value, onChange, onCostChange }: ImpressionFi
     [value, filament, printer, defaults],
   );
 
-  // Whether the *user* has changed a print input in this mount. Recomputing
-  // and reporting on mount — before any edit — is exactly the bug this guards
-  // against: a saved task opens with a frozen `impression_cost`, this effect
-  // would otherwise report today's recompute (which may differ, or may be
-  // `null` while `defaults` is still resolving, or `null` forever for a
-  // dangling printer/filament reference), and the panel would PATCH that over
-  // the frozen figure just because the row was looked at. Only a genuine
-  // edit — routed through `handleChange` below — may cause a report.
-  const [hasEdited, setHasEdited] = useState(false);
+  // Pricing is a side effect on the parent, so it happens here — at the moment
+  // a print input actually changes — rather than in an effect. An effect
+  // re-fires on every render (the parent hands us a fresh callback identity
+  // each time), which is what used to require both a `hasEdited` provenance
+  // flag here and an equality guard in the parent, and which still stomped a
+  // hand-typed cost on the next render.
+  //
+  // `next` is priced, not `value`: state has not advanced yet at this point.
   const handleChange = (next: ImpressionDraft) => {
-    setHasEdited(true);
-    onChange(next);
+    if (!defaults || referenceDataLoading) {
+      onChange(next);
+      return;
+    }
+    const nextFilament = filaments.find((f) => f.id === next.filamentId) ?? null;
+    const nextPrinter = printers.find((p) => p.id === next.printerId) ?? null;
+    onChange(next, computeImpressionCost(next, nextFilament, nextPrinter, defaults)?.total_ttc_qty);
   };
-
-  // Reporting the total is a side effect on the parent, not something that's
-  // safe to do while rendering — it has to happen after commit. Gated on
-  // `hasEdited` (see above) and held back until printer/filament/defaults
-  // have all resolved, so a still-loading `defaults` query can't momentarily
-  // report `null` and clobber a stored cost mid-fetch.
-  useEffect(() => {
-    if (!hasEdited || referenceDataLoading) return;
-    onCostChange(result?.total_ttc_qty ?? null);
-  }, [result, onCostChange, hasEdited, referenceDataLoading]);
 
   if (printers.length === 0) {
     return (
