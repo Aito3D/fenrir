@@ -114,15 +114,27 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         # the next edit that adds a service fixes it.
         project.quote_sync_error = "Project has no priced service yet"
         return
-    estimate = await zoho_service.create_estimate(
-        db,
-        {
-            "customer_id": project.client_id,
-            "reference_number": f"AITO-{project.id}",
-            "is_inclusive_tax": True,
-            "line_items": line_items,
-        },
-    )
+    # Idempotency guard: a prior tick can have POSTed successfully and then
+    # died before the commit that would have recorded the returned
+    # estimate_id (the project stays 'pending' either way). Without this
+    # check, the next tick would POST a second estimate under the exact same
+    # AITO-{id} reference, orphaning the first one in Books. A lookup failure
+    # is NOT swallowed into "create anyway" — it propagates like any other
+    # ZohoUpstreamError, so sync_project's own handling retries next tick
+    # instead of risking a duplicate.
+    reference_number = f"AITO-{project.id}"
+    estimate = await zoho_service.find_estimate_by_reference(db, reference_number)
+    if estimate is None:
+        estimate = await zoho_service.create_estimate(
+            db,
+            {
+                "customer_id": project.client_id,
+                "reference_number": reference_number,
+                "is_inclusive_tax": True,
+                "line_items": line_items,
+            },
+        )
+    await _write_back_rounded_impression(db, project.id)
     _apply_estimate(project, estimate)
     if project.quote_id:
         project.quote_url = await zoho_service.books_app_url(db, project.quote_id)
@@ -176,6 +188,19 @@ async def _reconcile_status(db: AsyncSession, project: AitoProject, estimate: di
     if project.status == "deleted":
         if status != "declined":
             project.quote_status_before_trash = status
+            # Persisted BEFORE the decline call, not after: set_estimate_status
+            # is a real, irreversible write to Books, and if the commit that
+            # would normally save this snapshot happened only afterwards (as
+            # the caller's later commit), a crash or failed commit in between
+            # would leave Books already declined while the DB never recorded
+            # what it was declined FROM. The next tick reads status ==
+            # "declined" from Books and — correctly, to stay idempotent about
+            # the decline itself — skips re-capturing, so a sent/accepted
+            # history would be gone for good. Committing here closes that
+            # window: worst case a crash right after this commit still loses
+            # nothing, because the snapshot is already durable even though the
+            # decline call hasn't happened yet, so it simply retries next tick.
+            await db.commit()
             await zoho_service.set_estimate_status(db, project.quote_id, "declined")
             project.quote_status = "declined"
         project.quote_sync_state = "idle"
@@ -200,12 +225,36 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         return
     if await _reconcile_status(db, project, estimate):
         return
+    if estimate.get("is_inclusive_tax") is False:
+        # Board costs are stored TTC (tax-inclusive) and this module never
+        # converts them. Writing our line items onto a tax-EXCLUSIVE estimate
+        # would have Books add tax on top of a figure that already includes
+        # it, silently inflating the total by the tax rate on every push.
+        # Treated exactly like an invoiced quote (see _is_locked above): no
+        # line items may be written, and the reason is recorded for the user
+        # rather than retried, since nothing about a retry would change it.
+        project.quote_sync_state = "locked"
+        if estimate.get("status") is not None:
+            project.quote_status = estimate["status"]
+        project.quote_sync_error = (
+            "This quote is tax-exclusive; Aito costs are tax-inclusive and cannot be pushed without inflating the total"
+        )
+        project.quote_sync_failures = 0
+        return
     catalogue = await zoho_service.get_catalogue(db)
     line_items = build_line_items(
         await load_export_tasks(db, project.id),
         estimate.get("line_items") or [],
         catalogue,
     )
+    if not line_items:
+        # Mirrors the create-path guard: a project whose only priced service
+        # was just cleared by hand would otherwise PUT an empty line_items
+        # array, and Books deletes every Aito line a live quote had. Stay
+        # pending, say nothing written: the next edit that adds a service
+        # back fixes it, same as create.
+        project.quote_sync_error = "Project has no priced service left; nothing was written to the quote"
+        return
     updated = await zoho_service.update_estimate_lines(db, project.quote_id, line_items)
     await _write_back_rounded_impression(db, project.id)
     _apply_estimate(project, updated)

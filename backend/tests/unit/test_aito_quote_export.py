@@ -208,6 +208,34 @@ def test_a_task_with_no_service_produces_nothing_not_even_a_header():
     assert lines[0]["item_id"] == "ITEM_SCAN"
 
 
+def test_catalogue_override_to_a_non_matching_sku_does_not_duplicate_our_own_line():
+    """The `zoho_item_*_id` settings are documented as overridable to a Books
+    item whose SKU does not follow the usual P3DIMP-style prefix. Before this
+    fix, `is_foreign` classified purely on SKU prefix, so Books echoing our
+    own overridden-item line back (as `existing_line_items`, from the
+    estimate the previous push wrote) would be judged "foreign" and both kept
+    AND have a fresh line re-emitted from the task — a duplicate that grows
+    on every single push.
+    """
+    catalogue = Catalogue(
+        scan_item_id="ITEM_SCAN",
+        modelisation_item_id="ITEM_MOD",
+        impression_item_id="ITEM_IMP_CUSTOM",  # overridden away from any P3DIMP-prefixed SKU
+        usinage_item_id="ITEM_USI",
+        tax_id="TAX",
+    )
+    existing = [
+        {"line_item_id": "L1", "item_id": "ITEM_IMP_CUSTOM", "sku": "CUSTOM-NOT-A-KNOWN-PREFIX", "item_order": 1},
+    ]
+    lines = build_line_items([task(impression_cost=1000, impression_quantity=1)], existing, catalogue)
+    impression_lines = [line for line in lines if line.get("item_id") == "ITEM_IMP_CUSTOM"]
+    assert len(impression_lines) == 1
+    # The survivor must be the freshly-built line (no line_item_id), not the
+    # old one echoed back as if it were foreign.
+    assert "line_item_id" not in impression_lines[0]
+    assert not any(line.get("line_item_id") == "L1" for line in lines)
+
+
 from backend.app.services.aito_quote_import import build_preview  # noqa: E402
 
 _SKU_FOR_ITEM = {

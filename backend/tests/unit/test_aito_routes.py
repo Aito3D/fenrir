@@ -638,10 +638,20 @@ async def test_create_records_no_creator_when_auth_is_disabled(async_client):
 async def idle_project(async_client, db_session):
     """A project with one task, forced to 'idle' so a test observes the
     *transition* an endpoint makes rather than the value a fresh create
-    already leaves behind."""
+    already leaves behind.
+
+    Also given a quote_id, so this simulates a project that has genuinely
+    completed a push (idle + quote_id set) rather than a legacy
+    localStorage-migrated card (idle + quote_id NULL) — the two are
+    deliberately indistinguishable to `_mark_pending_if_ours`, which must
+    never re-mark the latter pending. Without a quote_id here, this fixture
+    would itself be shaped exactly like a legacy card and every test built on
+    it would be asserting on behaviour the fix now (correctly) refuses to do.
+    """
     created = (await _create(async_client, tasks=[_task()])).json()
     task_id = (await async_client.get(f"/api/v1/aito/{created['id']}/tasks")).json()[0]["id"]
     project = (await db_session.execute(select(AitoProject).where(AitoProject.id == created["id"]))).scalar_one()
+    project.quote_id = "E-EXISTING"
     project.quote_sync_state = "idle"
     project.quote_sync_failures = 3
     await db_session.commit()

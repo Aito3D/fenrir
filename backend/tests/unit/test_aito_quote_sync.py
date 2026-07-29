@@ -79,6 +79,7 @@ async def test_pending_project_without_a_quote_gets_one_created(db_session):
     zoho_service.transport = httpx.MockTransport(
         zoho_handler(
             {
+                ("GET", "/estimates"): {"estimates": []},
                 ("POST", "/estimates"): {
                     "estimate": {
                         "estimate_id": "E1",
@@ -88,7 +89,7 @@ async def test_pending_project_without_a_quote_gets_one_created(db_session):
                         "total": 5000,
                         "last_modified_time": "2026-07-29T10:00:00-1000",
                     }
-                }
+                },
             },
             seen,
         )
@@ -159,6 +160,7 @@ async def test_unexpected_bug_in_one_project_does_not_abort_the_next(db_session,
     zoho_service.transport = httpx.MockTransport(
         zoho_handler(
             {
+                ("GET", "/estimates"): {"estimates": []},
                 ("POST", "/estimates"): {
                     "estimate": {
                         "estimate_id": "E1",
@@ -168,7 +170,7 @@ async def test_unexpected_bug_in_one_project_does_not_abort_the_next(db_session,
                         "total": 5000,
                         "last_modified_time": "2026-07-29T10:00:00-1000",
                     }
-                }
+                },
             }
         )
     )
@@ -246,6 +248,7 @@ async def test_commit_failure_for_one_project_does_not_roll_back_a_good_ones_wri
     zoho_service.transport = httpx.MockTransport(
         zoho_handler(
             {
+                ("GET", "/estimates"): {"estimates": []},
                 ("POST", "/estimates"): {
                     "estimate": {
                         "estimate_id": "E1",
@@ -255,7 +258,7 @@ async def test_commit_failure_for_one_project_does_not_roll_back_a_good_ones_wri
                         "total": 5000,
                         "last_modified_time": "2026-07-29T10:00:00-1000",
                     }
-                }
+                },
             }
         )
     )
@@ -346,6 +349,7 @@ async def test_commit_failure_for_middle_project_does_not_abort_the_last_one(db_
     zoho_service.transport = httpx.MockTransport(
         zoho_handler(
             {
+                ("GET", "/estimates"): {"estimates": []},
                 ("POST", "/estimates"): {
                     "estimate": {
                         "estimate_id": "E1",
@@ -355,7 +359,7 @@ async def test_commit_failure_for_middle_project_does_not_abort_the_last_one(db_
                         "total": 5000,
                         "last_modified_time": "2026-07-29T10:00:00-1000",
                     }
-                }
+                },
             }
         )
     )
@@ -444,6 +448,8 @@ async def test_zoho_request_rejected_goes_straight_to_error(db_session):
     def handler(request: httpx.Request) -> httpx.Response:
         if "oauth" in request.url.path:
             return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        if request.method == "GET" and request.url.path.endswith("/estimates"):
+            return httpx.Response(200, json={"estimates": []})
         if request.method == "POST" and request.url.path.endswith("/estimates"):
             return httpx.Response(400, json={"message": "Invalid customer_id"})
         return httpx.Response(404, json={"message": "no route"})
@@ -854,3 +860,253 @@ async def test_sync_is_skipped_when_disabled_in_settings(db_session):
     assert await sync_enabled(db_session) is True
     await set_setting(db_session, "aito_quote_sync_enabled", "false")
     assert await sync_enabled(db_session) is False
+
+
+# --- Final pre-merge review fixes -------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_tax_exclusive_estimate_is_locked_and_never_written(db_session):
+    """C1: board costs are stored TTC and this module never converts. Pushing
+    our line items onto a tax-EXCLUSIVE estimate would have Books add tax on
+    top of a figure that already includes it, silently inflating the total by
+    the tax rate on every push. Must be locked exactly like an invoiced quote,
+    and nothing may be PUT."""
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    await _configure_zoho(db_session)
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "draft",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": False,
+                        "line_items": [],
+                    }
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "locked"
+    assert project.quote_sync_error
+    assert not any(entry[0] == "PUT" for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_create_writes_back_rounded_impression_immediately(db_session):
+    """I3: the write-back must happen on the CREATE path too, not just
+    update — otherwise a brand new project shows a stale, unrounded figure on
+    its card until some unrelated later edit converges the two sides."""
+    project = AitoProject(
+        description="Helice",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_sync_state="pending",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(
+        AitoTask(project_id=project.id, position=0, title="Helice", impression_cost=2401, impression_quantity=2)
+    )
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {"estimates": []},
+                ("POST", "/estimates"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "status": "draft",
+                        "total": 2400,
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    task_row = (await db_session.execute(select(AitoTask).where(AitoTask.project_id == project.id))).scalar_one()
+    # 2401 over 2 units cannot be expressed at price_precision 0, same as the
+    # update-path test above — this one exercises the create path instead.
+    assert task_row.impression_cost == 2400
+
+
+@pytest.mark.asyncio
+async def test_create_adopts_an_existing_estimate_with_the_same_reference_instead_of_duplicating(db_session):
+    """I4: simulates the aftermath of a POST that succeeded but whose commit
+    then failed — the project is still `pending` and quote_id-less, but Books
+    already holds an estimate under this exact AITO-{id} reference. The next
+    tick must adopt that orphan, not POST a second one."""
+    project = AitoProject(
+        description="Helice",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_sync_state="pending",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Helice", scan_cost=5000))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {
+                    "estimates": [
+                        {
+                            "estimate_id": "E-ORPHAN",
+                            "estimate_number": "DEV26-9002",
+                            "date": "2026-07-29",
+                            "status": "draft",
+                            "total": 5000,
+                            "last_modified_time": "2026-07-29T09:00:00-1000",
+                        }
+                    ]
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_id == "E-ORPHAN"
+    assert project.quote_sync_state == "idle"
+    assert not any(entry[0] == "POST" for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_create_lookup_failure_retries_rather_than_blindly_creating(db_session):
+    """I4: when the reference-number lookup itself fails, creation must NOT
+    fall back to POSTing anyway — that risks the exact duplicate this fix
+    exists to prevent. It is treated as an ordinary upstream failure and
+    retried next tick, the same as any other Zoho outage."""
+    project = AitoProject(
+        description="Helice",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_sync_state="pending",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Helice", scan_cost=5000))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    seen: list = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        seen.append((request.method, request.url.path))
+        if request.method == "GET" and request.url.path.endswith("/estimates"):
+            return httpx.Response(503, json={"message": "down"})
+        return httpx.Response(500, json={"message": "should not be reached"})
+
+    zoho_service.transport = httpx.MockTransport(handler)
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "pending"
+    assert project.quote_id is None
+    assert project.quote_sync_failures == 1
+    assert not any(method == "POST" for method, _ in seen)
+
+
+@pytest.mark.asyncio
+async def test_update_with_no_priced_service_does_not_wipe_the_quotes_lines(db_session):
+    """I6: clearing the only priced service on the only task of an existing
+    quote must not PUT an empty line_items array onto it — Books would delete
+    every Aito line the live estimate has."""
+    project = await _project_with_quote(db_session)  # no cost fields set -> nothing priced
+    await _configure_zoho(db_session)
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "invoiced_amount": 0,
+                        "line_items": [],
+                    }
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert not any(entry[0] == "PUT" for entry in seen)
+    assert project.quote_sync_error
+
+
+@pytest.mark.asyncio
+async def test_decline_snapshot_survives_a_commit_failure_that_happens_after_the_decline_call(db_session, monkeypatch):
+    """Deferred item 5: quote_status_before_trash must be durably persisted
+    BEFORE the (irreversible) decline call, not only by the caller's later
+    commit. Failing every commit issued once Books has actually recorded the
+    decline characterises "the commit after the decline call fails" without
+    hardcoding a specific call count — which would differ between the pre-fix
+    (one commit total) and post-fix (two commits) versions of this code."""
+    project = await _project_with_quote(db_session, scan_cost=1)
+    await _configure_zoho(db_session)
+    project.status = "deleted"
+    await db_session.commit()
+
+    decline_seen = {"done": False}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        if request.method == "GET" and request.url.path.endswith("/estimates/E1"):
+            return httpx.Response(
+                200,
+                json={"estimate": {"estimate_id": "E1", "status": "sent", "invoiced_amount": 0, "line_items": []}},
+            )
+        if request.method == "POST" and request.url.path.endswith("/status/declined"):
+            decline_seen["done"] = True
+            return httpx.Response(200, json={"message": "ok"})
+        return httpx.Response(404, json={"message": "no route"})
+
+    zoho_service.transport = httpx.MockTransport(handler)
+    zoho_service.invalidate_token()
+
+    original_commit = db_session.commit
+
+    async def flaky_commit():
+        if decline_seen["done"]:
+            raise RuntimeError("simulated commit failure after the decline call")
+        await original_commit()
+
+    monkeypatch.setattr(db_session, "commit", flaky_commit)
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_status_before_trash == "sent"

@@ -217,14 +217,52 @@ async def _apply_rules(db: AsyncSession, project: AitoProject) -> None:
 
 
 def _mark_pending(project: AitoProject) -> None:
-    """Hand the project to the Zoho sync worker.
+    """Hand the project to the Zoho sync worker unconditionally.
 
     The only thing a request path ever does about Zoho. Clearing the failure
     counter is what makes an edit the natural way to retry a project stuck in
     'error' — the user fixes whatever Books objected to and saves.
+
+    Called directly only from ``create_project``'s own-quote branch — every
+    other handler edits an EXISTING project and must go through
+    ``_mark_pending_if_ours`` instead, which adds the guard that keeps a
+    legacy quote-less card from ever being marked. See that function's
+    docstring for why the two must not be merged.
     """
     project.quote_sync_state = "pending"
     project.quote_sync_failures = 0
+
+
+def _mark_pending_if_ours(project: AitoProject) -> None:
+    """Like ``_mark_pending``, but only for a project this feature actually
+    owns the quote lifecycle of.
+
+    ``quote_sync_state`` defaults to 'idle', and the product decision for the
+    legacy localStorage migration is that an imported quote-less card is left
+    alone, permanently: nothing about editing it should ever cause a NEW
+    estimate to be created in Books for a job that may already have been
+    quoted outside the app. But the worker's rule for what 'pending' means is
+    unconditional — pending + quote_id IS NULL means "create a quote" — so a
+    content handler that called the bare ``_mark_pending`` on a legacy card
+    would start quoting it the moment its description was edited.
+
+    The guard is `quote_id is not None or quote_sync_state != "idle"`:
+
+    - A legacy card is `idle` with `quote_id` NULL, so it fails the test and
+      is never marked — exactly "left alone, permanently".
+    - A project this feature created is marked 'pending' at creation time
+      (see ``create_project``, which calls the unconditional ``_mark_pending``
+      directly) and only ever reaches 'idle' again once a push has actually
+      succeeded — at which point it also carries a ``quote_id`` (from
+      ``_apply_estimate``). So a project of ours is never simultaneously
+      'idle' and quote_id-less at any point a later request could observe it,
+      except while its own creation request is still in flight — which is
+      this same request, not a future edit. A project whose first creation
+      attempt failed stays 'pending' or 'error', never drops back to 'idle',
+      so it still passes the test and keeps retrying on the next edit.
+    """
+    if project.quote_id is not None or project.quote_sync_state != "idle":
+        _mark_pending(project)
 
 
 async def _mark_project_pending_for_task(db: AsyncSession, project_id: int) -> AitoProject | None:
@@ -234,7 +272,7 @@ async def _mark_project_pending_for_task(db: AsyncSession, project_id: int) -> A
     callers that also need to run `_apply_rules` on it don't load it twice."""
     project = (await db.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one_or_none()
     if project:
-        _mark_pending(project)
+        _mark_pending_if_ours(project)
     return project
 
 
@@ -299,7 +337,18 @@ async def create_project(
         created_by=current_user.username if current_user else None,
     )
     db.add(project)
-    _mark_pending(project)
+    if payload.quote_id is None:
+        # A payload with no quote_id is a genuine new job: mark it pending so
+        # the worker creates its estimate. A payload that already carries a
+        # quote_id came through the Import flow — the imported project is by
+        # definition already in sync with that quote (its tasks were derived
+        # FROM it), so marking pending here would have the worker take the
+        # UPDATE path within one tick and PUT a freshly-regenerated
+        # line_items array onto a real customer estimate nobody has touched
+        # yet: hand-typed rows deleted, names/SKUs reverted to catalogue
+        # values, tax forced onto every line. The user's first real edit
+        # marks it pending as normal and pushes exactly what changed.
+        _mark_pending(project)
     # Flush so the project has an id the tasks can reference; one commit still
     # covers both, so a failure creates neither.
     await db.flush()
@@ -338,7 +387,7 @@ async def add_task(
     project = (await db.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    _mark_pending(project)
+    _mark_pending_if_ours(project)
     highest = await db.scalar(select(func.max(AitoTask.position)).where(AitoTask.project_id == project_id))
     task = AitoTask(project_id=project_id, position=(highest + 1) if highest is not None else 0, **payload.model_dump())
     db.add(task)
@@ -508,7 +557,7 @@ async def update_project(
     for key in ("client_id", "client_name", "client_phone", "client_email", "client_is_company"):
         if key in fields:
             setattr(project, key, fields[key])
-    _mark_pending(project)
+    _mark_pending_if_ours(project)
     await db.commit()
     await db.refresh(project)
     return _to_response(project, await _one_summary(db, project.id))
@@ -531,7 +580,7 @@ async def restore_project(
     position = len(await _active_in_column(db, project.board_column))
     project.status = "active"
     project.position = position
-    _mark_pending(project)
+    _mark_pending_if_ours(project)
     await _apply_rules(db, project)
     await db.commit()
     await db.refresh(project)
@@ -551,5 +600,5 @@ async def delete_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     project.status = "deleted"
-    _mark_pending(project)
+    _mark_pending_if_ours(project)
     await db.commit()

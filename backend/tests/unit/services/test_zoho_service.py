@@ -465,3 +465,33 @@ async def test_get_catalogue_falls_back_to_the_verified_defaults(db_session):
     catalogue = await zoho_service.get_catalogue(db_session)
     assert catalogue.scan_item_id == "66407000006501192"
     assert catalogue.tax_id == "66407000009281008"
+
+
+@pytest.mark.asyncio
+async def test_find_estimate_by_reference_filters_by_the_exact_reference_number(async_client, db_session):
+    await _configure(async_client)
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json={"estimates": [{"estimate_id": "E1", "reference_number": "AITO-7"}]})
+
+    zoho_service.transport = _transport(handler)
+    result = await zoho_service.find_estimate_by_reference(db_session, "AITO-7")
+    assert seen["params"]["reference_number"] == "AITO-7"
+    assert result == {"estimate_id": "E1", "reference_number": "AITO-7"}
+
+
+@pytest.mark.asyncio
+async def test_find_estimate_by_reference_returns_none_when_nothing_matches(async_client, db_session):
+    await _configure(async_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(200, json={"estimates": []})
+
+    zoho_service.transport = _transport(handler)
+    assert await zoho_service.find_estimate_by_reference(db_session, "AITO-999") is None

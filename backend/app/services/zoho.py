@@ -217,6 +217,23 @@ class ZohoService:
         """The full estimate, line items included."""
         return (await self._request(db, "GET", f"/estimates/{estimate_id}")).get("estimate", {})
 
+    async def find_estimate_by_reference(self, db: AsyncSession, reference_number: str) -> dict | None:
+        """The estimate carrying this exact ``reference_number``, if Books has
+        one — an exact-match filter the list endpoint accepts, unlike
+        ``search_estimates``'s free-text search.
+
+        Used to make quote creation idempotent: before POSTing a new estimate
+        with ``reference_number = f"AITO-{project.id}"``, the caller checks
+        whether one already exists (e.g. because a previous tick's POST
+        succeeded but the commit that would have recorded its id failed) and
+        adopts it instead of creating a duplicate. Returns None rather than
+        raising when nothing matches — that is the expected, common case, not
+        an error.
+        """
+        payload = await self._request(db, "GET", "/estimates", params={"reference_number": reference_number})
+        estimates = payload.get("estimates") or []
+        return estimates[0] if estimates else None
+
     async def create_estimate(self, db: AsyncSession, payload: dict) -> dict:
         """Create a draft estimate. Template, salesperson, notes, terms, expiry
         and numbering are all left to the org defaults — this app sends only

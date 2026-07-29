@@ -159,6 +159,11 @@ class Catalogue:
             "usinage": self.usinage_item_id,
         }[service]
 
+    def item_ids(self) -> frozenset[str]:
+        """The four catalogue ids, for ownership checks that must not rely on
+        SKU prefixes alone — see ``is_foreign``."""
+        return frozenset({self.scan_item_id, self.modelisation_item_id, self.impression_item_id, self.usinage_item_id})
+
 
 def impression_rate_quantity(task: ExportTask) -> tuple[float, int]:
     """(rate, quantity) for the Impression3D line.
@@ -173,9 +178,20 @@ def impression_rate_quantity(task: ExportTask) -> tuple[float, int]:
     return round((task.impression_cost or 0) / quantity), quantity
 
 
-def is_foreign(line: dict) -> bool:
+def is_foreign(line: dict, catalogue: Catalogue) -> bool:
     """True for a line this app does not own: not a header, and not one of the
-    four AITO service SKUs. Retail items, laser cuts, delivery fees.
+    four AITO service items. Retail items, laser cuts, delivery fees.
+
+    Ownership is checked two ways, either of which is enough to claim the
+    line: the catalogue's item id, or the SKU prefix. The item id check comes
+    first and is what makes this safe against catalogue overrides — the four
+    ``zoho_item_*_id`` settings are deliberately overridable to a Books item
+    whose SKU does NOT start with the usual ``P3DIMP``-style prefix (that is
+    the documented reason the setting exists). Without the id check, such an
+    override would make our own emitted line — echoed back by Books with that
+    same item id — classify as foreign, so it both survives the "keep foreign
+    lines" pass below AND gets re-emitted fresh from the task, duplicating
+    itself a little more on every single push.
 
     A header row is deliberately NOT foreign. Headers are positional and carry
     no identity, so one typed by hand in Books is indistinguishable from one we
@@ -183,6 +199,8 @@ def is_foreign(line: dict) -> bool:
     format, not an oversight.
     """
     if line.get("line_item_category") == "header":
+        return False
+    if line.get("item_id") in catalogue.item_ids():
         return False
     return service_for_sku(line.get("sku")) is None
 
@@ -226,7 +244,7 @@ def build_line_items(
                 }
             )
     for line in sorted(existing_line_items, key=lambda item: item.get("item_order") or 0):
-        if is_foreign(line) and line.get("line_item_id"):
+        if is_foreign(line, catalogue) and line.get("line_item_id"):
             lines.append({"line_item_id": line["line_item_id"]})
     for position, line in enumerate(lines, start=1):
         line["item_order"] = position
