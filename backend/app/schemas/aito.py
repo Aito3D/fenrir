@@ -50,6 +50,11 @@ class AitoProjectCreate(BaseModel):
     client_phone: str | None = None
     client_email: str | None = None
     client_is_company: bool | None = None
+    quote_id: str | None = Field(default=None, max_length=50)
+    quote_number: str | None = Field(default=None, max_length=50)
+    quote_date: str | None = Field(default=None, max_length=10)
+    quote_total: float | None = Field(default=None, ge=0)
+    quote_url: str | None = Field(default=None, max_length=300)
     tasks: list[AitoTaskCreate] = Field(default_factory=list)
 
 
@@ -98,6 +103,11 @@ class AitoProjectResponse(BaseModel):
     client_phone: str | None
     client_email: str | None
     client_is_company: bool | None
+    quote_id: str | None
+    quote_number: str | None
+    quote_date: str | None
+    quote_total: float | None
+    quote_url: str | None
     # Aggregates over the project's tasks, so the board card can show a summary
     # without GET /aito/ shipping every task row. Required, never defaulted:
     # see _to_response in the routes module.

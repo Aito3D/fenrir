@@ -3877,6 +3877,18 @@ async def run_migrations(conn):
     # render the same label.
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN client_is_company BOOLEAN")
 
+    # Migration: Aito cards imported from a Zoho quote snapshot the quote's
+    # identity, date, total and deep link. Snapshotted rather than re-fetched so
+    # the detail panel renders with Zoho unreachable — and so a viewer with only
+    # aito:read never needs a Zoho permission. quote_total is the QUOTE's total,
+    # which can exceed the project total when non-AITO lines were skipped.
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_id VARCHAR(50)")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_number VARCHAR(50)")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_date VARCHAR(10)")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_total FLOAT")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_url VARCHAR(300)")
+    await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_aito_projects_quote_id ON aito_projects (quote_id)")
+
 
 _USER_PRINT_TEMPLATE_RENAMES: tuple[tuple[str, str, str], ...] = (
     ("user_print_start", "User Print Started", "User Print Started Email"),

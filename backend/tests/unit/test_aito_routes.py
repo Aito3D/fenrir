@@ -494,3 +494,45 @@ async def test_task_summaries_handles_many_projects_and_an_empty_list(db_session
     # A project with no tasks is simply absent — callers fall back to the empty
     # summary rather than paying for a row per task-free card.
     assert 3 not in summaries
+
+
+@pytest.mark.asyncio
+async def test_create_project_stores_quote_link(async_client):
+    r = await async_client.post(
+        "/api/v1/aito/",
+        json={
+            "description": "Tapis souple X4 bloc",
+            "client_id": "z1",
+            "client_name": "ACME",
+            "quote_id": "664070000095",
+            "quote_number": "DEV26-2461",
+            "quote_date": "2026-07-28",
+            "quote_total": 18000.0,
+            "quote_url": "https://books.zoho.eu/app/999#/estimates/664070000095",
+        },
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["quote_id"] == "664070000095"
+    assert body["quote_number"] == "DEV26-2461"
+    assert body["quote_date"] == "2026-07-28"
+    assert body["quote_total"] == 18000.0
+    assert body["quote_url"].endswith("#/estimates/664070000095")
+
+    listed = (await async_client.get("/api/v1/aito/")).json()
+    assert listed[0]["quote_number"] == "DEV26-2461"
+
+
+@pytest.mark.asyncio
+async def test_create_project_without_quote_leaves_quote_fields_null(async_client):
+    r = await async_client.post(
+        "/api/v1/aito/",
+        json={"description": "Manual card", "client_id": "z1", "client_name": "ACME"},
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["quote_id"] is None
+    assert body["quote_number"] is None
+    assert body["quote_date"] is None
+    assert body["quote_total"] is None
+    assert body["quote_url"] is None

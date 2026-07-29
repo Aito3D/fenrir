@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.database import Base
@@ -28,5 +28,12 @@ class AitoProject(Base):
     client_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     client_email: Mapped[str | None] = mapped_column(String(200), nullable=True)
     client_is_company: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Snapshot of the Zoho quote this project was imported from; NULL on cards
+    # created by hand. quote_total is the quote's own total, not the project's.
+    quote_id: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    quote_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    quote_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    quote_total: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quote_url: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

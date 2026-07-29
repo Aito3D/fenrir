@@ -115,6 +115,11 @@ def _to_response(p: AitoProject, summary: _TaskSummary) -> AitoProjectResponse:
         client_phone=p.client_phone,
         client_email=p.client_email,
         client_is_company=p.client_is_company,
+        quote_id=p.quote_id,
+        quote_number=p.quote_number,
+        quote_date=p.quote_date,
+        quote_total=p.quote_total,
+        quote_url=p.quote_url,
         task_count=summary.count,
         tasks_total=summary.total,
         task_services=list(summary.services),
@@ -204,6 +209,11 @@ async def create_project(
         client_phone=payload.client_phone,
         client_email=payload.client_email,
         client_is_company=payload.client_is_company,
+        quote_id=payload.quote_id,
+        quote_number=payload.quote_number,
+        quote_date=payload.quote_date,
+        quote_total=payload.quote_total,
+        quote_url=payload.quote_url,
     )
     db.add(project)
     # Flush so the project has an id the tasks can reference; one commit still
