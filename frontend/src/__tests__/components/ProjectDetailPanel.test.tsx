@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { screen, fireEvent, act, waitFor, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { useQuery } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { server } from '../mocks/server';
 import { render } from '../utils';
 import { ProjectDetailPanel } from '../../components/aito/ProjectDetailPanel';
+import { ToastProvider } from '../../contexts/ToastContext';
 import { api } from '../../api/client';
 import type { AitoProject, AitoTask } from '../../api/client';
 
@@ -333,6 +334,45 @@ describe('ProjectDetailPanel tasks', () => {
     await user.click(await screen.findByRole('button', { name: /mark done/i }));
 
     await waitFor(() => expect(boardFetches).toHaveBeenCalled());
+  });
+
+  it('does not resurrect a step\'s old Done state when the card is reopened', async () => {
+    // Production runs a 60s app-wide staleTime (App.tsx), so reopening a card
+    // within the minute is served from the `['aito-tasks', id]` cache with no
+    // GET. Un-ticking a step advanced the diff baseline and invalidated the
+    // BOARD, but left that cache holding the pre-tick rows: the card moved
+    // back a column while the very step it moved for still read as done.
+    //
+    // The shared test client uses staleTime 0, which refetches on every mount
+    // and hides this completely — hence a production-shaped client here.
+    let stored: AitoTask = { ...mockTask, scan_done: true };
+    server.use(
+      http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([stored])),
+      http.patch('/api/v1/aito/tasks/:id', async ({ request }) => {
+        stored = { ...stored, ...((await request.json()) as Partial<AitoTask>) };
+        return HttpResponse.json(stored);
+      }),
+    );
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } });
+    const Host = ({ open }: { open: boolean }) => (
+      <QueryClientProvider client={client}>
+        <ToastProvider>{open ? <ProjectDetailPanel project={project} onClose={vi.fn()} /> : null}</ToastProvider>
+      </QueryClientProvider>
+    );
+
+    const user = userEvent.setup();
+    const { rerender } = rtlRender(<Host open />);
+    await expandAllTasks();
+    await user.click(await screen.findByRole('button', { name: /mark not done/i }));
+    await waitFor(() => expect(stored.scan_done).toBe(false));
+
+    // Close, then reopen well inside the staleTime window.
+    rerender(<Host open={false} />);
+    rerender(<Host open />);
+    await expandAllTasks();
+
+    expect(await screen.findByRole('button', { name: /mark done/i })).toBeInTheDocument();
   });
 
   it('editing a value back to its original after a successful save still issues a second PATCH', async () => {

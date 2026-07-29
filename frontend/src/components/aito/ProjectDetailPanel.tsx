@@ -177,6 +177,26 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
     baselineRef.current = new Map(tasksQuery.data.map((row) => [row.id, row]));
   }, [tasksQuery.data]);
 
+  // Adding or removing a task changes the card's count, total and badge set,
+  // so the board is invalidated alongside the task list.
+  //
+  // Also what a closing panel calls once its edits have landed, and the task
+  // list matters there as much as the board: the panel rehydrates its rows
+  // from `['aito-tasks', id]` on the next open, and with the app-wide 60s
+  // staleTime (App.tsx) reopening a card inside that window is served from
+  // cache with no GET. Without this the cached rows stay frozen at their
+  // pre-edit values — a step un-ticked a moment ago comes back ticked, while
+  // the card sits in the column the un-tick correctly moved it to.
+  //
+  // Safe only because every caller either has no panel open or has already
+  // closed it with no PATCH outstanding: refetching the list while a row is
+  // mid-edit is what the resync effect above must never see (it would replace
+  // every row, not just the saved one).
+  const invalidateTasksAndBoard = () => {
+    queryClient.invalidateQueries({ queryKey: ['aito-tasks', project.id] });
+    queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+  };
+
   const updateTaskMutation = useMutation({
     mutationFn: ({ id, patch }: { id: number; patch: AitoTaskUpdate }) => api.updateAitoTask(id, patch),
     onMutate: () => {
@@ -207,17 +227,10 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
     onSettled: () => {
       inFlightTaskPatches.current -= 1;
       if (closedRef.current && inFlightTaskPatches.current === 0 && tasksDirtyRef.current) {
-        queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+        invalidateTasksAndBoard();
       }
     },
   });
-
-  // Adding or removing a task changes the card's count, total and badge set,
-  // so the board is invalidated alongside the task list.
-  const invalidateTasksAndBoard = () => {
-    queryClient.invalidateQueries({ queryKey: ['aito-tasks', project.id] });
-    queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
-  };
 
   const addTaskMutation = useMutation({
     mutationFn: () => api.createAitoTask(project.id, taskDraftToTaskCreate(emptyTaskDraft())),
@@ -341,8 +354,10 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
         // Only when every PATCH has already landed. If any is still open, the
         // refresh is `onSettled`'s job (see the counter's comment above):
         // invalidating now would race the write it is supposed to reflect.
+        // `project.id` here is the one this panel mounted with, which is the
+        // only one it can ever have — a card is opened from a closed board.
         if (tasksDirtyRef.current && inFlightTaskPatches.current === 0) {
-          queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+          invalidateTasksAndBoard();
         }
       };
     },

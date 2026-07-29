@@ -518,7 +518,12 @@ export function AitoPage() {
   const dropTarget = activeId !== null ? findColumn(board, activeId) : undefined;
 
   return (
-    <div className="p-4 md:p-8 space-y-6">
+    // Full-height page so the columns run the height of the screen and each
+    // one scrolls its own cards, instead of every column being as tall as
+    // whichever holds the most. Same shape FileManagerPage uses: a hard height
+    // from `lg` up, a min-height below it, so a narrow screen still scrolls the
+    // page normally rather than squeezing seven columns into a phone.
+    <div className="p-4 md:p-8 flex flex-col gap-6 min-h-[calc(100vh-64px)] lg:h-[calc(100vh-64px)]">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-rise-lg vt-page-title">
         <div>
@@ -584,7 +589,10 @@ export function AitoPage() {
           }
         }}
       >
-        <div className="flex gap-4 items-stretch overflow-x-auto pb-4 stagger-parents">
+        {/* min-h-0 is what lets this shrink inside the flex column: without it
+            a tall column would push the board past the viewport instead of
+            scrolling inside itself. */}
+        <div className="flex gap-4 items-stretch overflow-x-auto pb-4 stagger-parents flex-1 min-h-0">
           {COLUMNS.map((column) => (
             <div key={column.id} className="animate-rise-lg flex flex-shrink-0">
               <BoardColumn
