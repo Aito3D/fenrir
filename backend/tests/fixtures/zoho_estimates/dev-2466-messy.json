@@ -1,0 +1,47 @@
+{
+  "estimate_id": "66407000009400003",
+  "estimate_number": "DEV26-2466",
+  "date": "2026-07-28",
+  "status": "sent",
+  "customer_id": "66407000003700003",
+  "customer_name": "Jean EXEMPLE",
+  "currency_code": "XPF",
+  "is_inclusive_tax": true,
+  "price_precision": 0,
+  "total": 10250,
+  "line_items": [
+    {
+      "line_item_id": "1",
+      "item_order": 1,
+      "sku": "P3DSCAN",
+      "name": "Scan3D - Prestation \"AITO 3D\"",
+      "description": "Info: Logo F170 à la place du F150 \n*Fichier non cédé* ",
+      "quantity": 1,
+      "rate": 3500,
+      "item_total": 3097,
+      "line_item_taxes": [{"tax_amount": 403}]
+    },
+    {
+      "line_item_id": "2",
+      "item_order": 2,
+      "sku": "P3DMOD",
+      "name": "Modelisation3D - Prestation \"AITO 3D\"",
+      "description": "Info: Logo F170 à la place du F150  ---- \"BY BLAST\" à la place de XLP\n*Fichier non cédé*\nCouleur Noir de face + fond avec écriture Bleu menthe.\nFaire plusieurs pièce",
+      "quantity": 1.5,
+      "rate": 4500,
+      "item_total": 5974,
+      "line_item_taxes": [{"tax_amount": 776}]
+    },
+    {
+      "line_item_id": "3",
+      "item_order": 3,
+      "sku": "P3DIMP",
+      "name": "Impression3D - Prestation \"AITO 3D\"",
+      "description": "Prix d'impression défini après confection du logo final.------------------\nProjet: \nMatériau: PETG\nPoids:\nTemps:\nCouleur: bleu menthe + Noir",
+      "quantity": 2,
+      "rate": 0,
+      "item_total": 0,
+      "line_item_taxes": [{"tax_amount": 0}]
+    }
+  ]
+}

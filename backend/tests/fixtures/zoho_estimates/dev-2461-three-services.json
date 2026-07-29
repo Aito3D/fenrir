@@ -1,0 +1,47 @@
+{
+  "estimate_id": "66407000009400001",
+  "estimate_number": "DEV26-2461",
+  "date": "2026-07-27",
+  "status": "sent",
+  "customer_id": "66407000003700001",
+  "customer_name": "SARL Exemple Import",
+  "currency_code": "XPF",
+  "is_inclusive_tax": true,
+  "price_precision": 0,
+  "total": 18000,
+  "line_items": [
+    {
+      "line_item_id": "1",
+      "item_order": 1,
+      "sku": "P3DSCAN",
+      "name": "Scan3D - Prestation \"AITO 3D\"",
+      "description": "Info: Prise de mesure d'une gouttière de pièce.\n*Fichier non cédé*",
+      "quantity": 1,
+      "rate": 3500,
+      "item_total": 3097,
+      "line_item_taxes": [{"tax_amount": 403}]
+    },
+    {
+      "line_item_id": "2",
+      "item_order": 2,
+      "sku": "P3DMOD",
+      "name": "Modelisation3D - Prestation \"AITO 3D\"",
+      "description": "Info: Dessin d'un tapis de gouttière en 4 zones\n*Fichier non cédé*",
+      "quantity": 1,
+      "rate": 4500,
+      "item_total": 3983,
+      "line_item_taxes": [{"tax_amount": 517}]
+    },
+    {
+      "line_item_id": "3",
+      "item_order": 3,
+      "sku": "P3DIMP",
+      "name": "Impression3D - Prestation \"AITO 3D\"",
+      "description": "Projet: Tapis souple X4 bloc\nMatériau: TPU 95 A --- 1.5mm\nPoids: 210 gr\nTemps: 13h\nCouleur: NOIR",
+      "quantity": 1,
+      "rate": 10000,
+      "item_total": 8850,
+      "line_item_taxes": [{"tax_amount": 1150}]
+    }
+  ]
+}

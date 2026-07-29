@@ -1,0 +1,36 @@
+{
+  "estimate_id": "66407000009400005",
+  "estimate_number": "DEV26-2463",
+  "date": "2026-07-26",
+  "status": "draft",
+  "customer_id": "66407000003700005",
+  "customer_name": "Boutique EXEMPLE",
+  "currency_code": "XPF",
+  "is_inclusive_tax": true,
+  "price_precision": 0,
+  "total": 12000,
+  "line_items": [
+    {
+      "line_item_id": "1",
+      "item_order": 1,
+      "sku": "PB05016",
+      "name": "Polymaker - PETG - Vert foncé - 1.75mm - 1kg",
+      "description": "",
+      "quantity": 2,
+      "rate": 4000,
+      "item_total": 7080,
+      "line_item_taxes": [{"tax_amount": 920}]
+    },
+    {
+      "line_item_id": "2",
+      "item_order": 2,
+      "sku": "L3DIMP",
+      "name": "Découpe et Gravure Laser - Prestation \"AITO 3D\"",
+      "description": "Projet: Plaque gravée\nMatériau: Acrylique\nDimensions: 200x100",
+      "quantity": 1,
+      "rate": 4000,
+      "item_total": 3540,
+      "line_item_taxes": [{"tax_amount": 460}]
+    }
+  ]
+}

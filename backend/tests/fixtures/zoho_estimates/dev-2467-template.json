@@ -1,0 +1,58 @@
+{
+  "estimate_id": "66407000009502316",
+  "estimate_number": "DEV26-2467",
+  "date": "2026-07-28",
+  "status": "draft",
+  "customer_id": "66407000003724099",
+  "customer_name": "Test Person",
+  "currency_code": "XPF",
+  "is_inclusive_tax": true,
+  "price_precision": 0,
+  "total": 0,
+  "line_items": [
+    {
+      "line_item_id": "1",
+      "item_order": 1,
+      "sku": "P3DSCAN",
+      "name": "Scan3D - Prestation \"AITO 3D\"",
+      "description": "Info: [TITLE]\n*Fichier non cédé*",
+      "quantity": 1,
+      "rate": 0,
+      "item_total": 0,
+      "line_item_taxes": []
+    },
+    {
+      "line_item_id": "2",
+      "item_order": 2,
+      "sku": "P3DMOD",
+      "name": "Modelisation3D - Prestation \"AITO 3D\"",
+      "description": "Info: [TITLE]\n*Fichier non cédé*\n",
+      "quantity": 1,
+      "rate": 0,
+      "item_total": 0,
+      "line_item_taxes": []
+    },
+    {
+      "line_item_id": "3",
+      "item_order": 3,
+      "sku": "P3DIMP",
+      "name": "Impression3D - Prestation \"AITO 3D\"",
+      "description": "Projet: [TITLE]\nMatériau: [MATERIAL]\nPoids: [WEIGHT]\nTemps: [TIME]\nCouleur: [COLOR]\n",
+      "quantity": 1,
+      "rate": 0,
+      "item_total": 0,
+      "line_item_taxes": []
+    },
+    {
+      "line_item_id": "4",
+      "item_order": 4,
+      "sku": "U3DIMP",
+      "name": "Usinage - Prestation \"AITO 3D\"",
+      "description": "Usinage: [TITLE]\n",
+      "quantity": 1,
+      "rate": 0,
+      "item_total": 0,
+      "line_item_taxes": []
+    }
+  ]
+}

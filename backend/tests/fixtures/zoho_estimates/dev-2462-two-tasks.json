@@ -1,0 +1,47 @@
+{
+  "estimate_id": "66407000009400002",
+  "estimate_number": "DEV26-2462",
+  "date": "2026-07-27",
+  "status": "draft",
+  "customer_id": "66407000003700002",
+  "customer_name": "Marie EXEMPLE",
+  "currency_code": "XPF",
+  "is_inclusive_tax": true,
+  "price_precision": 0,
+  "total": 5600,
+  "line_items": [
+    {
+      "line_item_id": "1",
+      "item_order": 1,
+      "sku": "P3DMOD",
+      "name": "Modelisation3D - Prestation \"AITO 3D\"",
+      "description": "Info:\n*Fichier non cédé*\n",
+      "quantity": 1,
+      "rate": 3000,
+      "item_total": 2655,
+      "line_item_taxes": [{"tax_amount": 345}]
+    },
+    {
+      "line_item_id": "2",
+      "item_order": 2,
+      "sku": "P3DIMP",
+      "name": "Impression3D - Prestation \"AITO 3D\"",
+      "description": "Projet: Helice grise\nMatériau: PETG\nPoids: 2g\nTemps: 26min\nCouleur: Gris metallique",
+      "quantity": 3,
+      "rate": 800,
+      "item_total": 2124,
+      "line_item_taxes": [{"tax_amount": 276}]
+    },
+    {
+      "line_item_id": "3",
+      "item_order": 3,
+      "sku": "P3DIMP",
+      "name": "Impression3D - Prestation \"AITO 3D\"",
+      "description": "Projet: helice\nMatériau:\nPoids:\nTemps:\nCouleur:\n",
+      "quantity": 1,
+      "rate": 200,
+      "item_total": 177,
+      "line_item_taxes": [{"tax_amount": 23}]
+    }
+  ]
+}

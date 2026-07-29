@@ -1,0 +1,36 @@
+{
+  "estimate_id": "66407000009400004",
+  "estimate_number": "DEV26-2448",
+  "date": "2026-07-20",
+  "status": "accepted",
+  "customer_id": "66407000003700004",
+  "customer_name": "Atelier EXEMPLE",
+  "currency_code": "XPF",
+  "is_inclusive_tax": false,
+  "price_precision": 0,
+  "total": 9040,
+  "line_items": [
+    {
+      "line_item_id": "1",
+      "item_order": 1,
+      "sku": "P3DMOD",
+      "name": "Modelisation3D - Prestation \"AITO 3D\"",
+      "description": "Info: Bride de fixation\n*Fichier non cédé*",
+      "quantity": 1,
+      "rate": 4000,
+      "item_total": 4000,
+      "line_item_taxes": [{"tax_amount": 520}]
+    },
+    {
+      "line_item_id": "2",
+      "item_order": 2,
+      "sku": "U3DIMP-VENTE",
+      "name": "Usinage - Vente \"AITO 3D\"",
+      "description": "Projet: Bride alu\nMatériau: Aluminium 6060\nPoids: 1,2 kg\nTemps: 1j 4h\nCouleur: Brut",
+      "quantity": 1,
+      "rate": 4000,
+      "item_total": 4000,
+      "line_item_taxes": [{"tax_amount": 520}]
+    }
+  ]
+}
