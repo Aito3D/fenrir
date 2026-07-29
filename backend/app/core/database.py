@@ -961,11 +961,15 @@ async def _migrate_aito_board_columns(conn) -> None:
             )
 
         # 2. A card already past Quote was accepted in reality. A declined one
-        #    is left alone and will derive to Done in step 4.
+        #    is left alone and will derive to Done in step 4. The explicit column
+        #    list (rather than != 'devis') is what makes an accidental second run
+        #    of this statement a no-op on the pre-migration column set instead of
+        #    force-accepting a `scan`/`waiting`/`finish` card whose quote is
+        #    legitimately still `sent`.
         await conn.execute(
             text(
                 "UPDATE aito_projects SET quote_status = 'accepted' "
-                "WHERE board_column != 'devis' "
+                "WHERE board_column IN ('model', 'print', 'pickup', 'finish') "
                 "AND (quote_status IS NULL OR quote_status NOT IN ('accepted', 'declined'))"
             )
         )
@@ -4000,8 +4004,9 @@ async def run_migrations(conn):
     # Migration: per-step Done flags on Aito tasks (2026-07-29). One boolean per
     # service, mirroring the four cost columns; ticking them is what advances a
     # project's board column. The data back-fill that reconstructs these flags
-    # from each card's existing column lives further down, gated on the columns
-    # not having existed.
+    # from each card's existing column is `_migrate_aito_board_columns`, defined
+    # above this function, and is invoked a few lines below — gated on the
+    # columns not having existed.
     _aito_steps_existed = await _column_exists(conn, "aito_tasks", "scan_done")
     for _service in ("scan", "modelisation", "impression", "usinage"):
         await _safe_execute(

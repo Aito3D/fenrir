@@ -7,8 +7,9 @@ ORM — the model no longer knows the word 'pickup'.
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
 
-from backend.app.core.database import _migrate_aito_board_columns
+from backend.app.core.database import Base, _migrate_aito_board_columns, run_migrations
 
 
 async def _seed(conn, board_column, **task_costs):
@@ -153,3 +154,124 @@ async def test_every_project_satisfies_the_rules_afterwards(raw_conn):
         from backend.app.services.aito_board_rules import evaluate
 
         assert evaluate(quote_status, column, pending)[0] == column
+
+
+@pytest.mark.asyncio
+async def test_run_migrations_gate_survives_a_second_boot():
+    """The one-time gate is `run_migrations`' capture-before-ALTER ordering of
+    `_aito_steps_existed`, not anything inside `_migrate_aito_board_columns`
+    itself — every test above calls that function directly and so cannot see
+    that ordering. Drive this one through `run_migrations`, seeding an
+    `aito_tasks` table that (like the real pre-2026-07-29 database) does not
+    yet have the four `*_done` columns, so the first pass has to ADD them
+    before the gate can even ask whether they existed.
+    """
+    # `run_migrations` touches nearly every table in the app; register them all
+    # on Base.metadata the same way `init_db()` does, or unrelated ALTERs below
+    # fail with "no such table" before the aito ones are ever reached.
+    from backend.app.models import (  # noqa: F401
+        active_print_spoolman,
+        aito_project,
+        aito_task,
+        ams_history,
+        ams_label,
+        api_key,
+        archive,
+        auth_ephemeral,
+        bug_report,
+        calculator,
+        color_catalog,
+        external_link,
+        filament,
+        filament_sku_settings,
+        github_backup,
+        group,
+        kprofile_note,
+        library,
+        local_preset,
+        location,
+        long_lived_token,
+        maintenance,
+        notification,
+        notification_template,
+        oidc_provider,
+        orca_base_cache,
+        pending_upload,
+        pipeline_run,
+        print_batch,
+        print_log,
+        print_queue,
+        printer,
+        printer_sensor_history,
+        project,
+        project_bom,
+        settings,
+        shopping_list,
+        slicer_pipeline,
+        slot_preset,
+        smart_plug,
+        smart_plug_energy_snapshot,
+        spool,
+        spool_assignment,
+        spool_catalog,
+        spool_k_profile,
+        spool_usage_history,
+        spoolbuddy_device,
+        spoolman_k_profile,
+        spoolman_slot_assignment,
+        user,
+        user_email_pref,
+        user_otp_code,
+        user_totp,
+        virtual_printer,
+    )
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            # Simulate the pre-migration schema: SQLite 3.35+ supports DROP COLUMN.
+            for service in ("scan", "modelisation", "impression", "usinage"):
+                await conn.execute(text(f"ALTER TABLE aito_tasks DROP COLUMN {service}_done"))
+
+        async with engine.begin() as conn:
+            project_id = await _seed(conn, "print", impression_cost=1.0)
+
+        async with engine.begin() as conn:
+            await run_migrations(conn)
+
+        async with engine.connect() as conn:
+            quote_status = (
+                await conn.execute(text("SELECT quote_status FROM aito_projects WHERE id = :p"), {"p": project_id})
+            ).scalar_one()
+        # Evidence the back-fill actually ran on this first pass: a card
+        # outside `devis` is accepted. If the capture-before-ALTER ordering
+        # were broken this would stay NULL.
+        assert quote_status == "accepted"
+
+        # Between boots the user does real work: finishes the last step and
+        # declines the quote.
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("UPDATE aito_tasks SET impression_done = 1 WHERE project_id = :p"), {"p": project_id}
+            )
+            await conn.execute(
+                text("UPDATE aito_projects SET quote_status = 'declined' WHERE id = :p"), {"p": project_id}
+            )
+
+        async with engine.begin() as conn:
+            await run_migrations(conn)
+
+        async with engine.connect() as conn:
+            quote_status = (
+                await conn.execute(text("SELECT quote_status FROM aito_projects WHERE id = :p"), {"p": project_id})
+            ).scalar_one()
+            impression_done = (
+                await conn.execute(
+                    text("SELECT impression_done FROM aito_tasks WHERE project_id = :p"), {"p": project_id}
+                )
+            ).scalar_one()
+        assert quote_status == "declined", "a second run must not re-accept a quote the user declined"
+        assert bool(impression_done) is True, "a second run must not un-tick a step the user completed"
+    finally:
+        await engine.dispose()
