@@ -1,5 +1,9 @@
 """Aito board routes: required client, move reindexing, soft delete, one-shot import."""
 
+import json
+import os
+from pathlib import Path
+
 import pytest
 from sqlalchemy import select
 
@@ -16,6 +20,71 @@ async def _create(client, **overrides):
     }
     payload.update(overrides)
     return await client.post("/api/v1/aito/", json=payload)
+
+
+_GOLDEN = Path(__file__).parent.parent / "fixtures" / "aito_board_payload.json"
+
+
+async def _seed_golden_board(client, db_session):
+    """Four projects covering every shape the board payload can take: no tasks,
+    a zero-cost service, mixed done flags, and a project in a non-default
+    column."""
+    await client.post(
+        "/api/v1/aito/",
+        json={"description": "no tasks", "client_id": "C1", "client_name": "One", "tasks": []},
+    )
+    await client.post(
+        "/api/v1/aito/",
+        json={
+            "description": "zero cost",
+            "client_id": "C2",
+            "client_name": "Two",
+            "tasks": [{"title": "free scan", "scan_cost": 0}],
+        },
+    )
+    await client.post(
+        "/api/v1/aito/",
+        json={
+            "description": "mixed",
+            "client_id": "C3",
+            "client_name": "Three",
+            "tasks": [
+                {"title": "a", "scan_cost": 5000, "scan_done": True, "impression_cost": 2400},
+                {"title": "b", "usinage_cost": 1000},
+            ],
+        },
+    )
+    accepted = await client.post(
+        "/api/v1/aito/",
+        json={
+            "description": "accepted",
+            "client_id": "C4",
+            "client_name": "Four",
+            "tasks": [{"title": "c", "modelisation_cost": 3000, "modelisation_done": True}],
+        },
+    )
+    await client.post(f"/api/v1/aito/{accepted.json()['id']}/quote-status", json={"status": "accepted"})
+
+
+def _stable(payload: list[dict]) -> list[dict]:
+    """Drop the fields that legitimately differ between runs."""
+    return [{k: v for k, v in row.items() if k not in ("created_at", "updated_at")} for row in payload]
+
+
+@pytest.mark.asyncio
+async def test_board_payload_matches_the_golden_fixture(async_client, db_session):
+    """The load-bearing test for the summarise() swap: the board's JSON must be
+    byte-identical to what the SQL aggregate produced. Regenerate deliberately
+    with REGENERATE_GOLDEN=1 and read the diff before committing it."""
+    await _seed_golden_board(async_client, db_session)
+    actual = _stable((await async_client.get("/api/v1/aito/")).json())
+
+    if os.environ.get("REGENERATE_GOLDEN") == "1":
+        _GOLDEN.parent.mkdir(parents=True, exist_ok=True)
+        _GOLDEN.write_text(json.dumps(actual, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    expected = json.loads(_GOLDEN.read_text(encoding="utf-8"))
+    assert actual == expected
 
 
 @pytest.mark.asyncio
