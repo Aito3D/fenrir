@@ -111,3 +111,15 @@ export function toOptimisticProjects(board: Board): AitoProject[] {
     board[col].map((project, index) => ({ ...project, column: col, position: index })),
   );
 }
+
+/** Which columns this card may be dropped into.
+ *
+ *  Reordering INSIDE a column is always allowed — it changes priority, not
+ *  state — so a locked card's own column is always in the list. Crossing
+ *  columns is only ever Finish <-> Done, and only once the rules have released
+ *  the card (`move_lock === null`). The server enforces the same thing with a
+ *  409; this is what stops dnd-kit relocating the card visually first. */
+export function allowedColumns(project: AitoProject): ColumnId[] {
+  if (project.move_lock !== null) return [project.column];
+  return ['finish', 'done'];
+}

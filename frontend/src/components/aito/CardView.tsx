@@ -59,6 +59,16 @@ export function CardView({
     .filter(Boolean)
     .join(' · ');
 
+  // The grip stays a grip even when locked: the card is still reorderable
+  // inside its column. The badge says what it CANNOT do — leave.
+  const LOCK_LABEL_KEYS = {
+    quote: 'aito.lockedQuote',
+    waiting: 'aito.lockedWaiting',
+    declined: 'aito.lockedDeclined',
+    steps: 'aito.lockedSteps',
+  } as const;
+  const lockTitle = project.move_lock ? t(LOCK_LABEL_KEYS[project.move_lock]) : null;
+
   // Every element here is phrasing content (<span>, and Money renders a
   // <span>): this block is rendered INSIDE the body <button>, and a <button>
   // may not contain <div> or <p>. Keeping it inside the button is deliberate —
@@ -81,7 +91,7 @@ export function CardView({
       className={`group relative rounded-xl border bg-bambu-dark-secondary select-none ${
         overlay
           ? 'rotate-1 scale-[1.02] border-bambu-green/40 shadow-2xl cursor-grabbing'
-          : 'border-bambu-dark-tertiary card-shadow transition-[border-color,box-shadow] duration-100 hover:border-bambu-green/40 hover:shadow-lg'
+          : 'border-bambu-dark-tertiary card-shadow transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-bambu-green/40 hover:shadow-lg motion-reduce:hover:translate-y-0'
       }`}
     >
       <div className="flex items-center gap-2 px-3 py-2 bg-bambu-dark-tertiary rounded-t-xl border-b border-bambu-dark-secondary">
@@ -92,6 +102,11 @@ export function CardView({
         >
           {project.client_name ?? t('aito.noClient')}
         </p>
+        {lockTitle && (
+          <span title={lockTitle} className="flex-shrink-0 text-bambu-gray" aria-label={lockTitle}>
+            <Lock className="w-3 h-3" aria-hidden="true" />
+          </span>
+        )}
         {dragHandleProps ? (
           <button
             type="button"

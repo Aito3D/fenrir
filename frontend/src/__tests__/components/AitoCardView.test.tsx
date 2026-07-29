@@ -285,4 +285,24 @@ describe('CardView', () => {
     expect(screen.getByText('DEV26-2462')).toBeInTheDocument();
     expect(screen.queryByText('Accepted')).not.toBeInTheDocument();
   });
+
+  it('marks a quote-locked card with a lock and says why', () => {
+    render(<CardView project={{ ...project, move_lock: 'quote' }} onExpand={vi.fn()} onDelete={vi.fn()} />);
+    expect(screen.getByTitle('Locked to Quote until the quote is accepted')).toBeInTheDocument();
+  });
+
+  it('says a waiting card is stalled on the client, not on us', () => {
+    render(<CardView project={{ ...project, move_lock: 'waiting' }} onExpand={vi.fn()} onDelete={vi.fn()} />);
+    expect(screen.getByTitle('Waiting on the client to answer the quote')).toBeInTheDocument();
+  });
+
+  it('names the step rule on a card the checkboxes are driving', () => {
+    render(<CardView project={{ ...project, move_lock: 'steps' }} onExpand={vi.fn()} onDelete={vi.fn()} />);
+    expect(screen.getByTitle("This card's column is set by its task steps")).toBeInTheDocument();
+  });
+
+  it('shows no lock on a card free to move between Finish and Done', () => {
+    render(<CardView project={{ ...project, move_lock: null }} onExpand={vi.fn()} onDelete={vi.fn()} />);
+    expect(screen.queryByTitle(/Locked|set by its task steps|declined/)).not.toBeInTheDocument();
+  });
 });

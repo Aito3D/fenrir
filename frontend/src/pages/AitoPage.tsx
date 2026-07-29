@@ -35,6 +35,7 @@ import { prefersReducedMotion } from '../utils/motion';
 import { useCardMorph } from '../hooks/useCardMorph';
 import {
   COLUMN_IDS,
+  allowedColumns,
   applyCrossColumnMove,
   buildBoard,
   computeMoveTarget,
@@ -183,6 +184,7 @@ export function AitoPage() {
   const [showImport, setShowImport] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
   const [activeId, setActiveId] = useState<number | null>(null);
+  const [allowedDropColumns, setAllowedDropColumns] = useState<ColumnId[] | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const { open: openCard, close: closeCard } = useCardMorph(setExpandedId);
 
@@ -416,7 +418,10 @@ export function AitoPage() {
 
   const handleDragStart = ({ active }: DragStartEvent) => {
     setActiveId(active.id as number);
-    dragOriginColumnRef.current = findColumn(board, active.id) ?? null;
+    const originColumn = findColumn(board, active.id) ?? null;
+    dragOriginColumnRef.current = originColumn;
+    const card = originColumn ? board[originColumn].find((p) => p.id === (active.id as number)) ?? null : null;
+    setAllowedDropColumns(card ? allowedColumns(card) : null);
   };
 
   // Cross-column moves happen live during dragOver so the destination column
@@ -428,6 +433,7 @@ export function AitoPage() {
 
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
     setActiveId(null);
+    setAllowedDropColumns(null);
     const originColumn = dragOriginColumnRef.current;
     dragOriginColumnRef.current = null;
 
@@ -532,6 +538,7 @@ export function AitoPage() {
         onDragEnd={handleDragEnd}
         onDragCancel={() => {
           setActiveId(null);
+          setAllowedDropColumns(null);
           dragOriginColumnRef.current = null;
           // A cancelled drag (e.g. Escape) can leave a cross-column dragOver
           // relocation applied locally with nothing persisted — resync.
@@ -552,6 +559,7 @@ export function AitoPage() {
                 onExpandCard={openCard}
                 transitionConfig={reducedMotion ? null : SORTABLE_TRANSITION}
                 shouldAnimateIn={shouldAnimateIn}
+                dropDisabled={allowedDropColumns !== null && !allowedDropColumns.includes(column.id)}
               />
             </div>
           ))}

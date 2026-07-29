@@ -57,6 +57,7 @@ interface ColumnProps {
   onExpandCard: (id: number) => void;
   transitionConfig: { duration: number; easing: string } | null;
   shouldAnimateIn: (id: number) => boolean;
+  dropDisabled?: boolean;
 }
 
 export function BoardColumn({
@@ -67,9 +68,10 @@ export function BoardColumn({
   onExpandCard,
   transitionConfig,
   shouldAnimateIn,
+  dropDisabled,
 }: ColumnProps) {
   const { t } = useTranslation();
-  const { setNodeRef } = useDroppable({ id: column.id });
+  const { setNodeRef } = useDroppable({ id: column.id, disabled: dropDisabled });
 
   return (
     <div
@@ -80,7 +82,10 @@ export function BoardColumn({
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-bambu-dark-tertiary/60">
         <span className={`w-2 h-2 rounded-full ${column.dot}`} />
         <h2 className="text-sm font-semibold text-white flex-1 truncate">{t(column.labelKey)}</h2>
-        <span className="min-w-[1.5rem] px-1.5 py-0.5 text-center text-xs font-medium text-bambu-gray-light bg-bambu-dark-tertiary rounded-full tabular-nums">
+        <span
+          key={projects.length}
+          className="min-w-[1.5rem] px-1.5 py-0.5 text-center text-xs font-medium text-bambu-gray-light bg-bambu-dark-tertiary rounded-full tabular-nums animate-value-tick"
+        >
           {projects.length}
         </span>
       </div>
