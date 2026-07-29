@@ -424,16 +424,32 @@ export function AitoPage() {
     setAllowedDropColumns(card ? allowedColumns(card) : null);
   };
 
+  // BoardColumn's `dropDisabled` only disables the COLUMN's own droppable —
+  // it opens a slot in an empty column, but every card is its own
+  // `useSortable` droppable and stays collidable no matter which column it
+  // sits in. `over.id` can therefore resolve to a card that lives in a
+  // disallowed column just as easily as to a column background, so the gate
+  // has to live here too, resolving the destination the same way the move
+  // path (computeMoveTarget/applyCrossColumnMove) already does via
+  // `findColumn`. A card's own column is always in `allowedDropColumns`
+  // (allowedColumns() guarantees it), so reordering within it is never
+  // blocked by this check.
+  const isDropAllowed = (overId: string | number) => {
+    if (allowedDropColumns === null) return true;
+    const destination = findColumn(board, overId);
+    return destination === undefined || allowedDropColumns.includes(destination);
+  };
+
   // Cross-column moves happen live during dragOver so the destination column
   // opens a slot under the pointer (Trello-style), not only on drop.
   const handleDragOver = ({ active, over }: DragOverEvent) => {
     if (!over) return;
+    if (!isDropAllowed(over.id)) return;
     setBoard((prev) => applyCrossColumnMove(prev, active.id as number, over.id));
   };
 
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
     setActiveId(null);
-    setAllowedDropColumns(null);
     const originColumn = dragOriginColumnRef.current;
     dragOriginColumnRef.current = null;
 
@@ -441,11 +457,20 @@ export function AitoPage() {
     // card locally with nothing to persist it, so resync rather than desync.
     // Skipped while a move is pending — see onSettled for why.
     if (!over) {
+      setAllowedDropColumns(null);
       if (pendingMoves.current === 0) {
         queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
       }
       return;
     }
+
+    // dragOver already refused to relocate a disallowed drop, so the board
+    // still holds the pre-drag layout here — nothing to persist and nothing
+    // to resync. Checked against the CURRENT allowedDropColumns, still in
+    // scope until the clear below takes effect on the next render.
+    const dropAllowed = isDropAllowed(over.id);
+    setAllowedDropColumns(null);
+    if (!dropAllowed) return;
 
     const result = computeMoveTarget(board, active.id as number, over.id, originColumn);
     if (result.kind === 'resync') {

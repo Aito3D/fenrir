@@ -32,6 +32,13 @@
  * `BoardColumn` spreads them. Together these two assertions catch both
  * variants named above — dropping `dragHandleRef` (spy never called) and
  * spreading `attributes` onto the wrong element (marker on the wrong node).
+ *
+ * The second describe block below (`BoardColumn — dropDisabled`) covers
+ * Task 9's `dropDisabled` prop: `useDroppable` is mocked the same way, as a
+ * spy, so the test can see the `disabled` option BoardColumn actually passes
+ * rather than inferring it from a side effect. `DndContext` is left real
+ * (via `importOriginal`) since BoardColumn's `useDroppable` call needs to run
+ * inside a real drag context provider to not throw.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -47,6 +54,7 @@ import type { AitoProject } from '../../api/client';
 // `undefined` inside the factory at call time, which silently produces a
 // no-op ref with no error — confirmed the hard way while writing this test.
 const mockSetActivatorNodeRef = vi.fn();
+const mockUseDroppable = vi.fn();
 
 vi.mock('@dnd-kit/sortable', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@dnd-kit/sortable')>();
@@ -61,6 +69,17 @@ vi.mock('@dnd-kit/sortable', async (importOriginal) => {
       transition: undefined,
       isDragging: false,
     }),
+  };
+});
+
+vi.mock('@dnd-kit/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@dnd-kit/core')>();
+  return {
+    ...actual,
+    useDroppable: (args: Parameters<typeof actual.useDroppable>[0]) => {
+      mockUseDroppable(args);
+      return actual.useDroppable(args);
+    },
   };
 });
 
@@ -93,7 +112,7 @@ const project: AitoProject = {
   updated_at: '2026-07-27T00:00:00',
 };
 
-function Harness() {
+function Harness({ dropDisabled }: { dropDisabled?: boolean } = {}) {
   return (
     <DndContext>
       <BoardColumn
@@ -104,6 +123,7 @@ function Harness() {
         onExpandCard={vi.fn()}
         transitionConfig={null}
         shouldAnimateIn={() => false}
+        dropDisabled={dropDisabled}
       />
     </DndContext>
   );
@@ -137,5 +157,26 @@ describe('BoardColumn — drag handle wiring', () => {
     expect(grip).toHaveAttribute('data-dnd-mock-attr', 'grip-only');
     expect(cardWrapper).not.toHaveAttribute('data-dnd-mock-attr');
     expect(body).not.toHaveAttribute('data-dnd-mock-attr');
+  });
+});
+
+describe('BoardColumn — dropDisabled', () => {
+  beforeEach(() => {
+    mockUseDroppable.mockClear();
+  });
+
+  it('passes dropDisabled through to useDroppable as the disabled option, for a disallowed column', () => {
+    render(<Harness dropDisabled />);
+    expect(mockUseDroppable).toHaveBeenCalledWith({ id: COLUMNS[0].id, disabled: true });
+  });
+
+  it('leaves an allowed column — including the locked card\'s own column — enabled', () => {
+    render(<Harness dropDisabled={false} />);
+    expect(mockUseDroppable).toHaveBeenCalledWith({ id: COLUMNS[0].id, disabled: false });
+  });
+
+  it('defaults to enabled when dropDisabled is omitted (no drag in progress)', () => {
+    render(<Harness />);
+    expect(mockUseDroppable).toHaveBeenCalledWith({ id: COLUMNS[0].id, disabled: undefined });
   });
 });
