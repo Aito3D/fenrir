@@ -223,3 +223,158 @@ def group_lines(lines: list[ParsedLine]) -> list[list[ParsedLine]]:
     if current:
         groups.append(current)
     return groups
+
+
+_TITLE_MAX = 200
+_COLOR_MAX = 100
+_COST_FIELD: dict[str, str] = {
+    "scan": "scan_cost",
+    "modelisation": "modelisation_cost",
+    "impression": "impression_cost",
+    "usinage": "usinage_cost",
+}
+# Labels the impression fields consume, so they are not repeated in the body.
+_IMPRESSION_LABELS: tuple[str, ...] = ("poids", "temps", "couleur")
+
+
+def _title_label(line: ParsedLine) -> str | None:
+    """Which of this line's labels could supply a task title, if any."""
+    for label in TITLE_LABELS:
+        if line.labels.get(label, "").strip():
+            return label
+    return None
+
+
+def _truncate_words(value: str, limit: int) -> tuple[str, bool]:
+    """(title, was_truncated). Cuts at the last space before the limit."""
+    if len(value) <= limit:
+        return value, False
+    head = value[:limit]
+    cut = head.rfind(" ")
+    return (head[:cut] if cut > 0 else head).rstrip(), True
+
+
+def _dedupe(rows: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for row in rows:
+        if row and row not in seen:
+            seen.add(row)
+            out.append(row)
+    return out
+
+
+def _build_task(group: list[ParsedLine]) -> dict:
+    """One Aito task from one group of quote lines."""
+    ordered = sorted(group, key=lambda line: SERVICE_RANK[line.service])
+    impression = next((line for line in ordered if line.service == "impression"), None)
+
+    # The impression line names the part being made, so its Projet: wins the
+    # title; otherwise the first line in canonical order that has one.
+    title_line: ParsedLine | None = None
+    title_key: str | None = None
+    if impression and impression.labels.get("projet", "").strip():
+        title_line, title_key = impression, "projet"
+    else:
+        for line in ordered:
+            key = _title_label(line)
+            if key:
+                title_line, title_key = line, key
+                break
+    raw_title = title_line.labels[title_key].strip() if title_line and title_key else ""
+    title, truncated = _truncate_words(raw_title, _TITLE_MAX)
+
+    weight = parse_weight_g(impression.labels.get("poids", "")) if impression else None
+    minutes = parse_time_min(impression.labels.get("temps", "")) if impression else None
+    color = (impression.labels.get("couleur", "").strip() or None) if impression else None
+
+    rows: list[str] = []
+    # A truncated title would otherwise lose its tail — keep the full line.
+    if truncated:
+        rows.append(raw_title)
+    for line in ordered:
+        for label in LABEL_ORDER:
+            value = line.labels.get(label, "").strip()
+            if not value:
+                continue
+            if line is title_line and label == title_key:
+                continue  # became the task title
+            if line is impression and label in _IMPRESSION_LABELS:
+                # Consumed into a field — unless the value could not be parsed,
+                # in which case it is preserved rather than dropped.
+                if (
+                    label == "couleur"
+                    or (label == "poids" and weight is not None)
+                    or (label == "temps" and minutes is not None)
+                ):
+                    continue
+            prefix = SERVICE_LABEL[line.service] if label in TITLE_LABELS else LABEL_DISPLAY[label]
+            rows.append(f"{prefix}: {value}")
+        rows.extend(line.free_text)
+
+    task: dict = {
+        "title": title,
+        "description": "\n".join(_dedupe(rows)),
+        "scan_cost": None,
+        "modelisation_cost": None,
+        "usinage_cost": None,
+        "impression_printer_id": None,
+        "impression_filament_id": None,
+        "impression_weight_g": weight,
+        "impression_time_min": minutes,
+        "impression_quantity": max(1, round(impression.quantity)) if impression else None,
+        "impression_color": color[:_COLOR_MAX] if color else None,
+        "impression_cost": None,
+    }
+    for line in ordered:
+        task[_COST_FIELD[line.service]] = line.amount
+    return task
+
+
+def _client_snapshot(estimate: dict, contact: dict | None) -> dict:
+    """The client fields an Aito card stores.
+
+    Degrades to the estimate's own customer when the contact could not be
+    fetched: a Zoho contact outage must not cost the user their import.
+    """
+    if not contact:
+        return {
+            "id": estimate.get("customer_id") or "",
+            "name": estimate.get("customer_name") or "",
+            "phone": None,
+            "email": None,
+            "is_company": None,
+        }
+    sub_type = contact.get("customer_sub_type") or ""
+    is_company = True if sub_type == "business" else (False if sub_type == "individual" else None)
+    return {
+        "id": contact.get("id") or estimate.get("customer_id") or "",
+        "name": contact.get("name") or estimate.get("customer_name") or "",
+        # Mobile first: it is where the board writes a phone number back.
+        "phone": (contact.get("mobile") or contact.get("phone") or "").strip() or None,
+        "email": (contact.get("email") or "").strip() or None,
+        "is_company": is_company,
+    }
+
+
+def build_preview(estimate: dict, contact: dict | None, quote_url: str) -> dict:
+    """Everything the import modal needs, in the shape POST /aito/ accepts."""
+    lines, skipped = parse_lines(estimate)
+    tasks = [_build_task(group) for group in group_lines(lines)]
+    titles = [task["title"] for task in tasks if task["title"]]
+    number = estimate.get("estimate_number") or ""
+    return {
+        "quote": {
+            "id": estimate.get("estimate_id") or "",
+            "number": number,
+            "date": estimate.get("date") or "",
+            "status": estimate.get("status") or "",
+            "total": float(estimate.get("total") or 0),
+            "currency_code": estimate.get("currency_code") or "",
+            "url": quote_url,
+        },
+        "client": _client_snapshot(estimate, contact),
+        "suggested_description": "\n".join(titles) or number,
+        "tasks": tasks,
+        "skipped_lines": skipped,
+    }

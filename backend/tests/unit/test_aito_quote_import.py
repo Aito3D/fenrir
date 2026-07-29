@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from backend.app.services.aito_quote_import import (
+    build_preview,
     group_lines,
     parse_description,
     parse_lines,
@@ -152,3 +153,158 @@ def test_group_lines_merges_a_gap_in_the_run():
     lines, _skipped = parse_lines(load_estimate("dev-2448-vente"))
     # modelisation (rank 1) then usinage (rank 3) still rises, so one task.
     assert len(group_lines(lines)) == 1
+
+
+CONTACT = {
+    "id": "66407000003700001",
+    "name": "SARL Exemple Import",
+    "company_name": "SARL Exemple Import",
+    "customer_sub_type": "business",
+    "phone": "40123456",
+    "mobile": "87123456",
+    "email": "contact@exemple.pf",
+}
+URL = "https://books.zoho.eu/app/999#/estimates/1"
+
+
+def test_build_preview_three_services_becomes_one_task():
+    preview = build_preview(load_estimate("dev-2461-three-services"), CONTACT, URL)
+    assert len(preview["tasks"]) == 1
+    task = preview["tasks"][0]
+    # The impression line's Projet: wins the title.
+    assert task["title"] == "Tapis souple X4 bloc"
+    # The other services' titles and the material are folded into the body;
+    # weight, time and colour were consumed into their own fields.
+    assert task["description"] == (
+        "Scan3D: Prise de mesure d'une gouttière de pièce.\n"
+        "Modelisation3D: Dessin d'un tapis de gouttière en 4 zones\n"
+        "Matériau: TPU 95 A --- 1.5mm"
+    )
+    assert task["scan_cost"] == 3500
+    assert task["modelisation_cost"] == 4500
+    assert task["impression_cost"] == 10000
+    assert task["usinage_cost"] is None
+    assert task["impression_weight_g"] == 210
+    assert task["impression_time_min"] == 780
+    assert task["impression_color"] == "NOIR"
+    assert task["impression_quantity"] == 1
+    # The quote never names a printer or a filament, and the inventory is
+    # brand-prefixed, so these are always left for the user.
+    assert task["impression_printer_id"] is None
+    assert task["impression_filament_id"] is None
+
+
+def test_build_preview_splits_a_repeated_service_into_two_tasks():
+    preview = build_preview(load_estimate("dev-2462-two-tasks"), None, URL)
+    assert [t["title"] for t in preview["tasks"]] == ["Helice grise", "helice"]
+    first, second = preview["tasks"]
+    assert first["modelisation_cost"] == 3000
+    assert first["impression_cost"] == 2400
+    assert first["description"] == "Matériau: PETG"
+    assert second["modelisation_cost"] is None
+    assert second["impression_cost"] == 200
+    # Every label on the second line was blank, so nothing is preserved.
+    assert second["description"] == ""
+    assert second["impression_weight_g"] is None
+    assert second["impression_time_min"] is None
+    assert second["impression_color"] is None
+    assert preview["suggested_description"] == "Helice grise\nhelice"
+
+
+def test_build_preview_template_quote_yields_one_empty_task():
+    preview = build_preview(load_estimate("dev-2467-template"), None, URL)
+    assert len(preview["tasks"]) == 1
+    task = preview["tasks"][0]
+    assert task["title"] == ""
+    assert task["description"] == ""
+    assert task["scan_cost"] == 0
+    assert task["usinage_cost"] == 0
+    # No title anywhere, so the description falls back to the quote number.
+    assert preview["suggested_description"] == "DEV26-2467"
+
+
+def test_build_preview_preserves_everything_from_a_messy_quote():
+    preview = build_preview(load_estimate("dev-2466-messy"), None, URL)
+    task = preview["tasks"][0]
+    # The impression line's Projet: is blank, so the first Info: wins.
+    assert task["title"] == "Logo F170 à la place du F150"
+    body = task["description"]
+    assert 'Modelisation3D: Logo F170 à la place du F150  ---- "BY BLAST" à la place de XLP' in body
+    assert "Couleur Noir de face + fond avec écriture Bleu menthe." in body
+    assert "Faire plusieurs pièce" in body
+    assert "Prix d'impression défini après confection du logo final.------------------" in body
+    assert "Matériau: PETG" in body
+    # The scan line supplied the title, so its Info: is not repeated.
+    assert "Scan3D:" not in body
+    assert task["impression_color"] == "bleu menthe + Noir"
+    assert task["impression_weight_g"] is None
+    assert task["impression_quantity"] == 2
+    assert task["modelisation_cost"] == 6750  # 4500 x 1.5
+
+
+def test_build_preview_preserves_unconsumed_labels_on_a_usinage_line():
+    preview = build_preview(load_estimate("dev-2448-vente"), None, URL)
+    task = preview["tasks"][0]
+    # No impression line, so the title falls back to the first line in
+    # canonical service order that has one — modelisation, not usinage.
+    assert task["title"] == "Bride de fixation"
+    body = task["description"]
+    # Usinage has no weight/time/colour fields on an Aito task, so its
+    # template values must survive in the body rather than being dropped.
+    assert "Usinage: Bride alu" in body
+    assert "Modelisation3D:" not in body  # it supplied the title
+    assert "Matériau: Aluminium 6060" in body
+    assert "Poids: 1,2 kg" in body
+    assert "Temps: 1j 4h" in body
+    assert "Couleur: Brut" in body
+    assert task["usinage_cost"] == 4520
+    assert task["impression_cost"] is None
+
+
+def test_build_preview_retail_quote_has_no_tasks():
+    preview = build_preview(load_estimate("dev-2463-retail"), None, URL)
+    assert preview["tasks"] == []
+    assert len(preview["skipped_lines"]) == 2
+    assert preview["suggested_description"] == "DEV26-2463"
+
+
+def test_build_preview_maps_the_contact_snapshot():
+    preview = build_preview(load_estimate("dev-2461-three-services"), CONTACT, URL)
+    assert preview["client"] == {
+        "id": "66407000003700001",
+        "name": "SARL Exemple Import",
+        # mobile wins over phone, matching how the board stores a client.
+        "phone": "87123456",
+        "email": "contact@exemple.pf",
+        "is_company": True,
+    }
+    assert preview["quote"] == {
+        "id": "66407000009400001",
+        "number": "DEV26-2461",
+        "date": "2026-07-27",
+        "status": "sent",
+        "total": 18000,
+        "currency_code": "XPF",
+        "url": URL,
+    }
+
+
+def test_build_preview_degrades_when_the_contact_is_missing():
+    preview = build_preview(load_estimate("dev-2461-three-services"), None, URL)
+    assert preview["client"] == {
+        "id": "66407000003700001",
+        "name": "SARL Exemple Import",
+        "phone": None,
+        "email": None,
+        "is_company": None,
+    }
+
+
+def test_build_preview_truncates_a_long_title_and_keeps_the_full_text():
+    estimate = load_estimate("dev-2461-three-services")
+    long_title = "Tapis " + "très long " * 40  # > 200 characters
+    estimate["line_items"][2]["description"] = f"Projet: {long_title}"
+    preview = build_preview(estimate, None, URL)
+    task = preview["tasks"][0]
+    assert len(task["title"]) <= 200
+    assert long_title.strip() in task["description"]
