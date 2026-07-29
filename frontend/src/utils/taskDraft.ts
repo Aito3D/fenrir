@@ -187,3 +187,28 @@ export function taskTotal(task: TaskDraft): number {
 export function projectTotal(tasks: TaskDraft[]): number {
   return tasks.reduce((sum, t) => sum + taskTotal(t), 0);
 }
+
+/** True when at least one of the four services is priced on this task.
+ *
+ *  Tests for `null`, not falsiness: `null` means the service is disabled and
+ *  `0` means it is free, and a service quoted at zero is a real line on the
+ *  quote. Mirrors the IS NOT NULL membership test in `_task_summaries`
+ *  (backend/app/api/routes/aito.py). */
+export function hasPricedService(task: TaskDraft): boolean {
+  return (
+    task.scanCost !== null
+    || task.modelisationCost !== null
+    || task.usinageCost !== null
+    || task.impressionCost !== null
+  );
+}
+
+/** Every task must be priced, and there must be at least one.
+ *
+ *  A task with no priced service produces no line item, so it would appear on
+ *  the board and be invisible on the quote — including its header. Requiring
+ *  it up front is what makes "one project is one quote" true rather than
+ *  usually true. */
+export function projectHasPricedService(tasks: TaskDraft[]): boolean {
+  return tasks.length > 0 && tasks.every(hasPricedService);
+}

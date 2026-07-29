@@ -76,6 +76,13 @@ async function openModal(user: ReturnType<typeof userEvent.setup>) {
   await waitFor(() =>
     expect(screen.getByRole('combobox', { name: /client/i })).toHaveValue('Client de passage'),
   );
+  // A project needs a task with a priced service before it can be created
+  // (see NewProjectModal.test.tsx / taskDraft.ts), and every test in this
+  // file submits the form — so price the seeded task here once rather than
+  // in each test. The row is left expanded, so a test that cares about a
+  // specific cost (e.g. 0 vs disabled) can just overwrite this same field.
+  await user.click(screen.getByText('Task 1'));
+  fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '10' } });
 }
 
 describe('AitoPage: create-project → Zoho sync wiring', () => {
@@ -279,10 +286,9 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
     await openModal(user);
     await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
 
-    await user.click(screen.getByRole('button', { name: /add task/i }));
-    // Explicitly fill Scan with 0 (a free service) and leave the title and
-    // every other service untouched (disabled) — the two states the mapping
-    // must never conflate.
+    // openModal already primed the seeded task's Scan field; overwrite it to
+    // 0 (a free service) and leave the title and every other service
+    // untouched (disabled) — the two states the mapping must never conflate.
     fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '0' } });
 
     await user.click(screen.getByRole('button', { name: /create project/i }));

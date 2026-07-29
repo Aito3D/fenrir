@@ -5,6 +5,7 @@ import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { render } from '../utils';
 import { NewProjectModal } from '../../components/aito/NewProjectModal';
+import { hasPricedService, emptyTaskDraft, projectHasPricedService } from '../../utils/taskDraft';
 
 const DEFAULT_ID = '66407000001237340';
 
@@ -74,7 +75,50 @@ beforeEach(() => {
   );
 });
 
+describe('taskDraft service predicates', () => {
+  it('treats a zero cost as priced and null as disabled', () => {
+    expect(hasPricedService(emptyTaskDraft())).toBe(false);
+    expect(hasPricedService({ ...emptyTaskDraft(), scanCost: 0 })).toBe(true);
+    expect(hasPricedService({ ...emptyTaskDraft(), impressionCost: 2400 })).toBe(true);
+  });
+
+  it('requires every task to be priced, not just one', () => {
+    const priced = { ...emptyTaskDraft(), scanCost: 10 };
+    expect(projectHasPricedService([priced, emptyTaskDraft()])).toBe(false);
+    expect(projectHasPricedService([priced])).toBe(true);
+    expect(projectHasPricedService([])).toBe(false);
+  });
+});
+
 describe('NewProjectModal', () => {
+  it('opens with exactly one task row, un-removable, and keeps submit disabled until it is priced', async () => {
+    const user = userEvent.setup();
+    render(<NewProjectModal onClose={vi.fn()} onCreate={vi.fn()} />);
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: /client/i })).toHaveValue('Client de passage'),
+    );
+
+    // Exactly one row, seeded rather than requiring "+ Add task" first.
+    expect(screen.getByText('Task 1')).toBeInTheDocument();
+    expect(screen.queryByText('Task 2')).not.toBeInTheDocument();
+    // The sole task is the last one, so it cannot be removed down to zero.
+    expect(screen.queryByLabelText('Remove task')).not.toBeInTheDocument();
+
+    // A description alone is not enough — the seeded task has no priced
+    // service yet, so the create button must stay disabled.
+    await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
+    expect(screen.getByRole('button', { name: /create project/i })).toBeDisabled();
+
+    // Pricing the seeded task's Scan service is what flips it on.
+    await user.click(screen.getByText('Task 1'));
+    fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '10' } });
+    expect(screen.getByRole('button', { name: /create project/i })).not.toBeDisabled();
+
+    // Adding a second task makes both rows removable again.
+    await user.click(screen.getByRole('button', { name: /add task/i }));
+    expect(screen.getAllByLabelText('Remove task')).toHaveLength(2);
+  });
+
   it('opens with the default client preselected and submits it', async () => {
     const onCreate = vi.fn();
     const user = userEvent.setup();
@@ -83,11 +127,17 @@ describe('NewProjectModal', () => {
       expect(screen.getByRole('combobox', { name: /client/i })).toHaveValue('Client de passage'),
     );
     await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
+
+    // The project must carry a task with a priced service before it can be
+    // created — price the seeded row.
+    await user.click(screen.getByText('Task 1'));
+    fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '10' } });
+
     await user.click(screen.getByRole('button', { name: /create project/i }));
     expect(onCreate).toHaveBeenCalledWith(
       'Support de caméra',
       expect.objectContaining({ id: DEFAULT_ID, isDefault: true }),
-      [],
+      [expect.objectContaining({ scanCost: 10 })],
     );
   });
 
@@ -100,6 +150,12 @@ describe('NewProjectModal', () => {
     );
     await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
 
+    // Price the seeded first task too — every task must have a priced
+    // service, not just the one being added.
+    await user.click(screen.getByText('Task 1'));
+    fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '10' } });
+    await user.click(screen.getByText('Task 1')); // collapse, so "Scan" stays unique below
+
     await user.click(screen.getByRole('button', { name: /add task/i }));
     fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '42' } });
 
@@ -108,7 +164,7 @@ describe('NewProjectModal', () => {
     expect(onCreate).toHaveBeenCalledWith(
       'Support de caméra',
       expect.objectContaining({ id: DEFAULT_ID, isDefault: true }),
-      [expect.objectContaining({ scanCost: 42 })],
+      [expect.objectContaining({ scanCost: 10 }), expect.objectContaining({ scanCost: 42 })],
     );
   });
 
@@ -120,6 +176,11 @@ describe('NewProjectModal', () => {
       expect(screen.getByRole('combobox', { name: /client/i })).toHaveValue('Client de passage'),
     );
     await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
+    // Price the seeded task first so this test isolates the email-validation
+    // gate rather than tripping the (separate) priced-service gate.
+    await user.click(screen.getByText('Task 1'));
+    fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '10' } });
+
     await user.type(screen.getByLabelText(/^email/i), 'nope');
     // Never blurred, so no message yet — and submit is not blocked by a hidden
     // error either: the spec ties blocking to a *visible* error ("showing an
@@ -181,6 +242,10 @@ describe('NewProjectModal', () => {
       expect(screen.getByRole('combobox', { name: /client/i })).toHaveValue('Client de passage'),
     );
     await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
+    // Price the seeded task first so this test isolates the phone-validation
+    // gate rather than tripping the (separate) priced-service gate.
+    await user.click(screen.getByText('Task 1'));
+    fireEvent.change(screen.getByLabelText('Scan'), { target: { value: '10' } });
 
     const combobox = screen.getByRole('combobox', { name: /client/i });
     await user.clear(combobox);

@@ -10,6 +10,7 @@ import { NewContactForm } from './NewContactForm';
 import { TaskEditor } from './TaskEditor';
 import { defaultClientDraft, draftFromContact, visibleClientDraftErrors } from '../../utils/clientDraft';
 import type { ClientDraft } from '../../utils/clientDraft';
+import { emptyTaskDraft, projectHasPricedService } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
 import { inputCls, labelCls } from '../formStyles';
 
@@ -29,7 +30,10 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
   // seed for the company field". The company field starts empty now, so this is
   // only ever the former.
   const [creatingClient, setCreatingClient] = useState(false);
-  const [tasks, setTasks] = useState<TaskDraft[]>([]);
+  // A project with no task is not a project — it would produce a quote with no
+  // lines. Opening with one row makes the requirement obvious instead of
+  // enforcing it with an error after the fact.
+  const [tasks, setTasks] = useState<TaskDraft[]>(() => [emptyTaskDraft()]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const statusQuery = useQuery({
@@ -76,7 +80,8 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
   // reveals it, below, the same way leaving the field would have.
   const visibleErrors = draft ? visibleClientDraftErrors(draft) : { phone: null, email: null };
   const clientValid = draft === null || (visibleErrors.phone === null && visibleErrors.email === null);
-  const canSubmit = configured && description.trim().length > 0 && draft !== null && clientValid;
+  const canSubmit =
+    configured && description.trim().length > 0 && draft !== null && clientValid && projectHasPricedService(tasks);
 
   const submit = () => {
     if (!draft || !configured) return;
@@ -85,6 +90,7 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
     setDraft(revealed);
     const revealedErrors = visibleClientDraftErrors(revealed);
     if (description.trim().length === 0 || revealedErrors.phone !== null || revealedErrors.email !== null) return;
+    if (!projectHasPricedService(tasks)) return;
     onCreate(description.trim(), draft, tasks);
   };
 
@@ -171,6 +177,7 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
                     value={tasks}
                     onChange={setTasks}
                     onRemove={(index) => setTasks(tasks.filter((_, i) => i !== index))}
+                    minRows={1}
                   />
                 </div>
               </div>

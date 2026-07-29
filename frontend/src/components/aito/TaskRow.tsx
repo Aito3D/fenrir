@@ -16,7 +16,10 @@ export interface TaskRowProps {
   task: TaskDraft;
   index: number;
   onChange: (next: TaskDraft) => void;
-  onRemove: () => void;
+  /** Absent, not merely disabled, when this row cannot be removed (see
+   *  TaskEditor's `minRows`) — the control disappears entirely rather than
+   *  sitting there inert. */
+  onRemove?: () => void;
   expanded: boolean;
   onToggle: () => void;
 }
@@ -112,7 +115,9 @@ export function TaskRow({ task, index, onChange, onRemove, expanded, onToggle }:
             )}
           </button>
         </h4>
-        <DeleteHoldButton onDelete={onRemove} label={t('aito.removeTask')} hint={t('aito.holdToDelete')} />
+        {onRemove && (
+          <DeleteHoldButton onDelete={onRemove} label={t('aito.removeTask')} hint={t('aito.holdToDelete')} />
+        )}
       </div>
 
       {expanded && (

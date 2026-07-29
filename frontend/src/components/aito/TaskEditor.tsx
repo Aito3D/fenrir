@@ -34,6 +34,11 @@ export interface TaskEditorProps {
   value: TaskDraft[];
   onChange: (next: TaskDraft[]) => void;
   onRemove: (index: number) => void;
+  /** Rows that cannot be removed. The create modal passes 1: a project must
+   *  carry at least one task, and letting the user delete their way to zero
+   *  and then be told "no" is worse than not offering it. Defaults to 0 so the
+   *  detail panel is unaffected. */
+  minRows?: number;
 }
 
 /** The task list for one Aito project: a heading, each task's `TaskRow`, "+
@@ -42,7 +47,7 @@ export interface TaskEditorProps {
  *  new array. That split is what lets the create modal hold this array in
  *  local state and POST it with the project, while the detail panel wires
  *  each change to a PATCH; neither caller is visible from here. */
-export function TaskEditor({ value, onChange, onRemove }: TaskEditorProps) {
+export function TaskEditor({ value, onChange, onRemove, minRows = 0 }: TaskEditorProps) {
   const { t } = useTranslation();
   const { data: settings } = useQuery({
     queryKey: ['settings'],
@@ -102,7 +107,7 @@ export function TaskEditor({ value, onChange, onRemove }: TaskEditorProps) {
             task={task}
             index={index}
             onChange={(next) => onChange(value.map((existing, i) => (i === index ? next : existing)))}
-            onRemove={() => onRemove(index)}
+            onRemove={value.length > minRows ? () => onRemove(index) : undefined}
             expanded={expandedKeys.has(rowKey(task))}
             onToggle={() => toggle(rowKey(task))}
           />
