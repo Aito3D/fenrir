@@ -12,18 +12,18 @@ than from wherever someone last dropped it.
 
 Three changes deliver that:
 
-1. **The board gains a rule engine.** Six columns, and a card's column is a
+1. **The board gains a rule engine.** Seven columns, and a card's column is a
    pure function of its quote status and its task steps.
 2. **Tasks gain steps.** Each of the four services a task can carry becomes a
    step with its own "Done" toggle, shown in a restructured task form.
-3. **The quote gains an accept/decline control** on the card, which is what
-   releases a project onto the board at all.
+3. **The quote gains sent/accept/decline controls** on the card. Acceptance is
+   what releases a project onto the board at all.
 
 ## Scope
 
 In scope: the column set and migration, the derivation rules, per-step done
-flags, the task form rework, the drag restrictions, and the accept/decline
-control including its best-effort write back to Zoho Books.
+flags, the task form rework, the drag restrictions, and the sent/accept/decline
+controls including their best-effort write back to Zoho Books.
 
 Out of scope, deliberately:
 
@@ -35,11 +35,12 @@ Out of scope, deliberately:
 
 ## Columns
 
-`pickup` is removed. `scan` and `done` are added. The board becomes:
+`pickup` is removed. `waiting`, `scan` and `done` are added. The board becomes:
 
 | id | label (EN) | label (FR) | accent |
 |---|---|---|---|
 | `devis` | Quote | Devis | sky |
+| `waiting` | Waiting | En attente | amber |
 | `scan` | Scan | Scan | teal |
 | `model` | Modeling | Modélisation | violet |
 | `print` | Printing & Machining | Impression & Usinage | orange |
@@ -52,7 +53,7 @@ ticked on every task that has them.
 
 Finish keeps the brand green because it is the accomplishment; Done is neutral
 because it is the archive. The board is a horizontally-scrolling flex row
-(`AitoPage.tsx:544`), so six columns need no layout change.
+(`AitoPage.tsx:544`), so seven columns need no layout change.
 
 ## The rule engine
 
@@ -75,21 +76,29 @@ Stages map to services:
 ```
 derive_column(quote_status, stored_column, tasks) -> column
 
-  1. quote_status == 'declined'          → 'done'
-  2. quote_status != 'accepted'          → 'devis'      (NULL included)
-  3. first stage, in board order, holding at least one
-     enabled-but-unticked step           → that stage
-  4. otherwise                           → 'done' if stored_column == 'done'
-                                            else 'finish'
+  1. quote_status == 'declined'                     → 'done'
+  2. quote_status in (sent, viewed, expired)        → 'waiting'
+  3. quote_status != 'accepted'                     → 'devis'   (NULL included)
+  4. first stage, in board order, holding at least one
+     enabled-but-unticked step                      → that stage
+  5. otherwise                                      → 'done' if stored_column == 'done'
+                                                       else 'finish'
 ```
 
-Rule 2 is what makes acceptance the single gate: draft, sent, viewed, expired
-and no-quote-at-all all sit in Quote until Accept is held. A project with no
-Zoho quote is accepted locally, with no Zoho call.
+Rules 2 and 3 split the pre-acceptance life of a quote in two. **Quote** means
+the shop is still writing it — a draft, or a card with no Zoho quote at all.
+**Waiting** means it has left the shop and the answer is the client's to give:
+`viewed` only says they opened it, and `expired` says they never answered, so
+both are still waiting on them. An expired quote parked in Waiting is a visible
+prompt to chase it, which it would not be buried back in Quote.
 
-Rule 4's carve-out is the only place the stored column is believed, and it is
+Acceptance remains the single gate onto the work columns, whichever side of it
+a card is waiting on. A project with no Zoho quote is accepted locally, with no
+Zoho call.
+
+Rule 5's carve-out is the only place the stored column is believed, and it is
 what lets **Finish ↔ Done** be a genuine manual drag inside a derived model.
-Un-tick anything and rule 3 fires first, pulling the card back out of Done.
+Un-tick anything and rule 4 fires first, pulling the card back out of Done.
 
 ### Where it runs
 
@@ -101,9 +110,10 @@ computed from which rule fired:
 | rule | `move_lock` | meaning |
 |---|---|---|
 | 1 | `'declined'` | the quote was declined |
-| 2 | `'quote'` | pinned to Quote until the quote is accepted |
-| 3 | `'steps'` | the column is set by the task steps |
-| 4 | `null` | free to move between Finish and Done |
+| 2 | `'waiting'` | the quote is with the client |
+| 3 | `'quote'` | pinned to Quote until the quote is accepted |
+| 4 | `'steps'` | the column is set by the task steps |
+| 5 | `null` | free to move between Finish and Done |
 
 The card renders its lock badge and tooltip from that value, and a drag enables
 exactly the droppables it allows. Nothing derives anything client-side, so the
@@ -114,7 +124,7 @@ which the codebase has to keep in sync by hand and documents as such.
 
 The column is stored, not computed on read: per-column ordering and `position`
 depend on it. It is recomputed on every mutation that can change it —
-project create, task create/update/delete, quote accept/decline, project
+project create, task create/update/delete, any quote status change, project
 restore — and the result is written to `board_column`.
 
 When a recompute moves a project, it is **appended to the end** of the
@@ -195,9 +205,14 @@ reconstructs the history from where each card already sits:
 Step 5 matters: the migration leaves the board *self-consistent under the new
 rules*, not merely close to its old shape.
 
+Step 3 leaves cards in `devis` with their status untouched, which is what lets
+rule 2 sort them on first load: an imported card whose quote was already `sent`,
+`viewed` or `expired` lands in Waiting without the migration knowing the column
+exists.
+
 **Known consequence:** every card sitting in the Quote column on the day this
-ships becomes locked there until Accept is held on it. That is the intended
-workflow, but without warning it reads as the board having frozen.
+ships becomes locked in Quote or Waiting until Accept is held on it. That is
+the intended workflow, but without warning it reads as the board having frozen.
 
 ## API
 
@@ -209,7 +224,12 @@ workflow, but without warning it reads as the board having frozen.
 
 ### `POST /aito/{project_id}/quote-status`
 
-Body `{"status": "accepted" | "declined"}`, guarded by `Permission.AITO_UPDATE`.
+Body `{"status": "sent" | "accepted" | "declined"}`, guarded by
+`Permission.AITO_UPDATE`.
+
+`sent` is here because nothing else in the app can produce it: the status
+otherwise only ever arrives by importing a quote that was already sent in Zoho,
+which would leave the Waiting column unreachable for a hand-made card.
 
 1. Write `quote_status` locally and re-derive the column. This happens first
    and always: the board must be correct with Zoho unreachable, which is the
@@ -228,8 +248,15 @@ non-200. The frontend toasts "saved locally, Zoho not updated".
 ### `ZohoService.set_estimate_status(db, estimate_id, status)`
 
 `POST /estimates/{estimate_id}/status/{status}`, with `status` restricted to
-`accepted` and `declined`. Zoho has no `/status/draft`, and a declined estimate
-cannot be returned to draft — established by probing in the push design.
+`sent`, `accepted` and `declined`. Zoho has no `/status/draft`, and a declined
+estimate cannot be returned to draft — established by probing in the push
+design.
+
+`/status/accepted` and `/status/declined` were both exercised against the live
+org during that design. **`/status/sent` was not** — it is documented by Zoho
+but unverified here, so its failure path is the one to watch on first use. It
+costs nothing if it is wrong: the local write has already happened and the
+response simply reports `zoho_synced: false`.
 
 ## Frontend
 
@@ -275,9 +302,9 @@ on-close, in-flight-counted invalidation for cost edits is untouched.
 ### Quote actions
 
 A new `QuoteStatusActions` in the panel's left column, directly under the quote
-rows where the quote number and salesperson already sit. Two hold-500ms
-buttons, both always visible; whichever matches the current status is disabled
-and shows a check.
+rows where the quote number and salesperson already sit. Three hold-500ms
+buttons — Mark as sent, Accept, Decline — all always visible; whichever matches
+the current status is disabled and shows a check.
 
 `DeleteHoldButton`'s press-and-hold mechanic is extracted into a `HoldButton`
 that all three controls share, rather than copying the timer twice.
@@ -314,6 +341,11 @@ that all three controls share, rather than copying the timer twice.
   task holding it back is gone.
 - **A declined card.** Sits in Done with `move_lock: 'declined'`. Accepting it
   reopens it and re-derives normally.
+- **A card in Waiting.** Locked there whatever its tasks say — the work has not
+  been authorised yet, so ticking a step on it changes nothing on the board.
+  Accept releases it and rule 4 then places it by its steps, so a quote
+  accepted after some steps were already ticked lands correctly rather than at
+  Scan.
 - **A soft-deleted project.** Off the board entirely; restore re-derives.
 
 ## Testing
@@ -321,8 +353,9 @@ that all three controls share, rather than copying the timer twice.
 **Backend**
 
 - `test_aito_board_rules.py`: table-driven over `derive_column` — every rule,
-  and the two easy to get wrong: un-ticking pulling a card back *out* of Done,
-  and rule 4 believing the stored column only between Finish and Done.
+  the three statuses that mean Waiting, and the two easy to get wrong:
+  un-ticking pulling a card back *out* of Done, and rule 5 believing the stored
+  column only between Finish and Done.
 - Migration: back-fill produces the expected flags per source column, `pickup`
   lands in `finish`, and every project's column satisfies `derive_column`
   afterwards.
@@ -330,9 +363,10 @@ that all three controls share, rather than copying the timer twice.
   non-existent step is 422; a tick recomputes the project's column.
 - `PATCH /{id}/move`: 409 on an illegal column, 200 on a reorder within a
   column, 200 on Finish↔Done when `move_lock` is null.
-- `POST /{id}/quote-status`: local write and column change; Zoho called with
-  the right status; Zoho raising still returns 200 with `zoho_synced: false`;
-  a project with no `quote_id` never calls Zoho.
+- `POST /{id}/quote-status`: local write and column change for all three
+  statuses, including `sent` landing the card in Waiting; Zoho called with the
+  right status; Zoho raising still returns 200 with `zoho_synced: false`; a
+  project with no `quote_id` never calls Zoho.
 
 **Frontend**
 
