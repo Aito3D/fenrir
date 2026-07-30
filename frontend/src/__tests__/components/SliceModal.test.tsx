@@ -332,6 +332,138 @@ describe('SliceModal', () => {
     expect(screen.queryByLabelText(/Use the file's built-in settings/)).toBeNull();
   });
 
+  // #2622: a MakerWorld 3MF designed for another printer carries the author's
+  // own process tweaks. BambuStudio records which keys deviate from the stock
+  // preset inside the file, so a cross-printer re-slice can carry them instead
+  // of losing them to the picked process profile.
+  const designedFor = {
+    file_id: 100,
+    filename: 'Designed.3mf',
+    plates: [],
+    is_multi_plate: false,
+    embedded_printer: 'Bambu Lab A1 0.4 nozzle',
+    embedded_process: '0.20mm Standard @BBL A1',
+    design_overrides: [
+      { key: 'wall_loops', value: '5', printer_coupled: false },
+      { key: 'sparse_infill_density', value: '100%', printer_coupled: false },
+      { key: 'outer_wall_speed', value: '200', printer_coupled: true },
+    ],
+  };
+
+  async function openDesignSection() {
+    const user = userEvent.setup();
+    await user.click(await screen.findByText(/Keep the designer's settings/));
+    return user;
+  }
+
+  it("carries the design's printer-independent settings by default (#2622)", async () => {
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+    mockApi.getLibraryFilePlates.mockResolvedValue(designedFor);
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Designed.3mf' },
+      onClose: vi.fn(),
+    });
+
+    // Two of three pre-selected: the speed key is machine-coupled.
+    expect(await screen.findByText('2 of 3 selected')).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+
+    await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
+    const payload = mockApi.sliceLibraryFile.mock.calls[0][1] as { design_overrides?: string[] };
+    expect([...(payload.design_overrides ?? [])].sort()).toEqual(['sparse_infill_density', 'wall_loops']);
+  });
+
+  it('lists every changed setting with its value and flags the machine-coupled ones (#2622)', async () => {
+    mockApi.getLibraryFilePlates.mockResolvedValue(designedFor);
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Designed.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await openDesignSection();
+
+    expect(screen.getByText('wall_loops')).toBeInTheDocument();
+    expect(screen.getByText('5')).toBeInTheDocument();
+    expect(screen.getByText('sparse_infill_density')).toBeInTheDocument();
+    expect(screen.getByText('100%')).toBeInTheDocument();
+    // The risky one is listed too — visible, explained, just not pre-ticked.
+    expect(screen.getByText('outer_wall_speed')).toBeInTheDocument();
+    expect(screen.getByText('printer-specific')).toBeInTheDocument();
+  });
+
+  it('lets the user opt a machine-coupled setting in and a safe one out (#2622)', async () => {
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+    mockApi.getLibraryFilePlates.mockResolvedValue(designedFor);
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Designed.3mf' },
+      onClose: vi.fn(),
+    });
+
+    const user = await openDesignSection();
+    const boxes = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    const byKey = (key: string) =>
+      boxes.find((b) => b.closest('label')?.textContent?.includes(key)) as HTMLInputElement;
+
+    await user.click(byKey('outer_wall_speed'));
+    await user.click(byKey('wall_loops'));
+
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+
+    await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
+    const payload = mockApi.sliceLibraryFile.mock.calls[0][1] as { design_overrides?: string[] };
+    expect([...(payload.design_overrides ?? [])].sort()).toEqual(['outer_wall_speed', 'sparse_infill_density']);
+  });
+
+  it('omits design_overrides entirely when the user unticks everything (#2622)', async () => {
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+    mockApi.getLibraryFilePlates.mockResolvedValue(designedFor);
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Designed.3mf' },
+      onClose: vi.fn(),
+    });
+
+    const user = await openDesignSection();
+    const boxes = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    for (const box of boxes) {
+      if (box.checked) await user.click(box);
+    }
+
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+
+    await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
+    expect(mockApi.sliceLibraryFile.mock.calls[0][1]).not.toHaveProperty('design_overrides');
+  });
+
+  it('hides the section for a file that changes nothing (#2622)', async () => {
+    mockApi.getLibraryFilePlates.mockResolvedValue({ ...designedFor, design_overrides: [] });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Designed.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Slice$/ })).toBeEnabled());
+    expect(screen.queryByText(/Keep the designer's settings/)).toBeNull();
+  });
+
   it('includes bed_type in the request when the user picks a non-auto plate (#1337)', async () => {
     const onClose = vi.fn();
     mockApi.sliceLibraryFile.mockResolvedValue({
@@ -1346,5 +1478,85 @@ describe('pickFilamentForSlot — printer-compat contract (#1851)', () => {
       index,
     );
     expect(pick).toEqual({ source: 'standard', id: 'Generic PLA @BBL H2C' });
+  });
+});
+
+describe('pickFilamentForSlot — long-form printer tag (#2628)', () => {
+  const index = buildCompatibilityIndex({
+    'Bambu Lab A1': 'A1',
+    'Bambu Lab H2D': 'H2D',
+  });
+
+  it('never auto-picks a user-saved preset scoped to another printer', () => {
+    // michaelklos's registry: a cloud-tier user preset carrying the full
+    // "@Bambu Lab H2D 0.4 nozzle" tag outscores the A1 preset on tier bonus
+    // alone. Until the matcher learned the long form it classified 'unknown'
+    // — indistinguishable from compatible — so it won the slot, landed in a
+    // dropdown the modal disables (slot not used by the plate), and the CLI
+    // rejected the whole slice.
+    const presets = makeUnified({
+      cloud: {
+        printer: [],
+        process: [],
+        filament: [
+          {
+            id: 'sunlu-tpu-h2d',
+            name: 'SUNLU TPU 95A @Bambu Lab H2D 0.4 nozzle',
+            source: 'cloud',
+            filament_type: 'PLA',
+            filament_colour: '#FF0000',
+          },
+        ],
+      },
+      standard: {
+        printer: [],
+        process: [],
+        filament: [
+          {
+            id: 'Bambu PLA Basic @BBL A1',
+            name: 'Bambu PLA Basic @BBL A1',
+            source: 'standard',
+            filament_type: 'PLA',
+            filament_colour: '#FFFFFF',
+          },
+        ],
+      },
+    });
+
+    const pick = pickFilamentForSlot(
+      presets,
+      { type: 'PLA', color: '#FF0000' },
+      'Bambu Lab A1 0.4 nozzle',
+      index,
+    );
+
+    expect(pick).toEqual({ source: 'standard', id: 'Bambu PLA Basic @BBL A1' });
+  });
+
+  it('still picks a long-form preset for its own printer', () => {
+    const presets = makeUnified({
+      cloud: {
+        printer: [],
+        process: [],
+        filament: [
+          {
+            id: 'sunlu-tpu-h2d',
+            name: 'SUNLU TPU 95A @Bambu Lab H2D 0.4 nozzle',
+            source: 'cloud',
+            filament_type: 'TPU',
+            filament_colour: '#FF0000',
+          },
+        ],
+      },
+    });
+
+    const pick = pickFilamentForSlot(
+      presets,
+      { type: 'TPU', color: '#FF0000' },
+      'Bambu Lab H2D 0.4 nozzle',
+      index,
+    );
+
+    expect(pick).toEqual({ source: 'cloud', id: 'sunlu-tpu-h2d' });
   });
 });

@@ -83,6 +83,7 @@ import {
   MoreHorizontal,
   SlidersHorizontal,
   Stethoscope,
+  ScanEye,
   LineChart as LineChartIcon,
   LayoutGrid,
   MonitorPlay,
@@ -107,6 +108,7 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useFlipReorder } from '../hooks/useFlipReorder';
 import { MQTTDebugModal } from '../components/MQTTDebugModal';
 import { HMSErrorModal, filterKnownHMSErrors } from '../components/HMSErrorModal';
+import { AiDetectionModal } from '../components/AiDetectionModal';
 import { PrinterQueueWidget } from '../components/PrinterQueueWidget';
 import { AMSHistoryModal } from '../components/AMSHistoryModal';
 import { AmsBackupModal } from '../components/AmsBackupModal';
@@ -1812,6 +1814,9 @@ function PrinterCard({
   bedTempPresets = BED_TEMP_DEFAULTS,
   chamberTempPresets = CHAMBER_TEMP_DEFAULTS,
   fanSpeedPresets = FAN_SPEED_DEFAULTS,
+  aiDetectionEnabled = false,
+  aiDetection,
+  aiLastError = null,
 }: {
   printer: Printer;
   hideIfDisconnected?: boolean;
@@ -1850,6 +1855,9 @@ function PrinterCard({
   bedTempPresets?: readonly [number, number, number];
   chamberTempPresets?: readonly [number, number, number];
   fanSpeedPresets?: readonly [number, number, number];
+  aiDetectionEnabled?: boolean;
+  aiDetection?: { class: string; frame_count: number; score: number };
+  aiLastError?: string | null;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -1866,6 +1874,8 @@ function PrinterCard({
   const [showPowerOffConfirm, setShowPowerOffConfirm] = useState(false);
   const [haToggleConfirm, setHaToggleConfirm] = useState<SmartPlug | null>(null);
   const [showHMSModal, setShowHMSModal] = useState(false);
+  // #1546: AI failure detection modal — opens from the AI badge.
+  const [showAiModal, setShowAiModal] = useState(false);
   // #1762: AMS Filament Backup status / control modal — opens from the badge.
   const [amsBackupModalOpen, setAmsBackupModalOpen] = useState(false);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
@@ -2028,6 +2038,30 @@ function PrinterCard({
       }
     }
     return filaments;
+  }, [status?.ams, status?.vt_tray]);
+
+  // Collect loaded type+color+tray_info_idx triples for variant-aware force-color
+  // matching. Format: "TYPE:rrggbb:idx" (idx "" for custom/third-party spools) —
+  // distinguishes Bambu PLA sub-variants that share a base type+colour (#2650).
+  const loadedVariants = useMemo(() => {
+    const variants = new Set<string>();
+    if (status?.ams) {
+      for (const ams of status.ams) {
+        for (const tray of ams.tray || []) {
+          if (tray.tray_type && tray.tray_color) {
+            const color = tray.tray_color.replace('#', '').toLowerCase().slice(0, 6);
+            variants.add(`${tray.tray_type.toUpperCase()}:${color}:${tray.tray_info_idx || ''}`);
+          }
+        }
+      }
+    }
+    for (const vt of status?.vt_tray ?? []) {
+      if (vt.tray_type && vt.tray_color) {
+        const color = vt.tray_color.replace('#', '').toLowerCase().slice(0, 6);
+        variants.add(`${vt.tray_type.toUpperCase()}:${color}:${vt.tray_info_idx || ''}`);
+      }
+    }
+    return variants;
   }, [status?.ams, status?.vt_tray]);
 
   // Fetch cloud filament info for tooltips (name includes color, also has K value)
@@ -2203,8 +2237,8 @@ function PrinterCard({
   // An empty Set means no filaments are loaded — jobs requiring specific types are incompatible.
   const queueCount = useMemo(() => {
     if (!queueItems?.length) return 0;
-    return filterCompatibleQueueItems(queueItems, loadedFilamentTypes, loadedFilaments).length;
-  }, [queueItems, loadedFilamentTypes, loadedFilaments]);
+    return filterCompatibleQueueItems(queueItems, loadedFilamentTypes, loadedFilaments, loadedVariants).length;
+  }, [queueItems, loadedFilamentTypes, loadedFilaments, loadedVariants]);
 
   // Fetch currently printing queue item to show who started it (Issue #206)
   const { data: printingQueueItems } = useQuery({
@@ -3445,6 +3479,39 @@ function PrinterCard({
                   </button>
                 );
               })()}
+              {/* AI failure detection badge (#1546) — always shown while detection
+                  is enabled for this printer, like the other health badges. Gray
+                  "Idle" outside a monitored print, class-colored during one. */}
+              {aiDetectionEnabled && (() => {
+                const cls = aiDetection
+                  ? (aiDetection.class === 'failure' || aiDetection.class === 'warning' ? aiDetection.class : 'safe')
+                  : 'idle';
+                const colorClass =
+                  cls === 'failure'
+                    ? 'bg-status-error/20 text-status-error'
+                    : cls === 'warning'
+                      ? 'bg-status-warning/20 text-status-warning'
+                      : cls === 'safe'
+                        ? 'bg-status-ok/20 text-status-ok'
+                        : 'bg-bambu-dark-tertiary text-bambu-gray';
+                return (
+                  <button
+                    onClick={() => setShowAiModal(true)}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs cursor-pointer hover:opacity-80 transition-opacity ${colorClass}`}
+                    title={
+                      aiDetection
+                        ? t('printers.aiDetection.tooltip', {
+                            status: t(`printers.aiDetection.${cls}`),
+                            score: aiDetection.score.toFixed(3),
+                          })
+                        : t('printers.aiDetection.tooltipIdle')
+                    }
+                  >
+                    <ScanEye className="w-3 h-3" />
+                    {t(`printers.aiDetection.${cls}`)}
+                  </button>
+                );
+              })()}
               {/* Maintenance Status Indicator */}
               {maintenanceInfo && (
                 <button
@@ -3651,18 +3718,55 @@ function PrinterCard({
                     ? 'bg-status-warning'
                     : 'bg-bambu-green';
 
+                const hasCompactEta = isActiveCompactPrint && status.remaining_time != null && status.remaining_time > 0;
+                const hasCompactLayers =
+                  isActiveCompactPrint &&
+                  status.layer_num != null &&
+                  status.total_layers != null &&
+                  status.total_layers > 0;
+
                 return (
-                  <div className="relative mt-2 flex items-center gap-2">
-                    <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-bambu-dark-tertiary">
-                      <div
-                        className={`${compactProgressClass} h-1.5 w-full rounded-full origin-left transition-transform duration-300 ease-(--ease-signature) motion-reduce:transition-none`}
-                        style={{ transform: `scaleX(${Math.min(100, Math.max(0, compactProgress)) / 100})` }}
-                      />
+                  <>
+                    <div className="relative mt-2 flex items-center gap-2">
+                      <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-bambu-dark-tertiary">
+                        <div
+                          className={`${compactProgressClass} h-1.5 w-full rounded-full origin-left transition-transform duration-300 ease-(--ease-signature) motion-reduce:transition-none`}
+                          style={{ transform: `scaleX(${Math.min(100, Math.max(0, compactProgress)) / 100})` }}
+                        />
+                      </div>
+                      <span className={`w-9 shrink-0 text-right text-[11px] leading-none ${isActiveCompactPrint ? 'text-white' : 'text-bambu-gray'}`}>
+                        {isActiveCompactPrint ? `${Math.round(compactProgress)}%` : '---%'}
+                      </span>
                     </div>
-                    <span className={`w-9 shrink-0 text-right text-[11px] leading-none ${isActiveCompactPrint ? 'text-white' : 'text-bambu-gray'}`}>
-                      {isActiveCompactPrint ? `${Math.round(compactProgress)}%` : '---%'}
-                    </span>
-                  </div>
+                    {/* #2674: size S showed only a name, a pip and a progress bar — not
+                        enough to answer "which printer finishes first", which is what a
+                        wall-mounted fleet view is for. One line of the metrics the
+                        expanded card already renders, using the same formatters and the
+                        same ETA styling so S and M read alike. The row keeps its height
+                        when idle so cards don't shift as prints start and stop. */}
+                    <div className="mt-1 flex min-h-[14px] items-center gap-2 overflow-hidden text-[11px] leading-none text-bambu-gray">
+                      {hasCompactEta && (
+                        <>
+                          <span className="flex shrink-0 items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {formatDuration(status.remaining_time! * 60)}
+                          </span>
+                          <span
+                            className="shrink-0 font-medium text-bambu-green"
+                            title={t('printers.estimatedCompletion')}
+                          >
+                            ETA {formatETA(status.remaining_time!, timeFormat, t)}
+                          </span>
+                        </>
+                      )}
+                      {hasCompactLayers && (
+                        <span className="flex min-w-0 items-center gap-1 truncate">
+                          <Layers className="w-3 h-3 shrink-0" />
+                          {status.layer_num}/{status.total_layers}
+                        </span>
+                      )}
+                    </div>
+                  </>
                 );
               })()
             ) : (
@@ -3780,6 +3884,7 @@ function PrinterCard({
                         printerModel={printer.model}
                         loadedFilamentTypes={loadedFilamentTypes}
                         loadedFilaments={loadedFilaments}
+                        loadedVariants={loadedVariants}
                         variant="panelExtension"
                       />
                     </div>
@@ -6289,6 +6394,16 @@ function PrinterCard({
         />
       )}
 
+      {/* AI failure detection modal (#1546) */}
+      {showAiModal && (
+        <AiDetectionModal
+          printerName={printer.name}
+          detection={aiDetection}
+          lastError={aiLastError}
+          onClose={() => setShowAiModal(false)}
+        />
+      )}
+
       {/* AMS Filament Backup status / control modal (#1762) */}
       {amsBackupModalOpen && status && (
         <AmsBackupModal
@@ -7892,6 +8007,22 @@ export function PrintersPage() {
     staleTime: 60 * 1000, // 1 minute
   });
 
+  // Live AI failure detection state for the card badges (#1546). Matches the
+  // 10s refetch of the Failure Detection settings panel.
+  const { data: obicoPrinterStatus } = useQuery({
+    queryKey: ['obico-printer-status'],
+    queryFn: api.getObicoPrinterStatus,
+    refetchInterval: 10000,
+  });
+  // Badge visibility: detection enabled AND this printer in the monitored set
+  // (monitored_printers null = all). Live per-print state is passed separately.
+  const isAiMonitored = useCallback(
+    (printerId: number) =>
+      obicoPrinterStatus?.enabled === true &&
+      (obicoPrinterStatus.monitored_printers === null || obicoPrinterStatus.monitored_printers.includes(printerId)),
+    [obicoPrinterStatus],
+  );
+
   // Fetch Spoolman status to enable link spool feature
   const { data: spoolmanStatus } = useQuery({
     queryKey: ['spoolman-status'],
@@ -8989,6 +9120,9 @@ export function PrintersPage() {
                   isSelected={selectedPrinterIds.has(printer.id)}
                   onToggleSelect={toggleSelect}
                   onOpenCompactCard={openCompactCard}
+                  aiDetectionEnabled={isAiMonitored(printer.id)}
+                  aiDetection={obicoPrinterStatus?.enabled ? obicoPrinterStatus.per_printer[String(printer.id)] : undefined}
+                  aiLastError={obicoPrinterStatus?.last_error ?? null}
                 />
               </div>
             );

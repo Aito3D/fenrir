@@ -37,6 +37,7 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@MethodicalMartian](https://github.com/MethodicalMartian)
 - [@brianharwell](https://github.com/brianharwell)
 - [@shosier01](https://github.com/shosier01)
+- [@freifunk-bamberg](https://github.com/freifunk-bamberg)
 
 ## Backers ($5/mo+)
 
@@ -65,6 +66,9 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@hazzardr](https://github.com/hazzardr)
 - [@Shihchiun](https://github.com/Shihchiun)
 - [@kycrna](https://github.com/kycrna)
+- [@iljur](https://github.com/iljur)
+- [@bhamiltoncx](https://github.com/bhamiltoncx)
+- [@g7ufo](https://github.com/g7ufo)
 
 ---
 

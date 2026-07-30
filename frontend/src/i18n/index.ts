@@ -20,6 +20,7 @@ const LOCALE_LOADERS: Record<string, () => Promise<{ default: object }>> = {
   'zh-TW': () => import('./locales/zh-TW'),
   tr: () => import('./locales/tr'),
   ru: () => import('./locales/ru'),
+  uk: () => import('./locales/uk'),
 };
 
 // Minimal i18next backend: resolves a language to its lazily imported
@@ -45,7 +46,7 @@ const resources = {
   en: { translation: en },
 };
 
-const SUPPORTED_LNGS = ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'pt-BR', 'ru', 'tr', 'zh-CN', 'zh-TW'];
+const SUPPORTED_LNGS = ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'pt-BR', 'ru', 'tr', 'uk', 'zh-CN', 'zh-TW'];
 const APPLIANCE_CONSUMED_KEY = 'bambuddy_appliance_locale_consumed';
 
 i18n
@@ -130,4 +131,5 @@ export const availableLanguages = [
   { code: 'zh-TW', name: 'Chinese (Traditional)', nativeName: '繁體中文' },
   { code: 'tr', name: 'Turkish', nativeName: 'Türkçe' },
   { code: 'ru', name: 'Russian', nativeName: 'Русский' },
+  { code: 'uk', name: 'Ukrainian', nativeName: 'Українська' },
 ];

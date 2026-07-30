@@ -152,9 +152,7 @@ class TestChamberStreamReconnect:
         monkeypatch.setattr(cam, "read_next_chamber_frame", fake_read)
         monkeypatch.setattr(cam, "_CHAMBER_RECONNECT_DELAYS", (0.0, 0.0, 0.0))
 
-        gen = cam.generate_chamber_mjpeg_stream(
-            "1.2.3.4", "code", fps=5, stream_id="9-test", printer_id=9, raw=True
-        )
+        gen = cam.generate_chamber_mjpeg_stream("1.2.3.4", "code", fps=5, stream_id="9-test", printer_id=9, raw=True)
         frame = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
         assert frame == VALID_JPEG
         assert len(writers) == 2  # initial + one reconnect

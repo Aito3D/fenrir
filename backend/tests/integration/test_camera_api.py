@@ -980,6 +980,7 @@ class TestCameraEndpointAuthEnabled:
         # 503 means we got past auth
         assert response.status_code == 503
 
+
 class TestCameraStreamPoolHygiene:
     """Regression guard for the camera-stream DB-connection leak (issue #2572)."""
 

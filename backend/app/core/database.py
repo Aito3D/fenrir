@@ -1573,11 +1573,14 @@ async def run_migrations(conn):
     if is_sqlite():
         for _col in _tristate_cols:
             async with conn.begin_nested():
+                # B608 is a false positive here: _col is a hardcoded constant
+                # from _tristate_cols, never user input, and SQL identifiers
+                # can't be bound as parameters. Suppressed inline below.
                 await conn.execute(
-                    text(f"UPDATE print_queue SET {_col} = 'on' WHERE {_col} IN (1, '1', 'true', 'True')")
+                    text(f"UPDATE print_queue SET {_col} = 'on' WHERE {_col} IN (1, '1', 'true', 'True')")  # nosec B608
                 )
                 await conn.execute(
-                    text(f"UPDATE print_queue SET {_col} = 'off' WHERE {_col} IN (0, '0', 'false', 'False')")
+                    text(f"UPDATE print_queue SET {_col} = 'off' WHERE {_col} IN (0, '0', 'false', 'False')")  # nosec B608
                 )
     else:
         for _col in _tristate_cols:
@@ -3938,6 +3941,35 @@ async def run_migrations(conn):
     # #2603 archive plate_id backfill above so print_archives.plate_id is populated.
     await _migrate_scope_run_filament_to_plate(conn)
 
+    # Migration: Add controls_printer_power to smart_plugs (#2629). Marks
+    # whether a plug actually feeds the printer's own power — only then may an
+    # auto-off mark the printer offline. Defaults to true so existing plugs
+    # keep the previous behaviour; accessory plugs (filter fan, lights) are
+    # opted out by the user. BOOLEAN literals differ per dialect (SQLite has
+    # no true/false keyword), so the default is dialect-branched.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN controls_printer_power BOOLEAN DEFAULT 1")
+    else:
+        await _safe_execute(
+            conn,
+            "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS controls_printer_power BOOLEAN DEFAULT true",
+        )
+
+    # Migration: real filesystem mtime for library files/folders (#2680). The
+    # folder tree's "sort by recent activity" and the file pane's date sort must
+    # track the on-disk mtime (``ls -t``), not Bambuddy's DB ``updated_at`` — for
+    # a bulk external scan every row's ``updated_at`` is the same scan instant, so
+    # ordering was arbitrary. Nullable; the timestamp type differs by dialect
+    # (SQLite DATETIME vs Postgres TIMESTAMP) so an existing-DB upgrade doesn't hit
+    # "type datetime does not exist" on Postgres. On a fresh DB create_all() already
+    # built the column, so the ALTER is swallowed as "already exists".
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN fs_modified_at DATETIME")
+        await _safe_execute(conn, "ALTER TABLE library_folders ADD COLUMN fs_modified_at DATETIME")
+    else:
+        await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN fs_modified_at TIMESTAMP")
+        await _safe_execute(conn, "ALTER TABLE library_folders ADD COLUMN fs_modified_at TIMESTAMP")
+
     # Migration: Disambiguate the four ``user_print_*`` notification template
     # names by appending " Email" (#1792). See ``_migrate_rename_user_print_template_names``.
     await _migrate_rename_user_print_template_names(conn)
@@ -4156,6 +4188,41 @@ async def run_migrations(conn):
         "UPDATE aito_projects SET quote_url = REPLACE(quote_url, '#/estimates/', '#/quotes/') "
         "WHERE quote_url LIKE '%#/estimates/%'",
     )
+
+    # Migration: per-file print progress inside a project (#1897).
+    # - print_archives.library_file_id: which library file a queued run was
+    #   dispatched from; nullable, no FK constraint added to existing tables
+    #   (SQLite can't ADD CONSTRAINT; the application uses SET NULL semantics
+    #   via the ORM on fresh installs and tolerates dangling ids by matching
+    #   hash/filename as fallback anyway).
+    # - projects.target_sets: optional copies-per-file target. INTEGER is
+    #   spelled identically on SQLite and Postgres — no dialect branch.
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN library_file_id INTEGER")
+    await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN target_sets INTEGER")
+
+    # Migration: persist the timelapse snapshot-diff baseline (#2704).
+    # The list of video filenames present on the printer when the print began,
+    # so the diff survives a restart and the manual scan can use it instead of
+    # the clock-based matching that a LAN-only printer defeats. No dialect
+    # branch: SQLAlchemy renders this column as `JSON` on both SQLite and
+    # Postgres for a fresh install (checked with CreateTable against each
+    # dialect), so spelling the ALTER the same way keeps a migrated database
+    # identical to a new one. Matching matters on Postgres in particular —
+    # asyncpg binds the serialised value as json and would reject a TEXT column
+    # (mirrors the `projects.attachments JSON` migration above).
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN timelapse_baseline JSON")
+
+    # Migration: plate-clear-required notification opt-in (#2525). Off by
+    # default — it fires after every print, at the same moment as the
+    # print-complete alert. Postgres rejects `DEFAULT 0` for BOOLEAN.
+    if is_sqlite():
+        await _safe_execute(
+            conn, "ALTER TABLE notification_providers ADD COLUMN on_plate_clear_required BOOLEAN DEFAULT 0"
+        )
+    else:
+        await _safe_execute(
+            conn, "ALTER TABLE notification_providers ADD COLUMN on_plate_clear_required BOOLEAN DEFAULT false"
+        )
 
 
 _USER_PRINT_TEMPLATE_RENAMES: tuple[tuple[str, str, str], ...] = (

@@ -82,9 +82,7 @@ async def test_history_missing_file_404(async_client: AsyncClient):
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_history_matches_runs_by_hash(
-    async_client: AsyncClient, file_factory, archive_factory, printer_factory
-):
+async def test_history_matches_runs_by_hash(async_client: AsyncClient, file_factory, archive_factory, printer_factory):
     """Log entries of hash-matching archives become print events; other hashes don't."""
     printer = await printer_factory()
     lib_file = await file_factory()

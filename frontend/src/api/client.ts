@@ -724,6 +724,8 @@ export interface ArchiveSlim {
   started_at: string | null;
   completed_at: string | null;
   cost: number | null;
+  energy_kwh: number | null;
+  energy_cost: number | null;
   quantity: number;
   created_at: string;
 }
@@ -906,6 +908,7 @@ export interface Project {
   status: string;  // active, completed, archived
   target_count: number | null;  // Target number of plates/print jobs
   target_parts_count: number | null;  // Target number of parts/objects
+  target_sets: number | null;  // Copies-per-file target (#1897)
   notes: string | null;
   attachments: ProjectAttachment[] | null;
   tags: string | null;
@@ -931,6 +934,12 @@ export interface ProjectAttachment {
   uploaded_at: string;
 }
 
+// Completed-run count for one library file inside a project (#1897)
+export interface ProjectFileProgress {
+  file_id: number;
+  completed_count: number;
+}
+
 export interface ArchivePreview {
   id: number;
   print_name: string | null;
@@ -948,6 +957,7 @@ export interface ProjectListItem {
   status: string;
   target_count: number | null;  // Target number of plates/print jobs
   target_parts_count: number | null;  // Target number of parts/objects
+  target_sets: number | null;  // #1897 — the shared edit dialog seeds itself from this
   budget: number | null;
   tags: string | null;  // #2536 — the shared edit dialog seeds itself from this
   due_date: string | null;  // #2536
@@ -970,6 +980,7 @@ export interface ProjectCreate {
   color?: string;
   target_count?: number;
   target_parts_count?: number;
+  target_sets?: number;
   notes?: string;
   tags?: string;
   due_date?: string;
@@ -986,6 +997,7 @@ export interface ProjectUpdate {
   status?: string;
   target_count?: number;
   target_parts_count?: number;
+  target_sets?: number | null;  // #1897 — explicit null clears the copies-per-file target
   notes?: string;
   tags?: string | null;  // #2536 — explicit null clears the tags
   due_date?: string | null;  // #2536 — explicit null clears the due date
@@ -1057,6 +1069,7 @@ export interface ProjectExport {
   status: string;
   target_count: number | null;
   target_parts_count: number | null;
+  target_sets: number | null;  // #1897
   notes: string | null;
   tags: string | null;
   due_date: string | null;
@@ -1073,6 +1086,7 @@ export interface ProjectImport {
   status?: string;
   target_count?: number;
   target_parts_count?: number;
+  target_sets?: number;  // #1897
   notes?: string;
   tags?: string;
   due_date?: string;
@@ -1942,6 +1956,9 @@ export interface SmartPlug {
   rest_energy_total_path: string | null;
   rest_energy_total_multiplier: number;
   printer_id: number | null;
+  // #2629: only a plug that really feeds the printer may mark it offline when
+  // switched off. Accessory plugs follow the print cycle without powering it.
+  controls_printer_power: boolean;
   enabled: boolean;
   auto_on: boolean;
   auto_off: boolean;
@@ -2018,6 +2035,8 @@ export interface SmartPlugCreate {
   rest_energy_total_path?: string | null;
   rest_energy_total_multiplier?: number;
   printer_id?: number | null;
+  // #2629
+  controls_printer_power?: boolean;
   enabled?: boolean;
   auto_on?: boolean;
   auto_off?: boolean;
@@ -2086,6 +2105,8 @@ export interface SmartPlugUpdate {
   rest_energy_total_path?: string | null;
   rest_energy_total_multiplier?: number;
   printer_id?: number | null;
+  // #2629
+  controls_printer_power?: boolean;
   enabled?: boolean;
   auto_on?: boolean;
   auto_off?: boolean;
@@ -2226,7 +2247,7 @@ export interface PrintQueueItem {
   // PrintModal's deficit warning was acknowledged.
   skip_filament_check: boolean;
   ams_mapping: number[] | null;  // AMS slot mapping for multi-color prints
-  filament_overrides: Array<{ slot_id: number; type: string; color: string; color_name?: string; force_color_match?: boolean }> | null;  // Filament overrides for model-based assignment
+  filament_overrides: Array<{ slot_id: number; type: string; color: string; color_name?: string; tray_info_idx?: string; force_color_match?: boolean }> | null;  // Filament overrides for model-based assignment
   plate_id: number | null;  // Plate ID for multi-plate 3MF files
   // Print options
   bed_levelling: CalibrationMode;
@@ -2484,7 +2505,7 @@ export interface Filament {
 }
 
 // Notification Provider types
-export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'email' | 'discord' | 'webhook' | 'homeassistant';
+export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'email' | 'discord' | 'webhook' | 'homeassistant' | 'bark';
 
 export interface NotificationProvider {
   id: number;
@@ -2513,6 +2534,7 @@ export interface NotificationProvider {
   on_ams_ht_temperature_high: boolean;
   // Build plate detection
   on_plate_not_empty: boolean;
+  on_plate_clear_required: boolean;
   // Bed cooled
   on_bed_cooled: boolean;
   // First layer complete
@@ -2572,6 +2594,7 @@ export interface NotificationProviderCreate {
   on_ams_ht_temperature_high?: boolean;
   // Build plate detection
   on_plate_not_empty?: boolean;
+  on_plate_clear_required?: boolean;
   // Bed cooled
   on_bed_cooled?: boolean;
   // First layer complete
@@ -2624,6 +2647,7 @@ export interface NotificationProviderUpdate {
   on_ams_ht_temperature_high?: boolean;
   // Build plate detection
   on_plate_not_empty?: boolean;
+  on_plate_clear_required?: boolean;
   // Bed cooled
   on_bed_cooled?: boolean;
   // First layer complete
@@ -2774,6 +2798,16 @@ export interface ObicoStatus {
   action: 'notify' | 'pause' | 'pause_and_off';
   poll_interval: number;
   external_url_configured: boolean;
+}
+
+// Lightweight subset served under printers:read for the printer-card badge (#1546)
+export interface ObicoPrinterStatus {
+  enabled: boolean;
+  // null = all printers are monitored
+  monitored_printers: number[] | null;
+  per_printer: Record<string, { class: string; frame_count: number; score: number }>;
+  // null = no error, or the viewer lacks settings:read (error strings can embed config URLs)
+  last_error: string | null;
 }
 
 export interface ObicoTestConnection {
@@ -6420,6 +6454,9 @@ export const api = {
     request<{ message: string }>(`/projects/${id}`, { method: 'DELETE' }),
   getProjectArchives: (id: number, limit = 100, offset = 0) =>
     request<Archive[]>(`/projects/${id}/archives?limit=${limit}&offset=${offset}`),
+  // Completed-run counts per library file (#1897); files with 0 runs are omitted
+  getProjectFileProgress: (id: number) =>
+    request<ProjectFileProgress[]>(`/projects/${id}/file-progress`),
   addArchivesToProject: (projectId: number, archiveIds: number[]) =>
     request<{ message: string }>(`/projects/${projectId}/add-archives`, {
       method: 'POST',
@@ -6957,6 +6994,9 @@ export const api = {
   getObicoStatus: () =>
     request<ObicoStatus>('/obico/status'),
 
+  getObicoPrinterStatus: () =>
+    request<ObicoPrinterStatus>('/obico/printer-status'),
+
   testObicoConnection: (url: string) =>
     request<ObicoTestConnection>('/obico/test-connection', {
       method: 'POST',
@@ -7377,6 +7417,9 @@ export interface LibraryFileListItem {
   created_by_id: number | null;
   created_by_username: string | null;
   created_at: string;
+  // Real on-disk modification time (#2680). Null for managed uploads; the date
+  // sort and "Modified" column use `fs_modified_at ?? created_at`.
+  fs_modified_at: string | null;
   print_name: string | null;
   print_time_seconds: number | null;
   filament_used_grams: number | null;

@@ -32,6 +32,7 @@ from backend.app.core.auth import (
     create_camera_stream_token,
 )
 from backend.app.core.database import async_session, get_db
+from backend.app.core.logging_filters import redact_url_credentials
 from backend.app.core.permissions import Permission
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
@@ -139,6 +140,7 @@ _disconnect_events: dict[str, asyncio.Event] = {}
 # names. They alias the _state fields (same dict objects, never rebound).
 _active_streams = _state.active_streams
 _active_chamber_streams = _state.active_chamber_streams
+_spawned_ffmpeg_pids = _state.spawned_ffmpeg_pids
 
 
 def _scan_dead_pids() -> list[int]:
@@ -1055,9 +1057,15 @@ def _summarize_ffmpeg_stderr(raw: str | None) -> str:
     The FFmpeg banner (version, build config, library versions) can be ~10–15 lines
     long.  Before #925 every retry logged it in full; this helper strips the banner
     so logs stay focused on the real error.
+
+    Credentials are masked here rather than at each ``logger`` call because
+    this is the one funnel every stderr log in this module passes through.
+    ffmpeg echoes the RTSP input URL back in its ``Input #0`` line, which
+    carries the printer access code.
     """
     if not raw:
         return ""
+    raw = redact_url_credentials(raw) or ""
 
     _BANNER_PREFIXES = (
         "ffmpeg version",
@@ -1070,6 +1078,43 @@ def _summarize_ffmpeg_stderr(raw: str | None) -> str:
         line for line in raw.splitlines() if line.strip() and not any(line.startswith(p) for p in _BANNER_PREFIXES)
     ]
     return "\n".join(lines[-10:])
+
+
+async def _read_ffmpeg_stderr(process: asyncio.subprocess.Process) -> str | None:
+    """Read whatever ffmpeg has written to stderr so far (best-effort).
+
+    ffmpeg's stderr must be drained *incrementally*. A stalled-but-still-alive
+    ffmpeg — the typical P2S RTSP failure, where it connects but never produces
+    a frame — never closes stderr, so a plain ``stderr.read()`` (read-to-EOF)
+    blocks until the wait_for timeout and returns nothing, discarding the
+    banner + stream-analysis lines ffmpeg already printed. Reading in bounded
+    chunks returns the buffered output promptly whether or not ffmpeg has
+    exited. Returns the content with ffmpeg's boilerplate banner stripped.
+
+    Not wired into the streaming paths in this fork: ``_drain_stderr`` below
+    owns the stderr pipe for the whole life of a stream, and two concurrent
+    readers on one pipe would split the output between them. Kept as the
+    one-shot reader for callers that own a process outright.
+    """
+    if not process or not process.stderr:
+        return None
+    chunks: list[bytes] = []
+    total = 0
+    cap = 65536
+    try:
+        while total < cap:
+            chunk = await asyncio.wait_for(process.stderr.read(8192), timeout=2.0)
+            if not chunk:
+                break  # EOF — ffmpeg has exited
+            chunks.append(chunk)
+            total += len(chunk)
+    except Exception:
+        # Timed out waiting for more data — ffmpeg is alive but quiet now.
+        # Fall through and return whatever it already printed.
+        pass
+    if not chunks:
+        return None
+    return _summarize_ffmpeg_stderr(b"".join(chunks).decode(errors="replace")) or None
 
 
 _STDERR_ERROR_KEYWORDS = (
@@ -1110,12 +1155,12 @@ async def _drain_stderr(process: asyncio.subprocess.Process, stream_id: str) -> 
                     categories[category] = categories.get(category, 0) + 1
                     error_count += 1
                     if len(recent) < _STDERR_RECENT_CAP:
-                        recent.append(re.sub(r"rtsps?://[^@]+@", "rtsps://***:***@", stripped))
+                        recent.append(redact_url_credentials(stripped))
                     logger.warning(
                         "ffmpeg[%s][%s]: %s",
                         stream_id,
                         category,
-                        re.sub(r"rtsps?://[^@]+@", "rtsps://***:***@", stripped),
+                        redact_url_credentials(stripped),
                     )
     except asyncio.CancelledError:
         raise
@@ -1412,7 +1457,7 @@ async def _rtsp_mjpeg_frames(
         skip_frames,
     )
     # Log full command with RTSP credentials redacted
-    redacted_cmd = [re.sub(r"rtsps?://[^@]+@", "rtsps://***:***@", arg) for arg in cmd]
+    redacted_cmd = [redact_url_credentials(arg) for arg in cmd]
     logger.info("ffmpeg command: %s", redacted_cmd)
 
     semaphore = get_rtsp_semaphore()
@@ -1924,7 +1969,10 @@ async def camera_grid_stream(
                             entry.task.cancel()
                         entries.pop(pid, None)
                         if pid not in pending_restarts:
-                            pending_restarts[pid] = (_restart_attempts(pid, entry, 0, now), now + _GRID_RESTART_BASE_DELAY)
+                            pending_restarts[pid] = (
+                                _restart_attempts(pid, entry, 0, now),
+                                now + _GRID_RESTART_BASE_DELAY,
+                            )
                         continue
 
                     # Touch last_accessed so the producer stays alive
@@ -2196,7 +2244,9 @@ async def camera_stream(
     async with database.async_session() as db:
         # Resolve quality preset from DB when no explicit params provided
         if fps is None and quality is None and scale is None:
-            fps, quality, scale, threads, gpu_accel, _skip, _preset = await _resolve_quality_from_settings(db, 1, "single")
+            fps, quality, scale, threads, gpu_accel, _skip, _preset = await _resolve_quality_from_settings(
+                db, 1, "single"
+            )
         else:
             fps = fps or 10
             quality = quality or 5
@@ -2214,12 +2264,36 @@ async def camera_stream(
             "Using external camera (%s) for printer %s at %s fps", printer.external_camera_type, printer_id, fps
         )
 
+        # Register the stream into the SAME registries the RTSP/chamber paths use
+        # (#2675) so `/camera/stop` and cleanup_orphaned_streams can find and kill
+        # a leaked ffmpeg holding a USB device open. Before this, external streams
+        # only tracked _active_external_streams and were structurally invisible to
+        # both the stop endpoint and the janitor. The stream_id keeps the
+        # `{printer_id}-` prefix both scanners key on, plus a unique suffix so two
+        # concurrent viewers of one printer don't clobber each other's entry.
+        stream_id = f"{printer_id}-ext-{uuid.uuid4().hex[:8]}"
+        stop_event = asyncio.Event()
+        _disconnect_events[stream_id] = stop_event
         # Track stream start
         _state.stream_start_times[printer_id] = time.monotonic()
         _state.active_external_streams.add(printer_id)
 
         frame_interval = 1.0 / fps if fps > 0 else 0.1
         last_yield_time = time.monotonic()
+
+        # Mutable holder so the wrapper's finally can unregister whatever process
+        # is currently registered (the RTSP path may respawn across reconnects).
+        current_proc: dict[str, asyncio.subprocess.Process] = {}
+
+        def _register_external_process(proc: asyncio.subprocess.Process) -> None:
+            prev = current_proc.get("proc")
+            if prev is not None and prev.pid != proc.pid:
+                _state.spawned_ffmpeg_pids.pop(prev.pid, None)
+            current_proc["proc"] = proc
+            _state.active_streams[stream_id] = proc
+            # monotonic, not wall clock: every other writer of this map uses it
+            # and the janitor compares the two.
+            _state.spawned_ffmpeg_pids[proc.pid] = time.monotonic()
 
         async def external_stream_wrapper():
             """Wrap external stream to track start/stop and update frame times."""
@@ -2232,6 +2306,8 @@ async def camera_stream(
                     gpu_accel=gpu_accel,
                     quality=quality,
                     threads=threads,
+                    on_process=_register_external_process,
+                    stop_event=stop_event,
                 ):
                     # Rate limit to prevent overwhelming browser
                     current_time = time.monotonic()
@@ -2242,6 +2318,15 @@ async def camera_stream(
                     _state.last_frame_times[printer_id] = last_yield_time
                     yield frame
             finally:
+                # Best-effort unregister. If an abrupt disconnect skips this
+                # finally, the registry entries persist — which is exactly what
+                # lets the stop endpoint / janitor reap the leaked process.
+                stop_event.set()
+                proc = current_proc.get("proc")
+                if proc is not None:
+                    _state.spawned_ffmpeg_pids.pop(proc.pid, None)
+                _state.active_streams.pop(stream_id, None)
+                _disconnect_events.pop(stream_id, None)
                 _state.active_external_streams.discard(printer_id)
                 logger.info("External camera stream ended for printer %s", printer_id)
 
@@ -2338,6 +2423,9 @@ async def stop_camera_stream(
 
     for stream_id in to_remove:
         _state.active_streams.pop(stream_id, None)
+        # The generator's finally pops this too, but an abrupt client disconnect
+        # can skip that finally — and then the event would live forever.
+        _disconnect_events.pop(stream_id, None)
 
     # Stop chamber image streams.  Like the RTSP path above, hub-owned
     # connections with viewers still attached are left alone — closing the
@@ -3148,9 +3236,14 @@ async def delete_reference(
 
 
 def _scan_bambu_ffmpeg_pids() -> list[int]:
-    """Scan /proc for ffmpeg processes with Bambu RTSP URLs.
+    """Scan /proc for ffmpeg processes that are ours.
 
-    These are definitely ours — no other software connects to rtsp(s)://bblp:.
+    Two shapes are matched, both unambiguously Bambuddy's:
+    - Bambu RTSP: no other software connects to ``rtsp(s)://bblp:``.
+    - External USB (V4L2): an ffmpeg spawned with ``-f v4l2`` is our USB camera
+      stream (#2675). Only orphans are killed — the caller excludes PIDs still in
+      ``_active_streams``, so a live USB stream (now registered there) is spared.
+
     This catches orphans that survive app restarts and are not in any tracking dict.
     """
     if sys.platform != "linux":
@@ -3166,8 +3259,11 @@ def _scan_bambu_ffmpeg_pids() -> list[int]:
             try:
                 with open(f"/proc/{entry}/cmdline", "rb") as f:
                     cmdline = f.read()
-                # Match both rtsp:// (via TLS proxy) and rtsps:// (direct)
-                if b"ffmpeg" in cmdline and (b"rtsp://bblp:" in cmdline or b"rtsps://bblp:" in cmdline):
+                if b"ffmpeg" not in cmdline:
+                    continue
+                # Match both rtsp:// (via TLS proxy) and rtsps:// (direct), plus
+                # the `-f v4l2` input flag our USB camera command always carries.
+                if b"rtsp://bblp:" in cmdline or b"rtsps://bblp:" in cmdline or b"v4l2" in cmdline:
                     pids.append(int(entry))
             except (OSError, PermissionError, ValueError):
                 continue

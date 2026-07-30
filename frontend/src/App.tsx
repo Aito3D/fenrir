@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Layout } from './components/Layout';
 import { useWebSocket } from './hooks/useWebSocket';
+import { usePrintProgressTitle } from './hooks/usePrintProgressTitle';
 import { useStreamTokenSync } from './hooks/useCameraStreamToken';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './contexts/ToastContext';
@@ -128,6 +129,7 @@ function StreamTokenSync() {
 
 function WebSocketProvider({ children }: { children: React.ReactNode }) {
   useWebSocket();
+  usePrintProgressTitle();
   return <>{children}</>;
 }
 

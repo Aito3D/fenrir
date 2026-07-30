@@ -14,6 +14,7 @@ import {
   FolderPlus,
   FileBox,
   Clock,
+  CalendarClock,
   HardDrive,
   File,
   MoveRight,
@@ -75,7 +76,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { usePageFileDrop } from '../hooks/usePageFileDrop';
 import { useFlipReorder } from '../hooks/useFlipReorder';
 import { useAuth } from '../contexts/AuthContext';
-import { formatDuration, parseUTCDate } from '../utils/date';
+import { formatDuration, parseUTCDate, formatDate } from '../utils/date';
 import { formatFileSize } from '../utils/file';
 
 type SortField = 'name' | 'date' | 'size' | 'type' | 'prints';
@@ -563,16 +564,28 @@ interface FolderTreeItemProps {
   depth?: number;
   wrapNames?: boolean;
   defaultExpanded?: boolean;
+  showModified?: boolean;
   hasPermission: (permission: Permission) => boolean;
   t: TFunction;
 }
 
-function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, onRename, depth = 0, wrapNames = false, defaultExpanded = true, hasPermission, t }: FolderTreeItemProps) {
+function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, onRename, depth = 0, wrapNames = false, defaultExpanded = true, showModified = false, hasPermission, t }: FolderTreeItemProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [showActions, setShowActions] = useState(false);
   const hasChildren = folder.children.length > 0;
   const isLinked = folder.project_id || folder.archive_id;
   const isExternal = folder.is_external;
+  // #1781: users with only library:delete_own may delete empty, unlinked,
+  // non-external folders. The backend enforces the same rule and additionally
+  // counts trashed files (invisible here), so a 403 can still come back.
+  const canDeleteFolder =
+    hasPermission('library:delete_all') ||
+    (hasPermission('library:delete_own') && folder.file_count === 0 && !hasChildren && !isExternal && !isLinked);
+  const deleteDisabledTooltip = canDeleteFolder
+    ? undefined
+    : hasPermission('library:delete_own') && !isExternal && !isLinked
+      ? t('fileManager.onlyEmptyFoldersDeletable')
+      : t('fileManager.noPermissionDeleteFolder');
 
   return (
     <div>
@@ -603,7 +616,20 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
         ) : (
           <FolderOpen className="w-4 h-4 text-bambu-green flex-shrink-0" />
         )}
-        <span className={`text-sm flex-1 min-w-0 ${wrapNames ? 'break-all' : 'truncate'}`} title={folder.name}>{folder.name}</span>
+        <div className="flex-1 min-w-0">
+          <span className={`block text-sm ${wrapNames ? 'break-all' : 'truncate'}`} title={folder.name}>{folder.name}</span>
+          {/* #2680 follow-up: the same toolbar toggle that shows dates on file
+              cards also shows them here. This is `latest_activity_at` — the
+              newest timestamp among the folder itself, its files and its
+              subfolders (the value "sort by recent activity" orders on) — not
+              the folder's own on-disk mtime, hence the distinct label. */}
+          {showModified && folder.latest_activity_at && (
+            <span className="mt-0.5 flex items-center gap-1 text-xs text-bambu-gray" title={t('fileManager.lastActivity')}>
+              <CalendarClock className="w-3 h-3 flex-shrink-0" />
+              <span className="truncate">{formatDate(folder.latest_activity_at)}</span>
+            </span>
+          )}
+        </div>
         {/* Link indicator - clickable to change link */}
         {isLinked && (
           <button
@@ -674,11 +700,11 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
                 </button>
                 <button
                   className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
-                    hasPermission('library:delete_all') ? 'text-red-700 dark:text-red-400 hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
+                    canDeleteFolder ? 'text-red-700 dark:text-red-400 hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
                   }`}
-                  onClick={() => { if (hasPermission('library:delete_all')) { onDelete(folder.id); setShowActions(false); } }}
-                  disabled={!hasPermission('library:delete_all')}
-                  title={!hasPermission('library:delete_all') ? t('fileManager.noPermissionDeleteFolder') : undefined}
+                  onClick={() => { if (canDeleteFolder) { onDelete(folder.id); setShowActions(false); } }}
+                  disabled={!canDeleteFolder}
+                  title={deleteDisabledTooltip}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   {t('common.delete')}
@@ -703,6 +729,7 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
               depth={depth + 1}
               wrapNames={wrapNames}
               defaultExpanded={defaultExpanded}
+              showModified={showModified}
               hasPermission={hasPermission}
               t={t}
             />
@@ -749,10 +776,11 @@ interface FileCardProps {
   hasPermission: (permission: Permission) => boolean;
   canModify: (resource: 'queue' | 'archives' | 'library', action: 'update' | 'delete' | 'reprint', createdById: number | null | undefined) => boolean;
   authEnabled: boolean;
+  showModified: boolean;
   t: TFunction;
 }
 
-function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onRunPipeline, onPrint, onSlice, useSlicerApi, onPreview3d, onRename, onGenerateThumbnail, onManageTags, onTagClick, onHistory, thumbnailVersion, hasPermission, canModify, authEnabled, t }: FileCardProps) {
+function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onRunPipeline, onPrint, onSlice, useSlicerApi, onPreview3d, onRename, onGenerateThumbnail, onManageTags, onTagClick, onHistory, thumbnailVersion, hasPermission, canModify, authEnabled, showModified, t }: FileCardProps) {
   const [showActions, setShowActions] = useState(false);
 
   return (
@@ -843,6 +871,14 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
           <div className="mt-1 text-xs text-bambu-gray flex items-center gap-1">
             <User className="w-3 h-3" />
             {file.created_by_username}
+          </div>
+        )}
+        {/* #2680: last-modified date, toggled from the toolbar. Uses the real
+            on-disk mtime when known, else the DB created_at. */}
+        {showModified && (
+          <div className="mt-1 text-xs text-bambu-gray flex items-center gap-1" title={t('fileManager.lastModified')}>
+            <CalendarClock className="w-3 h-3" />
+            {formatDate(file.fs_modified_at ?? file.created_at)}
           </div>
         )}
         {(file.tags?.length ?? 0) > 0 && (
@@ -1156,6 +1192,10 @@ export function FileManagerPage() {
     const saved = localStorage.getItem('library-sort-direction');
     return (saved as SortDirection) || 'asc';
   });
+  // Show/hide the last-modified date on each file card (#2680). Persisted.
+  const [showModified, setShowModified] = useState<boolean>(
+    () => localStorage.getItem('library-show-modified') === 'true'
+  );
 
   // Mobile detection for touch-friendly UI
   const isMobile = useIsMobile();
@@ -1355,7 +1395,11 @@ export function FileManagerPage() {
           comparison = (a.print_name || a.filename).localeCompare(b.print_name || b.filename);
           break;
         case 'date':
-          comparison = (parseUTCDate(a.created_at)?.getTime() ?? 0) - (parseUTCDate(b.created_at)?.getTime() ?? 0);
+          // #2680: sort by real on-disk mtime (matches `ls -t`), falling back to
+          // the DB created_at for managed uploads that have no filesystem mtime.
+          comparison =
+            (parseUTCDate(a.fs_modified_at ?? a.created_at)?.getTime() ?? 0) -
+            (parseUTCDate(b.fs_modified_at ?? b.created_at)?.getTime() ?? 0);
           break;
         case 'size':
           comparison = a.file_size - b.file_size;
@@ -2023,6 +2067,7 @@ export function FileManagerPage() {
                 onRename={(f) => setRenameItem({ type: 'folder', id: f.id, name: f.name })}
                 wrapNames={wrapFolderNames}
                 defaultExpanded={!collapseFoldersByDefault}
+                showModified={showModified}
                 hasPermission={hasPermission}
                 t={t}
               />
@@ -2176,6 +2221,20 @@ export function FileManagerPage() {
                   ) : (
                     <SortDesc className="w-4 h-4 text-white" />
                   )}
+                </button>
+                <button
+                  onClick={() => setShowModified((v) => {
+                    const next = !v;
+                    localStorage.setItem('library-show-modified', String(next));
+                    return next;
+                  })}
+                  className={`p-1.5 rounded bg-bambu-dark border transition-colors ${
+                    showModified ? 'border-bambu-green text-bambu-green' : 'border-bambu-dark-tertiary text-white hover:border-bambu-green'
+                  }`}
+                  title={showModified ? t('fileManager.hideModified') : t('fileManager.showModified')}
+                  aria-pressed={showModified}
+                >
+                  <CalendarClock className="w-4 h-4" />
                 </button>
               </div>
 
@@ -2374,6 +2433,7 @@ export function FileManagerPage() {
                     hasPermission={hasPermission}
                     canModify={canModify}
                     authEnabled={authEnabled}
+                    showModified={showModified}
                   />
                   </div>
                 ))}
@@ -2461,6 +2521,14 @@ export function FileManagerPage() {
                             {file.filament_used_grams != null && file.filament_used_grams > 0 && (
                               <span>{file.filament_used_grams.toFixed(1)}g</span>
                             )}
+                          </div>
+                        )}
+                        {/* #2680: last-modified date under the name, toggled from
+                            the toolbar. Real on-disk mtime when known, else created_at. */}
+                        {showModified && (
+                          <div className="text-xs text-bambu-gray flex items-center gap-1 mt-0.5" title={t('fileManager.lastModified')}>
+                            <CalendarClock className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">{formatDate(file.fs_modified_at ?? file.created_at)}</span>
                           </div>
                         )}
                       </div>
