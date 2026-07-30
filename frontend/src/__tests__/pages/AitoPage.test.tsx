@@ -505,5 +505,44 @@ describe('AitoPage (backend board)', () => {
       await vi.advanceTimersByTimeAsync(60_000);
       expect(getAitoProjects.mock.calls.length).toBe(callsAtBound);
     });
+
+    it('resumes polling for a new matching card once an earlier card already spent the poll budget', async () => {
+      // Regression: the deadline was cleared only when the WHOLE "some card
+      // pending" predicate went false, not per-card. So once card A's budget
+      // was spent while it (or any card) still matched, `now >= deadline`
+      // stayed true forever — including for a genuinely new card that starts
+      // matching afterward. That stuck-forever case is exactly what the
+      // bound exists for (sync worker off or unconfigured), so the second
+      // card's "Creating quote…" would never resolve for the life of the tab.
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const cardA = { ...baseProject, id: 1, quote_sync_state: 'pending' as const, quote_number: null };
+      const getAitoProjects = vi.spyOn(api, 'getAitoProjects').mockResolvedValue([cardA]);
+      getAitoProjects.mockClear();
+
+      render(<AitoPage />);
+      await waitFor(() => expect(getAitoProjects).toHaveBeenCalledTimes(1));
+
+      // Spend card A's whole 5-minute budget.
+      await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
+      const callsAtBound = getAitoProjects.mock.calls.length;
+      expect(callsAtBound).toBeGreaterThan(1);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(getAitoProjects.mock.calls.length).toBe(callsAtBound);
+
+      // A fresh import creates card B: genuinely new, still pending, and
+      // actually present in the cache. Card A is untouched (still pending
+      // too — the worker is still off).
+      const cardB = { ...baseProject, id: 2, quote_sync_state: 'pending' as const, quote_number: null };
+      getAitoProjects.mockResolvedValue([cardA, cardB]);
+      await act(async () => {
+        window.dispatchEvent(new Event('visibilitychange'));
+      });
+      await waitFor(() => expect(getAitoProjects.mock.calls.length).toBe(callsAtBound + 1));
+
+      // Polling must resume for card B's own budget.
+      const callsAfterNewCard = getAitoProjects.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(getAitoProjects.mock.calls.length).toBeGreaterThan(callsAfterNewCard);
+    });
   });
 });

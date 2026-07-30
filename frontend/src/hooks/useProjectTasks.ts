@@ -105,38 +105,42 @@ export function useProjectTasks(projectId: number) {
   // effect was blocked.
   const appliedDataRef = useRef<AitoTask[] | undefined>(undefined);
 
+  // Wall-clock time (`Date.now()`) of the last successful task PATCH,
+  // stamped from `updateTaskMutation`'s `onSuccess`. The guard above (empty
+  // `pendingRef`/`inFlightRef`) says it's now SAFE to resync, but doesn't
+  // say the cached `tasksQuery.data` is actually fresh enough to resync
+  // WITH: a refetch that landed mid-debounce and lost the guard's race gets
+  // cached, and the generation bump from the save that beat it re-runs this
+  // effect the instant that save settles — with that same stale, pre-edit
+  // snapshot still sitting in `tasksQuery.data`. Applying it would silently
+  // revert the value that had just saved, one debounce window later than
+  // the guard the resync effect exists to satisfy. Comparing the snapshot's
+  // own fetch time against the last save catches that: a snapshot fetched
+  // before the save landed is asked for again instead of being trusted.
+  const lastSaveAtRef = useRef(0);
+
   useEffect(() => {
     if (!tasksQuery.data) return;
     if (pendingRef.current.size > 0 || inFlightRef.current > 0) return;
     if (appliedDataRef.current === tasksQuery.data) return;
+    if (tasksQuery.dataUpdatedAt < lastSaveAtRef.current) {
+      // This snapshot predates the last successful save, so it cannot be
+      // applied without clobbering that save. Ask for a fresh one instead
+      // of silently trusting a stale one — the fetch it triggers will land
+      // with a newer `dataUpdatedAt` and this effect will re-run and apply
+      // it normally.
+      queryClient.invalidateQueries({ queryKey: ['aito-tasks', projectId] });
+      return;
+    }
     appliedDataRef.current = tasksQuery.data;
     setTasks(tasksQuery.data.map(taskDraftFromAitoTask));
     baselineRef.current = new Map(tasksQuery.data.map((row) => [row.id, row]));
-  }, [tasksQuery.data, tasksSyncGeneration]);
+  }, [tasksQuery.data, tasksQuery.dataUpdatedAt, tasksSyncGeneration, queryClient, projectId]);
 
   const invalidateTasksAndBoard = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['aito-tasks', projectId] });
     queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
   }, [queryClient, projectId]);
-
-  // Per-task chain of in-flight PATCHes: `flush` awaits the previous entry for
-  // the SAME task id before starting the next mutate() call, so two flushes
-  // for one task can never land out of order (each patch is a cumulative diff
-  // from `baselineRef`, not a merge — the older response landing last would
-  // write the older value and `onSuccess` would advance the baseline to it,
-  // with nothing left to correct the silent loss).
-  //
-  // `useBoardDrag` solves the equivalent problem with a single shared
-  // `scope: { id: 'aito-move' }`, and that was the first thing tried here too.
-  // It does not transfer: a global scope serializes ALL tasks' PATCHes against
-  // each other, not just repeats for the same task, and that reordering is
-  // directly what the "a different row resolving its PATCH does not clobber
-  // this row's in-flight edit" test below exercises (two different tasks
-  // flushed together on unmount, one deliberately left open) — under a global
-  // scope the second task's request queues behind the first instead of firing
-  // concurrently. Chaining per task id gives the same same-task guarantee
-  // without coupling unrelated tasks' requests to each other.
-  const taskFlushChainRef = useRef<Map<number, Promise<void>>>(new Map());
 
   const updateTaskMutation = useMutation({
     mutationFn: ({ id, patch }: { id: number; patch: AitoTaskUpdate }) => api.updateAitoTask(id, patch),
@@ -149,6 +153,10 @@ export function useProjectTasks(projectId: number) {
       // baseline and the PATCH is silently dropped.
       baselineRef.current.set(updatedTask.id, updatedTask);
       tasksDirtyRef.current = true;
+      // See `lastSaveAtRef`'s doc above the resync effect: this stamp is
+      // what stops that effect from applying a cached snapshot older than
+      // this save over the value that just landed.
+      lastSaveAtRef.current = Date.now();
       // A tick is one deliberate click and can change the project's COLUMN, so
       // it refreshes now — the panel's Stage row and the card move together.
       const tickedAStep = ['scan_done', 'modelisation_done', 'impression_done', 'usinage_done'].some(
@@ -182,18 +190,41 @@ export function useProjectTasks(projectId: number) {
       if (!entry) return;
       clearTimeout(entry.timer);
       pendingRef.current.delete(taskId);
-      if (Object.keys(entry.patch).length === 0) return;
-      // Wait for this task's own previous flush (if any) to settle before
-      // starting this one — see `taskFlushChainRef`'s doc above. Unrelated
-      // tasks have no entry here and so fire immediately, same as before.
-      const previous = taskFlushChainRef.current.get(taskId) ?? Promise.resolve();
-      const settled = previous.then(
-        () =>
-          new Promise<void>((resolve) => {
-            updateTaskMutation.mutate({ id: taskId, patch: entry.patch }, { onSettled: () => resolve() });
-          }),
-      );
-      taskFlushChainRef.current.set(taskId, settled);
+      if (Object.keys(entry.patch).length === 0) {
+        // Nothing to send, but a resync may have been skipped while this
+        // entry was pending (see the guard above the resync effect) — give
+        // it a chance to run now that this row is no longer blocking it.
+        // A real mutate() would do this from its own onSettled; a no-op
+        // flush has no mutate() call, so nothing else will.
+        setTasksSyncGeneration((generation) => generation + 1);
+        return;
+      }
+      // Accepted trade: same-task flushes are not serialised against each
+      // other, so two PATCHes for the same task landing out of order would
+      // write the older value last. A promise chain was tried here to close
+      // that gap by having `flush` await the previous entry's `onSettled`
+      // before starting the next — but all tasks share ONE
+      // `updateTaskMutation` MutationObserver, and React Query stores the
+      // per-call `onSettled` passed to `mutate()` in a single slot on that
+      // observer. Flushing a different task while this one's PATCH was still
+      // open overwrote that slot and detached the observer from THIS
+      // mutation, so this task's resolver was silently orphaned — the chain
+      // link never settled, and every subsequent edit to this task was
+      // dropped for the rest of the panel's lifetime. That is strictly worse
+      // than the ordering issue it was meant to fix, so it was reverted.
+      // With the 500ms debounce and at most one in-flight PATCH per task,
+      // two flushes racing each other for the same row is vanishingly rare;
+      // if it happens, the older value landing last is an acceptable, purely
+      // theoretical cost.
+      //
+      // Reverting this also fixed two things the chain broke as a side
+      // effect: deferring `mutate` to a microtask meant `onMutate`'s
+      // `inFlightRef += 1` no longer ran before the unmount cleanup checked
+      // it, so "exactly one of onSettled / unmount fires the board refresh"
+      // was false and every close cost an extra full-board GET; and a chain
+      // entry survived task deletion, so a queued flush could PATCH a
+      // deleted row and toast `aito.saveFailed`.
+      updateTaskMutation.mutate({ id: taskId, patch: entry.patch });
     },
     // `updateTaskMutation.mutate` specifically, not the mutation object: React
     // Query's `useMutation` returns a fresh object literal every render, so
@@ -291,11 +322,6 @@ export function useProjectTasks(projectId: number) {
     [tasks, deleteTaskMutation.mutate],
   );
 
-  const markClosed = useCallback(() => {
-    flushAll();
-    closedRef.current = true;
-  }, [flushAll]);
-
   const flushAllRef = useRef(flushAll);
   flushAllRef.current = flushAll;
   const invalidateRef = useRef(invalidateTasksAndBoard);
@@ -325,5 +351,5 @@ export function useProjectTasks(projectId: number) {
     [],
   );
 
-  return { tasks, onTasksChange, onRemoveTask, onRowBlur: flush, markClosed };
+  return { tasks, onTasksChange, onRemoveTask, onRowBlur: flush };
 }

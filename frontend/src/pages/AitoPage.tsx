@@ -43,9 +43,9 @@ const DROP_ANIMATION: DropAnimation = {
 // `!quote_number && quote_sync_state === 'pending'` — see CardView.tsx. A
 // card that already has a quote number has nothing left for this poll to
 // reveal, even if an ordinary task edit re-marks it pending (see
-// `_mark_pending_if_ours` in aito.py); polling for it would just be six extra
-// full-board GETs after every editing session for a card whose screen never
-// changes.
+// `_mark_pending_if_ours` in aito.py); polling for it would just be up to
+// thirty extra full-board GETs (the ~5 minute bound below, at one fetch per
+// QUOTE_POLL_INTERVAL_MS) for a card whose screen never changes.
 const QUOTE_POLL_INTERVAL_MS = 10_000;
 // `pending` is cleared only by the Zoho sync worker, and the worker is
 // gated behind `aito_quote_sync_enabled` — a supported operator setting that
@@ -60,27 +60,45 @@ export function AitoPage() {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  // Wall-clock deadline for the current poll run, set the moment the
-  // predicate first becomes true and cleared the instant it goes false — so a
-  // later card that starts a fresh import gets its own full run at the poll
-  // rather than inheriting a budget an earlier card already spent. Deadline
-  // rather than a tick counter: React Query can re-evaluate `refetchInterval`
-  // more than once per actual fetch, which would burn a fixed tick budget
-  // faster than real time actually elapses.
+  // Wall-clock deadline for the current poll run, cleared the instant no
+  // card matches and (re)set whenever a card starts matching that was not
+  // matching on the previous evaluation — so a later card that starts a
+  // fresh import gets its own full run at the poll rather than being cut off
+  // by a budget an earlier, still-stuck card already spent (the deadline is
+  // shared, not per-card: a new match resets it for whatever else is still
+  // pending too, which is fine — it just means a genuinely new event gives
+  // the whole poll another chance). Deadline rather than a tick counter:
+  // React Query can re-evaluate `refetchInterval` more than once per actual
+  // fetch, which would burn a fixed tick budget faster than real time
+  // actually elapses.
   const pollDeadlineRef = useRef<number | null>(null);
+  // The matching id set as of the previous `refetchInterval` evaluation —
+  // what "not matching on the previous evaluation" above is compared
+  // against. Keying off ids (not just a boolean) is what lets a new card
+  // reset the deadline even while an old one is still matching too; a plain
+  // boolean can only ever go true -> true across that transition and would
+  // never notice the new arrival.
+  const pollMatchingIdsRef = useRef<Set<number>>(new Set());
   const aitoQuery = useQuery({
     queryKey: ['aito-projects'],
     queryFn: api.getAitoProjects,
     refetchInterval: (query) => {
-      const pending = query.state.data?.some(
-        (p) => !p.quote_number && p.quote_sync_state === 'pending',
+      const matchingIds = new Set(
+        (query.state.data ?? [])
+          .filter((p) => !p.quote_number && p.quote_sync_state === 'pending')
+          .map((p) => p.id),
       );
-      if (!pending) {
+      if (matchingIds.size === 0) {
         pollDeadlineRef.current = null;
+        pollMatchingIdsRef.current = matchingIds;
         return false;
       }
       const now = Date.now();
-      pollDeadlineRef.current ??= now + QUOTE_POLL_MAX_MS;
+      const hasNewMatch = [...matchingIds].some((id) => !pollMatchingIdsRef.current.has(id));
+      if (pollDeadlineRef.current === null || hasNewMatch) {
+        pollDeadlineRef.current = now + QUOTE_POLL_MAX_MS;
+      }
+      pollMatchingIdsRef.current = matchingIds;
       if (now >= pollDeadlineRef.current) return false;
       return QUOTE_POLL_INTERVAL_MS;
     },
