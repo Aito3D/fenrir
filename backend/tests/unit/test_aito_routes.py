@@ -29,9 +29,10 @@ _GOLDEN = Path(__file__).parent.parent / "fixtures" / "aito_board_payload.json"
 
 async def _seed_golden_board(client):
     """Five projects covering every shape the board payload can take: no
-    tasks, a zero-cost service, mixed done flags, a project in a non-default
-    column, and an accepted project pinned in place by a single unticked
-    zero-cost step (the "0 is pending" half of the None-vs-0 rule)."""
+    tasks, a zero-cost service, an accepted project with mixed done flags, a
+    project in a non-default column, and an accepted project pinned in place
+    by a single unticked zero-cost step (the "0 is pending" half of the
+    None-vs-0 rule)."""
     await client.post(
         "/api/v1/aito/",
         json={"description": "no tasks", "client_id": "C1", "client_name": "One", "tasks": []},
@@ -51,6 +52,9 @@ async def _seed_golden_board(client):
             "description": "mixed",
             "client_id": "C3",
             "client_name": "Three",
+            # Accepted because ticked steps now require it — a mixed-done-flags
+            # card cannot exist in any other status.
+            "quote_status": "accepted",
             "tasks": [
                 {"title": "a", "scan_cost": 5000, "scan_done": True, "impression_cost": 2400},
                 {"title": "b", "usinage_cost": 1000},
@@ -63,6 +67,9 @@ async def _seed_golden_board(client):
             "description": "accepted",
             "client_id": "C4",
             "client_name": "Four",
+            # Accepted for the same reason as "mixed": a pre-ticked step at
+            # creation now requires it.
+            "quote_status": "accepted",
             "tasks": [{"title": "c", "modelisation_cost": 3000, "modelisation_done": True}],
         },
     )
@@ -987,6 +994,65 @@ async def test_enabling_a_service_and_ticking_it_in_one_patch_is_allowed(async_c
 
 
 @pytest.mark.asyncio
+async def test_ticking_a_step_without_an_accepted_quote_is_422(async_client):
+    """Acceptance is the gate that authorises the work. evaluate() already
+    refuses to move such a card, so the tick is not merely premature — it is
+    meaningless."""
+    p = (await _create(async_client, quote_status="sent")).json()
+    t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
+
+    r = await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_ticking_a_step_with_no_quote_at_all_is_422(async_client):
+    p = (await _create(async_client)).json()  # quote_status NULL
+    t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
+
+    r = await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_unticking_survives_the_quote_leaving_accepted(async_client):
+    """A tick stranded by a status flip must always be undoable — otherwise a
+    mis-declined project keeps work marked done with no way back."""
+    p = (await _create(async_client, quote_status="accepted")).json()
+    t = (await _add_task(async_client, p["id"], scan_cost=1200.0, scan_done=True)).json()
+    await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "declined"})
+
+    r = await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": False})
+    assert r.status_code == 200
+    assert r.json()["scan_done"] is False
+
+
+@pytest.mark.asyncio
+async def test_adding_a_pre_ticked_task_needs_an_accepted_quote(async_client):
+    p = (await _create(async_client, quote_status="draft")).json()
+    r = await _add_task(async_client, p["id"], scan_cost=1200.0, scan_done=True)
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_creating_with_pre_ticked_tasks_needs_an_accepted_quote(async_client):
+    r = await _create(async_client, tasks=[{"title": "a", "scan_cost": 1200.0, "scan_done": True}])
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_importing_an_accepted_quote_may_carry_ticked_steps(async_client):
+    """An import that legitimately arrives already-accepted is not blocked."""
+    r = await _create(
+        async_client,
+        quote_id="EST-9",
+        quote_status="accepted",
+        tasks=[{"title": "a", "scan_cost": 1200.0, "scan_done": True}],
+    )
+    assert r.status_code == 201
+
+
+@pytest.mark.asyncio
 async def test_unticking_a_step_pulls_the_card_back(async_client):
     p = (await _create(async_client, quote_status="accepted")).json()
     t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
@@ -1036,11 +1102,12 @@ async def test_marking_sent_parks_the_card_in_waiting(async_client):
 
 @pytest.mark.asyncio
 async def test_accepting_from_waiting_lands_on_the_right_stage(async_client):
-    p = (await _create(async_client)).json()
+    p = (await _create(async_client, quote_status="accepted")).json()
     t = (await _add_task(async_client, p["id"], scan_cost=1.0, impression_cost=1.0)).json()
-    await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "sent"})
-    # Ticking while the card is out with the client changes nothing on the board.
     await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
+
+    # Out with the client: the ticks stand, the card parks in waiting.
+    await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "sent"})
     board = {row["id"]: row for row in (await async_client.get("/api/v1/aito/")).json()}
     assert board[p["id"]]["column"] == "waiting"
 

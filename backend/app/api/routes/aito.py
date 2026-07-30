@@ -287,6 +287,8 @@ async def create_project(
         # returns None for both rather than a synthetic user.
         created_by=current_user.username if current_user else None,
     )
+    for task_payload in payload.tasks:
+        _reject_ticks_without_acceptance(payload.quote_status, task_payload.model_dump())
     db.add(project)
     if payload.quote_id is None:
         # A payload with no quote_id is a genuine new job: mark it pending so
@@ -330,6 +332,28 @@ async def list_tasks(
     return [_task_to_response(t) for t in (await db.execute(stmt)).scalars().all()]
 
 
+def _reject_ticks_without_acceptance(quote_status: str | None, fields: dict) -> None:
+    """A step may only be ticked once the quote is accepted.
+
+    Acceptance is the board's single gate: ``evaluate()`` sends every other
+    status to devis, waiting or done, so a tick on an unaccepted quote cannot
+    move the card and does not describe authorised work.
+
+    Only SETTING a flag is refused. Clearing one to False stays legal at every
+    call site — a tick stranded by a status flip (a decline entered in Books)
+    must always be undoable, or a mis-declined project keeps work marked done
+    with no way back.
+    """
+    if quote_status == "accepted":
+        return
+    for service in SERVICES:
+        if fields.get(f"{service}_done"):
+            raise HTTPException(
+                status_code=422,
+                detail=f"{service} cannot be marked done until the quote is accepted",
+            )
+
+
 async def _get_task_or_404(db: AsyncSession, task_id: int) -> AitoTask:
     task = (await db.execute(select(AitoTask).where(AitoTask.id == task_id))).scalar_one_or_none()
     if not task:
@@ -347,6 +371,7 @@ async def add_task(
     project = (await db.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    _reject_ticks_without_acceptance(project.quote_status, payload.model_dump())
     _mark_pending_if_ours(project)
     highest = await db.scalar(select(func.max(AitoTask.position)).where(AitoTask.project_id == project_id))
     task = AitoTask(project_id=project_id, position=(highest + 1) if highest is not None else 0, **payload.model_dump())
@@ -368,8 +393,11 @@ async def update_task(
     """Only fields present in the body are written, so an omitted key is left
     alone and an explicit null disables that service.
 
-    Two invariants hold across the write:
+    Three invariants hold across the write:
 
+    - A done flag may not be set unless the project's quote is accepted.
+      Acceptance is what authorises the work; clearing a flag stays legal
+      regardless, so a tick stranded by a status flip can always be undone.
     - Clearing a cost to NULL clears its done flag. The step no longer exists,
       and leaving the flag set would bring the service back pre-ticked if it
       were ever re-enabled.
@@ -380,6 +408,14 @@ async def update_task(
     """
     task = await _get_task_or_404(db, task_id)
     fields = payload.model_dump(exclude_unset=True)
+
+    # Loaded before the write, not after: the guard needs the parent's quote
+    # status, and one load then serves the pending mark and _apply_rules too.
+    # Marking pending ahead of a possible 422 is safe — get_db rolls back on
+    # ANY exception (core/database.py:220), so a rejected PATCH persists
+    # nothing, including this mark.
+    project = await _mark_project_pending_for_task(db, task.project_id)
+    _reject_ticks_without_acceptance(project.quote_status if project else None, fields)
 
     for service in SERVICES:
         cost_key, done_key = f"{service}_cost", f"{service}_done"
@@ -393,7 +429,6 @@ async def update_task(
 
     for key, value in fields.items():
         setattr(task, key, value)
-    project = await _mark_project_pending_for_task(db, task.project_id)
     if project:
         await _apply_rules(db, project, await _summary_for(db, task.project_id))
     await db.commit()
