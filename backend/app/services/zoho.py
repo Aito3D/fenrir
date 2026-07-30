@@ -400,11 +400,16 @@ class ZohoService:
         The API host is not the app host, so the region is taken from the
         accounts URL: accounts.zoho.eu -> books.zoho.eu, and
         accounts.zoho.com.au -> books.zoho.com.au.
+
+        The fragment is `#/quotes/`, not `#/estimates/`: the REST API still
+        calls these estimates (every endpoint in this service does), but the
+        Books web app routes them under quotes, and an `#/estimates/` link
+        does not resolve. The two names are the same object.
         """
         config = await self._load_config(db)
         host = urlparse(config["zoho_accounts_url"]).hostname or "accounts.zoho.eu"
         suffix = host[len("accounts.") :] if host.startswith("accounts.") else host
-        return f"https://books.{suffix}/app/{config['zoho_organization_id']}#/estimates/{estimate_id}"
+        return f"https://books.{suffix}/app/{config['zoho_organization_id']}#/quotes/{estimate_id}"
 
     async def create_contact(
         self,

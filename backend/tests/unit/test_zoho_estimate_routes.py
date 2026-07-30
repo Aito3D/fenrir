@@ -42,7 +42,9 @@ async def test_books_app_url_follows_the_accounts_region(async_client):
     await _configure(async_client)
     async with async_session() as db:
         url = await zoho_service.books_app_url(db, "abc")
-    assert url == "https://books.zoho.eu/app/999#/estimates/abc"
+    # `#/quotes/`, not `#/estimates/`: the API calls them estimates, the Books
+    # web app routes them under quotes, and only the latter resolves.
+    assert url == "https://books.zoho.eu/app/999#/quotes/abc"
 
 
 @pytest.mark.asyncio
@@ -52,7 +54,7 @@ async def test_books_app_url_handles_a_multi_part_region(async_client):
     await _configure(async_client, zoho_accounts_url="https://accounts.zoho.com.au")
     async with async_session() as db:
         url = await zoho_service.books_app_url(db, "abc")
-    assert url == "https://books.zoho.com.au/app/999#/estimates/abc"
+    assert url == "https://books.zoho.com.au/app/999#/quotes/abc"
 
 
 @pytest.mark.asyncio
@@ -183,7 +185,7 @@ async def test_preview_returns_tasks_client_and_quote(async_client):
     assert r.status_code == 200
     body = r.json()
     assert body["quote"]["number"] == "DEV26-2461"
-    assert body["quote"]["url"].endswith(f"#/estimates/{estimate['estimate_id']}")
+    assert body["quote"]["url"].endswith(f"#/quotes/{estimate['estimate_id']}")
     assert body["client"]["phone"] == "87123456"
     assert body["client"]["is_company"] is True
     assert len(body["tasks"]) == 1

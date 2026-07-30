@@ -4142,6 +4142,21 @@ async def run_migrations(conn):
             "ON aito_projects (quote_id) WHERE quote_id IS NOT NULL AND status = 'active'",
         )
 
+    # Migration (2026-07-29): every quote_url written before today points at
+    # `#/estimates/<id>`, which the Books web app does not resolve — the REST
+    # API calls them estimates but the app routes them under `#/quotes/<id>`
+    # (see ZohoService.books_app_url). Rewrite the stored links rather than
+    # wait for the sync worker to touch each project, which it only does when
+    # something else about the quote changes and never for a declined or
+    # unmanaged card. Idempotent by construction: once rewritten no row
+    # matches the WHERE again. Soft-deleted rows are included so a restored
+    # card comes back with a working link.
+    await _safe_execute(
+        conn,
+        "UPDATE aito_projects SET quote_url = REPLACE(quote_url, '#/estimates/', '#/quotes/') "
+        "WHERE quote_url LIKE '%#/estimates/%'",
+    )
+
 
 _USER_PRINT_TEMPLATE_RENAMES: tuple[tuple[str, str, str], ...] = (
     ("user_print_start", "User Print Started", "User Print Started Email"),
