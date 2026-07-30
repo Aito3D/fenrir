@@ -172,34 +172,43 @@ describe('AitoPage — cross-column drag lock (over a card, not just an empty co
     expect(within(waitingColumn).queryByText('Support GoPro')).not.toBeInTheDocument();
   });
 
-  // A locked card can no longer be picked up at all — `BoardColumn` passes
-  // `disabled` to its `useSortable` and renders no grip (see
-  // AitoBoardColumnDrag.test.tsx), so these handlers never fire for one in the
-  // real UI. The gate is still asserted not to OVER-block: were it to reject a
-  // card's own column, an unlocked card sharing a column with a locked one, or
-  // any later relaxation of the grip rule, would silently stop reordering.
-  it('does not treat a locked card\'s own column as a forbidden destination', async () => {
+  // A locked card IS grabbable — the grip came back so the Quote column can be
+  // re-prioritised while its cards wait on acceptance (see
+  // AitoBoardColumnDrag.test.tsx). This is that path end to end: the lock gate
+  // must not treat the card's own column as a forbidden destination, and the
+  // reorder must reach the server.
+  it('reorders a locked card inside its own column and persists it', async () => {
+    let moveRequestBody: { id: string; body: unknown } | null = null;
+    server.use(
+      http.patch('/api/v1/aito/:id/move', async ({ request, params }) => {
+        moveRequestBody = { id: params.id as string, body: await request.json() };
+        return HttpResponse.json({ ...lockedProject, position: 1 });
+      }),
+    );
+
     render(<AitoPage />);
     await screen.findByText('Support GoPro');
 
     act(() => {
       mockCapturedHandlers.onDragStart?.({ active: { id: 12 } });
     });
-    // Drag the first Quote card over the second Quote card — same column,
-    // must still be allowed even though the card is locked.
-    act(() => {
-      mockCapturedHandlers.onDragOver?.({ active: { id: 12 }, over: { id: 56 } });
+    // Drag the first Quote card (id 12, position 0) onto the second (id 56,
+    // position 1) — same column, and allowed even though both are locked.
+    await act(async () => {
+      mockCapturedHandlers.onDragEnd?.({ active: { id: 12 }, over: { id: 56 } });
+      // Real time, not fake timers: gives the mutation's fetch room to
+      // round-trip instead of racing a synchronous assertion.
+      await new Promise((resolve) => setTimeout(resolve, 20));
     });
 
+    // Both cards are still in Quote — the reorder must not have relocated
+    // anything across columns.
     const quoteColumn = findColumnContainer('Quote');
-    const cardTexts = within(quoteColumn)
-      .getAllByText(/Support GoPro|Coque manette/)
-      .map((el) => el.textContent);
+    expect(within(quoteColumn).getByText('Support GoPro')).toBeInTheDocument();
+    expect(within(quoteColumn).getByText('Coque manette')).toBeInTheDocument();
 
-    // `applyCrossColumnMove` is a same-column no-op for ordering (dragEnd
-    // handles in-column reordering), but the point here is that neither
-    // card was booted out of the Quote column by the lock guard.
-    expect(cardTexts).toEqual(expect.arrayContaining(['Support GoPro', 'Coque manette']));
+    // And the new priority reached the server.
+    expect(moveRequestBody).toEqual({ id: '12', body: { column: 'devis', position: 1 } });
   });
 
   it('does not PATCH a move when a locked card is dropped onto a card in a disallowed column, even without a prior dragOver', async () => {
