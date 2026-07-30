@@ -1623,7 +1623,7 @@ async def test_trashing_before_first_tick_then_restoring_and_editing_is_re_enque
     created = await create_project(payload=payload, db=db_session, current_user=None)
     assert created.quote_sync_state == "pending"
 
-    await delete_project(project_id=created.id, db=db_session, _=None)
+    await delete_project(project_id=created.id, db=db_session, current_user=None)
     row = (await db_session.execute(select(AitoProject).where(AitoProject.id == created.id))).scalar_one()
     assert row.status == "deleted"
     assert row.quote_sync_state == "pending"  # still queued — the tick hasn't run yet
@@ -1642,14 +1642,14 @@ async def test_trashing_before_first_tick_then_restoring_and_editing_is_re_enque
     assert row.quote_sync_state != "pending"
     assert row.quote_sync_state != "unmanaged"
 
-    restored = await restore_project(project_id=created.id, db=db_session, _=None)
+    restored = await restore_project(project_id=created.id, db=db_session, current_user=None)
     assert restored.quote_sync_state == "pending"
 
     edited = await update_project(
         project_id=created.id,
         payload=AitoProjectUpdate(description="Helice modifiee"),
         db=db_session,
-        _=None,
+        current_user=None,
     )
     assert edited.quote_sync_state == "pending"
 

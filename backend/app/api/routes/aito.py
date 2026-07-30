@@ -26,6 +26,7 @@ from backend.app.schemas.aito import (
     AitoTaskUpdate,
 )
 from backend.app.services.aito_board_rules import SERVICES, TaskSummary, evaluate, summarise
+from backend.app.services.aito_events import diff_fields, record
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
 from backend.app.utils.http import build_content_disposition
 
@@ -246,15 +247,37 @@ def _mark_pending_if_ours(project: AitoProject) -> None:
         _mark_pending(project)
 
 
-async def _mark_project_pending_for_task(db: AsyncSession, project_id: int) -> AitoProject | None:
+def _actor(user: User | None) -> str | None:
+    """The username to snapshot on an event.
+
+    None for auth-disabled installs and for API-key requests, which carry no
+    user identity — the same rule ``created_by`` already follows on the
+    project itself, so the two never disagree about who did something.
+    """
+    return user.username if user is not None else None
+
+
+async def _mark_project_pending_for_task(db: AsyncSession, project_id: int) -> tuple[AitoProject | None, bool]:
     """Task endpoints address a task, not a project, so the parent has to be
     loaded to be marked. A missing parent is not an error here: the task's own
     404 already covers the case that matters. Returns the project (or None) so
-    callers that also need to run `_apply_rules` on it don't load it twice."""
+    callers that also need to run `_apply_rules` on it don't load it twice.
+
+    Also returns whether the project was ALREADY pending before this call.
+    ``_mark_pending_if_ours`` is unconditional and idempotent — it re-marks a
+    project that is already pending just as readily as one that was idle — so
+    a caller emitting ``sync.queued`` off the post-call state alone would fire
+    on every single task edit made before the sync worker's next tick, not
+    just the one that actually queued the project. Callers compare this
+    against the post-call state to catch only the genuine idle/error/locked
+    -> pending transition.
+    """
     project = (await db.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one_or_none()
-    if project:
-        _mark_pending_if_ours(project)
-    return project
+    if project is None:
+        return None, False
+    was_pending = project.quote_sync_state == "pending"
+    _mark_pending_if_ours(project)
+    return project, was_pending
 
 
 def _imported_created_at(quote_id: str | None, quote_date: str | None) -> datetime | None:
@@ -372,6 +395,16 @@ async def create_project(
     # Flush so the project has an id the tasks can reference; one commit still
     # covers both, so a failure creates neither.
     await db.flush()
+    await record(
+        db,
+        project.id,
+        "project.created",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="project",
+        subject_id=project.id,
+        detail={"imported_from": project.quote_number} if project.quote_number else None,
+    )
     new_tasks = [
         AitoTask(project_id=project.id, position=position, **task_payload.model_dump())
         for position, task_payload in enumerate(payload.tasks)
@@ -474,17 +507,33 @@ async def add_task(
     project_id: int,
     payload: AitoTaskCreate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     project = (await db.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     _reject_ticks_without_acceptance(project.quote_status, payload.model_dump())
+    # Captured before the mark: it is unconditional and idempotent, so
+    # checking the post-mark state alone would fire sync.queued on every task
+    # added to an already-pending project, not just the transition into it.
+    was_pending = project.quote_sync_state == "pending"
     _mark_pending_if_ours(project)
     highest = await db.scalar(select(func.max(AitoTask.position)).where(AitoTask.project_id == project_id))
     task = AitoTask(project_id=project_id, position=(highest + 1) if highest is not None else 0, **payload.model_dump())
     db.add(task)
     await db.flush()  # so _summary_for's SELECT sees the new row
+    await record(
+        db,
+        project_id,
+        "task.added",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="task",
+        subject_id=task.id,
+        subject_label=task.title,
+    )
+    if not was_pending and project.quote_sync_state == "pending":
+        await record(db, project.id, "sync.queued", actor_class="system")
     await _apply_rules(db, project, await _summary_for(db, project_id))
     await db.commit()
     await db.refresh(task)
@@ -496,7 +545,7 @@ async def update_task(
     task_id: int,
     payload: AitoTaskUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Only fields present in the body are written, so an omitted key is left
     alone and an explicit null disables that service.
@@ -516,13 +565,18 @@ async def update_task(
     """
     task = await _get_task_or_404(db, task_id)
     fields = payload.model_dump(exclude_unset=True)
+    # Captured before anything is applied, or diff_fields would compare the
+    # new value against itself and return [].
+    changes = diff_fields(task, fields)
+    tick_changes = [c for c in changes if c["field"].endswith("_done")]
+    field_changes = [c for c in changes if not c["field"].endswith("_done")]
 
     # Loaded before the write, not after: the guard needs the parent's quote
     # status, and one load then serves the pending mark and _apply_rules too.
     # Marking pending ahead of a possible 422 is safe — get_db rolls back on
     # ANY exception (core/database.py:220), so a rejected PATCH persists
     # nothing, including this mark.
-    project = await _mark_project_pending_for_task(db, task.project_id)
+    project, was_pending = await _mark_project_pending_for_task(db, task.project_id)
     _reject_ticks_without_acceptance(project.quote_status if project else None, fields)
 
     for service in SERVICES:
@@ -537,6 +591,33 @@ async def update_task(
 
     for key, value in fields.items():
         setattr(task, key, value)
+    await record(
+        db,
+        task.project_id,
+        "task.updated",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="task",
+        subject_id=task.id,
+        subject_label=task.title,
+        changes=field_changes,
+    )
+    for change in tick_changes:
+        # One event per tick, never coalesced: each is a discrete decision
+        # about whether work is finished, and the board column moves on it.
+        await record(
+            db,
+            task.project_id,
+            "task.step.ticked" if change["to"] else "task.step.unticked",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="task",
+            subject_id=task.id,
+            subject_label=task.title,
+            detail={"service": change["field"].removesuffix("_done")},
+        )
+    if project is not None and not was_pending and project.quote_sync_state == "pending":
+        await record(db, project.id, "sync.queued", actor_class="system")
     if project:
         await _apply_rules(db, project, await _summary_for(db, task.project_id))
     await db.commit()
@@ -548,12 +629,22 @@ async def update_task(
 async def delete_task(
     task_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_DELETE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_DELETE),
 ):
     """Hard delete, unlike projects: tasks need no stable visible number, and
     hold-to-remove is already a deliberate gesture."""
     task = await _get_task_or_404(db, task_id)
-    project = await _mark_project_pending_for_task(db, task.project_id)
+    project, _was_pending = await _mark_project_pending_for_task(db, task.project_id)
+    await record(
+        db,
+        task.project_id,
+        "task.removed",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="task",
+        subject_id=task.id,
+        subject_label=task.title,
+    )
     await db.delete(task)
     await db.flush()  # so the deleted row is out of _summary_for's SELECT
     if project:
@@ -612,7 +703,7 @@ async def move_project(
     project_id: int,
     payload: AitoProjectMove,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     project = (
         await db.execute(select(AitoProject).where(AitoProject.id == project_id, AitoProject.status == "active"))
@@ -647,6 +738,20 @@ async def move_project(
     if source_column != payload.column:
         for i, row in enumerate(await _active_in_column(db, source_column, exclude_id=project.id)):
             row.position = i
+        # Only a genuine cross-column move is a stage change — reordering
+        # within a column has source_column == payload.column and must stay
+        # silent, or every in-column drag would fill the timeline with
+        # from == to non-events.
+        await record(
+            db,
+            project.id,
+            "stage.changed",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=project.id,
+            changes=[{"field": "column", "from": source_column, "to": project.board_column}],
+        )
     await db.commit()
     await db.refresh(project)
     return _to_response(project, summary)
@@ -657,7 +762,7 @@ async def update_project(
     project_id: int,
     payload: AitoProjectUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Edit a card's content. Only fields present in the body are written, so a
     null client_phone clears it while an omitted one is left alone."""
@@ -668,6 +773,9 @@ async def update_project(
         raise HTTPException(status_code=404, detail="Project not found")
 
     fields = payload.model_dump(exclude_unset=True)
+    # Captured before anything is applied, or diff_fields would compare the
+    # new value against itself and return [].
+    changes = diff_fields(project, fields)
 
     # The client fields are a snapshot, so consistency has to hold for the MERGED
     # row, not just the payload: a lone {"client_name": null} passes any
@@ -683,7 +791,23 @@ async def update_project(
     for key in ("client_id", "client_name", "client_phone", "client_email", "client_is_company"):
         if key in fields:
             setattr(project, key, fields[key])
+    # Captured before the mark: it is unconditional and idempotent, so
+    # checking the post-mark state alone would fire sync.queued on every edit
+    # to an already-pending project, not just the transition into it.
+    was_pending = project.quote_sync_state == "pending"
     _mark_pending_if_ours(project)
+    await record(
+        db,
+        project.id,
+        "project.updated",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="project",
+        subject_id=project.id,
+        changes=changes,
+    )
+    if not was_pending and project.quote_sync_state == "pending":
+        await record(db, project.id, "sync.queued", actor_class="system")
     await db.commit()
     await db.refresh(project)
     return _to_response(project, await _summary_for(db, project.id))
@@ -694,7 +818,7 @@ async def set_quote_status(
     project_id: int,
     payload: AitoQuoteStatusUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Move a project's quote to sent, accepted or declined.
 
@@ -724,6 +848,15 @@ async def set_quote_status(
     project.quote_status_remote = None
     summary = await _summary_for(db, project.id)
     await _apply_rules(db, project, summary)
+    await record(
+        db,
+        project.id,
+        f"quote.{payload.status}",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="project",
+        subject_id=project.id,
+    )
     await db.commit()
     await db.refresh(project)
 
@@ -767,7 +900,7 @@ async def set_quote_status(
 async def restore_project(
     project_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Un-delete: back onto the board at the end of its original column."""
     project = (
@@ -786,6 +919,15 @@ async def restore_project(
     _mark_pending_if_ours(project)
     summary = await _summary_for(db, project.id)
     await _apply_rules(db, project, summary)
+    await record(
+        db,
+        project.id,
+        "project.restored",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="project",
+        subject_id=project.id,
+    )
     await db.commit()
     await db.refresh(project)
     return _to_response(project, summary)
@@ -795,7 +937,7 @@ async def restore_project(
 async def delete_project(
     project_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_DELETE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_DELETE),
 ):
     """Soft delete: the row is kept forever, only hidden from the board."""
     project = (
@@ -805,4 +947,13 @@ async def delete_project(
         raise HTTPException(status_code=404, detail="Project not found")
     project.status = "deleted"
     _mark_pending_if_ours(project)
+    await record(
+        db,
+        project.id,
+        "project.trashed",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="project",
+        subject_id=project.id,
+    )
     await db.commit()
