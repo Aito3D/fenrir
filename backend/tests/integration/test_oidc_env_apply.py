@@ -342,10 +342,10 @@ async def test_boot_survives_removing_the_config_after_a_rename(db_session, monk
 
 
 @pytest.mark.asyncio
-async def test_a_database_left_with_two_managed_rows_is_repaired(db_session, monkeypatch):
-    """An install upgraded from the version that never swept the flag already
-    has two managed rows. Releasing only one of them would leave the same dead
-    end behind, so the release path releases every row it finds."""
+async def test_every_managed_row_is_released_not_just_one(db_session, monkeypatch):
+    """The upsert's sweep should keep this at one row. Should is not enforced by
+    the schema, and the cost of being wrong is the whole release path raising
+    MultipleResultsFound out of the lifespan -- so it releases what it finds."""
     for name in ("Keycloak", "Authentik"):
         stale = OIDCProvider(
             name=name,

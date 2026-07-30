@@ -103,10 +103,10 @@ async def apply_env_oidc_provider(db: AsyncSession) -> None:
 
     if config is None:
         # Nothing to look up by name any more, so the previously managed rows are
-        # found by the flag -- and then released. All of them: an install
-        # upgraded from a version that did not sweep the flag on rename carries
-        # two, and scalar_one_or_none() would raise MultipleResultsFound out of
-        # the lifespan instead of booting.
+        # found by the flag -- and then released. All of them: the upsert's sweep
+        # should keep that at one, but scalar_one_or_none() would raise
+        # MultipleResultsFound out of the lifespan the moment it isn't, and
+        # losing the boot is too steep a price for an invariant check.
         released_rows = (
             (await db.execute(select(OIDCProvider).where(OIDCProvider.is_env_managed.is_(True)))).scalars().all()
         )
