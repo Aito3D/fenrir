@@ -145,6 +145,8 @@ export default {
     quoteLocked: '报价单已开票',
     quoteLockedHelp: '此报价单已开票：更改仅保留在本地。',
     quoteDeclinedNoDraft: 'Zoho 不允许将报价单重新转为草稿。',
+    quoteConflict: '看板显示{{ours}}，Books 显示{{theirs}} — 请在 Books 中处理',
+    quoteRejected: 'Books 在状态为{{theirs}}时拒绝改为{{ours}}',
     retrySync: '重试',
     columns: {
       devis: '报价',

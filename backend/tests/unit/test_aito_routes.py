@@ -1404,3 +1404,29 @@ async def test_hand_made_cards_are_never_duplicates_of_each_other(async_client):
     collide with every other hand-made card."""
     assert (await _create(async_client)).status_code == 201
     assert (await _create(async_client)).status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_changing_the_board_status_clears_a_recorded_block(async_client, db_session):
+    """set_quote_status owns our side, so it owns invalidating the record.
+
+    This is the invariant that lets `quote_status_remote` alone identify a
+    blocked attempt: our side cannot drift away from the recorded attempt
+    without the record being cleared, so the reconciler never has to store
+    (and re-parse) the pair.
+    """
+    created = (await _create(async_client, quote_status="accepted")).json()
+    project = (await db_session.execute(select(AitoProject).where(AitoProject.id == created["id"]))).scalar_one()
+    project.quote_status_block = "rejected"
+    project.quote_status_remote = "draft"
+    await db_session.commit()
+
+    r = await async_client.post(f"/api/v1/aito/{created['id']}/quote-status", json={"status": "declined"})
+    assert r.status_code == 200
+    assert r.json()["project"]["quote_status_block"] is None
+    assert r.json()["project"]["quote_status_remote"] is None
+
+    row = (await db_session.execute(select(AitoProject).where(AitoProject.id == created["id"]))).scalar_one()
+    await db_session.refresh(row)
+    assert row.quote_status_block is None
+    assert row.quote_status_remote is None

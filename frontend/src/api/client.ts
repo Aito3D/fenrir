@@ -3455,6 +3455,16 @@ export interface AitoProject {
   /** The last push failure, or null. Only meaningful when quote_sync_state
    *  is 'error'; stale/ignored otherwise. */
   quote_sync_error: string | null;
+  /** Why the backend's status reconciler is blocked, or null when it is not.
+   *  'conflict' — the board and Books both decided, and differently;
+   *  'rejected' — Books refused the status change the board asked for.
+   *  Independent of quote_sync_state, and rendered whatever that state is:
+   *  a block is the reconciler's own stored fact, not a sync failure. */
+  quote_status_block: 'conflict' | 'rejected' | null;
+  /** Books' status at the moment the block was recorded. Ours is
+   *  `quote_status`, which is always current — the backend clears both of
+   *  these whenever the board's own status changes. */
+  quote_status_remote: string | null;
   /** Username of the webapp user who created the card. Null when auth is
    *  disabled and for API-key requests, which carry no user identity. */
   created_by: string | null;

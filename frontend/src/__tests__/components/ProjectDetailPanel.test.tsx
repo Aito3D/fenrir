@@ -33,6 +33,8 @@ const project: AitoProject = {
   quote_status: null,
   quote_sync_state: 'idle',
   quote_sync_error: null,
+  quote_status_block: null,
+  quote_status_remote: null,
   created_by: null,
   task_count: 0,
   tasks_total: 0,
@@ -1187,6 +1189,40 @@ describe('ProjectDetailPanel sync row', () => {
     expect(
       await screen.findByText('Zoho does not allow reverting a quote back to draft.'),
     ).toBeInTheDocument();
+  });
+
+  it('surfaces a recorded conflict even though the project is idle', async () => {
+    // The whole point of the block being its own stored fact: an 'idle'
+    // project renders no sync row at all, so a conflict folded into
+    // quote_sync_error would reach nobody.
+    show({
+      quote_sync_state: 'idle',
+      quote_status: 'accepted',
+      quote_status_block: 'conflict',
+      quote_status_remote: 'declined',
+    });
+    expect(
+      await screen.findByText('The board says Accepted but Books says Declined — resolve it in Books'),
+    ).toBeInTheDocument();
+  });
+
+  it('surfaces a rejected push, with both statuses localised', async () => {
+    show({
+      quote_sync_state: 'idle',
+      quote_status: 'accepted',
+      quote_status_block: 'rejected',
+      quote_status_remote: 'draft',
+    });
+    expect(
+      await screen.findByText('Books refused to change this quote to Accepted while it reads Draft'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders no block row when nothing is blocked', async () => {
+    show({ quote_sync_state: 'idle' });
+    expect(await screen.findByText('ACME SARL')).toBeInTheDocument();
+    expect(screen.queryByText(/resolve it in Books/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Books refused/)).not.toBeInTheDocument();
   });
 
   it('retrying re-saves the unchanged description, which is what re-marks the project pending', async () => {

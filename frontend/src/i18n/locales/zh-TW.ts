@@ -145,6 +145,8 @@ export default {
     quoteLocked: '報價單已開立發票',
     quoteLockedHelp: '此報價單已開立發票：變更僅保留在本機。',
     quoteDeclinedNoDraft: 'Zoho 不允許將報價單重新轉為草稿。',
+    quoteConflict: '看板顯示{{ours}}，Books 顯示{{theirs}} — 請在 Books 中處理',
+    quoteRejected: 'Books 在狀態為{{theirs}}時拒絕改為{{ours}}',
     retrySync: '重試',
     columns: {
       devis: '報價',

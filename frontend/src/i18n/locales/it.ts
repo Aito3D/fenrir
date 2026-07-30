@@ -145,6 +145,8 @@ export default {
     quoteLocked: 'Preventivo fatturato',
     quoteLockedHelp: 'Questo preventivo è stato fatturato: le modifiche restano locali.',
     quoteDeclinedNoDraft: 'Zoho non consente di riportare un preventivo in bozza.',
+    quoteConflict: 'La bacheca dice {{ours}} ma Books dice {{theirs}} — risolvilo in Books',
+    quoteRejected: 'Books ha rifiutato il passaggio a {{ours}} mentre risulta {{theirs}}',
     retrySync: 'Riprova',
     columns: {
       devis: 'Preventivo',

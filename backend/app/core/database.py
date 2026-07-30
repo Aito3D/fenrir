@@ -4017,6 +4017,11 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_sync_failures INTEGER NOT NULL DEFAULT 0")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_synced_at VARCHAR(30)")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_status_before_trash VARCHAR(30)")
+    # Why the Aito status reconciler is blocked, if it is, and what Books read
+    # when it was blocked. Nullable with no backfill: NULL means "not blocked",
+    # which is exactly right for every existing row.
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_status_block VARCHAR(20)")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_status_remote VARCHAR(30)")
 
     # Migration: backfill the explicit 'unmanaged' ownership marker (Critical
     # fix, 2026-07-29). Before this, `_mark_pending_if_ours` (routes/aito.py)

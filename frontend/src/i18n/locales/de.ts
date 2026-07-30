@@ -145,6 +145,8 @@ export default {
     quoteLocked: 'Angebot fakturiert',
     quoteLockedHelp: 'Dieses Angebot wurde fakturiert: Änderungen bleiben lokal.',
     quoteDeclinedNoDraft: 'Zoho erlaubt es nicht, ein Angebot wieder in einen Entwurf umzuwandeln.',
+    quoteConflict: 'Das Board sagt {{ours}}, Books sagt {{theirs}} — bitte in Books klären',
+    quoteRejected: 'Books hat die Änderung auf {{ours}} abgelehnt, solange es {{theirs}} anzeigt',
     retrySync: 'Erneut versuchen',
     columns: {
       devis: 'Angebot',

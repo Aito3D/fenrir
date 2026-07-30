@@ -145,6 +145,8 @@ export default {
     quoteLocked: '見積書は請求済みです',
     quoteLockedHelp: 'この見積書は請求済みのため、変更内容はローカルにのみ保存されます。',
     quoteDeclinedNoDraft: 'Zohoでは見積書を下書きに戻すことはできません。',
+    quoteConflict: 'ボードは{{ours}}、Booksは{{theirs}}です — Books で解決してください',
+    quoteRejected: 'Books は {{theirs}} の状態では {{ours}} への変更を拒否しました',
     retrySync: '再試行',
     columns: {
       devis: '見積もり',

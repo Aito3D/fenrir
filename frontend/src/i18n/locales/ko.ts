@@ -145,6 +145,8 @@ export default {
     quoteLocked: '견적서가 청구됨',
     quoteLockedHelp: '이 견적서는 청구되어 변경 사항이 로컬에만 유지됩니다.',
     quoteDeclinedNoDraft: 'Zoho에서는 견적서를 다시 임시 저장 상태로 되돌릴 수 없습니다.',
+    quoteConflict: '보드는 {{ours}}, Books는 {{theirs}}입니다 — Books에서 해결하세요',
+    quoteRejected: 'Books가 {{theirs}} 상태에서 {{ours}}(으)로 변경을 거부했습니다',
     retrySync: '다시 시도',
     columns: {
       devis: '견적',

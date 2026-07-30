@@ -145,6 +145,8 @@ export default {
     quoteLocked: 'Orçamento faturado',
     quoteLockedHelp: 'Este orçamento foi faturado: as alterações permanecem apenas locais.',
     quoteDeclinedNoDraft: 'O Zoho não permite reverter um orçamento para rascunho.',
+    quoteConflict: 'O quadro diz {{ours}} mas o Books diz {{theirs}} — resolva no Books',
+    quoteRejected: 'O Books recusou a mudança para {{ours}} enquanto consta como {{theirs}}',
     retrySync: 'Tentar novamente',
     columns: {
       devis: 'Orçamento',

@@ -87,6 +87,8 @@ def _to_response(p: AitoProject, summary: TaskSummary) -> AitoProjectResponse:
         created_by=p.created_by,
         quote_sync_state=p.quote_sync_state or "idle",
         quote_sync_error=p.quote_sync_error,
+        quote_status_block=p.quote_status_block,
+        quote_status_remote=p.quote_status_remote,
         task_count=summary.count,
         tasks_total=summary.total,
         task_services=list(summary.services),
@@ -670,6 +672,11 @@ async def set_quote_status(
         raise HTTPException(status_code=404, detail="Project not found")
 
     project.quote_status = payload.status
+    # Our side just moved, so any recorded block describes an attempt that no
+    # longer exists. This is what lets quote_status_remote alone identify a
+    # blocked attempt — see the column comments on AitoProject.
+    project.quote_status_block = None
+    project.quote_status_remote = None
     summary = await _summary_for(db, project.id)
     await _apply_rules(db, project, summary)
     await db.commit()

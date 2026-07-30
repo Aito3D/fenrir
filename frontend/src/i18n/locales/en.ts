@@ -149,6 +149,8 @@ export default {
     quoteLocked: 'Quote invoiced',
     quoteLockedHelp: 'This quote has been invoiced: changes stay local.',
     quoteDeclinedNoDraft: 'Zoho does not allow reverting a quote back to draft.',
+    quoteConflict: 'The board says {{ours}} but Books says {{theirs}} — resolve it in Books',
+    quoteRejected: 'Books refused to change this quote to {{ours}} while it reads {{theirs}}',
     retrySync: 'Retry',
     columns: {
       devis: 'Quote',

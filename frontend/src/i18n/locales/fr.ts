@@ -145,6 +145,8 @@ export default {
     quoteLocked: 'Devis facturé',
     quoteLockedHelp: 'Ce devis a été facturé : les modifications restent locales.',
     quoteDeclinedNoDraft: 'Zoho ne permet pas de repasser un devis en brouillon.',
+    quoteConflict: 'Le tableau indique {{ours}} mais Books indique {{theirs}} — à corriger dans Books',
+    quoteRejected: "Books a refusé le passage à {{ours}} tant qu'il affiche {{theirs}}",
     retrySync: 'Réessayer',
     columns: {
       devis: 'Devis',

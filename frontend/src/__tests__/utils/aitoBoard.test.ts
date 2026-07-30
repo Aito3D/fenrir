@@ -29,6 +29,8 @@ const card = (id: number, column: AitoProject['column'], position: number): Aito
   quote_status: null,
   quote_sync_state: 'idle',
   quote_sync_error: null,
+  quote_status_block: null,
+  quote_status_remote: null,
   created_by: null,
   task_count: 0,
   tasks_total: 0,

@@ -145,6 +145,8 @@ export default {
     quoteLocked: 'Presupuesto facturado',
     quoteLockedHelp: 'Este presupuesto ha sido facturado: los cambios permanecen locales.',
     quoteDeclinedNoDraft: 'Zoho no permite volver a convertir un presupuesto en borrador.',
+    quoteConflict: 'El tablero dice {{ours}} pero Books dice {{theirs}} — resuélvelo en Books',
+    quoteRejected: 'Books rechazó el cambio a {{ours}} mientras figura como {{theirs}}',
     retrySync: 'Reintentar',
     columns: {
       devis: 'Presupuesto',

@@ -1641,11 +1641,13 @@ async def test_two_conflicting_decisions_change_nothing(db_session):
     """Overwriting either side is destructive and unrecoverable, so neither
     wins: the conflict is recorded and both sides are left alone.
 
-    Per the human ruling on I3/I4: the conflict must also set
-    quote_sync_state = 'error' alongside the message, not just write the
-    message while state stays 'idle' — the panel and the board's error badge
-    both key off quote_sync_state, and a message nobody's UI ever surfaces is
-    as good as no record at all."""
+    Round 4 moved the record from a sentence in quote_sync_error to the
+    quote_status_block/quote_status_remote pair, and dropped the
+    quote_sync_state = 'error' flip that I4's ruling had required only because
+    the panel's sync row was the sole place a message could surface. The panel
+    now renders a recorded block for ANY sync state, so the conflict reaches a
+    human without this module borrowing another subsystem's field (or its
+    error badge, which also gates a Retry button that cannot help here)."""
     project = await _project_with_quote(db_session, impression_cost=1000)
     project.quote_status = "accepted"
     project.quote_sync_state = "idle"
@@ -1662,8 +1664,11 @@ async def test_two_conflicting_decisions_change_nothing(db_session):
     await db_session.refresh(project)
     assert not any(entry[0] == "POST" for entry in seen)
     assert project.quote_status == "accepted"
-    assert project.quote_sync_state == "error"
-    assert project.quote_sync_error is not None
+    assert project.quote_status_block == "conflict"
+    assert project.quote_status_remote == "declined"
+    # Neither side changed, and neither did the field this module does not own.
+    assert project.quote_sync_state == "idle"
+    assert project.quote_sync_error is None
 
 
 @pytest.mark.asyncio
@@ -1791,14 +1796,17 @@ async def test_decline_snapshot_survives_a_commit_failure_that_happens_after_the
 @pytest.mark.asyncio
 async def test_a_rejected_status_push_is_not_retried_every_tick(db_session):
     """I1: Books rejecting a status transition is terminal, exactly like a
-    rejected line-item payload — ZohoRequestRejected sends the project
-    straight to 'error', the same rule sync_project's pending-path exception
-    handling already follows, because retrying an identical payload cannot
+    rejected line-item payload, because retrying an identical payload cannot
     help. Without a guard, the next tick's status-only branch would re-GET
     (fine) and then re-POST the exact same rejected, non-idempotent mutation
     against a real customer estimate — every 60s, forever. The second tick
     below proves the push is skipped, not the read: zero POSTs, but the GET
-    still happens."""
+    still happens.
+
+    Round 4: the rejection is recorded as quote_status_block = 'rejected'
+    rather than as a parseable sentence in quote_sync_error, and no longer
+    drags quote_sync_state to 'error' — that flip was what made a single
+    rejection unrepairable in round 1 (see N1 below)."""
     project = await _project_with_quote(db_session, impression_cost=1000)
     project.quote_status = "accepted"
     project.quote_sync_state = "idle"
@@ -1828,15 +1836,15 @@ async def test_a_rejected_status_push_is_not_retried_every_tick(db_session):
 
     await run_sync_once(db_session)
     await db_session.refresh(project)
-    assert project.quote_sync_state == "error"
-    assert project.quote_sync_error
+    assert project.quote_status_block == "rejected"
+    assert project.quote_status_remote == "draft"
 
     seen.clear()
     assert await run_sync_once(db_session) == 1
     assert not any(method == "POST" for method, _ in seen)
     assert any(method == "GET" for method, _ in seen)
     await db_session.refresh(project)
-    assert project.quote_sync_state == "error"
+    assert project.quote_status_block == "rejected"
 
 
 @pytest.mark.asyncio
@@ -1931,11 +1939,15 @@ async def test_an_unrelated_error_diagnostic_survives_a_status_pull(db_session):
 
 @pytest.mark.asyncio
 async def test_a_resolved_conflict_is_cleared_once_both_sides_agree(db_session):
-    """I4b: the conflict message (and, per the human ruling, the 'error'
-    state it now forces) must not persist forever once a human resolves it —
-    a since-fixed Books status that now matches ours must clear both, not
-    leave the message behind as a permanent, now-false ghost that
-    misdescribes a project that is actually fine again."""
+    """I4b: a recorded conflict must not persist forever once a human resolves
+    it — a since-fixed Books status that now matches ours must clear the
+    record, not leave it behind as a permanent, now-false ghost that
+    misdescribes a project that is actually fine again.
+
+    Round 4: the record is the quote_status_block/quote_status_remote pair,
+    and clearing it is now unconditional — no "is this error mine?" guard,
+    because these columns are the reconciler's own and there is nothing of
+    anyone else's to destroy."""
     project = await _project_with_quote(db_session, impression_cost=1000)
     project.quote_status = "accepted"
     project.quote_sync_state = "idle"
@@ -1948,8 +1960,8 @@ async def test_a_resolved_conflict_is_cleared_once_both_sides_agree(db_session):
     zoho_service.invalidate_token()
     await run_sync_once(db_session)
     await db_session.refresh(project)
-    assert project.quote_sync_state == "error"
-    assert project.quote_sync_error
+    assert project.quote_status_block == "conflict"
+    assert project.quote_status_remote == "declined"
 
     # The human resolves it in Books, bringing its status back to match ours.
     zoho_service.transport = httpx.MockTransport(
@@ -1958,6 +1970,8 @@ async def test_a_resolved_conflict_is_cleared_once_both_sides_agree(db_session):
     zoho_service.invalidate_token()
     assert await run_sync_once(db_session) == 1
     await db_session.refresh(project)
+    assert project.quote_status_block is None
+    assert project.quote_status_remote is None
     assert project.quote_sync_state == "idle"
     assert project.quote_sync_error is None
 
@@ -2057,10 +2071,15 @@ async def test_a_status_change_in_books_unblocks_a_previously_rejected_push(db_s
     OTHER than our exact status. That is precisely the population this task
     exists to repair (five accepted-vs-draft projects) becoming
     unrepairable after one contiguous rejection. The fix keys off the
-    recorded (ours, theirs) PAIR instead: once Books' status changes to
-    anything other than the pair that was rejected, the next tick attempts
-    the push again — proven here by a status change from 'draft' (rejected)
-    to 'sent' (not yet attempted), which this time succeeds."""
+    recorded attempt instead: once Books' status changes to anything other
+    than the one that was rejected, the next tick attempts the push again —
+    proven here by a status change from 'draft' (rejected) to 'sent' (not yet
+    attempted), which this time succeeds.
+
+    Round 4: that recorded attempt is quote_status_remote, a stored fact,
+    rather than an (ours, theirs) pair re-parsed out of a prose message. Our
+    side needs no recording at all, because set_quote_status clears the whole
+    record whenever the board's status moves."""
     project = await _project_with_quote(db_session, impression_cost=1000)
     project.quote_status = "accepted"
     project.quote_sync_state = "idle"
@@ -2083,11 +2102,11 @@ async def test_a_status_change_in_books_unblocks_a_previously_rejected_push(db_s
 
     await run_sync_once(db_session)
     await db_session.refresh(project)
-    assert project.quote_sync_state == "error"
-    assert "draft" in project.quote_sync_error
+    assert project.quote_status_block == "rejected"
+    assert project.quote_status_remote == "draft"
 
     # Books' status moves on (a human, or the client, changed it) — no
-    # longer the pair that was rejected. accepted-from-sent needs no
+    # longer the attempt that was rejected. accepted-from-sent needs no
     # sent-first hop, so a single POST /status/accepted is expected.
     seen: list = []
     zoho_service.transport = httpx.MockTransport(
@@ -2104,6 +2123,8 @@ async def test_a_status_change_in_books_unblocks_a_previously_rejected_push(db_s
     assert await run_sync_once(db_session) == 1
     await db_session.refresh(project)
     assert any(entry[0] == "POST" and entry[1].endswith("/status/accepted") for entry in seen)
+    assert project.quote_status_block is None
+    assert project.quote_status_remote is None
     assert project.quote_sync_state == "idle"
     assert project.quote_sync_error is None
 
@@ -2200,19 +2221,22 @@ async def test_a_rejected_push_does_not_overwrite_an_unrelated_diagnostic(db_ses
     unconditionally, even when the project was ALREADY in 'error' for an
     unrelated reason (no priced service). That both destroyed the only
     record of the real problem AND manufactured false evidence for the
-    equality branch: a later tick would see a message carrying this
-    module's own "Books rejected pushing..." prefix, conclude via
-    _error_is_status_related that the error was its own doing, and wrongly
-    restore 'idle' — leaving the card reading as in-sync while Books still
-    holds the stale, broken lines, with no error badge and no Retry button
-    to fix it (both gated on the error state).
+    equality branch, which read that same field back: a later tick would see a
+    message carrying this module's own rejection wording, conclude the error
+    was its own doing, and wrongly restore 'idle' — leaving the card reading
+    as in-sync while Books still holds the stale, broken lines, with no error
+    badge and no Retry button to fix it (both gated on the error state).
+
+    Round 4 removes the whole class: this module no longer writes or reads
+    quote_sync_error at all, so there is nothing to overwrite and no message
+    to misread.
 
     Sequence: an unrelated no-priced-service error lands first (quote_status
     stays a real DECIDED value, "accepted", since that guard never touches
     it) -> a sweep tick's push is rejected -> the ORIGINAL message must
     survive, not the rejection -> Books is then edited to match ours -> the
-    equality branch must NOT read the still-original, still-unrelated
-    message as its own and restore 'idle'."""
+    equality branch must leave that still-unrelated message (and its 'error'
+    state) exactly as it found them."""
     project = await _project_with_quote(db_session)  # no cost fields -> nothing priced
     project.quote_status = "accepted"
     project.quote_sync_state = "pending"
@@ -2265,6 +2289,12 @@ async def test_a_rejected_push_does_not_overwrite_an_unrelated_diagnostic(db_ses
     await db_session.refresh(project)
     assert project.quote_sync_state == "error"
     assert project.quote_sync_error == original_message
+    # Round 4: the rejection is not lost either — it lands in the reconciler's
+    # own columns, where recording it destroys nothing. Under the old design
+    # this branch had to return without recording anything at all to protect
+    # the unrelated message, which is what made a rejected push repeat forever.
+    assert project.quote_status_block == "rejected"
+    assert project.quote_status_remote == "draft"
 
     # Tick 3: a human accepts in Books, matching the board's decision. The
     # equality branch must not mistake the surviving, unrelated message for
@@ -2277,3 +2307,167 @@ async def test_a_rejected_push_does_not_overwrite_an_unrelated_diagnostic(db_ses
     await db_session.refresh(project)
     assert project.quote_sync_state == "error"
     assert project.quote_sync_error == original_message
+
+
+# --- Round-4: the reconciler records facts, not prose -------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_rejected_push_is_recorded_as_a_fact_not_a_message(db_session):
+    """The block is a stored fact. quote_sync_error belongs to another
+    subsystem and the reconciler must not touch it."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    project.quote_sync_error = "a message this reconciler does not own"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    def rejecting(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        if request.method == "GET" and request.url.path.endswith("/estimates/E1"):
+            return httpx.Response(200, json={"estimate": {"estimate_id": "E1", "status": "draft"}})
+        if request.method == "POST" and request.url.path.endswith("/status/sent"):
+            return httpx.Response(200, json={"message": "ok"})
+        if request.method == "POST" and request.url.path.endswith("/status/accepted"):
+            return httpx.Response(400, json={"message": "Books will not accept this estimate directly"})
+        return httpx.Response(404, json={"message": "no route"})
+
+    zoho_service.transport = httpx.MockTransport(rejecting)
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_status_block == "rejected"
+    assert project.quote_status_remote == "draft"
+    assert project.quote_sync_error == "a message this reconciler does not own"
+
+
+@pytest.mark.asyncio
+async def test_a_recorded_rejection_suppresses_only_the_identical_attempt(db_session):
+    """Bounded retry: the same attempt is not repeated, but a Books-side move
+    unblocks it on the next tick."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    def rejecting(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        if request.method == "GET" and request.url.path.endswith("/estimates/E1"):
+            return httpx.Response(200, json={"estimate": {"estimate_id": "E1", "status": "draft"}})
+        if request.method == "POST" and request.url.path.endswith("/status/sent"):
+            return httpx.Response(200, json={"message": "ok"})
+        if request.method == "POST" and request.url.path.endswith("/status/accepted"):
+            return httpx.Response(400, json={"message": "Books will not accept this estimate directly"})
+        return httpx.Response(404, json={"message": "no route"})
+
+    zoho_service.transport = httpx.MockTransport(rejecting)
+    zoho_service.invalidate_token()
+
+    # Tick 1: rejected, and the block is recorded against Books' 'draft'.
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_status_block == "rejected"
+    assert project.quote_status_remote == "draft"
+
+    # Tick 2: Books has not moved, so the identical attempt is not repeated.
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler({("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "draft"}}}, seen)
+    )
+    zoho_service.invalidate_token()
+    assert await run_sync_once(db_session) == 1
+    assert not any(entry[0] == "POST" for entry in seen)
+    assert any(entry[0] == "GET" for entry in seen)
+    await db_session.refresh(project)
+    assert project.quote_status_block == "rejected"
+
+    # Tick 3: Books moved to 'sent', so this is no longer the attempt that
+    # failed and the push is made again — this time it succeeds.
+    seen.clear()
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "sent"}},
+                ("POST", "/status/accepted"): {"message": "ok"},
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+    assert await run_sync_once(db_session) == 1
+    assert any(entry[0] == "POST" and entry[1].endswith("/status/accepted") for entry in seen)
+    await db_session.refresh(project)
+    assert project.quote_status_block is None
+    assert project.quote_status_remote is None
+
+
+@pytest.mark.asyncio
+async def test_an_unrelated_error_survives_and_never_blocks_the_push(db_session):
+    """The case that produced findings I3, N2 and N4. An error owned by the
+    line-item path is not evidence about status, in either direction."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "error"
+    project.quote_sync_error = "Project has no priced service left; nothing was written to the quote"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "draft"}},
+                ("POST", "/status/sent"): {"message": "ok"},
+                ("POST", "/status/accepted"): {"message": "ok"},
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert [entry[1] for entry in seen if entry[0] == "POST"][-1].endswith("/status/accepted")
+    assert project.quote_sync_error == "Project has no priced service left; nothing was written to the quote"
+    assert project.quote_sync_state == "error"
+    assert project.quote_status_block is None
+    assert project.quote_status_remote is None
+
+
+@pytest.mark.asyncio
+async def test_a_conflict_is_recorded_and_clears_when_books_agrees(db_session):
+    """Both sides decided and differ -> neither wins, and the record clears
+    itself once a human resolves it."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler({("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "declined"}}}, seen)
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert not any(entry[0] == "POST" for entry in seen)
+    assert project.quote_status_block == "conflict"
+    assert project.quote_status_remote == "declined"
+    assert project.quote_status == "accepted"
+
+    # A human resolves it in Books.
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler({("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "accepted"}}})
+    )
+    zoho_service.invalidate_token()
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_status_block is None
+    assert project.quote_status_remote is None

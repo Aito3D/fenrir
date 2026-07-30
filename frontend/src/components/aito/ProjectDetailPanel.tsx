@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, ExternalLink, Loader2, X } from 'lucide-react';
 import { COLUMNS } from './columns';
 import { QuoteStatusActions } from './QuoteStatusActions';
+import { quoteStatusLabelKey } from './quoteStatus';
 import { TaskEditor } from './TaskEditor';
 import { AITO_CARD_VT_NAME } from '../../hooks/useCardMorph';
 import { useProjectTasks } from '../../hooks/useProjectTasks';
@@ -18,6 +19,19 @@ const SYNC_LABEL_KEY: Record<string, string> = {
   pending: 'aito.syncPendingLabel',
   error: 'aito.syncError',
   locked: 'aito.quoteLocked',
+};
+
+/** Why the backend's status reconciler is stuck, keyed by the stored fact it
+ *  records — same explicit-map reason as SYNC_LABEL_KEY above.
+ *
+ *  Deliberately NOT folded into the sync row: a block is recorded whatever
+ *  `quote_sync_state` happens to be, and the sync row only renders for three
+ *  of its five values. A conflict written into a field the UI renders in one
+ *  state only is a conflict that reaches nobody, which is exactly how the
+ *  previous design lost them. */
+const BLOCK_MESSAGE_KEY: Record<string, string> = {
+  conflict: 'aito.quoteConflict',
+  rejected: 'aito.quoteRejected',
 };
 
 interface ProjectDetailPanelProps {
@@ -60,6 +74,17 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
   ]
     .filter(Boolean)
     .join(' · ');
+
+  // A status rendered through the shared quote-status labels, so the two sides
+  // of a block message are localised too rather than raw Zoho English. An
+  // untranslated status falls back to the raw string, the same rule the board
+  // card follows — Zoho can add statuses.
+  const statusLabel = (status: string | null): string => {
+    if (!status) return '—';
+    const key = quoteStatusLabelKey(status);
+    return key ? t(key) : status;
+  };
+  const blockKey = project.quote_status_block ? BLOCK_MESSAGE_KEY[project.quote_status_block] : null;
 
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -314,6 +339,22 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
                           {t('aito.retrySync')}
                         </button>
                       )}
+                    </dd>
+                  </div>
+                )}
+
+                {/* Rendered for ANY quote_sync_state, unlike the sync row
+                    above: the reconciler records a block as a fact of its
+                    own, and a card can be perfectly 'idle' for the line-item
+                    sync while its STATUS is stuck against Books. */}
+                {blockKey && (
+                  <div className="flex items-baseline justify-between gap-2">
+                    <dt className="text-bambu-gray flex-shrink-0">{t('aito.sync')}:</dt>
+                    <dd className="text-white min-w-0 text-right">
+                      {t(blockKey, {
+                        ours: statusLabel(project.quote_status),
+                        theirs: statusLabel(project.quote_status_remote),
+                      })}
                     </dd>
                   </div>
                 )}

@@ -145,6 +145,8 @@ export default {
     quoteLocked: 'Смета выставлена',
     quoteLockedHelp: 'Эта смета уже выставлена: изменения остаются только локальными.',
     quoteDeclinedNoDraft: 'Zoho не позволяет вернуть смету в статус черновика.',
+    quoteConflict: 'На доске {{ours}}, а в Books {{theirs}} — исправьте в Books',
+    quoteRejected: 'Books отклонил переход в {{ours}}, пока там {{theirs}}',
     retrySync: 'Повторить',
     columns: {
       devis: 'Смета',

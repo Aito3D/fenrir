@@ -135,6 +135,13 @@ class AitoProjectResponse(BaseModel):
     # comment on AitoProject.quote_sync_state for what each means.
     quote_sync_state: str
     quote_sync_error: str | None
+    # Why the status reconciler is blocked, if it is, and what Books read when
+    # it was recorded — 'conflict' (both sides decided and differ) or
+    # 'rejected' (Books refused our push). Independent of quote_sync_state:
+    # the panel renders this whatever the sync state is, which is the point of
+    # it being a stored fact rather than a sentence in quote_sync_error.
+    quote_status_block: Literal["conflict", "rejected"] | None
+    quote_status_remote: str | None
     # Aggregates over the project's tasks, so the board card can show a summary
     # without GET /aito/ shipping every task row. Required, never defaulted:
     # see _to_response in the routes module.

@@ -145,6 +145,8 @@ export default {
     quoteLocked: 'Teklif faturalandı',
     quoteLockedHelp: 'Bu teklif faturalandırıldı: değişiklikler yalnızca yerel olarak kalır.',
     quoteDeclinedNoDraft: 'Zoho, bir teklifin yeniden taslağa döndürülmesine izin vermiyor.',
+    quoteConflict: 'Pano {{ours}} diyor ama Books {{theirs}} diyor — Books üzerinden çözün',
+    quoteRejected: 'Books, {{theirs}} durumundayken {{ours}} değişikliğini reddetti',
     retrySync: 'Yeniden dene',
     columns: {
       devis: 'Teklif',
