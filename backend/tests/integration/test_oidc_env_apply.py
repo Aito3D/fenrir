@@ -8,6 +8,7 @@ recreating the provider would silently unlink every account bound to it.
 from __future__ import annotations
 
 import logging
+import os
 
 import pytest
 from sqlalchemy import select
@@ -32,6 +33,7 @@ ALL_VARS = (
     "BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED",
     "BAMBUDDY_OIDC_ICON_URL",
     "BAMBUDDY_OIDC_AUTOLOGIN",
+    "BAMBUDDY_OIDC_DEFAULT_GROUP",
 )
 
 
@@ -378,6 +380,96 @@ async def test_releasing_the_provider_clears_autologin(db_session, monkeypatch):
     assert released.is_autologin is False
 
 
+# --- default group by name -----------------------------------------------------
+# Group ids are not stable across installs, so a declarative deployment cannot
+# name one by id. Without this, every auto-created user falls back to Viewers
+# (routes/mfa.py) and the env lock means the UI cannot correct the provider.
+
+
+async def _group(db_session, name: str):
+    from backend.app.models.group import Group
+
+    group = Group(name=name, description=f"Test group {name}")
+    db_session.add(group)
+    await db_session.commit()
+    return group
+
+
+@pytest.mark.asyncio
+async def test_the_default_group_is_resolved_by_name(db_session, monkeypatch):
+    group = await _group(db_session, "Operators")
+    _configure(monkeypatch, BAMBUDDY_OIDC_DEFAULT_GROUP="Operators")
+
+    await apply_env_oidc_provider(db_session)
+
+    assert (await _env_provider(db_session)).default_group_id == group.id
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_group_name_is_rejected_rather_than_defaulted(db_session, monkeypatch, caplog):
+    """Silently falling back to Viewers is how a typo mints under-privileged
+    users for weeks. The API answers 400 for a default_group_id that does not
+    exist; env config gets the same answer, logged and survivable."""
+    _configure(monkeypatch, BAMBUDDY_OIDC_DEFAULT_GROUP="Nope")
+
+    with caplog.at_level(logging.ERROR):
+        await apply_env_oidc_provider(db_session)
+
+    assert await _env_provider(db_session) is None
+    assert "BAMBUDDY_OIDC_DEFAULT_GROUP" in caplog.text
+    assert "Nope" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_group_name_leaves_the_previous_provider_intact(db_session, monkeypatch):
+    """Rejection happens before the upsert, so the running config survives a
+    bad edit -- the provider keeps working until the operator fixes the name."""
+    group = await _group(db_session, "Operators")
+    _configure(monkeypatch, BAMBUDDY_OIDC_DEFAULT_GROUP="Operators")
+    await apply_env_oidc_provider(db_session)
+
+    monkeypatch.setenv("BAMBUDDY_OIDC_DEFAULT_GROUP", "Typo")
+    await apply_env_oidc_provider(db_session)
+
+    provider = await _env_provider(db_session)
+    assert provider is not None
+    assert provider.default_group_id == group.id
+
+
+@pytest.mark.asyncio
+async def test_no_group_variable_leaves_the_default_group_unset(db_session, monkeypatch):
+    _configure(monkeypatch)
+    await apply_env_oidc_provider(db_session)
+
+    assert (await _env_provider(db_session)).default_group_id is None
+
+
+@pytest.mark.asyncio
+async def test_removing_the_group_variable_clears_the_default_group(db_session, monkeypatch):
+    """The environment is the whole truth for this row; a group that is no
+    longer declared must not linger, since the lock blocks removing it in the UI."""
+    await _group(db_session, "Operators")
+    _configure(monkeypatch, BAMBUDDY_OIDC_DEFAULT_GROUP="Operators")
+    await apply_env_oidc_provider(db_session)
+
+    monkeypatch.delenv("BAMBUDDY_OIDC_DEFAULT_GROUP")
+    await apply_env_oidc_provider(db_session)
+
+    assert (await _env_provider(db_session)).default_group_id is None
+
+
+@pytest.mark.asyncio
+async def test_an_empty_group_variable_counts_as_unset(db_session, monkeypatch):
+    """Same rule the required vars follow: an empty value in a compose file is
+    a forgotten value, not a request to reject the config."""
+    _configure(monkeypatch, BAMBUDDY_OIDC_DEFAULT_GROUP="")
+    await apply_env_oidc_provider(db_session)
+
+    provider = await _env_provider(db_session)
+    assert provider is not None
+    assert provider.default_group_id is None
+
+
 # --- account links and collision behavior ------------------------------------
 
 
@@ -486,6 +578,36 @@ async def test_renaming_with_autologin_updates_the_exclusivity_sweep(db_session,
     # UI provider autologin is cleared (only env-managed can be autologin now)
     await db_session.refresh(ui_provider)
     assert ui_provider.is_autologin is False
+
+
+@pytest.mark.asyncio
+async def test_group_name_matching_is_case_sensitive(db_session, monkeypatch, caplog):
+    """Group name is resolved by exact match; 'operators' != 'Operators'."""
+    await _group(db_session, "Operators")  # capital O
+    _configure(monkeypatch, BAMBUDDY_OIDC_DEFAULT_GROUP="operators")  # lowercase
+
+    with caplog.at_level(logging.ERROR):
+        await apply_env_oidc_provider(db_session)
+
+    # Config is rejected
+    assert await _env_provider(db_session) is None
+    assert "operators" in caplog.text
+    assert "BAMBUDDY_OIDC_DEFAULT_GROUP" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_group_name_rejection_does_not_log_the_secret(db_session, monkeypatch, caplog):
+    """Group resolution happens before schema validation, so the secret is
+    not yet in scope, but verify it's not leaked by the error path."""
+    _configure(monkeypatch, BAMBUDDY_OIDC_DEFAULT_GROUP="NonExistent")
+    secret = os.environ["BAMBUDDY_OIDC_CLIENT_SECRET"]
+
+    with caplog.at_level(logging.ERROR):
+        await apply_env_oidc_provider(db_session)
+
+    # Config is rejected but secret is safe
+    assert await _env_provider(db_session) is None
+    assert secret not in caplog.text
 
 
 @pytest.mark.asyncio

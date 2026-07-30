@@ -58,6 +58,11 @@ def read_env_oidc_config() -> dict | None:
         "require_email_verified": _env_bool("BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED", True),
         "icon_url": os.environ.get("BAMBUDDY_OIDC_ICON_URL"),
         "is_autologin": _env_bool("BAMBUDDY_OIDC_AUTOLOGIN", False),
+        # A name, not an id: ids are assigned per install, so the same compose
+        # file would point at a different group on every deployment. Resolved
+        # against the database in apply_env_oidc_provider -- the reader has no
+        # session and stays dumb.
+        "default_group": (os.environ.get("BAMBUDDY_OIDC_DEFAULT_GROUP") or "").strip() or None,
     }
 
 
@@ -75,6 +80,10 @@ _APPLIED_FIELDS = (
     "require_email_verified",
     "icon_url",
     "is_autologin",
+    # Written on every boot, so a group that is no longer declared is cleared:
+    # the environment is the whole truth for this row, and the API lock means
+    # a lingering value could not be removed in the UI either.
+    "default_group_id",
 )
 
 
@@ -86,6 +95,7 @@ async def apply_env_oidc_provider(db: AsyncSession) -> None:
     """
     # Imported here rather than at module scope: app.core is imported by the
     # models themselves, so a top-level import would be a cycle.
+    from backend.app.models.group import Group
     from backend.app.models.oidc_provider import OIDCProvider
     from backend.app.schemas.auth import OIDCProviderCreate
 
@@ -127,6 +137,27 @@ async def apply_env_oidc_provider(db: AsyncSession) -> None:
     # already existed hit that unique constraint during startup -- and this
     # function runs in the lifespan, so the app would not boot.
     existing = (await db.execute(select(OIDCProvider).where(OIDCProvider.name == config["name"]))).scalar_one_or_none()
+
+    # Resolved before anything is written, so a name that matches no group
+    # leaves the running provider untouched. Refused rather than defaulted:
+    # falling back would put every auto-created user in Viewers (routes/mfa.py)
+    # for as long as the typo lives, and the API answers 422 for a
+    # default_group_id that does not exist -- env config gets the same answer.
+    group_name = config.pop("default_group", None)
+    if group_name is not None:
+        group = (await db.execute(select(Group).where(Group.name == group_name))).scalar_one_or_none()
+        if group is None:
+            # Spelled out because the two cases differ sharply: an existing
+            # provider keeps running on its last good config, while on a first
+            # boot nothing is created at all and the login page has no SSO
+            # button until the name matches.
+            logger.error(
+                "BAMBUDDY_OIDC_DEFAULT_GROUP=%r matches no group, provider not applied (%s).",
+                group_name,
+                "previous config left running" if existing is not None else "no provider created",
+            )
+            return
+        config["default_group_id"] = group.id
 
     try:
         # The same schema the API uses, so env config cannot reach a state the

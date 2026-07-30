@@ -28,6 +28,7 @@ OPTIONAL = (
     "BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED",
     "BAMBUDDY_OIDC_ICON_URL",
     "BAMBUDDY_OIDC_AUTOLOGIN",
+    "BAMBUDDY_OIDC_DEFAULT_GROUP",
 )
 
 
@@ -116,6 +117,23 @@ def test_optional_strings_override_their_defaults(monkeypatch):
     assert cfg["scopes"] == "openid profile groups"
     assert cfg["email_claim"] == "mail"
     assert cfg["icon_url"] == "https://sso.example.com/logo.png"
+
+
+def test_the_default_group_is_read_as_a_name(monkeypatch):
+    """A name, not an id: group ids differ per install, so an id in a compose
+    file would point at whatever group happened to be created third."""
+    _set_required(monkeypatch)
+    monkeypatch.setenv("BAMBUDDY_OIDC_DEFAULT_GROUP", "Operators")
+    cfg = read_env_oidc_config()
+    assert cfg["default_group"] == "Operators"
+    assert "default_group_id" not in cfg, "resolution needs the database, not the reader"
+
+
+@pytest.mark.parametrize("raw", ["", "   "])
+def test_a_blank_default_group_is_unset(monkeypatch, raw):
+    _set_required(monkeypatch)
+    monkeypatch.setenv("BAMBUDDY_OIDC_DEFAULT_GROUP", raw)
+    assert read_env_oidc_config()["default_group"] is None
 
 
 def test_every_var_the_reader_knows_is_registered_in_the_typo_guard():

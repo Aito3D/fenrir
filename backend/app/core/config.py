@@ -149,6 +149,7 @@ _INTENTIONAL_UNSETTINGS = {
     "BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED",
     "BAMBUDDY_OIDC_ICON_URL",
     "BAMBUDDY_OIDC_AUTOLOGIN",
+    "BAMBUDDY_OIDC_DEFAULT_GROUP",
 }
 
 _known_settings_fields = {f.upper() for f in settings.model_fields}
