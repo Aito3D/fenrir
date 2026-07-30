@@ -5,6 +5,7 @@ user cannot read. TaskEditor saves on row blur, so editing a title, then a
 cost, then a quantity is three PATCHes and would otherwise be three rows.
 """
 
+import logging
 from datetime import datetime, timedelta
 
 import pytest
@@ -239,3 +240,93 @@ async def test_ticks_never_coalesce(db_session):
 
     rows = (await db_session.execute(AitoEvent.__table__.select())).all()
     assert len(rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_anonymous_edits_coalesce_with_each_other(db_session):
+    """actor_name=None is the DEFAULT, not an edge case: it is what every edit
+    looks like on installs with auth disabled and for API-key requests. The
+    coalescing query has to use `actor_name.is_(None)` rather than
+    `actor_name == None`, since SQL's `= NULL` never matches anything -- if
+    that ternary regressed to plain equality, anonymous edits would never
+    coalesce and every PATCH would land as its own row."""
+    first = await record(
+        db_session,
+        1,
+        "task.updated",
+        actor_class="user",
+        actor_name=None,
+        subject_type="task",
+        subject_id=3,
+        changes=[{"field": "title", "from": "Socle", "to": "Socle v2"}],
+    )
+    second = await record(
+        db_session,
+        1,
+        "task.updated",
+        actor_class="user",
+        actor_name=None,
+        subject_type="task",
+        subject_id=3,
+        changes=[{"field": "impression_cost", "from": 4200, "to": 5600}],
+    )
+
+    assert second.id == first.id
+    assert len(second.changes) == 2
+
+
+@pytest.mark.asyncio
+async def test_project_level_edits_coalesce_with_no_subject_id(db_session):
+    """project.updated events describe the project itself, not a child row, so
+    subject_id is None rather than pointing at a task. The same IS-NULL vs.
+    equals-NULL trap applies here as it does for actor_name, on the other
+    column the coalescing query filters on."""
+    first = await record(
+        db_session,
+        1,
+        "project.updated",
+        actor_class="user",
+        actor_name="paul",
+        subject_type="project",
+        subject_id=None,
+        changes=[{"field": "name", "from": "Vitrine", "to": "Vitrine v2"}],
+    )
+    second = await record(
+        db_session,
+        1,
+        "project.updated",
+        actor_class="user",
+        actor_name="paul",
+        subject_type="project",
+        subject_id=None,
+        changes=[{"field": "budget", "from": 1000, "to": 2000}],
+    )
+
+    assert second.id == first.id
+    assert len(second.changes) == 2
+
+
+@pytest.mark.asyncio
+async def test_an_unregistered_kind_is_refused_and_logged(db_session, caplog):
+    """The read path filters by `kind IN (...)` derived entirely from KINDS, so
+    a row written with a kind absent from that registry could never be
+    returned by any depth -- it would just be dead weight in the table.
+    Refusing loudly (not just returning None silently) is what lets an
+    unregistered kind be caught in review instead of discovered as a
+    mysteriously missing timeline entry."""
+    with caplog.at_level(logging.ERROR, logger="backend.app.services.aito_events"):
+        result = await record(
+            db_session,
+            1,
+            "not.a.real.kind",
+            actor_class="user",
+            actor_name="paul",
+            subject_type="task",
+            subject_id=3,
+            changes=[{"field": "title", "from": "a", "to": "b"}],
+        )
+
+    assert result is None
+    assert "not.a.real.kind" in caplog.text
+    rows = (await db_session.execute(AitoEvent.__table__.select())).all()
+    assert rows == []
