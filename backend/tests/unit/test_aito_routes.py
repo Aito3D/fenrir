@@ -1082,11 +1082,105 @@ async def test_a_linked_quote_is_pushed_to_zoho(async_client, monkeypatch):
     async def _spy(self, db, estimate_id, status):
         calls.append((estimate_id, status))
 
+    async def _sent(self, db, estimate_id):
+        return {"status": "sent"}
+
     monkeypatch.setattr(zoho_module.ZohoService, "set_estimate_status", _spy)
+    monkeypatch.setattr(zoho_module.ZohoService, "get_estimate", _sent)
 
     p = (await _create(async_client, quote_id="EST-9", quote_number="QT-9")).json()
     r = await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "accepted"})
     assert r.json()["zoho_synced"] is True
+    assert calls == [("EST-9", "accepted")]
+
+
+@pytest.mark.asyncio
+async def test_a_draft_quote_is_marked_sent_before_accepted(async_client, monkeypatch):
+    """Books enforces draft -> sent -> accepted and rejects the shortcut with a
+    400 whose message is localised, so the status is READ, never parsed."""
+    from backend.app.services import zoho as zoho_module
+
+    calls = []
+
+    async def _spy(self, db, estimate_id, status):
+        calls.append((estimate_id, status))
+
+    async def _draft(self, db, estimate_id):
+        return {"status": "draft"}
+
+    monkeypatch.setattr(zoho_module.ZohoService, "set_estimate_status", _spy)
+    monkeypatch.setattr(zoho_module.ZohoService, "get_estimate", _draft)
+
+    p = (await _create(async_client, quote_id="EST-9", quote_status="draft")).json()
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "accepted"})
+    assert r.json()["zoho_synced"] is True
+    assert calls == [("EST-9", "sent"), ("EST-9", "accepted")]
+
+
+@pytest.mark.asyncio
+async def test_an_already_sent_quote_is_accepted_in_one_call(async_client, monkeypatch):
+    from backend.app.services import zoho as zoho_module
+
+    calls = []
+
+    async def _spy(self, db, estimate_id, status):
+        calls.append((estimate_id, status))
+
+    async def _sent(self, db, estimate_id):
+        return {"status": "sent"}
+
+    monkeypatch.setattr(zoho_module.ZohoService, "set_estimate_status", _spy)
+    monkeypatch.setattr(zoho_module.ZohoService, "get_estimate", _sent)
+
+    p = (await _create(async_client, quote_id="EST-9", quote_status="sent")).json()
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "accepted"})
+    assert r.json()["zoho_synced"] is True
+    assert calls == [("EST-9", "accepted")]
+
+
+@pytest.mark.asyncio
+async def test_marking_sent_never_reads_the_estimate(async_client, monkeypatch):
+    """`sent` is not one of the statuses Books gates, so it costs no extra read."""
+    from backend.app.services import zoho as zoho_module
+
+    calls = []
+    reads = []
+
+    async def _spy(self, db, estimate_id, status):
+        calls.append((estimate_id, status))
+
+    async def _read(self, db, estimate_id):
+        reads.append(estimate_id)
+        return {"status": "draft"}
+
+    monkeypatch.setattr(zoho_module.ZohoService, "set_estimate_status", _spy)
+    monkeypatch.setattr(zoho_module.ZohoService, "get_estimate", _read)
+
+    p = (await _create(async_client, quote_id="EST-9", quote_status="draft")).json()
+    await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "sent"})
+    assert calls == [("EST-9", "sent")]
+    assert reads == []
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_estimate_status_does_not_block_the_push(async_client, monkeypatch):
+    """An estimate whose status Books omits is not evidence of a draft. Fail
+    OPEN: attempt the target, exactly as before this guard existed."""
+    from backend.app.services import zoho as zoho_module
+
+    calls = []
+
+    async def _spy(self, db, estimate_id, status):
+        calls.append((estimate_id, status))
+
+    async def _empty(self, db, estimate_id):
+        return {}
+
+    monkeypatch.setattr(zoho_module.ZohoService, "set_estimate_status", _spy)
+    monkeypatch.setattr(zoho_module.ZohoService, "get_estimate", _empty)
+
+    p = (await _create(async_client, quote_id="EST-9")).json()
+    await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "accepted"})
     assert calls == [("EST-9", "accepted")]
 
 
@@ -1098,7 +1192,11 @@ async def test_a_zoho_failure_still_writes_locally(async_client, monkeypatch):
     async def _boom(self, db, estimate_id, status):
         raise RuntimeError("Zoho is down")
 
+    async def _sent(self, db, estimate_id):
+        return {"status": "sent"}
+
     monkeypatch.setattr(zoho_module.ZohoService, "set_estimate_status", _boom)
+    monkeypatch.setattr(zoho_module.ZohoService, "get_estimate", _sent)
 
     p = (await _create(async_client, quote_id="EST-9")).json()
     await _add_task(async_client, p["id"], impression_cost=1.0)

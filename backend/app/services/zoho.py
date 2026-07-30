@@ -20,6 +20,13 @@ _REQUIRED_KEYS = ("zoho_client_id", "zoho_client_secret", "zoho_refresh_token", 
 DEFAULT_CONTACT_ID_FALLBACK = "66407000001237340"
 DEFAULT_CONTACT_NAME_FALLBACK = "Client de passage"
 
+# Statuses Books will only accept once the estimate has left draft. Its
+# lifecycle is draft -> sent -> accepted/declined and it enforces that: POSTing
+# /status/accepted to a draft estimate returns 400. Confirmed against the live
+# org, not inferred — see
+# docs/superpowers/specs/2026-07-29-aito-accept-gate-design.md.
+_STATUSES_NEEDING_SENT = frozenset({"accepted", "declined"})
+
 
 class ZohoNotConfiguredError(Exception):
     """Raised when required Zoho settings are missing."""
@@ -337,6 +344,32 @@ class ZohoService:
         """`sent`, `accepted` or `declined`. There is no `draft`: Books offers
         no way back, so declining an estimate is one-way through the API."""
         await self._request(db, "POST", f"/estimates/{estimate_id}/status/{status}")
+
+    async def advance_estimate_status(
+        self, db: AsyncSession, estimate_id: str, target: str, *, current: str | None = None
+    ) -> None:
+        """Set an estimate's status, marking it sent first when Books demands it.
+
+        ``current`` is the status the caller already holds AUTHORITATIVELY — an
+        estimate dict it just fetched. Omit it and this reads the estimate
+        itself; never pass the local ``quote_status`` snapshot, which the model
+        documents as going stale (accepting a quote in Zoho does not update the
+        card — see AitoProject.quote_status).
+
+        Only an explicit "draft" triggers the extra call. An estimate whose
+        status Books omits is not evidence of anything, so this fails OPEN and
+        attempts the target exactly as it did before the guard existed.
+
+        Marking sent does not email the client — Books emails through a
+        separate endpoint. It is the same act our own "Mark as sent" performs,
+        which is why chaining through it is invisible to the client.
+        """
+        if target in _STATUSES_NEEDING_SENT:
+            if current is None:
+                current = (await self.get_estimate(db, estimate_id)).get("status") or ""
+            if current == "draft":
+                await self.set_estimate_status(db, estimate_id, "sent")
+        await self.set_estimate_status(db, estimate_id, target)
 
     async def get_catalogue(self, db: AsyncSession) -> Catalogue:
         """The AITO 3D item ids and the services tax, from settings.

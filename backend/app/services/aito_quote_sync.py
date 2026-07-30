@@ -269,14 +269,19 @@ async def _reconcile_status(db: AsyncSession, project: AitoProject, estimate: di
             # context and raise, rather than simply returning the value still
             # held in memory.
             await db.commit()
-            await zoho_service.set_estimate_status(db, project.quote_id, "declined")
+            # `current=status` is the estimate Books just gave us. A draft
+            # estimate cannot be declined directly either, so a project trashed
+            # before its quote ever went out needs the same sent-first chain.
+            await zoho_service.advance_estimate_status(db, project.quote_id, "declined", current=status)
             project.quote_status = "declined"
         project.quote_sync_state = "idle"
         project.quote_sync_error = None
         project.quote_sync_failures = 0
         return True
     if status == "declined" and project.quote_status_before_trash in _RESTORABLE:
-        await zoho_service.set_estimate_status(db, project.quote_id, project.quote_status_before_trash)
+        await zoho_service.advance_estimate_status(
+            db, project.quote_id, project.quote_status_before_trash, current=status
+        )
         project.quote_status = project.quote_status_before_trash
         project.quote_status_before_trash = None
     return False

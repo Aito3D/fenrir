@@ -590,7 +590,10 @@ async def set_quote_status(
     zoho_synced = False
     if project.quote_id:
         try:
-            await zoho_service.set_estimate_status(db, project.quote_id, payload.status)
+            # No `current`: this pays for one read rather than trusting
+            # project.quote_status, which the model documents as a snapshot
+            # that goes stale.
+            await zoho_service.advance_estimate_status(db, project.quote_id, payload.status)
             zoho_synced = True
         except Exception:
             logger.warning(
