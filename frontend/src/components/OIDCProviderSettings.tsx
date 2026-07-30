@@ -398,35 +398,36 @@ export function OIDCProviderSettings() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {provider.icon_url && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => refreshIconMutation.mutate(provider.id)}
-                    disabled={refreshIconMutation.isPending}
-                    title={t('settings.oidc.refreshIcon')}
-                    data-testid={`refresh-icon-${provider.id}`}
-                  >
-                    <RefreshCw className={`w-4 h-4 ${refreshIconMutation.isPending ? 'animate-spin' : ''}`} />
-                  </Button>
-                )}
-                {provider.has_icon && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => removeIconMutation.mutate(provider.id)}
-                    disabled={removeIconMutation.isPending}
-                    title={t('settings.oidc.removeIcon')}
-                    data-testid={`remove-icon-${provider.id}`}
-                  >
-                    <ImageOff className="w-4 h-4" />
-                  </Button>
-                )}
                 {/* #2593: startup rewrites the env-managed row from BAMBUDDY_OIDC_*
-                    and the API answers 409, so offering these would promise a
-                    change that cannot land. */}
+                    and the API answers 409, so offering any of these would promise
+                    a change that cannot land -- the icon routes included, where the
+                    click only ever produced an error toast. */}
                 {!provider.is_env_managed && (
                   <>
+                    {provider.icon_url && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => refreshIconMutation.mutate(provider.id)}
+                        disabled={refreshIconMutation.isPending}
+                        title={t('settings.oidc.refreshIcon')}
+                        data-testid={`refresh-icon-${provider.id}`}
+                      >
+                        <RefreshCw className={`w-4 h-4 ${refreshIconMutation.isPending ? 'animate-spin' : ''}`} />
+                      </Button>
+                    )}
+                    {provider.has_icon && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => removeIconMutation.mutate(provider.id)}
+                        disabled={removeIconMutation.isPending}
+                        title={t('settings.oidc.removeIcon')}
+                        data-testid={`remove-icon-${provider.id}`}
+                      >
+                        <ImageOff className="w-4 h-4" />
+                      </Button>
+                    )}
                     <Toggle
                       checked={provider.is_enabled}
                       onChange={() => toggleEnabled(provider)}
