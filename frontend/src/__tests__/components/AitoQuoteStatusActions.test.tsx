@@ -40,16 +40,31 @@ describe('QuoteStatusActions', () => {
     expect(screen.queryByRole('button', { name: /mark as sent/i })).not.toBeInTheDocument();
   });
 
-  it('disables the action matching the current status, short of acceptance', () => {
+  it('renders nothing at all once the quote is declined', () => {
     render(<QuoteStatusActions project={{ ...project, quote_status: 'declined' }} />);
-    expect(screen.getByRole('button', { name: /decline quote/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /accept quote/i })).toBeEnabled();
-    expect(screen.getByRole('button', { name: /mark as sent/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /accept quote/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /decline quote/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /mark as sent/i })).not.toBeInTheDocument();
   });
 
-  it('keeps Mark as sent live on a viewed quote — re-sending is a real thing to do', () => {
-    render(<QuoteStatusActions project={{ ...project, quote_status: 'viewed' }} />);
-    expect(screen.getByRole('button', { name: /mark as sent/i })).toBeEnabled();
+  it('drops Mark as sent once the client already has the quote', () => {
+    for (const quote_status of ['sent', 'viewed', 'expired']) {
+      const { unmount } = render(<QuoteStatusActions project={{ ...project, quote_status }} />);
+      expect(screen.queryByRole('button', { name: /mark as sent/i })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /accept quote/i })).toBeEnabled();
+      expect(screen.getByRole('button', { name: /decline quote/i })).toBeEnabled();
+      unmount();
+    }
+  });
+
+  it('offers all three on a quote the client has not seen', () => {
+    for (const quote_status of [null, 'draft']) {
+      const { unmount } = render(<QuoteStatusActions project={{ ...project, quote_status }} />);
+      expect(screen.getByRole('button', { name: /mark as sent/i })).toBeEnabled();
+      expect(screen.getByRole('button', { name: /accept quote/i })).toBeEnabled();
+      expect(screen.getByRole('button', { name: /decline quote/i })).toBeEnabled();
+      unmount();
+    }
   });
 
   it('sends the sent transition when its hold completes', async () => {

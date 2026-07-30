@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, Send, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { Send, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { HoldButton } from './HoldButton';
 import { api, type AitoProject } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
@@ -21,17 +21,18 @@ const TOAST_KEYS = {
  *  reversible (accepting a declined quote reopens it), so the gesture only has
  *  to prove intent, not discourage.
  *
- *  Once the quote is ACCEPTED the whole block disappears: acceptance is the
- *  gate that authorises the work, and past it the quote is settled — the card
- *  is on the work columns and its steps drive it from there. Un-sending or
- *  declining accepted work is a correction to make in Books, not a button to
- *  leave sitting next to a job in progress.
+ *  The block disappears entirely once the quote is ACCEPTED or DECLINED.
+ *  Acceptance authorises the work and a decline ends it; past either, the
+ *  quote is settled, and a correction belongs in Books rather than in a button
+ *  sitting next to a job on the board. The accepted consequence is that
+ *  re-accepting a declined quote has to happen in Books — both actions are
+ *  hold-to-confirm, so intent is proven before the state becomes terminal.
  *
- *  Before that, whichever action matches the current status is disabled rather
- *  than hidden: a control that vanishes reads as a bug, and its check mark is
- *  how the panel says where the quote already stands. Mark-as-sent stays live
- *  on a `viewed` or `expired` quote — those are Zoho's words for what happened
- *  next, not a different decision, and re-sending is a real thing to do. */
+ *  Mark-as-sent renders only while the client does not yet have the quote
+ *  (null or draft). This REPLACES an earlier rule that kept every action
+ *  visible-but-disabled with a check mark, and kept mark-as-sent live on
+ *  viewed/expired for re-sending: an action already taken is now simply not
+ *  offered, and nothing in this block is ever disabled-by-status. */
 export function QuoteStatusActions({ project }: { project: AitoProject }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -51,25 +52,29 @@ export function QuoteStatusActions({ project }: { project: AitoProject }) {
   });
 
   // After every hook, so the hook order is identical on the render where the
-  // quote flips to accepted and the block goes away.
-  if (project.quote_status === 'accepted') return null;
+  // quote settles and the block goes away.
+  if (project.quote_status === 'accepted' || project.quote_status === 'declined') return null;
 
-  const isSent = project.quote_status === 'sent';
-  const isDeclined = project.quote_status === 'declined';
+  // Mark-as-sent only while the client does not have the quote yet. On sent,
+  // viewed and expired they already do, so offering to mark it sent says
+  // nothing true.
+  const canMarkSent = project.quote_status === null || project.quote_status === 'draft';
 
   return (
     <div className="flex flex-col gap-2 border-t border-bambu-dark-tertiary pt-4">
-      <HoldButton
-        onHold={() => mutation.mutate('sent')}
-        durationMs={500}
-        disabled={isSent || mutation.isPending}
-        label={t('aito.markSent')}
-        hint={t('aito.holdToConfirm')}
-        className="justify-center border p-1.5 border-amber-400/40 text-amber-400 hover:bg-amber-400/10"
-      >
-        {isSent ? <Check className="w-3.5 h-3.5" /> : <Send className="w-3.5 h-3.5" />}
-        <span className="text-sm">{t('aito.markSent')}</span>
-      </HoldButton>
+      {canMarkSent && (
+        <HoldButton
+          onHold={() => mutation.mutate('sent')}
+          durationMs={500}
+          disabled={mutation.isPending}
+          label={t('aito.markSent')}
+          hint={t('aito.holdToConfirm')}
+          className="justify-center border p-1.5 border-amber-400/40 text-amber-400 hover:bg-amber-400/10"
+        >
+          <Send className="w-3.5 h-3.5" />
+          <span className="text-sm">{t('aito.markSent')}</span>
+        </HoldButton>
+      )}
       <div className="flex items-center gap-2">
       <HoldButton
         onHold={() => mutation.mutate('accepted')}
@@ -79,19 +84,18 @@ export function QuoteStatusActions({ project }: { project: AitoProject }) {
         hint={t('aito.holdToConfirm')}
         className="flex-1 justify-center border p-1.5 border-bambu-green/40 text-bambu-green hover:bg-bambu-green/10"
       >
-        {/* Never a check mark: an accepted quote renders no block at all. */}
         <ThumbsUp className="w-3.5 h-3.5" />
         <span className="text-sm">{t('aito.acceptQuote')}</span>
       </HoldButton>
       <HoldButton
         onHold={() => mutation.mutate('declined')}
         durationMs={500}
-        disabled={isDeclined || mutation.isPending}
+        disabled={mutation.isPending}
         label={t('aito.declineQuote')}
         hint={t('aito.holdToConfirm')}
         className="flex-1 justify-center border p-1.5 border-status-error/40 text-status-error hover:bg-status-error/10"
       >
-        {isDeclined ? <Check className="w-3.5 h-3.5" /> : <ThumbsDown className="w-3.5 h-3.5" />}
+        <ThumbsDown className="w-3.5 h-3.5" />
         <span className="text-sm">{t('aito.declineQuote')}</span>
       </HoldButton>
       </div>
