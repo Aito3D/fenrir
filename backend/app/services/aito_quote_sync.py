@@ -665,16 +665,32 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
             if should_pull_comments(project, estimate, now):
                 try:
                     comments = await zoho_service.list_estimate_comments(db, project.quote_id)
-                except Exception:
-                    # A failed comment pull must never fail the sync: the
-                    # line-item and status work above is what the board
-                    # depends on, and history that arrives one tick late
-                    # costs nothing.
-                    logger.warning("Aito comment mirror failed for project %s", project.id, exc_info=True)
-                else:
                     await mirror_comments(db, project, comments)
                     project.zoho_comments_watermark = estimate.get("last_modified_time")
                     project.zoho_comments_checked_at = now
+                except Exception:
+                    # The try covers the fetch AND mirror_comments AND the two
+                    # watermark writes, not just the network call. AitoEvent's
+                    # zoho_comment_id is a UNIQUE column, so mirror_comments'
+                    # own write path can raise (IntegrityError from two
+                    # overlapping ticks racing the same comment_id) just as
+                    # easily as the fetch can, and any other bug in the
+                    # mapping or write path deserves the same containment. A
+                    # failed comment pull must never fail the sync: the
+                    # line-item and status work above is what the board
+                    # depends on, and history that arrives one tick late costs
+                    # nothing. Anything that escaped this block would instead
+                    # reach sync_project's own outer catch-all below, which
+                    # flips quote_sync_state to 'error' and overwrites
+                    # quote_sync_error -- discarding this tick's
+                    # already-successful reconcile_quote_status result and
+                    # surfacing a misleading "sync error" for what is only a
+                    # history-mirroring problem. Keeping the watermark writes
+                    # inside the try is also what keeps them from advancing on
+                    # a tick where mirror_comments raised: an exception here
+                    # skips them, so the watermark still only moves once the
+                    # pull has fully succeeded.
+                    logger.warning("Aito comment mirror failed for project %s", project.id, exc_info=True)
 
             # A read that reaches this point succeeded, whatever
             # reconcile_quote_status went on to do with it — proof Books is

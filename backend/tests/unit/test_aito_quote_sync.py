@@ -10,7 +10,7 @@ from sqlalchemy import select
 from backend.app.api.routes.settings import set_setting
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
-from backend.app.services.aito_quote_sync import SYNC_FAILURE_LIMIT, run_sync_once
+from backend.app.services.aito_quote_sync import SYNC_FAILURE_LIMIT, run_sync_once, sync_project
 from backend.app.services.zoho import zoho_service
 
 
@@ -1758,6 +1758,50 @@ async def test_an_accepted_board_pushes_to_a_draft_quote(db_session):
     assert len(estimate_gets) == 1
     assert project.quote_status == "accepted"
     assert project.quote_sync_error is None
+
+
+@pytest.mark.asyncio
+async def test_a_comment_mirror_failure_does_not_corrupt_the_syncs_own_state(db_session, monkeypatch):
+    """AitoEvent.zoho_comment_id is a UNIQUE column, so mirror_comments' own
+    write path can raise (e.g. an IntegrityError from two overlapping ticks
+    racing the same comment_id), not just the network fetch. Before the fix,
+    only the fetch sat inside sync_project's try -- mirror_comments and the
+    watermark writes ran in the else branch, outside it, so a raise from
+    mirror_comments escaped straight to sync_project's own outer catch-all.
+    That flips quote_sync_state to 'error' and overwrites quote_sync_error,
+    discarding this tick's already-successful reconcile_quote_status result
+    for what is only a history-mirroring problem. Mirror failures must stay
+    contained."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "accepted"}},
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    from backend.app.services import aito_quote_sync
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("simulated IntegrityError from a racing tick")
+
+    monkeypatch.setattr(aito_quote_sync, "mirror_comments", boom)
+
+    await sync_project(db_session, project)
+
+    assert project.quote_sync_state != "error"
+    assert project.quote_sync_error is None
+    # The reconciler's own successful work from this same tick must survive
+    # the mirror's failure too.
+    assert project.quote_status == "accepted"
 
 
 @pytest.mark.asyncio

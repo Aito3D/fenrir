@@ -20,7 +20,12 @@ from sqlalchemy import select
 from backend.app.api.routes.settings import set_setting
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
-from backend.app.services.aito_zoho_comments import map_comment, mirror_comments
+from backend.app.services.aito_zoho_comments import (
+    COMMENT_REFRESH_INTERVAL,
+    map_comment,
+    mirror_comments,
+    should_pull_comments,
+)
 
 
 def test_a_recognised_status_becomes_a_client_story_event():
@@ -237,3 +242,74 @@ async def test_comment_utc_offset_is_read_from_settings_not_hardcoded(db_session
     row = (await db_session.execute(select(AitoEvent).where(AitoEvent.project_id == project.id))).scalar_one()
     # Org-local 09:00 at UTC+1 -> UTC 08:00 the same day.
     assert row.occurred_at == datetime(2026, 7, 28, 8, 0)
+
+
+# --- should_pull_comments: the quota gate ------------------------------------
+#
+# Pure function, no DB or HTTP: an AitoProject built in memory (never added to
+# a session) and a plain estimate dict are enough to exercise every branch.
+# Books allows only 1,000-10,000 calls/day for the whole organisation, and
+# this is the sole thing standing between the poller and a second call per
+# project per tick, so every branch earns its own test rather than trusting
+# the sweep-level tests elsewhere to happen to cover it.
+
+
+def test_unchanged_watermark_and_a_recent_check_saves_the_call():
+    """The common case this gate exists for: nothing new to pull, and the
+    4-hour floor has not elapsed either, so no call is spent."""
+    now = datetime(2026, 7, 28, 12, 0)
+    project = AitoProject(
+        description="Trophy",
+        board_column="devis",
+        quote_id="EST-1",
+        zoho_comments_watermark="2026-07-28T09:00:00-1000",
+        zoho_comments_checked_at=now - timedelta(minutes=5),
+    )
+    estimate = {"last_modified_time": "2026-07-28T09:00:00-1000"}
+    assert should_pull_comments(project, estimate, now) is False
+
+
+def test_a_changed_watermark_always_pulls():
+    """Every event that matters moves last_modified_time, so a mismatch is
+    news worth the call regardless of how recently comments were checked."""
+    now = datetime(2026, 7, 28, 12, 0)
+    project = AitoProject(
+        description="Trophy",
+        board_column="devis",
+        quote_id="EST-1",
+        zoho_comments_watermark="2026-07-28T09:00:00-1000",
+        zoho_comments_checked_at=now - timedelta(minutes=1),
+    )
+    estimate = {"last_modified_time": "2026-07-28T10:30:00-1000"}
+    assert should_pull_comments(project, estimate, now) is True
+
+
+def test_never_pulled_before_always_pulls():
+    """zoho_comments_checked_at is None: this project has never had its
+    comments read, so the gate cannot yet rely on the 4-hour floor."""
+    now = datetime(2026, 7, 28, 12, 0)
+    project = AitoProject(
+        description="Trophy",
+        board_column="devis",
+        quote_id="EST-1",
+        zoho_comments_watermark=None,
+        zoho_comments_checked_at=None,
+    )
+    estimate = {"last_modified_time": "2026-07-28T09:00:00-1000"}
+    assert should_pull_comments(project, estimate, now) is True
+
+
+def test_unchanged_watermark_past_the_four_hour_floor_still_pulls():
+    """A human typing a comment in Books directly never moves
+    last_modified_time, so the watermark alone would starve that comment
+    forever. COMMENT_REFRESH_INTERVAL is the floor that still catches it."""
+    now = datetime(2026, 7, 28, 12, 0)
+    project = AitoProject(
+        description="Trophy",
+        board_column="devis",
+        quote_id="EST-1",
+        zoho_comments_watermark="2026-07-28T09:00:00-1000",
+        zoho_comments_checked_at=now - COMMENT_REFRESH_INTERVAL - timedelta(minutes=1),
+    )
+    estimate = {"last_modified_time": "2026-07-28T09:00:00-1000"}
+    assert should_pull_comments(project, estimate, now) is True
