@@ -13,7 +13,7 @@ Phase 2 poller.
 import asyncio
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import async_session
@@ -227,6 +227,49 @@ async def _write_back_rounded_impression(db: AsyncSession, project_id: int) -> N
 # that was still a draft when its project was trashed cannot be recovered.
 _RESTORABLE = ("sent", "accepted")
 
+# The statuses that represent a DECISION someone made, as opposed to where a
+# quote merely happens to sit. We own ours (the shop accepted or declined);
+# Books owns the client's. Everything else — draft, sent, viewed, expired — is
+# undecided, and undecided always yields.
+_DECIDED = frozenset({"accepted", "declined"})
+
+
+async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimate: dict) -> None:
+    """Make the board and Books agree about one quote's status.
+
+    Asymmetric on purpose. We push a decision of ours that Books has not got
+    (the case that stranded five accepted projects against draft estimates:
+    Books rejects draft -> accepted, the route's push failed, and nothing
+    recorded that it owed a retry). We adopt Books' status whenever ours is
+    merely where the quote sat, because a client opening or letting a quote
+    expire is news to us, not something to overwrite.
+
+    When BOTH sides are decided and they disagree, neither wins: overwriting a
+    client's decline with our acceptance — or the reverse — is destructive and
+    unrecoverable, so the disagreement is recorded and left for a human.
+    """
+    zoho_status = estimate.get("status") or ""
+    local = project.quote_status
+    if not zoho_status or zoho_status == local:
+        return
+
+    ours_decided = local in _DECIDED
+    theirs_decided = zoho_status in _DECIDED
+
+    if ours_decided and theirs_decided:
+        project.quote_sync_error = (
+            f"The board says {local} but Books says {zoho_status}. Neither was changed — resolve it in Books."
+        )
+        return
+
+    if ours_decided:
+        await zoho_service.advance_estimate_status(db, project.quote_id, local, current=zoho_status)
+        project.quote_sync_error = None
+        return
+
+    project.quote_status = zoho_status
+    project.quote_sync_error = None
+
 
 async def _reconcile_status(db: AsyncSession, project: AitoProject, estimate: dict) -> bool:
     """Bring the quote's status in line with whether the project is on the board.
@@ -345,6 +388,15 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
 async def sync_project(db: AsyncSession, project: AitoProject) -> None:
     """One project's whole state machine. Never raises: every outcome is a state."""
     try:
+        # Swept, not pending: reconcile status and nothing else. Emphatically
+        # NOT _update_quote, which rebuilds the entire line_items array —
+        # running that on every quoted project every tick would revert
+        # hand-typed rows and catalogue overrides across the whole board (see
+        # create_project's own note on why marking a fresh import pending is
+        # unsafe).
+        if project.quote_sync_state != "pending":
+            await reconcile_quote_status(db, project, await zoho_service.get_estimate(db, project.quote_id))
+            return
         if not project.quote_id:
             if project.status == "deleted":
                 # Trashed before it was ever quoted. Nothing to create, nothing
@@ -408,8 +460,28 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         logger.exception("Aito quote sync hit an unexpected error for project %s", project.id)
 
 
+def _still_selected(project: AitoProject) -> bool:
+    """Mirrors ``run_sync_once``'s SELECT predicate in Python, for the
+    per-iteration re-check below.
+
+    The re-fetched row can no longer be assumed to still be ``'pending'`` —
+    that was true back when the pending queue was the only source of ids, but
+    the swept set now contributes ids whose state is never ``'pending'`` in
+    the first place. Checking against the literal string here would silently
+    skip every swept project, discarding the id selection above outright.
+    """
+    if project.quote_sync_state == "pending":
+        return True
+    return (
+        project.status == "active"
+        and project.quote_id is not None
+        and project.quote_sync_state not in ("pending", "unmanaged", "locked")
+    )
+
+
 async def run_sync_once(db: AsyncSession) -> int:
-    """Drain every pending project. Returns how many were actually attempted.
+    """Drain every pending project, and reconcile the status of every other
+    managed quote. Returns how many were actually attempted.
 
     Not the same as the number of ids selected up front: the skip guard below
     can pass over an id whose row vanished or whose state moved on before the
@@ -422,7 +494,22 @@ async def run_sync_once(db: AsyncSession) -> int:
     project_ids = list(
         (
             await db.execute(
-                select(AitoProject.id).where(AitoProject.quote_sync_state == "pending").order_by(AitoProject.id)
+                select(AitoProject.id)
+                .where(
+                    or_(
+                        AitoProject.quote_sync_state == "pending",
+                        and_(
+                            AitoProject.status == "active",
+                            AitoProject.quote_id.is_not(None),
+                            # 'unmanaged' is the one state meaning this feature
+                            # must never touch the quote. 'locked' is an
+                            # invoiced or tax-unsafe estimate, where a status
+                            # write is no safer than a line-item write.
+                            AitoProject.quote_sync_state.not_in(("pending", "unmanaged", "locked")),
+                        ),
+                    )
+                )
+                .order_by(AitoProject.id)
             )
         )
         .scalars()
@@ -449,7 +536,7 @@ async def run_sync_once(db: AsyncSession) -> int:
         # handful of cards, and correctness beats saving a few primary-key
         # lookups.
         project = await db.get(AitoProject, project_id)
-        if project is None or project.quote_sync_state != "pending":
+        if project is None or not _still_selected(project):
             # Gone, or already handled by something else since the id was
             # selected above — nothing left to sync. Not counted below: it was
             # never actually attempted.

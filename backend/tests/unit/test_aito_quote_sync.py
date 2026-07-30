@@ -1519,9 +1519,16 @@ async def test_update_with_no_priced_service_does_not_wipe_the_quotes_lines(db_s
     quote must not PUT an empty line_items array onto it — Books would delete
     every Aito line the live estimate has.
 
-    Minor 5: also must not spin forever. Left as 'pending', this project
-    would be re-selected and re-GET every single tick indefinitely; it must
-    land in a terminal state instead, with the explanatory error kept."""
+    Minor 5: also must not spin forever RE-PUSHING the line items. Left as
+    'pending', this project would be re-selected and re-GET every single tick
+    indefinitely for a line-item retry that could never succeed; it must land
+    in a terminal state instead, with the explanatory error kept. The
+    quote-status sweep (Task 7) still reaches an 'error' project that has a
+    quote_id — only 'pending', 'unmanaged' and 'locked' are excluded from it,
+    deliberately, since a status mismatch is worth reconciling even when the
+    line-item push is broken — so the second tick below is re-armed to prove
+    that reconciliation read never turns into a PUT, rather than asserting no
+    call happens at all."""
     project = await _project_with_quote(db_session)  # no cost fields set -> nothing priced
     await _configure_zoho(db_session)
     seen: list = []
@@ -1549,12 +1556,138 @@ async def test_update_with_no_priced_service_does_not_wipe_the_quotes_lines(db_s
     assert project.quote_sync_error
     assert project.quote_sync_state == "error"
 
-    # A second tick must not even attempt another Zoho call: 'error' is
-    # terminal, not re-selected by run_sync_once's `WHERE quote_sync_state ==
-    # 'pending'` — this is the actual regression guard for Minor 5's
-    # "unbounded GET every 60s" complaint.
+    # Second tick: the sweep's GET is a no-op for status too, since this
+    # project's quote_status was never set (the create/update path errored out
+    # before _apply_estimate ran) — mocking Books' status as absent matches
+    # that "unset" local value, so reconcile_quote_status's own early return
+    # (zoho_status falsy) fires and nothing is written.
     seen.clear()
-    assert await run_sync_once(db_session) == 0
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler({("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1"}}}, seen)
+    )
+    assert await run_sync_once(db_session) == 1
+    assert not any(entry[0] == "PUT" for entry in seen)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.quote_sync_error
+
+
+@pytest.mark.asyncio
+async def test_an_accepted_board_pushes_to_a_draft_quote(db_session):
+    """The live divergence: the board decided, the push failed, nothing
+    retried. Books rejects a direct draft -> accepted push, so the reconciler
+    must chain through advance_estimate_status's sent-first behaviour: a
+    POST to /status/sent followed by one to /status/accepted."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "draft"}},
+                ("POST", "/status/sent"): {"message": "ok"},
+                ("POST", "/status/accepted"): {"message": "ok"},
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    posts = [entry[1] for entry in seen if entry[0] == "POST"]
+    assert len(posts) == 2
+    assert posts[0].endswith("/status/sent")
+    assert posts[1].endswith("/status/accepted")
+    assert project.quote_status == "accepted"
+    assert project.quote_sync_error is None
+
+
+@pytest.mark.asyncio
+async def test_an_undecided_board_adopts_books_status(db_session):
+    """A client opening a sent quote is news to us, not something to
+    overwrite — the board adopts Books' status with no push."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "sent"
+    project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler({("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "viewed"}}}, seen)
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_status == "viewed"
+    assert not any(entry[0] == "POST" for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_two_conflicting_decisions_change_nothing(db_session):
+    """Overwriting either side is destructive and unrecoverable, so neither
+    wins: the conflict is recorded and both sides are left alone."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler({("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "declined"}}}, seen)
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert not any(entry[0] == "POST" for entry in seen)
+    assert project.quote_status == "accepted"
+    assert project.quote_sync_error is not None
+
+
+@pytest.mark.asyncio
+async def test_agreeing_statuses_cost_no_write(db_session):
+    """Both sides already agree: reconcile_quote_status's early return means
+    no push and no local write, just the sweep's one GET."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler({("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "accepted"}}}, seen)
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    assert not any(entry[0] == "POST" for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_never_touches_an_unmanaged_project(db_session):
+    """'unmanaged' is the ONE state meaning this feature must not touch the
+    quote — see _mark_pending_if_ours. run_sync_once's widened select must
+    exclude it, so sync_project (and therefore Zoho) is never even reached."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "unmanaged"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(zoho_handler({}, seen))
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
     assert seen == []
 
 
