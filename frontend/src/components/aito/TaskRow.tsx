@@ -77,7 +77,7 @@ export function TaskRow({
 
   return (
     <div
-      className={`group rounded-lg border ${finished ? 'border-bambu-green/40 bg-bambu-green/5' : 'border-bambu-dark-tertiary'}`}
+      className={`animate-rise group rounded-lg border ${finished ? 'border-bambu-green/40 bg-bambu-green/5' : 'border-bambu-dark-tertiary'}`}
       onBlur={(e) => {
         // focusout bubbles in React, so one handler covers every input in the
         // row. relatedTarget is where focus went: inside the row means the
@@ -141,7 +141,7 @@ export function TaskRow({
       </div>
 
       {expanded && (
-        <div id={`${reactId}-body`} className="px-3 pb-3 space-y-3">
+        <div id={`${reactId}-body`} className="animate-slide-up px-3 pb-3 space-y-3">
           {editing ? (
             <TaskStepFields task={task} onChange={onChange} />
           ) : (
