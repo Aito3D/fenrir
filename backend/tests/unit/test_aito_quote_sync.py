@@ -1730,6 +1730,7 @@ async def test_an_accepted_board_pushes_to_a_draft_quote(db_session):
         zoho_handler(
             {
                 ("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "draft"}},
+                ("GET", "/estimates/E1/comments"): {"comments": []},
                 ("POST", "/status/sent"): {"message": "ok"},
                 ("POST", "/status/accepted"): {"message": "ok"},
             },
@@ -1740,7 +1741,11 @@ async def test_an_accepted_board_pushes_to_a_draft_quote(db_session):
 
     await run_sync_once(db_session)
     await db_session.refresh(project)
-    gets = [entry for entry in seen if entry[0] == "GET"]
+    # Scoped to the estimate GET specifically (not just "GET"): the sweep now
+    # also fires a GET at /estimates/E1/comments to mirror Books' history
+    # (Task 7), which is unrelated to what this test is proving and would
+    # otherwise be conflated with a redundant estimate re-read.
+    estimate_gets = [entry for entry in seen if entry[0] == "GET" and entry[1].endswith("/estimates/E1")]
     posts = [entry[1] for entry in seen if entry[0] == "POST"]
     assert len(posts) == 2
     assert posts[0].endswith("/status/sent")
@@ -1750,7 +1755,7 @@ async def test_an_accepted_board_pushes_to_a_draft_quote(db_session):
     # default None — with current=None the sent-first chain would re-read the
     # estimate itself before POSTing, costing a second GET this mock does not
     # even provide a route for.
-    assert len(gets) == 1
+    assert len(estimate_gets) == 1
     assert project.quote_status == "accepted"
     assert project.quote_sync_error is None
 

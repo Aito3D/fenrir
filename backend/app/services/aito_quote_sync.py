@@ -12,6 +12,7 @@ Phase 2 poller.
 
 import asyncio
 import logging
+from datetime import datetime
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +24,7 @@ from backend.app.models.aito_task import AitoTask
 from backend.app.models.filament import Filament
 from backend.app.services.aito_events import record
 from backend.app.services.aito_quote_export import ExportTask, build_line_items
+from backend.app.services.aito_zoho_comments import mirror_comments, should_pull_comments
 from backend.app.services.zoho import (
     ZohoAmbiguousReferenceError,
     ZohoNotConfiguredError,
@@ -658,6 +660,22 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
                     )
                 return
             await reconcile_quote_status(db, project, estimate)
+
+            now = datetime.utcnow()
+            if should_pull_comments(project, estimate, now):
+                try:
+                    comments = await zoho_service.list_estimate_comments(db, project.quote_id)
+                except Exception:
+                    # A failed comment pull must never fail the sync: the
+                    # line-item and status work above is what the board
+                    # depends on, and history that arrives one tick late
+                    # costs nothing.
+                    logger.warning("Aito comment mirror failed for project %s", project.id, exc_info=True)
+                else:
+                    await mirror_comments(db, project, comments)
+                    project.zoho_comments_watermark = estimate.get("last_modified_time")
+                    project.zoho_comments_checked_at = now
+
             # A read that reaches this point succeeded, whatever
             # reconcile_quote_status went on to do with it — proof Books is
             # reachable right now. Reset the failure counter so a run of past

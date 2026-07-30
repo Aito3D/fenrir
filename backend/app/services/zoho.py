@@ -300,6 +300,17 @@ class ZohoService:
         """The full estimate, line items included."""
         return (await self._request(db, "GET", f"/estimates/{estimate_id}")).get("estimate", {})
 
+    async def list_estimate_comments(self, db: AsyncSession, estimate_id: str) -> list[dict]:
+        """The estimate's comments AND its system history.
+
+        This is where Books records "viewed by the customer" and "accepted",
+        with the timestamp of when it actually happened rather than when we
+        next polled. That difference is the whole reason the timeline mirrors
+        this instead of inferring status changes from the estimate itself.
+        """
+        payload = await self._request(db, "GET", f"/estimates/{estimate_id}/comments")
+        return payload.get("comments") or []
+
     async def find_estimate_by_reference(
         self, db: AsyncSession, reference_number: str, customer_id: str
     ) -> dict | None:
