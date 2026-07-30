@@ -2189,3 +2189,91 @@ async def test_an_unrelated_error_survives_even_when_status_already_agreed(db_se
     await db_session.refresh(project)
     assert project.quote_sync_state == "error"
     assert project.quote_sync_error == original_message
+
+
+# --- Round-3 review fix (N4) -------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_rejected_push_does_not_overwrite_an_unrelated_diagnostic(db_session):
+    """N4: the ZohoRequestRejected handler used to overwrite quote_sync_error
+    unconditionally, even when the project was ALREADY in 'error' for an
+    unrelated reason (no priced service). That both destroyed the only
+    record of the real problem AND manufactured false evidence for the
+    equality branch: a later tick would see a message carrying this
+    module's own "Books rejected pushing..." prefix, conclude via
+    _error_is_status_related that the error was its own doing, and wrongly
+    restore 'idle' — leaving the card reading as in-sync while Books still
+    holds the stale, broken lines, with no error badge and no Retry button
+    to fix it (both gated on the error state).
+
+    Sequence: an unrelated no-priced-service error lands first (quote_status
+    stays a real DECIDED value, "accepted", since that guard never touches
+    it) -> a sweep tick's push is rejected -> the ORIGINAL message must
+    survive, not the rejection -> Books is then edited to match ours -> the
+    equality branch must NOT read the still-original, still-unrelated
+    message as its own and restore 'idle'."""
+    project = await _project_with_quote(db_session)  # no cost fields -> nothing priced
+    project.quote_status = "accepted"
+    project.quote_sync_state = "pending"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    # Tick 1: the pending path hits the no-priced-service guard. quote_status
+    # is left untouched at "accepted" — a real, decided value, not None.
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "draft",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    original_message = project.quote_sync_error
+    assert original_message
+    assert "priced service" in original_message
+    assert project.quote_status == "accepted"
+
+    # Tick 2: the sweep's pair guard does not match (no rejection recorded
+    # yet), so the push is attempted — sent-first, then accepted — and Books
+    # rejects it. The original, unrelated message must survive verbatim.
+    def rejecting(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        if request.method == "GET" and request.url.path.endswith("/estimates/E1"):
+            return httpx.Response(200, json={"estimate": {"estimate_id": "E1", "status": "draft"}})
+        if request.method == "POST" and request.url.path.endswith("/status/sent"):
+            return httpx.Response(200, json={"message": "ok"})
+        if request.method == "POST" and request.url.path.endswith("/status/accepted"):
+            return httpx.Response(400, json={"message": "Books will not accept this estimate directly"})
+        return httpx.Response(404, json={"message": "no route"})
+
+    zoho_service.transport = httpx.MockTransport(rejecting)
+    zoho_service.invalidate_token()
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.quote_sync_error == original_message
+
+    # Tick 3: a human accepts in Books, matching the board's decision. The
+    # equality branch must not mistake the surviving, unrelated message for
+    # evidence this reconciler owns the error.
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler({("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "accepted"}}})
+    )
+    zoho_service.invalidate_token()
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.quote_sync_error == original_message

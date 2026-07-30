@@ -378,7 +378,26 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
         try:
             await zoho_service.advance_estimate_status(db, project.quote_id, local, current=zoho_status)
         except ZohoRequestRejected as e:
+            if project.quote_sync_state == "error" and not _error_is_status_related(project):
+                # An unrelated diagnostic (e.g. "no priced service left") is
+                # already sitting here, and overwriting it with this
+                # rejection would destroy the only record of the real
+                # problem — and later manufacture false evidence for the
+                # equality branch above, which would then read its OWN
+                # rejection message as proof this reconciler owns the
+                # error and wrongly restore 'idle'. Leave it alone; the
+                # edit that fixes the unrelated cause re-marks the project
+                # pending and re-enters the normal path regardless.
+                return
             project.quote_sync_state = "error"
+            # Keyed on Books' status BEFORE advance_estimate_status's own
+            # sent-first hop (target in _STATUSES_NEEDING_SENT with a
+            # draft `current` marks sent first, then POSTs the target) —
+            # not after. If THIS call itself performed that hop before the
+            # rejection, the next tick's GET reads 'sent', the pair no
+            # longer matches, and one further rejected POST happens before
+            # the pair stabilises. Judged self-limiting (one extra attempt,
+            # no mutation ever lands) and left as is.
             project.quote_sync_error = _rejected_push_message(local, zoho_status, str(e))
             return
         # Guarded the same way as the equality branch above, and for the same
