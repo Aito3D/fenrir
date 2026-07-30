@@ -6393,6 +6393,23 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  /** The project's Zoho quote as a PDF blob.
+   *
+   *  A manual fetch rather than `request()`: that helper parses JSON. And the
+   *  caller needs a Blob rather than a URL because the endpoint requires the
+   *  Authorization header, which neither <iframe src> nor <a href> can send —
+   *  the blob is what makes an offline object URL possible.
+   */
+  getAitoQuotePdf: async (projectId: number): Promise<Blob> => {
+    const headers: Record<string, string> = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const response = await fetch(`${API_BASE}/aito/${projectId}/quote.pdf`, { headers });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.blob();
+  },
   updateAitoProject: (id: number, data: AitoProjectUpdate) =>
     request<AitoProject>(`/aito/${id}`, {
       method: 'PATCH',
