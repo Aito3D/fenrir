@@ -47,7 +47,7 @@ async def test_unauthorized_active_print_triggers_stop(monkeypatch):
     )
     monkeypatch.setattr(main_module.printer_manager, "get_printer", lambda printer_id: None)
     monkeypatch.setattr(main_module.printer_manager, "get_model", lambda printer_id: None)
-    monkeypatch.setattr(main_module, "printer_state_to_dict", lambda state, printer_id, model: {})
+    monkeypatch.setattr(main_module, "printer_state_to_dict", lambda *args, **kwargs: {})
     monkeypatch.setattr(main_module.mqtt_relay, "on_printer_status", fake_status)
     monkeypatch.setattr(main_module.ws_manager, "send_printer_status", fake_status)
     monkeypatch.setattr("backend.app.services.finance_budget.is_printer_kill_switch_enabled", kill_switch_enabled)
@@ -67,6 +67,7 @@ async def test_unauthorized_active_print_triggers_stop(monkeypatch):
         active_extruder=0,
         tray_now=255,
         door_open=False,
+        ams_filament_backup=False,
         current_print=None,
         subtask_name="foreign_job",
         gcode_file="foreign_job.gcode",
@@ -96,7 +97,7 @@ async def test_bambuddy_authorized_print_is_not_stopped(monkeypatch):
     )
     monkeypatch.setattr(main_module.printer_manager, "get_printer", lambda printer_id: None)
     monkeypatch.setattr(main_module.printer_manager, "get_model", lambda printer_id: None)
-    monkeypatch.setattr(main_module, "printer_state_to_dict", lambda state, printer_id, model: {})
+    monkeypatch.setattr(main_module, "printer_state_to_dict", lambda *args, **kwargs: {})
     monkeypatch.setattr(main_module.mqtt_relay, "on_printer_status", fake_status)
     monkeypatch.setattr(main_module.ws_manager, "send_printer_status", fake_status)
     monkeypatch.setattr("backend.app.services.finance_budget.is_printer_kill_switch_enabled", kill_switch_enabled)
@@ -116,6 +117,7 @@ async def test_bambuddy_authorized_print_is_not_stopped(monkeypatch):
         active_extruder=0,
         tray_now=255,
         door_open=False,
+        ams_filament_backup=False,
         current_print=None,
         subtask_name="foreign_job",
         gcode_file="foreign_job.gcode",
@@ -143,7 +145,7 @@ async def test_unauthorized_print_state_is_cleared_when_print_ends(monkeypatch):
     )
     monkeypatch.setattr(main_module.printer_manager, "get_printer", lambda printer_id: None)
     monkeypatch.setattr(main_module.printer_manager, "get_model", lambda printer_id: None)
-    monkeypatch.setattr(main_module, "printer_state_to_dict", lambda state, printer_id, model: {})
+    monkeypatch.setattr(main_module, "printer_state_to_dict", lambda *args, **kwargs: {})
     monkeypatch.setattr(main_module.mqtt_relay, "on_printer_status", fake_status)
     monkeypatch.setattr(main_module.ws_manager, "send_printer_status", fake_status)
     monkeypatch.setattr("backend.app.services.finance_budget.is_printer_kill_switch_enabled", kill_switch_enabled)
@@ -163,6 +165,7 @@ async def test_unauthorized_print_state_is_cleared_when_print_ends(monkeypatch):
         active_extruder=0,
         tray_now=255,
         door_open=False,
+        ams_filament_backup=False,
         current_print=None,
         subtask_name="foreign_job",
         gcode_file="foreign_job.gcode",
@@ -183,6 +186,7 @@ async def test_unauthorized_print_state_is_cleared_when_print_ends(monkeypatch):
         active_extruder=0,
         tray_now=255,
         door_open=False,
+        ams_filament_backup=False,
         current_print=None,
         subtask_name="",
         gcode_file=None,

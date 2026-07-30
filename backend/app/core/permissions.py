@@ -19,7 +19,7 @@ class Permission(StrEnum):
     PRINTERS_CREATE = "printers:create"
     PRINTERS_UPDATE = "printers:update"
     PRINTERS_DELETE = "printers:delete"
-    PRINTERS_CONTROL = "printers:control"  # Start/stop/pause/resume prints
+    PRINTERS_CONTROL = "printers:control"  # Printer controls: stop/pause/resume, lights, motors, drying, etc.
     PRINTERS_FILES = "printers:files"  # Send files to printer
     PRINTERS_AMS_RFID = "printers:ams_rfid"  # Re-read AMS RFID tags
     PRINTERS_CLEAR_PLATE = "printers:clear_plate"  # Confirm plate cleared for next print
@@ -36,15 +36,15 @@ class Permission(StrEnum):
     ARCHIVES_UPDATE_ALL = "archives:update_all"
     ARCHIVES_DELETE_OWN = "archives:delete_own"
     ARCHIVES_DELETE_ALL = "archives:delete_all"
-    ARCHIVES_REPRINT_OWN = "archives:reprint_own"
-    ARCHIVES_REPRINT_ALL = "archives:reprint_all"
+    ARCHIVES_REPRINT_OWN = "archives:reprint_own"  # Reprint own archives; queue:create is also required to enqueue
+    ARCHIVES_REPRINT_ALL = "archives:reprint_all"  # Reprint any archive; queue:create is also required to enqueue
     ARCHIVES_PURGE = "archives:purge"
 
     # Queue
     QUEUE_READ = "queue:read"
     QUEUE_READ_OWN = "queue:read_own"
     QUEUE_READ_ALL = "queue:read_all"
-    QUEUE_CREATE = "queue:create"
+    QUEUE_CREATE = "queue:create"  # Create queue items, including ASAP items eligible for immediate dispatch
     QUEUE_UPDATE_OWN = "queue:update_own"
     QUEUE_UPDATE_ALL = "queue:update_all"
     QUEUE_DELETE_OWN = "queue:delete_own"
@@ -55,7 +55,7 @@ class Permission(StrEnum):
     LIBRARY_READ = "library:read"
     LIBRARY_READ_OWN = "library:read_own"
     LIBRARY_READ_ALL = "library:read_all"
-    LIBRARY_UPLOAD = "library:upload"
+    LIBRARY_UPLOAD = "library:upload"  # Upload/import/slice library files; queue:create is also required to print
     LIBRARY_UPDATE_OWN = "library:update_own"
     LIBRARY_UPDATE_ALL = "library:update_all"
     LIBRARY_DELETE_OWN = "library:delete_own"
@@ -183,6 +183,11 @@ class Permission(StrEnum):
     GROUPS_CREATE = "groups:create"
     GROUPS_UPDATE = "groups:update"
     GROUPS_DELETE = "groups:delete"
+
+    # Slicer Pipelines (#1425)
+    PIPELINES_READ = "pipelines:read"  # View pipeline definitions and run history
+    PIPELINES_WRITE = "pipelines:write"  # Create / edit / delete pipeline definitions
+    PIPELINES_RUN = "pipelines:run"  # Kick off a pipeline run (PR C); separate because spending filament is a different trust dimension than authoring the recipe
 
     # WebSocket connection
     WEBSOCKET_CONNECT = "websocket:connect"
@@ -349,6 +354,11 @@ PERMISSION_CATEGORIES = {
         Permission.GROUPS_UPDATE,
         Permission.GROUPS_DELETE,
     ],
+    "Slicer Pipelines": [
+        Permission.PIPELINES_READ,
+        Permission.PIPELINES_WRITE,
+        Permission.PIPELINES_RUN,
+    ],
     "WebSocket": [
         Permission.WEBSOCKET_CONNECT,
     ],
@@ -466,6 +476,10 @@ DEFAULT_GROUPS = {
             Permission.COST_CENTERS_READ_OWN.value,
             # Settings - read only
             Permission.SETTINGS_READ.value,
+            # Slicer Pipelines - full access
+            Permission.PIPELINES_READ.value,
+            Permission.PIPELINES_WRITE.value,
+            Permission.PIPELINES_RUN.value,
             # WebSocket
             Permission.WEBSOCKET_CONNECT.value,
         ],
@@ -497,6 +511,8 @@ DEFAULT_GROUPS = {
             Permission.STATS_READ.value,
             Permission.SYSTEM_READ.value,
             Permission.SETTINGS_READ.value,
+            # Slicer Pipelines - read only
+            Permission.PIPELINES_READ.value,
             Permission.WEBSOCKET_CONNECT.value,
             # MakerWorld browsing only (no import — that writes to library)
             Permission.MAKERWORLD_VIEW.value,

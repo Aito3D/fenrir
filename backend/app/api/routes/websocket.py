@@ -19,11 +19,12 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from sqlalchemy import select
 
 from backend.app.core.auth import is_auth_enabled, verify_websocket_token
 from backend.app.core.database import async_session
 from backend.app.core.websocket import ws_manager
-from backend.app.services.background_dispatch import background_dispatch
+from backend.app.models.user import User
 from backend.app.services.printer_manager import printer_manager, printer_state_to_dict
 
 logger = logging.getLogger(__name__)
@@ -87,6 +88,20 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
     # ``broadcast_to_principal()`` helper can filter on it without
     # touching every call site.
     websocket.state.bambuddy_principal = principal
+    # Resolve principal username → User.id once at connect so
+    # ``ws_manager.broadcast_to_user()`` can filter without re-querying
+    # per message. Auth-disabled path keeps None (broadcast_to_user fans
+    # out to all when target is None — matches the legacy single-user
+    # toast behaviour). API-keyed principal is empty string → None.
+    principal_user_id: int | None = None
+    if principal:
+        try:
+            async with async_session() as db:
+                row = await db.execute(select(User.id).where(User.username == principal))
+                principal_user_id = row.scalar_one_or_none()
+        except Exception:  # SEC-AUTH-EXC: resolution failure is non-fatal — degrades to no per-user routing
+            logger.warning("WebSocket principal resolve failed for %s", principal, exc_info=True)
+    websocket.state.bambuddy_principal_user_id = principal_user_id
     logger.info("WebSocket client connected")
 
     try:
@@ -106,14 +121,6 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
                 }
             )
 
-        dispatch_state = await background_dispatch.get_state()
-        if (dispatch_state.get("dispatched", 0) + dispatch_state.get("processing", 0)) > 0:
-            await websocket.send_json(
-                {
-                    "type": "background_dispatch",
-                    "data": dispatch_state,
-                }
-            )
         logger.info("Sent initial status for %s printers", len(statuses))
 
         # Keep connection alive and handle incoming messages.

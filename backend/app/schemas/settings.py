@@ -1,6 +1,22 @@
 import json
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
+
+from backend.app.schemas.print_queue import TriState
+
+# Outbound service URLs validated on save, so a bad value is rejected at
+# configuration time with a clear message rather than failing opaquely at
+# request time. Every one of these services is commonly self-hosted on the same
+# host or LAN as Bambuddy, so the LAN-service policy applies: loopback and
+# RFC-1918 stay permitted, while cloud-metadata endpoints, numeric-encoded IPs,
+# IPv4-mapped IPv6 and non-HTTP schemes are rejected. See
+# ``_url_safety.assert_safe_lan_service_url``.
+#
+# Module-level rather than a class attribute so the CI backstop in
+# tests/unit/test_outbound_url_ssrf_guards.py can import the real list and
+# cannot drift from it. Any new outbound-URL setting belongs here (or, if it
+# must be reachable on the public internet, on the stricter OIDC guard).
+LAN_SERVICE_URL_SETTINGS = ("ha_url", "obico_ml_url", "orcaslicer_api_url", "bambu_studio_api_url")
 
 
 class AppSettings(BaseModel):
@@ -139,6 +155,15 @@ class AppSettings(BaseModel):
 
     # Default printer for operations
     default_printer_id: int | None = Field(default=None, description="Default printer ID for uploads, reprints, etc.")
+
+    # Slicer Pipelines (#1425 PR C). Cap on the ``copies`` field in the
+    # Run-with-pipeline modal — keeps a misclick from queueing 5000 prints.
+    pipeline_max_copies: int = Field(
+        default=50,
+        ge=1,
+        le=1000,
+        description="Upper bound on the copies an operator can request when running a Slicer Pipeline. Larger fleets / production rigs can raise this; the hard ceiling at 1000 is a sanity guard against fat-fingered input.",
+    )
 
     # Virtual Printer
     virtual_printer_enabled: bool = Field(default=False, description="Enable virtual printer for slicer uploads")
@@ -285,9 +310,10 @@ class AppSettings(BaseModel):
         description="Enable user email notifications for print job events (requires Advanced Authentication)",
     )
 
-    # Default print options
-    default_bed_levelling: bool = Field(default=True, description="Default bed levelling option for new prints")
-    default_flow_cali: bool = Field(default=False, description="Default flow calibration option for new prints")
+    # Default print options. bed_levelling / flow_cali / nozzle_offset_cali are
+    # tri-state (off/on/auto), defaulting to "auto" per BambuStudio.
+    default_bed_levelling: TriState = Field(default="auto", description="Default bed levelling option for new prints")
+    default_flow_cali: TriState = Field(default="auto", description="Default flow calibration option for new prints")
     default_vibration_cali: bool = Field(
         default=True, description="Default vibration calibration option for new prints"
     )
@@ -295,8 +321,8 @@ class AppSettings(BaseModel):
         default=False, description="Default first layer inspection option for new prints"
     )
     default_timelapse: bool = Field(default=False, description="Default timelapse option for new prints")
-    default_nozzle_offset_cali: bool = Field(
-        default=True,
+    default_nozzle_offset_cali: TriState = Field(
+        default="auto",
         description="Default nozzle offset calibration option for new prints (dual-nozzle printers only)",
     )
 
@@ -336,6 +362,53 @@ class AppSettings(BaseModel):
     queue_shortest_first: bool = Field(
         default=False,
         description="Shortest Job First — scheduler prioritizes shorter print jobs over longer ones",
+    )
+    queue_max_concurrent_uploads: int = Field(
+        default=4,
+        ge=1,
+        le=16,
+        description=(
+            "How many printers the queue may upload to at the same time. Printers are independent "
+            "machines, so raising this starts a multi-printer batch proportionally sooner; each "
+            "concurrent upload costs one connection and one thread on the Bambuddy host."
+        ),
+    )
+
+    # Preheat / heat-soak before queued prints (#1468). The scheduler stage runs
+    # BEFORE FTP upload. Three hardware tiers behave differently:
+    #   - Chamber heater (H2C/H2D/H2DPro/H2S/X2D/X1E): M141 → wait for chamber
+    #     sensor to reach target → soak
+    #   - Chamber sensor only (X1C/P2S): M140 only → wait for radiant chamber
+    #     warm-up to reach target OR max-wait timeout → soak
+    #   - No chamber sensor (P1S/P1P/A1/A1 Mini): M140 only → fixed soak timer
+    #     (no way to verify chamber temp; relies entirely on max_wait + soak)
+    # Chamber target derives per-print from the loaded AMS filament types via
+    # preheat_filament_targets (max across loaded slots). A target of 0 skips
+    # the chamber phase but keeps the bed phase + soak. Per-queue-item
+    # `preheat_chamber_target_override` (nullable) bypasses the derivation.
+    preheat_enabled: bool = Field(
+        default=False,
+        description="Master toggle / default for new queue items. Per-item preheat_override can flip the decision per print.",
+    )
+    preheat_filament_targets: str = Field(
+        default="",
+        description=(
+            "JSON map of normalized filament type → chamber target °C. Empty = bundled defaults "
+            "(PLA/PETG/TPU/PVA: 0, PETG-CF: 40, ABS/ASA: 45, PA/PC/PC-FR: 50, PA-CF: 55, default: 0). "
+            "Scheduler picks max across loaded AMS slots; 0 disables chamber phase for that print."
+        ),
+    )
+    preheat_max_wait_seconds: int = Field(
+        default=900,
+        ge=60,
+        le=3600,
+        description="Maximum time to wait for the chamber to reach the target before falling through to the soak phase (radiant heating on X1C/P2S can take 15-30 min).",
+    )
+    preheat_soak_seconds: int = Field(
+        default=300,
+        ge=0,
+        le=1800,
+        description="Additional hold time at temperature after the chamber reaches the target (or after max_wait_seconds elapses). 0 = no soak.",
     )
 
     # User-configurable presets for the printer-card temperature / fan-speed
@@ -478,6 +551,7 @@ class AppSettingsUpdate(BaseModel):
     date_format: str | None = None
     time_format: str | None = None
     default_printer_id: int | None = None
+    pipeline_max_copies: int | None = None
     virtual_printer_enabled: bool | None = None
     virtual_printer_access_code: str | None = None
     virtual_printer_mode: str | None = None
@@ -516,12 +590,12 @@ class AppSettingsUpdate(BaseModel):
     low_stock_threshold: float | None = Field(default=None, ge=0.1, le=99.9)
     session_max_hours: int | None = Field(default=None, ge=1, le=720)
     user_notifications_enabled: bool | None = None
-    default_bed_levelling: bool | None = None
-    default_flow_cali: bool | None = None
+    default_bed_levelling: TriState | None = None
+    default_flow_cali: TriState | None = None
     default_vibration_cali: bool | None = None
     default_layer_inspect: bool | None = None
     default_timelapse: bool | None = None
-    default_nozzle_offset_cali: bool | None = None
+    default_nozzle_offset_cali: TriState | None = None
     stagger_group_size: int | None = Field(default=None, ge=1, le=50)
     stagger_interval_minutes: int | None = Field(default=None, ge=1, le=60)
     billing_enabled: bool | None = None
@@ -530,6 +604,11 @@ class AppSettingsUpdate(BaseModel):
     finance_budget_reset_timezone: str | None = None
     require_plate_clear: bool | None = None
     queue_shortest_first: bool | None = None
+    queue_max_concurrent_uploads: int | None = Field(default=None, ge=1, le=16)
+    preheat_enabled: bool | None = None
+    preheat_filament_targets: str | None = None
+    preheat_max_wait_seconds: int | None = Field(default=None, ge=60, le=3600)
+    preheat_soak_seconds: int | None = Field(default=None, ge=0, le=1800)
     nozzle_temp_presets: str | None = None
     bed_temp_presets: str | None = None
     chamber_temp_presets: str | None = None
@@ -558,6 +637,47 @@ class AppSettingsUpdate(BaseModel):
     obico_enabled_printers: str | None = None
     default_sidebar_order: str | None = None
     forecast_global_lead_time_days: int | None = Field(default=None, ge=0)
+
+    @field_validator(*LAN_SERVICE_URL_SETTINGS)
+    @classmethod
+    def validate_lan_service_url(cls, v: str | None, info: ValidationInfo) -> str | None:
+        """Reject SSRF-unsafe outbound service URLs on save.
+
+        Empty (and whitespace-only) is the documented "not configured / fall
+        back to the env var" value for all four fields and must keep passing.
+
+        Values that are not absolute URLs at all ("192.168.1.10:3333",
+        "localhost:3333") are left alone rather than rejected. Two reasons:
+
+        - They are inert. Every consumer of these four settings goes through
+          httpx, which raises UnsupportedProtocol for a URL with no scheme, so
+          no request is ever issued and there is nothing to guard against.
+        - They were storable before this validator existed, and the settings
+          UI is a plain text input with no scheme enforcement. Newly rejecting
+          them would break saves that have nothing to do with the URL: the
+          Obico panel, for one, sends obico_ml_url with every change and
+          auto-saves, so one legacy value would block toggling detection on or
+          off. A pre-existing misconfiguration should keep failing where it
+          already failed (at request time), not spread to unrelated fields.
+
+        ``urlparse`` is no help in telling the two apart — it reads
+        "localhost:3333" as scheme "localhost" — so the test is the literal
+        "://" that makes a string an absolute URL.
+        """
+        if v is None or not v.strip():
+            return v
+        candidate = v.strip()
+        if "://" not in candidate:
+            return v
+        # Lazy-imported: schemas avoid top-level imports from api/routes,
+        # matching the existing pattern in auth.py's _validate_icon_url.
+        from backend.app.api.routes._url_safety import assert_safe_lan_service_url
+
+        try:
+            assert_safe_lan_service_url(candidate, label=info.field_name or "URL")
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        return v
 
     @field_validator("gcode_snippets")
     @classmethod

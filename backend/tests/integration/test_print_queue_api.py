@@ -469,8 +469,8 @@ class TestPrintQueueAPI:
         data = {
             "printer_id": printer.id,
             "archive_id": archive.id,
-            "bed_levelling": False,
-            "flow_cali": True,
+            "bed_levelling": "off",
+            "flow_cali": "on",
             "vibration_cali": False,
             "layer_inspect": True,
             "timelapse": True,
@@ -479,8 +479,8 @@ class TestPrintQueueAPI:
         response = await async_client.post("/api/v1/queue/", json=data)
         assert response.status_code == 200
         result = response.json()
-        assert result["bed_levelling"] is False
-        assert result["flow_cali"] is True
+        assert result["bed_levelling"] == "off"
+        assert result["flow_cali"] == "on"
         assert result["vibration_cali"] is False
         assert result["layer_inspect"] is True
         assert result["timelapse"] is True
@@ -504,14 +504,65 @@ class TestPrintQueueAPI:
         response = await async_client.patch(
             f"/api/v1/queue/{item.id}",
             json={
-                "bed_levelling": False,
+                "bed_levelling": "off",
                 "timelapse": True,
             },
         )
         assert response.status_code == 200
         result = response.json()
-        assert result["bed_levelling"] is False
+        assert result["bed_levelling"] == "off"
         assert result["timelapse"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_reassign_rejected_while_dispatching(
+        self, async_client: AsyncClient, queue_item_factory, printer_factory, db_session
+    ):
+        """#2615: a claimed (in-flight) row rejects edits with 409, so its printer
+        can't be reassigned out from under the running FTP upload."""
+        from datetime import datetime, timezone
+
+        item = await queue_item_factory(dispatching_at=datetime.now(timezone.utc))
+        other = await printer_factory()
+        original_printer_id = item.printer_id
+
+        response = await async_client.patch(f"/api/v1/queue/{item.id}", json={"printer_id": other.id})
+        assert response.status_code == 409
+
+        await db_session.refresh(item)
+        assert item.printer_id == original_printer_id, "printer_id must not change on a dispatching row"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_update_skips_dispatching_item(
+        self, async_client: AsyncClient, queue_item_factory, printer_factory, db_session
+    ):
+        """#2615: bulk edits skip a claimed row rather than splitting it."""
+        from datetime import datetime, timezone
+
+        item = await queue_item_factory(dispatching_at=datetime.now(timezone.utc))
+        other = await printer_factory()
+        original_printer_id = item.printer_id
+
+        response = await async_client.patch("/api/v1/queue/bulk", json={"item_ids": [item.id], "printer_id": other.id})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["skipped_count"] == 1
+        assert body["updated_count"] == 0
+
+        await db_session.refresh(item)
+        assert item.printer_id == original_printer_id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_allowed_on_unclaimed_pending_item(
+        self, async_client: AsyncClient, queue_item_factory, db_session
+    ):
+        """Regression guard: a normal pending row (no claim) still edits fine."""
+        item = await queue_item_factory()
+        response = await async_client.patch(f"/api/v1/queue/{item.id}", json={"plate_id": 7})
+        assert response.status_code == 200
+        assert response.json()["plate_id"] == 7
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1096,6 +1147,22 @@ class TestQueueLibraryFileSupport:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_add_library_file_rejects_cross_model_mismatch(
+        self, async_client: AsyncClient, printer_factory, library_file_factory, db_session
+    ):
+        """Cross-model gate (#2578) also reads sliced_for_model from library file metadata."""
+        await printer_factory(model="H2D")
+        lib_file = await library_file_factory(file_metadata={"print_name": "Mismatch", "sliced_for_model": "X1C"})
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={"target_model": "H2D", "library_file_id": lib_file.id},
+        )
+        assert response.status_code == 400
+        assert "sliced for X1C" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_add_to_queue_library_file_with_options(
         self, async_client: AsyncClient, printer_factory, library_file_factory, db_session
     ):
@@ -1108,7 +1175,7 @@ class TestQueueLibraryFileSupport:
             "library_file_id": lib_file.id,
             "ams_mapping": [1, 2, -1, -1],
             "plate_id": 2,
-            "bed_levelling": False,
+            "bed_levelling": "off",
             "timelapse": True,
             "manual_start": True,
         }
@@ -1118,7 +1185,7 @@ class TestQueueLibraryFileSupport:
         assert result["library_file_id"] == lib_file.id
         assert result["ams_mapping"] == [1, 2, -1, -1]
         assert result["plate_id"] == 2
-        assert result["bed_levelling"] is False
+        assert result["bed_levelling"] == "off"
         assert result["timelapse"] is True
         assert result["manual_start"] is True
 
@@ -1284,8 +1351,8 @@ class TestBulkUpdateEndpoint:
             defaults = {
                 "status": "pending",
                 "position": 1,
-                "bed_levelling": True,
-                "flow_cali": False,
+                "bed_levelling": "on",
+                "flow_cali": "off",
                 "vibration_cali": True,
             }
             defaults.update(kwargs)
@@ -1302,12 +1369,12 @@ class TestBulkUpdateEndpoint:
     @pytest.mark.integration
     async def test_bulk_update_single_field(self, async_client: AsyncClient, queue_item_factory, db_session):
         """Verify bulk update can change a single field on multiple items."""
-        item1 = await queue_item_factory(bed_levelling=True)
-        item2 = await queue_item_factory(bed_levelling=True)
+        item1 = await queue_item_factory(bed_levelling="on")
+        item2 = await queue_item_factory(bed_levelling="on")
 
         response = await async_client.patch(
             "/api/v1/queue/bulk",
-            json={"item_ids": [item1.id, item2.id], "bed_levelling": False},
+            json={"item_ids": [item1.id, item2.id], "bed_levelling": "off"},
         )
         assert response.status_code == 200
         result = response.json()
@@ -1317,22 +1384,22 @@ class TestBulkUpdateEndpoint:
         # Verify items were updated
         await db_session.refresh(item1)
         await db_session.refresh(item2)
-        assert item1.bed_levelling is False
-        assert item2.bed_levelling is False
+        assert item1.bed_levelling == "off"
+        assert item2.bed_levelling == "off"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_bulk_update_multiple_fields(self, async_client: AsyncClient, queue_item_factory, db_session):
         """Verify bulk update can change multiple fields at once."""
-        item1 = await queue_item_factory(bed_levelling=True, flow_cali=False, manual_start=False)
-        item2 = await queue_item_factory(bed_levelling=True, flow_cali=False, manual_start=False)
+        item1 = await queue_item_factory(bed_levelling="on", flow_cali="off", manual_start=False)
+        item2 = await queue_item_factory(bed_levelling="on", flow_cali="off", manual_start=False)
 
         response = await async_client.patch(
             "/api/v1/queue/bulk",
             json={
                 "item_ids": [item1.id, item2.id],
-                "bed_levelling": False,
-                "flow_cali": True,
+                "bed_levelling": "off",
+                "flow_cali": "on",
                 "manual_start": True,
             },
         )
@@ -1341,23 +1408,23 @@ class TestBulkUpdateEndpoint:
         assert result["updated_count"] == 2
 
         await db_session.refresh(item1)
-        assert item1.bed_levelling is False
-        assert item1.flow_cali is True
+        assert item1.bed_levelling == "off"
+        assert item1.flow_cali == "on"
         assert item1.manual_start is True
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_bulk_update_skips_non_pending(self, async_client: AsyncClient, queue_item_factory, db_session):
         """Verify bulk update skips non-pending items."""
-        pending_item = await queue_item_factory(status="pending", bed_levelling=True)
-        printing_item = await queue_item_factory(status="printing", bed_levelling=True)
-        completed_item = await queue_item_factory(status="completed", bed_levelling=True)
+        pending_item = await queue_item_factory(status="pending", bed_levelling="on")
+        printing_item = await queue_item_factory(status="printing", bed_levelling="on")
+        completed_item = await queue_item_factory(status="completed", bed_levelling="on")
 
         response = await async_client.patch(
             "/api/v1/queue/bulk",
             json={
                 "item_ids": [pending_item.id, printing_item.id, completed_item.id],
-                "bed_levelling": False,
+                "bed_levelling": "off",
             },
         )
         assert response.status_code == 200
@@ -1369,9 +1436,9 @@ class TestBulkUpdateEndpoint:
         await db_session.refresh(pending_item)
         await db_session.refresh(printing_item)
         await db_session.refresh(completed_item)
-        assert pending_item.bed_levelling is False
-        assert printing_item.bed_levelling is True
-        assert completed_item.bed_levelling is True
+        assert pending_item.bed_levelling == "off"
+        assert printing_item.bed_levelling == "on"
+        assert completed_item.bed_levelling == "on"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1697,6 +1764,90 @@ class TestTargetLocationFeature:
         assert response.status_code == 200
         result = response.json()
         assert result["target_location"] is None
+
+    # ------------------------------------------------------------------
+    # Cross-model dispatch gate (#2578): a G-code 3MF sliced for one model
+    # must not be queued for model-based dispatch to an incompatible model.
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_rejects_cross_model_mismatch(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """X1C-sliced archive + target_model=H2D must be rejected (#2578)."""
+        await printer_factory(model="H2D")
+        archive = await archive_factory(sliced_for_model="X1C")
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={"target_model": "H2D", "archive_id": archive.id},
+        )
+        assert response.status_code == 400
+        assert "sliced for X1C" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_allows_gcode_family_target(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """X1C-sliced G-code on a P1S is an intentional mixed-farm workflow —
+        same kinematics/volume family, must stay allowed."""
+        await printer_factory(model="P1S")
+        archive = await archive_factory(sliced_for_model="X1C")
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={"target_model": "P1S", "archive_id": archive.id},
+        )
+        assert response.status_code == 200
+        assert response.json()["target_model"] == "P1S"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_without_sliced_metadata_not_blocked(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Legacy archives without sliced_for_model can't be validated — must keep working."""
+        await printer_factory(model="H2D")
+        archive = await archive_factory()  # no sliced_for_model
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={"target_model": "H2D", "archive_id": archive.id},
+        )
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_rejects_cross_model_mismatch(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory, db_session
+    ):
+        """Editing an item must not be able to introduce an incompatible target either."""
+        await printer_factory(model="X1C")
+        await printer_factory(model="H2D")
+        archive = await archive_factory(sliced_for_model="X1C")
+        item = await queue_item_factory(printer_id=None, target_model="X1C", archive_id=archive.id)
+
+        response = await async_client.patch(f"/api/v1/queue/{item.id}", json={"target_model": "H2D"})
+        assert response.status_code == 400
+        assert "sliced for X1C" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_can_fix_stale_mismatched_target(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory, db_session
+    ):
+        """A pre-fix DB row with a wrong target (the reporter's rows 78-82) must be
+        repairable by editing the target back to the sliced-for model."""
+        await printer_factory(model="X1C")
+        archive = await archive_factory(sliced_for_model="X1C")
+        # Stale mismatched row written directly to the DB (bypasses the API gate)
+        item = await queue_item_factory(printer_id=None, target_model="H2D", archive_id=archive.id)
+
+        response = await async_client.patch(f"/api/v1/queue/{item.id}", json={"target_model": "X1C"})
+        assert response.status_code == 200
+        assert response.json()["target_model"] == "X1C"
 
 
 class TestAbortedStatusNormalisation:
@@ -2192,6 +2343,199 @@ class TestAbortedStatusNormalisation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_add_to_queue_insert_position_shifts_existing_items(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Verify priority insertion shifts existing pending items in the same printer queue."""
+        printer = await printer_factory()
+        first = await archive_factory(print_name="First")
+        second = await archive_factory(print_name="Second")
+        priority = await archive_factory(print_name="Priority")
+
+        assert (
+            await async_client.post("/api/v1/queue/", json={"printer_id": printer.id, "archive_id": first.id})
+        ).status_code == 200
+        assert (
+            await async_client.post("/api/v1/queue/", json={"printer_id": printer.id, "archive_id": second.id})
+        ).status_code == 200
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": priority.id,
+                "insert_position": 1,
+            },
+        )
+        assert response.status_code == 200
+
+        list_response = await async_client.get(f"/api/v1/queue/?printer_id={printer.id}")
+        items = sorted(list_response.json(), key=lambda item: item["position"])
+        assert [item["archive_id"] for item in items[:3]] == [priority.id, first.id, second.id]
+        assert [item["position"] for item in items[:3]] == [1, 2, 3]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_insert_position_quantity_shifts_existing_by_quantity(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """ASAP batch insertion shifts existing pending items by the inserted quantity."""
+        printer = await printer_factory()
+        first = await archive_factory(print_name="First")
+        second = await archive_factory(print_name="Second")
+        priority = await archive_factory(print_name="Priority")
+
+        assert (
+            await async_client.post("/api/v1/queue/", json={"printer_id": printer.id, "archive_id": first.id})
+        ).status_code == 200
+        assert (
+            await async_client.post("/api/v1/queue/", json={"printer_id": printer.id, "archive_id": second.id})
+        ).status_code == 200
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": priority.id,
+                "quantity": 3,
+                "insert_position": 1,
+            },
+        )
+        assert response.status_code == 200
+        batch_id = response.json()["batch_id"]
+
+        list_response = await async_client.get(f"/api/v1/queue/?printer_id={printer.id}")
+        items = sorted(list_response.json(), key=lambda item: item["position"])
+        assert [item["archive_id"] for item in items] == [
+            priority.id,
+            priority.id,
+            priority.id,
+            first.id,
+            second.id,
+        ]
+        assert [item["position"] for item in items] == [1, 2, 3, 4, 5]
+        assert [item["batch_id"] for item in items[:3]] == [batch_id, batch_id, batch_id]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_insert_position_scopes_unassigned_items(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Unassigned inserts shift only the unassigned queue scope."""
+        printer = await printer_factory()
+        unassigned_first = await archive_factory(print_name="Unassigned First")
+        unassigned_second = await archive_factory(print_name="Unassigned Second")
+        assigned = await archive_factory(print_name="Assigned")
+        priority = await archive_factory(print_name="Unassigned Priority")
+
+        assert (await async_client.post("/api/v1/queue/", json={"archive_id": unassigned_first.id})).status_code == 200
+        assert (await async_client.post("/api/v1/queue/", json={"archive_id": unassigned_second.id})).status_code == 200
+        assigned_response = await async_client.post(
+            "/api/v1/queue/",
+            json={"printer_id": printer.id, "archive_id": assigned.id},
+        )
+        assert assigned_response.status_code == 200
+        assert assigned_response.json()["position"] == 1
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "archive_id": priority.id,
+                "insert_position": 1,
+            },
+        )
+        assert response.status_code == 200
+
+        unassigned_response = await async_client.get("/api/v1/queue/?printer_id=-1")
+        unassigned_items = sorted(unassigned_response.json(), key=lambda item: item["position"])
+        assert [item["archive_id"] for item in unassigned_items] == [
+            priority.id,
+            unassigned_first.id,
+            unassigned_second.id,
+        ]
+        assert [item["position"] for item in unassigned_items] == [1, 2, 3]
+
+        assigned_scope_response = await async_client.get(f"/api/v1/queue/?printer_id={printer.id}&target_model=NONE")
+        assigned_items = sorted(assigned_scope_response.json(), key=lambda item: item["position"])
+        assert [item["archive_id"] for item in assigned_items] == [assigned.id]
+        assert [item["position"] for item in assigned_items] == [1]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_insert_position_greater_than_max_appends_without_gap(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Oversized explicit insert_position appends at max+1 instead of creating sparse positions."""
+        printer = await printer_factory()
+        first = await archive_factory(print_name="First")
+        second = await archive_factory(print_name="Second")
+        appended = await archive_factory(print_name="Append")
+
+        assert (
+            await async_client.post("/api/v1/queue/", json={"printer_id": printer.id, "archive_id": first.id})
+        ).status_code == 200
+        assert (
+            await async_client.post("/api/v1/queue/", json={"printer_id": printer.id, "archive_id": second.id})
+        ).status_code == 200
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": appended.id,
+                "insert_position": 99,
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["position"] == 3
+
+        list_response = await async_client.get(f"/api/v1/queue/?printer_id={printer.id}")
+        items = sorted(list_response.json(), key=lambda item: item["position"])
+        assert [item["archive_id"] for item in items] == [first.id, second.id, appended.id]
+        assert [item["position"] for item in items] == [1, 2, 3]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_consecutive_asap_inserts_stack_in_submission_order(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Consecutive ASAP inserts to the same printer preserve the client submission order."""
+        printer = await printer_factory()
+        existing = await archive_factory(print_name="Existing")
+        first_asap = await archive_factory(print_name="First ASAP")
+        second_asap = await archive_factory(print_name="Second ASAP")
+
+        assert (
+            await async_client.post("/api/v1/queue/", json={"printer_id": printer.id, "archive_id": existing.id})
+        ).status_code == 200
+
+        first_response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": first_asap.id,
+                "insert_position": 1,
+            },
+        )
+        assert first_response.status_code == 200
+
+        second_response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": second_asap.id,
+                "insert_position": 2,
+            },
+        )
+        assert second_response.status_code == 200
+
+        list_response = await async_client.get(f"/api/v1/queue/?printer_id={printer.id}")
+        items = sorted(list_response.json(), key=lambda item: item["position"])
+        assert [item["archive_id"] for item in items] == [first_asap.id, second_asap.id, existing.id]
+        assert [item["position"] for item in items] == [1, 2, 3]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_add_to_queue_quantity_with_print_options(
         self, async_client: AsyncClient, printer_factory, archive_factory, db_session
     ):
@@ -2203,7 +2547,7 @@ class TestAbortedStatusNormalisation:
             "printer_id": printer.id,
             "archive_id": archive.id,
             "quantity": 2,
-            "bed_levelling": False,
+            "bed_levelling": "off",
             "timelapse": True,
         }
         response = await async_client.post("/api/v1/queue/", json=data)
@@ -2214,7 +2558,7 @@ class TestAbortedStatusNormalisation:
         batch_items = [i for i in list_response.json() if i["batch_id"] == batch_id]
         assert len(batch_items) == 2
         for item in batch_items:
-            assert item["bed_levelling"] is False
+            assert item["bed_levelling"] == "off"
             assert item["timelapse"] is True
 
     @pytest.mark.asyncio
@@ -2586,7 +2930,7 @@ class TestResumeQueueAfterFailure:
             defaults = {
                 "filename": f"resume_print_{counter}.3mf",
                 "print_name": f"Resume Print {counter}",
-                "file_path": f"/tmp/resume_print_{counter}.3mf",
+                "file_path": f"/tmp/resume_print_{counter}.3mf",  # nosec B108
                 "file_size": 1024,
                 "content_hash": f"resumehash{counter:08d}",
                 "status": "completed",
@@ -2788,3 +3132,455 @@ class TestResumeQueueAfterFailure:
 
         second = await async_client.post(f"/api/v1/queue/printer/{printer.id}/resume")
         assert second.json() == {"acknowledged": 0, "restored": 0}
+
+
+class TestReorderEndpoint:
+    """Tests for the /queue/reorder endpoint (#1625-followup duplicate-position validator)."""
+
+    @pytest.fixture
+    async def printer_factory(self, db_session):
+        async def _create(**kwargs):
+            from backend.app.models.printer import Printer
+
+            defaults = {
+                "name": "Reorder Test Printer",
+                "ip_address": "192.168.1.220",
+                "serial_number": "TESTREORDER001",
+                "access_code": "12345678",
+                "model": "X1C",
+            }
+            defaults.update(kwargs)
+            printer = Printer(**defaults)
+            db_session.add(printer)
+            await db_session.commit()
+            await db_session.refresh(printer)
+            return printer
+
+        return _create
+
+    @pytest.fixture
+    async def archive_factory(self, db_session):
+        _counter = [0]
+
+        async def _create(**kwargs):
+            from backend.app.models.archive import PrintArchive
+
+            _counter[0] += 1
+            defaults = {
+                "filename": f"reorder_{_counter[0]}.3mf",
+                "print_name": f"Reorder {_counter[0]}",
+                "file_path": f"/tmp/reorder_{_counter[0]}.3mf",  # nosec B108
+                "file_size": 1024,
+                "content_hash": f"reorderhash{_counter[0]:06d}",
+                "status": "completed",
+            }
+            defaults.update(kwargs)
+            archive = PrintArchive(**defaults)
+            db_session.add(archive)
+            await db_session.commit()
+            await db_session.refresh(archive)
+            return archive
+
+        return _create
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_reorder_rejects_duplicate_positions(
+        self, async_client: AsyncClient, db_session, printer_factory, archive_factory
+    ):
+        """Reorder payload with duplicate positions → 422 at schema layer.
+
+        Regression guard: pre-fix, a buggy client sending two items at the
+        same position would leave the queue in an inconsistent state (the
+        scheduler's ORDER BY (printer_id, position) tie would be broken by
+        physical row order — non-deterministic dispatch order).
+        """
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        a1 = await archive_factory()
+        a2 = await archive_factory()
+        item1 = PrintQueueItem(printer_id=printer.id, archive_id=a1.id, status="pending", position=1)
+        item2 = PrintQueueItem(printer_id=printer.id, archive_id=a2.id, status="pending", position=2)
+        db_session.add_all([item1, item2])
+        await db_session.commit()
+        await db_session.refresh(item1)
+        await db_session.refresh(item2)
+
+        response = await async_client.post(
+            "/api/v1/queue/reorder",
+            json={
+                "items": [
+                    {"id": item1.id, "position": 1},
+                    {"id": item2.id, "position": 1},  # duplicate
+                ]
+            },
+        )
+        assert response.status_code == 422
+        body = response.json()
+        # Pydantic v2 wraps custom validator errors; the message must mention "Duplicate"
+        # so the FE can surface the actionable detail.
+        assert any("duplicate" in str(err).lower() for err in body.get("detail", []))
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_reorder_accepts_unique_positions(
+        self, async_client: AsyncClient, db_session, printer_factory, archive_factory
+    ):
+        """Reorder with unique positions succeeds and updates them in DB."""
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        a1 = await archive_factory()
+        a2 = await archive_factory()
+        item1 = PrintQueueItem(printer_id=printer.id, archive_id=a1.id, status="pending", position=1)
+        item2 = PrintQueueItem(printer_id=printer.id, archive_id=a2.id, status="pending", position=2)
+        db_session.add_all([item1, item2])
+        await db_session.commit()
+        await db_session.refresh(item1)
+        await db_session.refresh(item2)
+
+        response = await async_client.post(
+            "/api/v1/queue/reorder",
+            json={
+                "items": [
+                    {"id": item1.id, "position": 2},
+                    {"id": item2.id, "position": 1},
+                ]
+            },
+        )
+        assert response.status_code == 200
+
+        await db_session.refresh(item1)
+        await db_session.refresh(item2)
+        assert item1.position == 2
+        assert item2.position == 1
+
+
+class TestForceColorOverridesAreScopedToThePlate:
+    """Queueing several plates of one 3MF must not make each plate wait on the
+    colours of its siblings (#2551).
+
+    The print dialog builds one override list from every selected plate and posts
+    that same list with each plate's item, so the API is what has to keep only the
+    slots the plate prints -- a ``force_color_match`` entry blocks dispatch until
+    the printer has that exact colour loaded.
+    """
+
+    THREE_PLATES = """<?xml version="1.0" encoding="UTF-8"?>
+    <config>
+        <plate>
+            <metadata key="index" value="1"/>
+            <filament id="1" used_g="50.0" type="PLA" color="#0B2C7A"/>
+        </plate>
+        <plate>
+            <metadata key="index" value="2"/>
+            <filament id="2" used_g="40.0" type="PLA" color="#9B9EA0"/>
+        </plate>
+        <plate>
+            <metadata key="index" value="3"/>
+            <filament id="3" used_g="30.0" type="PLA" color="#F4EE2A"/>
+        </plate>
+    </config>
+    """
+
+    # What the dialog posts for every plate: the union of all three plates'
+    # filaments, each one force-matched.
+    ALL_THREE_COLORS = [
+        {"slot_id": 1, "type": "PLA", "color": "#0B2C7A", "color_name": "Army Blue", "force_color_match": True},
+        {"slot_id": 2, "type": "PLA", "color": "#9B9EA0", "color_name": "Ash Grey", "force_color_match": True},
+        {"slot_id": 3, "type": "PLA", "color": "#F4EE2A", "color_name": "Sunshine Yellow", "force_color_match": True},
+    ]
+
+    @pytest.fixture
+    async def multi_plate_archive(self, db_session, tmp_path):
+        """An archive whose 3MF really exists on disk, one colour per plate."""
+        import zipfile
+
+        from backend.app.models.archive import PrintArchive
+
+        file_path = tmp_path / "three_plates.gcode.3mf"
+        with zipfile.ZipFile(file_path, "w") as zf:
+            zf.writestr("Metadata/slice_info.config", self.THREE_PLATES)
+
+        archive = PrintArchive(
+            filename="three_plates.gcode.3mf",
+            print_name="Three Plates",
+            file_path=str(file_path),
+            file_size=file_path.stat().st_size,
+            content_hash="platehash0001",
+            status="completed",
+        )
+        db_session.add(archive)
+        await db_session.commit()
+        await db_session.refresh(archive)
+        return archive
+
+    @pytest.fixture
+    async def x1c(self, db_session):
+        from backend.app.models.printer import Printer
+
+        printer = Printer(
+            name="Force Color X1C",
+            ip_address="192.168.1.210",
+            serial_number="FORCECOLOR01",
+            access_code="12345678",
+            model="X1C",
+        )
+        db_session.add(printer)
+        await db_session.commit()
+        await db_session.refresh(printer)
+        return printer
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_each_plate_keeps_only_the_colour_it_prints(
+        self, async_client: AsyncClient, multi_plate_archive, x1c
+    ):
+        """The bug: plate 1 prints Army Blue only, but was stored demanding all three."""
+        stored = {}
+        for plate_id in (1, 2, 3):
+            response = await async_client.post(
+                "/api/v1/queue/",
+                json={
+                    "target_model": "X1C",
+                    "archive_id": multi_plate_archive.id,
+                    "plate_id": plate_id,
+                    "filament_overrides": self.ALL_THREE_COLORS,
+                },
+            )
+            assert response.status_code == 200
+            stored[plate_id] = response.json()["filament_overrides"]
+
+        assert [o["color_name"] for o in stored[1]] == ["Army Blue"]
+        assert [o["color_name"] for o in stored[2]] == ["Ash Grey"]
+        assert [o["color_name"] for o in stored[3]] == ["Sunshine Yellow"]
+        # The slot each entry maps to has to survive narrowing untouched, or the
+        # dispatch-time AMS mapping would key the override onto the wrong slot.
+        assert [o["slot_id"] for o in stored[2]] == [2]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_whole_file_queue_keeps_every_colour(self, async_client: AsyncClient, multi_plate_archive, x1c):
+        """No plate_id means the job prints the whole file, so every colour is needed."""
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "target_model": "X1C",
+                "archive_id": multi_plate_archive.id,
+                "filament_overrides": self.ALL_THREE_COLORS,
+            },
+        )
+        assert response.status_code == 200
+        assert len(response.json()["filament_overrides"]) == 3
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unreadable_3mf_keeps_every_colour(self, async_client: AsyncClient, db_session, tmp_path, x1c):
+        """When the plate's slots can't be read, keep the overrides rather than drop them.
+
+        An item waiting on a colour it doesn't need is visible and fixable; one that
+        silently lost its forced colour would dispatch in the wrong filament.
+        """
+        from backend.app.models.archive import PrintArchive
+
+        file_path = tmp_path / "not_a_zip.gcode.3mf"
+        file_path.write_text("this is not a 3mf")
+        archive = PrintArchive(
+            filename="not_a_zip.gcode.3mf",
+            print_name="Corrupt",
+            file_path=str(file_path),
+            file_size=file_path.stat().st_size,
+            content_hash="platehash0002",
+            status="completed",
+        )
+        db_session.add(archive)
+        await db_session.commit()
+        await db_session.refresh(archive)
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "target_model": "X1C",
+                "archive_id": archive.id,
+                "plate_id": 1,
+                "filament_overrides": self.ALL_THREE_COLORS,
+            },
+        )
+        assert response.status_code == 200
+        assert len(response.json()["filament_overrides"]) == 3
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_required_types_stay_scoped_to_the_plate(self, async_client: AsyncClient, db_session, tmp_path, x1c):
+        """Override types are merged into required_filament_types, so a shared list
+        also widened the type gate -- a PLA-only plate demanded PETG as well."""
+        import zipfile
+
+        from backend.app.models.archive import PrintArchive
+
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <plate>
+                <metadata key="index" value="1"/>
+                <filament id="1" used_g="50.0" type="PLA" color="#0B2C7A"/>
+            </plate>
+            <plate>
+                <metadata key="index" value="2"/>
+                <filament id="2" used_g="40.0" type="PETG" color="#9B9EA0"/>
+            </plate>
+        </config>
+        """
+        file_path = tmp_path / "mixed_types.gcode.3mf"
+        with zipfile.ZipFile(file_path, "w") as zf:
+            zf.writestr("Metadata/slice_info.config", xml)
+        archive = PrintArchive(
+            filename="mixed_types.gcode.3mf",
+            print_name="Mixed",
+            file_path=str(file_path),
+            file_size=file_path.stat().st_size,
+            content_hash="platehash0003",
+            status="completed",
+        )
+        db_session.add(archive)
+        await db_session.commit()
+        await db_session.refresh(archive)
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "target_model": "X1C",
+                "archive_id": archive.id,
+                "plate_id": 1,
+                "filament_overrides": [
+                    {"slot_id": 1, "type": "PLA", "color": "#0B2C7A", "force_color_match": True},
+                    {"slot_id": 2, "type": "PETG", "color": "#9B9EA0", "force_color_match": True},
+                ],
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["required_filament_types"] == ["PLA"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_editing_an_item_narrows_the_overrides_too(
+        self, async_client: AsyncClient, db_session, multi_plate_archive, x1c
+    ):
+        """The edit dialog posts the same shared list, so PATCH narrows it as well."""
+        from backend.app.models.print_queue import PrintQueueItem
+
+        item = PrintQueueItem(
+            target_model="X1C",
+            archive_id=multi_plate_archive.id,
+            plate_id=2,
+            status="pending",
+            position=1,
+        )
+        db_session.add(item)
+        await db_session.commit()
+        await db_session.refresh(item)
+
+        response = await async_client.patch(
+            f"/api/v1/queue/{item.id}",
+            json={"filament_overrides": self.ALL_THREE_COLORS},
+        )
+        assert response.status_code == 200
+        assert [o["color_name"] for o in response.json()["filament_overrides"]] == ["Ash Grey"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_editing_the_plate_renarrows_against_the_new_plate(
+        self, async_client: AsyncClient, db_session, multi_plate_archive, x1c
+    ):
+        """Moving an item to another plate must re-scope its colours to that plate."""
+        from backend.app.models.print_queue import PrintQueueItem
+
+        item = PrintQueueItem(
+            target_model="X1C",
+            archive_id=multi_plate_archive.id,
+            plate_id=1,
+            status="pending",
+            position=1,
+        )
+        db_session.add(item)
+        await db_session.commit()
+        await db_session.refresh(item)
+
+        response = await async_client.patch(
+            f"/api/v1/queue/{item.id}",
+            json={"plate_id": 3, "filament_overrides": self.ALL_THREE_COLORS},
+        )
+        assert response.status_code == 200
+        assert [o["color_name"] for o in response.json()["filament_overrides"]] == ["Sunshine Yellow"]
+
+
+@pytest.mark.asyncio
+async def test_stop_offline_reconciles_linked_archive_status_2603(
+    async_client: AsyncClient, printer_factory, archive_factory, db_session
+):
+    """Stopping a printing item while the printer is offline must also close out its
+    archive (#2603).
+
+    When the stop command reaches the printer, the later MQTT completion event flips
+    the archive to cancelled. When the printer is offline no such event ever arrives,
+    so without this the archive stays "printing" forever while the queue row is
+    already cancelled — the reporter's archive 436. The offline branch reconciles the
+    archive directly.
+    """
+    from unittest.mock import MagicMock, patch
+
+    from backend.app.models.print_queue import PrintQueueItem
+
+    printer = await printer_factory(name="Offline printer")
+    archive = await archive_factory(
+        printer.id, status="printing", plate_id=22, filename="heart 3.gcode.3mf", with_run=False
+    )
+    item = PrintQueueItem(printer_id=printer.id, archive_id=archive.id, status="printing")
+    db_session.add(item)
+    await db_session.commit()
+    await db_session.refresh(item)
+
+    # stop_print returns False => printer offline / not connected.
+    with patch(
+        "backend.app.services.printer_manager.printer_manager.stop_print",
+        MagicMock(return_value=False),
+    ):
+        resp = await async_client.post(f"/api/v1/queue/{item.id}/stop")
+
+    assert resp.status_code == 200
+    await db_session.refresh(item)
+    await db_session.refresh(archive)
+    assert item.status == "cancelled"
+    assert archive.status == "cancelled", "an offline stop must reconcile the archive, not leave it 'printing'"
+    assert archive.completed_at is not None
+    assert archive.failure_reason == "Stopped by user (printer was offline)"
+
+
+@pytest.mark.asyncio
+async def test_stop_online_leaves_archive_for_mqtt_to_reconcile_2603(
+    async_client: AsyncClient, printer_factory, archive_factory, db_session
+):
+    """When the stop command reaches the printer, the archive is left to the MQTT
+    completion path — the offline reconcile must NOT fire and pre-empt it."""
+    from unittest.mock import MagicMock, patch
+
+    from backend.app.models.print_queue import PrintQueueItem
+
+    printer = await printer_factory(name="Online printer")
+    archive = await archive_factory(printer.id, status="printing", filename="heart 3.gcode.3mf", with_run=False)
+    item = PrintQueueItem(printer_id=printer.id, archive_id=archive.id, status="printing")
+    db_session.add(item)
+    await db_session.commit()
+    await db_session.refresh(item)
+
+    with patch(
+        "backend.app.services.printer_manager.printer_manager.stop_print",
+        MagicMock(return_value=True),
+    ):
+        resp = await async_client.post(f"/api/v1/queue/{item.id}/stop")
+
+    assert resp.status_code == 200
+    await db_session.refresh(item)
+    await db_session.refresh(archive)
+    assert item.status == "cancelled"
+    assert archive.status == "printing", "an online stop must leave the archive for the MQTT completion path"

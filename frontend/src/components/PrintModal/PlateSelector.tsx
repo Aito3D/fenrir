@@ -8,8 +8,8 @@ import { getBedTypeInfo } from '../../utils/bedType';
 /**
  * Plate selection grid for multi-plate 3MF files.
  * Shows thumbnails, names, objects, and print times for each plate.
- * In multi-select mode (add-to-queue), plates have checkboxes for selecting a subset.
- * In single-select mode (reprint/edit), only one plate can be selected at a time.
+ * In multi-select mode, plates have checkboxes for selecting a subset.
+ * In single-select mode, only one plate can be selected at a time.
  */
 export function PlateSelector({
   plates,
@@ -35,7 +35,7 @@ export function PlateSelector({
         <Layers className="w-4 h-4 text-bambu-gray" />
         <span className="text-sm text-bambu-gray">Select Plate{multiSelect ? 's' : ''} to Print</span>
         {selectedPlates.size === 0 && (
-          <span className="text-xs text-orange-400 flex items-center gap-1">
+          <span className="text-xs text-orange-700 dark:text-orange-400 flex items-center gap-1">
             <AlertTriangle className="w-3 h-3" />
             Selection required
           </span>

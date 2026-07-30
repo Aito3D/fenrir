@@ -1119,21 +1119,51 @@ async def _collect_support_info() -> dict:
 
 
 def _get_log_content(max_bytes: int = 10 * 1024 * 1024, sensitive_strings: dict[str, str] | None = None) -> bytes:
-    """Get log file content, limited to max_bytes from the end."""
+    """Get recent log content, limited to max_bytes from the end.
+
+    Spans the rotated files as well as the live one. ``bambuddy.log`` is capped
+    at 5 MB by the RotatingFileHandler, and the bundle used to ship only that
+    file — so on a large fleet with debug logging on, the window we ask a
+    reporter for was far shorter than anyone realised. The 19-printer farm in
+    #2555 emits ~100 lines/s of MQTT frame dumps, which fills 5 MB in under five
+    minutes: the bundle we received to diagnose a *queue* problem barely
+    contained one upload. The three rotated backups were sitting on disk unread.
+
+    Reads oldest -> newest so the result is chronological, then takes the last
+    ``max_bytes``, which is where the budget was all along.
+    """
     log_file = settings.log_dir / "bambuddy.log"
     if not log_file.exists():
         return b"Log file not found"
 
-    file_size = log_file.stat().st_size
-    if file_size <= max_bytes:
-        content = log_file.read_text(encoding="utf-8", errors="replace")
-    else:
-        # Read last max_bytes
-        with open(log_file, "rb") as f:
-            f.seek(file_size - max_bytes)
-            # Skip partial line at start
-            f.readline()
-            content = f.read().decode("utf-8", errors="replace")
+    # RotatingFileHandler names its backups .log.1 (newest) .. .log.N (oldest).
+    # Walk them in reverse so the concatenation reads forwards in time.
+    candidates: list[Path] = []
+    for index in range(settings.log_backup_count, 0, -1):
+        rotated = log_file.with_name(f"{log_file.name}.{index}")
+        if rotated.exists():
+            candidates.append(rotated)
+    candidates.append(log_file)
+
+    chunks: list[str] = []
+    remaining = max_bytes
+    # Fill from the newest backwards so the byte budget is spent on recent
+    # history, then flip back to chronological order for the reader.
+    for path in reversed(candidates):
+        if remaining <= 0:
+            break
+        try:
+            size = path.stat().st_size
+            with open(path, "rb") as f:
+                if size > remaining:
+                    f.seek(size - remaining)
+                    f.readline()  # discard the partial line the seek landed in
+                chunks.append(f.read().decode("utf-8", errors="replace"))
+            remaining -= min(size, remaining)
+        except OSError:
+            logger.debug("Failed to read log file %s for support bundle", path, exc_info=True)
+
+    content = "".join(reversed(chunks))
 
     # Sanitize sensitive data
     content = sanitize_log_content(content, sensitive_strings)
@@ -1195,6 +1225,35 @@ def _redact_raw_push_status(raw: dict) -> dict:
             ]
 
     return out
+
+
+def _sanitize_push_status_values(node, sensitive_strings: dict[str, str]):
+    """Sanitize a push_status snapshot's string *values*, never its JSON text.
+
+    This used to run :func:`sanitize_log_content` over the serialised snapshot.
+    That pass includes a generic Bambu-serial regex
+    (``0[0-3][A-Z0-9][A-Z0-9]{9,13}`` in ``log_reader``) which matches the
+    decimal expansion of a float just as happily as a serial: an AMS ``k`` flow
+    factor of ``0.0199999995529652`` came out as ``0.[SERIAL]``, and the bundle
+    shipped invalid JSON — unusable for exactly the ground-truth purpose the
+    snapshot exists for (found while diagnosing #2702).
+
+    Walking the structure instead leaves numbers, bools and None untouched, so
+    the output always parses. Keys are structural and never rewritten.
+    """
+    if isinstance(node, str):
+        return sanitize_log_content(node, sensitive_strings)
+    if isinstance(node, dict):
+        return {k: _sanitize_push_status_values(v, sensitive_strings) for k, v in node.items()}
+    if isinstance(node, list | tuple):
+        # Tuples too: `json.dumps` renders them as arrays, so stringifying one
+        # here would change the file's shape rather than just its content.
+        return [_sanitize_push_status_values(v, sensitive_strings) for v in node]
+    if node is None or isinstance(node, bool | int | float):
+        return node
+    # Anything else (datetime, Decimal, …) would be stringified by json.dumps'
+    # ``default=str`` *after* this pass and so escape sanitisation entirely.
+    return sanitize_log_content(str(node), sensitive_strings)
 
 
 async def _get_recent_sanitized_logs(max_lines: int = 200) -> str:
@@ -1270,15 +1329,21 @@ async def generate_support_bundle(
                 "captured_at": datetime.now(timezone.utc).isoformat(),
                 "raw_data": redacted,
             }
-            # Belt-and-suspenders: pass the JSON text through the string-based
-            # sanitizer so any user-named string (printer name, serial baked
-            # into a tray uuid) the structural pass missed still gets caught.
-            snapshot_json = json.dumps(snapshot, indent=2, default=str)
-            snapshot_json = sanitize_log_content(snapshot_json, sensitive_strings)
-            zf.writestr(f"push-status/printer-{i + 1}.json", snapshot_json)
+            # Belt-and-suspenders: pass every string value through the
+            # string-based sanitizer so any user-named string (printer name,
+            # serial baked into a tray uuid) the structural pass missed still
+            # gets caught. Values only — sanitizing the serialised JSON text
+            # corrupted numeric literals (see _sanitize_push_status_values).
+            snapshot = _sanitize_push_status_values(snapshot, sensitive_strings)
+            zf.writestr(f"push-status/printer-{i + 1}.json", json.dumps(snapshot, indent=2, default=str))
 
         # Add log file
-        log_content = _get_log_content(sensitive_strings=sensitive_strings)
+        # Off the event loop: this reads up to 10 MB and then runs one full regex
+        # pass per sensitive string over it. Now that the bundle spans the rotated
+        # files it can genuinely reach that ceiling, and the blocking cost scales
+        # with the number of printers (4 redaction patterns each) — i.e. it is
+        # worst on exactly the fleet size this change was written for.
+        log_content = await asyncio.to_thread(_get_log_content, sensitive_strings=sensitive_strings)
         zf.writestr("bambuddy.log", log_content)
 
     zip_buffer.seek(0)

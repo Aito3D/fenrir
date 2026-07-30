@@ -330,6 +330,55 @@ class TestSanitizeLogContent:
         assert "/home/[user]/" in result
         assert "[IP]" in result
 
+    def test_ldap_dn_redacted_reporter_line(self):
+        """#2681: the exact reporter line — the CN (real name) must not survive."""
+        from backend.app.services.log_reader import sanitize_log_content as _sanitize_log_content
+
+        content = (
+            "LDAP authentication successful for user: jschmoe "
+            "(DN: CN=Joe Schmoe,CN=Users,DC=ad,DC=example,DC=com, groups: 4)"
+        )
+        result = _sanitize_log_content(content)
+        assert "Joe Schmoe" not in result
+        assert "DC=example" not in result
+        assert result == "LDAP authentication successful for user: jschmoe (DN: [DN], groups: 4)"
+
+    def test_ldap_dn_redacted_in_exception_string(self):
+        """DNs that leak indirectly via ldap3 exception text are caught too."""
+        from backend.app.services.log_reader import sanitize_log_content as _sanitize_log_content
+
+        content = "LDAP bind failed for user jschmoe: invalidCredentials at uid=jschmoe,ou=people,dc=example,dc=org"
+        result = _sanitize_log_content(content)
+        assert "uid=jschmoe" not in result
+        assert "[DN]" in result
+
+    def test_ldap_group_dn_redacted(self):
+        """Group DNs (from group-mapping logs) are PII-bearing and redacted."""
+        from backend.app.services.log_reader import sanitize_log_content as _sanitize_log_content
+
+        content = "Mapped CN=Admins,OU=Groups,DC=corp,DC=local -> Administrators"
+        result = _sanitize_log_content(content)
+        assert "CN=Admins" not in result
+        assert "DC=corp" not in result
+        assert "[DN]" in result
+        assert "Administrators" in result  # the non-PII target group name survives
+
+    def test_non_dn_key_value_line_not_clobbered(self):
+        """An ordinary key=value log line must not be mistaken for a DN."""
+        from backend.app.services.log_reader import sanitize_log_content as _sanitize_log_content
+
+        content = "Dispatch decision: mode=queue, state=FINISH, printer=1"
+        result = _sanitize_log_content(content)
+        assert result == content
+
+    def test_single_rdn_not_redacted(self):
+        """A lone attr=value (not a multi-component DN) is left alone."""
+        from backend.app.services.log_reader import sanitize_log_content as _sanitize_log_content
+
+        content = "Country C=US selected"
+        result = _sanitize_log_content(content)
+        assert result == content
+
 
 class TestCollectSupportInfo:
     """Tests for _collect_support_info() new diagnostic sections."""
@@ -1166,8 +1215,8 @@ class TestRedactRawPushStatus:
         out = _redact_raw_push_status(raw)
 
         # LAN topology must be scrubbed (mirrors the #1429 VP fix).
-        assert out["net"]["info"][0]["ip"] == "0.0.0.0"
-        assert out["net"]["info"][1]["ip"] == "0.0.0.0"
+        assert out["net"]["info"][0]["ip"] == "0.0.0.0"  # nosec B104 - redaction sentinel, not a bind address
+        assert out["net"]["info"][1]["ip"] == "0.0.0.0"  # nosec B104 - redaction sentinel, not a bind address
         # Non-IP siblings inside the entry survive so the shape stays
         # diagnosable (interface count, mask presence, etc.).
         assert out["net"]["info"][0]["mask"] == "255.255.255.0"
@@ -1236,3 +1285,169 @@ class TestRedactRawPushStatus:
         assert _redact_raw_push_status(None) == {}  # type: ignore[arg-type]
         assert _redact_raw_push_status([]) == {}  # type: ignore[arg-type]
         assert _redact_raw_push_status("") == {}  # type: ignore[arg-type]
+
+
+class TestSanitizePushStatusValues:
+    """The bundled push_status snapshot must stay parseable JSON.
+
+    Sanitization used to run over the *serialised* snapshot. The generic
+    Bambu-serial regex in ``log_reader`` (``0[0-3][A-Z0-9][A-Z0-9]{9,13}``)
+    matches the decimal expansion of a float as readily as a serial, so an AMS
+    ``k`` flow factor came out as ``0.[SERIAL]`` and the whole file stopped
+    parsing — found in a real bundle while diagnosing #2702, which is exactly
+    the case the snapshot was added to serve.
+    """
+
+    def test_float_that_matches_the_serial_regex_survives(self):
+        """The observed reproducer, verbatim."""
+        import json
+
+        from backend.app.api.routes.support import _sanitize_push_status_values
+
+        raw = {"ams": [{"tray": [{"k": 0.0199999995529652}]}]}
+
+        out = _sanitize_push_status_values(raw, {})
+
+        assert json.loads(json.dumps(out)) == raw
+
+    def test_output_always_parses(self):
+        """Whatever it does to values, the result must be valid JSON."""
+        import json
+
+        from backend.app.api.routes.support import _sanitize_push_status_values
+
+        raw = {
+            "k_values": [0.0199999995529652, 0.019999999552965164, 0.02],
+            "home_flag": 7554487,
+            "sdcard": True,
+            "resolution": "",
+            "nozzle": None,
+        }
+
+        json.loads(json.dumps(_sanitize_push_status_values(raw, {})))
+
+    def test_still_redacts_strings(self):
+        """The point of the pass is not lost — string values are sanitized."""
+        from backend.app.api.routes.support import _sanitize_push_status_values
+
+        raw = {"tag_uid": "0123456789ABCDEF", "name": "Martin's P1S", "ip": "192.168.1.50"}
+
+        out = _sanitize_push_status_values(raw, {"Martin's P1S": "[PRINTER]"})
+
+        assert out["tag_uid"] == "[SERIAL]"
+        assert out["name"] == "[PRINTER]"
+        assert out["ip"] == "[IP]"
+
+    def test_walks_nested_containers(self):
+        from backend.app.api.routes.support import _sanitize_push_status_values
+
+        raw = {"ams": [{"tray": [{"tray_uuid": "0123456789ABCDEF"}]}]}
+
+        out = _sanitize_push_status_values(raw, {})
+
+        assert out["ams"][0]["tray"][0]["tray_uuid"] == "[SERIAL]"
+
+    def test_keys_are_left_alone(self):
+        """Keys are structural — renaming one would break the schema."""
+        from backend.app.api.routes.support import _sanitize_push_status_values
+
+        raw = {"0123456789ABCDEF": 1}
+
+        assert list(_sanitize_push_status_values(raw, {})) == ["0123456789ABCDEF"]
+
+    def test_non_json_scalars_are_sanitized_not_smuggled(self):
+        """``json.dumps(default=str)`` runs after this pass, so do it here."""
+        from datetime import datetime, timezone
+
+        from backend.app.api.routes.support import _sanitize_push_status_values
+
+        raw = {"seen_at": datetime(2026, 7, 29, 23, 12, 40, tzinfo=timezone.utc), "who": object()}
+
+        out = _sanitize_push_status_values(raw, {"2026-07-29": "[WHEN]"})
+
+        assert out["seen_at"].startswith("[WHEN]")
+        assert isinstance(out["who"], str)
+
+    def test_bools_stay_bools(self):
+        """`isinstance(True, int)` — a bool must not fall through to str()."""
+        from backend.app.api.routes.support import _sanitize_push_status_values
+
+        out = _sanitize_push_status_values({"sdcard": True, "force_upgrade": False}, {})
+
+        assert out["sdcard"] is True
+        assert out["force_upgrade"] is False
+
+    def test_the_full_bundle_chain_on_a_real_p1s_payload(self):
+        """The route's transform, end to end, on the shape from the #2702 bundle.
+
+        `_redact_raw_push_status` then `_sanitize_push_status_values` then
+        `json.dumps(default=str)` — the composition the bundle writer applies.
+        The bundle that exposed this had five `k` values corrupted, so the
+        snapshot could not be read at all; the field the report was about
+        (`total_layer_num`) was sitting in it, intact and unreachable.
+        """
+        import json
+
+        from backend.app.api.routes.support import (
+            _redact_raw_push_status,
+            _sanitize_push_status_values,
+        )
+
+        raw = {
+            "gcode_file": "AMS_Filament_Clip_3MF.3mf",
+            "layer_num": 2,
+            "total_layer_num": 33,
+            "home_flag": 7554487,
+            "sdcard": True,
+            "net": {"info": [{"ip": "192.168.1.50", "mask": 0}]},
+            "ams": {
+                "ams": [
+                    {
+                        "id": "0",
+                        "humidity": "5",
+                        "tray": [
+                            {"id": "0", "k": 0.0199999995529652, "tag_uid": "0123456789ABCDEF"},
+                            {"id": "1", "k": 0.0209999997168779, "tag_uid": "44F782D000000100"},
+                        ],
+                    }
+                ]
+            },
+        }
+
+        snapshot = {
+            "model": "P1S",
+            "firmware_version": "01.10.00.00",
+            "raw_data": _redact_raw_push_status(raw),
+        }
+        text = json.dumps(_sanitize_push_status_values(snapshot, {}), indent=2, default=str)
+
+        parsed = json.loads(text)  # used to raise "Expecting ',' delimiter"
+        trays = parsed["raw_data"]["ams"]["ams"][0]["tray"]
+        assert [t["k"] for t in trays] == [0.0199999995529652, 0.0209999997168779]
+        assert parsed["raw_data"]["total_layer_num"] == 33
+        # Redaction still did its job on both fronts.
+        assert "gcode_file" not in parsed["raw_data"]
+        assert trays[0]["tag_uid"] == "[SERIAL]"
+        # The structural pass replaces the printer's LAN address with the
+        # sentinel 0.0.0.0, which is itself an IPv4 literal, so the value pass
+        # then masks it to [IP]. Harmless — the real address is already gone —
+        # and matches what shipped in the bundle behind #2702.
+        assert parsed["raw_data"]["net"]["info"][0]["ip"] == "[IP]"
+
+    def test_does_not_mutate_the_live_snapshot(self):
+        """`state.raw_data` is read by the dispatcher on every tick.
+
+        The bundle writer passes a redacted copy, but a walker that mutated in
+        place would still be one refactor away from redacting the live state.
+        """
+        import copy
+
+        from backend.app.api.routes.support import _sanitize_push_status_values
+
+        raw = {"tag_uid": "0123456789ABCDEF", "ams": [{"tray": [{"k": 0.02, "n": "0123456789ABCDEF"}]}]}
+        before = copy.deepcopy(raw)
+
+        out = _sanitize_push_status_values(raw, {})
+
+        assert raw == before, "input was mutated"
+        assert out["tag_uid"] == "[SERIAL]"  # and the copy really was redacted

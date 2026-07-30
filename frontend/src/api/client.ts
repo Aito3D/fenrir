@@ -287,19 +287,61 @@ export interface SystemHealthResult {
   };
 }
 
-// Long-lived camera-stream tokens (#1108). The `token` field is populated
-// only on the create response — listing endpoints set it to null because
-// the plaintext value is shown to the user exactly once.
+// Long-lived camera tokens (#1108). The `token` field is populated only on the
+// create response — listing endpoints set it to null because the plaintext
+// value is shown to the user exactly once.
+//
+// 'camera_stream' reaches the video endpoints only. 'camwall' additionally
+// reaches the read-only Cam Wall feed, which names the printers (#2531), so it
+// is a separate scope rather than a widening of tokens already in the wild.
+export type LongLivedTokenScope = 'camera_stream' | 'camwall' | 'overlay';
+
 export interface LongLivedCameraToken {
   id: number;
   user_id: number;
   name: string;
-  scope: 'camera_stream';
+  scope: LongLivedTokenScope;
   lookup_prefix: string;
   created_at: string;
   expires_at: string;
   last_used_at: string | null;
   token: string | null;
+}
+
+// One row of the token-authenticated Cam Wall feed (#2531). Deliberately
+// smaller than PrinterStatus: no serial, no IP, no print filename — a kiosk URL
+// is not a secret, so the payload behind it must not be either.
+export interface CamWallPrinter {
+  id: number;
+  name: string;
+  camera_rotation: number;
+  connected: boolean;
+  state: string | null;
+  progress: number | null;
+  remaining_time: number | null;
+  layer_num: number | null;
+  total_layers: number | null;
+  hms_errors: HMSError[];
+}
+
+// Streaming-overlay feed (#2613). The subset of print state the /overlay page
+// draws for one printer, served behind an `overlay`-scoped token so OBS embeds
+// with no login session can read it. Unlike CamWallPrinter this names the file
+// being printed (the overlay shows the part on screen).
+export interface OverlayStatus {
+  id: number;
+  name: string;
+  camera_rotation: number;
+  connected: boolean;
+  state: string | null;
+  current_print: string | null;
+  gcode_file: string | null;
+  progress: number | null;
+  remaining_time: number | null;
+  layer_num: number | null;
+  total_layers: number | null;
+  stg_cur_name: string | null;
+  time_format: 'system' | '12h' | '24h';
 }
 
 // Printer types
@@ -333,6 +375,19 @@ export interface HMSError {
   attr: number;  // Attribute value for constructing wiki URL
   module: number;
   severity: number;  // 1=fatal, 2=serious, 3=common, 4=info
+  actions?: string[];  // List of user-facing action keys (e.g. "CHECK_FILAMENT")
+  job_id?: string;  // Optional job ID for actions that require it (e.g. "CHECK_ASSISTANT")
+  // Canonical hex identifier the firmware matches against — 8 chars for
+  // print_error-sourced faults, 16 chars for hms[]-array-sourced faults. Send
+  // this back as HmsActionBody.print_error so we don't truncate the 64-bit
+  // identifier into the silent-rejection short code (#1830).
+  full_code?: string;
+}
+
+export interface HMSActionBody {
+  print_error: string;  // HMS error code (e.g. "05000070")
+  action: string;  // "HMS action to execute (e.g. 'resume_after_error')"
+  job_id: string | null;  // Optional job ID for context (if applicable)
 }
 
 export interface AMSTray {
@@ -352,6 +407,7 @@ export interface AMSTray {
   drying_temp: number | null;      // RFID-recommended drying temp
   drying_time: number | null;      // RFID-recommended drying time (hours)
   state: number | null;            // AMS tray state: 9=empty, 10=spool present not loaded, 11=loaded
+  exists?: boolean | null;         // Firmware tray_exist_bits: spool physically present (non-RFID → "?" not "Empty", #2527)
 }
 
 export interface AMSUnit {
@@ -457,7 +513,7 @@ export interface PrinterStatus {
   ipcam: boolean;  // Live view enabled
   wifi_signal: number | null;  // WiFi signal strength in dBm
   wired_network: boolean;  // Ethernet connection detected
-  door_open: boolean;  // Enclosure door open (X1/P1S/P2S/H2*)
+  door_open: boolean;  // Enclosure door open (models with a door sensor: X1/X1C/X1E/X2D/P2S/H2*)
   nozzles: NozzleInfo[];  // Nozzle hardware info (index 0=left/primary, 1=right)
   nozzle_rack: NozzleRackSlot[];  // H2C 6-nozzle tool-changer rack
   print_options: PrintOptions | null;  // AI detection and print options
@@ -486,6 +542,14 @@ export interface PrinterStatus {
   fila_switch: FilaSwitchState | null;
   // Currently loaded tray (global tray ID, 255 = no filament loaded, 254 = external spool)
   tray_now: number;
+  // Runout / filament-replacement guidance (#2587). Populated only while PAUSED.
+  // Global tray IDs (ams_id*4+slot, 128-135 = AMS-HT, 254 = external), matching
+  // the same numbering as tray_now so the AMS graphic can highlight them.
+  //   expected_tray = the slot the firmware now expects filament in (null = idle,
+  //                   not paused, or unresolvable → "check the printer").
+  //   previous_tray = the slot that ran out (null = unknown).
+  expected_tray: number | null;
+  previous_tray: number | null;
   // AMS status for filament change tracking (0=idle, 1=filament_change, 2=rfid_identifying, 3=assist, 4=calibration)
   ams_status_main: number;
   // AMS sub-status for filament change step (when main=1): 4=retraction, 6=load verification, 7=purge
@@ -501,6 +565,11 @@ export interface PrinterStatus {
   big_fan1_speed: number | null;     // Auxiliary fan
   big_fan2_speed: number | null;     // Chamber/exhaust fan
   heatbreak_fan_speed: number | null; // Hotend heatbreak fan
+  // Left auxiliary part cooling fan (optional P2S/X2D accessory, M106 P10).
+  // null = not installed / not reported by this model.
+  left_aux_fan_speed: number | null;
+  // Chamber exhaust fan present (P2S/X2D External Exhaust Fan kit, airduct part 3).
+  exhaust_fan_present: boolean;
   firmware_version: string | null;   // Firmware version from MQTT
   // Developer LAN mode: true = enabled, false = disabled, null = unknown
   developer_mode: boolean | null;
@@ -512,6 +581,8 @@ export interface PrinterStatus {
   awaiting_plate_clear: boolean;
   // AMS drying support
   supports_drying: boolean;
+  // The AMS can dry, but only from the printer's own screen (P1 series, #2533).
+  drying_screen_only?: boolean;
   // Active chamber heater (responds to M141). True only for H2C/H2D/H2DPro/H2S/X2D.
   supports_chamber_heater?: boolean;
 }
@@ -607,6 +678,7 @@ export interface Archive {
   original_archive_id: number | null;  // ID of the first/original archive
   object_count: number | null;
   print_name: string | null;
+  plate_id: number | null;  // Selected plate of a multi-plate 3MF (#2603)
   print_time_seconds: number | null;
   actual_time_seconds: number | null;  // Computed from started_at/completed_at
   time_accuracy: number | null;  // Percentage: 100 = perfect, >100 = faster than estimated
@@ -660,6 +732,8 @@ export interface ArchiveSlim {
   started_at: string | null;
   completed_at: string | null;
   cost: number | null;
+  energy_kwh: number | null;
+  energy_cost: number | null;
   quantity: number;
   created_at: string;
 }
@@ -842,6 +916,7 @@ export interface Project {
   status: string;  // active, completed, archived
   target_count: number | null;  // Target number of plates/print jobs
   target_parts_count: number | null;  // Target number of parts/objects
+  target_sets: number | null;  // Copies-per-file target (#1897)
   notes: string | null;
   attachments: ProjectAttachment[] | null;
   tags: string | null;
@@ -867,6 +942,12 @@ export interface ProjectAttachment {
   uploaded_at: string;
 }
 
+// Completed-run count for one library file inside a project (#1897)
+export interface ProjectFileProgress {
+  file_id: number;
+  completed_count: number;
+}
+
 export interface ArchivePreview {
   id: number;
   print_name: string | null;
@@ -884,7 +965,11 @@ export interface ProjectListItem {
   status: string;
   target_count: number | null;  // Target number of plates/print jobs
   target_parts_count: number | null;  // Target number of parts/objects
+  target_sets: number | null;  // #1897 — the shared edit dialog seeds itself from this
   budget: number | null;
+  tags: string | null;  // #2536 — the shared edit dialog seeds itself from this
+  due_date: string | null;  // #2536
+  priority: string;  // #2536
   created_at: string;
   archive_count: number;  // Number of print jobs (plates)
   total_items: number;  // Sum of quantities (total items printed, including failed)
@@ -903,6 +988,7 @@ export interface ProjectCreate {
   color?: string;
   target_count?: number;
   target_parts_count?: number;
+  target_sets?: number;
   notes?: string;
   tags?: string;
   due_date?: string;
@@ -919,9 +1005,10 @@ export interface ProjectUpdate {
   status?: string;
   target_count?: number;
   target_parts_count?: number;
+  target_sets?: number | null;  // #1897 — explicit null clears the copies-per-file target
   notes?: string;
-  tags?: string;
-  due_date?: string;
+  tags?: string | null;  // #2536 — explicit null clears the tags
+  due_date?: string | null;  // #2536 — explicit null clears the due date
   priority?: string;
   budget?: number | null;
   parent_id?: number;
@@ -990,6 +1077,7 @@ export interface ProjectExport {
   status: string;
   target_count: number | null;
   target_parts_count: number | null;
+  target_sets: number | null;  // #1897
   notes: string | null;
   tags: string | null;
   due_date: string | null;
@@ -1006,6 +1094,7 @@ export interface ProjectImport {
   status?: string;
   target_count?: number;
   target_parts_count?: number;
+  target_sets?: number;  // #1897
   notes?: string;
   tags?: string;
   due_date?: string;
@@ -1035,6 +1124,9 @@ export interface APIKey {
   can_read_status: boolean;
   can_manage_library: boolean;
   can_manage_inventory: boolean;
+  can_manage_maintenance: boolean;
+  can_manage_archives: boolean;
+  can_manage_projects: boolean;
   can_access_cloud: boolean;
   can_update_energy_cost: boolean;
   printer_ids: number[] | null;
@@ -1051,6 +1143,9 @@ export interface APIKeyCreate {
   can_read_status?: boolean;
   can_manage_library?: boolean;
   can_manage_inventory?: boolean;
+  can_manage_maintenance?: boolean;
+  can_manage_archives?: boolean;
+  can_manage_projects?: boolean;
   can_access_cloud?: boolean;
   can_update_energy_cost?: boolean;
   printer_ids?: number[] | null;
@@ -1068,12 +1163,22 @@ export interface APIKeyUpdate {
   can_read_status?: boolean;
   can_manage_library?: boolean;
   can_manage_inventory?: boolean;
+  can_manage_maintenance?: boolean;
+  can_manage_archives?: boolean;
+  can_manage_projects?: boolean;
   can_access_cloud?: boolean;
   can_update_energy_cost?: boolean;
   printer_ids?: number[] | null;
   enabled?: boolean;
   expires_at?: string | null;
 }
+
+/**
+ * Tri-state calibration option (BambuStudio parity): "off" never runs it,
+ * "on" forces it every print, "auto" lets the printer skip it if it was done
+ * recently. Used by bed_levelling, flow_cali, and nozzle_offset_cali.
+ */
+export type CalibrationMode = 'off' | 'on' | 'auto';
 
 // Settings types
 export interface AppSettings {
@@ -1126,6 +1231,7 @@ export interface AppSettings {
   spoolman_url: string;
   // Default printer
   default_printer_id: number | null;
+  pipeline_max_copies: number;
   // Dark mode theme settings
   dark_style: 'classic' | 'glow' | 'vibrant';
   dark_background: 'neutral' | 'warm' | 'cool' | 'oled' | 'slate' | 'forest';
@@ -1183,12 +1289,12 @@ export interface AppSettings {
   // User email notifications toggle
   user_notifications_enabled: boolean;
   // Default print options
-  default_bed_levelling: boolean;
-  default_flow_cali: boolean;
+  default_bed_levelling: CalibrationMode;
+  default_flow_cali: CalibrationMode;
   default_vibration_cali: boolean;
   default_layer_inspect: boolean;
   default_timelapse: boolean;
-  default_nozzle_offset_cali: boolean;
+  default_nozzle_offset_cali: CalibrationMode;
   // Staggered batch start defaults
   stagger_group_size: number;
   stagger_interval_minutes: number;
@@ -1201,6 +1307,19 @@ export interface AppSettings {
   require_plate_clear: boolean;
   // Shortest job first scheduling
   queue_shortest_first: boolean;
+  // How many printers the queue may upload to at once (#2555). 1 restores the
+  // old strictly-serial behaviour, where every printer waited out every other
+  // printer's transfer.
+  queue_max_concurrent_uploads: number;
+  // Preheat / heat-soak before queued prints (#1468). Master toggle is the
+  // default for new queue items; per-item PrintQueueItem.preheat_override can
+  // flip the decision per print. Chamber target derives from the loaded AMS
+  // filament types via preheat_filament_targets (JSON map of type → °C, max
+  // across loaded slots); the per-item override field bypasses derivation.
+  preheat_enabled: boolean;
+  preheat_filament_targets: string;
+  preheat_max_wait_seconds: number;
+  preheat_soak_seconds: number;
   // User-configurable presets for the printer-card popovers (JSON arrays of 3 ints).
   // Empty string = use built-in defaults.
   nozzle_temp_presets: string;
@@ -1246,6 +1365,8 @@ export interface CloudAuthStatus {
   is_authenticated: boolean;
   email: string | null;
   region?: 'global' | 'china' | null;
+  /** A token is stored but Bambu no longer accepts it — tell the user why the login form is back. */
+  sign_in_expired?: boolean;
 }
 
 export interface CloudLoginResponse {
@@ -1259,10 +1380,26 @@ export interface CloudLoginResponse {
 // Orca Cloud types — paste-flow PKCE handshake against auth.orcaslicer.com.
 // See backend/app/services/orca_cloud.py for the deep dive on why this
 // flow is paste-based rather than callback-based.
-export type OrcaOAuthProvider = 'google' | 'apple' | 'github';
+export interface OrcaDeviceStartResponse {
+  user_code: string;
+  verification_uri: string;
+  verification_uri_complete: string;
+  interval: number;
+  expires_in: number;
+}
 
-export interface OrcaAuthStartResponse {
-  auth_url: string;
+export type OrcaDevicePollStatus =
+  | 'authorization_pending'
+  | 'slow_down'
+  | 'access_denied'
+  | 'expired_token'
+  | 'complete';
+
+export interface OrcaDevicePollResponse {
+  status: OrcaDevicePollStatus;
+  connected: boolean;
+  email: string | null;
+  user_id: string | null;
 }
 
 export interface OrcaAuthStatusResponse {
@@ -1307,6 +1444,8 @@ export interface OrcaProfileDetail {
 export interface MakerworldStatus {
   has_cloud_token: boolean;
   can_download: boolean;
+  /** A token is stored but Bambu rejected it — downloads will fail until the user signs in again. */
+  sign_in_expired?: boolean;
 }
 
 export interface MakerworldResolvedModel {
@@ -1455,6 +1594,11 @@ export interface SliceRequest {
   // "Textured PEI Plate", "Smooth PEI Plate", "Cool Plate (SuperTack)",
   // "Supertack Plate".
   bed_type?: string | null;
+  // "Slice as designed" (#2611). 3MF only: slice using the file's embedded
+  // project_settings.config (the designer's own wall count, infill, etc.)
+  // instead of the picked profile triplet. The preset refs above are still
+  // required by the backend validator but go unused on this path.
+  use_embedded_settings?: boolean;
 }
 
 // GET /api/v1/slicer/presets — unified listing across cloud / local / standard.
@@ -1492,6 +1636,139 @@ export interface UnifiedPresetsResponse {
   standard: UnifiedPresetsBySlot;
   cloud_status: SlicerCloudStatus;
   orca_cloud_status: SlicerCloudStatus;
+}
+
+// Slicer Pipelines (#1425) — named bundles of preset slots the SliceModal
+// can apply in one click. PR A surfaces only the bundle; target_* and
+// fanout_strategy round-trip from the backend but the UI doesn't yet expose
+// them (they come alive in PR B / PR C).
+export interface SlicerPipeline {
+  id: number;
+  name: string;
+  description: string | null;
+  printer_preset: PresetRef;
+  process_preset: PresetRef;
+  filament_presets: PresetRef[];
+  bed_type: string | null;
+  target_kind: 'specific_printer' | 'printer_class';
+  target_printer_id: number | null;
+  target_model_class: string | null;
+  fanout_strategy: 'max_parallel' | 'fill_one_first' | 'round_robin';
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+}
+export interface SlicerPipelineCreateRequest {
+  name: string;
+  description?: string | null;
+  printer_preset: PresetRef;
+  process_preset: PresetRef;
+  filament_presets: PresetRef[];
+  bed_type?: string | null;
+}
+export type SlicerPipelineUpdateRequest = Partial<SlicerPipelineCreateRequest> & {
+  target_kind?: 'specific_printer' | 'printer_class';
+  // ``target_printer_id: 0`` means "clear the target" — the backend maps that
+  // to null. Use null in TypeScript for the same intent.
+  target_printer_id?: number | null;
+  target_model_class?: string | null;
+  fanout_strategy?: 'max_parallel' | 'fill_one_first' | 'round_robin';
+};
+export interface SlicerPipelinesListResponse {
+  pipelines: SlicerPipeline[];
+}
+
+// Slicer Pipeline runs (#1425 PR B + PR C)
+export type PipelineEligibilityKind =
+  | 'printer_not_set'
+  | 'printer_not_found'
+  | 'printer_disabled'
+  | 'printer_offline'
+  | 'filament_type_mismatch'
+  | 'filament_color_mismatch'
+  | 'ams_slot_missing'
+  | 'filament_unverified'
+  | 'no_class_matches'
+  | 'class_not_set';
+export interface PipelineEligibilityIssue {
+  kind: PipelineEligibilityKind;
+  slot_index: number | null;
+  expected: string | null;
+  actual: string | null;
+}
+export interface PipelinePerPrinterReport {
+  printer_id: number;
+  printer_name: string;
+  ok: boolean;
+  issues: PipelineEligibilityIssue[];
+}
+export interface PipelineEligibilityReport {
+  ok: boolean;
+  target_kind: 'specific_printer' | 'printer_class';
+  target_printer_id: number | null;
+  target_printer_name: string | null;
+  target_model_class: string | null;
+  issues: PipelineEligibilityIssue[];
+  printer_reports: PipelinePerPrinterReport[];
+}
+export interface PipelineJob {
+  id: number;
+  pipeline_run_id: number;
+  copy_index: number;
+  assigned_printer_id: number | null;
+  assigned_printer_name: string | null;
+  queue_entry_id: number | null;
+  status:
+    | 'pending'
+    | 'awaiting_printer'
+    | 'queued'
+    | 'printing'
+    | 'completed'
+    | 'failed'
+    | 'cancelled';
+  error_message: string | null;
+  dispatched_at: string | null;
+  completed_at: string | null;
+}
+export interface PipelineRun {
+  id: number;
+  pipeline_id: number | null;
+  pipeline_name: string | null;
+  source_library_file_id: number | null;
+  source_archive_id: number | null;
+  source_filename: string | null;
+  parent_run_id: number | null;
+  copies: number;
+  copies_completed: number;
+  copies_failed: number;
+  copies_cancelled: number;
+  copies_in_progress: number;
+  status:
+    | 'queued'
+    | 'slicing'
+    | 'dispatching'
+    | 'in_progress'
+    | 'completed'
+    | 'failed'
+    | 'partial_failure'
+    | 'cancelled';
+  slice_job_id: number | null;
+  sliced_library_file_id: number | null;
+  eligibility_overridden: boolean;
+  error_message: string | null;
+  created_by: number | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  jobs: PipelineJob[];
+  target_kind: 'specific_printer' | 'printer_class' | null;
+  target_printer_id: number | null;
+  target_model_class: string | null;
+  fanout_strategy: 'max_parallel' | 'fill_one_first' | 'round_robin' | null;
+}
+export interface PipelineRunListResponse {
+  runs: PipelineRun[];
+  total: number;
 }
 
 export interface SliceResponse {
@@ -1670,7 +1947,14 @@ export interface SmartPlug {
   rest_energy_url: string | null;
   rest_energy_path: string | null;
   rest_energy_multiplier: number;
+  // Lifetime counter, separate from the daily one (#2539). A Shelly reports only
+  // this; Today and Yesterday are derived from its hourly snapshots.
+  rest_energy_total_path: string | null;
+  rest_energy_total_multiplier: number;
   printer_id: number | null;
+  // #2629: only a plug that really feeds the printer may mark it offline when
+  // switched off. Accessory plugs follow the print cycle without powering it.
+  controls_printer_power: boolean;
   enabled: boolean;
   auto_on: boolean;
   auto_off: boolean;
@@ -1744,7 +2028,11 @@ export interface SmartPlugCreate {
   rest_energy_url?: string | null;
   rest_energy_path?: string | null;
   rest_energy_multiplier?: number;
+  rest_energy_total_path?: string | null;
+  rest_energy_total_multiplier?: number;
   printer_id?: number | null;
+  // #2629
+  controls_printer_power?: boolean;
   enabled?: boolean;
   auto_on?: boolean;
   auto_off?: boolean;
@@ -1810,7 +2098,11 @@ export interface SmartPlugUpdate {
   rest_energy_url?: string | null;
   rest_energy_path?: string | null;
   rest_energy_multiplier?: number;
+  rest_energy_total_path?: string | null;
+  rest_energy_total_multiplier?: number;
   printer_id?: number | null;
+  // #2629
+  controls_printer_power?: boolean;
   enabled?: boolean;
   auto_on?: boolean;
   auto_off?: boolean;
@@ -1926,16 +2218,18 @@ export interface PrintQueueItem {
   // PrintModal's deficit warning was acknowledged.
   skip_filament_check: boolean;
   ams_mapping: number[] | null;  // AMS slot mapping for multi-color prints
-  filament_overrides: Array<{ slot_id: number; type: string; color: string; color_name?: string; force_color_match?: boolean }> | null;  // Filament overrides for model-based assignment
+  filament_overrides: Array<{ slot_id: number; type: string; color: string; color_name?: string; tray_info_idx?: string; force_color_match?: boolean }> | null;  // Filament overrides for model-based assignment
   plate_id: number | null;  // Plate ID for multi-plate 3MF files
   // Print options
-  bed_levelling: boolean;
-  flow_cali: boolean;
+  bed_levelling: CalibrationMode;
+  flow_cali: CalibrationMode;
   vibration_cali: boolean;
   layer_inspect: boolean;
   timelapse: boolean;
   use_ams: boolean;
-  nozzle_offset_cali: boolean;
+  nozzle_offset_cali: CalibrationMode;
+  preheat_override: 'inherit' | 'on' | 'off';
+  preheat_chamber_target_override: number | null;
   status: 'pending' | 'printing' | 'completed' | 'failed' | 'skipped' | 'cancelled';
   started_at: string | null;
   completed_at: string | null;
@@ -1965,6 +2259,7 @@ export interface PrintQueueItem {
   been_jumped?: boolean;
   // Auto-print G-code injection
   gcode_injection?: boolean;
+  cleanup_library_after_dispatch?: boolean;
 }
 
 export interface PrintBatch {
@@ -1995,19 +2290,23 @@ export interface PrintQueueItemCreate {
   require_previous_success?: boolean;
   auto_off_after?: boolean;
   manual_start?: boolean;  // Requires manual trigger to start (staged)
+  insert_at_top?: boolean;  // Insert ahead of other pending items in the same queue scope
+  insert_position?: number | null;  // 1-indexed insertion position for priority queueing
   // PrintModal "Print Anyway" on the deficit warning — persisted so the
   // scheduler doesn't immediately re-flag this item (#1698-followup).
   skip_filament_check?: boolean;
   ams_mapping?: number[] | null;  // AMS slot mapping for multi-color prints
   plate_id?: number | null;  // Plate ID for multi-plate 3MF files
   // Print options
-  bed_levelling?: boolean;
-  flow_cali?: boolean;
+  bed_levelling?: CalibrationMode;
+  flow_cali?: CalibrationMode;
   vibration_cali?: boolean;
   layer_inspect?: boolean;
   timelapse?: boolean;
   use_ams?: boolean;
-  nozzle_offset_cali?: boolean;
+  nozzle_offset_cali?: CalibrationMode;
+  preheat_override?: 'inherit' | 'on' | 'off';
+  preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
   gcode_injection?: boolean;
   // Batch: create multiple copies (creates a batch if > 1)
@@ -2018,6 +2317,18 @@ export interface PrintQueueItemCreate {
   project_id?: number;
   cost_center_id?: number | null;
   estimated_cost?: number | null;
+  // Delete transient uploaded library file after scheduler creates the archive
+  cleanup_library_after_dispatch?: boolean;
+}
+
+export interface PrintBatchCreate {
+  name: string;
+  archive_id?: number | null;
+  library_file_id?: number | null;
+  /** When set, the listed pending items are assigned to the new batch
+   *  (manual "Group as batch"). When omitted/empty, an empty batch is
+   *  returned so the client can pass batch_id on subsequent addToQueue calls. */
+  item_ids?: number[];
 }
 
 export interface PrintQueueItemUpdate {
@@ -2033,13 +2344,15 @@ export interface PrintQueueItemUpdate {
   ams_mapping?: number[];
   plate_id?: number | null;  // Plate ID for multi-plate 3MF files
   // Print options
-  bed_levelling?: boolean;
-  flow_cali?: boolean;
+  bed_levelling?: CalibrationMode;
+  flow_cali?: CalibrationMode;
   vibration_cali?: boolean;
   layer_inspect?: boolean;
   timelapse?: boolean;
   use_ams?: boolean;
-  nozzle_offset_cali?: boolean;
+  nozzle_offset_cali?: CalibrationMode;
+  preheat_override?: 'inherit' | 'on' | 'off';
+  preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
   gcode_injection?: boolean;
   cost_center_id?: number | null;
@@ -2054,13 +2367,15 @@ export interface PrintQueueBulkUpdate {
   auto_off_after?: boolean;
   manual_start?: boolean;
   // Print options
-  bed_levelling?: boolean;
-  flow_cali?: boolean;
+  bed_levelling?: CalibrationMode;
+  flow_cali?: CalibrationMode;
   vibration_cali?: boolean;
   layer_inspect?: boolean;
   timelapse?: boolean;
   use_ams?: boolean;
-  nozzle_offset_cali?: boolean;
+  nozzle_offset_cali?: CalibrationMode;
+  preheat_override?: 'inherit' | 'on' | 'off';
+  preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
   gcode_injection?: boolean;
   cost_center_id?: number | null;
@@ -2166,7 +2481,7 @@ export interface Filament {
 }
 
 // Notification Provider types
-export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'email' | 'discord' | 'webhook' | 'homeassistant';
+export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'email' | 'discord' | 'webhook' | 'homeassistant' | 'bark';
 
 export interface NotificationProvider {
   id: number;
@@ -2195,6 +2510,7 @@ export interface NotificationProvider {
   on_ams_ht_temperature_high: boolean;
   // Build plate detection
   on_plate_not_empty: boolean;
+  on_plate_clear_required: boolean;
   // Bed cooled
   on_bed_cooled: boolean;
   // First layer complete
@@ -2254,6 +2570,7 @@ export interface NotificationProviderCreate {
   on_ams_ht_temperature_high?: boolean;
   // Build plate detection
   on_plate_not_empty?: boolean;
+  on_plate_clear_required?: boolean;
   // Bed cooled
   on_bed_cooled?: boolean;
   // First layer complete
@@ -2306,6 +2623,7 @@ export interface NotificationProviderUpdate {
   on_ams_ht_temperature_high?: boolean;
   // Build plate detection
   on_plate_not_empty?: boolean;
+  on_plate_clear_required?: boolean;
   // Bed cooled
   on_bed_cooled?: boolean;
   // First layer complete
@@ -2419,6 +2737,21 @@ export interface LocalBackupFile {
   created_at: string;
 }
 
+/** Result of writing a probe file into the configured backup directory (#2544). */
+export interface LocalBackupPathCheck {
+  writable: boolean;
+  path: string;
+  /** 'ok' | 'sandboxed' | 'read_only' | 'permission_denied' | 'no_space' | 'not_a_directory' | 'missing' | 'error' */
+  code: string;
+  /** Raw OS error, shown as-is under the translated explanation. */
+  detail: string | null;
+  /** Copy-pasteable fix (systemd drop-in, compose snippet) — not translated. */
+  remedy: string | null;
+  message: string;
+  /** 'container_ephemeral' — writable, but the backups die with the container. */
+  warning: string | null;
+}
+
 export interface ObicoDetectionEvent {
   printer_id: number;
   task_name: string;
@@ -2441,6 +2774,16 @@ export interface ObicoStatus {
   action: 'notify' | 'pause' | 'pause_and_off';
   poll_interval: number;
   external_url_configured: boolean;
+}
+
+// Lightweight subset served under printers:read for the printer-card badge (#1546)
+export interface ObicoPrinterStatus {
+  enabled: boolean;
+  // null = all printers are monitored
+  monitored_printers: number[] | null;
+  per_printer: Record<string, { class: string; frame_count: number; score: number }>;
+  // null = no error, or the viewer lacks settings:read (error strings can embed config URLs)
+  last_error: string | null;
 }
 
 export interface ObicoTestConnection {
@@ -2476,15 +2819,6 @@ export interface NotificationTestRequest {
 export interface NotificationTestResponse {
   success: boolean;
   message: string;
-}
-
-export interface BackgroundDispatchResponse {
-  status: 'dispatched' | string;
-  printer_id: number;
-  archive_id?: number | null;
-  filename: string;
-  dispatch_job_id: number;
-  dispatch_position: number;
 }
 
 // Provider-specific config types for reference
@@ -3104,6 +3438,7 @@ export type Permission =
   | 'api_keys:read' | 'api_keys:create' | 'api_keys:update' | 'api_keys:delete'
   | 'users:read' | 'users:create' | 'users:update' | 'users:delete'
   | 'groups:read' | 'groups:create' | 'groups:update' | 'groups:delete'
+  | 'pipelines:read' | 'pipelines:write' | 'pipelines:run'
   | 'websocket:connect';
 
 // Group types
@@ -3725,7 +4060,7 @@ export const api = {
       method: 'POST',
     }),
 
-  setFanSpeed: (printerId: number, fan: 'part' | 'aux' | 'chamber', speed: number) =>
+  setFanSpeed: (printerId: number, fan: 'part' | 'aux' | 'aux2' | 'chamber', speed: number) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/fan-speed?fan=${fan}&speed=${speed}`, {
       method: 'POST',
     }),
@@ -3741,9 +4076,9 @@ export const api = {
     }),
 
   // Bed (Z-axis) jog
-  bedJog: (printerId: number, distance: number, force: boolean = false) =>
+  bedJog: (printerId: number, distance: number) =>
     request<{ success: boolean; message: string }>(
-      `/printers/${printerId}/bed-jog?distance=${distance}&force=${force}`,
+      `/printers/${printerId}/bed-jog?distance=${distance}`,
       { method: 'POST' }
     ),
   xyJog: (printerId: number, x: number, y: number) =>
@@ -3818,6 +4153,11 @@ export const api = {
   // HMS Errors
   clearHMSErrors: (printerId: number) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/hms/clear`, { method: 'POST' }),
+  executeHMSAction: (printerId: number, data: HMSActionBody) =>
+    request<{ success: boolean; message: string }>(`/printers/${printerId}/hms/execute-action`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
   // AMS Control
   refreshAmsSlot: (printerId: number, amsId: number, slotId: number) =>
@@ -4474,10 +4814,17 @@ export const api = {
     archiveId: number,
     plateId?: number,
     requestId?: string,
+    /** Ask for one entry per project slot instead of only the slots this
+     * plate consumes. The slice modal needs it: its filament list is
+     * positional, so a source whose only used slot is 4 must still present
+     * four rows or the user's pick is bound to slot 1 (#2712). Print-time
+     * AMS matching must NOT set this — it wants the used-only list. */
+    fullSlots?: boolean,
   ) => {
     const qs = new URLSearchParams();
     if (plateId !== undefined) qs.set('plate_id', String(plateId));
     if (requestId) qs.set('request_id', requestId);
+    if (fullSlots) qs.set('full_slots', 'true');
     return request<{
       archive_id: number;
       filename: string;
@@ -4492,32 +4839,6 @@ export const api = {
       }>;
     }>(`/archives/${archiveId}/filament-requirements${qs.toString() ? `?${qs}` : ''}`);
   },
-  reprintArchive: (
-    archiveId: number,
-    printerId: number,
-    options?: {
-      plate_id?: number;
-      plate_name?: string;
-      ams_mapping?: number[];
-      timelapse?: boolean;
-      bed_levelling?: boolean;
-      flow_cali?: boolean;
-      vibration_cali?: boolean;
-      layer_inspect?: boolean;
-      use_ams?: boolean;
-      cost_center_id?: number;
-      estimated_cost?: number;
-      nozzle_offset_cali?: boolean;
-    }
-  ) =>
-    request<BackgroundDispatchResponse>(
-      `/archives/${archiveId}/reprint?printer_id=${printerId}`,
-      {
-        method: 'POST',
-        headers: options ? { 'Content-Type': 'application/json' } : undefined,
-        body: options ? JSON.stringify(options) : undefined,
-      }
-    ),
   uploadArchive: async (file: File, printerId?: number): Promise<Archive> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -4705,24 +5026,17 @@ export const api = {
   cloudLogout: () =>
     request<{ success: boolean }>('/cloud/logout', { method: 'POST' }),
 
-  // Orca Cloud — paste-based PKCE flow for OAuth (Google/Apple/GitHub),
-  // direct credentials for email+password. start() returns an auth URL the
-  // user opens in their browser; after sign-in they paste the callback URL
-  // back via finish(). password() skips the dance entirely.
-  orcaCloudStartAuth: (provider: OrcaOAuthProvider = 'google') =>
-    request<OrcaAuthStartResponse>('/orca-cloud/auth/start', {
+  // Orca Cloud — RFC 8628 device pairing. deviceStart() returns a short
+  // user_code + verification link; the user approves it in their Orca Cloud
+  // settings while the frontend polls devicePoll() every `interval` seconds
+  // until the status flips to 'complete' (or a terminal deny/expire).
+  orcaCloudDeviceStart: () =>
+    request<OrcaDeviceStartResponse>('/orca-cloud/device/start', {
       method: 'POST',
-      body: JSON.stringify({ provider }),
     }),
-  orcaCloudFinishAuth: (callback_url: string) =>
-    request<OrcaAuthStatusResponse>('/orca-cloud/auth/finish', {
+  orcaCloudDevicePoll: () =>
+    request<OrcaDevicePollResponse>('/orca-cloud/device/poll', {
       method: 'POST',
-      body: JSON.stringify({ callback_url }),
-    }),
-  orcaCloudPasswordLogin: (email: string, password: string) =>
-    request<OrcaAuthStatusResponse>('/orca-cloud/auth/password', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
     }),
   orcaCloudStatus: () =>
     request<OrcaAuthStatusResponse>('/orca-cloud/status'),
@@ -4929,6 +5243,16 @@ export const api = {
   getBatch: (id: number) => request<PrintBatch>(`/queue/batches/${id}`),
   cancelBatch: (id: number) =>
     request<{ message: string }>(`/queue/batches/${id}`, { method: 'DELETE' }),
+  createBatch: (data: PrintBatchCreate) =>
+    request<PrintBatch>('/queue/batches', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  ungroupBatch: (id: number) =>
+    request<{ ungrouped_count: number; message: string }>(
+      `/queue/batches/${id}/ungroup`,
+      { method: 'POST' },
+    ),
 
   // K-Profiles
   getKProfiles: (printerId: number, nozzleDiameter = '0.4') =>
@@ -4948,7 +5272,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(profiles),
     }),
-  
+
   // Finance
   getMyBalance: () => request<WalletBalance>('/finance/me/balance'),
   getMyTransactions: (limit = 50, offset = 0) =>
@@ -4970,7 +5294,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
   createManualPrint: (data: ManualPrintRequest) =>
-    request<WalletTransaction>(`/finance/transactions/manual`, {
+    request<WalletTransaction>('/finance/transactions/manual', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -5018,10 +5342,9 @@ export const api = {
       body: JSON.stringify(data),
     }),
   rebuildBalanceLedger: () =>
-    request<{ status: string }>(`/finance/rebuild-balance-ledger`, {
+    request<{ status: string }>('/finance/rebuild-balance-ledger', {
       method: 'POST',
     }),
-
 
   // K-Profile Notes (stored locally, not on printer)
   getKProfileNotes: (printerId: number) =>
@@ -5377,7 +5700,7 @@ export const api = {
   // ── Spool label printing (#809) ──────────────────────────────────────────
   // Both endpoints return application/pdf. Frontend opens the resulting Blob
   // in a new tab so the user can print or save from the browser's PDF viewer.
-  printSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate }): Promise<Blob> => {
+  printSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate; monochrome?: boolean }): Promise<Blob> => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
     const response = await fetch(`${API_BASE}/inventory/labels`, {
@@ -5391,7 +5714,7 @@ export const api = {
     }
     return response.blob();
   },
-  printSpoolmanSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate }): Promise<Blob> => {
+  printSpoolmanSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate; monochrome?: boolean }): Promise<Blob> => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
     const response = await fetch(`${API_BASE}/spoolman/labels`, {
@@ -5668,11 +5991,15 @@ export const api = {
   getWebSocketToken: () =>
     request<{ token: string }>('/auth/ws-token', { method: 'POST' }),
 
-  // Long-lived camera-stream tokens (#1108)
-  createLongLivedCameraToken: (payload: { name: string; expires_in_days: number }) =>
+  // Long-lived camera tokens (#1108, #2531)
+  createLongLivedCameraToken: (payload: {
+    name: string;
+    expires_in_days: number;
+    scope?: LongLivedTokenScope;
+  }) =>
     request<LongLivedCameraToken>('/auth/tokens', {
       method: 'POST',
-      body: JSON.stringify({ ...payload, scope: 'camera_stream' }),
+      body: JSON.stringify({ scope: 'camera_stream', ...payload }),
     }),
   listMyLongLivedCameraTokens: () =>
     request<LongLivedCameraToken[]>('/auth/tokens'),
@@ -5682,6 +6009,21 @@ export const api = {
     request<LongLivedCameraToken[]>(`/auth/tokens?user_id=${userId}`),
   revokeLongLivedCameraToken: (tokenId: number) =>
     request<void>(`/auth/tokens/${tokenId}`, { method: 'DELETE' }),
+  // Token-authenticated Cam Wall feed (#2531). `token` is omitted only when
+  // auth is disabled, where the backend gate is a no-op anyway.
+  getCamWallPrinters: (token?: string) =>
+    request<CamWallPrinter[]>(
+      token ? `/camwall/printers?token=${encodeURIComponent(token)}` : '/camwall/printers',
+    ),
+  // Token-authenticated streaming-overlay feed (#2613). OBS (or any embed with
+  // no login session) loads /overlay/{id}?token=... and this backs it. `token`
+  // is omitted only when auth is disabled, where the backend gate is a no-op.
+  getOverlayStatus: (printerId: number, token?: string) =>
+    request<OverlayStatus>(
+      token
+        ? `/printers/${printerId}/overlay-status?token=${encodeURIComponent(token)}`
+        : `/printers/${printerId}/overlay-status`,
+    ),
   getCameraStreamUrl: (printerId: number, fps = 10) =>
     withStreamToken(`${API_BASE}/printers/${printerId}/camera/stream?fps=${fps}`),
   getCameraSnapshotUrl: (printerId: number) =>
@@ -5826,6 +6168,9 @@ export const api = {
     request<{ message: string }>(`/projects/${id}`, { method: 'DELETE' }),
   getProjectArchives: (id: number, limit = 100, offset = 0) =>
     request<Archive[]>(`/projects/${id}/archives?limit=${limit}&offset=${offset}`),
+  // Completed-run counts per library file (#1897); files with 0 runs are omitted
+  getProjectFileProgress: (id: number) =>
+    request<ProjectFileProgress[]>(`/projects/${id}/file-progress`),
   addArchivesToProject: (projectId: number, archiveIds: number[]) =>
     request<{ message: string }>(`/projects/${projectId}/add-archives`, {
       method: 'POST',
@@ -6247,53 +6592,23 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ file_ids: fileIds }),
     }),
-  printLibraryFile: (
-    fileId: number,
-    printerId: number,
-    options?: {
-      plate_id?: number;
-      plate_name?: string;
-      ams_mapping?: number[];
-      bed_levelling?: boolean;
-      flow_cali?: boolean;
-      vibration_cali?: boolean;
-      layer_inspect?: boolean;
-      timelapse?: boolean;
-      use_ams?: boolean;
-      nozzle_offset_cali?: boolean;
-      project_id?: number;
-      cleanup_library_after_dispatch?: boolean;
-      cost_center_id?: number;
-      estimated_cost?: number;
-    }
-  ) =>
-    request<BackgroundDispatchResponse>(
-      `/library/files/${fileId}/print?printer_id=${printerId}`,
-      {
-        method: 'POST',
-        body: options ? JSON.stringify(options) : undefined,
-      }
-    ),
-  cancelBackgroundDispatchJob: (jobId: number) =>
-    request<{
-      status: 'cancelled' | 'cancelling';
-      job_id: number;
-      source_name: string;
-      printer_id: number;
-      printer_name: string;
-    }>(`/background-dispatch/${jobId}`, {
-      method: 'DELETE',
-    }),
   getLibraryFilePlates: (fileId: number) =>
     request<LibraryFilePlatesResponse>(`/library/files/${fileId}/plates`),
   getLibraryFileFilamentRequirements: (
     fileId: number,
     plateId?: number,
     requestId?: string,
+    /** Ask for one entry per project slot instead of only the slots this
+     * plate consumes. The slice modal needs it: its filament list is
+     * positional, so a source whose only used slot is 4 must still present
+     * four rows or the user's pick is bound to slot 1 (#2712). Print-time
+     * AMS matching must NOT set this — it wants the used-only list. */
+    fullSlots?: boolean,
   ) => {
     const qs = new URLSearchParams();
     if (plateId !== undefined) qs.set('plate_id', String(plateId));
     if (requestId) qs.set('request_id', requestId);
+    if (fullSlots) qs.set('full_slots', 'true');
     return request<{
       file_id: number;
       filename: string;
@@ -6369,6 +6684,9 @@ export const api = {
   triggerLocalBackup: () =>
     request<{ success: boolean; message: string; filename?: string }>('/local-backup/run', { method: 'POST' }),
 
+  checkLocalBackupPath: () =>
+    request<LocalBackupPathCheck>('/local-backup/path-check'),
+
   getLocalBackups: () =>
     request<LocalBackupFile[]>('/local-backup/backups'),
 
@@ -6390,6 +6708,9 @@ export const api = {
   // Obico AI failure detection
   getObicoStatus: () =>
     request<ObicoStatus>('/obico/status'),
+
+  getObicoPrinterStatus: () =>
+    request<ObicoPrinterStatus>('/obico/printer-status'),
 
   testObicoConnection: (url: string) =>
     request<ObicoTestConnection>('/obico/test-connection', {
@@ -6422,6 +6743,89 @@ export const api = {
     request<UnifiedPresetsResponse>(
       options?.refresh ? '/slicer/presets?refresh=true' : '/slicer/presets',
     ),
+
+  // Slicer Pipelines (#1425) — preset bundles the SliceModal can apply in
+  // one click. CRUD is gated on PIPELINES_READ / PIPELINES_WRITE.
+  listSlicerPipelines: () =>
+    request<SlicerPipelinesListResponse>('/slicer-pipelines/'),
+  getSlicerPipeline: (id: number) =>
+    request<SlicerPipeline>(`/slicer-pipelines/${id}`),
+  createSlicerPipeline: (data: SlicerPipelineCreateRequest) =>
+    request<SlicerPipeline>('/slicer-pipelines/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateSlicerPipeline: (id: number, data: SlicerPipelineUpdateRequest) =>
+    request<SlicerPipeline>(`/slicer-pipelines/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteSlicerPipeline: (id: number) =>
+    request<void>(`/slicer-pipelines/${id}`, { method: 'DELETE' }),
+  checkPipelineEligibility: (
+    pipelineId: number,
+    source: { kind: 'libraryFile'; id: number } | { kind: 'archive'; id: number },
+  ) =>
+    request<PipelineEligibilityReport>(`/slicer-pipelines/${pipelineId}/check-eligibility`, {
+      method: 'POST',
+      body: JSON.stringify(
+        source.kind === 'libraryFile'
+          ? { source_library_file_id: source.id }
+          : { source_archive_id: source.id },
+      ),
+    }),
+  runPipeline: (
+    pipelineId: number,
+    source: { kind: 'libraryFile'; id: number } | { kind: 'archive'; id: number },
+    force = false,
+    copies = 1,
+  ) =>
+    request<PipelineRun>(`/slicer-pipelines/${pipelineId}/run`, {
+      method: 'POST',
+      body: JSON.stringify({
+        ...(source.kind === 'libraryFile'
+          ? { source_library_file_id: source.id }
+          : { source_archive_id: source.id }),
+        force,
+        copies,
+      }),
+    }),
+  listPipelineRuns: (pipelineId: number, limit = 5) =>
+    request<PipelineRunListResponse>(
+      `/slicer-pipelines/${pipelineId}/runs?limit=${limit}`,
+    ),
+  // Dashboard list across all pipelines (#1425 PR C).
+  listAllPipelineRuns: (params: {
+    limit?: number;
+    offset?: number;
+    pipelineId?: number;
+    status?: string;
+    targetPrinterId?: number;
+    targetModelClass?: string;
+  } = {}) => {
+    const search = new URLSearchParams();
+    if (params.limit) search.set('limit', String(params.limit));
+    if (params.offset) search.set('offset', String(params.offset));
+    if (params.pipelineId) search.set('pipeline_id', String(params.pipelineId));
+    if (params.status) search.set('status', params.status);
+    if (params.targetPrinterId) search.set('target_printer_id', String(params.targetPrinterId));
+    if (params.targetModelClass) search.set('target_model_class', params.targetModelClass);
+    const q = search.toString();
+    return request<PipelineRunListResponse>(
+      `/pipeline-runs${q ? '?' + q : ''}`,
+    );
+  },
+  // Clear terminal pipeline runs (#1425 PR C polish). Deletes all runs in
+  // a terminal state (completed/failed/cancelled/partial_failure); in-flight
+  // runs are preserved.
+  clearTerminalPipelineRuns: () =>
+    request<{ deleted: number }>('/pipeline-runs/clear', { method: 'POST' }),
+  getPipelineRun: (runId: number) =>
+    request<PipelineRun>(`/pipeline-runs/${runId}`),
+  cancelPipelineRun: (runId: number) =>
+    request<PipelineRun>(`/pipeline-runs/${runId}/cancel`, { method: 'POST' }),
+  retryFailedPipelineRun: (runId: number) =>
+    request<PipelineRun>(`/pipeline-runs/${runId}/retry-failed`, { method: 'POST' }),
 
   // Canonical Bambu printer-model registry — "Bambu Lab <model>" → short code.
   // Single source of truth shared with backend (PRINTER_MODEL_MAP); the
@@ -6727,6 +7131,9 @@ export interface LibraryFileListItem {
   created_by_id: number | null;
   created_by_username: string | null;
   created_at: string;
+  // Real on-disk modification time (#2680). Null for managed uploads; the date
+  // sort and "Modified" column use `fs_modified_at ?? created_at`.
+  fs_modified_at: string | null;
   print_name: string | null;
   print_time_seconds: number | null;
   filament_used_grams: number | null;

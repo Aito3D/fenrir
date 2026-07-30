@@ -34,6 +34,7 @@ from backend.app.schemas.project import (
     BOMItemUpdate,
     ProjectChildPreview,
     ProjectCreate,
+    ProjectFileProgress,
     ProjectImport,
     ProjectListResponse,
     ProjectResponse,
@@ -262,7 +263,11 @@ async def list_projects(
                 status=project.status,
                 target_count=project.target_count,
                 target_parts_count=project.target_parts_count,
+                target_sets=project.target_sets,
                 budget=project.budget,
+                tags=project.tags,
+                due_date=project.due_date,
+                priority=project.priority,
                 created_at=project.created_at,
                 archive_count=archive_count,
                 total_items=total_items,
@@ -301,6 +306,7 @@ async def create_project(
         color=data.color,
         target_count=data.target_count,
         target_parts_count=data.target_parts_count,
+        target_sets=data.target_sets,
         notes=data.notes,
         tags=data.tags,
         due_date=data.due_date,
@@ -323,6 +329,7 @@ async def create_project(
         status=project.status,
         target_count=project.target_count,
         target_parts_count=project.target_parts_count,
+        target_sets=project.target_sets,
         notes=project.notes,
         attachments=project.attachments,
         url=project.url,
@@ -370,7 +377,12 @@ async def list_templates(
                 color=project.color,
                 status=project.status,
                 target_count=project.target_count,
+                target_parts_count=project.target_parts_count,
+                target_sets=project.target_sets,
                 budget=project.budget,
+                tags=project.tags,
+                due_date=project.due_date,
+                priority=project.priority,
                 created_at=project.created_at,
                 archive_count=archive_count,
                 queue_count=0,
@@ -408,6 +420,7 @@ async def create_project_from_template(
         color=template.color,
         target_count=template.target_count,
         target_parts_count=template.target_parts_count,
+        target_sets=template.target_sets,
         notes=template.notes,
         tags=template.tags,
         priority=template.priority,
@@ -450,6 +463,7 @@ async def create_project_from_template(
         status=project.status,
         target_count=project.target_count,
         target_parts_count=project.target_parts_count,
+        target_sets=project.target_sets,
         notes=project.notes,
         attachments=project.attachments,
         url=project.url,
@@ -535,6 +549,7 @@ async def get_project(
         status=project.status,
         target_count=project.target_count,
         target_parts_count=project.target_parts_count,
+        target_sets=project.target_sets,
         notes=project.notes,
         attachments=project.attachments,
         url=project.url,
@@ -583,11 +598,18 @@ async def update_project(
         project.target_count = data.target_count
     if data.target_parts_count is not None:
         project.target_parts_count = data.target_parts_count
+    # Sent-but-null clears the copies-per-file target (#1897); omitted leaves it
+    # alone (same #2536 semantics as tags/due_date below).
+    if "target_sets" in data.model_fields_set:
+        project.target_sets = data.target_sets
     if data.notes is not None:
         project.notes = data.notes
-    if data.tags is not None:
+    # Sent-but-null clears the field; omitted leaves it alone. Guarding on
+    # ``is not None`` would make an emptied tags field or a removed due date
+    # silently revert to the stored value (#2536).
+    if "tags" in data.model_fields_set:
         project.tags = data.tags
-    if data.due_date is not None:
+    if "due_date" in data.model_fields_set:
         project.due_date = data.due_date
     if data.priority is not None:
         if data.priority not in ["low", "normal", "high", "urgent"]:
@@ -632,6 +654,7 @@ async def update_project(
         status=project.status,
         target_count=project.target_count,
         target_parts_count=project.target_parts_count,
+        target_sets=project.target_sets,
         notes=project.notes,
         attachments=project.attachments,
         url=project.url,
@@ -728,6 +751,76 @@ async def list_project_queue(
     items = result.scalars().all()
 
     return items
+
+
+@router.get("/{project_id}/file-progress", response_model=list[ProjectFileProgress])
+async def get_project_file_progress(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+):
+    """Completed-run counts per library file inside a project (#1897).
+
+    Counts completed ``PrintLogEntry`` rows (same source as the aggregate
+    project stats) of archives attributed to this project, and maps each run to
+    one of the project's library files — the files living in folders linked to
+    the project, the same set the project detail page renders.
+
+    A run is attributed to exactly one file, by the strongest available match:
+    1. ``archive.library_file_id`` (stamped at queue dispatch since #1897),
+    2. content hash (covers historical rows),
+    3. filename (covers hash drift, e.g. re-sliced uploads of the same name).
+    Files with no completed runs are omitted — the frontend treats absence as 0.
+    """
+    result = await db.execute(select(Project.id).where(Project.id == project_id))
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    files_result = await db.execute(
+        select(LibraryFile.id, LibraryFile.file_hash, LibraryFile.filename)
+        .join(LibraryFolder, LibraryFile.folder_id == LibraryFolder.id)
+        .where(LibraryFolder.project_id == project_id, LibraryFile.deleted_at.is_(None))
+    )
+    file_rows = files_result.all()
+    if not file_rows:
+        return []
+
+    # First match wins within each tier, so iteration order (file id) is stable
+    # when duplicates share a hash or filename.
+    by_id = {fid for fid, _, _ in file_rows}
+    by_hash: dict[str, int] = {}
+    by_name: dict[str, int] = {}
+    for fid, fhash, fname in file_rows:
+        if fhash and fhash not in by_hash:
+            by_hash[fhash] = fid
+        if fname not in by_name:
+            by_name[fname] = fid
+
+    runs_result = await db.execute(
+        select(
+            PrintArchive.library_file_id,
+            PrintArchive.content_hash,
+            PrintArchive.filename,
+            func.count(PrintLogEntry.id),
+        )
+        .join(PrintArchive, PrintArchive.id == PrintLogEntry.archive_id)
+        .where(PrintArchive.project_id == project_id, PrintLogEntry.status == "completed")
+        .group_by(PrintArchive.library_file_id, PrintArchive.content_hash, PrintArchive.filename)
+    )
+
+    counts: dict[int, int] = {}
+    for lib_file_id, content_hash, filename, run_count in runs_result.all():
+        if lib_file_id in by_id:
+            fid = lib_file_id
+        elif content_hash and content_hash in by_hash:
+            fid = by_hash[content_hash]
+        elif filename in by_name:
+            fid = by_name[filename]
+        else:
+            continue
+        counts[fid] = counts.get(fid, 0) + run_count
+
+    return [ProjectFileProgress(file_id=fid, completed_count=n) for fid, n in sorted(counts.items())]
 
 
 @router.post("/{project_id}/add-archives")
@@ -1392,6 +1485,7 @@ async def create_template_from_project(
         color=source.color,
         target_count=source.target_count,
         target_parts_count=source.target_parts_count,
+        target_sets=source.target_sets,
         notes=source.notes,
         tags=source.tags,
         priority=source.priority,
@@ -1434,6 +1528,7 @@ async def create_template_from_project(
         status=template.status,
         target_count=template.target_count,
         target_parts_count=template.target_parts_count,
+        target_sets=template.target_sets,
         notes=template.notes,
         attachments=template.attachments,
         url=template.url,
@@ -1643,6 +1738,7 @@ async def export_project(
         "status": project.status,
         "target_count": project.target_count,
         "target_parts_count": project.target_parts_count,
+        "target_sets": project.target_sets,
         "notes": project.notes,
         "tags": project.tags,
         "due_date": project.due_date.isoformat() if project.due_date else None,
@@ -1694,6 +1790,7 @@ async def import_project(
         status=data.status,
         target_count=data.target_count,
         target_parts_count=data.target_parts_count,
+        target_sets=data.target_sets,
         notes=data.notes,
         tags=data.tags,
         due_date=data.due_date,
@@ -1756,6 +1853,7 @@ async def import_project(
         status=project.status,
         target_count=project.target_count,
         target_parts_count=project.target_parts_count,
+        target_sets=project.target_sets,
         notes=project.notes,
         attachments=project.attachments,
         url=project.url,
@@ -1819,6 +1917,7 @@ async def import_project_file(
         status=data.get("status", "active"),
         target_count=data.get("target_count"),
         target_parts_count=data.get("target_parts_count"),
+        target_sets=data.get("target_sets"),
         notes=data.get("notes"),
         tags=data.get("tags"),
         due_date=datetime.fromisoformat(data["due_date"]) if data.get("due_date") else None,
@@ -1947,6 +2046,7 @@ async def import_project_file(
         status=project.status,
         target_count=project.target_count,
         target_parts_count=project.target_parts_count,
+        target_sets=project.target_sets,
         notes=project.notes,
         attachments=project.attachments,
         url=project.url,

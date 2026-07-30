@@ -205,6 +205,10 @@ class FileListResponse(BaseModel):
     created_by_id: int | None = None
     created_by_username: str | None = None
     created_at: datetime
+    # Real on-disk modification time (#2680). Populated for external files from
+    # their filesystem mtime; null for managed uploads. The file pane's date sort
+    # and the "Modified" column use ``fs_modified_at ?? created_at``.
+    fs_modified_at: datetime | None = None
 
     # Key metadata fields for display
     print_name: str | None = None
@@ -276,35 +280,6 @@ class FileMoveRequest(BaseModel):
 
     file_ids: list[int]
     folder_id: int | None = None  # None = move to root
-
-
-class FilePrintRequest(BaseModel):
-    """Schema for printing a file from the library.
-
-    Note: printer_id is passed as a query parameter, not in the body.
-    """
-
-    # Print options (same as archive reprint)
-    plate_id: int | None = None
-    plate_name: str | None = None
-    ams_mapping: list[int] | None = None
-    bed_levelling: bool = True
-    flow_cali: bool = False
-    vibration_cali: bool = True
-    layer_inspect: bool = False
-    timelapse: bool = False
-    use_ams: bool = True
-    cost_center_id: int | None = None
-    estimated_cost: float | None = None
-    nozzle_offset_cali: bool = True  # Dual-nozzle printers only — MQTT-gated (#1682)
-    # Project to associate the resulting archive with
-    project_id: int | None = None
-    # When true, delete the LibraryFile row + disk file after the archive has
-    # been created and the print has been dispatched. Used by the Printers-page
-    # Direct-Print flow (click / drag-drop a file onto a printer card) so the
-    # transient upload doesn't linger in File Manager. Cleanup is skipped on
-    # external library files.
-    cleanup_library_after_dispatch: bool = False
 
 
 class FileUploadResponse(BaseModel):

@@ -55,6 +55,7 @@ class ArchiveResponse(BaseModel):
     object_count: int | None = None
 
     print_name: str | None
+    plate_id: int | None = None  # Selected plate of a multi-plate 3MF (#2603)
     print_time_seconds: int | None  # Estimated time from slicer
     actual_time_seconds: int | None = None  # Computed from started_at/completed_at
     # Percentage: 100 = perfect, >100 = faster than estimated
@@ -136,6 +137,8 @@ class ArchiveSlim(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     cost: float | None
+    energy_kwh: float | None = None
+    energy_cost: float | None = None
     quantity: int = 1
     created_at: datetime | None
 
@@ -219,27 +222,3 @@ class ProjectPageUpdate(BaseModel):
     copyright: str | None = None
     profile_title: str | None = None
     profile_description: str | None = None
-
-
-class ReprintRequest(BaseModel):
-    """Request body for reprinting an archive."""
-
-    # Plate selection for multi-plate 3MF files
-    # If not specified, auto-detects from file (legacy behavior for single-plate files)
-    plate_id: int | None = None
-    plate_name: str | None = None
-
-    # AMS slot mapping: list of tray IDs for each filament slot in the 3MF
-    # Global tray ID = (ams_id * 4) + slot_id, external = 254
-    ams_mapping: list[int] | None = None
-
-    # Print options
-    bed_levelling: bool = True
-    flow_cali: bool = False
-    vibration_cali: bool = True
-    layer_inspect: bool = False
-    timelapse: bool = False
-    use_ams: bool = True  # Not exposed in UI, but needed for API
-    cost_center_id: int | None = None
-    estimated_cost: float | None = None
-    nozzle_offset_cali: bool = True  # Dual-nozzle printers only — MQTT-gated (#1682)

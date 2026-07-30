@@ -1,12 +1,13 @@
-import type { PrintQueueItem, Printer } from '../../api/client';
+import type { PrintQueueItem, Printer, CalibrationMode } from '../../api/client';
+
+export type { CalibrationMode };
 
 /**
  * Mode of operation for the PrintModal.
- * - 'reprint': Immediate print from archive (no schedule options)
- * - 'add-to-queue': Schedule print to queue (includes schedule options)
+ * - 'create': Create a print queue item from an archive or library file
  * - 'edit-queue-item': Edit existing queue item (all options + existing values)
  */
-export type PrintModalMode = 'reprint' | 'add-to-queue' | 'edit-queue-item';
+export type PrintModalMode = 'create' | 'edit-queue-item';
 
 /**
  * Props for the unified PrintModal component.
@@ -42,31 +43,41 @@ export interface PrintModalProps {
 /**
  * Print options that can be configured for a print job.
  */
+export type PreheatOverride = 'inherit' | 'on' | 'off';
+
 export interface PrintOptions {
-  bed_levelling: boolean;
-  flow_cali: boolean;
+  bed_levelling: CalibrationMode;
+  flow_cali: CalibrationMode;
   vibration_cali: boolean;
   layer_inspect: boolean;
   timelapse: boolean;
-  nozzle_offset_cali: boolean;
+  nozzle_offset_cali: CalibrationMode;
+  // Per-item preheat / heat-soak override (#1468). 'inherit' uses the global
+  // Settings → Workflow toggle; 'on' / 'off' force the per-print decision.
+  // chamber_target_override is non-null to bypass the per-filament-type
+  // derivation with an explicit °C target.
+  preheat_override: PreheatOverride;
+  preheat_chamber_target_override: number | null;
 }
 
 /**
  * Default print options values.
  */
 export const DEFAULT_PRINT_OPTIONS: PrintOptions = {
-  bed_levelling: true,
-  flow_cali: false,
+  bed_levelling: 'auto',
+  flow_cali: 'auto',
   vibration_cali: true,
   layer_inspect: false,
   timelapse: false,
-  nozzle_offset_cali: true,
+  nozzle_offset_cali: 'auto',
+  preheat_override: 'inherit',
+  preheat_chamber_target_override: null,
 };
 
 /**
  * Schedule type for queue items.
  */
-export type ScheduleType = 'asap' | 'scheduled' | 'manual';
+export type ScheduleType = 'asap' | 'queue' | 'scheduled';
 
 /**
  * Schedule options for queue items.
@@ -74,6 +85,7 @@ export type ScheduleType = 'asap' | 'scheduled' | 'manual';
 export interface ScheduleOptions {
   scheduleType: ScheduleType;
   scheduledTime: string;
+  requireManualStart: boolean;
   requirePreviousSuccess: boolean;
   autoOffAfter: boolean;
   gcodeInjection: boolean;
@@ -88,6 +100,7 @@ export interface ScheduleOptions {
 export const DEFAULT_SCHEDULE_OPTIONS: ScheduleOptions = {
   scheduleType: 'asap',
   scheduledTime: '',
+  requireManualStart: false,
   requirePreviousSuccess: false,
   autoOffAfter: false,
   gcodeInjection: false,
@@ -140,7 +153,7 @@ export interface PrinterSelectorProps {
   allowMultiple?: boolean;
   /** Show inactive printers (for edit mode where original assignment may be inactive) */
   showInactive?: boolean;
-  /** Disable selection of busy printers (used in reprint mode) */
+  /** Disable selection of busy printers */
   disableBusy?: boolean;
   /** Current assignment mode */
   assignmentMode?: AssignmentMode;
@@ -168,7 +181,7 @@ export interface PlateSelectorProps {
   onToggle: (plateIndex: number) => void;
   onSelectAll?: () => void;
   onDeselectAll?: () => void;
-  /** Whether multi-select (checkboxes) is enabled — true in add-to-queue mode */
+  /** Whether multi-select (checkboxes) is enabled */
   multiSelect?: boolean;
 }
 
@@ -210,6 +223,10 @@ export interface FilamentMappingProps {
   forceColorMatch?: Record<number, boolean>;
   /** Called when a slot's force-color-match checkbox is toggled. */
   onForceColorMatchChange?: (slotId: number, value: boolean) => void;
+  /** Names the plate this panel maps, when one panel is rendered per selected
+   *  plate. Each plate prints its own subset of the file's slots and gets its
+   *  own AMS mapping, so the panels have to be told apart. */
+  plateLabel?: string;
 }
 
 /**

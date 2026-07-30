@@ -1024,6 +1024,29 @@ class TestArchivesSlimAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_slim_includes_energy_fields(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Per-print smart-plug energy surfaces through /slim so the stats
+        page can include it in cost records and trends (#1432)."""
+        printer = await printer_factory()
+        await archive_factory(
+            printer.id,
+            status="completed",
+            cost=1.50,
+            energy_kwh=0.421,
+            energy_cost=0.063,
+        )
+
+        response = await async_client.get("/api/v1/archives/slim")
+
+        assert response.status_code == 200
+        item = response.json()[0]
+        assert item["energy_kwh"] == 0.421
+        assert item["energy_cost"] == 0.063
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_slim_computes_actual_time(
         self, async_client: AsyncClient, archive_factory, printer_factory, db_session
     ):
@@ -1709,7 +1732,7 @@ class TestUploadSourceThreeMF:
         archive = await archive_factory(
             printer.id,
             print_name="Corrupt Path",
-            file_path="/tmp/totally_outside.gcode.3mf",
+            file_path="/tmp/totally_outside.gcode.3mf",  # nosec B108
             filename="totally_outside.gcode.3mf",
         )
 
@@ -1719,4 +1742,4 @@ class TestUploadSourceThreeMF:
         assert response.status_code == 500
         assert "outside the data directory" in response.json()["detail"]
         # Did not write anything under the bogus /tmp/source/ either.
-        assert not (Path("/tmp") / "source").exists() or not (Path("/tmp") / "source" / "totally_outside.3mf").exists()
+        assert not (Path("/tmp") / "source").exists() or not (Path("/tmp") / "source" / "totally_outside.3mf").exists()  # nosec B108

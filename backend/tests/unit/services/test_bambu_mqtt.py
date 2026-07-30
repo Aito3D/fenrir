@@ -5,6 +5,7 @@ These tests focus on timelapse tracking during prints.
 """
 
 import json
+import logging
 import time
 
 import pytest
@@ -642,6 +643,43 @@ class TestAMSDataMerging:
         assert tray["tray_sub_brands"] == "", "tray_sub_brands should be cleared"
         assert tray["tag_uid"] == "0000000000000000", "tag_uid should be cleared"
 
+    def test_bitmask_only_ht_removal_fires_on_ams_change(self, mqtt_client):
+        """#2670: an AMS-HT whose spool is removed can be signalled by
+        tray_exist_bits alone while the firmware keeps echoing the stale
+        tray_type/tag_uid/remain in the tray payload. apply_tray_exist_bits
+        clears the merged slot, but a change-hash built from the RAW payload
+        never flips (the echoed fields are unchanged), so on_ams_change would
+        not fire and the spool_assignment row would stay bound to an empty slot.
+        Hashing the MERGED state fixes it.
+        """
+        from unittest.mock import Mock
+
+        mqtt_client.on_ams_change = Mock()
+
+        # Loaded HT-A: bit 16 set (0x10000). Fires once as the initial state.
+        loaded = {
+            "ams": [{"id": 128, "tray": [{"id": 0, "tray_type": "PLA", "tag_uid": "C7EFC10300000100", "remain": 75}]}],
+            "tray_exist_bits": "10000",
+            "power_on_flag": True,
+        }
+        mqtt_client._handle_ams_data(loaded)
+        assert mqtt_client.state.raw_data["ams"][0]["tray"][0]["tray_type"] == "PLA"
+        mqtt_client.on_ams_change.reset_mock()
+
+        # Removal signalled ONLY by the bitmask: bit 16 now clear, but the tray
+        # payload STILL echoes the same PLA/tag/remain — a raw-based hash would
+        # be byte-identical to the loaded push above and never fire.
+        bitmask_only_removal = {
+            "ams": [{"id": 128, "tray": [{"id": 0, "tray_type": "PLA", "tag_uid": "C7EFC10300000100", "remain": 75}]}],
+            "tray_exist_bits": "0",
+            "power_on_flag": True,
+        }
+        mqtt_client._handle_ams_data(bitmask_only_removal)
+
+        # Merged slot cleared, and the callback fired off the merged-state hash.
+        assert mqtt_client.state.raw_data["ams"][0]["tray"][0]["tray_type"] == ""
+        mqtt_client.on_ams_change.assert_called_once()
+
     def test_partial_update_preserves_other_fields(self, mqtt_client):
         """Test that partial updates still preserve non-slot-status fields."""
         # Initial state with full data
@@ -1196,6 +1234,63 @@ class TestAMSTrayStateClearning:
         assert tray0["tray_color"] == "00FF00FF"
         assert tray0["remain"] == 75
 
+    def _seed_loaded_ht_tray(self, mqtt_client):
+        """Seed an AMS-HT unit (id 128, single tray) whose loaded tray reports
+        state=9 — the real HT resting state, unlike a 4-slot AMS's state=11."""
+        initial = {
+            "ams": [
+                {
+                    "id": 128,
+                    "tray": [
+                        {
+                            "id": 0,
+                            "tray_type": "PA",
+                            "tray_color": "161616FF",
+                            "tray_info_idx": "GFG99",
+                            "tag_uid": "AABBCCDD11223344",
+                            "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+                            "remain": 60,
+                            "state": 9,
+                        }
+                    ],
+                }
+            ],
+            "power_on_flag": True,
+        }
+        mqtt_client._handle_ams_data(initial)
+
+    def test_ht_unit_state_9_preserves_tray_data(self, mqtt_client):
+        """#2594: an AMS-HT reports its loaded tray as state=9. A partial
+        {id, state=9} for the HT unit must NOT be read as 'empty' and wipe the
+        present spool — that made the HT-A spool vanish on every power-on."""
+        self._seed_loaded_ht_tray(mqtt_client)
+
+        # Printer sends a partial {id, state} for the HT tray on power-on.
+        update = {
+            "ams": [{"id": 128, "tray": [{"id": 0, "state": 9}]}],
+            "power_on_flag": True,
+        }
+        mqtt_client._handle_ams_data(update)
+
+        tray0 = mqtt_client.state.raw_data["ams"][0]["tray"][0]
+        assert tray0["tray_type"] == "PA", "HT state=9 must NOT clear a present spool (#2594)"
+        assert tray0["tray_uuid"] == "AABBCCDD11223344AABBCCDD11223344", "HT RFID must survive"
+        assert tray0["remain"] == 60
+
+    def test_ht_unit_explicit_empty_still_clears(self, mqtt_client):
+        """A genuine HT spool removal (explicit tray_type='') must still clear —
+        the #2594 fix only skips the state-heuristic, not the explicit path."""
+        self._seed_loaded_ht_tray(mqtt_client)
+
+        update = {
+            "ams": [{"id": 128, "tray": [{"id": 0, "tray_type": ""}]}],
+            "power_on_flag": False,
+        }
+        mqtt_client._handle_ams_data(update)
+
+        tray0 = mqtt_client.state.raw_data["ams"][0]["tray"][0]
+        assert tray0["tray_type"] == "", "explicit tray_type='' must still clear an HT tray"
+
 
 class TestApplyTrayExistBitsHelper:
     """Direct contract pinning for the shared ``apply_tray_exist_bits`` helper.
@@ -1274,14 +1369,17 @@ class TestApplyTrayExistBitsHelper:
         assert units[0]["tray"][0]["state"] == 9
         assert isinstance(units[0]["tray"][0]["state"], int)
 
-    def test_ams_ht_unit_skipped(self):
-        """AMS-HT (id >= 128) uses a different addressing scheme."""
+    def test_ams_ht_unit_now_handled_not_skipped(self):
+        """AMS-HT (id 128-135) is no longer skipped: it uses its own bit at
+        16+(ams_id-128). With all bits 0 the HT slot clears like any other
+        (#2670 — the old skip left the HT permanently stale). See the dedicated
+        HT bit-math tests below for the encoding."""
         from backend.app.services.bambu_mqtt import apply_tray_exist_bits
 
         units = [{"id": 128, "tray": [{"id": 0, "tray_type": "PLA"}]}]
         cleared = apply_tray_exist_bits(units, "0", power_on_flag=True)
-        assert cleared == 0
-        assert units[0]["tray"][0]["tray_type"] == "PLA"
+        assert cleared == 1
+        assert units[0]["tray"][0]["tray_type"] == ""
 
     def test_string_ids_handled(self):
         """Bridge cache stores ids as strings (JSON wire format)."""
@@ -1329,6 +1427,116 @@ class TestApplyTrayExistBitsHelper:
         # No tray_type to clear → cleared counter stays 0 but state is set.
         assert cleared == 0
         assert units[0]["tray"][0]["state"] == 9
+
+    def test_annotate_exists_marks_present_and_absent(self):
+        """#2527: annotate_exists writes the tray_exist_bits presence bit onto
+        every slot so a non-RFID spool (present, no tray_type) is distinguishable
+        from a truly-empty slot. 0x5 = slots 0,2 present; slots 1,3 absent."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [{"id": 0, "tray": [{"id": i} for i in range(4)]}]
+        apply_tray_exist_bits(units, "5", power_on_flag=True, annotate_exists=True)
+        exists = [t["exists"] for t in units[0]["tray"]]
+        assert exists == [True, False, True, False]
+
+    def test_annotate_exists_present_unknown_slot_not_cleared(self):
+        """A present slot with no tray_type (fresh non-RFID spool) keeps its
+        state and is marked exists=True — the UI then shows "?" not "Empty"."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        # 0x1 = slot 0 present. Slot 0 has no tray_type (unidentified spool).
+        units = [{"id": 0, "tray": [{"id": 0, "state": 9}]}]
+        cleared = apply_tray_exist_bits(units, "1", power_on_flag=True, annotate_exists=True)
+        assert cleared == 0
+        assert units[0]["tray"][0]["exists"] is True
+        # Present slot is left untouched (only absent slots get state=9 forced).
+        assert units[0]["tray"][0]["state"] == 9
+
+    def test_annotate_exists_off_by_default_keeps_wire_clean(self):
+        """The VP bridge calls this without annotate_exists, so the slicer-facing
+        tray dict must NOT gain a non-standard `exists` key."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [{"id": 0, "tray": [{"id": 0, "tray_type": "PLA"}, {"id": 1}]}]
+        apply_tray_exist_bits(units, "1", power_on_flag=True)
+        assert "exists" not in units[0]["tray"][0]
+        assert "exists" not in units[0]["tray"][1]
+
+    def test_ht_unit_presence_bit_is_16_not_ams_id_times_4(self):
+        """#2670: AMS-HT (n3s, id 128) is single-tray; its presence bit is
+        16+(ams_id-128)=bit 16, NOT ams_id*4 (=512, which the old code skipped
+        outright, so the HT slot never cleared). Real H2D capture: loaded HT-A
+        reports tray_exist_bits 0x10f7f (bit 16 set); after unload it reports
+        0xf7f (bit 16 clear). Verified against OrcaSlicer DevFilaSystem.cpp."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        # Loaded (bit 16 set) → slot preserved, exists=True.
+        loaded = [{"id": 128, "tray": [{"id": 0, "tray_type": "PLA", "tray_color": "000000FF"}]}]
+        assert apply_tray_exist_bits(loaded, "10f7f", power_on_flag=False, annotate_exists=True) == 0
+        assert loaded[0]["tray"][0]["tray_type"] == "PLA"
+        assert loaded[0]["tray"][0]["exists"] is True
+
+        # Empty (bit 16 clear) → slot cleared, state forced to 9, exists=False.
+        empty = [{"id": 128, "tray": [{"id": 0, "tray_type": "PLA", "tray_color": "000000FF"}]}]
+        assert apply_tray_exist_bits(empty, "f7f", power_on_flag=False, annotate_exists=True) == 1
+        assert empty[0]["tray"][0]["tray_type"] == ""
+        assert empty[0]["tray"][0]["state"] == 9
+        assert empty[0]["tray"][0]["exists"] is False
+
+    def test_ht_second_unit_is_bit_17_not_bit_20(self):
+        """#2670: multiple AMS-HT units pack into CONSECUTIVE bits — HT-A=16,
+        HT-B=17 — NOT the 4-strided bit 20 a naive ams_id*4-style extrapolation
+        would give. This pins the exact encoding OrcaSlicer uses and guards every
+        dual-HT printer. 0x20000 sets ONLY bit 17: a bit-20 implementation would
+        wrongly clear this loaded HT-B."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [{"id": 129, "tray": [{"id": 0, "tray_type": "PETG", "tray_color": "00FF00FF"}]}]
+        assert apply_tray_exist_bits(units, "20000", power_on_flag=False, annotate_exists=True) == 0
+        assert units[0]["tray"][0]["tray_type"] == "PETG"
+        assert units[0]["tray"][0]["exists"] is True
+
+    def test_ht_dual_unit_clears_only_the_empty_one(self):
+        """HT-A loaded + HT-B empty in one push, disambiguated by their
+        consecutive bits. 0x10000 = bit 16 only → HT-A (128) present, HT-B
+        (129, bit 17) empty."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [
+            {"id": 128, "tray": [{"id": 0, "tray_type": "PLA"}]},
+            {"id": 129, "tray": [{"id": 0, "tray_type": "PETG"}]},
+        ]
+        assert apply_tray_exist_bits(units, "10000", power_on_flag=False, annotate_exists=True) == 1
+        assert units[0]["tray"][0]["tray_type"] == "PLA"  # HT-A present
+        assert units[0]["tray"][0]["exists"] is True
+        assert units[1]["tray"][0]["tray_type"] == ""  # HT-B cleared
+        assert units[1]["tray"][0]["exists"] is False
+
+    def test_ht_and_regular_ams_use_their_own_formulas_together(self):
+        """Regular AMS keeps ams_id*4+tray_id while HT uses 16+(ams_id-128) in a
+        single call. bits 0x1 = regular AMS0 slot0 present (bit 0); HT-A empty
+        (bit 16 clear)."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [
+            {"id": 0, "tray": [{"id": 0, "tray_type": "PLA"}]},
+            {"id": 128, "tray": [{"id": 0, "tray_type": "ASA"}]},
+        ]
+        assert apply_tray_exist_bits(units, "1", power_on_flag=True, annotate_exists=True) == 1
+        assert units[0]["tray"][0]["tray_type"] == "PLA"  # regular AMS0 slot0 (bit 0) present
+        assert units[0]["tray"][0]["exists"] is True
+        assert units[1]["tray"][0]["tray_type"] == ""  # HT-A (bit 16) empty
+        assert units[1]["tray"][0]["exists"] is False
+
+    def test_unknown_ams_id_range_is_left_untouched(self):
+        """An id outside regular (0-15) and HT (128-135) has no known bit layout
+        — the helper must NOT guess a bit and must NOT clear the slot."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [{"id": 200, "tray": [{"id": 0, "tray_type": "PLA"}]}]
+        assert apply_tray_exist_bits(units, "0", power_on_flag=True, annotate_exists=True) == 0
+        assert units[0]["tray"][0]["tray_type"] == "PLA"
+        assert "exists" not in units[0]["tray"][0]
 
 
 class TestNozzleRackData:
@@ -3897,12 +4105,18 @@ class TestStartPrintAmsMapping:
         cmd = self._get_published_command(mqtt_client)
         assert cmd["use_ams"] is False
 
-    def test_all_unmapped_sets_use_ams_false(self, mqtt_client):
-        """All unmapped slots on non-H2D printer sets use_ams=False."""
+    def test_all_unresolved_keeps_use_ams_true(self, mqtt_client):
+        """All-unresolved (-1) is NOT external — must keep use_ams=True (#2589).
+
+        A stored [-1] comes from an unresolved mapping (e.g. a frontend
+        status-load race), not an explicit external-spool selection. Treating it
+        as external silently started the print against the empty external feed.
+        Only >=254 may downgrade to use_ams=False.
+        """
         mqtt_client.start_print("test.3mf", ams_mapping=[-1, -1], use_ams=True)
 
         cmd = self._get_published_command(mqtt_client)
-        assert cmd["use_ams"] is False
+        assert cmd["use_ams"] is True
 
     def test_mixed_ams_and_external_keeps_use_ams_true(self, mqtt_client):
         """AMS tray + external spool keeps use_ams=True."""
@@ -3963,15 +4177,18 @@ class TestStartPrintAmsMapping:
         mqtt_client.start_print(
             "test.3mf",
             timelapse=True,
-            bed_levelling=False,
-            flow_cali=True,
+            bed_levelling="off",
+            flow_cali="on",
             vibration_cali=False,
             layer_inspect=True,
         )
 
         cmd = self._get_published_command(mqtt_client)
         assert cmd["timelapse"] is True
+        # bed_leveling stays a bool (true only for "on"); the tri-state rides on
+        # the auto_bed_leveling int.
         assert cmd["bed_leveling"] is False
+        assert cmd["auto_bed_leveling"] == 0
         assert cmd["flow_cali"] is True
         assert cmd["vibration_cali"] is False
         assert cmd["layer_inspect"] is True
@@ -3981,16 +4198,13 @@ class TestStartPrintAmsMapping:
     def test_p2s_uses_boolean_format(self, mqtt_client):
         """P2S sends calibration fields as JSON booleans (single-nozzle, like X1C/A1/P1)."""
         mqtt_client.model = "P2S"
-        mqtt_client.start_print("test.3mf", timelapse=True, flow_cali=False)
+        mqtt_client.start_print("test.3mf", timelapse=True, flow_cali="off")
 
         cmd = self._get_published_command(mqtt_client)
         assert cmd["timelapse"] is True
         assert cmd["flow_cali"] is False
-        # flow_cali off → extrude_cali_flag=0 (firmware actually skips the
-        # pre-print calibration stage). #1721 test on H2D 01.x showed `2`
-        # didn't suppress stage 8 ("Calibrating dynamic flow") despite the
-        # earlier "skip and reuse stored PA" reading; `0` does — verified
-        # live against the stg queue.
+        # flow_cali "off" → extrude_cali_flag=0 (firmware skips the pre-print
+        # calibration stage entirely). "auto" would send 2 instead.
         assert cmd["extrude_cali_flag"] == 0
 
     def test_h2s_single_external_spool_uses_main_id(self, mqtt_client):
@@ -4035,8 +4249,8 @@ class TestStartPrintAmsMapping:
         mqtt_client.start_print(
             "test.3mf",
             timelapse=True,
-            bed_levelling=False,
-            flow_cali=True,
+            bed_levelling="off",
+            flow_cali="on",
             vibration_cali=False,
             layer_inspect=True,
         )
@@ -4051,13 +4265,48 @@ class TestStartPrintAmsMapping:
         # flow-dynamics calibration instead of reusing the stored PA value.
         assert cmd["extrude_cali_flag"] == 1
 
-    def test_nozzle_offset_cali_default_is_skip(self, mqtt_client):
-        """Default `nozzle_offset_cali=False` → wire value `0` (skip).
+    def test_bed_leveling_auto_sends_int_two(self, mqtt_client):
+        """`bed_levelling="auto"` → bool false + auto_bed_leveling=2.
 
-        #1721 H2D 01.x test: `2` ("skip") didn't actually suppress stage 39
-        ("Nozzle offset calibration") — the stage stayed in the `stg` queue
-        and ran at print start. `0` does suppress it (verified live). Matches
-        what a BambuStudio Send-dialog echo on the same firmware shows.
+        Matches BambuStudio's ops_auto wire shape: the bool is true only for the
+        explicit "on" state; "auto" carries its intent in the int (2 = run only
+        if the bed wasn't levelled recently).
+        """
+        mqtt_client.model = "X1C"
+        mqtt_client.start_print("test.3mf", bed_levelling="auto")
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["bed_leveling"] is False
+        assert cmd["auto_bed_leveling"] == 2
+
+    def test_bed_leveling_on_sends_int_one(self, mqtt_client):
+        """`bed_levelling="on"` → bool true + auto_bed_leveling=1 (force)."""
+        mqtt_client.model = "X1C"
+        mqtt_client.start_print("test.3mf", bed_levelling="on")
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["bed_leveling"] is True
+        assert cmd["auto_bed_leveling"] == 1
+
+    def test_flow_cali_auto_sends_int_two(self, mqtt_client):
+        """`flow_cali="auto"` → bool false + extrude_cali_flag=2.
+
+        #1721 saw stage 8 stay queued on 2 — that is the auto contract (queued,
+        skipped at runtime if the filament was calibrated recently), which is
+        exactly what "auto" should do.
+        """
+        mqtt_client.model = "X1C"
+        mqtt_client.start_print("test.3mf", flow_cali="auto")
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["flow_cali"] is False
+        assert cmd["extrude_cali_flag"] == 2
+
+    def test_nozzle_offset_cali_default_auto_gated_on_single_nozzle(self, mqtt_client):
+        """Default (auto) on a single-nozzle printer → wire value `0`.
+
+        The default is now "auto", but single-nozzle machines have no second
+        head to calibrate, so the MQTT layer gates any state to `0` there.
         """
         mqtt_client.model = "P1S"
         mqtt_client.start_print("test.3mf")
@@ -4066,44 +4315,50 @@ class TestStartPrintAmsMapping:
         assert cmd["nozzle_offset_cali"] == 0
 
     def test_nozzle_offset_cali_ignored_on_single_nozzle(self, mqtt_client):
-        """Single-nozzle printer: `nozzle_offset_cali=True` is silently dropped.
+        """Single-nozzle printer: `nozzle_offset_cali="on"` is silently dropped.
 
         H2S is in the H2 firmware family but single-nozzle. The toggle has
         no physical meaning on single-nozzle machines and the UI gates it
         behind `nozzle_count==2`. Even if a stale queue item from when the
         printer was misidentified as dual carries the flag, the MQTT layer
         must downgrade it so firmware never tries to calibrate a head it
-        doesn't have (#1682). `0` is the actually-honoured skip value
-        post-#1721; old `2` left the stage in the queue.
+        doesn't have (#1682).
         """
         mqtt_client.model = "P1S"
-        mqtt_client.start_print("test.3mf", nozzle_offset_cali=True)
+        mqtt_client.start_print("test.3mf", nozzle_offset_cali="on")
 
         cmd = self._get_published_command(mqtt_client)
         assert cmd["nozzle_offset_cali"] == 0
 
     def test_nozzle_offset_cali_honored_on_dual_nozzle(self, mqtt_client):
-        """Dual-nozzle printer (H2D): `nozzle_offset_cali=True` → wire value `1`.
+        """Dual-nozzle printer (H2D): `nozzle_offset_cali="on"` → wire value `1`.
 
         H2D is in `DUAL_NOZZLE_MODELS`. The toggle controls whether the
         printer runs the nozzle-offset calibration pass before the print
-        starts. `1`=run (#1682).
+        starts. "on"=1 (force), "auto"=2, "off"=0 (#1682).
         """
         mqtt_client.model = "H2D"
-        mqtt_client.start_print("test.3mf", nozzle_offset_cali=True)
+        mqtt_client.start_print("test.3mf", nozzle_offset_cali="on")
 
         cmd = self._get_published_command(mqtt_client)
         assert cmd["nozzle_offset_cali"] == 1
 
-    def test_nozzle_offset_cali_false_on_dual_nozzle(self, mqtt_client):
-        """Dual-nozzle printer (H2D Pro): `nozzle_offset_cali=False` → `0` (skip).
+    def test_nozzle_offset_cali_auto_on_dual_nozzle(self, mqtt_client):
+        """Dual-nozzle printer (H2D): `nozzle_offset_cali="auto"` → wire value `2`."""
+        mqtt_client.model = "H2D"
+        mqtt_client.start_print("test.3mf", nozzle_offset_cali="auto")
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["nozzle_offset_cali"] == 2
+
+    def test_nozzle_offset_cali_off_on_dual_nozzle(self, mqtt_client):
+        """Dual-nozzle printer (H2D Pro): `nozzle_offset_cali="off"` → `0` (skip).
 
         Critical for users like #1682 who run diamond nozzles and need to
-        keep the calibration off. The wire value flipped from `2` to `0` in
-        #1721 after the H2D test showed `2` didn't actually suppress.
+        keep the calibration off.
         """
         mqtt_client.model = "H2D Pro"
-        mqtt_client.start_print("test.3mf", nozzle_offset_cali=False)
+        mqtt_client.start_print("test.3mf", nozzle_offset_cali="off")
 
         cmd = self._get_published_command(mqtt_client)
         assert cmd["nozzle_offset_cali"] == 0
@@ -4742,7 +4997,7 @@ class TestZombieSessionDetection:
         the routing in force_reconnect_stale_session falls back to socket-close
         — which is the safe option since loop_stop() from inside the loop
         thread would deadlock. Hard-reset is reserved for async-context callers
-        (background_dispatch dispatch path)."""
+        on the queue dispatch path."""
         import time
 
         state_change_called = []
@@ -4928,6 +5183,83 @@ class TestHMSUserActionFiltering:
         assert mqtt_client.state.hms_errors[0].code == "0x8061"
 
 
+class TestHMSFullCode:
+    """full_code is the firmware-matching key for HMS-related commands.
+    Truncating it to the 8-char short code is what caused #1830's silent
+    rejection on H2C, and the H2D wrong-plate path needs the print_error
+    32-bit form. Both branches must populate full_code consistently."""
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST_FULLCODE",
+            access_code="12345678",
+        )
+
+    def test_hms_array_path_populates_16_char_full_code(self, mqtt_client):
+        """hms[] entries carry a 64-bit identifier (attr + code, 32 bits each).
+        The full 16-char hex is what BambuStudio uses to match err on
+        idle_ignore — the truncated short_code drops 32 bits and the firmware
+        silently rejects (#1830). Verifies the parser preserves the full
+        identifier on HMSError.full_code."""
+        # 0x07FF0200 / 0x8011 → displayed as 07FF_0200_0000_8011 in the wiki
+        mqtt_client._update_state({"hms": [{"attr": 0x07FF0200, "code": 0x8011}]})
+        assert len(mqtt_client.state.hms_errors) == 1
+        assert mqtt_client.state.hms_errors[0].full_code == "07FF02000000" + "8011"
+
+    def test_print_error_path_populates_8_char_full_code(self, mqtt_client):
+        """print_error is already 32 bits — no truncation. full_code is the
+        8-char hex form, which is exactly what the firmware matches against."""
+        mqtt_client._update_state({"print_error": 0x05008051})
+        assert len(mqtt_client.state.hms_errors) == 1
+        assert mqtt_client.state.hms_errors[0].full_code == "05008051"
+
+    def test_hms_array_catalog_lookup_tries_16_char_first(self, mqtt_client, monkeypatch):
+        """When the catalog has both an 8-char and a 16-char entry for the
+        same fault family, the 16-char (specific variant) wins. The 8-char
+        is the fallback for codes that aren't in the long-form catalog."""
+        from backend.app.services import bambu_mqtt as mod
+
+        calls = []
+
+        def fake_lookup(device, code):
+            calls.append((device, code))
+            if len(code) == 16:
+                return ["RESUME_PRINTING"]
+            return []
+
+        monkeypatch.setattr(mod, "get_actions_for_error_code", fake_lookup)
+        # SN prefix "TES" — irrelevant for the test, we mocked the lookup.
+        mqtt_client._update_state({"hms": [{"attr": 0x07FF0200, "code": 0x8011}]})
+        # 16-char lookup attempted first, then 8-char only if 16-char missed.
+        assert calls[0][1] == "07FF020000008011"
+        assert mqtt_client.state.hms_errors[0].actions == ["RESUME_PRINTING"]
+
+    def test_hms_array_catalog_falls_back_to_8_char(self, mqtt_client, monkeypatch):
+        """If the catalog has no 16-char entry, fall back to the 8-char short
+        code — that's where base-class HMS codes live."""
+        from backend.app.services import bambu_mqtt as mod
+
+        calls = []
+
+        def fake_lookup(device, code):
+            calls.append((device, code))
+            if len(code) == 16:
+                return []  # no specific variant
+            return ["CHECK_ASSISTANT"]  # base class hit
+
+        monkeypatch.setattr(mod, "get_actions_for_error_code", fake_lookup)
+        mqtt_client._update_state({"hms": [{"attr": 0x07FF0200, "code": 0x8011}]})
+        # Two lookups: 16-char miss, then 8-char hit.
+        assert len(calls) == 2
+        assert calls[0][1] == "07FF020000008011"
+        assert calls[1][1] == "07FF8011"
+        assert mqtt_client.state.hms_errors[0].actions == ["CHECK_ASSISTANT"]
+
+
 class TestForceReconnectRouting:
     """#1136 — force_reconnect_stale_session routes between hard-reset (full
     paho-client teardown, wipes the QoS 1 queue) and socket-close (the legacy
@@ -5026,9 +5358,8 @@ class TestHardResetClientDirect:
 
     def test_swallows_disconnect_exception(self, mqtt_client):
         """A failing disconnect() (e.g. paho already in error state) must not
-        propagate — the await chain in background_dispatch.py would otherwise
-        raise instead of moving on, and a single broken client could brick
-        every future dispatch."""
+        propagate through async dispatch callers, and a single broken client
+        could brick every future dispatch."""
         original = mqtt_client._client
         original.disconnect.side_effect = RuntimeError("boom")
         # No exception escapes the call (test would fail if it did).
@@ -5994,3 +6325,655 @@ class TestTrayNowH2SExternalSpoolOverride:
 
         mqtt_client._process_message(_ams_payload(255))
         assert mqtt_client.state.tray_now == 255
+
+
+class TestLastLayerFinishPhotoTrigger:
+    """Tests for #1867: layer_num→total_layer_num edge fires the finish-photo
+    moment before user End G-code (e.g. SwapMod) executes.
+
+    A1 Mini firmware skips stg_cur=22 entirely, so the FINISH-state fallback
+    fires after end G-code has already moved the plate. The last-layer edge
+    is the earliest reliable "print finished" signal available across all
+    Bambu printer variants.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        client._was_running = True
+        client.state.total_layers = 100
+        client.state.layer_num = 99
+        return client
+
+    def test_fires_when_layer_reaches_total(self, mqtt_client):
+        events = []
+        mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
+
+        mqtt_client._process_message({"print": {"layer_num": 100}})
+
+        assert len(events) == 1
+        assert events[0]["trigger"] == "last_layer"
+        assert mqtt_client._finish_photo_captured is True
+
+    def test_does_not_fire_when_layer_still_below_total(self, mqtt_client):
+        events = []
+        mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
+
+        mqtt_client._process_message({"print": {"layer_num": 99}})
+
+        assert events == []
+        assert mqtt_client._finish_photo_captured is False
+
+    def test_edge_only_no_double_fire(self, mqtt_client):
+        """Once fired, subsequent messages at layer_num == total must not
+        re-fire (the guard flips _finish_photo_captured to True)."""
+        events = []
+        mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
+
+        mqtt_client._process_message({"print": {"layer_num": 100}})
+        mqtt_client._process_message({"print": {"layer_num": 100}})
+        mqtt_client._process_message({"print": {"layer_num": 100}})
+
+        assert len(events) == 1
+
+    def test_does_not_fire_when_not_running(self, mqtt_client):
+        """If the print never went through RUNNING (Bambuddy restart mid-print,
+        firmware replay), _was_running is False and no photo trigger fires."""
+        mqtt_client._was_running = False
+        events = []
+        mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
+
+        mqtt_client._process_message({"print": {"layer_num": 100}})
+
+        assert events == []
+
+    def test_does_not_fire_when_total_layers_unknown(self, mqtt_client):
+        """total=0 (before slicer metadata arrives) must never satisfy the
+        `new_layer >= total` condition."""
+        mqtt_client.state.total_layers = 0
+        mqtt_client.state.layer_num = 0
+        events = []
+        mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
+
+        mqtt_client._process_message({"print": {"layer_num": 0}})
+
+        assert events == []
+
+    def test_stage_22_skipped_after_last_layer_already_fired(self, mqtt_client):
+        """Once the last-layer trigger has set _finish_photo_captured, the
+        stage-22 hook that runs later on AMS printers must be a no-op."""
+        events = []
+        mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
+
+        mqtt_client._process_message({"print": {"layer_num": 100}})
+        assert len(events) == 1
+
+        mqtt_client.state.progress = 100
+        mqtt_client._process_message({"print": {"stg_cur": 22}})
+
+        assert len(events) == 1
+
+    def test_finish_state_fallback_skipped_after_last_layer_fired(self, mqtt_client):
+        """The gcode_state=FINISH fallback (which fires after end G-code on
+        every printer) must be suppressed once the last-layer edge fired.
+        This is the #1867 regression check — SwapMod plate must be captured
+        by last_layer, NOT by the post-End-G-code FINISH fallback."""
+        events = []
+        completion_events = []
+        mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
+        mqtt_client.on_print_complete = lambda data: completion_events.append(data)
+        mqtt_client._previous_gcode_state = "RUNNING"
+
+        mqtt_client._process_message({"print": {"layer_num": 100}})
+        assert events[0]["trigger"] == "last_layer"
+
+        mqtt_client._process_message({"print": {"gcode_state": "FINISH"}})
+
+        assert len(events) == 1
+        assert len(completion_events) == 1
+
+
+class TestPresumedPowerOffRecovery:
+    """#2629: a smart-plug turn-off marks the printer offline optimistically.
+
+    When the plug does not actually feed the printer, the printer keeps
+    publishing — and the forced 'unknown' state must be undone, or it sticks
+    until the next full pushall and the queue scheduler stalls forever.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        client.state.connected = True
+        client.state.state = "FINISH"
+        return client
+
+    @staticmethod
+    def _report(client, payload):
+        """Feed a report-topic message through the real _on_message path."""
+
+        class _Msg:
+            def __init__(self, topic, data):
+                self.topic = topic
+                self.payload = json.dumps(data).encode()
+
+        client._on_message(None, None, _Msg(client.topic_subscribe, payload))
+
+    def test_mark_power_off_blanks_state_and_remembers_it(self, mqtt_client):
+        assert mqtt_client.mark_power_off() is True
+
+        assert mqtt_client.state.connected is False
+        assert mqtt_client.state.state == "unknown"
+        assert mqtt_client._state_before_power_off == "FINISH"
+
+    def test_mark_power_off_noop_when_already_disconnected(self, mqtt_client):
+        mqtt_client.state.connected = False
+
+        assert mqtt_client.mark_power_off() is False
+        assert mqtt_client._state_before_power_off is None
+
+    def test_second_mark_does_not_overwrite_saved_state(self, mqtt_client):
+        mqtt_client.mark_power_off()
+        # Something flips connected back (a partial message) before the second mark
+        mqtt_client.state.connected = True
+        mqtt_client.mark_power_off()
+
+        assert mqtt_client._state_before_power_off == "FINISH"
+
+    def test_partial_report_restores_state(self, mqtt_client):
+        """The steady-state push_status carries no gcode_state — the pre-off
+        state must come back anyway, otherwise 'unknown' is permanent."""
+        mqtt_client.mark_power_off()
+
+        self._report(mqtt_client, {"print": {"wifi_signal": "-30dBm"}})
+
+        assert mqtt_client.state.connected is True
+        assert mqtt_client.state.state == "FINISH"
+        assert mqtt_client._state_before_power_off is None
+
+    def test_restore_broadcasts_state_change(self, mqtt_client):
+        broadcasts = []
+        mqtt_client.on_state_change = lambda state: broadcasts.append(state.state)
+        mqtt_client.mark_power_off()
+
+        self._report(mqtt_client, {"print": {"wifi_signal": "-30dBm"}})
+
+        assert "FINISH" in broadcasts
+
+    def test_fresh_gcode_state_wins_over_restored_state(self, mqtt_client):
+        """A report that does carry gcode_state is authoritative."""
+        mqtt_client.mark_power_off()
+
+        self._report(mqtt_client, {"print": {"gcode_state": "IDLE"}})
+
+        assert mqtt_client.state.state == "IDLE"
+
+    def test_restore_happens_only_once(self, mqtt_client):
+        """After recovery a later genuine blank must not be undone by a stale
+        saved state."""
+        mqtt_client.mark_power_off()
+        self._report(mqtt_client, {"print": {"wifi_signal": "-30dBm"}})
+
+        # Printer really loses power now: state blanked, nothing to restore from
+        mqtt_client.state.state = "unknown"
+        assert mqtt_client._restore_state_after_false_power_off() is False
+        assert mqtt_client.state.state == "unknown"
+
+    def test_request_topic_traffic_does_not_restore(self, mqtt_client):
+        """Only the printer's own report topic proves it is alive; the request
+        topic also carries slicer/Bambuddy commands."""
+        mqtt_client.mark_power_off()
+
+        class _Msg:
+            topic = mqtt_client.topic_publish
+            payload = json.dumps({"print": {"command": "project_file"}}).encode()
+
+        mqtt_client._on_message(None, None, _Msg())
+
+        assert mqtt_client.state.state == "unknown"
+        assert mqtt_client._state_before_power_off == "FINISH"
+
+    def test_reconnect_discards_saved_state(self, mqtt_client):
+        """A real power cut drops the MQTT session; on reconnect the saved state
+        is stale and must not be broadcast ahead of the printer's first report."""
+        from unittest.mock import MagicMock
+
+        mqtt_client.mark_power_off()
+
+        paho = MagicMock()
+        paho.subscribe.return_value = (0, 1)  # (MQTT_ERR_SUCCESS, mid)
+        mqtt_client._on_connect(paho, None, {}, 0)
+
+        assert mqtt_client._state_before_power_off is None
+
+        self._report(mqtt_client, {"print": {"wifi_signal": "-30dBm"}})
+
+        assert mqtt_client.state.state == "unknown"
+
+    def test_already_unknown_state_is_not_saved(self, mqtt_client):
+        """A printer that never reported has nothing to restore — saving
+        'unknown' would make the recovery broadcast a no-op state change."""
+        mqtt_client.state.state = "unknown"
+
+        assert mqtt_client.mark_power_off() is True
+        assert mqtt_client._state_before_power_off is None
+
+    def test_message_interleaved_with_mark_does_not_strand_unknown(self, mqtt_client):
+        """mark_power_off runs on the event loop, _on_message on the paho
+        thread. A message landing mid-mark must not consume the saved state and
+        leave the printer stuck on 'unknown' — the next message must recover."""
+        # Simulate the worst interleaving: a report is processed after the state
+        # was blanked but before the previous state was recorded.
+        mqtt_client.state.connected = False
+        mqtt_client.state.state = "unknown"
+        self._report(mqtt_client, {"print": {"wifi_signal": "-30dBm"}})
+        # ...now the rest of the mark completes.
+        mqtt_client._state_before_power_off = "FINISH"
+
+        self._report(mqtt_client, {"print": {"wifi_signal": "-30dBm"}})
+
+        assert mqtt_client.state.state == "FINISH"
+
+
+class TestKProfileResponseDoesNotClobberNozzle:
+    """#2663: the K-profile fetch (get_kprofiles) probes every nozzle size
+    0.2/0.4/0.6/0.8 with an ``extrusion_cali_get`` request. Each response
+    echoes the *requested* nozzle_diameter at the top level, which is NOT the
+    installed hardware. _process_message must not feed those responses to
+    _update_state, or the real nozzle size gets overwritten (typically to 0.8,
+    the last size probed) and the #1899 dispatch guard then blocks prints.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="A1TEST",
+            access_code="12345678",
+        )
+
+    def test_kprofile_response_does_not_overwrite_nozzle_diameter(self, mqtt_client):
+        # A genuine pushall reports the real 0.4mm nozzle.
+        mqtt_client._process_message({"print": {"nozzle_diameter": "0.4"}})
+        assert mqtt_client.state.nozzles[0].nozzle_diameter == "0.4"
+
+        # The K-profile probe's 0.8mm response arrives (as it did on the
+        # reporter's A1s). It must NOT clobber the hardware nozzle.
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "command": "extrusion_cali_get",
+                    "nozzle_diameter": "0.8",
+                    "filaments": [],
+                    "sequence_id": "1501",
+                }
+            }
+        )
+        assert mqtt_client.state.nozzles[0].nozzle_diameter == "0.4"
+
+    def test_kprofile_response_is_still_parsed(self, mqtt_client):
+        # Skipping _update_state must not skip the K-profile handler: the
+        # response's profiles still populate state.kprofiles.
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "command": "extrusion_cali_get",
+                    "nozzle_diameter": "0.4",
+                    "filaments": [
+                        {
+                            "cali_idx": 0,
+                            "nozzle_diameter": "0.4",
+                            "filament_id": "GFA00",
+                            "name": "PLA",
+                            "k_value": "0.020000",
+                        }
+                    ],
+                }
+            }
+        )
+        assert len(mqtt_client.state.kprofiles) == 1
+        assert mqtt_client.state.kprofiles[0].filament_id == "GFA00"
+
+    def test_genuine_pushall_still_updates_nozzle(self, mqtt_client):
+        # The one legitimate source of the hardware nozzle still works, and a
+        # later pushall corrects a value an old build left wrong.
+        mqtt_client.state.nozzles[0].nozzle_diameter = "0.8"
+        mqtt_client._process_message({"print": {"nozzle_diameter": "0.4"}})
+        assert mqtt_client.state.nozzles[0].nozzle_diameter == "0.4"
+
+
+class TestConnectRefusalReporting:
+    """#2698: a refused CONNACK must leave a trace.
+
+    ``_on_connect``'s failure branch used to be a bare ``connected = False``.
+    A printer refusing our access code then looked exactly like one that was
+    powered off: paho reports the follow-up drop as the generic "Unspecified
+    error", so the support bundle from a 30-second reconnect loop carried no
+    hint of the real cause. Bambu speaks MQTT 3.1.1, whose CONNACK return codes
+    4 and 5 paho maps to reason codes 134 / 135.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+
+    @staticmethod
+    def _connack(v3_return_code):
+        from paho.mqtt.client import convert_connack_rc_to_reason_code
+
+        return convert_connack_rc_to_reason_code(v3_return_code)
+
+    def test_no_error_recorded_before_any_attempt(self, mqtt_client):
+        assert mqtt_client.last_connect_error is None
+        assert mqtt_client.last_connect_error_name is None
+
+    @pytest.mark.parametrize("v3_rc", [4, 5])
+    def test_credential_refusal_recorded(self, mqtt_client, v3_rc, caplog):
+        with caplog.at_level(logging.WARNING):
+            mqtt_client._on_connect(None, None, None, self._connack(v3_rc))
+
+        assert mqtt_client.state.connected is False
+        assert mqtt_client.last_connect_error == "auth_rejected"
+        assert "refused" in caplog.text.lower()
+        # The remedy has to be in the log — that line is what a maintainer
+        # reads out of a support bundle.
+        assert "access code" in caplog.text.lower()
+        # Never leak the credential itself into a bundle.
+        assert "12345678" not in caplog.text
+
+    def test_non_credential_refusal_recorded_separately(self, mqtt_client, caplog):
+        # CONNACK 3 = server unavailable: a real refusal, but not about creds.
+        with caplog.at_level(logging.WARNING):
+            mqtt_client._on_connect(None, None, None, self._connack(3))
+
+        assert mqtt_client.last_connect_error == "refused"
+        assert "access code" not in caplog.text.lower()
+
+    def test_successful_connect_clears_previous_error(self, mqtt_client):
+        mqtt_client._on_connect(None, None, None, self._connack(5))
+        assert mqtt_client.last_connect_error == "auth_rejected"
+
+        mock_client = type("MockClient", (), {"subscribe": lambda self, topic: (0, 1)})()
+        mqtt_client._on_connect(mock_client, None, None, 0)
+
+        assert mqtt_client.state.connected is True
+        assert mqtt_client.last_connect_error is None
+        assert mqtt_client.last_connect_error_name is None
+
+    def test_disconnect_line_carries_the_refusal(self, mqtt_client, caplog):
+        """The reconnect loop is what fills the log, so it must say why."""
+        mqtt_client._on_connect(None, None, None, self._connack(5))
+        caplog.clear()
+
+        with caplog.at_level(logging.WARNING):
+            mqtt_client._on_disconnect(None, None)
+
+        assert "MQTT disconnected" in caplog.text
+        assert "refused" in caplog.text
+        assert "Not authorized" in caplog.text
+
+    def test_disconnect_line_unchanged_without_a_refusal(self, mqtt_client, caplog):
+        with caplog.at_level(logging.WARNING):
+            mqtt_client._on_disconnect(None, None)
+
+        assert "MQTT disconnected" in caplog.text
+        assert "refused" not in caplog.text
+
+
+class TestEndOfPrintProbe:
+    """Tests for #2547: the end-of-print telemetry probe.
+
+    The probe exists to answer a question no existing support bundle can:
+    what do the stage/action fields do between the last object layer and
+    gcode_state=FINISH? stg_cur=22 was supposed to mark "toolhead parked,
+    before filament unload" (#1721) and fires on no model in the field, and
+    Bambuddy drops every other stage field unread. These tests pin the
+    window's boundaries and the guarantee that instrumentation stays
+    instrumentation — it must never raise into the ingest path.
+    """
+
+    LOGGER = "backend.app.services.bambu_mqtt"
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        client._was_running = True
+        client.state.state = "RUNNING"
+        client.state.total_layers = 100
+        client.state.layer_num = 98
+        client.state.progress = 90.0
+        client.state.remaining_time = 12
+        return client
+
+    def test_silent_when_debug_logging_is_off(self, mqtt_client, caplog):
+        """The probe is a debug tool; at INFO it must cost nothing and say
+        nothing, including for a frame that would otherwise open the window."""
+        with caplog.at_level(logging.INFO, logger=self.LOGGER):
+            mqtt_client._process_message({"print": {"layer_num": 100}})
+
+        assert "EOP-PROBE" not in caplog.text
+        assert mqtt_client._eop_probe_open is False
+
+    def test_does_not_open_mid_print(self, mqtt_client, caplog):
+        with caplog.at_level(logging.DEBUG, logger=self.LOGGER):
+            mqtt_client._process_message({"print": {"layer_num": 99, "mc_percent": 91}})
+
+        assert "EOP-PROBE" not in caplog.text
+        assert mqtt_client._eop_probe_open is False
+
+    def test_opens_on_the_last_layer_frame_itself(self, mqtt_client, caplog):
+        """The frame carrying the signal must be captured, not just the ones
+        after it — so the probe has to read the raw frame rather than state,
+        which _update_state only updates further down the same call."""
+        with caplog.at_level(logging.DEBUG, logger=self.LOGGER):
+            mqtt_client._process_message({"print": {"layer_num": 100, "stg_cur": 0}})
+
+        assert "EOP-PROBE open" in caplog.text
+        assert "'layer_num': 100" in caplog.text
+        assert mqtt_client._eop_probe_open is True
+
+    def test_opens_on_progress_when_the_last_layer_packet_is_missed(self, mqtt_client, caplog):
+        """The layer_num edge is a single transient packet and is dropped
+        intermittently (the reason #1867 needed a second mechanism). Progress
+        has to be able to open the window on its own."""
+        with caplog.at_level(logging.DEBUG, logger=self.LOGGER):
+            mqtt_client._process_message({"print": {"mc_percent": 99}})
+
+        assert "EOP-PROBE open" in caplog.text
+        assert mqtt_client._eop_probe_open is True
+
+    def test_zero_remaining_does_not_open_before_the_print_progresses(self, mqtt_client, caplog):
+        """mc_remaining_time reads 0 during pre-print calibration too, so it
+        only counts once progress is non-zero."""
+        mqtt_client.state.progress = 0.0
+        with caplog.at_level(logging.DEBUG, logger=self.LOGGER):
+            mqtt_client._process_message({"print": {"mc_remaining_time": 0, "mc_percent": 0}})
+
+        assert "EOP-PROBE" not in caplog.text
+
+    def test_does_not_open_when_the_print_never_ran(self, mqtt_client, caplog):
+        """Bambuddy restarted mid-print, or firmware replayed a stale frame."""
+        mqtt_client._was_running = False
+        with caplog.at_level(logging.DEBUG, logger=self.LOGGER):
+            mqtt_client._process_message({"print": {"layer_num": 100}})
+
+        assert "EOP-PROBE" not in caplog.text
+
+    def test_logs_only_changed_fields_after_opening(self, mqtt_client, caplog):
+        """Most probed fields are static across the window; logging all of
+        them every frame would bury the transitions we're looking for."""
+        with caplog.at_level(logging.DEBUG, logger=self.LOGGER):
+            mqtt_client._process_message({"print": {"layer_num": 100, "stg_cur": 0}})
+            caplog.clear()
+            # Identical frame — nothing moved, so nothing to say.
+            mqtt_client._process_message({"print": {"layer_num": 100, "stg_cur": 0}})
+            assert "EOP-PROBE" not in caplog.text
+
+            mqtt_client._process_message({"print": {"layer_num": 100, "stg_cur": 22}})
+
+        assert "'stg_cur': 22" in caplog.text
+        assert "layer_num" not in caplog.text.split("EOP-PROBE")[-1]
+
+    def test_captures_the_fields_bambuddy_does_not_parse(self, mqtt_client, caplog):
+        """The whole point: mc_stage / mc_action / print_real_action are read
+        by nothing else in the codebase, so only the probe can show them."""
+        with caplog.at_level(logging.DEBUG, logger=self.LOGGER):
+            mqtt_client._process_message({"print": {"layer_num": 100}})
+            mqtt_client._process_message(
+                {
+                    "print": {
+                        "mc_stage": 3,
+                        "mc_action": 8,
+                        "print_real_action": 2,
+                        "print_gcode_action": 5,
+                        "stg_cd": 1,
+                        "home_flag": 2231371,
+                        "spd_lvl": 0,
+                    }
+                }
+            )
+
+        for field in ("mc_stage", "mc_action", "print_real_action", "print_gcode_action", "stg_cd", "spd_lvl"):
+            assert field in caplog.text
+
+    def test_closes_on_finish_and_does_not_reopen(self, mqtt_client, caplog):
+        with caplog.at_level(logging.DEBUG, logger=self.LOGGER):
+            mqtt_client._process_message({"print": {"layer_num": 100}})
+            mqtt_client._process_message({"print": {"gcode_state": "FINISH"}})
+
+            assert "EOP-PROBE 2 CLOSE" in caplog.text
+            assert mqtt_client._eop_probe_open is False
+            assert mqtt_client._eop_probe_armed is False
+
+            caplog.clear()
+            # Firmware re-sending FINISH, or a stale replay, must not restart it.
+            mqtt_client._process_message({"print": {"layer_num": 100, "mc_percent": 100}})
+
+        assert "EOP-PROBE" not in caplog.text
+
+    def test_closing_frame_is_self_contained_when_nothing_changed(self, mqtt_client, caplog):
+        """A FINISH frame that repeats values already seen still has to log
+        something — otherwise the window has no visible end."""
+        with caplog.at_level(logging.DEBUG, logger=self.LOGGER):
+            mqtt_client._process_message({"print": {"gcode_state": "RUNNING", "mc_percent": 100}})
+            caplog.clear()
+            mqtt_client._process_message({"print": {"gcode_state": "FINISH"}})
+            # Same value the probe already recorded on the opening frame.
+            mqtt_client._eop_probe_open = True
+            mqtt_client._eop_probe_armed = True
+            mqtt_client._eop_probe_last = {"gcode_state": "FINISH"}
+            mqtt_client._process_message({"print": {"gcode_state": "FINISH"}})
+
+        assert "CLOSE" in caplog.text
+        assert "'gcode_state': 'FINISH'" in caplog.text
+
+    def test_rearms_for_the_next_print(self, mqtt_client, caplog):
+        # A completion callback is what lets _update_state finish the print
+        # (and clear _was_running), which the new-print detection depends on.
+        mqtt_client.on_print_complete = lambda data: None
+        mqtt_client.state.gcode_file = "current.3mf"
+        mqtt_client._previous_gcode_state = "RUNNING"
+
+        with caplog.at_level(logging.DEBUG, logger=self.LOGGER):
+            mqtt_client._process_message({"print": {"layer_num": 100}})
+            mqtt_client._process_message({"print": {"gcode_state": "FINISH"}})
+            assert mqtt_client._eop_probe_armed is False
+
+            # New print: RUNNING again with a file, after the previous print
+            # completed. _update_state rearms the probe alongside the
+            # finish-photo one-shot.
+            mqtt_client._process_message(
+                {"print": {"gcode_state": "RUNNING", "gcode_file": "next.3mf", "subtask_name": "next"}}
+            )
+            assert mqtt_client._eop_probe_armed is True
+
+            caplog.clear()
+            mqtt_client.state.total_layers = 50
+            mqtt_client._process_message({"print": {"layer_num": 50}})
+
+        assert "EOP-PROBE open" in caplog.text
+
+    def test_frame_budget_caps_output_but_still_logs_the_close(self, mqtt_client, caplog):
+        """A long final layer holds the window open at ~1 frame/second; the
+        user still has to be able to upload the resulting log."""
+        from backend.app.services.bambu_mqtt import _END_OF_PRINT_PROBE_MAX_FRAMES
+
+        with caplog.at_level(logging.DEBUG, logger=self.LOGGER):
+            mqtt_client._process_message({"print": {"layer_num": 100}})
+            for i in range(_END_OF_PRINT_PROBE_MAX_FRAMES + 50):
+                mqtt_client._process_message({"print": {"mc_remaining_time": i}})
+
+            assert "frame budget" in caplog.text
+            caplog.clear()
+            mqtt_client._process_message({"print": {"gcode_state": "FINISH"}})
+
+        assert "CLOSE" in caplog.text
+
+    def test_opens_on_numeric_strings(self, mqtt_client, caplog):
+        """Firmware sends these as ints or as numeric strings depending on
+        model and field, so the window checks must coerce rather than compare
+        a str against an int and silently never open."""
+        with caplog.at_level(logging.DEBUG, logger=self.LOGGER):
+            mqtt_client._process_message({"print": {"layer_num": "100", "mc_percent": "99"}})
+
+        assert "EOP-PROBE open" in caplog.text
+        assert mqtt_client._eop_probe_open is True
+
+    def test_coercion_helper_falls_back_on_junk(self, mqtt_client):
+        """Unit-level, because feeding junk through _process_message would trip
+        the pre-existing parsers before ever reaching the probe. The guarantee
+        under test is only that the probe's own reads can't raise."""
+        assert mqtt_client._probe_number("100") == 100.0
+        assert mqtt_client._probe_number("not-a-number", 7) == 7
+        assert mqtt_client._probe_number(None) is None
+        assert mqtt_client._probe_number({"unexpected": "shape"}, 0) == 0
+
+    def test_probe_failure_cannot_break_ingest(self, mqtt_client, caplog, monkeypatch):
+        """Instrumentation must stay instrumentation: if the probe ever throws,
+        state parsing still has to complete."""
+
+        def boom(_data):
+            raise RuntimeError("probe exploded")
+
+        monkeypatch.setattr(mqtt_client, "_probe_end_of_print", boom)
+
+        with caplog.at_level(logging.DEBUG, logger=self.LOGGER):
+            mqtt_client._process_message({"print": {"gcode_state": "RUNNING", "layer_num": 100}})
+
+        assert mqtt_client.state.layer_num == 100
+        assert "EOP-PROBE failed" in caplog.text
+
+    def test_never_logs_the_access_code(self, mqtt_client, caplog):
+        with caplog.at_level(logging.DEBUG, logger=self.LOGGER):
+            mqtt_client._process_message({"print": {"layer_num": 100}})
+            mqtt_client._process_message({"print": {"gcode_state": "FINISH"}})
+
+        probe_lines = [line for line in caplog.text.splitlines() if "EOP-PROBE" in line]
+        assert probe_lines
+        assert not any("12345678" in line for line in probe_lines)
