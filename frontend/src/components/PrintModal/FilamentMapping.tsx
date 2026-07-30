@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Circle, Check, AlertTriangle, RefreshCw, ChevronDown, ChevronUp, Palette } from 'lucide-react';
@@ -122,9 +122,17 @@ export function FilamentMapping({
     return total;
   }, [filamentComparison, trayCostMap, defaultCostPerKg]);
 
+  // Callers rendering one mapping per selected plate naturally create a
+  // plate-scoped callback inline. Keep the latest callback in a ref so a new
+  // function identity does not retrigger the cost effect and create a
+  // parent/child render loop.
+  const onEstimatedCostChangeRef = useRef(onEstimatedCostChange);
   useEffect(() => {
-    onEstimatedCostChange?.(totalCost > 0 ? totalCost : null);
-  }, [onEstimatedCostChange, totalCost]);
+    onEstimatedCostChangeRef.current = onEstimatedCostChange;
+  }, [onEstimatedCostChange]);
+  useEffect(() => {
+    onEstimatedCostChangeRef.current?.(totalCost > 0 ? totalCost : null);
+  }, [totalCost]);
 
   const hasAnyCost = useMemo(
     () => Array.from(trayCostMap.values()).some((v) => v != null && v > 0),
