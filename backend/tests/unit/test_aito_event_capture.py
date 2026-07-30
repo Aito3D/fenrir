@@ -95,6 +95,36 @@ async def test_trashing_and_restoring_are_both_recorded(async_client, db_session
 
 
 @pytest.mark.asyncio
+async def test_clearing_a_cost_records_the_implicit_untick(async_client, db_session):
+    """The SERVICES normalization loop in update_task force-clears a *_done
+    flag when its cost is cleared to null. That flip never appears in the
+    request body, but it can still move the board via _apply_rules, so it
+    must leave a task.step.unticked event just like an explicit untick would."""
+    project_id = (await async_client.post("/api/v1/aito/", json=_project_payload(quote_status="accepted"))).json()["id"]
+    task_id = (
+        await async_client.post(f"/api/v1/aito/{project_id}/tasks", json={"title": "Socle", "scan_cost": 1200.0})
+    ).json()["id"]
+    await async_client.patch(f"/api/v1/aito/tasks/{task_id}", json={"scan_done": True})
+
+    response = await async_client.patch(f"/api/v1/aito/tasks/{task_id}", json={"scan_cost": None})
+    assert response.status_code == 200
+
+    event = (
+        await db_session.execute(
+            select(AitoEvent)
+            .where(
+                AitoEvent.project_id == project_id,
+                AitoEvent.kind == "task.step.unticked",
+                AitoEvent.subject_id == task_id,
+            )
+            .order_by(AitoEvent.id.desc())
+            .limit(1)
+        )
+    ).scalar_one()
+    assert event.detail["service"] == "scan"
+
+
+@pytest.mark.asyncio
 async def test_the_actor_is_recorded_as_none_when_auth_is_disabled(async_client, db_session):
     """Matches created_by's existing rule: no user, no name, and saying so is
     information rather than a gap."""

@@ -565,11 +565,6 @@ async def update_task(
     """
     task = await _get_task_or_404(db, task_id)
     fields = payload.model_dump(exclude_unset=True)
-    # Captured before anything is applied, or diff_fields would compare the
-    # new value against itself and return [].
-    changes = diff_fields(task, fields)
-    tick_changes = [c for c in changes if c["field"].endswith("_done")]
-    field_changes = [c for c in changes if not c["field"].endswith("_done")]
 
     # Loaded before the write, not after: the guard needs the parent's quote
     # status, and one load then serves the pending mark and _apply_rules too.
@@ -588,6 +583,18 @@ async def update_task(
                 raise HTTPException(status_code=422, detail=f"{service} has no cost, so it cannot be marked done")
             if merged_done:
                 fields[done_key] = False
+
+    # Captured after the SERVICES loop above but before the setattr loop
+    # below applies fields to task: diff_fields must still run before the
+    # write (it compares against task's pre-patch state), but the SERVICES
+    # loop can itself flip a *_done flag to False when a cost is cleared —
+    # a diff taken before that loop would miss that implicit untick, and
+    # the board can move on it via _apply_rules even though no client ever
+    # sent the flag, so skipping it here would silently drop the
+    # task.step.unticked event an audit is most likely to be asked about.
+    changes = diff_fields(task, fields)
+    tick_changes = [c for c in changes if c["field"].endswith("_done")]
+    field_changes = [c for c in changes if not c["field"].endswith("_done")]
 
     for key, value in fields.items():
         setattr(task, key, value)
