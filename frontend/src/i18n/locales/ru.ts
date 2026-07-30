@@ -107,7 +107,7 @@ export default {
     quotePlaceholder: 'Поиск по номеру или клиенту…',
     quoteRecent: 'Последние сметы',
     quoteNoResults: 'Подходящие сметы не найдены',
-    quoteAlreadyImportedMarker: 'Уже импортировано',
+    quotePickerImported: 'Уже импортировано',
     quoteAlreadyHasProject: 'У этого предложения уже есть проект',
     restoreBlockedByQuote: 'У этого предложения уже есть активный проект',
     quoteLoadFailed: 'Не удалось загрузить эту смету.',

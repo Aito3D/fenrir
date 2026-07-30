@@ -107,7 +107,7 @@ export default {
     quotePlaceholder: '番号または取引先で検索…',
     quoteRecent: '最近の見積もり',
     quoteNoResults: '該当する見積もりがありません',
-    quoteAlreadyImportedMarker: 'インポート済み',
+    quotePickerImported: 'インポート済み',
     quoteAlreadyHasProject: 'この見積にはすでにプロジェクトがあります',
     restoreBlockedByQuote: 'この見積にはすでに有効なプロジェクトがあります',
     quoteLoadFailed: 'この見積もりを読み込めませんでした。',

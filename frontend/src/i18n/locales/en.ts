@@ -107,7 +107,11 @@ export default {
     quotePlaceholder: 'Search by number or client…',
     quoteRecent: 'Recent quotes',
     quoteNoResults: 'No matching quotes',
-    quoteAlreadyImportedMarker: 'Already imported',
+    // Short marker shown inline in the quote picker's dropdown list. Distinct
+    // from `quoteAlreadyImported` below, which is the full sentence (with a
+    // project number) shown on the full-page import preview — the two read
+    // similarly but have different interpolation contracts and call sites.
+    quotePickerImported: 'Already imported',
     quoteAlreadyHasProject: 'This quote already has a project',
     restoreBlockedByQuote: 'That quote already has an active project',
     quoteLoadFailed: 'Could not load this quote.',

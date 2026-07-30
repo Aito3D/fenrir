@@ -4098,14 +4098,44 @@ async def run_migrations(conn):
     # A quote backs at most one ACTIVE project. Partial, so the many
     # soft-deleted rows sharing a quote with a live one stay legal (trashing
     # frees a quote for re-import) and so the NULL quote_id of every hand-made
-    # card is exempt. Verified to build on the live board as it stands: five
-    # quotes have one active project plus trashed siblings, and no quote has
-    # two active projects.
-    await _safe_execute(
-        conn,
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_aito_project_active_quote "
-        "ON aito_projects (quote_id) WHERE quote_id IS NOT NULL AND status = 'active'",
-    )
+    # card is exempt. Verified to build cleanly on the live board as it stood
+    # when this was written: five quotes have one active project plus trashed
+    # siblings, and no quote has two active projects.
+    #
+    # That is not guaranteed on every install — this rule is new, so any board
+    # that already carries two active projects sharing a quote (perfectly
+    # legal before this migration) would make CREATE UNIQUE INDEX raise
+    # IntegrityError. _safe_execute deliberately does not swallow that (only
+    # OperationalError/ProgrammingError, by design — see its docstring), so an
+    # uncaught IntegrityError here would abort run_migrations and take down
+    # the whole application's startup over one Kanban row. Probe for the
+    # conflict first and skip the index rather than let that happen; the
+    # route guard (_reject_duplicate_quote in routes/aito.py) still enforces
+    # the rule for new writes even with the index absent, so the invariant
+    # only weakens to "not retroactively enforced on old data", not "unenforced".
+    dupe_quote_ids = [
+        row[0]
+        for row in await conn.execute(
+            text(
+                "SELECT quote_id FROM aito_projects WHERE status = 'active' AND quote_id IS NOT NULL "
+                "GROUP BY quote_id HAVING COUNT(*) > 1"
+            )
+        )
+    ]
+    if dupe_quote_ids:
+        logger.error(
+            "Skipping uq_aito_project_active_quote: %d quote(s) already back more than one active "
+            "project (%s) — reconcile the board (trash the extra projects) before this index can be "
+            "created. New imports and restores are still blocked by the route-level guard.",
+            len(dupe_quote_ids),
+            ", ".join(dupe_quote_ids),
+        )
+    else:
+        await _safe_execute(
+            conn,
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_aito_project_active_quote "
+            "ON aito_projects (quote_id) WHERE quote_id IS NOT NULL AND status = 'active'",
+        )
 
 
 _USER_PRINT_TEMPLATE_RENAMES: tuple[tuple[str, str, str], ...] = (

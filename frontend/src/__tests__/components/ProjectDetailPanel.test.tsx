@@ -45,8 +45,10 @@ const project: AitoProject = {
 const show = (overrides: Partial<AitoProject> = {}) =>
   render(<ProjectDetailPanel project={{ ...project, ...overrides }} onClose={vi.fn()} />);
 
-// Mirrors AitoPage.tsx: `AitoPage` owns the sole `useQuery(['aito-projects'])`
-// (AitoPage.tsx:178) and renders `ProjectDetailPanel` as its own child,
+// Mirrors AitoPage.tsx: `AitoPage` owns a `useQuery(['aito-projects'])`
+// (AitoPage.tsx:83) — no longer the only one in production; `QuoteCombobox`
+// also observes this key to mark already-imported quotes in its picker — and
+// renders `ProjectDetailPanel` as its own child,
 // conditionally, via `{expandedProject && <ProjectDetailPanel .../>}`
 // (AitoPage.tsx:532-534) — so the board query stays actively observed for the
 // panel's entire lifetime; only the panel itself unmounts on close, never the

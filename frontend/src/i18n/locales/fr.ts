@@ -107,7 +107,7 @@ export default {
     quotePlaceholder: 'Rechercher par numéro ou par client…',
     quoteRecent: 'Devis récents',
     quoteNoResults: 'Aucun devis correspondant',
-    quoteAlreadyImportedMarker: 'Déjà importé',
+    quotePickerImported: 'Déjà importé',
     quoteAlreadyHasProject: 'Ce devis a déjà un projet',
     restoreBlockedByQuote: 'Ce devis a déjà un projet actif',
     quoteLoadFailed: 'Impossible de charger ce devis.',
