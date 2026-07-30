@@ -129,6 +129,55 @@ describe('useProjectTasks', () => {
     await waitFor(() => expect(updateAitoTask).toHaveBeenCalledWith(7, { scan_cost: 1200 }));
   });
 
+  it('does not clobber a pending draft on a mid-debounce tasks refetch, and resyncs once the patch settles', async () => {
+    // Regression for the unconditional resync effect: a refetch landing while
+    // an edit is still debounced (refetchOnWindowFocus, or another row's
+    // add/delete invalidating ['aito-tasks', id]) used to overwrite the
+    // in-progress draft AND reset the diff baseline to the pre-edit row.
+    let capturedClient: QueryClient | undefined;
+    function isolatedWrapper({ children }: { children: ReactNode }) {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      capturedClient = client;
+      return (
+        <QueryClientProvider client={client}>
+          <ToastProvider>{children}</ToastProvider>
+        </QueryClientProvider>
+      );
+    }
+
+    const view = renderHook(() => useProjectTasks(1), { wrapper: isolatedWrapper });
+    await waitFor(() => expect(view.result.current.tasks).toHaveLength(1));
+
+    act(() => {
+      view.result.current.onTasksChange([{ ...view.result.current.tasks[0], title: 'draft' }]);
+    });
+    expect(view.result.current.tasks[0].title).toBe('draft');
+
+    // The refetch lands before the debounce has flushed, so the server still
+    // reports the pre-edit row (plus some unrelated field the guard must not
+    // let through either, since it replaces the whole row).
+    vi.mocked(api.getAitoTasks).mockResolvedValueOnce([{ ...ROW, description: 'server changed elsewhere' }]);
+    await act(async () => {
+      await capturedClient!.refetchQueries({ queryKey: ['aito-tasks', 1] });
+    });
+    expect(view.result.current.tasks[0].title).toBe('draft');
+    expect(updateAitoTask).not.toHaveBeenCalled();
+
+    // Flush the debounced patch.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(updateAitoTask).toHaveBeenCalledWith(7, { title: 'draft' });
+
+    // Now that the patch has settled (pendingRef empty, inFlightRef back to
+    // 0), a fresh refetch is no longer blocked by the guard.
+    vi.mocked(api.getAitoTasks).mockResolvedValueOnce([{ ...ROW, title: 'draft', description: 'synced' }]);
+    await act(async () => {
+      await capturedClient!.refetchQueries({ queryKey: ['aito-tasks', 1] });
+    });
+    await waitFor(() => expect(view.result.current.tasks[0].description).toBe('synced'));
+  });
+
   it('sends nothing when a field is edited back to its saved value', async () => {
     const { result } = await mounted();
 

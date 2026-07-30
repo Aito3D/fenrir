@@ -306,11 +306,14 @@ async def create_project(
     # Flush so the project has an id the tasks can reference; one commit still
     # covers both, so a failure creates neither.
     await db.flush()
-    for position, task_payload in enumerate(payload.tasks):
-        db.add(AitoTask(project_id=project.id, position=position, **task_payload.model_dump()))
+    new_tasks = [
+        AitoTask(project_id=project.id, position=position, **task_payload.model_dump())
+        for position, task_payload in enumerate(payload.tasks)
+    ]
+    db.add_all(new_tasks)
     # The tasks were just inserted from the payload, so they are already in
     # hand: summarise them rather than reading them back.
-    summary = await _summary_for(db, project.id)
+    summary = summarise(new_tasks)
     await _apply_rules(db, project, summary)
     await db.commit()
     await db.refresh(project)

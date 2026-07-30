@@ -81,16 +81,62 @@ export function useProjectTasks(projectId: number) {
   const closedRef = useRef(false);
   const inFlightRef = useRef(0);
 
+  // A refetch (`refetchOnWindowFocus`, an add/delete's `invalidateTasksAndBoard`
+  // firing while another row is mid-edit, or a late `onSettled` landing after
+  // reopen) must not overwrite a row that has a debounced edit not yet sent
+  // (`pendingRef`) or a PATCH still in flight (`inFlightRef`) — doing so would
+  // both show the pre-edit value AND move `baselineRef` to it, so a later edit
+  // diffs against the wrong baseline and silently never re-sends the field.
+  // Mirrors `useBoardDrag`'s `pendingMoves`/`syncGeneration` guard on the
+  // identical race. `tasksSyncGeneration` is bumped from `updateTaskMutation`'s
+  // `onSettled` so a sync skipped while blocked gets a chance to re-run once
+  // things go quiet, even on a render where `tasksQuery.data`'s identity does
+  // not itself change.
+  const [tasksSyncGeneration, setTasksSyncGeneration] = useState(0);
+
+  // The `tasksQuery.data` reference this hook has already applied to `tasks`.
+  // Without this, the generation bump above would re-run the sync on EVERY
+  // settle even when `tasksQuery.data` has not actually changed since it was
+  // last applied — reapplying that same (by now stale) snapshot would revert
+  // the very edit that just finished saving, since a task PATCH's response is
+  // deliberately never written into the `['aito-tasks', id]` cache (see
+  // `baselineRef` above). Comparing against the last-applied reference makes
+  // the generation bump a genuine no-op unless a real fetch landed while this
+  // effect was blocked.
+  const appliedDataRef = useRef<AitoTask[] | undefined>(undefined);
+
   useEffect(() => {
     if (!tasksQuery.data) return;
+    if (pendingRef.current.size > 0 || inFlightRef.current > 0) return;
+    if (appliedDataRef.current === tasksQuery.data) return;
+    appliedDataRef.current = tasksQuery.data;
     setTasks(tasksQuery.data.map(taskDraftFromAitoTask));
     baselineRef.current = new Map(tasksQuery.data.map((row) => [row.id, row]));
-  }, [tasksQuery.data]);
+  }, [tasksQuery.data, tasksSyncGeneration]);
 
   const invalidateTasksAndBoard = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['aito-tasks', projectId] });
     queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
   }, [queryClient, projectId]);
+
+  // Per-task chain of in-flight PATCHes: `flush` awaits the previous entry for
+  // the SAME task id before starting the next mutate() call, so two flushes
+  // for one task can never land out of order (each patch is a cumulative diff
+  // from `baselineRef`, not a merge — the older response landing last would
+  // write the older value and `onSuccess` would advance the baseline to it,
+  // with nothing left to correct the silent loss).
+  //
+  // `useBoardDrag` solves the equivalent problem with a single shared
+  // `scope: { id: 'aito-move' }`, and that was the first thing tried here too.
+  // It does not transfer: a global scope serializes ALL tasks' PATCHes against
+  // each other, not just repeats for the same task, and that reordering is
+  // directly what the "a different row resolving its PATCH does not clobber
+  // this row's in-flight edit" test below exercises (two different tasks
+  // flushed together on unmount, one deliberately left open) — under a global
+  // scope the second task's request queues behind the first instead of firing
+  // concurrently. Chaining per task id gives the same same-task guarantee
+  // without coupling unrelated tasks' requests to each other.
+  const taskFlushChainRef = useRef<Map<number, Promise<void>>>(new Map());
 
   const updateTaskMutation = useMutation({
     mutationFn: ({ id, patch }: { id: number; patch: AitoTaskUpdate }) => api.updateAitoTask(id, patch),
@@ -115,6 +161,11 @@ export function useProjectTasks(projectId: number) {
     // which is the point: the write that lands after close triggers the refresh.
     onSettled: () => {
       inFlightRef.current -= 1;
+      // Re-run the resync effect: this may be the thing that finally makes
+      // `pendingRef.current.size === 0 && inFlightRef.current === 0` true for
+      // a sync that was skipped while this PATCH (or another row's debounced
+      // edit) was outstanding.
+      setTasksSyncGeneration((generation) => generation + 1);
       if (closedRef.current && inFlightRef.current === 0 && tasksDirtyRef.current) {
         // Both keys, via the same ref the unmount effect uses below: with the
         // app-wide 60s staleTime, invalidating only the board would leave the
@@ -132,15 +183,24 @@ export function useProjectTasks(projectId: number) {
       clearTimeout(entry.timer);
       pendingRef.current.delete(taskId);
       if (Object.keys(entry.patch).length === 0) return;
-      updateTaskMutation.mutate({ id: taskId, patch: entry.patch });
+      // Wait for this task's own previous flush (if any) to settle before
+      // starting this one — see `taskFlushChainRef`'s doc above. Unrelated
+      // tasks have no entry here and so fire immediately, same as before.
+      const previous = taskFlushChainRef.current.get(taskId) ?? Promise.resolve();
+      const settled = previous.then(
+        () =>
+          new Promise<void>((resolve) => {
+            updateTaskMutation.mutate({ id: taskId, patch: entry.patch }, { onSettled: () => resolve() });
+          }),
+      );
+      taskFlushChainRef.current.set(taskId, settled);
     },
     // `updateTaskMutation.mutate` specifically, not the mutation object: React
     // Query's `useMutation` returns a fresh object literal every render, so
     // depending on the whole object would give `flush` (and, transitively,
-    // `flushAll` and `markClosed`) a new identity on every render too. `mutate`
-    // itself comes from a `useCallback` bound to the mutation observer and is
-    // genuinely stable — see ProjectDetailPanel's markClosed effect for why
-    // that stability is load-bearing.
+    // `flushAll`) a new identity on every render too. `mutate` itself comes
+    // from a `useCallback` bound to the mutation observer and is genuinely
+    // stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [updateTaskMutation.mutate],
   );

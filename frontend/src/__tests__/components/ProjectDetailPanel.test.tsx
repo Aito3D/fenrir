@@ -314,8 +314,8 @@ describe('ProjectDetailPanel tasks', () => {
   });
 
   it('refreshes the board immediately when a step is ticked, unlike a plain cost edit', async () => {
-    // The panel defers the board refresh to close for per-keystroke cost
-    // PATCHes (see `updateTaskMutation`'s doc), but a tick can move the
+    // The panel defers the board refresh to close for a debounced cost PATCH
+    // (see `updateTaskMutation`'s doc), but a tick can move the
     // project to a different COLUMN, so it must not wait — the Stage row and
     // the card behind the panel have to move together, while the panel is
     // still open.
@@ -406,8 +406,8 @@ describe('ProjectDetailPanel tasks', () => {
       // `updateTaskMutation`'s doc in useProjectTasks.ts) — the panel is still
       // open here, so no board GET must have fired yet. The corrupted
       // `closedRef` (stamped `true` from mount by the same bug) made every
-      // completed save look like a post-close settle and fire this GET on
-      // every keystroke; the existing board-refetch tests below all
+      // completed save look like a post-close settle and fire this GET after
+      // every debounced save; the existing board-refetch tests below all
       // `mockClear()` after their edits land, so that spurious GET was
       // invisible to them.
       expect(boardFetches).not.toHaveBeenCalled();
@@ -916,10 +916,11 @@ describe('ProjectDetailPanel tasks', () => {
   });
 
   it('closing with a PATCH still in flight waits for it before refreshing the board', async () => {
-    // Race the "refresh once, on close" deferral used to lose. Task fields
-    // PATCH per keystroke, so typing `4000` fires four of them; an earlier one
-    // has already landed (the panel is "dirty") while a later one is still
-    // open when the user closes. Invalidating on the dirty flag alone fires
+    // Race the "refresh once, on close" deferral used to lose. Cost edits are
+    // debounced (500ms), not sent per keystroke, so this test edits the field
+    // twice: the first edit's PATCH is awaited until it lands (the panel is
+    // now "dirty"), then the second edit fires and its PATCH is still open
+    // when the user closes. Invalidating on the dirty flag alone fires
     // the board GET concurrently with that open PATCH, with no ordering
     // guarantee — served first, the GET writes a pre-PATCH total into the
     // card, and staleTime (60s, App.tsx) means nothing corrects it.

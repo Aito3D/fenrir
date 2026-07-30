@@ -33,6 +33,18 @@ interface MoveVariables {
   previous: AitoProject[] | undefined;
 }
 
+/** Drag-and-drop state and the move mutation for the Aito board.
+ *
+ *  Cache contract: `projects` is read-only input for building the local
+ *  `board`, but every write this hook makes — the optimistic move, every
+ *  rollback, and every settle-time refetch — targets the hard-coded
+ *  `['aito-projects']` query key, not whatever `projects` was derived from.
+ *  That is safe for AitoPage, the only caller today, because it passes the
+ *  full, unfiltered board. A caller passing a filtered or derived list would
+ *  have `setQueryData(['aito-projects'], ...)` overwrite the FULL cache entry
+ *  with just the filtered subset — silently deleting every other card from
+ *  the cache until the next settle-invalidate corrects it. This hook is not
+ *  safe to reuse with a filtered `projects` without changing that. */
 export function useBoardDrag(projects: AitoProject[] | undefined) {
   const { t } = useTranslation();
   const { showToast } = useToast();

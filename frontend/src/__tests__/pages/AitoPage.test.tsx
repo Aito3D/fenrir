@@ -450,5 +450,60 @@ describe('AitoPage (backend board)', () => {
       await vi.advanceTimersByTimeAsync(30_000);
       expect(getAitoProjects.mock.calls.length).toBe(callsAfterSettle);
     });
+
+    it('does not poll a pending card that already has a quote number', async () => {
+      // aito.quotePending — the only thing this poll exists to resolve on
+      // screen — only renders when `!quote_number && quote_sync_state ===
+      // 'pending'` (CardView.tsx). A card that already has a quote number has
+      // nothing left for the poll to reveal, even though an ordinary task
+      // edit re-marks an already-quoted card pending.
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const quotedButPending = [
+        { ...baseProject, id: 1, quote_sync_state: 'pending' as const, quote_number: 'DEV26-1' },
+      ];
+      // `vi.spyOn` on an already-spied method (the preceding test in this
+      // describe also spies `getAitoProjects`) keeps the prior call history —
+      // clear it so `toHaveBeenCalledTimes` below counts only this test's
+      // fetches.
+      const getAitoProjects = vi.spyOn(api, 'getAitoProjects').mockResolvedValue(quotedButPending);
+      getAitoProjects.mockClear();
+
+      render(<AitoPage />);
+      await waitFor(() => expect(getAitoProjects).toHaveBeenCalledTimes(1));
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(getAitoProjects).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops polling after the ~5 minute bound even while the card is still pending', async () => {
+      // The worker that clears `pending` is gated behind a setting that can
+      // be off (and Zoho credentials can be pulled), so nothing guarantees
+      // `pending` ever resolves — an unbounded poll would run forever with a
+      // tab left open. The bound is a wall-clock deadline (~5 minutes from
+      // when polling started), not a fixed count of ticks, since React Query
+      // can re-evaluate `refetchInterval` more than once per actual fetch.
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const stillPending = [
+        { ...baseProject, id: 1, quote_sync_state: 'pending' as const, quote_number: null },
+      ];
+      // See the previous test's comment: clear the leftover call history from
+      // whichever earlier test in this describe last spied this method.
+      const getAitoProjects = vi.spyOn(api, 'getAitoProjects').mockResolvedValue(stillPending);
+      getAitoProjects.mockClear();
+
+      render(<AitoPage />);
+      await waitFor(() => expect(getAitoProjects).toHaveBeenCalledTimes(1));
+
+      // Run well past the 5 minute bound — polling must have stopped inside
+      // that window regardless of exactly how many fetches it took.
+      await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
+      const callsAtBound = getAitoProjects.mock.calls.length;
+      expect(callsAtBound).toBeGreaterThan(1);
+
+      // Nothing changed in the data — the card is still pending — but the
+      // bound is spent, so no further polling.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(getAitoProjects.mock.calls.length).toBe(callsAtBound);
+    });
   });
 });

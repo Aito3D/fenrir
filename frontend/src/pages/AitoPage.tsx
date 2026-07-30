@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DndContext, DragOverlay, MeasuringStrategy, closestCorners, type DropAnimation } from '@dnd-kit/core';
@@ -38,21 +38,52 @@ const DROP_ANIMATION: DropAnimation = {
   },
 };
 
+// The board poll exists for exactly one visible thing: CardView's
+// "Creating quote…" placeholder (aito.quotePending), which only renders when
+// `!quote_number && quote_sync_state === 'pending'` — see CardView.tsx. A
+// card that already has a quote number has nothing left for this poll to
+// reveal, even if an ordinary task edit re-marks it pending (see
+// `_mark_pending_if_ours` in aito.py); polling for it would just be six extra
+// full-board GETs after every editing session for a card whose screen never
+// changes.
+const QUOTE_POLL_INTERVAL_MS = 10_000;
+// `pending` is cleared only by the Zoho sync worker, and the worker is
+// gated behind `aito_quote_sync_enabled` — a supported operator setting that
+// can be off, or Zoho credentials can be pulled entirely. In either case
+// nothing will ever clear `pending`, so "it will resolve eventually" is not
+// guaranteed and this poll must not run forever. Five minutes is comfortably
+// past the worker's own ~60s cadence when it IS running, so a healthy worker
+// is never cut off before it resolves.
+const QUOTE_POLL_MAX_MS = 5 * 60 * 1000;
+
 export function AitoPage() {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+  // Wall-clock deadline for the current poll run, set the moment the
+  // predicate first becomes true and cleared the instant it goes false — so a
+  // later card that starts a fresh import gets its own full run at the poll
+  // rather than inheriting a budget an earlier card already spent. Deadline
+  // rather than a tick counter: React Query can re-evaluate `refetchInterval`
+  // more than once per actual fetch, which would burn a fixed tick budget
+  // faster than real time actually elapses.
+  const pollDeadlineRef = useRef<number | null>(null);
   const aitoQuery = useQuery({
     queryKey: ['aito-projects'],
     queryFn: api.getAitoProjects,
-    // A card whose quote the worker has not created yet shows "Creating
-    // quote…", and the app-wide staleTime is 60s with no refetch while the
-    // window stays focused — so without this the placeholder sits there until
-    // the user blurs and returns. Bounded by construction: the sync worker
-    // ticks every 60s, so a card resolves within about six polls, and polling
-    // stops dead the moment nothing is in flight.
-    refetchInterval: (query) =>
-      query.state.data?.some((p) => p.quote_sync_state === 'pending') ? 10_000 : false,
+    refetchInterval: (query) => {
+      const pending = query.state.data?.some(
+        (p) => !p.quote_number && p.quote_sync_state === 'pending',
+      );
+      if (!pending) {
+        pollDeadlineRef.current = null;
+        return false;
+      }
+      const now = Date.now();
+      pollDeadlineRef.current ??= now + QUOTE_POLL_MAX_MS;
+      if (now >= pollDeadlineRef.current) return false;
+      return QUOTE_POLL_INTERVAL_MS;
+    },
   });
 
   const [showModal, setShowModal] = useState(false);
