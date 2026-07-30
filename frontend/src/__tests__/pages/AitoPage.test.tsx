@@ -25,6 +25,15 @@ const project = {
 const openCard = async (user: ReturnType<typeof userEvent.setup>) =>
   user.click(await screen.findByRole('button', { name: /Support GoPro/ }));
 
+/** The description edit box, disambiguated from ActivityRail's note <input>
+ *  — mounting the rail as the panel's third column means `getByRole('textbox')`
+ *  now matches both, since a plain text <input> shares the textbox role with
+ *  a <textarea>. */
+const findDescriptionTextarea = (panel: HTMLElement) =>
+  within(panel)
+    .getAllByRole('textbox')
+    .find((el) => el.tagName === 'TEXTAREA') as HTMLTextAreaElement;
+
 beforeEach(() => {
   vi.mocked(localStorage.getItem).mockReset();
   vi.mocked(localStorage.setItem).mockReset();
@@ -188,7 +197,7 @@ describe('AitoPage (backend board)', () => {
 
     const panel = await screen.findByRole('dialog');
     await user.click(within(panel).getByText('Support GoPro'));
-    const textarea = within(panel).getByRole('textbox');
+    const textarea = findDescriptionTextarea(panel);
     await user.clear(textarea);
     await user.type(textarea, 'Support GoPro v2');
     await user.tab();
@@ -206,7 +215,7 @@ describe('AitoPage (backend board)', () => {
 
     const panel = await screen.findByRole('dialog');
     await user.click(within(panel).getByText('Support GoPro'));
-    await user.type(within(panel).getByRole('textbox'), ' scrapped');
+    await user.type(findDescriptionTextarea(panel), ' scrapped');
     await user.keyboard('{Escape}');
 
     expect(patched).not.toHaveBeenCalled();
@@ -228,7 +237,7 @@ describe('AitoPage (backend board)', () => {
     expect(patched).not.toHaveBeenCalled();
 
     await user.click(within(panel).getByText('Support GoPro'));
-    await user.clear(within(panel).getByRole('textbox'));
+    await user.clear(findDescriptionTextarea(panel));
     await user.tab();
     expect(patched).not.toHaveBeenCalled();
     expect(within(panel).getByText('Support GoPro')).toBeInTheDocument();
@@ -242,7 +251,7 @@ describe('AitoPage (backend board)', () => {
 
     const panel = await screen.findByRole('dialog');
     await user.click(within(panel).getByText('Support GoPro'));
-    await user.type(within(panel).getByRole('textbox'), ' v2');
+    await user.type(findDescriptionTextarea(panel), ' v2');
     await user.tab();
 
     expect(await screen.findByText('Could not save your changes. Please try again.')).toBeInTheDocument();
@@ -256,7 +265,7 @@ describe('AitoPage (backend board)', () => {
 
     const panel = await screen.findByRole('dialog');
     await user.click(within(panel).getByText('Support GoPro'));
-    const textarea = within(panel).getByRole('textbox');
+    const textarea = findDescriptionTextarea(panel);
     expect(textarea).toHaveFocus();
     const lastActivityBefore = within(panel).getByText('Last activity:').nextElementSibling?.textContent;
 

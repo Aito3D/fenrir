@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, ExternalLink, Loader2, X } from 'lucide-react';
 import { COLUMNS } from './columns';
+import { ActivityRail } from './history/ActivityRail';
 import { QuotePrintButton } from './QuotePrintButton';
 import { QuoteStatusActions } from './QuoteStatusActions';
 import { quoteStatusLabelKey } from './quoteStatus';
@@ -86,6 +87,7 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
       queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
         prev?.map((p) => (p.id === updatedProject.id ? updatedProject : p)) ?? prev,
       );
+      queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
     },
     onError: () => showToast(t('aito.saveFailed'), 'error'),
   });
@@ -163,7 +165,7 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
         aria-modal="true"
         aria-label={project.client_name ?? t('aito.noClient')}
         style={{ viewTransitionName: AITO_CARD_VT_NAME }}
-        className="bg-bambu-dark-secondary rounded-xl w-full max-w-7xl border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)]"
+        className="bg-bambu-dark-secondary rounded-xl w-full max-w-[100rem] border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)]"
       >
         <div className="p-4 border-b border-bambu-dark-tertiary flex items-start justify-between gap-3 flex-shrink-0">
           <h2 className="text-lg font-semibold text-white truncate min-w-0">
@@ -181,7 +183,7 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
         </div>
 
         <div className="p-4 overflow-y-auto flex-1">
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] gap-4 lg:gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)_minmax(0,26rem)] gap-4 lg:gap-6">
             <div className="space-y-4 min-w-0">
               <div>
                 {/* The same name the create modal gives this field, so the
@@ -409,6 +411,10 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
                 }}
                 canTick={project.quote_status === 'accepted'}
               />
+            </div>
+
+            <div className="min-w-0 border-t border-bambu-dark-tertiary pt-4 lg:border-t-0 lg:pt-0 lg:border-l lg:pl-6">
+              <ActivityRail projectId={project.id} />
             </div>
           </div>
         </div>

@@ -29,6 +29,7 @@ export function useQuoteStatusMutation(project: AitoProject) {
       queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
         prev?.map((p) => (p.id === result.project.id ? result.project : p)) ?? prev,
       );
+      queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
       showToast(t(TOAST_KEYS[status]), 'success');
       // The board is right either way — only the push to Books failed.
       if (project.quote_id && !result.zoho_synced) showToast(t('aito.zohoNotUpdated'), 'error');

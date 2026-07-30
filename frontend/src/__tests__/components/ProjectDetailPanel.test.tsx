@@ -1319,3 +1319,32 @@ describe('diffTaskDraft', () => {
     expect(Object.keys(patch).sort()).toEqual(wireKeys.sort());
   });
 });
+
+describe('ProjectDetailPanel activity rail', () => {
+  it('shows the activity rail alongside the tasks', async () => {
+    vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
+    render(<ProjectDetailPanel project={project} onClose={vi.fn()} />);
+    expect(await screen.findByRole('region', { name: /activity/i })).toBeInTheDocument();
+  });
+
+  it('refetches the timeline after the description is edited', async () => {
+    const events = vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
+    vi.spyOn(api, 'updateAitoProject').mockResolvedValue({ ...project, description: 'Changed' });
+    const user = userEvent.setup();
+    render(<ProjectDetailPanel project={project} onClose={vi.fn()} />);
+
+    await screen.findByRole('region', { name: /activity/i });
+    const before = events.mock.calls.length;
+
+    await user.click(screen.getByRole('button', { name: /edit description/i }));
+    // getByRole('textbox') is now ambiguous: ActivityRail's note <input> is a
+    // second textbox alongside the description <textarea>. Filter to the
+    // <textarea> specifically rather than relying on DOM order.
+    const box = screen.getAllByRole('textbox').find((el) => el.tagName === 'TEXTAREA')!;
+    await user.clear(box);
+    await user.type(box, 'Changed');
+    await user.tab();
+
+    await waitFor(() => expect(events.mock.calls.length).toBeGreaterThan(before));
+  });
+});

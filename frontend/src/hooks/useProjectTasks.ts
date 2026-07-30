@@ -158,6 +158,7 @@ export function useProjectTasks(projectId: number) {
   const invalidateTasksAndBoard = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['aito-tasks', projectId] });
     queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+    queryClient.invalidateQueries({ queryKey: ['aito-events', projectId] });
   }, [queryClient, projectId]);
 
   const updateTaskMutation = useMutation({
@@ -181,6 +182,11 @@ export function useProjectTasks(projectId: number) {
         (key) => key in patch,
       );
       if (tickedAStep) queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+      // Every edit writes an event, not only ticks — this sits outside the
+      // guard above deliberately. The two-element prefix (not the query's own
+      // three-element key) matches every depth's cache entry, so switching
+      // depth after an edit never shows a stale list.
+      queryClient.invalidateQueries({ queryKey: ['aito-events', projectId] });
     },
     onError: (error, { id }) => {
       showToast(t('aito.saveFailed'), 'error');
