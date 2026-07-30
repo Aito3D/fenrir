@@ -1,7 +1,8 @@
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, GripVertical, Lock } from 'lucide-react';
+import { AlertTriangle, GripVertical, Lock, Send } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { DeleteHoldButton } from './DeleteHoldButton';
+import { HoldButton } from './HoldButton';
 import { ServiceBadges } from './ServiceBadges';
 import { quoteStatusLabelKey, quoteStatusStyle } from './quoteStatus';
 import type { AitoProject } from '../../api/client';
@@ -24,6 +25,9 @@ export interface CardViewProps {
   overlay?: boolean;
   onDelete?: () => void;
   onExpand?: () => void;
+  /** Marks the quote sent from the board. Omitted by the DragOverlay clone,
+   *  exactly like onDelete — the overlay is a picture, not a control. */
+  onMarkSent?: () => void;
   /** dnd-kit's setActivatorNodeRef — omitted by the DragOverlay clone. */
   dragHandleRef?: (element: HTMLElement | null) => void;
   /** dnd-kit's attributes + listeners, spread onto the grip. */
@@ -46,6 +50,7 @@ export function CardView({
   overlay = false,
   onDelete,
   onExpand,
+  onMarkSent,
   dragHandleRef,
   dragHandleProps,
 }: CardViewProps) {
@@ -204,9 +209,30 @@ export function CardView({
             </span>
           )}
         </span>
-        {onDelete && (
-          <DeleteHoldButton onDelete={onDelete} label={t('aito.deleteTitle')} hint={t('aito.holdToDelete')} />
-        )}
+        <span className="flex items-center gap-1 flex-shrink-0">
+          {/* The Quote column's one real action, on the card so the column can
+              be cleared without opening anything. Deliberately NOT hidden
+              behind group-hover the way delete is: delete hides because a
+              destructive action should be hard to hit by accident, and this is
+              the opposite — the primary action of the column, which an
+              invisible button cannot be. `project.column` is the server's
+              derived value (aito_board_rules.evaluate); the frontend derives
+              nothing of its own here. */}
+          {onMarkSent && project.column === 'devis' && (
+            <HoldButton
+              onHold={onMarkSent}
+              durationMs={500}
+              label={t('aito.markSent')}
+              hint={t('aito.holdToConfirm')}
+              className="p-1 -m-1 text-amber-400/70 hover:text-amber-400 hover:bg-amber-400/10 focus-visible:ring-amber-400/40 data-[holding=true]:text-amber-400"
+            >
+              <Send className="relative w-3.5 h-3.5" />
+            </HoldButton>
+          )}
+          {onDelete && (
+            <DeleteHoldButton onDelete={onDelete} label={t('aito.deleteTitle')} hint={t('aito.holdToDelete')} />
+          )}
+        </span>
       </div>
     </div>
   );

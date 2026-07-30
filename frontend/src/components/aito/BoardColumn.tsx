@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { CardView } from './CardView';
 import type { ColumnMeta } from './columns';
 import type { AitoProject } from '../../api/client';
+import { useQuoteStatusMutation } from '../../hooks/useQuoteStatusMutation';
 
 function SortableCard({
   project,
@@ -37,6 +38,13 @@ function SortableCard({
     transition: transitionConfig,
   });
 
+  // Owned here rather than threaded down from AitoPage: the hook is
+  // per-project, and this component is already the one-per-project layer.
+  // Hoisting it to the board would mean either one mutation per column (wrong
+  // project) or a lookup by id (a second source of truth for which project a
+  // card is).
+  const markSent = useQuoteStatusMutation(project);
+
   return (
     <div
       ref={setNodeRef}
@@ -47,6 +55,7 @@ function SortableCard({
         project={project}
         onDelete={onDelete}
         onExpand={onExpand}
+        onMarkSent={markSent.isPending ? undefined : () => markSent.mutate('sent')}
         dragHandleRef={setActivatorNodeRef}
         dragHandleProps={{ ...attributes, ...listeners }}
       />
