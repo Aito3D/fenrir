@@ -33,7 +33,8 @@ describe('LoginPage', () => {
       render(<LoginPage />);
 
       await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /Bambuddy Login/i })).toBeInTheDocument();
+        // The credentials step is identified by the brand logo — it has no heading.
+        expect(screen.getByAltText('AITO3D')).toBeInTheDocument();
       });
 
       expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
@@ -268,7 +269,8 @@ describe('LoginPage', () => {
       await user.click(backButton);
 
       await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /Bambuddy Login/i })).toBeInTheDocument();
+        // Back on the credentials step: brand logo, no step heading.
+        expect(screen.getByAltText('AITO3D')).toBeInTheDocument();
       });
     });
 

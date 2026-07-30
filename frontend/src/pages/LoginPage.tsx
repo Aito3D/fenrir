@@ -4,12 +4,12 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { useTheme } from '../contexts/ThemeContext';
-import { X, Mail, Shield, Smartphone, Key } from 'lucide-react';
+import { X, Mail, Shield, Smartphone, Key, Loader2 } from 'lucide-react';
 import { api, type LoginResponse, type OIDCProvider, type TokenPersistence } from '../api/client';
 import { Card, CardHeader, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { armShellIntro } from '../components/Layout';
+import aito3dLogo from '../assets/aito3d_logo.png';
 
 type LoginStep = 'credentials' | '2fa' | 'reset-password';
 
@@ -116,7 +116,6 @@ export function LoginPage() {
   const { t } = useTranslation();
   const { login, loginWithToken, user, loading } = useAuth();
   const { showToast } = useToast();
-  const { mode } = useTheme();
 
   // Arriving at the login screen means the next Layout mount is a genuine
   // app entry — re-arm the shell intro so login → dashboard always animates.
@@ -537,8 +536,9 @@ export function LoginPage() {
             <button
               type="submit"
               disabled={resetPasswordMutation.isPending || !newPassword || !confirmPassword}
-              className="w-full flex justify-center py-3 px-4 bg-bambu-green hover:bg-bambu-green-light text-white font-medium rounded-lg shadow-lg shadow-bambu-green/20 hover:shadow-bambu-green/30 focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:ring-offset-2 focus:ring-offset-bambu-dark-secondary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center py-3 px-4 bg-bambu-green hover:bg-bambu-green-light text-white font-medium rounded-lg shadow-lg shadow-bambu-green/20 hover:shadow-bambu-green/30 focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:ring-offset-2 focus:ring-offset-bambu-dark-secondary transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
             >
+              {resetPasswordMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {resetPasswordMutation.isPending ? t('login.resetPassword.saving') : t('login.resetPassword.submit')}
             </button>
           </form>
@@ -696,8 +696,9 @@ export function LoginPage() {
                 !twoFACode.trim() ||
                 (twoFAMethod === 'email' && !emailOTPSent)
               }
-              className="w-full flex justify-center py-3 px-4 bg-bambu-green hover:bg-bambu-green-light text-white font-medium rounded-lg shadow-lg shadow-bambu-green/20 hover:shadow-bambu-green/30 focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:ring-offset-2 focus:ring-offset-bambu-dark-secondary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center py-3 px-4 bg-bambu-green hover:bg-bambu-green-light text-white font-medium rounded-lg shadow-lg shadow-bambu-green/20 hover:shadow-bambu-green/30 focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:ring-offset-2 focus:ring-offset-bambu-dark-secondary transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
             >
+              {verify2FAMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {verify2FAMutation.isPending
                 ? t('login.twoFA.verifyingButton')
                 : t('login.twoFA.verifyButton')}
@@ -727,17 +728,14 @@ export function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-bambu-dark p-4">
       <div className={`${isExiting ? 'animate-login-card-out pointer-events-none' : 'animate-login-card-in'} max-w-md w-full space-y-8 p-8 bg-gradient-to-br from-bambu-card to-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary shadow-lg`}>
-        <div className="text-center">
+        <div className="text-center animate-rise" style={{ animationDelay: '120ms' }}>
           <div className="flex items-center justify-center mb-6">
             <img
-              src={mode === 'dark' ? '/img/bambuddy_logo_dark_transparent.png' : '/img/bambuddy_logo_light.png'}
-              alt="Bambuddy"
-              className="h-16"
+              src={aito3dLogo}
+              alt="AITO3D"
+              className="h-16 w-auto dark:invert dark:hue-rotate-180"
             />
           </div>
-          <h2 className="text-3xl font-bold text-white">
-            {t('login.title')}
-          </h2>
           <p className="mt-2 text-sm text-bambu-gray">
             {t('login.subtitle')}
           </p>
@@ -756,7 +754,7 @@ export function LoginPage() {
         )}
 
         {localLoginEnabled && (
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+        <form className="mt-8 space-y-6 animate-rise" style={{ animationDelay: '200ms' }} onSubmit={handleSubmit}>
           <div className="space-y-4">
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-white mb-2">
@@ -812,8 +810,9 @@ export function LoginPage() {
             <button
               type="submit"
               disabled={loginMutation.isPending}
-              className="w-full flex justify-center py-3 px-4 bg-bambu-green hover:bg-bambu-green-light text-white font-medium rounded-lg shadow-lg shadow-bambu-green/20 hover:shadow-bambu-green/30 focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:ring-offset-2 focus:ring-offset-bambu-dark-secondary transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-bambu-green"
+              className="w-full flex items-center justify-center py-3 px-4 bg-bambu-green hover:bg-bambu-green-light text-white font-medium rounded-lg shadow-lg shadow-bambu-green/20 hover:shadow-bambu-green/30 focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:ring-offset-2 focus:ring-offset-bambu-dark-secondary transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-bambu-green disabled:active:scale-100"
             >
+              {loginMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {loginMutation.isPending ? t('login.signingIn') : t('login.signIn')}
             </button>
           </div>
@@ -832,7 +831,7 @@ export function LoginPage() {
 
         {/* OIDC provider buttons */}
         {oidcProviders && oidcProviders.length > 0 && (
-          <div className="space-y-3">
+          <div className="space-y-3 animate-rise" style={{ animationDelay: '280ms' }}>
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-bambu-dark-tertiary" />
