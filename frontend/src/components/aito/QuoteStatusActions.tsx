@@ -21,12 +21,18 @@ const TOAST_KEYS = {
  *  reversible from right here (accepting a declined quote reopens it), so the
  *  gesture only has to prove intent, not discourage.
  *
- *  What renders, by quote_status:
+ *  What renders, by quote_status — one action set per board column:
  *
- *    null, draft            Mark sent · Accept · Decline
- *    sent, viewed, expired  Accept · Decline
- *    declined               Accept only
+ *    null, draft            Mark sent          (column: devis)
+ *    sent, viewed, expired  Accept · Decline   (column: waiting)
+ *    declined               Accept only        (column: done)
  *    accepted               nothing
+ *
+ *  ACCEPT AND DECLINE ARE HIDDEN ON null/draft. A quote the client has never
+ *  received cannot be accepted or declined, so the Quote column offers only
+ *  the one transition that is real. This costs the in-person acceptance case
+ *  a second hold — mark sent, then accept — which was raised and accepted as
+ *  the price of the columns and the actions agreeing.
  *
  *  ACCEPTED is the one terminal state: it authorises the work, the whole board
  *  is gated on it, and there is no action left to offer.
@@ -72,6 +78,14 @@ export function QuoteStatusActions({ project }: { project: AitoProject }) {
   // viewed, expired and declined they already do, so offering to mark it sent
   // says nothing true.
   const canMarkSent = project.quote_status === null || project.quote_status === 'draft';
+  // The exact complement of canMarkSent, and deliberately expressed as its
+  // negation rather than re-derived: a quote the client has never received
+  // cannot be accepted or declined. Because aito_board_rules.evaluate derives
+  // the column FROM the status, this is identical to "the card is not in the
+  // Quote column" — the two can never disagree, which is why the rule is
+  // written against the status the server already sends rather than against
+  // project.column.
+  const canSettle = !canMarkSent;
   // Declining an already-declined quote is a no-op the board would still
   // hold-to-confirm and toast about. Accept is what a declined card needs.
   const canDecline = project.quote_status !== 'declined';
@@ -91,32 +105,34 @@ export function QuoteStatusActions({ project }: { project: AitoProject }) {
           <span className="text-sm">{t('aito.markSent')}</span>
         </HoldButton>
       )}
-      <div className="flex items-center gap-2">
-      <HoldButton
-        onHold={() => mutation.mutate('accepted')}
-        durationMs={500}
-        disabled={mutation.isPending}
-        label={t('aito.acceptQuote')}
-        hint={t('aito.holdToConfirm')}
-        className="flex-1 justify-center border p-1.5 border-bambu-green/40 text-bambu-green hover:bg-bambu-green/10"
-      >
-        <ThumbsUp className="w-3.5 h-3.5" />
-        <span className="text-sm">{t('aito.acceptQuote')}</span>
-      </HoldButton>
-      {canDecline && (
-        <HoldButton
-          onHold={() => mutation.mutate('declined')}
-          durationMs={500}
-          disabled={mutation.isPending}
-          label={t('aito.declineQuote')}
-          hint={t('aito.holdToConfirm')}
-          className="flex-1 justify-center border p-1.5 border-status-error/40 text-status-error hover:bg-status-error/10"
-        >
-          <ThumbsDown className="w-3.5 h-3.5" />
-          <span className="text-sm">{t('aito.declineQuote')}</span>
-        </HoldButton>
+      {canSettle && (
+        <div className="flex items-center gap-2">
+          <HoldButton
+            onHold={() => mutation.mutate('accepted')}
+            durationMs={500}
+            disabled={mutation.isPending}
+            label={t('aito.acceptQuote')}
+            hint={t('aito.holdToConfirm')}
+            className="flex-1 justify-center border p-1.5 border-bambu-green/40 text-bambu-green hover:bg-bambu-green/10"
+          >
+            <ThumbsUp className="w-3.5 h-3.5" />
+            <span className="text-sm">{t('aito.acceptQuote')}</span>
+          </HoldButton>
+          {canDecline && (
+            <HoldButton
+              onHold={() => mutation.mutate('declined')}
+              durationMs={500}
+              disabled={mutation.isPending}
+              label={t('aito.declineQuote')}
+              hint={t('aito.holdToConfirm')}
+              className="flex-1 justify-center border p-1.5 border-status-error/40 text-status-error hover:bg-status-error/10"
+            >
+              <ThumbsDown className="w-3.5 h-3.5" />
+              <span className="text-sm">{t('aito.declineQuote')}</span>
+            </HoldButton>
+          )}
+        </div>
       )}
-      </div>
     </div>
   );
 }
