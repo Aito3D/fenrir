@@ -223,4 +223,23 @@ describe('BoardColumn — dropDisabled', () => {
     render(<Harness />);
     expect(mockUseDroppable).toHaveBeenCalledWith({ id: COLUMNS[0].id, disabled: undefined });
   });
+
+  /** BoardColumn's own outer div, reached from its <h2>: heading -> header
+   *  div -> the wrapper that carries the drop styling. Anchored on the
+   *  heading rather than `container.firstElementChild` because the shared
+   *  `render` from '../utils' wraps every tree in providers, one of which
+   *  (ToastProvider) can render DOM of its own. */
+  function columnWrapper(): HTMLElement {
+    return screen.getByRole('heading', { level: 2 }).closest('div')!.parentElement as HTMLElement;
+  }
+
+  it('dims a column that is refusing drops, so the drag shows where it may land', () => {
+    render(<Harness dropDisabled />);
+    expect(columnWrapper().className).toContain('opacity-40');
+  });
+
+  it('leaves an accepting column at full opacity', () => {
+    render(<Harness dropDisabled={false} />);
+    expect(columnWrapper().className).not.toContain('opacity-40');
+  });
 });

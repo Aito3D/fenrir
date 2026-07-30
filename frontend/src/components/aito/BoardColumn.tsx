@@ -80,9 +80,13 @@ export function BoardColumn({
 
   return (
     <div
-      className={`w-72 sm:w-80 flex-shrink-0 flex flex-col rounded-xl bg-bambu-dark-secondary/40 border transition-[border-color,box-shadow] duration-150 ${
+      // The dim is purely visual — `useDroppable({ disabled })` above is what
+      // actually refuses the drop. It tells the user, mid-drag, which columns
+      // this card may land in: only its own for a rule-locked card, Finish and
+      // Done for a released one.
+      className={`w-72 sm:w-80 flex-shrink-0 flex flex-col rounded-xl bg-bambu-dark-secondary/40 border transition-[border-color,box-shadow,opacity] duration-150 ${
         isDropTarget ? `border-transparent ring-2 ${column.ring}` : 'border-bambu-dark-tertiary'
-      }`}
+      } ${dropDisabled ? 'opacity-40' : ''}`}
     >
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-bambu-dark-tertiary/60">
         <span className={`w-2 h-2 rounded-full ${column.dot}`} />
