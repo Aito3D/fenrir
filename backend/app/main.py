@@ -4970,6 +4970,28 @@ async def on_print_complete(printer_id: int, data: dict):
         except Exception as e:
             logger.warning("[BED-COOL] Failed to register waiter: %s", e)
 
+    # Capture the slicer estimate before usage tracking runs. The tracker may
+    # update archive.cost with this run's measured cost; billing partial runs
+    # against that already-partial value would discount the charge twice.
+    billing_planned_grams: float | None = None
+    billing_base_cost: float | None = None
+    if archive_id:
+        try:
+            async with async_session() as db:
+                from backend.app.models.archive import PrintArchive
+
+                billing_archive = await db.get(PrintArchive, archive_id)
+                if billing_archive:
+                    billing_path = (
+                        app_settings.base_dir / billing_archive.file_path if billing_archive.file_path else None
+                    )  # SEC-PATH-OK: archive.file_path is DB-stored, internally generated
+                    billing_planned_grams, billing_base_cost = _plate_scoped_run_estimate(
+                        billing_archive,
+                        billing_path,
+                    )
+        except Exception as e:
+            logger.warning("[FINANCE] Failed to capture planned usage for archive %s: %s", archive_id, e)
+
     # --- Track filament consumption (must run before archive_id early-return so usage
     # is recorded even when auto-archive is disabled) ---
     usage_results: list[dict] = []
@@ -5192,7 +5214,11 @@ async def on_print_complete(printer_id: int, data: dict):
 
     log_timing("Archive status update")
 
-    # Apply finance wallet charge or release reservations once
+    # Apply finance wallet charge or release reservations once. For all partial
+    # terminal states (failed, aborted at the printer display, or cancelled via
+    # Bambuddy) use this run's measured spool delta, falling back to the last
+    # valid printer progress. PrintArchive.filament_used_grams is the slicer
+    # estimate and therefore cannot represent an interrupted run.
     try:
         if data.get("status") in ("completed", "failed", "aborted", "cancelled"):
             async with async_session() as db:
@@ -5200,12 +5226,29 @@ async def on_print_complete(printer_id: int, data: dict):
                 from backend.app.services.finance_billing import apply_print_charge_for_archive
 
                 archive = await db.get(PrintArchive, archive_id)
+                if archive and archive.created_by_id is None and _print_user_info:
+                    archive.created_by_id = _print_user_info.get("user_id")
+                    await db.flush()
+
+                run_status = data.get("status", "completed")
+                last_progress = data.get("last_progress")
+                if last_progress is None:
+                    last_progress = data.get("progress")
+                actual_run_grams = _compute_run_filament_grams(
+                    run_status,
+                    billing_planned_grams,
+                    last_progress,
+                    usage_results,
+                )
+                filament_usage = (actual_run_grams, billing_planned_grams) if run_status != "completed" else None
                 cost_center_id = _print_cost_center_ids.pop(archive_id, None)
                 charged = await apply_print_charge_for_archive(
                     db,
                     archive_id,
                     cost_center_id=cost_center_id,
                     print_run_id=archive.subtask_id if archive else None,
+                    base_cost_override=billing_base_cost,
+                    filament_usage=filament_usage,
                 )
                 await db.commit()
                 if charged:
@@ -5254,7 +5297,7 @@ async def on_print_complete(printer_id: int, data: dict):
                 _run_grams = _compute_run_filament_grams(
                     _run_status,
                     _est_grams,
-                    data.get("progress"),
+                    data.get("last_progress", data.get("progress")),
                     usage_results,
                 )
 

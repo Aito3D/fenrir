@@ -2986,9 +2986,10 @@ class BambuMQTTClient:
             self.state.subtask_id = data["subtask_id"]
         if "mc_percent" in data:
             # Save last non-zero progress for usage tracking (firmware resets to 0 on cancel)
-            if self.state.progress > 0:
-                self._last_valid_progress = self.state.progress
-            self.state.progress = float(data["mc_percent"])
+            new_progress = float(data["mc_percent"])
+            if new_progress > 0:
+                self._last_valid_progress = new_progress
+            self.state.progress = new_progress
         if "mc_remaining_time" in data:
             self.state.remaining_time = int(data["mc_remaining_time"])
         if "mc_print_sub_stage" in data:

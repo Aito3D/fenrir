@@ -54,6 +54,8 @@ async def _get_balance_after_for_transaction(
 def _calculate_partial_charge(
     archive: PrintArchive,
     base_cost: float,
+    *,
+    filament_usage: tuple[float | None, float | None] | None = None,
 ) -> tuple[float, str]:
     """Calculate proportional charge for partial prints based on filament usage.
 
@@ -66,13 +68,23 @@ def _calculate_partial_charge(
         if archive.status == "completed":
             return round(float(base_cost), 2), ""
 
-        filament_used = float(archive.filament_used_grams or 0.0)
-        filament_planned = None
+        if filament_usage is not None:
+            actual_grams, planned_grams = filament_usage
+            filament_used = float(actual_grams or 0.0)
+            filament_planned = float(planned_grams) if planned_grams is not None else None
+        else:
+            # Backwards-compatible fallback for recalculation and callers that
+            # do not have per-run telemetry. At print completion main.py passes
+            # the measured/progress-scaled run usage explicitly: the archive
+            # field is the slicer's planned amount and must not be mistaken for
+            # the amount consumed by an aborted run.
+            filament_used = float(archive.filament_used_grams or 0.0)
+            filament_planned = None
 
-        if archive.extra_data and isinstance(archive.extra_data, dict):
-            filament_planned = archive.extra_data.get("filament_grams_total")
-            if filament_planned is not None:
-                filament_planned = float(filament_planned)
+            if archive.extra_data and isinstance(archive.extra_data, dict):
+                filament_planned = archive.extra_data.get("filament_grams_total")
+                if filament_planned is not None:
+                    filament_planned = float(filament_planned)
 
         # If we don't have reliable planned filament data, do not guess a partial charge.
         # Charging a failed/aborted print without an estimated baseline can overcharge users.
@@ -99,6 +111,8 @@ async def apply_print_charge_for_archive(
     *,
     cost_center_id: int | None = None,
     print_run_id: str | None = None,
+    base_cost_override: float | None = None,
+    filament_usage: tuple[float | None, float | None] | None = None,
 ) -> bool:
     """Apply an idempotent wallet charge for a print archive.
 
@@ -133,7 +147,7 @@ async def apply_print_charge_for_archive(
             logger.warning(f"Archive ID {archive_id} has no creator ID.")
             return False
 
-        base_cost = float(archive.cost or 0.0)
+        base_cost = float(base_cost_override if base_cost_override is not None else (archive.cost or 0.0))
         if base_cost <= 0:
             logger.info(f"Base cost for archive ID {archive_id} is zero or negative.")
             return False
@@ -150,7 +164,11 @@ async def apply_print_charge_for_archive(
             return False
 
         # Calculate charge (full for completed, partial for others)
-        charge, reason_suffix = _calculate_partial_charge(archive, base_cost)
+        charge, reason_suffix = _calculate_partial_charge(
+            archive,
+            base_cost,
+            filament_usage=filament_usage,
+        )
         if charge <= 0:
             await release_budget_reservation(db, print_archive_id=archive.id, status="released")
             logger.info(f"Calculated charge for archive ID {archive_id} is zero or negative.")

@@ -219,6 +219,79 @@ class TestPartialPrintCharges:
     """Tests for proportional charge calculation on aborted/failed/cancelled prints."""
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("status", ["cancelled", "aborted", "failed"])
+    async def test_terminal_partial_print_uses_per_run_consumption_and_consumes_reservation(
+        self,
+        db_session,
+        status,
+    ):
+        """Bambuddy stop, display abort, and printer failure share one billing path."""
+        await enable_billing(db_session)
+        user = User(username=f"partial_{status}", role="user", is_active=True)
+        cost_center = CostCenter(name=f"Partial {status} CC", is_active=True, is_private=False)
+        db_session.add_all([user, cost_center])
+        await db_session.commit()
+        await db_session.refresh(user)
+        await db_session.refresh(cost_center)
+
+        archive = PrintArchive(
+            printer_id=None,
+            filename=f"{status}.3mf",
+            file_path=f"archives/test/{status}.3mf",
+            file_size=100,
+            content_hash=f"partial-{status}-override",
+            status=status,
+            # The usage tracker may already have replaced archive.cost with the
+            # measured partial cost. Completion billing must use the estimate
+            # captured before tracking, not discount this value a second time.
+            cost=3.0,
+            filament_used_grams=100.0,
+            extra_data={"filament_grams_total": 100.0},
+            created_by_id=user.id,
+            cost_center_id=cost_center.id,
+        )
+        db_session.add(archive)
+        await db_session.commit()
+        await db_session.refresh(archive)
+
+        reservation = BudgetReservation(
+            cost_center_id=cost_center.id,
+            amount=12.0,
+            status="active",
+            source_type="print_queue",
+            source_id=archive.id,
+            print_archive_id=archive.id,
+        )
+        db_session.add(reservation)
+        await db_session.commit()
+        await db_session.refresh(reservation)
+
+        changed = await apply_print_charge_for_archive(
+            db_session,
+            archive.id,
+            base_cost_override=12.0,
+            filament_usage=(25.0, 100.0),
+        )
+        await db_session.commit()
+
+        assert changed is True
+        wallet = await db_session.scalar(select(UserWallet).where(UserWallet.user_id == user.id))
+        assert wallet is not None
+        assert wallet.balance == -3.0
+
+        transaction = await db_session.scalar(
+            select(WalletTransaction).where(WalletTransaction.print_archive_id == archive.id)
+        )
+        assert transaction is not None
+        assert transaction.amount == -3.0
+        assert status in transaction.description.lower()
+        assert "25.0g/100.0g" in transaction.description
+
+        await db_session.refresh(reservation)
+        assert reservation.status == "consumed"
+        assert reservation.released_at is not None
+
+    @pytest.mark.asyncio
     async def test_partial_print_with_missing_planned_filament_is_skipped(self, db_session):
         await enable_billing(db_session)
         user = User(username="missing_plan", role="user", is_active=True)
@@ -314,8 +387,8 @@ class TestPartialPrintCharges:
         assert "50.0" in tx.description  # filament used
 
     @pytest.mark.asyncio
-    async def test_cancelled_print_with_no_filament_data_is_not_charged(self, db_session):
-        """Verify cancelled print with no filament data is skipped."""
+    async def test_cancelled_print_with_zero_run_usage_is_not_charged(self, db_session):
+        """A slicer estimate alone is not mistaken for actual run consumption."""
         await enable_billing(db_session)
         user = User(username="cancel_no_data", role="user", is_active=True)
         cost_center = CostCenter(name="Cancel No Data CC", is_active=True, is_private=False)
@@ -332,7 +405,8 @@ class TestPartialPrintCharges:
             content_hash="cancel-hash",
             status="cancelled",
             cost=5.0,
-            filament_used_grams=None,  # No data
+            filament_used_grams=100.0,
+            extra_data={"filament_grams_total": 100.0},
             created_by_id=user.id,
             cost_center_id=cost_center.id,
         )
@@ -351,7 +425,11 @@ class TestPartialPrintCharges:
         await db_session.commit()
         await db_session.refresh(reservation)
 
-        changed = await apply_print_charge_for_archive(db_session, archive.id)
+        changed = await apply_print_charge_for_archive(
+            db_session,
+            archive.id,
+            filament_usage=(None, 100.0),
+        )
         await db_session.commit()
 
         assert changed is False
