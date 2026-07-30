@@ -183,6 +183,7 @@ describe('BoardColumn — a locked card is grabbable for reordering', () => {
     // Reordering inside a column is always allowed — it changes priority, not
     // state — so the sortable must not be disabled. `useBoardDrag`'s
     // `isDropAllowed` is what refuses the cross-column drop.
+    expect(mockUseSortable).toHaveBeenCalledWith(expect.objectContaining({ id: project.id }));
     expect(mockUseSortable).not.toHaveBeenCalledWith(expect.objectContaining({ disabled: true }));
     const grip = screen.getByRole('button', { name: /drag|glisser/i });
     expect(grip).toBeInTheDocument();
@@ -199,6 +200,7 @@ describe('BoardColumn — a locked card is grabbable for reordering', () => {
 
   it('leaves an unlocked card draggable', () => {
     render(<Harness />);
+    expect(mockUseSortable).toHaveBeenCalledWith(expect.objectContaining({ id: project.id }));
     expect(mockUseSortable).not.toHaveBeenCalledWith(expect.objectContaining({ disabled: true }));
     expect(screen.getByRole('button', { name: /drag|glisser/i })).toBeInTheDocument();
   });

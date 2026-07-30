@@ -202,7 +202,14 @@ describe('AitoPage — cross-column drag lock (over a card, not just an empty co
     });
 
     // Both cards are still in Quote — the reorder must not have relocated
-    // anything across columns.
+    // anything across columns. Not asserted: that 'Coque manette' now
+    // precedes 'Support GoPro' in the DOM. The msw GET handler above always
+    // returns the cards at their original positions, so the mutation's
+    // `onSettled` invalidate-refetch (see useBoardDrag.ts) rebuilds the board
+    // back to the pre-move order within this test's 20ms window — a DOM-order
+    // assertion would be flaky against that refetch, not against the reorder
+    // itself. The PATCH body below is the load-bearing assertion: it proves
+    // the new priority reached the server.
     const quoteColumn = findColumnContainer('Quote');
     expect(within(quoteColumn).getByText('Support GoPro')).toBeInTheDocument();
     expect(within(quoteColumn).getByText('Coque manette')).toBeInTheDocument();
