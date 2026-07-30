@@ -286,13 +286,19 @@ def test_a_changed_watermark_always_pulls():
 
 def test_never_pulled_before_always_pulls():
     """zoho_comments_checked_at is None: this project has never had its
-    comments read, so the gate cannot yet rely on the 4-hour floor."""
+    comments read, so the gate cannot yet rely on the 4-hour floor.
+
+    The watermark deliberately MATCHES the estimate's last_modified_time. With a
+    mismatched (or None) watermark the earlier watermark-changed branch returns
+    True first and this test passes without ever reaching the None check — it
+    then survives deleting the branch it is named for, which is no test at all.
+    """
     now = datetime(2026, 7, 28, 12, 0)
     project = AitoProject(
         description="Trophy",
         board_column="devis",
         quote_id="EST-1",
-        zoho_comments_watermark=None,
+        zoho_comments_watermark="2026-07-28T09:00:00-1000",
         zoho_comments_checked_at=None,
     )
     estimate = {"last_modified_time": "2026-07-28T09:00:00-1000"}
