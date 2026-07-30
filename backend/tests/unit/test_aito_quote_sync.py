@@ -905,6 +905,49 @@ async def test_a_local_acceptance_survives_a_task_edit_while_books_still_says_se
 
 
 @pytest.mark.asyncio
+async def test_a_push_never_resolves_two_disagreeing_decisions_in_books_favour(db_session):
+    """The C1 exit, undone by a copy-back. Accept on a DECLINED card writes
+    'accepted' locally while the Books POST is best-effort (it can return
+    zoho_synced=False), so the board holds 'accepted' against a Books
+    'declined'. The next pending event of any kind — a task edit, an
+    add/delete, the panel's Retry sync — comes through _apply_estimate.
+
+    A guard phrased as "remote not in _DECIDED" passes here, because 'declined'
+    IS decided, and silently re-declines the card. Two disagreeing decisions
+    are the reconciler's conflict to record, never this path's to resolve."""
+    project = await _project_with_quote(db_session, impression_cost=5000, impression_done=True)
+    await _configure_zoho(db_session)
+    project.quote_status = "accepted"
+    project.board_column = "print"
+    await db_session.commit()
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "declined",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "declined", "total": 5000}},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_status == "accepted"
+    # And the card stays on a work column rather than being swept to 'done' by
+    # a decline nobody on this side made.
+    assert project.board_column == "finish"
+
+
+@pytest.mark.asyncio
 async def test_a_push_still_adopts_books_status_when_ours_is_undecided(db_session):
     """The other half of the same guard: the copy-back is not disabled, only
     made asymmetric. A client viewing the quote is still news to us."""

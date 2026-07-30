@@ -184,13 +184,17 @@ export function useProjectTasks(projectId: number) {
     },
     onError: (error, { id }) => {
       showToast(t('aito.saveFailed'), 'error');
-      // A 422 is the backend's quote-acceptance guard refusing to tick a step
-      // (the only validation error this PATCH can produce). `tasks` is
-      // optimistic — the checkbox was flipped locally the moment it was
-      // clicked — so without this the row goes on rendering as DONE while the
-      // server holds it undone, and stays that way until some unrelated
-      // refetch happens to correct it. A toast alone is not enough: the user
-      // sees work marked finished that no one recorded.
+      // A 422 means the PATCH was REFUSED, so nothing in it was saved. The
+      // case that matters is the backend's quote-acceptance guard declining to
+      // tick a step, but it is not the only 422 this PATCH can draw: the same
+      // route also rejects ticking a service that has no cost, and FastAPI's
+      // own body validation answers 422 too. The rollback below is right for
+      // all of them, precisely because it keys on "refused", not on which
+      // guard refused. `tasks` is optimistic — the checkbox was flipped
+      // locally the moment it was clicked — so without this the row goes on
+      // rendering as DONE while the server holds it undone, and stays that way
+      // until some unrelated refetch happens to correct it. A toast alone is
+      // not enough: the user sees work marked finished that no one recorded.
       //
       // Rolled back from `baselineRef`, the last-known-persisted row, rather
       // than by invalidating: the baseline IS the server's answer here (the

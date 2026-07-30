@@ -148,24 +148,39 @@ def _apply_estimate(project: AitoProject, estimate: dict) -> None:
     # could clobber.
     project.quote_total = float(estimate.get("total") or 0)
     remote_status = estimate.get("status")
-    if remote_status is not None and not (project.quote_status in _DECIDED and remote_status not in _DECIDED):
-        # The same asymmetry reconcile_quote_status applies, for the same
-        # reason — a copy-back is not a licence to unmake a decision. Books'
-        # status is adopted whenever ours is merely where the quote sat, but a
-        # DECIDED local status is never replaced by an UNDECIDED remote one.
+    if remote_status is not None and not (project.quote_status in _DECIDED and remote_status != project.quote_status):
+        # A copy-back is not a licence to unmake a decision. Books' status is
+        # adopted whenever ours is merely where the quote sat; once ours is
+        # DECIDED, the ONLY remote status still copied back is the identical
+        # one, which changes nothing.
         #
-        # The sequence this closes: accepting a card whose estimate is still a
-        # draft marks it sent first, and if the accept POST then fails the
-        # board holds 'accepted' while Books holds 'sent'. Any later task edit
-        # comes through here, and the old unconditional write pulled the card
-        # back to 'sent' — off its work column, Done toggle gone, ticks 422'd —
-        # and left reconcile_quote_status unable to repair it, because with a
-        # now-UNDECIDED local status it adopts Books' forever.
+        # The condition is `remote_status != project.quote_status`, NOT
+        # `remote_status not in _DECIDED`. The two are not the same test and
+        # the difference is a Critical: with local 'accepted' and remote
+        # 'declined' the _DECIDED form is False, the guard passes, and this
+        # line writes 'declined' straight over the acceptance — resolving a
+        # conflict in Books' favour three lines under a comment promising it
+        # does not. That is reachable, and it is the C1 scenario undone:
+        # Accept on a declined card writes 'accepted' locally while the Books
+        # POST is best-effort (`zoho_synced=False` on failure), and the next
+        # pending event of any kind — a task edit, an add/delete, the panel's
+        # own Retry sync — came back through here and silently re-declined the
+        # card, with `_clear_block` erasing the conflict record on the way out.
+        # Test the real condition ("does the remote disagree with our
+        # decision?"), never a proxy for it.
         #
-        # Two decisions that DISAGREE are not resolved here: this path holds
-        # no evidence about which is right, and the reconciler already records
-        # that case as a conflict for a human. Keeping ours simply leaves it
-        # for the next sweep to see.
+        # The sequence the guard as a whole closes: accepting a card whose
+        # estimate is still a draft marks it sent first, and if the accept POST
+        # then fails the board holds 'accepted' while Books holds 'sent'. Any
+        # later task edit comes through here, and an unconditional write pulled
+        # the card back to 'sent' — off its work column, Done toggle gone,
+        # ticks 422'd — and left reconcile_quote_status unable to repair it,
+        # because with a now-UNDECIDED local status it adopts Books' forever.
+        #
+        # Two decisions that DISAGREE are not resolved here either: this path
+        # holds no evidence about which is right, and the reconciler already
+        # records that case as a conflict for a human. Keeping ours simply
+        # leaves it for the next sweep to see.
         project.quote_status = remote_status
     _clear_block(project)
     if estimate.get("last_modified_time") is not None:
