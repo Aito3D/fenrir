@@ -64,4 +64,33 @@ describe('QuotePrintButton', () => {
     render(<QuotePrintButton project={{ ...project, quote_id: null } as unknown as AitoProject} />);
     expect(screen.queryByRole('button', { name: /print quote/i })).not.toBeInTheDocument();
   });
+
+  it('does not fall back to a new tab once the component has unmounted', async () => {
+    // The 3s fallback timer used to be a bare window.setTimeout with no
+    // cleanup tied to the component's lifetime: closing the detail panel
+    // within 3s of clicking print still popped a stray tab (and, in tests,
+    // hit jsdom's "Not implemented: window.open" after RTL had already torn
+    // the tree down).
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.spyOn(api, 'getAitoQuotePdf').mockResolvedValue(new Blob(['%PDF-']));
+      const open = vi.spyOn(window, 'open').mockReturnValue(null);
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+
+      const { unmount } = render(<QuotePrintButton project={project} />);
+      await user.click(screen.getByRole('button', { name: /print quote/i }));
+
+      // Let the resolved fetch's continuation run: the iframe is created and
+      // appended, and the 3s fallback timer is scheduled, all synchronously
+      // once the awaited promise settles.
+      await waitFor(() => expect(document.querySelector('iframe')).not.toBeNull());
+
+      unmount();
+      await vi.advanceTimersByTimeAsync(3100);
+
+      expect(open).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

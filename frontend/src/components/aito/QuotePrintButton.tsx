@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2, Printer } from 'lucide-react';
 import { api, type AitoProject } from '../../api/client';
@@ -30,6 +30,28 @@ export function QuotePrintButton({ project }: { project: AitoProject }) {
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const timeoutRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
+
+  // The fallback timer (and the iframe it may act on) must not outlive the
+  // component: closing the detail panel within IFRAME_LOAD_TIMEOUT_MS of
+  // clicking print must not later pop a stray tab for a screen the user has
+  // already left. Clearing the timeout handles the timer path; mountedRef
+  // additionally guards `onload`, which can still fire after unmount.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (timeoutRef.current !== null) {
+        window.clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      if (frameRef.current) {
+        frameRef.current.remove();
+        frameRef.current = null;
+      }
+    };
+  }, []);
 
   if (!project.quote_id) return null;
 
@@ -44,6 +66,7 @@ export function QuotePrintButton({ project }: { project: AitoProject }) {
     window.open(url, '_blank');
     showToast(t('aito.printOpenedInTab'), 'info');
     cleanup(frame, url);
+    setBusy(false);
   };
 
   const print = async () => {
@@ -52,6 +75,7 @@ export function QuotePrintButton({ project }: { project: AitoProject }) {
     let frame: HTMLIFrameElement | null = null;
     try {
       const blob = await api.getAitoQuotePdf(project.id);
+      if (!mountedRef.current) return;
       url = URL.createObjectURL(blob);
       frame = document.createElement('iframe');
       frame.style.position = 'fixed';
@@ -66,19 +90,23 @@ export function QuotePrintButton({ project }: { project: AitoProject }) {
       let settled = false;
 
       const timer = window.setTimeout(() => {
-        if (settled) return;
+        timeoutRef.current = null;
+        if (settled || !mountedRef.current) return;
         settled = true;
         openInTab(objectUrl, element);
       }, IFRAME_LOAD_TIMEOUT_MS);
+      timeoutRef.current = timer;
 
       element.onload = () => {
-        if (settled) return;
+        if (settled || !mountedRef.current) return;
         settled = true;
         window.clearTimeout(timer);
+        timeoutRef.current = null;
         try {
           element.contentWindow?.focus();
           element.contentWindow?.print();
           cleanup(element, objectUrl);
+          setBusy(false);
         } catch {
           openInTab(objectUrl, element);
         }
@@ -90,7 +118,6 @@ export function QuotePrintButton({ project }: { project: AitoProject }) {
       showToast(t('aito.printFailed'), 'error');
       if (frame) frame.remove();
       if (url) URL.revokeObjectURL(url);
-    } finally {
       setBusy(false);
     }
   };
