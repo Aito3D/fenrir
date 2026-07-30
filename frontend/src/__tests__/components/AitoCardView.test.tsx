@@ -301,7 +301,7 @@ describe('CardView', () => {
     expect(screen.getByTitle("This card's column is set by its task steps")).toBeInTheDocument();
   });
 
-  it('gives a locked card no grip — the lock stands where the handle would be', () => {
+  it('shows both the lock and the grip on a locked card', () => {
     render(
       <CardView
         project={{ ...project, move_lock: 'quote' }}
@@ -310,9 +310,9 @@ describe('CardView', () => {
         dragHandleProps={{}}
       />,
     );
-    // Even handed a drag handle, a locked card must not offer one: a grip that
-    // lifts the card and refuses every destination is a promise the rules break.
-    expect(screen.queryByRole('button', { name: /drag|glisser/i })).not.toBeInTheDocument();
+    // The grip is for reordering inside the column, which the rules allow;
+    // the lock badge explains why the card cannot leave that column.
+    expect(screen.getByRole('button', { name: /drag|glisser/i })).toBeInTheDocument();
     expect(screen.getByTitle('Locked to Quote until the quote is accepted')).toBeInTheDocument();
   });
 

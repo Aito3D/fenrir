@@ -69,10 +69,11 @@ export function CardView({
     .filter(Boolean)
     .join(' · ');
 
-  // A locked card has no grip: the lock takes its place in the header. The
-  // rules decide where the card sits, so a grip there could only lift it and
-  // put it straight back — an affordance that promises a move it will always
-  // refuse. The badge's title says why it cannot be moved.
+  // A locked card keeps its grip: reordering inside a column changes priority,
+  // not state, so the rules allow it. The badge sits beside the grip rather
+  // than replacing it and says which rule pins the card to this column;
+  // `useBoardDrag` refuses every other destination, and the board dims the
+  // columns that will refuse.
   const lockTitle = project.move_lock ? t(LOCK_LABEL_KEYS[project.move_lock]) : null;
 
   // Every element here is phrasing content (<span>, and Money renders a
@@ -108,16 +109,17 @@ export function CardView({
         >
           {project.client_name ?? t('aito.noClient')}
         </p>
-        {lockTitle ? (
+        {lockTitle && (
           <span
             title={lockTitle}
             role="img"
             aria-label={lockTitle}
-            className="flex-shrink-0 p-2 -m-2 text-bambu-gray"
+            className="flex-shrink-0 p-1 -m-1 text-bambu-gray"
           >
             <Lock className="w-4 h-4" aria-hidden="true" />
           </span>
-        ) : dragHandleProps ? (
+        )}
+        {dragHandleProps ? (
           <button
             type="button"
             ref={dragHandleRef}

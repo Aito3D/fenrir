@@ -169,28 +169,35 @@ describe('BoardColumn — drag handle wiring', () => {
   });
 });
 
-describe('BoardColumn — a locked card is not grabbable at all', () => {
+describe('BoardColumn — a locked card is grabbable for reordering', () => {
   beforeEach(() => {
     mockUseSortable.mockClear();
     mockSetActivatorNodeRef.mockClear();
   });
 
-  it('disables the sortable and renders no grip when the rules lock the card', () => {
+  it('leaves the sortable enabled and renders a grip when the rules lock the card', () => {
     render(<Harness moveLock="quote" />);
 
-    // `disabled` is what stops the pointer AND keyboard sensors; without it a
-    // grip-less card could still be picked up with the keyboard.
-    expect(mockUseSortable).toHaveBeenCalledWith(expect.objectContaining({ id: project.id, disabled: true }));
-    expect(screen.queryByRole('button', { name: /drag|glisser/i })).not.toBeInTheDocument();
-    // The lock takes the grip's place, so the header still says something.
+    // Reordering inside a column is always allowed — it changes priority, not
+    // state — so the sortable must not be disabled. `useBoardDrag`'s
+    // `isDropAllowed` is what refuses the cross-column drop.
+    expect(mockUseSortable).not.toHaveBeenCalledWith(expect.objectContaining({ disabled: true }));
+    const grip = screen.getByRole('button', { name: /drag|glisser/i });
+    expect(grip).toBeInTheDocument();
+    // The activator is wired to the grip, exactly as on an unlocked card.
+    expect(mockSetActivatorNodeRef).toHaveBeenCalledWith(grip);
+  });
+
+  it('keeps the lock badge alongside the grip so the card still says why it is pinned', () => {
+    render(<Harness moveLock="quote" />);
+
     expect(screen.getByRole('img', { name: /locked to quote/i })).toBeInTheDocument();
-    // No activator either — nothing for dnd-kit to treat as a handle.
-    expect(mockSetActivatorNodeRef).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /drag|glisser/i })).toBeInTheDocument();
   });
 
   it('leaves an unlocked card draggable', () => {
     render(<Harness />);
-    expect(mockUseSortable).toHaveBeenCalledWith(expect.objectContaining({ id: project.id, disabled: false }));
+    expect(mockUseSortable).not.toHaveBeenCalledWith(expect.objectContaining({ disabled: true }));
     expect(screen.getByRole('button', { name: /drag|glisser/i })).toBeInTheDocument();
   });
 });
