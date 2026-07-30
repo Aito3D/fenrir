@@ -1375,6 +1375,11 @@ describe('ProjectDetailPanel delete', () => {
     const { container } = render(<ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} />);
     // Asserted on the class rather than a rendered pixel: jsdom applies no
     // stylesheet, so the border is only observable as the utility that draws it.
-    expect(container.querySelector('.lg\\:border-l')).not.toBeNull();
+    //
+    // COUNTED, not merely found. The activity rail already carried lg:border-l
+    // before this column did, so `querySelector(...) !== null` matched the rail
+    // and passed identically with the task column's rule removed — a test that
+    // could not fail. Both dividers must be present: tasks and activity.
+    expect(container.querySelectorAll('.lg\\:border-l')).toHaveLength(2);
   });
 });
