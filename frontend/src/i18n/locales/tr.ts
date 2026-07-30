@@ -3666,6 +3666,7 @@ export default {
     showModified: 'Değiştirme tarihlerini göster',
     hideModified: 'Değiştirme tarihlerini gizle',
     lastModified: 'Son değiştirme',
+    lastActivity: 'Son etkinlik',
     resultsCount: '{{total}} dosyadan {{showing}} tanesi',
     selectAll: 'Tümünü Seç',
     deselectAll: 'Seçimi Kaldır',

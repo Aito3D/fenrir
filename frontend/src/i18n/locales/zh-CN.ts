@@ -3658,6 +3658,7 @@ export default {
     showModified: '显示修改日期',
     hideModified: '隐藏修改日期',
     lastModified: '最后修改',
+    lastActivity: '最近活动',
     resultsCount: '{{showing}} / {{total}} 个文件',
     selectAll: '全选',
     deselectAll: '取消全选',

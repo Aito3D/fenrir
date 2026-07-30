@@ -3474,6 +3474,7 @@ export default {
     showModified: "Показать даты изменения",
     hideModified: "Скрыть даты изменения",
     lastModified: "Изменено",
+    lastActivity: "Последняя активность",
     resultsCount: "Показано {{showing}} из {{total}} файлов",
     selectAll: "Выбрать всё",
     deselectAll: "Снять выделение",
