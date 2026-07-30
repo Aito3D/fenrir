@@ -2001,3 +2001,191 @@ async def test_the_sweep_locks_a_quote_invoiced_since_the_last_sync(db_session):
     assert project.quote_sync_state == "locked"
     assert not any(entry[0] == "POST" for entry in seen)
     assert not any(entry[0] == "PUT" for entry in seen)
+    # N3: the estimate's "draft" must NOT silently replace the board's own
+    # "accepted" decision — that overwrite (and the board-column move it
+    # would then feed into via _apply_rules) is exactly what this branch
+    # must never do, unlike _update_quote's one-shot pending-path lock.
+    assert project.quote_status == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_lock_branch_does_not_clear_an_unrelated_error(db_session):
+    """N3, second half: the lock branch used to also clear quote_sync_error
+    unconditionally, for the same reason the status adoption above was
+    dropped — discovering an invoice is not evidence that whatever ELSE this
+    project's quote_sync_error was recording is now resolved."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "error"
+    project.quote_sync_error = "Project has no priced service left; nothing was written to the quote"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "draft",
+                        "is_transaction_created": True,
+                        "invoiced_amount": 8500,
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "locked"
+    assert project.quote_sync_error == "Project has no priced service left; nothing was written to the quote"
+
+
+# --- Round-2 review fixes (N1, N2, N3) --------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_status_change_in_books_unblocks_a_previously_rejected_push(db_session):
+    """N1: the round-1 fix keyed the "don't retry a rejected push" guard off
+    quote_sync_state alone, which — since the equality branch is the ONLY
+    place that ever clears an 'error' set here, and it only fires when the
+    two sides already match — meant a rejected push could never be retried
+    by this worker again, ever, for any reason: not a Books outage that
+    happened to coincide, not a human resolving the conflict to something
+    OTHER than our exact status. That is precisely the population this task
+    exists to repair (five accepted-vs-draft projects) becoming
+    unrepairable after one contiguous rejection. The fix keys off the
+    recorded (ours, theirs) PAIR instead: once Books' status changes to
+    anything other than the pair that was rejected, the next tick attempts
+    the push again — proven here by a status change from 'draft' (rejected)
+    to 'sent' (not yet attempted), which this time succeeds."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    def rejecting(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        if request.method == "GET" and request.url.path.endswith("/estimates/E1"):
+            return httpx.Response(200, json={"estimate": {"estimate_id": "E1", "status": "draft"}})
+        if request.method == "POST" and request.url.path.endswith("/status/sent"):
+            return httpx.Response(200, json={"message": "ok"})
+        if request.method == "POST" and request.url.path.endswith("/status/accepted"):
+            return httpx.Response(400, json={"message": "Books will not accept this estimate directly"})
+        return httpx.Response(404, json={"message": "no route"})
+
+    zoho_service.transport = httpx.MockTransport(rejecting)
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert "draft" in project.quote_sync_error
+
+    # Books' status moves on (a human, or the client, changed it) — no
+    # longer the pair that was rejected. accepted-from-sent needs no
+    # sent-first hop, so a single POST /status/accepted is expected.
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "sent"}},
+                ("POST", "/status/accepted"): {"message": "ok"},
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert any(entry[0] == "POST" and entry[1].endswith("/status/accepted") for entry in seen)
+    assert project.quote_sync_state == "idle"
+    assert project.quote_sync_error is None
+
+
+@pytest.mark.asyncio
+async def test_an_unrelated_error_survives_even_when_status_already_agreed(db_session):
+    """N2: the round-1 immunity argument ("local is None, so equality can
+    never fire") only covers a project that never synced. The common,
+    reachable shape is a project that HAS synced before — quote_status
+    pulled from Books and still equal to it, a real value like 'sent', not
+    None — and then loses its priced service via an unrelated edit:
+    _update_quote's guard sets 'error' with a real diagnostic but never
+    touches quote_status, which is still exactly what Books itself last
+    reported. The very next sweep tick's GET returns that same, unmoved
+    status, landing on the TRUE-equality branch — which must not read
+    "nothing changed" as "nothing is wrong"."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    await _configure_zoho(db_session)
+
+    # First tick: an ordinary successful push, landing 'idle' with a real,
+    # non-None quote_status pulled straight from Books.
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "sent", "total": 1000}},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "idle"
+    assert project.quote_status == "sent"
+
+    # The user clears the only task's priced service; an edit elsewhere
+    # would re-mark the project pending exactly like this.
+    task_row = (await db_session.execute(select(AitoTask).where(AitoTask.project_id == project.id))).scalar_one()
+    task_row.impression_cost = None
+    project.quote_sync_state = "pending"
+    await db_session.commit()
+
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    original_message = project.quote_sync_error
+    assert original_message
+    assert project.quote_status == "sent"
+    assert project.quote_sync_failures == 0
+
+    # Next sweep tick: Books still reads "sent", completely unchanged — the
+    # true-equality branch fires, and must not treat that as proof the error
+    # is resolved.
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler({("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "sent"}}})
+    )
+    zoho_service.invalidate_token()
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.quote_sync_error == original_message

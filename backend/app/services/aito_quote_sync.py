@@ -233,6 +233,57 @@ _RESTORABLE = ("sent", "accepted")
 # undecided, and undecided always yields.
 _DECIDED = frozenset({"accepted", "declined"})
 
+# Stable, parseable prefixes for the two messages ONLY this module writes to
+# quote_sync_error. There is no separate column recording WHY a project is
+# 'error' (deliberately — see the no-new-column constraint this whole
+# reconciler operates under), so these prefixes double as that evidence:
+# `_error_is_status_related` below matches a project's current message
+# against them to tell "this reconciler put it here" apart from an unrelated
+# cause (e.g. _update_quote's "no priced service left" guard) before ever
+# clearing or restoring anything.
+_CONFLICT_MESSAGE_PREFIX = "The board says "
+_REJECTED_PUSH_MESSAGE_PREFIX = "Books rejected pushing "
+
+
+def _rejected_push_message(local: str, zoho_status: str, detail: str) -> str:
+    """The message recorded when Books rejects pushing `local` while it still
+    reads `zoho_status`, keyed on that exact (ours, theirs) pair.
+
+    Keying on the pair, not just the prefix, is what lets a later tick tell
+    "the same rejected transition, still unresolved" apart from "the pair has
+    moved on since the rejection" (e.g. a human changed Books to something
+    else entirely) — the latter deserves a fresh push attempt, the former
+    does not.
+    """
+    return f"{_REJECTED_PUSH_MESSAGE_PREFIX}{local!r} while Books reads {zoho_status!r}: {detail}"
+
+
+def _error_is_status_related(project: AitoProject) -> bool:
+    """Positive evidence that `project.quote_sync_error`, if any, was written
+    by this reconciler rather than some unrelated cause — never inferred from
+    `quote_sync_state == "error"` alone, which is shared by every terminal
+    error path in this module (no priced service, an ambiguous reference, a
+    tax-exclusive lock, ...).
+
+    Two kinds of evidence, matching the two ways THIS function can be the
+    reason a project is in 'error':
+
+    - `quote_sync_failures >= SYNC_FAILURE_LIMIT`: every OTHER terminal-error
+      path explicitly resets the counter to 0 the moment it sets 'error' (see
+      `_create_quote` / `_update_quote`'s no-priced-service guards), so a
+      count still at or above the limit at reconcile time can only be this
+      module's own escalation in `sync_project`'s `ZohoUpstreamError` handler
+      (the transient-outage case, I2). The caller resets this counter to 0
+      AFTER calling this function, so it is still intact here.
+    - The message itself carries one of the two prefixes above (a recorded
+      conflict, I4b, or a recorded rejected push, N1) — text no other code
+      path in the entire application writes into this field.
+    """
+    if (project.quote_sync_failures or 0) >= SYNC_FAILURE_LIMIT:
+        return True
+    error = project.quote_sync_error or ""
+    return error.startswith(_CONFLICT_MESSAGE_PREFIX) or error.startswith(_REJECTED_PUSH_MESSAGE_PREFIX)
+
 
 async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimate: dict) -> None:
     """Make the board and Books agree about one quote's status.
@@ -273,17 +324,24 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
 
     if zoho_status == local:
         # Genuine agreement (a real status on both sides, not just "no data"
-        # above) is positive evidence nothing here needs a human anymore, so
-        # unlike every other branch this one MAY safely clear a stale
-        # 'error': either this is the read that proves a run of transient
-        # ZohoUpstreamError failures has passed for a project whose status
-        # was fine the whole time (the "healthy project permanently stranded
-        # in error" case), or it is the read that proves a human resolved a
-        # conflict this function itself recorded, by editing Books to match
-        # the board. A conflict message from a still-live disagreement can
-        # never reach this branch — the branch below returns before this one
-        # is even attempted when the two sides differ.
-        if project.quote_sync_state == "error":
+        # above) is positive evidence nothing here needs a human anymore —
+        # PROVIDED the 'error' was ours to begin with. Equality alone is not
+        # enough: a project that already synced once (so quote_status was
+        # pulled from Books and still equals it) and then lost its priced
+        # service via an unrelated edit sits in 'error' with quote_status
+        # completely untouched by that guard, so the very next sweep tick
+        # would otherwise see this same "agreement" and wipe a diagnostic
+        # about a problem that is still completely unfixed. Restoring is
+        # therefore gated on `_error_is_status_related`, which proves this
+        # 'error' was actually this reconciler's own doing: either this read
+        # is what proves a run of transient ZohoUpstreamError failures has
+        # passed for a project whose status was fine the whole time, or it is
+        # what proves a human resolved a conflict this function itself
+        # recorded, by editing Books to match the board. A conflict message
+        # from a still-live disagreement can never reach this branch — the
+        # branch below returns before this one is even attempted when the two
+        # sides differ.
+        if project.quote_sync_state == "error" and _error_is_status_related(project):
             project.quote_sync_error = None
             project.quote_sync_state = "idle"
         return
@@ -299,17 +357,43 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
         return
 
     if ours_decided:
-        if project.quote_sync_state == "error":
-            # A previous push of this exact transition was rejected by Books
-            # (ZohoRequestRejected sends the project straight to 'error', the
-            # same rule the pending-path push already follows: retrying an
-            # identical payload cannot help). Repeating it every tick forever
-            # would repeat that rejected, non-idempotent mutation against a
-            # real customer estimate. The read above still happened — if
-            # Books' status changes on its own, a later tick's equality or
-            # conflict branch takes over instead of this one.
+        if project.quote_sync_state == "error" and (project.quote_sync_error or "").startswith(
+            _rejected_push_message(local, zoho_status, "")
+        ):
+            # Books rejected pushing THIS EXACT (ours, theirs) pair on a
+            # previous tick — retrying an identical payload cannot help (the
+            # same rule the pending-path push already follows). Discriminated
+            # by the recorded pair, not by quote_sync_state alone: gating on
+            # state would also block a project that is 'error' for any OTHER
+            # reason from ever getting its first, legitimate push attempt,
+            # and — since this branch is the ONLY place that ever sets state
+            # back to 'idle' or clears a message via the equality branch
+            # above — would leave a diverging project permanently stuck the
+            # moment a single Books outage or an unrelated line-item problem
+            # ever coincided with it. Once either side's status moves on
+            # (Books changes on its own, or a human edits ours), the pair no
+            # longer matches this prefix and the push below is attempted
+            # again.
             return
-        await zoho_service.advance_estimate_status(db, project.quote_id, local, current=zoho_status)
+        try:
+            await zoho_service.advance_estimate_status(db, project.quote_id, local, current=zoho_status)
+        except ZohoRequestRejected as e:
+            project.quote_sync_state = "error"
+            project.quote_sync_error = _rejected_push_message(local, zoho_status, str(e))
+            return
+        # Guarded the same way as the equality branch above, and for the same
+        # reason: this push can now run even when quote_sync_state was
+        # already 'error' for an unrelated cause (deliberately — see the
+        # comment above), so a message this reconciler did not write must
+        # survive a push that happens to succeed, exactly as it must survive
+        # a routine pull — AND the state must not be silently left at
+        # 'error' with the unrelated message cleared out from under it,
+        # which would be worse than either extreme on its own.
+        if project.quote_sync_state == "error":
+            if _error_is_status_related(project):
+                project.quote_sync_error = None
+                project.quote_sync_state = "idle"
+            return
         project.quote_sync_error = None
         return
 
@@ -455,10 +539,25 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
                 # exactly the write the exclusion list on run_sync_once's
                 # SELECT calls out as "no safer than a line-item write". No
                 # extra API call: this reuses the read the sweep already did.
+                #
+                # Deliberately NOT mirroring _update_quote's own lock branch
+                # any further than the state flip: that branch is reachable
+                # at most once, only from the pending path, before the
+                # project settles into 'idle' or stays 'pending' — adopting
+                # Books' status there is a one-time snapshot. This branch
+                # runs on EVERY quoted project EVERY tick, so adopting
+                # `estimate["status"]` here would silently replace a local
+                # DECIDED status (e.g. 'accepted') with whatever Books
+                # happens to report mid-invoicing (often still 'draft' or
+                # 'sent') on the very first sweep after the estimate is
+                # invoiced — which then feeds _apply_rules below and can move
+                # the card's board column too. Overwriting a board decision
+                # is exactly what this whole module exists to never do
+                # outside a deliberate push. Nothing is lost by leaving
+                # quote_status and quote_sync_error alone: 'locked' is
+                # excluded from every later sweep, so there is no ongoing
+                # status to keep in sync, and no error to clear away either.
                 project.quote_sync_state = "locked"
-                if estimate.get("status") is not None:
-                    project.quote_status = estimate["status"]
-                project.quote_sync_error = None
                 project.quote_sync_failures = 0
                 return
             await reconcile_quote_status(db, project, estimate)
