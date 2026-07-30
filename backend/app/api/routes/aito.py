@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
@@ -459,20 +459,32 @@ async def list_events(
     project_id: int,
     depth: Literal["story", "detail", "everything"] = "detail",
     before: int | None = None,
+    before_at: datetime | None = None,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ) -> AitoEventPage:
     """This project's timeline, newest first.
 
-    Ordered by occurred_at then id, and paged on id, so the cursor is stable
-    when several events share a timestamp — which the backfill makes routine
-    rather than rare, since every synthesised event borrows its project's
-    created_at.
+    Ordered by occurred_at then id, so the cursor must be the PAIR
+    (occurred_at, id), not id alone. An id-only cursor is only equivalent to
+    the compound sort while id order and occurred_at order agree, and the
+    backfill breaks that: it inserts each project's synthesised
+    'project.created' row with a freshly-assigned HIGH id but an OLD
+    occurred_at (the project's own created_at, possibly years earlier than
+    every organic event). Filtering on `id < before` alone makes that row's
+    id un-crossable — the cursor only ever shrinks past it — so it would never
+    appear on any page, not merely be mis-ordered. Keying on both halves keeps
+    the cursor stable when several events share a timestamp (also routine
+    after a backfill) while still reaching rows whose id and occurred_at
+    disagree.
     """
     project = await db.get(AitoProject, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    if (before is None) != (before_at is None):
+        raise HTTPException(status_code=422, detail="The cursor needs both 'before' and 'before_at'")
 
     limit = max(1, min(limit, 200))
     query = (
@@ -482,7 +494,9 @@ async def list_events(
         .limit(limit + 1)  # one extra row is how has_more is answered without a count
     )
     if before is not None:
-        query = query.where(AitoEvent.id < before)
+        query = query.where(
+            or_(AitoEvent.occurred_at < before_at, and_(AitoEvent.occurred_at == before_at, AitoEvent.id < before))
+        )
 
     rows = list((await db.execute(query)).scalars().all())
     return AitoEventPage(
