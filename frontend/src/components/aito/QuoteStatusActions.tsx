@@ -1,17 +1,8 @@
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Send, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { HoldButton } from './HoldButton';
-import { api, type AitoProject } from '../../api/client';
-import { useToast } from '../../contexts/ToastContext';
-
-// Module scope: a plain object literal, identical on every render, so it
-// need not be reconstructed each time the panel renders.
-const TOAST_KEYS = {
-  sent: 'aito.quoteSent',
-  accepted: 'aito.quoteAccepted',
-  declined: 'aito.quoteDeclined',
-} as const;
+import { useQuoteStatusMutation } from '../../hooks/useQuoteStatusMutation';
+import { type AitoProject } from '../../api/client';
 
 /** Move this project's quote to sent, accepted or declined.
  *
@@ -54,21 +45,7 @@ const TOAST_KEYS = {
  *  offered, and nothing in this block is ever disabled-by-status. */
 export function QuoteStatusActions({ project }: { project: AitoProject }) {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const { showToast } = useToast();
-
-  const mutation = useMutation({
-    mutationFn: (status: 'sent' | 'accepted' | 'declined') => api.setAitoQuoteStatus(project.id, { status }),
-    onSuccess: (result, status) => {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.map((p) => (p.id === result.project.id ? result.project : p)) ?? prev,
-      );
-      showToast(t(TOAST_KEYS[status]), 'success');
-      // The board is right either way — only the push to Books failed.
-      if (project.quote_id && !result.zoho_synced) showToast(t('aito.zohoNotUpdated'), 'error');
-    },
-    onError: () => showToast(t('aito.saveFailed'), 'error'),
-  });
+  const mutation = useQuoteStatusMutation(project);
 
   // After every hook, so the hook order is identical on the render where the
   // quote settles and the block goes away.
