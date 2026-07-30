@@ -1052,6 +1052,7 @@ def _maybe_start_layer_timelapse(printer, printer_id: int, archive_id: int) -> b
         printer.external_camera_url,
         printer.external_camera_type or "mjpeg",
         snapshot_url=printer.external_camera_snapshot_url,
+        rotation=getattr(printer, "camera_rotation", 0),
     )
     logging.getLogger(__name__).info("Started layer timelapse for printer %s, archive %s", printer_id, archive_id)
     return True
@@ -2321,26 +2322,9 @@ async def _maybe_bank_inprint_frame(printer_id: int, layer_num: int) -> None:
 
 def _apply_camera_rotation(image_data: bytes, printer, logger) -> bytes:
     """Apply camera rotation to snapshot image if configured."""
-    rotation = getattr(printer, "camera_rotation", 0)
-    if not rotation or rotation == 0:
-        return image_data
+    from backend.app.services.camera import apply_camera_rotation
 
-    try:
-        from io import BytesIO
-
-        from PIL import Image
-
-        img = Image.open(BytesIO(image_data))
-        # PIL rotate is counter-clockwise, so negate for clockwise rotation
-        img = img.rotate(-rotation, expand=True)
-        buf = BytesIO()
-        img.save(buf, format="JPEG", quality=90)
-        rotated = buf.getvalue()
-        logger.info("[SNAPSHOT] Applied %d° rotation: %s → %s bytes", rotation, len(image_data), len(rotated))
-        return rotated
-    except Exception as e:
-        logger.warning("[SNAPSHOT] Failed to apply rotation: %s", e)
-        return image_data
+    return apply_camera_rotation(image_data, getattr(printer, "camera_rotation", 0), logger)
 
 
 async def _send_print_start_notification(

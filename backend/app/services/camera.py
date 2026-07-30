@@ -836,6 +836,35 @@ async def extract_video_last_frame(video_path: Path, output_path: Path) -> bool:
         return False
 
 
+def apply_camera_rotation(image_data: bytes, rotation: int, logger: logging.Logger) -> bytes:
+    """Apply a camera_rotation value (degrees clockwise) to a captured JPEG.
+
+    Shared by every capture path that saves a still image (notification
+    snapshots, finish photos, layer-timelapse frames) - previously only
+    wired into the notification-snapshot path, which left finish photos
+    and timelapse videos upside-down whenever camera_rotation was set.
+    """
+    if not rotation:
+        return image_data
+
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        img = Image.open(BytesIO(image_data))
+        # PIL rotate is counter-clockwise, so negate for clockwise rotation
+        img = img.rotate(-rotation, expand=True)
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=90)
+        rotated = buf.getvalue()
+        logger.info("Applied %d° camera rotation: %s → %s bytes", rotation, len(image_data), len(rotated))
+        return rotated
+    except Exception as e:
+        logger.warning("Failed to apply camera rotation: %s", e)
+        return image_data
+
+
 async def capture_finish_photo(
     printer_id: int,
     ip_address: str,
