@@ -34,8 +34,8 @@ from backend.app.services.zoho import (
 logger = logging.getLogger(__name__)
 
 # Consecutive upstream failures before a project's push is escalated to
-# 'error'. Five minutes of a Books outage at the default 60s tick, which rides
-# out a restart without giving up.
+# 'error'. Twenty-five minutes of a Books outage at the default 300s tick, which
+# rides out a restart without giving up.
 #
 # It does NOT stop the project being polled, and never claim it does: the sweep
 # deliberately keeps selecting 'error' projects (see run_sync_once's SELECT,
@@ -361,7 +361,7 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
         if project.quote_status_block == "rejected" and project.quote_status_remote == zoho_status:
             # Books rejected this exact attempt on an earlier tick and nothing
             # has moved since — retrying an identical payload cannot help, and
-            # a POST every 60s forever against a real customer estimate is the
+            # a POST every 300s forever against a real customer estimate is the
             # failure this record exists to stop. `quote_status_remote` alone
             # is enough to identify the attempt: our side cannot have changed
             # without `set_quote_status` clearing both columns (see the model).
@@ -511,7 +511,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         # array, and Books deletes every Aito line a live quote had. A
         # terminal state, not a silent no-op: without one, this project would
         # be re-selected every tick forever — an unbounded GET
-        # /estimates/{id} against Books every 60s for as long as it sits
+        # /estimates/{id} against Books every 300s for as long as it sits
         # empty. The next edit that adds a service back re-marks it pending
         # as normal, same as create.
         project.quote_sync_state = "error"
