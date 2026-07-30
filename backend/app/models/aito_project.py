@@ -86,5 +86,11 @@ class AitoProject(Base):
     # behind by a status change describes an attempt that no longer exists,
     # and would suppress a push that ought to be retried.
     quote_status_remote: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # The estimate's last_modified_time as it stood when the comment mirror
+    # last pulled, and when that pull happened. Read by the mirror's fetch
+    # policy (services/aito_quote_sync.py): pull comments only when the
+    # watermark has moved, or when the last pull is more than 4 hours old.
+    zoho_comments_watermark: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    zoho_comments_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

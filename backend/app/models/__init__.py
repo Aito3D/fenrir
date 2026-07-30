@@ -1,3 +1,4 @@
+from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.ams_history import AMSSensorHistory
@@ -43,6 +44,7 @@ from backend.app.models.user_otp_code import UserOTPCode
 from backend.app.models.user_totp import UserTOTP
 
 __all__ = [
+    "AitoEvent",
     "AitoProject",
     "AitoTask",
     "Printer",

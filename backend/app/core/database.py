@@ -242,6 +242,7 @@ async def init_db():
     # Import models to register them with SQLAlchemy
     from backend.app.models import (  # noqa: F401
         active_print_spoolman,
+        aito_event,
         aito_project,
         aito_task,
         ams_history,
@@ -4188,6 +4189,14 @@ async def run_migrations(conn):
         "UPDATE aito_projects SET quote_url = REPLACE(quote_url, '#/estimates/', '#/quotes/') "
         "WHERE quote_url LIKE '%#/estimates/%'",
     )
+
+    # Migration: the comment mirror's fetch policy needs to know when it last
+    # pulled and what the estimate's last_modified_time was at that moment, so
+    # it can skip the call entirely when Books says nothing has changed. Books
+    # allows 1,000-10,000 requests/day per org; an unconditional comment fetch
+    # per poll per project is not affordable.
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN zoho_comments_watermark VARCHAR(30)")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN zoho_comments_checked_at DATETIME")
 
     # Migration: per-file print progress inside a project (#1897).
     # - print_archives.library_file_id: which library file a queued run was
