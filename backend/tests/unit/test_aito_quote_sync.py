@@ -1072,10 +1072,10 @@ async def test_project_state_changed_away_from_pending_before_the_loop_reaches_i
 
 
 @pytest.mark.asyncio
-async def test_sync_interval_falls_back_to_sixty_seconds(db_session):
+async def test_sync_interval_falls_back_to_three_hundred_seconds(db_session):
     from backend.app.services.aito_quote_sync import sync_interval_seconds
 
-    assert await sync_interval_seconds(db_session) == 60
+    assert await sync_interval_seconds(db_session) == 300
 
 
 @pytest.mark.asyncio

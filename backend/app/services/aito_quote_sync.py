@@ -811,7 +811,11 @@ async def run_sync_once(db: AsyncSession) -> int:
     return attempted
 
 
-_DEFAULT_INTERVAL_SECONDS = 60
+# 300s, not 60s: run_sync_once spends one Books call per active quoted
+# project per tick, and Zoho allows 1,000-10,000 requests/day per org
+# depending on plan. At 60s a single active quote cost 1,440 calls/day and
+# two of them exhausted a Standard plan. See test_aito_quote_sync_interval.
+_DEFAULT_INTERVAL_SECONDS = 300
 
 
 async def sync_interval_seconds(db: AsyncSession) -> int:
