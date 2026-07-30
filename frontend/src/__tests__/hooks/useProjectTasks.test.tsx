@@ -216,6 +216,95 @@ describe('useProjectTasks', () => {
     expect(view.result.current.tasks[0].title).toBe('draft');
   });
 
+  it('caps the stale-snapshot recovery at one invalidate per save, even if the clock steps backwards', async () => {
+    // Regression for the missing attempt cap on the invalidate-instead-of-
+    // apply path: if Date.now() moves backwards after a save stamps
+    // `lastSaveAtRef` (an NTP correction, or a user changing the system
+    // clock), EVERY subsequent fetch lands with `dataUpdatedAt` reading
+    // before that stamp. Each landing changes `dataUpdatedAt`, which is an
+    // effect dependency, so an uncapped recovery invalidates on every single
+    // one of them -- an unthrottled GET loop with no backoff. The fix caps
+    // recovery to one invalidate per save stamp; a second stale landing for
+    // the same stamp falls through and applies the snapshot instead.
+    //
+    // `invalidateQueries` is replaced (not just spied on) so the two fetches
+    // below are the only ones in play -- letting the real implementation
+    // through would also trigger its own active-query refetch, which is the
+    // production loop this bug describes and is exactly what the cap exists
+    // to prevent, but is not what this test is trying to observe.
+    let capturedClient: QueryClient | undefined;
+    function isolatedWrapper({ children }: { children: ReactNode }) {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      capturedClient = client;
+      return (
+        <QueryClientProvider client={client}>
+          <ToastProvider>{children}</ToastProvider>
+        </QueryClientProvider>
+      );
+    }
+
+    // Distinct content on every call: `mockResolvedValue` would hand back the
+    // exact same reference every time, and even a fresh-but-identical object
+    // gets collapsed back to the previous reference by React Query's default
+    // structural sharing -- both would satisfy the resync effect's
+    // `appliedDataRef.current === tasksQuery.data` guard on the very first
+    // refetch below and short-circuit before the staleness check under test
+    // is ever reached.
+    let fetchCount = 0;
+    vi.mocked(api.getAitoTasks).mockImplementation(async () => {
+      fetchCount += 1;
+      return [{ ...ROW, description: `fetch-${fetchCount}` }];
+    });
+
+    const view = renderHook(() => useProjectTasks(1), { wrapper: isolatedWrapper });
+    await waitFor(() => expect(view.result.current.tasks).toHaveLength(1));
+
+    // Save a field so `lastSaveAtRef` is stamped at the current (fake) time.
+    act(() => {
+      view.result.current.onTasksChange([{ ...view.result.current.tasks[0], title: 'saved' }]);
+    });
+    act(() => {
+      view.result.current.onRowBlur(7);
+    });
+    await waitFor(() => expect(updateAitoTask).toHaveBeenCalledWith(7, { title: 'saved' }));
+    // `waitFor` above only confirms the mutation *started* -- `updateAitoTask`
+    // is called synchronously by `mutate()`, before its promise resolves.
+    // Flush microtasks so `onSuccess` actually runs and stamps
+    // `lastSaveAtRef` before the clock is stepped back below; otherwise the
+    // stamp would still be its initial 0 and the staleness check under test
+    // would never trip, in either the buggy or the fixed code.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // Step the clock backwards, as an NTP correction would. Every fetch from
+    // here on stamps `dataUpdatedAt` before the save that just landed.
+    vi.setSystemTime(Date.now() - 10_000);
+
+    const invalidateSpy = vi.spyOn(capturedClient!, 'invalidateQueries').mockResolvedValue(undefined);
+
+    // Two consecutive fetches, both landing "before" the save under the
+    // stepped-back clock -- the exact scenario the uncapped effect used to
+    // invalidate on every single time.
+    await act(async () => {
+      await capturedClient!.refetchQueries({ queryKey: ['aito-tasks', 1] });
+      // React Query's notifyManager batches observer notifications via a
+      // microtask separate from the fetch promise itself; under fake timers
+      // that microtask needs an explicit flush or the hook's effect never
+      // re-runs to observe this landing.
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await capturedClient!.refetchQueries({ queryKey: ['aito-tasks', 1] });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    const tasksInvalidateCalls = invalidateSpy.mock.calls.filter(
+      ([filters]) => JSON.stringify(filters) === JSON.stringify({ queryKey: ['aito-tasks', 1] }),
+    );
+    expect(tasksInvalidateCalls.length).toBeLessThanOrEqual(1);
+  });
+
   it('still reaches the server for a later edit to a task whose earlier flush overlapped a different task\'s flush', async () => {
     // Regression for CRITICAL 1 (the reverted per-task promise chain): all
     // tasks share one `updateTaskMutation` MutationObserver. Calling

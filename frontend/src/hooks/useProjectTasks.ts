@@ -119,16 +119,34 @@ export function useProjectTasks(projectId: number) {
   // before the save landed is asked for again instead of being trusted.
   const lastSaveAtRef = useRef(0);
 
+  // The `lastSaveAtRef` stamp the staleness check below last issued an
+  // invalidate for. Recovery is one-shot per stamp: if the system clock
+  // steps backwards after a save stamps `lastSaveAtRef` (an NTP correction,
+  // a user changing the clock), EVERY subsequent fetch lands with
+  // `dataUpdatedAt` reading before that stamp, and `dataUpdatedAt` is a
+  // dependency of the effect — so without this guard, each landing would
+  // re-run the effect, invalidate, refetch, and land stale again, forever,
+  // with no backoff. Comparing against the stamp this ref already tried
+  // caps it at one invalidate per save: a second encounter with the same
+  // stamp falls through and applies the (possibly stale) snapshot instead.
+  // Accepted trade — a screen behind by one save is strictly better than an
+  // unthrottled request loop, and the next genuine fetch or edit corrects it.
+  const invalidatedForStampRef = useRef(0);
+
   useEffect(() => {
     if (!tasksQuery.data) return;
     if (pendingRef.current.size > 0 || inFlightRef.current > 0) return;
     if (appliedDataRef.current === tasksQuery.data) return;
-    if (tasksQuery.dataUpdatedAt < lastSaveAtRef.current) {
-      // This snapshot predates the last successful save, so it cannot be
-      // applied without clobbering that save. Ask for a fresh one instead
-      // of silently trusting a stale one — the fetch it triggers will land
-      // with a newer `dataUpdatedAt` and this effect will re-run and apply
-      // it normally.
+    if (
+      tasksQuery.dataUpdatedAt <= lastSaveAtRef.current &&
+      invalidatedForStampRef.current !== lastSaveAtRef.current
+    ) {
+      // This snapshot predates (or ties, at millisecond resolution) the last
+      // successful save, so it cannot be applied without clobbering that
+      // save. Ask for a fresh one instead of silently trusting a stale one —
+      // the fetch it triggers will land with a newer `dataUpdatedAt` and this
+      // effect will re-run and apply it normally.
+      invalidatedForStampRef.current = lastSaveAtRef.current;
       queryClient.invalidateQueries({ queryKey: ['aito-tasks', projectId] });
       return;
     }
