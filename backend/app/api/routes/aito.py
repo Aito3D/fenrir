@@ -1,6 +1,7 @@
 """Aito production board: DB-backed Kanban with soft delete."""
 
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
@@ -227,6 +228,35 @@ async def _mark_project_pending_for_task(db: AsyncSession, project_id: int) -> A
     return project
 
 
+def _imported_created_at(quote_id: str | None, quote_date: str | None) -> datetime | None:
+    """When an import should backdate the card, the instant to use — else None,
+    meaning leave ``created_at``'s server default alone.
+
+    Import posts through this same endpoint as a manual card, so ``quote_id``
+    is what distinguishes them: a hand-made card keeps its real creation
+    instant.
+
+    The hour is NOON, and that is load-bearing. ``quote_date`` is a date with
+    no time, ``created_at`` is an instant, and the frontend reads the column as
+    UTC (``parseUTCDate`` in utils/date.ts). Midnight UTC renders as the
+    PREVIOUS calendar day everywhere west of Greenwich, which would show the
+    wrong date on every install in the Americas. Noon is correct from UTC-11 to
+    UTC+11; UTC+12/+13 still read a day late, and no single instant can satisfy
+    every offset.
+
+    ``quote_date`` is a client-supplied string (see AitoProjectCreate), so it
+    is parsed, never trusted: anything unparseable falls back to the default.
+    Naive, matching the column.
+    """
+    if quote_id is None or not quote_date:
+        return None
+    try:
+        parsed = datetime.strptime(quote_date, "%Y-%m-%d")
+    except ValueError:
+        return None
+    return parsed.replace(hour=12)
+
+
 @router.get("/", response_model=list[AitoProjectResponse])
 async def list_projects(
     db: AsyncSession = Depends(get_db),
@@ -267,6 +297,7 @@ async def create_project(
     # New cards land on top of the quote column: shift existing cards down.
     for row in await _active_in_column(db, "devis"):
         row.position += 1
+    created_at = _imported_created_at(payload.quote_id, payload.quote_date)
     project = AitoProject(
         description=payload.description.strip(),
         board_column="devis",
@@ -286,6 +317,9 @@ async def create_project(
         # None when auth is disabled, and for API-key requests — the dependency
         # returns None for both rather than a synthetic user.
         created_by=current_user.username if current_user else None,
+        # Absent unless an import backdates it — an explicit None would write a
+        # NULL rather than fall through to the column's server default.
+        **({"created_at": created_at} if created_at else {}),
     )
     for task_payload in payload.tasks:
         _reject_ticks_without_acceptance(payload.quote_status, task_payload.model_dump())

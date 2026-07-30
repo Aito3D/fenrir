@@ -2,6 +2,7 @@
 
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,15 @@ async def _create(client, **overrides):
     }
     payload.update(overrides)
     return await client.post("/api/v1/aito/", json=payload)
+
+
+def _seconds_since(created_at: str) -> float:
+    """How stale a response's created_at is. The column is naive UTC (its
+    server_default is func.now(), i.e. SQLite CURRENT_TIMESTAMP), so `now` is
+    made naive to match. `datetime.now(timezone.utc)` rather than the
+    deprecated `utcnow()`, and no `datetime.UTC` — this project targets 3.10."""
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    return abs((now - datetime.fromisoformat(created_at)).total_seconds())
 
 
 _GOLDEN = Path(__file__).parent.parent / "fixtures" / "aito_board_payload.json"
@@ -1314,3 +1324,34 @@ async def test_importing_ten_projects_runs_no_task_queries(async_client, db_sess
     # own engine would silence the listener entirely and task_selects == 0
     # would pass vacuously forever, hiding a real N+1 regression.
     assert project_selects > 0, "expected the listener to observe aito_projects SELECTs, saw none"
+
+
+@pytest.mark.asyncio
+async def test_an_imported_card_is_as_old_as_its_quote(async_client):
+    """Noon, not midnight: the frontend reads timestamps as UTC, so midnight
+    would render as the previous day everywhere west of Greenwich."""
+    r = await _create(async_client, quote_id="EST-9", quote_date="2026-07-15")
+    assert r.status_code == 201
+    assert r.json()["created_at"].startswith("2026-07-15T12:00:00")
+
+
+@pytest.mark.asyncio
+async def test_a_hand_made_card_keeps_its_real_creation_time(async_client):
+    r = await _create(async_client, quote_date="2026-07-15")  # no quote_id: not an import
+    assert not r.json()["created_at"].startswith("2026-07-15T12:00:00")
+
+
+@pytest.mark.asyncio
+async def test_an_unparseable_quote_date_falls_back_to_now(async_client):
+    """quote_date is a client-supplied string, not a trusted value."""
+    r = await _create(async_client, quote_id="EST-9", quote_date="15/07/2026")
+    assert r.status_code == 201
+    assert not r.json()["created_at"].startswith("2026-07-15")
+    assert _seconds_since(r.json()["created_at"]) < 300
+
+
+@pytest.mark.asyncio
+async def test_an_import_with_no_quote_date_falls_back_to_now(async_client):
+    r = await _create(async_client, quote_id="EST-9")
+    assert r.status_code == 201
+    assert _seconds_since(r.json()["created_at"]) < 300
