@@ -40,11 +40,27 @@ describe('QuoteStatusActions', () => {
     expect(screen.queryByRole('button', { name: /mark as sent/i })).not.toBeInTheDocument();
   });
 
-  it('renders nothing at all once the quote is declined', () => {
+  it('keeps Accept, and only Accept, on a declined quote', () => {
+    // The one way out of 'declined'. It is reachable without anyone choosing
+    // it — trashing a project declines its estimate, and re-importing that
+    // quote makes a card that is born declined — and nothing else can undo it:
+    // the reconciler owns a local decline, so it pushes it back over a
+    // Books-side reopen or records a permanent conflict. Deleting this
+    // expectation makes 'declined' absorbing again.
     render(<QuoteStatusActions project={{ ...project, quote_status: 'declined' }} />);
-    expect(screen.queryByRole('button', { name: /accept quote/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /accept quote/i })).toBeEnabled();
     expect(screen.queryByRole('button', { name: /decline quote/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /mark as sent/i })).not.toBeInTheDocument();
+  });
+
+  it('sends the accepted transition from a declined quote', async () => {
+    const spy = vi.spyOn(api, 'setAitoQuoteStatus').mockResolvedValue({ project, zoho_synced: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<QuoteStatusActions project={{ ...project, quote_status: 'declined' }} />);
+
+    await user.pointer({ keys: '[MouseLeft>]', target: screen.getByRole('button', { name: /accept quote/i }) });
+    vi.advanceTimersByTime(600);
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(12, { status: 'accepted' }));
   });
 
   it('drops Mark as sent once the client already has the quote', () => {

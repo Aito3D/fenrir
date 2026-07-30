@@ -542,11 +542,18 @@ async def test_sync_recomputes_board_column_so_the_card_does_not_go_stale(db_ses
     run_sync_once also recomputing and storing board_column, a card sitting in
     Printing whose quote comes back `sent` renders self-contradictory: parked
     in Printing but locked with a "waiting on the client" badge. A project
-    that was accepted and moved to `print` before Books flips its estimate
-    back to `sent` must end the sync tick relocated to `waiting`."""
+    that sits in `print` while Books reports its estimate `sent` must end the
+    sync tick relocated to `waiting`.
+
+    The local status here is deliberately UNDECIDED ('draft'): a DECIDED one is
+    no longer overwritten by an undecided remote (see _apply_estimate's guard
+    and test_a_local_acceptance_survives_a_task_edit_while_books_still_says_sent),
+    so staging this with a local 'accepted' would exercise a write the module
+    is now specifically built not to make, and prove nothing about
+    board_column."""
     project = await _project_with_quote(db_session, impression_cost=5000, impression_done=True)
     project.board_column = "print"
-    project.quote_status = "accepted"
+    project.quote_status = "draft"
     await db_session.commit()
     await _configure_zoho(db_session)
     zoho_service.transport = httpx.MockTransport(
@@ -804,9 +811,16 @@ async def test_restoring_reapplies_the_snapshotted_status(db_session):
 
 
 @pytest.mark.asyncio
-async def test_a_quote_that_was_a_draft_stays_declined_on_restore(db_session):
-    """Books offers no /status/draft. The snapshot is kept as the record of
-    what it was, and the panel explains it — nothing pretends otherwise."""
+async def test_a_quote_that_was_a_draft_comes_back_as_sent_on_restore(db_session):
+    """Books offers no /status/draft, so a restore puts the estimate back to
+    'sent' — its nearest legal state, and the literal truth: the trash path's
+    sent-first chain really did mark it sent before declining it.
+
+    This replaces an assertion that such a quote simply STAYED declined. That
+    was written when a decline POST against a draft still 400'd (so the case
+    was unreachable) and when the board still offered Accept on a declined
+    card. Both changed, and 'declined' became an absorbing state a restored
+    project could never leave."""
     project = await _project_with_quote(db_session, scan_cost=1)
     await _configure_zoho(db_session)
     project.quote_status = "declined"
@@ -825,7 +839,8 @@ async def test_a_quote_that_was_a_draft_stays_declined_on_restore(db_session):
                         "line_items": [],
                     }
                 },
-                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "declined", "total": 1}},
+                ("POST", "/status/sent"): {"message": "ok"},
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "sent", "total": 1}},
             },
             seen,
         )
@@ -834,8 +849,91 @@ async def test_a_quote_that_was_a_draft_stays_declined_on_restore(db_session):
 
     await run_sync_once(db_session)
     await db_session.refresh(project)
-    assert project.quote_status_before_trash == "draft"
-    assert not any("/status/" in entry[1] for entry in seen)
+    assert project.quote_status == "sent"
+    assert project.quote_status_before_trash is None
+    assert any(entry[1].endswith("/status/sent") for entry in seen)
+    assert not any(entry[1].endswith("/status/declined") for entry in seen)
+    # Same as the accepted-snapshot restore above: the status hop is only half
+    # the tick, the line-item push must still happen.
+    assert any(entry[0] == "PUT" for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_a_local_acceptance_survives_a_task_edit_while_books_still_says_sent(db_session):
+    """Important 2. Accepting a card whose estimate was still a draft marks it
+    sent first; if the accept POST then fails, the board holds 'accepted' while
+    Books holds 'sent'. The next task edit takes the pending path, and
+    _apply_estimate used to copy Books' 'sent' straight back over the local
+    acceptance — knocking the card off its work columns, hiding the Done
+    toggle, 422-ing every tick, and leaving reconcile_quote_status unable to
+    repair it (with an UNDECIDED local status it adopts Books' forever).
+
+    A DECIDED local status is never replaced by an UNDECIDED remote one."""
+    project = await _project_with_quote(db_session, impression_cost=5000, impression_done=True)
+    await _configure_zoho(db_session)
+    project.quote_status = "accepted"
+    project.board_column = "print"
+    await db_session.commit()
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {
+                    "estimate": {"estimate_id": "E1", "status": "sent", "total": 5000},
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_status == "accepted"
+    # And the card stays on a WORK column — the rules advance it to 'finish'
+    # because its impression is ticked — rather than being sent back to
+    # 'waiting' by a status the shop never left.
+    assert project.board_column == "finish"
+
+
+@pytest.mark.asyncio
+async def test_a_push_still_adopts_books_status_when_ours_is_undecided(db_session):
+    """The other half of the same guard: the copy-back is not disabled, only
+    made asymmetric. A client viewing the quote is still news to us."""
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    await _configure_zoho(db_session)
+    project.quote_status = "sent"
+    await db_session.commit()
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "viewed",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "viewed", "total": 5000}},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_status == "viewed"
 
 
 @pytest.mark.asyncio

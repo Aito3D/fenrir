@@ -1191,6 +1191,17 @@ describe('ProjectDetailPanel sync row', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows that same note on an idle declined card, which is the normal case', async () => {
+    // It used to live inside the sync row, which renders only for
+    // pending/error/locked — so the one card that most needs the explanation
+    // (restored from the trash, or imported from an already-declined quote,
+    // both of which settle at 'idle') never got it.
+    show({ quote_sync_state: 'idle', quote_status: 'declined' });
+    expect(
+      await screen.findByText('Zoho does not allow reverting a quote back to draft.'),
+    ).toBeInTheDocument();
+  });
+
   it('surfaces a recorded conflict even though the project is idle', async () => {
     // The whole point of the block being its own stored fact: an 'idle'
     // project renders no sync row at all, so a conflict folded into

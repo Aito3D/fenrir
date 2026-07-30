@@ -17,16 +17,29 @@ const TOAST_KEYS = {
  *
  *  Each one moves the card: sent parks it in Waiting, acceptance releases it
  *  onto the work columns, a decline sends it to Done. So all three are
- *  hold-to-confirm, like delete. 500 ms rather than delete's 1000: these are
- *  reversible (accepting a declined quote reopens it), so the gesture only has
- *  to prove intent, not discourage.
+ *  hold-to-confirm, like delete. 500 ms rather than delete's 1000: a decline is
+ *  reversible from right here (accepting a declined quote reopens it), so the
+ *  gesture only has to prove intent, not discourage.
  *
- *  The block disappears entirely once the quote is ACCEPTED or DECLINED.
- *  Acceptance authorises the work and a decline ends it; past either, the
- *  quote is settled, and a correction belongs in Books rather than in a button
- *  sitting next to a job on the board. The accepted consequence is that
- *  re-accepting a declined quote has to happen in Books — both actions are
- *  hold-to-confirm, so intent is proven before the state becomes terminal.
+ *  What renders, by quote_status:
+ *
+ *    null, draft            Mark sent · Accept · Decline
+ *    sent, viewed, expired  Accept · Decline
+ *    declined               Accept only
+ *    accepted               nothing
+ *
+ *  ACCEPTED is the one terminal state: it authorises the work, the whole board
+ *  is gated on it, and there is no action left to offer.
+ *
+ *  DECLINED deliberately keeps Accept. It is not a state the user can only
+ *  reach on purpose — trashing a project declines its estimate, and
+ *  re-importing that quote produces a card born declined — and there is no
+ *  route out of it anywhere else: the reconciler treats a local decline as OUR
+ *  decision, so it either pushes it back over a Books-side reopen or records a
+ *  permanent conflict asking the user to fix it in Books, which is precisely
+ *  what they would just have done. Accept here is the exit. Decline itself is
+ *  hidden — the quote already is declined — and Mark as sent stays hidden for
+ *  the same reason it is on `sent`: the client has the quote.
  *
  *  Mark-as-sent renders only while the client does not yet have the quote
  *  (null or draft). This REPLACES an earlier rule that kept every action
@@ -53,12 +66,15 @@ export function QuoteStatusActions({ project }: { project: AitoProject }) {
 
   // After every hook, so the hook order is identical on the render where the
   // quote settles and the block goes away.
-  if (project.quote_status === 'accepted' || project.quote_status === 'declined') return null;
+  if (project.quote_status === 'accepted') return null;
 
   // Mark-as-sent only while the client does not have the quote yet. On sent,
-  // viewed and expired they already do, so offering to mark it sent says
-  // nothing true.
+  // viewed, expired and declined they already do, so offering to mark it sent
+  // says nothing true.
   const canMarkSent = project.quote_status === null || project.quote_status === 'draft';
+  // Declining an already-declined quote is a no-op the board would still
+  // hold-to-confirm and toast about. Accept is what a declined card needs.
+  const canDecline = project.quote_status !== 'declined';
 
   return (
     <div className="flex flex-col gap-2 border-t border-bambu-dark-tertiary pt-4">
@@ -87,17 +103,19 @@ export function QuoteStatusActions({ project }: { project: AitoProject }) {
         <ThumbsUp className="w-3.5 h-3.5" />
         <span className="text-sm">{t('aito.acceptQuote')}</span>
       </HoldButton>
-      <HoldButton
-        onHold={() => mutation.mutate('declined')}
-        durationMs={500}
-        disabled={mutation.isPending}
-        label={t('aito.declineQuote')}
-        hint={t('aito.holdToConfirm')}
-        className="flex-1 justify-center border p-1.5 border-status-error/40 text-status-error hover:bg-status-error/10"
-      >
-        <ThumbsDown className="w-3.5 h-3.5" />
-        <span className="text-sm">{t('aito.declineQuote')}</span>
-      </HoldButton>
+      {canDecline && (
+        <HoldButton
+          onHold={() => mutation.mutate('declined')}
+          durationMs={500}
+          disabled={mutation.isPending}
+          label={t('aito.declineQuote')}
+          hint={t('aito.holdToConfirm')}
+          className="flex-1 justify-center border p-1.5 border-status-error/40 text-status-error hover:bg-status-error/10"
+        >
+          <ThumbsDown className="w-3.5 h-3.5" />
+          <span className="text-sm">{t('aito.declineQuote')}</span>
+        </HoldButton>
+      )}
       </div>
     </div>
   );

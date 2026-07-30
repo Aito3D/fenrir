@@ -326,9 +326,6 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
                       {project.quote_sync_state === 'locked' && (
                         <span className="block text-xs text-bambu-gray">{t('aito.quoteLockedHelp')}</span>
                       )}
-                      {project.quote_status === 'declined' && (
-                        <span className="block text-xs text-bambu-gray">{t('aito.quoteDeclinedNoDraft')}</span>
-                      )}
                       {project.quote_sync_state === 'error' && (
                         <button
                           type="button"
@@ -340,6 +337,18 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
                         </button>
                       )}
                     </dd>
+                  </div>
+                )}
+
+                {/* Also independent of the sync row above, and for the same
+                    reason it had to be moved out of it: the sync row only
+                    renders for pending/error/locked, and a card left declined
+                    — restored from the trash, or re-imported from a declined
+                    quote — is normally 'idle', so the one sentence explaining
+                    why it is stuck rendered exactly never. */}
+                {project.quote_status === 'declined' && (
+                  <div className="flex items-baseline gap-2">
+                    <dd className="ml-0 w-full text-xs text-bambu-gray">{t('aito.quoteDeclinedNoDraft')}</dd>
                   </div>
                 )}
 

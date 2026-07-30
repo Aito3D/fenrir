@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type AitoTask, type AitoTaskCreate, type AitoTaskUpdate } from '../api/client';
+import { api, ApiError, type AitoTask, type AitoTaskCreate, type AitoTaskUpdate } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { emptyTaskDraft, taskDraftFromAitoTask, taskDraftToTaskCreate } from '../utils/taskDraft';
 import type { TaskDraft } from '../utils/taskDraft';
@@ -182,7 +182,31 @@ export function useProjectTasks(projectId: number) {
       );
       if (tickedAStep) queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
     },
-    onError: () => showToast(t('aito.saveFailed'), 'error'),
+    onError: (error, { id }) => {
+      showToast(t('aito.saveFailed'), 'error');
+      // A 422 is the backend's quote-acceptance guard refusing to tick a step
+      // (the only validation error this PATCH can produce). `tasks` is
+      // optimistic — the checkbox was flipped locally the moment it was
+      // clicked — so without this the row goes on rendering as DONE while the
+      // server holds it undone, and stays that way until some unrelated
+      // refetch happens to correct it. A toast alone is not enough: the user
+      // sees work marked finished that no one recorded.
+      //
+      // Rolled back from `baselineRef`, the last-known-persisted row, rather
+      // than by invalidating: the baseline IS the server's answer here (the
+      // PATCH changed nothing), so this needs no GET and cannot race one. The
+      // whole row is restored, not just the flag, because the whole PATCH was
+      // refused — every field in it is equally unsaved.
+      if (!(error instanceof ApiError) || error.status !== 422) return;
+      const baseline = baselineRef.current.get(id);
+      if (!baseline) {
+        // No baseline to roll back to (a row added and edited inside the same
+        // panel session before its first load). Ask the server instead.
+        queryClient.invalidateQueries({ queryKey: ['aito-tasks', projectId] });
+        return;
+      }
+      setTasks((prev) => prev.map((row) => (row.id === id ? taskDraftFromAitoTask(baseline) : row)));
+    },
     // Mutation-level, so React Query still runs it after this hook unmounts —
     // which is the point: the write that lands after close triggers the refresh.
     onSettled: () => {

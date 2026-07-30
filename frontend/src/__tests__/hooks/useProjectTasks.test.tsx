@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api } from '../../api/client';
+import { api, ApiError } from '../../api/client';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { useProjectTasks } from '../../hooks/useProjectTasks';
 
@@ -389,5 +389,41 @@ describe('useProjectTasks', () => {
       await vi.advanceTimersByTimeAsync(500);
     });
     expect(updateAitoTask).not.toHaveBeenCalled();
+  });
+
+  it('un-ticks a step the server refused with a 422', async () => {
+    // The backend's quote-acceptance guard rejects a tick on a project whose
+    // quote is not accepted. The checkbox is optimistic, so a toast alone
+    // would leave the row rendering as DONE work the server never recorded.
+    updateAitoTask.mockRejectedValue(new ApiError('Quote not accepted', 422));
+    const { result } = await mounted();
+
+    act(() => {
+      result.current.onTasksChange([
+        { ...result.current.tasks[0], done: { ...result.current.tasks[0].done, impression: true } },
+      ]);
+    });
+    expect(result.current.tasks[0].done.impression).toBe(true);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(updateAitoTask).toHaveBeenCalledWith(7, { impression_done: true });
+    await waitFor(() => expect(result.current.tasks[0].done.impression).toBe(false));
+  });
+
+  it('leaves an optimistic edit alone when the failure is not the tick guard', async () => {
+    // Only a 422 is the guard. A 500 or an offline PATCH is a transient
+    // failure the user should be able to retry from what is still on screen.
+    updateAitoTask.mockRejectedValue(new ApiError('boom', 500));
+    const { result } = await mounted();
+
+    act(() => {
+      result.current.onTasksChange([{ ...result.current.tasks[0], title: 'changed' }]);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(result.current.tasks[0].title).toBe('changed');
   });
 });

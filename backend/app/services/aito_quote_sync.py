@@ -33,10 +33,25 @@ from backend.app.services.zoho import (
 
 logger = logging.getLogger(__name__)
 
-# Consecutive upstream failures before a project stops being retried. Five
-# minutes of a Books outage at the default 60s tick, which rides out a restart
-# without giving up, and stops a permanently broken project polling forever.
+# Consecutive upstream failures before a project's push is escalated to
+# 'error'. Five minutes of a Books outage at the default 60s tick, which rides
+# out a restart without giving up.
+#
+# It does NOT stop the project being polled, and never claim it does: the sweep
+# deliberately keeps selecting 'error' projects (see run_sync_once's SELECT,
+# which excludes only 'unmanaged' and 'locked'), so an escalated project is
+# still re-read every tick — and that read is exactly what lets sync_project's
+# recovery branch bring it back to 'idle' once Books answers again. What the
+# limit ends is the retrying of the PUSH, and it surfaces the failure on the
+# card instead of leaving it silently 'pending' forever.
 SYNC_FAILURE_LIMIT = 5
+
+# The statuses that represent a DECISION someone made, as opposed to where a
+# quote merely happens to sit. We own ours (the shop accepted or declined);
+# Books owns the client's. Everything else — draft, sent, viewed, expired — is
+# undecided, and undecided always yields. Read by reconcile_quote_status (the
+# full asymmetry) and by _apply_estimate (the copy-back's half of it).
+_DECIDED = frozenset({"accepted", "declined"})
 
 
 def _clear_block(project: AitoProject) -> None:
@@ -105,7 +120,9 @@ def _apply_estimate(project: AitoProject, estimate: dict) -> None:
     """Copy back what Books now says, so the card stops guessing.
 
     quote_status in particular: it used to be a snapshot frozen at import that
-    went stale the moment a quote was accepted. Every push refreshes it.
+    went stale the moment a quote was accepted. Every push refreshes it — but
+    only in the direction reconcile_quote_status allows, never over a decision
+    of ours Books has not caught up with yet. See the guard below.
 
     A missing ``estimate_id`` is refused rather than silently marked 'idle':
     ``create_estimate``/``update_estimate_lines`` return
@@ -130,8 +147,26 @@ def _apply_estimate(project: AitoProject, estimate: dict) -> None:
     # unlike the string fields above, there's no falsy-but-valid float this
     # could clobber.
     project.quote_total = float(estimate.get("total") or 0)
-    if estimate.get("status") is not None:
-        project.quote_status = estimate["status"]
+    remote_status = estimate.get("status")
+    if remote_status is not None and not (project.quote_status in _DECIDED and remote_status not in _DECIDED):
+        # The same asymmetry reconcile_quote_status applies, for the same
+        # reason — a copy-back is not a licence to unmake a decision. Books'
+        # status is adopted whenever ours is merely where the quote sat, but a
+        # DECIDED local status is never replaced by an UNDECIDED remote one.
+        #
+        # The sequence this closes: accepting a card whose estimate is still a
+        # draft marks it sent first, and if the accept POST then fails the
+        # board holds 'accepted' while Books holds 'sent'. Any later task edit
+        # comes through here, and the old unconditional write pulled the card
+        # back to 'sent' — off its work column, Done toggle gone, ticks 422'd —
+        # and left reconcile_quote_status unable to repair it, because with a
+        # now-UNDECIDED local status it adopts Books' forever.
+        #
+        # Two decisions that DISAGREE are not resolved here: this path holds
+        # no evidence about which is right, and the reconciler already records
+        # that case as a conflict for a human. Keeping ours simply leaves it
+        # for the next sweep to see.
+        project.quote_status = remote_status
     _clear_block(project)
     if estimate.get("last_modified_time") is not None:
         project.quote_synced_at = estimate["last_modified_time"]
@@ -246,15 +281,16 @@ async def _write_back_rounded_impression(db: AsyncSession, project_id: int) -> N
         row.impression_cost = round(row.impression_cost / quantity) * quantity
 
 
-# Statuses Books can be put back into. There is no /status/draft, so a quote
-# that was still a draft when its project was trashed cannot be recovered.
-_RESTORABLE = ("sent", "accepted")
-
-# The statuses that represent a DECISION someone made, as opposed to where a
-# quote merely happens to sit. We own ours (the shop accepted or declined);
-# Books owns the client's. Everything else — draft, sent, viewed, expired — is
-# undecided, and undecided always yields.
-_DECIDED = frozenset({"accepted", "declined"})
+# A snapshotted pre-trash status -> the status a restore puts Books back into.
+#
+# 'draft' maps to 'sent', not to itself: Books offers no /status/draft, and the
+# previous behaviour (treat draft as unrestorable) left the project permanently
+# 'declined' after a restore — an absorbing state, since a declined quote also
+# hides most of the board's actions. 'sent' is both Books' nearest legal state
+# and the literal truth about that estimate: a draft cannot be declined
+# directly, so the trash path's own sent-first chain
+# (advance_estimate_status) really did mark it sent on the way out.
+_RESTORE_TARGET = {"draft": "sent", "sent": "sent", "accepted": "accepted"}
 
 
 async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimate: dict) -> None:
@@ -399,11 +435,10 @@ async def _reconcile_status(db: AsyncSession, project: AitoProject, estimate: di
         project.quote_sync_error = None
         project.quote_sync_failures = 0
         return True
-    if status == "declined" and project.quote_status_before_trash in _RESTORABLE:
-        await zoho_service.advance_estimate_status(
-            db, project.quote_id, project.quote_status_before_trash, current=status
-        )
-        project.quote_status = project.quote_status_before_trash
+    restore_target = _RESTORE_TARGET.get(project.quote_status_before_trash or "")
+    if status == "declined" and restore_target is not None:
+        await zoho_service.advance_estimate_status(db, project.quote_id, restore_target, current=status)
+        project.quote_status = restore_target
         project.quote_status_before_trash = None
         _clear_block(project)
     return False
