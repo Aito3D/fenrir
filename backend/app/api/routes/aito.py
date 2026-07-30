@@ -162,7 +162,7 @@ async def _active_in_column(db: AsyncSession, column: str, exclude_id: int | Non
     return [r for r in rows if r.id != exclude_id]
 
 
-async def _apply_rules(db: AsyncSession, project: AitoProject, summary: TaskSummary) -> None:
+async def _apply_rules(db: AsyncSession, project: AitoProject, summary: TaskSummary, actor: str | None = None) -> None:
     """Recompute ``project.board_column`` from the rules and relocate it.
 
     Takes the summary rather than loading the tasks itself: several callers
@@ -176,6 +176,14 @@ async def _apply_rules(db: AsyncSession, project: AitoProject, summary: TaskSumm
     observe the half-applied move.
 
     Does not commit: every caller is already inside a request that does.
+
+    ``actor`` is the acting user's name, or None. actor_class is 'user', not
+    'system': the machinery here is automatic, but a person caused it by
+    ticking a step or editing a card, and the timeline should say who. The
+    sync worker's call (``run_sync_once``, via a function-level import to
+    avoid a circular import) passes nothing, which reads as an unattributed
+    move rather than a false attribution to whichever user happened to be
+    online when the worker's tick ran.
     """
     column, _ = evaluate(project.quote_status, project.board_column, summary.pending)
     if column == project.board_column:
@@ -188,6 +196,18 @@ async def _apply_rules(db: AsyncSession, project: AitoProject, summary: TaskSumm
     project.position = len(destination_rows)
     for index, row in enumerate(source_rows):
         row.position = index
+
+    await record(
+        db,
+        project.id,
+        "stage.changed",
+        actor_class="user" if actor else "system",
+        actor_name=actor,
+        subject_type="project",
+        subject_id=project.id,
+        changes=[{"field": "column", "from": source, "to": project.board_column}],
+        detail={"cause": "rule"},
+    )
 
 
 def _mark_pending(project: AitoProject) -> None:
@@ -413,7 +433,7 @@ async def create_project(
     # The tasks were just inserted from the payload, so they are already in
     # hand: summarise them rather than reading them back.
     summary = summarise(new_tasks)
-    await _apply_rules(db, project, summary)
+    await _apply_rules(db, project, summary, actor=_actor(current_user))
     await db.commit()
     await db.refresh(project)
     return _to_response(project, summary)
@@ -534,7 +554,7 @@ async def add_task(
     )
     if not was_pending and project.quote_sync_state == "pending":
         await record(db, project.id, "sync.queued", actor_class="system")
-    await _apply_rules(db, project, await _summary_for(db, project_id))
+    await _apply_rules(db, project, await _summary_for(db, project_id), actor=_actor(current_user))
     await db.commit()
     await db.refresh(task)
     return _task_to_response(task)
@@ -626,7 +646,7 @@ async def update_task(
     if project is not None and not was_pending and project.quote_sync_state == "pending":
         await record(db, project.id, "sync.queued", actor_class="system")
     if project:
-        await _apply_rules(db, project, await _summary_for(db, task.project_id))
+        await _apply_rules(db, project, await _summary_for(db, task.project_id), actor=_actor(current_user))
     await db.commit()
     await db.refresh(task)
     return _task_to_response(task)
@@ -655,7 +675,7 @@ async def delete_task(
     await db.delete(task)
     await db.flush()  # so the deleted row is out of _summary_for's SELECT
     if project:
-        await _apply_rules(db, project, await _summary_for(db, task.project_id))
+        await _apply_rules(db, project, await _summary_for(db, task.project_id), actor=_actor(current_user))
     await db.commit()
 
 
@@ -854,7 +874,7 @@ async def set_quote_status(
     project.quote_status_block = None
     project.quote_status_remote = None
     summary = await _summary_for(db, project.id)
-    await _apply_rules(db, project, summary)
+    await _apply_rules(db, project, summary, actor=_actor(current_user))
     await record(
         db,
         project.id,
@@ -925,7 +945,7 @@ async def restore_project(
     project.position = position
     _mark_pending_if_ours(project)
     summary = await _summary_for(db, project.id)
-    await _apply_rules(db, project, summary)
+    await _apply_rules(db, project, summary, actor=_actor(current_user))
     await record(
         db,
         project.id,

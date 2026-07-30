@@ -21,6 +21,7 @@ from backend.app.core.tasks import spawn_background_task
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.filament import Filament
+from backend.app.services.aito_events import record
 from backend.app.services.aito_quote_export import ExportTask, build_line_items
 from backend.app.services.zoho import (
     ZohoAmbiguousReferenceError,
@@ -250,6 +251,15 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
     )
     await _write_back_rounded_impression(db, project.id)
     _apply_estimate(project, estimate)
+    await record(
+        db,
+        project.id,
+        "quote.created",
+        actor_class="system",
+        subject_type="project",
+        subject_id=project.id,
+        detail={"quote_number": project.quote_number},
+    )
     if project.quote_id:
         project.quote_url = await zoho_service.books_app_url(db, project.quote_id)
     if estimate.get("is_inclusive_tax") is not True:
@@ -266,6 +276,7 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         project.quote_sync_error = (
             "This quote is tax-exclusive; Aito costs are tax-inclusive and cannot be pushed without inflating the total"
         )
+        await record(db, project.id, "sync.locked", actor_class="system", subject_type="project", subject_id=project.id)
 
 
 def _is_locked(estimate: dict) -> bool:
@@ -347,6 +358,15 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
     if zoho_status == local:
         # Genuine agreement: whatever was blocking, is not any more.
         _clear_block(project)
+        await record(
+            db,
+            project.id,
+            "poll.reconciled",
+            actor_class="system",
+            subject_type="project",
+            subject_id=project.id,
+            detail={"status": project.quote_status},
+        )
         return
 
     ours_decided = local in _DECIDED
@@ -355,6 +375,15 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
     if ours_decided and theirs_decided:
         project.quote_status_block = "conflict"
         project.quote_status_remote = zoho_status
+        await record(
+            db,
+            project.id,
+            "sync.conflict",
+            actor_class="system",
+            subject_type="project",
+            subject_id=project.id,
+            detail={"ours": project.quote_status, "theirs": project.quote_status_remote},
+        )
         return
 
     if ours_decided:
@@ -388,6 +417,15 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
                 project.id,
                 zoho_status,
                 e,
+            )
+            await record(
+                db,
+                project.id,
+                "sync.status_rejected",
+                actor_class="system",
+                subject_type="project",
+                subject_id=project.id,
+                detail={"ours": project.quote_status, "theirs": project.quote_status_remote},
             )
             return
         _clear_block(project)
@@ -473,6 +511,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         # again.
         _clear_block(project)
         project.quote_sync_failures = 0
+        await record(db, project.id, "sync.locked", actor_class="system", subject_type="project", subject_id=project.id)
         return
     if await _reconcile_status(db, project, estimate):
         return
@@ -498,6 +537,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         # sweep permanently, so nothing would ever clear a stale block again.
         _clear_block(project)
         project.quote_sync_failures = 0
+        await record(db, project.id, "sync.locked", actor_class="system", subject_type="project", subject_id=project.id)
         return
     catalogue = await zoho_service.get_catalogue(db)
     line_items = build_line_items(
@@ -517,10 +557,28 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         project.quote_sync_state = "error"
         project.quote_sync_error = "Project has no priced service left; nothing was written to the quote"
         project.quote_sync_failures = 0
+        await record(
+            db,
+            project.id,
+            "sync.failed",
+            actor_class="system",
+            subject_type="project",
+            subject_id=project.id,
+            detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
+        )
         return
     updated = await zoho_service.update_estimate_lines(db, project.quote_id, line_items)
     await _write_back_rounded_impression(db, project.id)
     _apply_estimate(project, updated)
+    await record(
+        db,
+        project.id,
+        "sync.pushed",
+        actor_class="system",
+        subject_type="project",
+        subject_id=project.id,
+        detail={"lines": len(line_items)},
+    )
 
 
 async def sync_project(db: AsyncSession, project: AitoProject) -> None:
@@ -570,6 +628,9 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
                 # attempt again.
                 _clear_block(project)
                 project.quote_sync_failures = 0
+                await record(
+                    db, project.id, "sync.locked", actor_class="system", subject_type="project", subject_id=project.id
+                )
                 return
             await reconcile_quote_status(db, project, estimate)
             # A read that reaches this point succeeded, whatever
@@ -638,6 +699,15 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         # the next successful read would erase this message as if it were the
         # outage's.
         project.quote_sync_failures = 0
+        await record(
+            db,
+            project.id,
+            "sync.failed",
+            actor_class="system",
+            subject_type="project",
+            subject_id=project.id,
+            detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
+        )
     except ZohoAmbiguousReferenceError as e:
         # find_estimate_by_reference found more than one plausible match, or
         # the lone survivor belongs to a different customer. Like a rejected
@@ -648,15 +718,47 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         project.quote_sync_state = "error"
         project.quote_sync_error = str(e)
         project.quote_sync_failures = 0
+        await record(
+            db,
+            project.id,
+            "sync.failed",
+            actor_class="system",
+            subject_type="project",
+            subject_id=project.id,
+            detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
+        )
     except ZohoNotFound:
         project.quote_sync_state = "error"
         project.quote_sync_error = "The quote no longer exists in Zoho Books"
         project.quote_sync_failures = 0
+        await record(
+            db,
+            project.id,
+            "sync.failed",
+            actor_class="system",
+            subject_type="project",
+            subject_id=project.id,
+            detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
+        )
     except ZohoUpstreamError as e:
         project.quote_sync_failures = (project.quote_sync_failures or 0) + 1
         project.quote_sync_error = str(e)
         if project.quote_sync_failures >= SYNC_FAILURE_LIMIT:
             project.quote_sync_state = "error"
+            # Recorded only once the retry budget is actually spent: every
+            # tick below the limit is a transient blip _apply_estimate's own
+            # caller will simply retry, and a trace row per 300s outage tick
+            # would drown the one row that matters -- the moment this project
+            # actually stopped retrying and surfaced on the card.
+            await record(
+                db,
+                project.id,
+                "sync.failed",
+                actor_class="system",
+                subject_type="project",
+                subject_id=project.id,
+                detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
+            )
         logger.warning("Aito quote sync failed for project %s: %s", project.id, e)
     except Exception as e:
         # Anything not already handled above: a DB error, a bug in
@@ -672,6 +774,15 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         # its own, not the outage escalation, and must not be mistaken for one
         # by the sweep path's recovery.
         project.quote_sync_failures = 0
+        await record(
+            db,
+            project.id,
+            "sync.failed",
+            actor_class="system",
+            subject_type="project",
+            subject_id=project.id,
+            detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
+        )
         logger.exception("Aito quote sync hit an unexpected error for project %s", project.id)
 
 
