@@ -39,6 +39,29 @@ logger = logging.getLogger(__name__)
 SYNC_FAILURE_LIMIT = 5
 
 
+def _clear_block(project: AitoProject) -> None:
+    """No reason to be blocked any more. Unconditional and always safe: these
+    two columns are the status reconciler's own and nothing else ever writes
+    them, so there is no other subsystem's record to destroy — which is
+    exactly the property `quote_sync_error` did not have, and the reason every
+    "is this error mine?" guard that used to stand in reconcile_quote_status
+    is gone.
+
+    Called from every site that writes `project.quote_status`, not just the
+    reconciler's own branches. The model's comment states the invariant
+    plainly — a recorded block always describes an attempt made from the
+    CURRENT `quote_status`, which is what lets `quote_status_remote` alone
+    identify it — and each of those sites happens to write Books' own current
+    status, so today's block would clear on the next tick's equality branch
+    anyway. Relying on that is a subtle argument no future edit is obliged to
+    preserve: clearing at the source makes the invariant true by construction
+    instead. (`set_quote_status` in routes/aito.py is the one writer outside
+    this module, and it clears both columns inline.)
+    """
+    project.quote_status_block = None
+    project.quote_status_remote = None
+
+
 async def load_export_tasks(db: AsyncSession, project_id: int) -> list[ExportTask]:
     """The project's tasks, flattened for the I/O-free exporter.
 
@@ -110,6 +133,7 @@ def _apply_estimate(project: AitoProject, estimate: dict) -> None:
     project.quote_total = float(estimate.get("total") or 0)
     if estimate.get("status") is not None:
         project.quote_status = estimate["status"]
+    _clear_block(project)
     if estimate.get("last_modified_time") is not None:
         project.quote_synced_at = estimate["last_modified_time"]
     project.quote_sync_state = "idle"
@@ -232,16 +256,6 @@ _RESTORABLE = ("sent", "accepted")
 # Books owns the client's. Everything else — draft, sent, viewed, expired — is
 # undecided, and undecided always yields.
 _DECIDED = frozenset({"accepted", "declined"})
-
-
-def _clear_block(project: AitoProject) -> None:
-    """No reason to be blocked any more. Unconditional and always safe: these
-    two columns are this reconciler's own and nothing else ever writes them,
-    so there is no other subsystem's record to destroy — which is exactly the
-    property `quote_sync_error` did not have, and the reason every "is this
-    error mine?" guard that used to stand here is gone."""
-    project.quote_status_block = None
-    project.quote_status_remote = None
 
 
 async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimate: dict) -> None:
@@ -380,6 +394,7 @@ async def _reconcile_status(db: AsyncSession, project: AitoProject, estimate: di
             # before its quote ever went out needs the same sent-first chain.
             await zoho_service.advance_estimate_status(db, project.quote_id, "declined", current=status)
             project.quote_status = "declined"
+            _clear_block(project)
         project.quote_sync_state = "idle"
         project.quote_sync_error = None
         project.quote_sync_failures = 0
@@ -390,6 +405,7 @@ async def _reconcile_status(db: AsyncSession, project: AitoProject, estimate: di
         )
         project.quote_status = project.quote_status_before_trash
         project.quote_status_before_trash = None
+        _clear_block(project)
     return False
 
 
@@ -400,6 +416,12 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         if estimate.get("status") is not None:
             project.quote_status = estimate["status"]
         project.quote_sync_error = None
+        # A locked project leaves the sweep for good, so a block recorded
+        # before it was invoiced would render on the card forever with nothing
+        # left running that could ever clear it. There is also nothing left to
+        # push: the block described an attempt this module will never make
+        # again.
+        _clear_block(project)
         project.quote_sync_failures = 0
         return
     if await _reconcile_status(db, project, estimate):
@@ -422,6 +444,9 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         project.quote_sync_error = (
             "This quote is tax-exclusive; Aito costs are tax-inclusive and cannot be pushed without inflating the total"
         )
+        # Same as the invoiced branch above: 'locked' is excluded from the
+        # sweep permanently, so nothing would ever clear a stale block again.
+        _clear_block(project)
         project.quote_sync_failures = 0
         return
     catalogue = await zoho_service.get_catalogue(db)
@@ -487,6 +512,13 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
                 # excluded from every later sweep, so there is no ongoing
                 # status to keep in sync, and no error to clear away either.
                 project.quote_sync_state = "locked"
+                # quote_status and quote_sync_error are deliberately left
+                # alone (above), but a recorded block is neither: 'locked'
+                # leaves the sweep for good, so a block kept here would render
+                # "Books refused to change this quote to ..." beside "Quote
+                # invoiced" forever, describing a push this module will never
+                # attempt again.
+                _clear_block(project)
                 project.quote_sync_failures = 0
                 return
             await reconcile_quote_status(db, project, estimate)
@@ -498,15 +530,19 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
             # project in 'error' with no way back except a user edit (I2).
             #
             # A counter still AT the limit is a stored fact identifying the
-            # error below as this handler's own outage escalation and nothing
-            # else: every other terminal-error path resets the counter to 0 in
-            # the same breath as it sets 'error' (see _create_quote and
-            # _update_quote's no-priced-service guards), and the
-            # ZohoUpstreamError handler always overwrites quote_sync_error
-            # with its own message when it increments. So the message being
-            # cleared here is guaranteed to be the one that handler wrote —
-            # no other subsystem's diagnostic can be destroyed, and no string
-            # has to be inspected to know that.
+            # error below as sync_project's own ZohoUpstreamError escalation
+            # and nothing else. That holds because EVERY other path that sets
+            # 'error' resets this counter to 0 in the same breath — the
+            # no-priced-service guards in _create_quote/_update_quote, and all
+            # four terminal exception handlers below (ZohoRequestRejected,
+            # ZohoAmbiguousReferenceError, ZohoNotFound and the catch-all).
+            # Keep that true if you ever add another: an 'error' that inherits
+            # a count it did not earn would have its diagnostic erased here by
+            # the next successful read. The ZohoUpstreamError handler for its
+            # part always overwrites quote_sync_error with its own message
+            # when it increments, so the message cleared here is guaranteed to
+            # be the one that handler wrote — no other subsystem's diagnostic
+            # can be destroyed, and no string has to be inspected to know it.
             if project.quote_sync_state == "error" and (project.quote_sync_failures or 0) >= SYNC_FAILURE_LIMIT:
                 project.quote_sync_state = "idle"
                 project.quote_sync_error = None
@@ -544,6 +580,14 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         # Books rejected the payload. Retrying an identical body cannot help.
         project.quote_sync_state = "error"
         project.quote_sync_error = str(e)
+        # Counter to 0, exactly like _create_quote/_update_quote's terminal
+        # guards — see the sweep path's recovery above, which relies on a
+        # counter still AT the limit meaning "the ZohoUpstreamError escalation
+        # and nothing else". A terminal error of a DIFFERENT kind landing on
+        # top of an escalated project would otherwise inherit that count, and
+        # the next successful read would erase this message as if it were the
+        # outage's.
+        project.quote_sync_failures = 0
     except ZohoAmbiguousReferenceError as e:
         # find_estimate_by_reference found more than one plausible match, or
         # the lone survivor belongs to a different customer. Like a rejected
@@ -553,9 +597,11 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         # how a real customer's estimate would get adopted and overwritten.
         project.quote_sync_state = "error"
         project.quote_sync_error = str(e)
+        project.quote_sync_failures = 0
     except ZohoNotFound:
         project.quote_sync_state = "error"
         project.quote_sync_error = "The quote no longer exists in Zoho Books"
+        project.quote_sync_failures = 0
     except ZohoUpstreamError as e:
         project.quote_sync_failures = (project.quote_sync_failures or 0) + 1
         project.quote_sync_error = str(e)
@@ -572,6 +618,10 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         # into a duplicate estimate in Books. Fail this project only.
         project.quote_sync_state = "error"
         project.quote_sync_error = str(e)
+        # Same reason as the three handlers above: this is a terminal error of
+        # its own, not the outage escalation, and must not be mistaken for one
+        # by the sweep path's recovery.
+        project.quote_sync_failures = 0
         logger.exception("Aito quote sync hit an unexpected error for project %s", project.id)
 
 

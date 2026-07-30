@@ -2471,3 +2471,138 @@ async def test_a_conflict_is_recorded_and_clears_when_books_agrees(db_session):
     await db_session.refresh(project)
     assert project.quote_status_block is None
     assert project.quote_status_remote is None
+
+
+@pytest.mark.asyncio
+async def test_a_different_terminal_error_is_not_erased_by_the_outage_recovery(db_session):
+    """Fix-round 1, Important 1: the sweep path's I2 recovery reads
+    `quote_sync_failures >= SYNC_FAILURE_LIMIT` as proof that an 'error' is
+    the ZohoUpstreamError escalation and nothing else. That is only true while
+    every OTHER path that sets 'error' resets the counter — which four of
+    sync_project's exception handlers did not.
+
+    The hole: a project escalated by an outage run (failures == 5) that then
+    hits a terminal error of a different kind lands a new, unrelated
+    diagnostic with the counter still at 5, and the next successful read
+    erases it and reports the card as in sync while the real fault stands.
+    """
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    def failing(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(503, json={"message": "down"})
+
+    zoho_service.transport = httpx.MockTransport(failing)
+    zoho_service.invalidate_token()
+    for _ in range(SYNC_FAILURE_LIMIT):
+        await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.quote_sync_failures == SYNC_FAILURE_LIMIT
+
+    # A terminal error of a DIFFERENT kind: the estimate is gone from Books.
+    def gone(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(404, json={"message": "not found"})
+
+    zoho_service.transport = httpx.MockTransport(gone)
+    zoho_service.invalidate_token()
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.quote_sync_error == "The quote no longer exists in Zoho Books"
+    # The handler must not leave this project wearing the outage's count.
+    assert project.quote_sync_failures == 0
+
+    # The quote reappears (restored in Books, or the 404 was transient) and
+    # the read succeeds with both sides agreeing. The recovery must not read
+    # this as "the outage passed" and erase a message it never wrote.
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler({("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "accepted"}}})
+    )
+    zoho_service.invalidate_token()
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.quote_sync_error == "The quote no longer exists in Zoho Books"
+
+
+@pytest.mark.asyncio
+async def test_an_invoiced_quote_does_not_keep_a_block_it_can_never_clear(db_session):
+    """Fix-round 1, Minor 3: 'locked' leaves the sweep permanently, so a block
+    recorded before the estimate was invoiced would render beside "Quote
+    invoiced" forever, describing a push this module will never attempt
+    again."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    project.quote_status_block = "rejected"
+    project.quote_status_remote = "draft"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "draft",
+                        "is_transaction_created": True,
+                        "invoiced_amount": 8500,
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "locked"
+    assert project.quote_status_block is None
+    assert project.quote_status_remote is None
+
+
+@pytest.mark.asyncio
+async def test_adopting_books_status_on_a_push_clears_a_recorded_block(db_session):
+    """Fix-round 1, Minor 2: _apply_estimate writes quote_status too, so it
+    clears the block like every other writer. The model's invariant — a block
+    always describes an attempt made from the CURRENT quote_status — is true
+    by construction rather than by an argument about what values these sites
+    happen to write."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status_block = "conflict"
+    project.quote_status_remote = "declined"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "sent", "total": 1000}},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_status == "sent"
+    assert project.quote_status_block is None
+    assert project.quote_status_remote is None

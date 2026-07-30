@@ -348,9 +348,13 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
                     own, and a card can be perfectly 'idle' for the line-item
                     sync while its STATUS is stuck against Books. */}
                 {blockKey && (
-                  <div className="flex items-baseline justify-between gap-2">
-                    <dt className="text-bambu-gray flex-shrink-0">{t('aito.sync')}:</dt>
-                    <dd className="text-white min-w-0 text-right">
+                  <div className="flex items-baseline gap-2">
+                    {/* No <dt>: the sync row above already uses the only label
+                        that would fit ("Sync"), and two consecutive rows under
+                        one identical term reads as a mistake. The sentence
+                        names both sides itself, so it needs no term — it spans
+                        the row instead. */}
+                    <dd className="ml-0 w-full text-status-error">
                       {t(blockKey, {
                         ours: statusLabel(project.quote_status),
                         theirs: statusLabel(project.quote_status_remote),

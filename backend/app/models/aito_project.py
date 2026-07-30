@@ -77,8 +77,12 @@ class AitoProject(Base):
     #   'rejected' — Books refused the status push we attempted.
     quote_status_block: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # Books' status at the moment the block was recorded. Our side is simply
-    # quote_status, which is always current, because set_quote_status clears
-    # both of these whenever the board's own status changes.
+    # quote_status, which is always current, because EVERY site that writes
+    # quote_status clears both of these in the same breath: set_quote_status
+    # (routes/aito.py) inline, and every writer inside aito_quote_sync via its
+    # _clear_block helper. Keep that true of any new writer — a block left
+    # behind by a status change describes an attempt that no longer exists,
+    # and would suppress a push that ought to be retried.
     quote_status_remote: Mapped[str | None] = mapped_column(String(30), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
