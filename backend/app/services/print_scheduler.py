@@ -33,7 +33,11 @@ from backend.app.services.bambu_ftp import (
     with_ftp_retry,
 )
 from backend.app.services.filament_deficit import compute_deficit_for_queue_item
-from backend.app.services.finance_budget import validate_print_budget
+from backend.app.services.finance_budget import (
+    create_budget_reservation,
+    release_budget_reservation,
+    validate_print_budget,
+)
 from backend.app.services.notification_service import notification_service
 from backend.app.services.printer_manager import (
     printer_manager,
@@ -289,6 +293,11 @@ class PrintScheduler:
         # sequential caller, callbacks on the same loop, so no lock.
         # item_id -> (printer_id, remote_filename, archive_id)
         self._unconfirmed_expected_print: dict[int, tuple[int, str, int]] = {}
+        # Budget reservations created for a dispatch whose print command has
+        # not been confirmed yet. `_dispatch_one` releases these on every
+        # unsuccessful exit; a successful start removes the item id and leaves
+        # the reservation for finance_billing to consume with the archive.
+        self._unconfirmed_budget_reservations: set[int] = set()
 
     async def run(self):
         """Main loop - check queue every interval."""
@@ -970,6 +979,11 @@ class PrintScheduler:
                 # A confirmed send removes the entry itself, so this is a no-op
                 # on the happy path.
                 self._rollback_unconfirmed_expected_print(item_id)
+                # Mirror the pre-#1625 background-dispatch lifecycle: a
+                # reservation survives only after start_print() accepted the
+                # command. Failure, cancellation, deferral, and exceptions all
+                # release it here.
+                await asyncio.shield(self._release_unconfirmed_budget_reservation(item_db, item_id))
                 # Release the claim on every exit. Once dispatch has finished the
                 # row's status carries the lock (printing/failed/cancelled are all
                 # != pending), so the token is only needed for the duration of the
@@ -1000,6 +1014,38 @@ class PrintScheduler:
                 archive_id,
                 exc_info=True,
             )
+
+    async def _release_unconfirmed_budget_reservation(self, db: AsyncSession, item_id: int) -> None:
+        """Release a queue reservation when dispatch ended before MQTT send."""
+        if item_id not in self._unconfirmed_budget_reservations:
+            return
+
+        for attempt in range(1, 4):
+            try:
+                await db.rollback()
+                await release_budget_reservation(
+                    db,
+                    source_type="print_queue",
+                    source_id=item_id,
+                    status="released",
+                )
+                await db.commit()
+                self._unconfirmed_budget_reservations.discard(item_id)
+                return
+            except Exception as exc:
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
+                if attempt == 3:
+                    logger.error(
+                        "Queue item %s: failed to release budget reservation after %d attempts: %s",
+                        item_id,
+                        attempt,
+                        exc,
+                    )
+                    return
+                await asyncio.sleep(0.5 * attempt)
 
     async def _claim_for_dispatch(self, db: AsyncSession, item_id: int) -> bool:
         """Atomically stamp ``dispatching_at`` on a still-pending, unclaimed row.
@@ -3094,6 +3140,10 @@ class PrintScheduler:
         """
         logger.info("Starting queue item %s", item.id)
 
+        # Also covers a reservation left active by a process interruption
+        # during an earlier attempt. `_dispatch_one` releases this marker on
+        # every exit unless start_print() confirms that the command was sent.
+        self._unconfirmed_budget_reservations.add(item.id)
         try:
             from backend.app.models.user import User
 
@@ -3104,7 +3154,20 @@ class PrintScheduler:
                 estimated_cost=item.estimated_cost,
                 current_user=queue_user,
                 exclude_queue_item_id=item.id,
+                exclude_reservation_source_type="print_queue",
+                exclude_reservation_source_id=item.id,
             )
+            budget_reservation = await create_budget_reservation(
+                db,
+                cost_center_id=item.cost_center_id,
+                estimated_cost=item.estimated_cost,
+                current_user=queue_user,
+                source_type="print_queue",
+                source_id=item.id,
+                print_archive_id=item.archive_id,
+                exclude_queue_item_id=item.id,
+            )
+            await db.commit()
         except HTTPException as exc:
             item.status = "failed"
             item.error_message = str(exc.detail)
@@ -3240,6 +3303,8 @@ class PrintScheduler:
                 )
                 if archive:
                     item.archive_id = archive.id
+                    if budget_reservation is not None:
+                        budget_reservation.print_archive_id = archive.id
                     if item.cleanup_library_after_dispatch and not library_file.is_external:
                         item.library_file_id = None
                         cleanup_disk_paths.append(file_path)
@@ -3680,6 +3745,7 @@ class PrintScheduler:
             # survive. Anything still in this dict when _dispatch_one exits gets
             # rolled back.
             self._unconfirmed_expected_print.pop(item.id, None)
+            self._unconfirmed_budget_reservations.discard(item.id)
             logger.info("Queue item %s: Print started successfully - %s", item.id, filename)
             # No dispatch-toast event here: the legacy bg-dispatch path kept
             # status='processing' from upload start until the printer acked
@@ -3967,6 +4033,12 @@ class PrintScheduler:
                     f"prompt or error, confirm its SD card is readable, and start the job again."
                 )
                 item.completed_at = datetime.now(timezone.utc)
+                await release_budget_reservation(
+                    db,
+                    source_type="print_queue",
+                    source_id=item.id,
+                    status="released",
+                )
                 await db.commit()
                 return "gave_up"
             item.status = "pending"

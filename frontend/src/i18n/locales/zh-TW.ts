@@ -124,6 +124,7 @@ export default {
     duplicate: '複製',
     left: '左',
     right: '右',
+    user: '使用者',
     run: '執行',
     running: '執行中...',
   },

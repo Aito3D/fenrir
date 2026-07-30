@@ -36,7 +36,7 @@ from backend.app.schemas.print_queue import (
 )
 from backend.app.services.filament_deficit import compute_deficit_for_queue_item
 from backend.app.services.filament_requirements import overrides_for_plate
-from backend.app.services.finance_budget import validate_print_budget
+from backend.app.services.finance_budget import release_budget_reservation, validate_print_budget
 from backend.app.services.notification_service import notification_service
 from backend.app.utils.printer_models import (
     is_gcode_compatible,
@@ -1000,6 +1000,12 @@ async def cancel_batch(
     cancelled_count = 0
     for item in pending_items:
         item.status = "cancelled"
+        await release_budget_reservation(
+            db,
+            source_type="print_queue",
+            source_id=item.id,
+            status="released",
+        )
         cancelled_count += 1
 
     batch.status = "cancelled"
@@ -1242,6 +1248,12 @@ async def delete_queue_item(
     if item.status == "printing":
         raise HTTPException(400, "Cannot delete item that is currently printing")
 
+    await release_budget_reservation(
+        db,
+        source_type="print_queue",
+        source_id=item.id,
+        status="released",
+    )
     await db.delete(item)
     await db.commit()
 
@@ -1354,6 +1366,12 @@ async def cancel_queue_item(
 
     item.status = "cancelled"
     item.completed_at = datetime.now(timezone.utc)
+    await release_budget_reservation(
+        db,
+        source_type="print_queue",
+        source_id=item.id,
+        status="released",
+    )
     await db.commit()
 
     logger.info("Cancelled queue item %s", item_id)

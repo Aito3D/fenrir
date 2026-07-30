@@ -90,9 +90,19 @@ async def _cost_center_open_queue_reservations(
     *,
     exclude_queue_item_id: int | None = None,
 ) -> float:
+    active_queue_reservation = (
+        select(BudgetReservation.id)
+        .where(
+            BudgetReservation.status == "active",
+            BudgetReservation.source_type == "print_queue",
+            BudgetReservation.source_id == PrintQueueItem.id,
+        )
+        .exists()
+    )
     conditions = [
         PrintQueueItem.cost_center_id == cost_center_id,
         PrintQueueItem.status.in_(("pending", "printing")),
+        ~active_queue_reservation,
     ]
     if exclude_queue_item_id is not None:
         conditions.append(PrintQueueItem.id != exclude_queue_item_id)
@@ -101,13 +111,25 @@ async def _cost_center_open_queue_reservations(
     return float(result.scalar() or 0.0)
 
 
-async def _cost_center_active_budget_reservations(db: AsyncSession, cost_center_id: int) -> float:
-    result = await db.execute(
-        select(func.coalesce(func.sum(BudgetReservation.amount), 0.0)).where(
-            BudgetReservation.cost_center_id == cost_center_id,
-            BudgetReservation.status == "active",
+async def _cost_center_active_budget_reservations(
+    db: AsyncSession,
+    cost_center_id: int,
+    *,
+    exclude_source_type: str | None = None,
+    exclude_source_id: int | None = None,
+) -> float:
+    conditions = [
+        BudgetReservation.cost_center_id == cost_center_id,
+        BudgetReservation.status == "active",
+    ]
+    if exclude_source_type is not None and exclude_source_id is not None:
+        conditions.append(
+            ~(
+                (BudgetReservation.source_type == exclude_source_type)
+                & (BudgetReservation.source_id == exclude_source_id)
+            )
         )
-    )
+    result = await db.execute(select(func.coalesce(func.sum(BudgetReservation.amount), 0.0)).where(*conditions))
     return float(result.scalar() or 0.0)
 
 
@@ -119,6 +141,8 @@ async def validate_print_budget(
     current_user: User | None,
     quantity: int = 1,
     exclude_queue_item_id: int | None = None,
+    exclude_reservation_source_type: str | None = None,
+    exclude_reservation_source_id: int | None = None,
 ) -> None:
     """Validate that a print can be assigned to a cost center budget."""
     if not await is_billing_enabled(db):
@@ -160,7 +184,12 @@ async def validate_print_budget(
         cost_center_id,
         exclude_queue_item_id=exclude_queue_item_id,
     )
-    reserved += await _cost_center_active_budget_reservations(db, cost_center_id)
+    reserved += await _cost_center_active_budget_reservations(
+        db,
+        cost_center_id,
+        exclude_source_type=exclude_reservation_source_type,
+        exclude_source_id=exclude_reservation_source_id,
+    )
     requested = estimated_cost * max(1, quantity)
     available = float(budget_limit) - used - reserved
     if requested > available:
@@ -179,6 +208,7 @@ async def create_budget_reservation(
     source_type: str,
     source_id: int | None,
     print_archive_id: int | None = None,
+    exclude_queue_item_id: int | None = None,
 ) -> BudgetReservation | None:
     if not await is_billing_enabled(db):
         return None
@@ -191,7 +221,28 @@ async def create_budget_reservation(
         cost_center_id=cost_center_id,
         estimated_cost=estimated_cost,
         current_user=current_user,
+        exclude_queue_item_id=exclude_queue_item_id,
+        exclude_reservation_source_type=source_type,
+        exclude_reservation_source_id=source_id,
     )
+
+    existing = None
+    if source_id is not None:
+        existing = await db.scalar(
+            select(BudgetReservation).where(
+                BudgetReservation.status == "active",
+                BudgetReservation.source_type == source_type,
+                BudgetReservation.source_id == source_id,
+            )
+        )
+    if existing is not None:
+        existing.cost_center_id = cost_center_id
+        existing.amount = float(estimated_cost or 0.0)
+        if print_archive_id is not None:
+            existing.print_archive_id = print_archive_id
+        await db.flush()
+        return existing
+
     reservation = BudgetReservation(
         cost_center_id=cost_center_id,
         amount=float(estimated_cost or 0.0),

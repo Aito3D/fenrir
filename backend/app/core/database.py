@@ -1024,6 +1024,217 @@ async def _migrate_widen_spoolman_slot_ams_id_range(conn) -> None:
         raise
 
 
+async def _migrate_create_finance_tables(conn) -> None:
+    """Create finance tables missing from databases that predate billing.
+
+    ``Base.metadata.create_all()`` covers fresh installs, but upgrade and
+    restore paths can run the handwritten migrations against an existing
+    PostgreSQL schema.  The finance column migrations below must therefore not
+    assume these tables already exist.
+
+    ``UserWallet`` is mapped to ``user_wallets``.  The invitation table is kept
+    as a compatibility table for pre-release billing databases; current code
+    does not map or query it.
+    """
+    if is_sqlite():
+        statements = [
+            """
+            CREATE TABLE IF NOT EXISTS cost_centers (
+                id INTEGER PRIMARY KEY,
+                code VARCHAR(32) NOT NULL UNIQUE,
+                name VARCHAR(150) NOT NULL,
+                is_active BOOLEAN NOT NULL DEFAULT 1,
+                is_private BOOLEAN NOT NULL DEFAULT 0,
+                owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                total_budget FLOAT,
+                monthly_budget FLOAT,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS user_wallets (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+                balance FLOAT NOT NULL DEFAULT 0.0,
+                currency VARCHAR(3) NOT NULL DEFAULT 'EUR',
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS cost_center_members (
+                id INTEGER PRIMARY KEY,
+                cost_center_id INTEGER NOT NULL REFERENCES cost_centers(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                can_print BOOLEAN NOT NULL DEFAULT 1,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT uq_cost_center_members_cc_user UNIQUE (cost_center_id, user_id)
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS cost_center_invitations (
+                id INTEGER PRIMARY KEY,
+                cost_center_id INTEGER NOT NULL REFERENCES cost_centers(id) ON DELETE CASCADE,
+                email VARCHAR(320) NOT NULL,
+                token VARCHAR(255) NOT NULL UNIQUE,
+                invited_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                expires_at DATETIME,
+                accepted_at DATETIME,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS wallet_transactions (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                cost_center_id INTEGER REFERENCES cost_centers(id) ON DELETE SET NULL,
+                transaction_type VARCHAR(40) NOT NULL,
+                amount FLOAT NOT NULL,
+                balance_after FLOAT,
+                description TEXT,
+                created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                print_run_id VARCHAR(100),
+                print_archive_id INTEGER REFERENCES print_archives(id) ON DELETE SET NULL,
+                print_queue_id INTEGER REFERENCES print_queue(id) ON DELETE SET NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT ck_wallet_transactions_transaction_type CHECK (
+                    transaction_type IN ('print_charge', 'deposit', 'withdraw', 'manual_adjustment')
+                )
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS budget_reservations (
+                id INTEGER PRIMARY KEY,
+                cost_center_id INTEGER NOT NULL REFERENCES cost_centers(id) ON DELETE CASCADE,
+                amount FLOAT NOT NULL,
+                status VARCHAR(20) NOT NULL,
+                source_type VARCHAR(50) NOT NULL,
+                source_id INTEGER,
+                print_archive_id INTEGER REFERENCES print_archives(id) ON DELETE SET NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                released_at DATETIME
+            )
+            """,
+        ]
+    else:
+        statements = [
+            """
+            CREATE TABLE IF NOT EXISTS cost_centers (
+                id SERIAL PRIMARY KEY,
+                code VARCHAR(32) NOT NULL UNIQUE,
+                name VARCHAR(150) NOT NULL,
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                is_private BOOLEAN NOT NULL DEFAULT FALSE,
+                owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                total_budget FLOAT,
+                monthly_budget FLOAT,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS user_wallets (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+                balance FLOAT NOT NULL DEFAULT 0.0,
+                currency VARCHAR(3) NOT NULL DEFAULT 'EUR',
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS cost_center_members (
+                id SERIAL PRIMARY KEY,
+                cost_center_id INTEGER NOT NULL REFERENCES cost_centers(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                can_print BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT uq_cost_center_members_cc_user UNIQUE (cost_center_id, user_id)
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS cost_center_invitations (
+                id SERIAL PRIMARY KEY,
+                cost_center_id INTEGER NOT NULL REFERENCES cost_centers(id) ON DELETE CASCADE,
+                email VARCHAR(320) NOT NULL,
+                token VARCHAR(255) NOT NULL UNIQUE,
+                invited_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                expires_at TIMESTAMP,
+                accepted_at TIMESTAMP,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS wallet_transactions (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                cost_center_id INTEGER REFERENCES cost_centers(id) ON DELETE SET NULL,
+                transaction_type VARCHAR(40) NOT NULL,
+                amount FLOAT NOT NULL,
+                balance_after FLOAT,
+                description TEXT,
+                created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                print_run_id VARCHAR(100),
+                print_archive_id INTEGER REFERENCES print_archives(id) ON DELETE SET NULL,
+                print_queue_id INTEGER REFERENCES print_queue(id) ON DELETE SET NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT ck_wallet_transactions_transaction_type CHECK (
+                    transaction_type IN ('print_charge', 'deposit', 'withdraw', 'manual_adjustment')
+                )
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS budget_reservations (
+                id SERIAL PRIMARY KEY,
+                cost_center_id INTEGER NOT NULL REFERENCES cost_centers(id) ON DELETE CASCADE,
+                amount FLOAT NOT NULL,
+                status VARCHAR(20) NOT NULL,
+                source_type VARCHAR(50) NOT NULL,
+                source_id INTEGER,
+                print_archive_id INTEGER REFERENCES print_archives(id) ON DELETE SET NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                released_at TIMESTAMP
+            )
+            """,
+        ]
+
+    for statement in statements:
+        await _safe_execute(conn, statement)
+
+
+async def _migrate_create_finance_indexes(conn) -> None:
+    """Create finance indexes after legacy tables have received new columns."""
+    indexes = [
+        "CREATE INDEX IF NOT EXISTS ix_cost_centers_code ON cost_centers (code)",
+        "CREATE INDEX IF NOT EXISTS ix_cost_centers_name ON cost_centers (name)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_user_wallets_user_id ON user_wallets (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_cost_center_members_cost_center_id ON cost_center_members (cost_center_id)",
+        "CREATE INDEX IF NOT EXISTS ix_cost_center_members_user_id ON cost_center_members (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_cost_center_invitations_cost_center_id "
+        "ON cost_center_invitations (cost_center_id)",
+        "CREATE INDEX IF NOT EXISTS ix_cost_center_invitations_email ON cost_center_invitations (email)",
+        "CREATE INDEX IF NOT EXISTS ix_wallet_transactions_user_id ON wallet_transactions (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_wallet_transactions_cost_center_id ON wallet_transactions (cost_center_id)",
+        "CREATE INDEX IF NOT EXISTS ix_wallet_transactions_transaction_type "
+        "ON wallet_transactions (transaction_type)",
+        "CREATE INDEX IF NOT EXISTS ix_wallet_transactions_created_by_user_id "
+        "ON wallet_transactions (created_by_user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_wallet_transactions_print_run_id ON wallet_transactions (print_run_id)",
+        "CREATE INDEX IF NOT EXISTS ix_wallet_transactions_print_archive_id "
+        "ON wallet_transactions (print_archive_id)",
+        "CREATE INDEX IF NOT EXISTS ix_wallet_transactions_print_queue_id ON wallet_transactions (print_queue_id)",
+        "CREATE INDEX IF NOT EXISTS ix_wallet_transactions_created_at ON wallet_transactions (created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_budget_reservations_cost_center_id "
+        "ON budget_reservations (cost_center_id)",
+        "CREATE INDEX IF NOT EXISTS ix_budget_reservations_status ON budget_reservations (status)",
+        "CREATE INDEX IF NOT EXISTS ix_budget_reservations_source_type ON budget_reservations (source_type)",
+        "CREATE INDEX IF NOT EXISTS ix_budget_reservations_source_id ON budget_reservations (source_id)",
+        "CREATE INDEX IF NOT EXISTS ix_budget_reservations_print_archive_id "
+        "ON budget_reservations (print_archive_id)",
+    ]
+    for statement in indexes:
+        await _safe_execute(conn, statement)
+
+
 async def run_migrations(conn):
     """Run all schema migrations and data backfills on startup.
 
@@ -1037,6 +1248,11 @@ async def run_migrations(conn):
     swallowed.
     """
     from sqlalchemy import text
+
+    # Existing PostgreSQL databases predate the finance ORM tables. These must
+    # exist before any ALTER TABLE / CREATE INDEX statements below reference
+    # them. Fresh installs remain idempotent because create_all() runs first.
+    await _migrate_create_finance_tables(conn)
 
     # Migration: Add parent_run_id column to pipeline_runs (#1425 PR C).
     # Links a retry-failed run back to its parent so the dashboard can show
@@ -1100,15 +1316,19 @@ async def run_migrations(conn):
 
     # Migration: Add cost_center columns expected by current finance model
     await _safe_execute(conn, "ALTER TABLE cost_centers ADD COLUMN code VARCHAR(32)")
-    await _safe_execute(conn, "ALTER TABLE cost_centers ADD COLUMN is_private BOOLEAN DEFAULT 0")
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE cost_centers ADD COLUMN is_private BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(conn, "ALTER TABLE cost_centers ADD COLUMN is_private BOOLEAN DEFAULT FALSE")
     await _safe_execute(
         conn,
         "ALTER TABLE cost_centers ADD COLUMN owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL",
     )
     await _safe_execute(conn, "ALTER TABLE cost_centers ADD COLUMN total_budget FLOAT")
     await _safe_execute(conn, "ALTER TABLE cost_centers ADD COLUMN monthly_budget FLOAT")
-    await _safe_execute(conn, "ALTER TABLE cost_centers ADD COLUMN created_at DATETIME")
-    await _safe_execute(conn, "ALTER TABLE cost_centers ADD COLUMN updated_at DATETIME")
+    timestamp_type = "DATETIME" if is_sqlite() else "TIMESTAMP"
+    await _safe_execute(conn, f"ALTER TABLE cost_centers ADD COLUMN created_at {timestamp_type}")
+    await _safe_execute(conn, f"ALTER TABLE cost_centers ADD COLUMN updated_at {timestamp_type}")
 
     # Backfill empty cost center codes on upgraded databases.
     if is_sqlite():
@@ -1144,6 +1364,10 @@ async def run_migrations(conn):
     # Migration: Add print_run_id to wallet_transactions so repeated prints of the same archive
     # can be billed independently without mutating archive history.
     await _safe_execute(conn, "ALTER TABLE wallet_transactions ADD COLUMN print_run_id VARCHAR(100)")
+
+    # CREATE TABLE IF NOT EXISTS is a no-op for an older, incomplete table.
+    # Delay indexes until every legacy column they reference has been added.
+    await _migrate_create_finance_indexes(conn)
 
     # Migration: Add missing-spool-assignment print-start notification toggle
     try:
