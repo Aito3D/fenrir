@@ -1355,3 +1355,52 @@ async def test_an_import_with_no_quote_date_falls_back_to_now(async_client):
     r = await _create(async_client, quote_id="EST-9")
     assert r.status_code == 201
     assert _seconds_since(r.json()["created_at"]) < 300
+
+
+@pytest.mark.asyncio
+async def test_a_quote_may_back_only_one_active_project(async_client):
+    first = await _create(async_client, quote_id="EST-9", quote_number="QT-9")
+    assert first.status_code == 201
+
+    second = await _create(async_client, quote_id="EST-9", quote_number="QT-9")
+    assert second.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_trashing_a_project_frees_its_quote_for_re_import(async_client):
+    """An established workflow, not an accident — the live board has five
+    quotes with one active project and one or more trashed ones."""
+    first = (await _create(async_client, quote_id="EST-9")).json()
+    await async_client.delete(f"/api/v1/aito/{first['id']}")
+
+    second = await _create(async_client, quote_id="EST-9")
+    assert second.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_restoring_cannot_produce_a_second_project_for_one_quote(async_client):
+    """Otherwise restore would break the very rule this task adds — and, once
+    the partial unique index exists, would surface as a 500 rather than a 409."""
+    first = (await _create(async_client, quote_id="EST-9")).json()
+    await async_client.delete(f"/api/v1/aito/{first['id']}")
+    await _create(async_client, quote_id="EST-9")  # the quote's new active project
+
+    r = await async_client.post(f"/api/v1/aito/{first['id']}/restore")
+    assert r.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_restoring_is_fine_when_the_quote_is_free(async_client):
+    first = (await _create(async_client, quote_id="EST-9")).json()
+    await async_client.delete(f"/api/v1/aito/{first['id']}")
+
+    r = await async_client.post(f"/api/v1/aito/{first['id']}/restore")
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_hand_made_cards_are_never_duplicates_of_each_other(async_client):
+    """quote_id NULL is the normal case for a hand-made card and must not
+    collide with every other hand-made card."""
+    assert (await _create(async_client)).status_code == 201
+    assert (await _create(async_client)).status_code == 201

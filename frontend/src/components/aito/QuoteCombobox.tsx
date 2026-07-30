@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
@@ -25,6 +25,7 @@ export function QuoteCombobox({ selected, onSelect }: QuoteComboboxProps) {
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [editing, setEditing] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Debounce keystrokes — one request per pause, not per character.
   useEffect(() => {
@@ -39,6 +40,17 @@ export function QuoteCombobox({ selected, onSelect }: QuoteComboboxProps) {
     queryFn: () => api.searchZohoEstimates(debouncedQuery),
     enabled: editing,
   });
+
+  // The board's active projects, for the already-imported marker. Same query
+  // key AitoPage owns, so this rides its cache rather than adding a fetch.
+  // Active-only by construction (the endpoint excludes trashed rows), which is
+  // exactly the rule: trashing a project frees its quote for re-import.
+  const boardQuery = useQuery({
+    queryKey: ['aito-projects'],
+    queryFn: api.getAitoProjects,
+    staleTime: 60_000,
+  });
+  const importedQuoteIds = new Set((boardQuery.data ?? []).map((p) => p.quote_id).filter(Boolean));
 
   const results = quotesQuery.data ?? [];
   const label = selected ? `${selected.number} · ${selected.customer_name}` : '';
@@ -69,9 +81,10 @@ export function QuoteCombobox({ selected, onSelect }: QuoteComboboxProps) {
       e.preventDefault();
       if (results.length) setHighlightedIndex((i) => (i <= 0 ? results.length - 1 : i - 1));
     } else if (e.key === 'Enter') {
-      if (highlightedIndex >= 0 && results[highlightedIndex]) {
+      const quote = results[highlightedIndex];
+      if (highlightedIndex >= 0 && quote && !importedQuoteIds.has(quote.id)) {
         e.preventDefault();
-        pick(results[highlightedIndex]);
+        pick(quote);
       }
     } else if (e.key === 'Escape') {
       // Close the dropdown only — the modal's own Escape handler would
@@ -86,7 +99,7 @@ export function QuoteCombobox({ selected, onSelect }: QuoteComboboxProps) {
       <label htmlFor="aito-quote-search" className={labelCls}>
         {t('aito.quoteSearchLabel')}
       </label>
-      <div className="relative">
+      <div className="relative" ref={containerRef}>
         <input
           id="aito-quote-search"
           role="combobox"
@@ -103,14 +116,24 @@ export function QuoteCombobox({ selected, onSelect }: QuoteComboboxProps) {
           onChange={(e) => setRawQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           // The listbox's onMouseDown calls preventDefault, so clicking an
-          // option never blurs the input in the first place.
-          onBlur={stopEditing}
+          // ENABLED option never blurs the input in the first place. A
+          // DISABLED (already-imported) option is a different case: disabled
+          // form controls never dispatch mousedown at all, so that guard
+          // can't run — the browser instead moves focus to the nearest
+          // focusable ancestor, which is the listbox div below (tabIndex
+          // -1), and this checks relatedTarget so that in-widget focus
+          // handoff doesn't close the dropdown.
+          onBlur={(e) => {
+            if (containerRef.current?.contains(e.relatedTarget as Node | null)) return;
+            stopEditing();
+          }}
           placeholder={t('aito.quotePlaceholder')}
           className={inputCls}
         />
         {editing && (
           <div
             role="listbox"
+            tabIndex={-1}
             onMouseDown={(e) => e.preventDefault()}
             className="absolute z-50 left-0 right-0 mt-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg max-h-72 overflow-y-auto animate-slide-up"
           >
@@ -133,16 +156,23 @@ export function QuoteCombobox({ selected, onSelect }: QuoteComboboxProps) {
             )}
             {!loading &&
               !quotesQuery.isError &&
-              results.map((quote, index) => (
+              results.map((quote, index) => {
+                const alreadyImported = importedQuoteIds.has(quote.id);
+                return (
                 <button
                   key={quote.id}
                   type="button"
                   role="option"
                   aria-selected={index === highlightedIndex}
+                  disabled={alreadyImported}
                   onMouseEnter={() => setHighlightedIndex(index)}
                   onClick={() => pick(quote)}
                   className={`w-full px-3 py-2 text-left transition-colors ${
-                    index === highlightedIndex ? 'bg-bambu-dark-tertiary' : 'hover:bg-bambu-dark-tertiary'
+                    alreadyImported
+                      ? 'opacity-50 cursor-not-allowed'
+                      : index === highlightedIndex
+                        ? 'bg-bambu-dark-tertiary'
+                        : 'hover:bg-bambu-dark-tertiary'
                   }`}
                 >
                   <span className="flex items-baseline justify-between gap-2">
@@ -161,8 +191,11 @@ export function QuoteCombobox({ selected, onSelect }: QuoteComboboxProps) {
                       .filter(Boolean)
                       .join(' · ')}
                   </span>
+                  {alreadyImported && (
+                    <span className="block text-xs text-bambu-gray">{t('aito.quoteAlreadyImportedMarker')}</span>
+                  )}
                 </button>
-              ))}
+              );})}
           </div>
         )}
       </div>

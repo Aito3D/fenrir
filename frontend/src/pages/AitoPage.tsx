@@ -11,7 +11,7 @@ import { ImportQuoteModal } from '../components/aito/ImportQuoteModal';
 import { NewProjectModal } from '../components/aito/NewProjectModal';
 import { ProjectDetailPanel } from '../components/aito/ProjectDetailPanel';
 import { TrashModal } from '../components/aito/TrashModal';
-import { api, type ZohoQuotePreview } from '../api/client';
+import { api, ApiError, type ZohoQuotePreview } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { formatPhone } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
@@ -187,8 +187,9 @@ export function AitoPage() {
       queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
       setShowImport(false);
     },
-    onError: () => {
-      showToast(t('aito.createFailed'), 'error');
+    onError: (error) => {
+      const conflict = error instanceof ApiError && error.status === 409;
+      showToast(t(conflict ? 'aito.quoteAlreadyHasProject' : 'aito.createFailed'), 'error');
     },
   });
 

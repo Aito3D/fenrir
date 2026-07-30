@@ -122,6 +122,32 @@ def _task_to_response(t: AitoTask) -> AitoTaskResponse:
     )
 
 
+async def _reject_duplicate_quote(db: AsyncSession, quote_id: str | None, exclude_id: int | None = None) -> None:
+    """A quote may back at most one ACTIVE project.
+
+    Trashing frees the quote: soft-deleted rows are excluded, so re-importing a
+    quote whose project was thrown away is allowed. That is a real workflow —
+    the board carries several quotes with one active project and one or more
+    trashed ones — not an oversight.
+
+    ``quote_id`` NULL is the hand-made card, and never a duplicate of anything:
+    a NULL check here rather than at every call site, because forgetting it
+    would make every hand-made card collide with the first one.
+
+    ``exclude_id`` is the row being restored, which must not count itself.
+    """
+    if quote_id is None:
+        return
+    stmt = select(AitoProject.id).where(
+        AitoProject.quote_id == quote_id,
+        AitoProject.status == "active",
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(AitoProject.id != exclude_id)
+    if (await db.execute(stmt.limit(1))).scalar_one_or_none() is not None:
+        raise HTTPException(status_code=409, detail="This quote already has a project on the board")
+
+
 async def _active_in_column(db: AsyncSession, column: str, exclude_id: int | None = None) -> list[AitoProject]:
     stmt = (
         select(AitoProject)
@@ -294,6 +320,7 @@ async def create_project(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
+    await _reject_duplicate_quote(db, payload.quote_id)
     # New cards land on top of the quote column: shift existing cards down.
     for row in await _active_in_column(db, "devis"):
         row.position += 1
@@ -696,6 +723,9 @@ async def restore_project(
     ).scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="Deleted project not found")
+    # Restoring must not produce a second active project for one quote —
+    # `exclude_id` because this row is the one being brought back.
+    await _reject_duplicate_quote(db, project.quote_id, exclude_id=project.id)
     # Compute the append position before flipping status: autoflush would otherwise
     # include this row in its own column's active count.
     position = len(await _active_in_column(db, project.board_column))

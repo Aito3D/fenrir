@@ -77,6 +77,28 @@ describe('QuoteCombobox', () => {
     expect(await screen.findByText(/could not reach|zoho/i)).toBeInTheDocument();
   });
 
+  it('marks a quote that already has a project and refuses to pick it', async () => {
+    // The board's own query key, seeded via the same HTTP endpoint the
+    // combobox's ['aito-projects'] query fetches — no default handler exists
+    // for it, so this test supplies one (mirrors ProjectDetailPanel.test.tsx's
+    // BoardHost, which primes the same query key the same way).
+    server.use(http.get('/api/v1/aito/', () => HttpResponse.json([{ id: 1, quote_id: 'e1' }])));
+
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(<QuoteCombobox selected={null} onSelect={onSelect} />);
+    await user.click(screen.getByRole('combobox'));
+
+    const imported = await screen.findByRole('option', { name: /DEV26-2467/ });
+    expect(imported).toHaveTextContent(/already imported/i);
+    expect(imported).toBeDisabled();
+    await user.click(imported);
+    expect(onSelect).not.toHaveBeenCalled();
+
+    await user.click(await screen.findByRole('option', { name: /DEV26-2461/ }));
+    expect(onSelect).toHaveBeenCalled();
+  });
+
   it('shows the quote date in the shop\'s own timezone, not shifted a day early by UTC parsing', async () => {
     // French Polynesia is UTC-10. `new Date('2026-07-27')` parses as UTC
     // midnight, which is still July 26 locally — the bug. Parsing as local

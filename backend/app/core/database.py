@@ -4095,6 +4095,18 @@ async def run_migrations(conn):
         "CREATE INDEX IF NOT EXISTS ix_aito_projects_quote_sync_state ON aito_projects (quote_sync_state)",
     )
 
+    # A quote backs at most one ACTIVE project. Partial, so the many
+    # soft-deleted rows sharing a quote with a live one stay legal (trashing
+    # frees a quote for re-import) and so the NULL quote_id of every hand-made
+    # card is exempt. Verified to build on the live board as it stands: five
+    # quotes have one active project plus trashed siblings, and no quote has
+    # two active projects.
+    await _safe_execute(
+        conn,
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_aito_project_active_quote "
+        "ON aito_projects (quote_id) WHERE quote_id IS NOT NULL AND status = 'active'",
+    )
+
 
 _USER_PRINT_TEMPLATE_RENAMES: tuple[tuple[str, str, str], ...] = (
     ("user_print_start", "User Print Started", "User Print Started Email"),

@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2, X } from 'lucide-react';
-import { api } from '../../api/client';
+import { api, ApiError } from '../../api/client';
 import { Button } from '../Button';
 import { useToast } from '../../contexts/ToastContext';
 import { formatElapsedTime } from '../../utils/date';
@@ -20,8 +20,9 @@ export function TrashModal({ onClose }: { onClose: () => void }) {
       queryClient.invalidateQueries({ queryKey: ['aito-trash'] });
       showToast(t('aito.restored'));
     },
-    onError: () => {
-      showToast(t('aito.restoreFailed'), 'error');
+    onError: (error) => {
+      const conflict = error instanceof ApiError && error.status === 409;
+      showToast(t(conflict ? 'aito.restoreBlockedByQuote' : 'aito.restoreFailed'), 'error');
     },
   });
 
