@@ -113,4 +113,61 @@ describe('ActivityRail', () => {
     await screen.findByText(/paul/);
     expect(screen.queryByRole('button', { name: /load more/i })).not.toBeInTheDocument();
   });
+
+  it('pages with the (id, occurredAt) cursor pair taken from the last event of the page', async () => {
+    const spy = vi.spyOn(api, 'getAitoEvents');
+    spy.mockResolvedValueOnce({
+      events: [
+        event({ id: 99, occurred_at: '2026-07-29T12:00:00', actor_name: 'first-event' }),
+        event({ id: 5, occurred_at: '2020-01-01T00:00:00', actor_name: 'oldest-event' }),
+      ],
+      has_more: true,
+    });
+    spy.mockResolvedValueOnce({
+      events: [event({ id: 4, occurred_at: '2019-12-31T00:00:00', actor_name: 'second-page-event' })],
+      has_more: false,
+    });
+    const user = userEvent.setup();
+    render(<ActivityRail projectId={12} />);
+
+    await screen.findByText(/oldest-event/);
+
+    await user.click(screen.getByRole('button', { name: 'Load more' }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+    // The cursor must be the pair from the LAST event of the first page (id 5),
+    // not the first event's (id 99), and not a bare id.
+    expect(spy).toHaveBeenNthCalledWith(
+      2,
+      12,
+      expect.objectContaining({
+        cursor: { id: 5, occurredAt: '2020-01-01T00:00:00' },
+      }),
+    );
+  });
+
+  it('appends the next page instead of replacing the first one', async () => {
+    const spy = vi.spyOn(api, 'getAitoEvents');
+    spy.mockResolvedValueOnce({
+      events: [
+        event({ id: 99, occurred_at: '2026-07-29T12:00:00', actor_name: 'first-event' }),
+        event({ id: 5, occurred_at: '2020-01-01T00:00:00', actor_name: 'oldest-event' }),
+      ],
+      has_more: true,
+    });
+    spy.mockResolvedValueOnce({
+      events: [event({ id: 4, occurred_at: '2019-12-31T00:00:00', actor_name: 'second-page-event' })],
+      has_more: false,
+    });
+    const user = userEvent.setup();
+    render(<ActivityRail projectId={12} />);
+
+    await screen.findByText(/oldest-event/);
+
+    await user.click(screen.getByRole('button', { name: 'Load more' }));
+
+    await screen.findByText(/second-page-event/);
+    expect(screen.getByText(/first-event/)).toBeInTheDocument();
+    expect(screen.getByText(/oldest-event/)).toBeInTheDocument();
+  });
 });
