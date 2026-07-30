@@ -1599,10 +1599,17 @@ async def test_an_accepted_board_pushes_to_a_draft_quote(db_session):
 
     await run_sync_once(db_session)
     await db_session.refresh(project)
+    gets = [entry for entry in seen if entry[0] == "GET"]
     posts = [entry[1] for entry in seen if entry[0] == "POST"]
     assert len(posts) == 2
     assert posts[0].endswith("/status/sent")
     assert posts[1].endswith("/status/accepted")
+    # M4: proves `current=zoho_status` (the estimate the sweep already read)
+    # was actually passed through to advance_estimate_status, not left as the
+    # default None — with current=None the sent-first chain would re-read the
+    # estimate itself before POSTing, costing a second GET this mock does not
+    # even provide a route for.
+    assert len(gets) == 1
     assert project.quote_status == "accepted"
     assert project.quote_sync_error is None
 
@@ -1632,7 +1639,13 @@ async def test_an_undecided_board_adopts_books_status(db_session):
 @pytest.mark.asyncio
 async def test_two_conflicting_decisions_change_nothing(db_session):
     """Overwriting either side is destructive and unrecoverable, so neither
-    wins: the conflict is recorded and both sides are left alone."""
+    wins: the conflict is recorded and both sides are left alone.
+
+    Per the human ruling on I3/I4: the conflict must also set
+    quote_sync_state = 'error' alongside the message, not just write the
+    message while state stays 'idle' — the panel and the board's error badge
+    both key off quote_sync_state, and a message nobody's UI ever surfaces is
+    as good as no record at all."""
     project = await _project_with_quote(db_session, impression_cost=1000)
     project.quote_status = "accepted"
     project.quote_sync_state = "idle"
@@ -1649,13 +1662,21 @@ async def test_two_conflicting_decisions_change_nothing(db_session):
     await db_session.refresh(project)
     assert not any(entry[0] == "POST" for entry in seen)
     assert project.quote_status == "accepted"
+    assert project.quote_sync_state == "error"
     assert project.quote_sync_error is not None
 
 
 @pytest.mark.asyncio
 async def test_agreeing_statuses_cost_no_write(db_session):
     """Both sides already agree: reconcile_quote_status's early return means
-    no push and no local write, just the sweep's one GET."""
+    no push and no local write, just the sweep's one GET.
+
+    M3: asserting only "no POST" also passes if the sweep never reached this
+    project at all (e.g. the old pending-only WHERE, or a regression that
+    re-narrows it) — that would prove nothing was pushed for the wrong
+    reason. Asserting `run_sync_once(...) == 1` first proves the sweep
+    actually attempted this project, so "no POST" is then evidence the
+    reconciler chose not to write, not evidence it was never asked."""
     project = await _project_with_quote(db_session, impression_cost=1000)
     project.quote_status = "accepted"
     project.quote_sync_state = "idle"
@@ -1668,27 +1689,55 @@ async def test_agreeing_statuses_cost_no_write(db_session):
     )
     zoho_service.invalidate_token()
 
-    await run_sync_once(db_session)
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
     assert not any(entry[0] == "POST" for entry in seen)
+    assert project.quote_status == "accepted"
+    assert project.quote_sync_state == "idle"
 
 
 @pytest.mark.asyncio
 async def test_the_sweep_never_touches_an_unmanaged_project(db_session):
     """'unmanaged' is the ONE state meaning this feature must not touch the
     quote — see _mark_pending_if_ours. run_sync_once's widened select must
-    exclude it, so sync_project (and therefore Zoho) is never even reached."""
-    project = await _project_with_quote(db_session, impression_cost=1000)
-    project.quote_status = "accepted"
-    project.quote_sync_state = "unmanaged"
+    exclude it, so sync_project (and therefore Zoho) is never even reached.
+
+    M3: without a managed sibling that IS reached, this test also passes
+    under the OLD pending-only WHERE (which excludes 'unmanaged' too, simply
+    by excluding every non-pending state) — proving nothing about the new
+    predicate specifically. The second project below is 'idle' with a
+    quote_id, exactly the shape the widened sweep exists to reach, so a
+    regression that accidentally excludes everything (not just 'unmanaged')
+    fails this test via that project's missing GET."""
+    unmanaged = await _project_with_quote(db_session, impression_cost=1000)
+    unmanaged.quote_status = "accepted"
+    unmanaged.quote_sync_state = "unmanaged"
+    managed = AitoProject(
+        description="Gerable",
+        board_column="devis",
+        position=1,
+        client_id="C2",
+        client_name="Client",
+        quote_id="E2",
+        quote_number="DEV26-9002",
+        quote_status="accepted",
+        quote_sync_state="idle",
+    )
+    db_session.add(managed)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=managed.id, position=0, title="Autre", impression_cost=1000))
     await db_session.commit()
     await _configure_zoho(db_session)
 
     seen: list = []
-    zoho_service.transport = httpx.MockTransport(zoho_handler({}, seen))
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler({("GET", "/estimates/E2"): {"estimate": {"estimate_id": "E2", "status": "accepted"}}}, seen)
+    )
     zoho_service.invalidate_token()
 
-    await run_sync_once(db_session)
-    assert seen == []
+    assert await run_sync_once(db_session) == 1
+    assert not any(entry[1].endswith("/estimates/E1") for entry in seen)
+    assert any(entry[1].endswith("/estimates/E2") for entry in seen)
 
 
 @pytest.mark.asyncio
@@ -1734,3 +1783,221 @@ async def test_decline_snapshot_survives_a_commit_failure_that_happens_after_the
     await run_sync_once(db_session)
     await db_session.refresh(project)
     assert project.quote_status_before_trash == "sent"
+
+
+# --- Round-1 review fixes (I1-I5) -------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_rejected_status_push_is_not_retried_every_tick(db_session):
+    """I1: Books rejecting a status transition is terminal, exactly like a
+    rejected line-item payload — ZohoRequestRejected sends the project
+    straight to 'error', the same rule sync_project's pending-path exception
+    handling already follows, because retrying an identical payload cannot
+    help. Without a guard, the next tick's status-only branch would re-GET
+    (fine) and then re-POST the exact same rejected, non-idempotent mutation
+    against a real customer estimate — every 60s, forever. The second tick
+    below proves the push is skipped, not the read: zero POSTs, but the GET
+    still happens."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        if request.method == "GET" and request.url.path.endswith("/estimates/E1"):
+            return httpx.Response(200, json={"estimate": {"estimate_id": "E1", "status": "draft"}})
+        if request.method == "POST" and request.url.path.endswith("/status/sent"):
+            return httpx.Response(200, json={"message": "ok"})
+        if request.method == "POST" and request.url.path.endswith("/status/accepted"):
+            return httpx.Response(400, json={"message": "Books will not accept this estimate directly"})
+        return httpx.Response(404, json={"message": "no route"})
+
+    seen: list = []
+
+    def wrapped(request: httpx.Request) -> httpx.Response:
+        if "oauth" not in request.url.path:
+            seen.append((request.method, request.url.path))
+        return handler(request)
+
+    zoho_service.transport = httpx.MockTransport(wrapped)
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.quote_sync_error
+
+    seen.clear()
+    assert await run_sync_once(db_session) == 1
+    assert not any(method == "POST" for method, _ in seen)
+    assert any(method == "GET" for method, _ in seen)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+
+
+@pytest.mark.asyncio
+async def test_transient_read_failures_do_not_permanently_strand_a_healthy_project(db_session):
+    """I2: quote_sync_failures used to be monotonic on the sweep path — a run
+    of transient outages during the status-only GET could tip an otherwise
+    healthy, already-agreeing project over SYNC_FAILURE_LIMIT and leave it in
+    'error' forever, with no way back except a user edit. A read that then
+    succeeds and finds nothing to reconcile (the two sides already agree)
+    must both reset the counter and restore 'idle'."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    def failing(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(503, json={"message": "down"})
+
+    zoho_service.transport = httpx.MockTransport(failing)
+    zoho_service.invalidate_token()
+
+    for _ in range(SYNC_FAILURE_LIMIT - 1):
+        await run_sync_once(db_session)
+        await db_session.refresh(project)
+        assert project.quote_sync_state == "idle"
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.quote_sync_failures == SYNC_FAILURE_LIMIT
+
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler({("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "accepted"}}})
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "idle"
+    assert project.quote_sync_failures == 0
+    assert project.quote_sync_error is None
+
+
+@pytest.mark.asyncio
+async def test_an_unrelated_error_diagnostic_survives_a_status_pull(db_session):
+    """I3: reachable today — a project in 'error' for a reason the status
+    reconciler has no visibility into (here, _update_quote's "no priced
+    service left" guard) still gets swept for its STATUS, since only
+    'pending', 'unmanaged' and 'locked' are excluded from the sweep. Its
+    quote_status is unset, so any real status Books returns differs from
+    local and the undecided/pull branch fires — that must still adopt the
+    status (nothing here contradicts it) without erasing the only
+    diagnostic the user has for the actual, still-live problem."""
+    project = await _project_with_quote(db_session)  # no cost fields -> nothing priced
+    await _configure_zoho(db_session)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    original_message = project.quote_sync_error
+    assert original_message
+
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler({("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "viewed"}}})
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_status == "viewed"
+    assert project.quote_sync_state == "error"
+    assert project.quote_sync_error == original_message
+
+
+@pytest.mark.asyncio
+async def test_a_resolved_conflict_is_cleared_once_both_sides_agree(db_session):
+    """I4b: the conflict message (and, per the human ruling, the 'error'
+    state it now forces) must not persist forever once a human resolves it —
+    a since-fixed Books status that now matches ours must clear both, not
+    leave the message behind as a permanent, now-false ghost that
+    misdescribes a project that is actually fine again."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler({("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "declined"}}})
+    )
+    zoho_service.invalidate_token()
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.quote_sync_error
+
+    # The human resolves it in Books, bringing its status back to match ours.
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler({("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "accepted"}}})
+    )
+    zoho_service.invalidate_token()
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "idle"
+    assert project.quote_sync_error is None
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_locks_a_quote_invoiced_since_the_last_sync(db_session):
+    """I5: 'locked' was previously excluded from the sweep by REMEMBERED
+    quote_sync_state alone — an estimate invoiced in Books since the last
+    successful sync would still read whatever state it last settled into
+    (here 'idle') and get a decided status POSTed onto a live transaction,
+    exactly the write run_sync_once's own exclusion comment calls "no safer
+    than a line-item write". The status-only branch must re-check
+    is_transaction_created / invoiced_amount on the estimate it already
+    fetched (no extra API call) and refuse to push."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "draft",
+                        "is_transaction_created": True,
+                        "invoiced_amount": 8500,
+                    }
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "locked"
+    assert not any(entry[0] == "POST" for entry in seen)
+    assert not any(entry[0] == "PUT" for entry in seen)

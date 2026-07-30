@@ -246,29 +246,79 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
 
     When BOTH sides are decided and they disagree, neither wins: overwriting a
     client's decline with our acceptance — or the reverse — is destructive and
-    unrecoverable, so the disagreement is recorded and left for a human.
+    unrecoverable, so it is recorded (`quote_sync_state = "error"`, per the
+    human ruling that a conflict must surface on the board's existing error
+    badge, not a silent field only an API client would ever read) and left
+    for a human. Both sides are left exactly as they were.
+
+    A project can already be sitting in `'error'` for a reason this function
+    has no visibility into (e.g. `_update_quote`'s "no priced service left"
+    guard) when it is swept in here — the sweep does not exclude `'error'`,
+    deliberately, so a quote can still have its STATUS reconciled while its
+    LINE ITEMS are broken. Every branch below is written to leave such an
+    unrelated diagnostic alone rather than overwrite or erase it as a side
+    effect of a routine status read.
     """
     zoho_status = estimate.get("status") or ""
     local = project.quote_status
-    if not zoho_status or zoho_status == local:
+
+    if not zoho_status:
+        # Books gave no usable signal at all on this read — not evidence of
+        # agreement, disagreement, or anything else. In particular: do not
+        # touch an existing quote_sync_error here. A project already in
+        # 'error' for an unrelated reason (no priced service, an ambiguous
+        # reference, ...) must not have its only diagnostic silently erased
+        # just because this one read happened to omit a status.
+        return
+
+    if zoho_status == local:
+        # Genuine agreement (a real status on both sides, not just "no data"
+        # above) is positive evidence nothing here needs a human anymore, so
+        # unlike every other branch this one MAY safely clear a stale
+        # 'error': either this is the read that proves a run of transient
+        # ZohoUpstreamError failures has passed for a project whose status
+        # was fine the whole time (the "healthy project permanently stranded
+        # in error" case), or it is the read that proves a human resolved a
+        # conflict this function itself recorded, by editing Books to match
+        # the board. A conflict message from a still-live disagreement can
+        # never reach this branch — the branch below returns before this one
+        # is even attempted when the two sides differ.
+        if project.quote_sync_state == "error":
+            project.quote_sync_error = None
+            project.quote_sync_state = "idle"
         return
 
     ours_decided = local in _DECIDED
     theirs_decided = zoho_status in _DECIDED
 
     if ours_decided and theirs_decided:
+        project.quote_sync_state = "error"
         project.quote_sync_error = (
             f"The board says {local} but Books says {zoho_status}. Neither was changed — resolve it in Books."
         )
         return
 
     if ours_decided:
+        if project.quote_sync_state == "error":
+            # A previous push of this exact transition was rejected by Books
+            # (ZohoRequestRejected sends the project straight to 'error', the
+            # same rule the pending-path push already follows: retrying an
+            # identical payload cannot help). Repeating it every tick forever
+            # would repeat that rejected, non-idempotent mutation against a
+            # real customer estimate. The read above still happened — if
+            # Books' status changes on its own, a later tick's equality or
+            # conflict branch takes over instead of this one.
+            return
         await zoho_service.advance_estimate_status(db, project.quote_id, local, current=zoho_status)
         project.quote_sync_error = None
         return
 
+    # Undecided: adopt Books' status. Only the message is guarded — an
+    # unrelated diagnostic (see the docstring) must survive a routine pull,
+    # but the status field itself is not that diagnostic and always updates.
     project.quote_status = zoho_status
-    project.quote_sync_error = None
+    if project.quote_sync_state != "error":
+        project.quote_sync_error = None
 
 
 async def _reconcile_status(db: AsyncSession, project: AitoProject, estimate: dict) -> bool:
@@ -395,7 +445,30 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         # create_project's own note on why marking a fresh import pending is
         # unsafe).
         if project.quote_sync_state != "pending":
-            await reconcile_quote_status(db, project, await zoho_service.get_estimate(db, project.quote_id))
+            estimate = await zoho_service.get_estimate(db, project.quote_id)
+            if _is_locked(estimate):
+                # Re-checked here from the estimate already in hand, not
+                # trusted from whatever quote_sync_state this project last
+                # settled into. Remembered state alone would miss an estimate
+                # invoiced in Books since the last pending sync: it would
+                # still read e.g. 'idle' and get a status POSTed onto it —
+                # exactly the write the exclusion list on run_sync_once's
+                # SELECT calls out as "no safer than a line-item write". No
+                # extra API call: this reuses the read the sweep already did.
+                project.quote_sync_state = "locked"
+                if estimate.get("status") is not None:
+                    project.quote_status = estimate["status"]
+                project.quote_sync_error = None
+                project.quote_sync_failures = 0
+                return
+            await reconcile_quote_status(db, project, estimate)
+            # A read that reaches this point succeeded, whatever
+            # reconcile_quote_status went on to do with it — proof Books is
+            # reachable right now. Reset the failure counter so a run of past
+            # transient outages does not keep accumulating toward
+            # SYNC_FAILURE_LIMIT and eventually strand an otherwise-healthy
+            # project in 'error' with no way back except a user edit.
+            project.quote_sync_failures = 0
             return
         if not project.quote_id:
             if project.status == "deleted":
