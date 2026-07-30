@@ -287,3 +287,232 @@ async def test_the_issuer_and_client_can_change_under_the_same_name(db_session, 
     assert provider.id == original_id
     assert provider.issuer_url == "https://sso.example.com/realms/other"
     assert provider.client_id == "rotated"
+
+
+# --- a rename must not leave the old row managed -------------------------------
+# Identity is the name, so renaming BAMBUDDY_OIDC_NAME matches nothing and
+# creates a second row. Leaving the flag on the first one is what makes that
+# fatal: it stays enabled with a stale issuer and secret on the login page, the
+# API refuses every edit/disable/delete on it (409), and the release path's
+# scalar_one_or_none() then raises MultipleResultsFound out of the lifespan --
+# the app stops booting. Both states are reachable by ordinary config edits.
+
+
+async def _env_managed(db_session) -> list[OIDCProvider]:
+    result = await db_session.execute(select(OIDCProvider).where(OIDCProvider.is_env_managed.is_(True)))
+    return list(result.scalars().all())
+
+
+@pytest.mark.asyncio
+async def test_renaming_the_provider_releases_the_row_it_managed_before(db_session, monkeypatch):
+    _configure(monkeypatch, BAMBUDDY_OIDC_AUTOLOGIN="true")
+    await apply_env_oidc_provider(db_session)
+    old_id = (await _env_provider(db_session)).id
+
+    monkeypatch.setenv("BAMBUDDY_OIDC_NAME", "Authentik")
+    await apply_env_oidc_provider(db_session)
+
+    managed = await _env_managed(db_session)
+    assert [p.name for p in managed] == ["Authentik"], "exactly one row may carry the flag"
+
+    old = (await db_session.execute(select(OIDCProvider).where(OIDCProvider.id == old_id))).scalar_one()
+    # Released, not deleted -- user_oidc_links.provider_id cascades.
+    assert old.is_env_managed is False
+    assert old.is_enabled is False, "a stale issuer must not stay on the login page"
+    assert old.is_autologin is False
+
+
+@pytest.mark.asyncio
+async def test_boot_survives_removing_the_config_after_a_rename(db_session, monkeypatch):
+    """The MultipleResultsFound path: rename, then unset. Must not raise."""
+    _configure(monkeypatch)
+    await apply_env_oidc_provider(db_session)
+    monkeypatch.setenv("BAMBUDDY_OIDC_NAME", "Authentik")
+    await apply_env_oidc_provider(db_session)
+
+    for key in ALL_VARS:
+        monkeypatch.delenv(key, raising=False)
+    await apply_env_oidc_provider(db_session)  # must not raise
+
+    assert await _env_managed(db_session) == []
+    names = (await db_session.execute(select(OIDCProvider.name))).scalars().all()
+    assert sorted(names) == ["Authentik", "Keycloak"], "both rows survive, both released"
+
+
+@pytest.mark.asyncio
+async def test_a_database_left_with_two_managed_rows_is_repaired(db_session, monkeypatch):
+    """An install upgraded from the version that never swept the flag already
+    has two managed rows. Releasing only one of them would leave the same dead
+    end behind, so the release path releases every row it finds."""
+    for name in ("Keycloak", "Authentik"):
+        stale = OIDCProvider(
+            name=name,
+            issuer_url="https://sso.example.com/realms/main",
+            client_id="bambuddy",
+            is_env_managed=True,
+        )
+        stale.client_secret = "s3cr3t"
+        db_session.add(stale)
+    await db_session.commit()
+
+    await apply_env_oidc_provider(db_session)  # no vars set -> release path
+
+    assert await _env_managed(db_session) == []
+
+
+@pytest.mark.asyncio
+async def test_releasing_the_provider_clears_autologin(db_session, monkeypatch):
+    """is_enabled and is_env_managed alone leave a UI-editable row carrying a
+    latent autologin claim: update_oidc_provider only runs the exclusivity
+    sweep when a request sets is_autologin=True, so merely re-enabling this row
+    makes it the autologin target again."""
+    _configure(monkeypatch, BAMBUDDY_OIDC_AUTOLOGIN="true")
+    await apply_env_oidc_provider(db_session)
+    assert (await _env_provider(db_session)).is_autologin is True
+
+    for key in ALL_VARS:
+        monkeypatch.delenv(key, raising=False)
+    await apply_env_oidc_provider(db_session)
+
+    released = (await db_session.execute(select(OIDCProvider).where(OIDCProvider.name == "Keycloak"))).scalar_one()
+    assert released.is_autologin is False
+
+
+# --- account links and collision behavior ------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_renaming_to_match_a_ui_provider_adopts_it_and_releases_the_old_row(db_session, monkeypatch):
+    """New name collides with existing UI provider: env config adopts that row,
+    old env-managed row is released. Identity is the name, so the collision is
+    resolved by matching the new name against the table."""
+    # Start with env-managed "Keycloak"
+    _configure(monkeypatch)
+    await apply_env_oidc_provider(db_session)
+    old_id = (await _env_provider(db_session)).id
+
+    # Add a UI provider named "Authentik"
+    ui_provider = OIDCProvider(name="Authentik", issuer_url="https://auth.example.com", client_id="ui-client")
+    ui_provider.client_secret = "ui-secret"
+    db_session.add(ui_provider)
+    await db_session.commit()
+    ui_id = ui_provider.id
+
+    # Rename env provider to "Authentik" — matches the UI provider
+    monkeypatch.setenv("BAMBUDDY_OIDC_NAME", "Authentik")
+    await apply_env_oidc_provider(db_session)
+
+    # The UI provider is adopted and becomes env-managed
+    provider = await _env_provider(db_session)
+    assert provider.id == ui_id, "adopted the UI provider"
+    assert provider.name == "Authentik"
+    assert provider.client_id == "bambuddy"  # updated from env
+    assert provider.is_env_managed is True
+
+    # The old Keycloak row is released
+    old = (await db_session.execute(select(OIDCProvider).where(OIDCProvider.id == old_id))).scalar_one()
+    assert old.name == "Keycloak"
+    assert old.is_env_managed is False
+    assert old.is_enabled is False
+
+
+@pytest.mark.asyncio
+async def test_account_links_survive_a_provider_rename(db_session, monkeypatch):
+    """The provider row is never deleted, only updated: user_oidc_links FK
+    ON DELETE CASCADE must not be triggered by a rename."""
+    from backend.app.models.oidc_provider import UserOIDCLink
+    from backend.app.models.user import User
+
+    # Create a user and link it to the env-managed provider
+    _configure(monkeypatch)
+    await apply_env_oidc_provider(db_session)
+    provider_id = (await _env_provider(db_session)).id
+
+    user = User(username="testuser", email="test@example.com")
+    db_session.add(user)
+    await db_session.flush()
+
+    link = UserOIDCLink(
+        user_id=user.id,
+        provider_id=provider_id,
+        provider_user_id="oidc-sub-12345",
+        provider_email="test@idp.example.com",
+    )
+    db_session.add(link)
+    await db_session.commit()
+
+    # Rename the env provider
+    monkeypatch.setenv("BAMBUDDY_OIDC_NAME", "Authentik")
+    await apply_env_oidc_provider(db_session)
+
+    # The link still exists, pointing to the old row (which is now released)
+    result = await db_session.execute(select(UserOIDCLink).where(UserOIDCLink.provider_id == provider_id))
+    links = result.scalars().all()
+    assert len(links) == 1
+    assert links[0].provider_user_id == "oidc-sub-12345"
+
+
+@pytest.mark.asyncio
+async def test_renaming_with_autologin_updates_the_exclusivity_sweep(db_session, monkeypatch):
+    """When renamed env config has autologin=true, the sweep clears autologin
+    from other rows. The old row is released (autologin cleared there too)."""
+    # Setup: env provider "Keycloak" with autologin
+    _configure(monkeypatch, BAMBUDDY_OIDC_AUTOLOGIN="true")
+    await apply_env_oidc_provider(db_session)
+    old_id = (await _env_provider(db_session)).id
+    assert (await _env_provider(db_session)).is_autologin is True
+
+    # Another UI provider also has autologin
+    ui_provider = OIDCProvider(name="UI", issuer_url="https://ui.example.com", client_id="ui")
+    ui_provider.client_secret = "secret"
+    ui_provider.is_autologin = True
+    db_session.add(ui_provider)
+    await db_session.commit()
+
+    # Rename env provider to "Authentik" with autologin=true
+    monkeypatch.setenv("BAMBUDDY_OIDC_NAME", "Authentik")
+    await apply_env_oidc_provider(db_session)
+
+    # New row is the autologin target
+    new_provider = await _env_provider(db_session)
+    assert new_provider.name == "Authentik"
+    assert new_provider.is_autologin is True
+
+    # Old row is released and autologin cleared
+    old = (await db_session.execute(select(OIDCProvider).where(OIDCProvider.id == old_id))).scalar_one()
+    assert old.is_env_managed is False
+    assert old.is_autologin is False
+
+    # UI provider autologin is cleared (only env-managed can be autologin now)
+    await db_session.refresh(ui_provider)
+    assert ui_provider.is_autologin is False
+
+
+@pytest.mark.asyncio
+async def test_restoring_env_config_after_rename_then_unset_finds_the_original_row(db_session, monkeypatch):
+    """Rename Keycloak → Authentik, unset everything, restore Keycloak.
+    Must re-enable the original row, not create a new one."""
+    _configure(monkeypatch)
+    await apply_env_oidc_provider(db_session)
+    original_id = (await _env_provider(db_session)).id
+
+    # Rename to Authentik
+    monkeypatch.setenv("BAMBUDDY_OIDC_NAME", "Authentik")
+    await apply_env_oidc_provider(db_session)
+    assert (await _env_provider(db_session)).name == "Authentik"
+
+    # Unset everything
+    for key in ALL_VARS:
+        monkeypatch.delenv(key, raising=False)
+    await apply_env_oidc_provider(db_session)
+
+    # Restore the original Keycloak config
+    _configure(monkeypatch)
+    await apply_env_oidc_provider(db_session)
+
+    # Same row, re-enabled
+    provider = await _env_provider(db_session)
+    assert provider.id == original_id
+    assert provider.name == "Keycloak"
+    assert provider.is_enabled is True
+    assert provider.is_env_managed is True

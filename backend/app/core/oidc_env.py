@@ -92,12 +92,15 @@ async def apply_env_oidc_provider(db: AsyncSession) -> None:
     config = read_env_oidc_config()
 
     if config is None:
-        # Nothing to look up by name any more, so the previously managed row is
-        # found by the flag -- and then released.
-        released = (
-            await db.execute(select(OIDCProvider).where(OIDCProvider.is_env_managed.is_(True)))
-        ).scalar_one_or_none()
-        if released is not None:
+        # Nothing to look up by name any more, so the previously managed rows are
+        # found by the flag -- and then released. All of them: an install
+        # upgraded from a version that did not sweep the flag on rename carries
+        # two, and scalar_one_or_none() would raise MultipleResultsFound out of
+        # the lifespan instead of booting.
+        released_rows = (
+            (await db.execute(select(OIDCProvider).where(OIDCProvider.is_env_managed.is_(True)))).scalars().all()
+        )
+        for released in released_rows:
             # Disabled, never deleted: user_oidc_links.provider_id is FK ON
             # DELETE CASCADE, so removing the row would unlink every bound
             # account and the links would not come back when the variables do.
@@ -106,11 +109,17 @@ async def apply_env_oidc_provider(db: AsyncSession) -> None:
             # reachable only through the database.
             released.is_enabled = False
             released.is_env_managed = False
-            await db.commit()
+            # Cleared too, or the released row keeps a latent autologin claim:
+            # update_oidc_provider only re-runs the exclusivity sweep when a
+            # request sets is_autologin=True, so re-enabling this row in the UI
+            # would silently make it the autologin target again.
+            released.is_autologin = False
             logger.info(
                 "BAMBUDDY_OIDC_* is unset -- provider %r disabled and released to the UI.",
                 released.name,
             )
+        if released_rows:
+            await db.commit()
         return
 
     # Identity is the name, which is unique on the table. Matching on the flag
@@ -145,7 +154,20 @@ async def apply_env_oidc_provider(db: AsyncSession) -> None:
         setattr(existing, field, getattr(validated, field))
     existing.client_secret = validated.client_secret
     existing.is_env_managed = True
-    await db.flush()  # the id is needed by the autologin sweep below
+    await db.flush()  # the id is needed by the sweeps below
+
+    # Renaming BAMBUDDY_OIDC_NAME matches nothing, so the row managed until now
+    # stays behind. Left flagged it would keep a stale issuer and secret on the
+    # login page while the API refuses every edit, disable and delete on it
+    # (409) -- the dead end reachable only through the database that the release
+    # path exists to prevent -- and the next release would find two rows and
+    # take the boot down with MultipleResultsFound. Released, not deleted, for
+    # the same cascade reason as everywhere else.
+    await db.execute(
+        update(OIDCProvider)
+        .where(OIDCProvider.id != existing.id, OIDCProvider.is_env_managed.is_(True))
+        .values(is_env_managed=False, is_enabled=False, is_autologin=False)
+    )
 
     if existing.is_autologin:
         await db.execute(
