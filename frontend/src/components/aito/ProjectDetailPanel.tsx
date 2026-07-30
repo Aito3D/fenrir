@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, ExternalLink, Loader2, X } from 'lucide-react';
 import { COLUMNS } from './columns';
+import { QuotePrintButton } from './QuotePrintButton';
 import { QuoteStatusActions } from './QuoteStatusActions';
 import { quoteStatusLabelKey } from './quoteStatus';
 import { TaskEditor } from './TaskEditor';
@@ -64,16 +65,6 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
   const column = COLUMNS.find((c) => c.id === project.column);
   const created = parseUTCDate(project.created_at);
   const updated = parseUTCDate(project.updated_at);
-
-  // "28 Jul 2026 · 5 600 XPF" — the QUOTE's own date and total, which can
-  // exceed the project total when non-AITO lines were skipped at import.
-  const quoteDate = project.quote_date ? new Date(project.quote_date + 'T00:00:00') : null;
-  const quoteDetail = [
-    quoteDate && !Number.isNaN(quoteDate.getTime()) ? quoteDate.toLocaleDateString(i18n.language) : '',
-    project.quote_total != null ? project.quote_total.toLocaleString(i18n.language) : '',
-  ]
-    .filter(Boolean)
-    .join(' · ');
 
   // A status rendered through the shared quote-status labels, so the two sides
   // of a block message are localised too rather than raw Zoho English. An
@@ -286,22 +277,25 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
                 {project.quote_number && (
                   <div className="flex items-baseline justify-between gap-2 border-t border-bambu-dark-tertiary pt-2 mt-2">
                     <dt className="text-bambu-gray flex-shrink-0">{t('aito.quoteSearchLabel')}:</dt>
-                    <dd className="text-white min-w-0 truncate text-right">
+                    <dd className="text-white min-w-0 truncate text-right flex items-center justify-end gap-2">
                       {project.quote_url ? (
                         <a
                           href={project.quote_url}
                           target="_blank"
                           rel="noopener noreferrer"
                           title={t('aito.quoteOpenInZoho')}
-                          className="text-white hover:text-bambu-green inline-flex items-center gap-1"
+                          className="text-white hover:text-bambu-green inline-flex items-center gap-1 min-w-0 truncate"
                         >
                           {project.quote_number}
-                          <ExternalLink className="w-3.5 h-3.5" />
+                          <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
                         </a>
                       ) : (
-                        project.quote_number
+                        <span className="min-w-0 truncate">{project.quote_number}</span>
                       )}
-                      {quoteDetail && <span className="text-bambu-gray"> · {quoteDetail}</span>}
+                      {/* Replaces the quote's date and total, which said less
+                          than the one thing an operator actually does with a
+                          quote at this point in the job. */}
+                      <QuotePrintButton project={project} />
                     </dd>
                   </div>
                 )}

@@ -1129,6 +1129,12 @@ describe('ProjectDetailPanel quote row', () => {
     expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
   });
 
+  it('shows the print button for a project with a quote', () => {
+    // Replaces the quote's own date and total, which are no longer shown here.
+    show({ quote_id: 'e2', quote_number: 'DEV26-2462' });
+    expect(screen.getByRole('button', { name: /print quote/i })).toBeInTheDocument();
+  });
+
   it('labels the description field', async () => {
     show();
     expect(await screen.findByText('Product description')).toBeInTheDocument();
