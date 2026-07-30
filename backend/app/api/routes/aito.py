@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,7 +26,7 @@ from backend.app.schemas.aito import (
     AitoTaskUpdate,
 )
 from backend.app.services.aito_board_rules import SERVICES, TaskSummary, evaluate, summarise
-from backend.app.services.zoho import zoho_service
+from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
 
 logger = logging.getLogger(__name__)
 
@@ -393,6 +393,45 @@ async def list_tasks(
 ):
     stmt = select(AitoTask).where(AitoTask.project_id == project_id).order_by(AitoTask.position, AitoTask.id)
     return [_task_to_response(t) for t in (await db.execute(stmt)).scalars().all()]
+
+
+@router.get("/{project_id}/quote.pdf")
+async def get_quote_pdf(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+) -> Response:
+    """This project's Zoho estimate, rendered as a PDF for printing.
+
+    A proxy rather than a redirect: the Books OAuth token is server-side only,
+    and the browser has no way to authenticate against Zoho directly.
+
+    Returned whole rather than streamed. A quote is a few pages, ``httpx`` has
+    already buffered the whole body inside ``get_estimate_pdf`` by the time we
+    see it, and a StreamingResponse over an in-memory ``bytes`` buys nothing
+    but a harder failure mode: a mid-stream Zoho error becomes a truncated
+    PDF the browser renders as a blank print dialog, instead of the 502 below.
+    """
+    project = await db.get(AitoProject, project_id)
+    if project is None or project.status == "deleted":
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.quote_id:
+        raise HTTPException(status_code=404, detail="This project has no Zoho quote")
+    try:
+        pdf = await zoho_service.get_estimate_pdf(db, project.quote_id)
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        # 502, not 500: the failure is upstream, and the distinction is what
+        # tells the operator to check Zoho rather than the app's own logs.
+        logger.warning("Aito quote PDF failed for project %s: %s", project_id, e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    filename = f"{project.quote_number or project.quote_id}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        # inline, not attachment: the browser fetches this into a blob to
+        # drive its own print dialog, and a download prompt would defeat that.
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 def _reject_ticks_without_acceptance(quote_status: str | None, fields: dict) -> None:
