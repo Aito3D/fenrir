@@ -343,7 +343,7 @@ describe('CardView', () => {
   });
 
   it('does not offer mark-as-sent outside the Quote column', () => {
-    for (const column of ['waiting', 'model', 'print', 'done'] as const) {
+    for (const column of ['waiting', 'scan', 'model', 'print', 'finish', 'done'] as const) {
       const { unmount } = render(
         <CardView project={{ ...project, column }} onExpand={vi.fn()} onDelete={vi.fn()} onMarkSent={vi.fn()} />,
       );
@@ -357,6 +357,22 @@ describe('CardView', () => {
     // dragged, and its buttons would be unreachable anyway.
     render(<CardView project={{ ...project, column: 'devis' }} overlay />);
     expect(screen.queryByRole('button', { name: /mark as sent/i })).not.toBeInTheDocument();
+  });
+
+  it('disables mark-as-sent while the request is in flight, rather than removing it', () => {
+    // HoldButton fires on a timer, not on pointer release, so the mutation
+    // starts with the user's finger still down. A button that vanishes at that
+    // moment vanishes from under them.
+    render(
+      <CardView
+        project={{ ...project, column: 'devis' }}
+        onExpand={vi.fn()}
+        onDelete={vi.fn()}
+        onMarkSent={vi.fn()}
+        markSentPending
+      />,
+    );
+    expect(screen.getByRole('button', { name: /mark as sent/i })).toBeDisabled();
   });
 
   it('fires mark-as-sent only once the 500ms hold completes', async () => {

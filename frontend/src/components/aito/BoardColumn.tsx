@@ -55,7 +55,8 @@ function SortableCard({
         project={project}
         onDelete={onDelete}
         onExpand={onExpand}
-        onMarkSent={markSent.isPending ? undefined : () => markSent.mutate('sent')}
+        onMarkSent={() => markSent.mutate('sent')}
+        markSentPending={markSent.isPending}
         dragHandleRef={setActivatorNodeRef}
         dragHandleProps={{ ...attributes, ...listeners }}
       />

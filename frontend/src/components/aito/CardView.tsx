@@ -28,6 +28,10 @@ export interface CardViewProps {
   /** Marks the quote sent from the board. Omitted by the DragOverlay clone,
    *  exactly like onDelete — the overlay is a picture, not a control. */
   onMarkSent?: () => void;
+  /** True while that mutation is in flight. Disables the button rather than
+   *  removing it: HoldButton fires on a timer, not on release, so the request
+   *  begins with the user's finger still down. */
+  markSentPending?: boolean;
   /** dnd-kit's setActivatorNodeRef — omitted by the DragOverlay clone. */
   dragHandleRef?: (element: HTMLElement | null) => void;
   /** dnd-kit's attributes + listeners, spread onto the grip. */
@@ -51,6 +55,7 @@ export function CardView({
   onDelete,
   onExpand,
   onMarkSent,
+  markSentPending,
   dragHandleRef,
   dragHandleProps,
 }: CardViewProps) {
@@ -222,6 +227,7 @@ export function CardView({
             <HoldButton
               onHold={onMarkSent}
               durationMs={500}
+              disabled={markSentPending}
               label={t('aito.markSent')}
               hint={t('aito.holdToConfirm')}
               className="p-1 -m-1 text-amber-400/70 hover:text-amber-400 hover:bg-amber-400/10 focus-visible:ring-amber-400/40 data-[holding=true]:text-amber-400"
