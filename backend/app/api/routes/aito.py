@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import func, select
@@ -10,10 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.user import User
 from backend.app.schemas.aito import (
+    AitoEventPage,
+    AitoEventResponse,
+    AitoNoteCreate,
     AitoProjectCreate,
     AitoProjectImport,
     AitoProjectMove,
@@ -26,7 +31,7 @@ from backend.app.schemas.aito import (
     AitoTaskUpdate,
 )
 from backend.app.services.aito_board_rules import SERVICES, TaskSummary, evaluate, summarise
-from backend.app.services.aito_events import diff_fields, record
+from backend.app.services.aito_events import diff_fields, kinds_for_depth, record
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
 from backend.app.utils.http import build_content_disposition
 
@@ -447,6 +452,75 @@ async def list_tasks(
 ):
     stmt = select(AitoTask).where(AitoTask.project_id == project_id).order_by(AitoTask.position, AitoTask.id)
     return [_task_to_response(t) for t in (await db.execute(stmt)).scalars().all()]
+
+
+@router.get("/{project_id}/events", response_model=AitoEventPage)
+async def list_events(
+    project_id: int,
+    depth: Literal["story", "detail", "everything"] = "detail",
+    before: int | None = None,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+) -> AitoEventPage:
+    """This project's timeline, newest first.
+
+    Ordered by occurred_at then id, and paged on id, so the cursor is stable
+    when several events share a timestamp — which the backfill makes routine
+    rather than rare, since every synthesised event borrows its project's
+    created_at.
+    """
+    project = await db.get(AitoProject, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    limit = max(1, min(limit, 200))
+    query = (
+        select(AitoEvent)
+        .where(AitoEvent.project_id == project_id, AitoEvent.kind.in_(kinds_for_depth(depth)))
+        .order_by(AitoEvent.occurred_at.desc(), AitoEvent.id.desc())
+        .limit(limit + 1)  # one extra row is how has_more is answered without a count
+    )
+    if before is not None:
+        query = query.where(AitoEvent.id < before)
+
+    rows = list((await db.execute(query)).scalars().all())
+    return AitoEventPage(
+        events=[AitoEventResponse.model_validate(row) for row in rows[:limit]],
+        has_more=len(rows) > limit,
+    )
+
+
+@router.post("/{project_id}/events", response_model=AitoEventResponse, status_code=201)
+async def add_note(
+    project_id: int,
+    payload: AitoNoteCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+) -> AitoEventResponse:
+    """Append a note to the timeline.
+
+    Local only — notes are never pushed to Zoho. The kind and actor_class are
+    fixed here rather than taken from the body: this is the one client-writable
+    event, and a caller able to name its own kind could fabricate an acceptance.
+    """
+    project = await db.get(AitoProject, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    event = await record(
+        db,
+        project_id,
+        "note.added",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="project",
+        subject_id=project_id,
+        note=payload.note,
+    )
+    await db.commit()
+    await db.refresh(event)
+    return AitoEventResponse.model_validate(event)
 
 
 @router.get("/{project_id}/quote.pdf")
