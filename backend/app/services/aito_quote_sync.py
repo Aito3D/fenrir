@@ -41,11 +41,10 @@ SYNC_FAILURE_LIMIT = 5
 
 def _clear_block(project: AitoProject) -> None:
     """No reason to be blocked any more. Unconditional and always safe: these
-    two columns are the status reconciler's own and nothing else ever writes
-    them, so there is no other subsystem's record to destroy — which is
-    exactly the property `quote_sync_error` did not have, and the reason every
-    "is this error mine?" guard that used to stand in reconcile_quote_status
-    is gone.
+    two columns are the status reconciler's own record, so there is no other
+    subsystem's diagnostic to destroy — which is exactly the property
+    `quote_sync_error` did not have, and the reason every "is this error mine?"
+    guard that used to stand in reconcile_quote_status is gone.
 
     Called from every site that writes `project.quote_status`, not just the
     reconciler's own branches. The model's comment states the invariant
@@ -274,8 +273,9 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
     left for a human. Both sides are left exactly as they were.
 
     Every guard below reads a STORED FACT — `quote_status_block` and
-    `quote_status_remote`, which only this function writes — never a
-    human-readable string. `quote_sync_error` is read-only to this function
+    `quote_status_remote`, this function's own record, which nothing outside
+    this module and `set_quote_status` touches — never a human-readable
+    string. `quote_sync_error` is read-only to this function
     (in truth, not even read): it belongs to the line-item sync path, and a
     project can be sitting in 'error' for a reason this function has no
     visibility into (e.g. `_update_quote`'s "no priced service left" guard)

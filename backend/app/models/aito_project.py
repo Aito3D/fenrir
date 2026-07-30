@@ -67,12 +67,14 @@ class AitoProject(Base):
     # put it back. Zoho has no /status/draft, so a quote that was a draft
     # cannot be recovered and this stays the record of what it was.
     quote_status_before_trash: Mapped[str | None] = mapped_column(String(30), nullable=True)
-    # Why the reconciler is blocked, if it is. Owned SOLELY by
-    # aito_quote_sync's status reconciler — no other code writes these, and the
-    # reconciler writes nothing else. That ownership is the whole point: before
-    # these existed, the reconciler recorded its state inside quote_sync_error
-    # and then read that same field back as evidence of what had happened,
-    # which produced five defects across four review rounds.
+    # Why the reconciler is blocked, if it is. This is the status reconciler's
+    # OWN record and no other subsystem's: only aito_quote_sync writes a value
+    # here (recorded by the status reconciler, cleared everywhere else via its
+    # _clear_block helper), and set_quote_status clears it. That ownership is
+    # the whole point: before these existed, the reconciler recorded its state
+    # inside quote_sync_error — a field owned by the line-item sync path — and
+    # then read that same field back as evidence of what had happened, which
+    # produced five defects across four review rounds.
     #   'conflict' — both sides made a decision and they disagree.
     #   'rejected' — Books refused the status push we attempted.
     quote_status_block: Mapped[str | None] = mapped_column(String(20), nullable=True)
