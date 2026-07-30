@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import select
 
 from backend.app.models.aito_event import AitoEvent
-from backend.app.services.aito_quote_sync import sync_project
+from backend.app.services.aito_quote_sync import SYNC_FAILURE_LIMIT, sync_project
 from backend.app.services.zoho import zoho_service
 
 from .test_aito_quote_sync import _configure_zoho, _project_with_quote, zoho_handler
@@ -185,3 +185,140 @@ async def test_a_status_conflict_becomes_an_event(db_session):
     await db_session.refresh(project)
     assert project.quote_status_block == "conflict"
     assert "sync.conflict" in await _kinds(db_session, project.id)
+
+
+@pytest.mark.asyncio
+async def test_a_persistent_status_conflict_is_recorded_once(db_session):
+    """A conflict clears only via a human calling set_quote_status (see
+    _clear_block's docstring) — so with nobody doing that, the exact same
+    disagreement is rediscovered on every subsequent sweep tick. Before the
+    fix this wrote a fresh sync.conflict row per tick for as long as the
+    conflict persisted (a project left in conflict for a week would have
+    accumulated ~288 rows/day at the default 300s interval); the columns
+    (`quote_status_block`/`quote_status_remote`) are still written every
+    tick — only the event must be debounced."""
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    project.quote_sync_state = "idle"
+    project.quote_status = "accepted"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "status": "declined",
+                        "line_items": [],
+                        "last_modified_time": "2026-07-29T10:00:00+1100",
+                    }
+                }
+            }
+        )
+    )
+    try:
+        await sync_project(db_session, project)
+        await db_session.commit()
+        await db_session.refresh(project)
+        await sync_project(db_session, project)
+        await db_session.commit()
+    finally:
+        zoho_service.transport = None
+
+    await db_session.refresh(project)
+    assert project.quote_status_block == "conflict"  # the column is still written every tick
+    assert (await _kinds(db_session, project.id)).count("sync.conflict") == 1
+
+
+@pytest.mark.asyncio
+async def test_a_status_conflict_against_a_new_remote_status_records_again(db_session):
+    """The debounce must not swallow genuinely new information. Books' side of
+    a conflict can itself change — a second, different decision recorded
+    against the same disputed estimate — and that is not the same event as
+    the first; it must produce its own row. `quote_status_remote` alone
+    identifies the attempt the debounce compares against (see the 'rejected'
+    branch's own comment on this), so a second tick whose remote status
+    differs from what was stored must not be swallowed."""
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    project.quote_sync_state = "idle"
+    project.quote_status = "accepted"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    def transport_for(status: str) -> httpx.MockTransport:
+        return httpx.MockTransport(
+            zoho_handler(
+                {
+                    ("GET", "/estimates/E1"): {
+                        "estimate": {
+                            "estimate_id": "E1",
+                            "estimate_number": "DEV26-9001",
+                            "status": status,
+                            "line_items": [],
+                            "last_modified_time": "2026-07-29T10:00:00+1100",
+                        }
+                    }
+                }
+            )
+        )
+
+    try:
+        zoho_service.transport = transport_for("declined")
+        await sync_project(db_session, project)
+        await db_session.commit()
+        await db_session.refresh(project)
+        assert project.quote_status_block == "conflict"
+        assert project.quote_status_remote == "declined"
+
+        # Our own side changes too (the only way a SECOND, still-decided
+        # remote status can disagree with it — 'accepted'/'declined' are the
+        # only two decided values there are) — a fresh disagreement, not a
+        # repeat of the one just recorded.
+        project.quote_status = "declined"
+        await db_session.commit()
+        zoho_service.transport = transport_for("accepted")
+        await sync_project(db_session, project)
+        await db_session.commit()
+    finally:
+        zoho_service.transport = None
+
+    await db_session.refresh(project)
+    assert project.quote_status_remote == "accepted"
+    assert (await _kinds(db_session, project.id)).count("sync.conflict") == 2
+
+
+@pytest.mark.asyncio
+async def test_a_persistent_upstream_failure_is_recorded_once(db_session):
+    """The ZohoUpstreamError escalation re-fires on every subsequent tick for
+    the duration of a Books outage, because an escalated project stays
+    selected by the sweep (see the SYNC_FAILURE_LIMIT comment: the limit ends
+    retrying the PUSH, not being polled) and quote_sync_failures is never
+    reset while it stays broken. Before the fix this wrote a fresh
+    sync.failed row on every tick for the entire outage."""
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    project.quote_sync_state = "idle"
+    project.quote_sync_failures = SYNC_FAILURE_LIMIT - 1
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(503, json={"message": "down"})
+
+    zoho_service.transport = httpx.MockTransport(handler)
+    try:
+        await sync_project(db_session, project)
+        await db_session.commit()
+        await db_session.refresh(project)
+        assert project.quote_sync_state == "error"  # this tick spent the retry budget
+        await sync_project(db_session, project)
+        await db_session.commit()
+    finally:
+        zoho_service.transport = None
+
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert (await _kinds(db_session, project.id)).count("sync.failed") == 1
