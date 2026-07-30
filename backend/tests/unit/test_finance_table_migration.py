@@ -86,7 +86,9 @@ async def test_postgres_finance_ddl_uses_postgres_types():
     assert all("id SERIAL PRIMARY KEY" in sql for sql in create_statements)
     assert "TIMESTAMP" in "\n".join(create_statements)
 
-    created_tables = {sql.split("CREATE TABLE IF NOT EXISTS", 1)[1].split("(", 1)[0].strip() for sql in create_statements}
+    created_tables = {
+        sql.split("CREATE TABLE IF NOT EXISTS", 1)[1].split("(", 1)[0].strip() for sql in create_statements
+    }
     assert created_tables == EXPECTED_TABLES
 
 

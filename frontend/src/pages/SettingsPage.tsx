@@ -1032,8 +1032,7 @@ export function SettingsPage() {
       (settings.bed_temp_presets ?? '') !== (localSettings.bed_temp_presets ?? '') ||
       (settings.chamber_temp_presets ?? '') !== (localSettings.chamber_temp_presets ?? '') ||
       (settings.fan_speed_presets ?? '') !== (localSettings.fan_speed_presets ?? '') ||
-      (settings.session_max_hours ?? 24) !== (localSettings.session_max_hours ?? 24);
-      (settings.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
+      (settings.session_max_hours ?? 24) !== (localSettings.session_max_hours ?? 24) ||
       (settings.billing_enabled ?? false) !== (localSettings.billing_enabled ?? false) ||
       (settings.printer_kill_switch_enabled ?? false) !== (localSettings.printer_kill_switch_enabled ?? false) ||
       (settings.finance_budget_reset_day ?? 1) !== (localSettings.finance_budget_reset_day ?? 1) ||

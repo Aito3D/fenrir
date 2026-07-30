@@ -1214,22 +1214,18 @@ async def _migrate_create_finance_indexes(conn) -> None:
         "CREATE INDEX IF NOT EXISTS ix_cost_center_invitations_email ON cost_center_invitations (email)",
         "CREATE INDEX IF NOT EXISTS ix_wallet_transactions_user_id ON wallet_transactions (user_id)",
         "CREATE INDEX IF NOT EXISTS ix_wallet_transactions_cost_center_id ON wallet_transactions (cost_center_id)",
-        "CREATE INDEX IF NOT EXISTS ix_wallet_transactions_transaction_type "
-        "ON wallet_transactions (transaction_type)",
+        "CREATE INDEX IF NOT EXISTS ix_wallet_transactions_transaction_type ON wallet_transactions (transaction_type)",
         "CREATE INDEX IF NOT EXISTS ix_wallet_transactions_created_by_user_id "
         "ON wallet_transactions (created_by_user_id)",
         "CREATE INDEX IF NOT EXISTS ix_wallet_transactions_print_run_id ON wallet_transactions (print_run_id)",
-        "CREATE INDEX IF NOT EXISTS ix_wallet_transactions_print_archive_id "
-        "ON wallet_transactions (print_archive_id)",
+        "CREATE INDEX IF NOT EXISTS ix_wallet_transactions_print_archive_id ON wallet_transactions (print_archive_id)",
         "CREATE INDEX IF NOT EXISTS ix_wallet_transactions_print_queue_id ON wallet_transactions (print_queue_id)",
         "CREATE INDEX IF NOT EXISTS ix_wallet_transactions_created_at ON wallet_transactions (created_at)",
-        "CREATE INDEX IF NOT EXISTS ix_budget_reservations_cost_center_id "
-        "ON budget_reservations (cost_center_id)",
+        "CREATE INDEX IF NOT EXISTS ix_budget_reservations_cost_center_id ON budget_reservations (cost_center_id)",
         "CREATE INDEX IF NOT EXISTS ix_budget_reservations_status ON budget_reservations (status)",
         "CREATE INDEX IF NOT EXISTS ix_budget_reservations_source_type ON budget_reservations (source_type)",
         "CREATE INDEX IF NOT EXISTS ix_budget_reservations_source_id ON budget_reservations (source_id)",
-        "CREATE INDEX IF NOT EXISTS ix_budget_reservations_print_archive_id "
-        "ON budget_reservations (print_archive_id)",
+        "CREATE INDEX IF NOT EXISTS ix_budget_reservations_print_archive_id ON budget_reservations (print_archive_id)",
     ]
     for statement in indexes:
         await _safe_execute(conn, statement)
