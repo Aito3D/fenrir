@@ -130,7 +130,6 @@ function Harness({
         column={COLUMNS[0]}
         projects={[{ ...project, move_lock: moveLock }]}
         isDropTarget={false}
-        onDeleteCard={vi.fn()}
         onExpandCard={vi.fn()}
         transitionConfig={null}
         shouldAnimateIn={() => false}

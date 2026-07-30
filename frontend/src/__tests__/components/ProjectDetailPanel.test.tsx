@@ -45,7 +45,7 @@ const project: AitoProject = {
 };
 
 const show = (overrides: Partial<AitoProject> = {}) =>
-  render(<ProjectDetailPanel project={{ ...project, ...overrides }} onClose={vi.fn()} />);
+  render(<ProjectDetailPanel project={{ ...project, ...overrides }} onClose={vi.fn()} onDelete={vi.fn()} />);
 
 // Mirrors AitoPage.tsx: `AitoPage` owns a `useQuery(['aito-projects'])`
 // (AitoPage.tsx:83) — no longer the only one in production; `QuoteCombobox`
@@ -63,7 +63,9 @@ const show = (overrides: Partial<AitoProject> = {}) =>
 // cleanup order against each other, which is not how production works.
 function BoardHost({ showPanel, project: projectOverride }: { showPanel: boolean; project?: AitoProject }) {
   useQuery({ queryKey: ['aito-projects'], queryFn: api.getAitoProjects });
-  return showPanel ? <ProjectDetailPanel project={projectOverride ?? project} onClose={vi.fn()} /> : null;
+  return showPanel ? (
+    <ProjectDetailPanel project={projectOverride ?? project} onClose={vi.fn()} onDelete={vi.fn()} />
+  ) : null;
 }
 
 // ProjectDetailPanel renders TaskEditor unconditionally, and every TaskRow
@@ -443,7 +445,7 @@ describe('ProjectDetailPanel tasks', () => {
     const acceptedProject: AitoProject = { ...project, quote_status: 'accepted' };
     const Host = ({ open }: { open: boolean }) => (
       <QueryClientProvider client={client}>
-        <ToastProvider>{open ? <ProjectDetailPanel project={acceptedProject} onClose={vi.fn()} /> : null}</ToastProvider>
+        <ToastProvider>{open ? <ProjectDetailPanel project={acceptedProject} onClose={vi.fn()} onDelete={vi.fn()} /> : null}</ToastProvider>
       </QueryClientProvider>
     );
 
@@ -1053,7 +1055,7 @@ describe('ProjectDetailPanel tasks', () => {
     const Host = ({ open }: { open: boolean }) => (
       <QueryClientProvider client={client}>
         <BrowserRouter>
-          <ToastProvider>{open ? <ProjectDetailPanel project={project} onClose={vi.fn()} /> : null}</ToastProvider>
+          <ToastProvider>{open ? <ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} /> : null}</ToastProvider>
         </BrowserRouter>
       </QueryClientProvider>
     );
@@ -1323,7 +1325,7 @@ describe('diffTaskDraft', () => {
 describe('ProjectDetailPanel activity rail', () => {
   it('shows the activity rail alongside the tasks', async () => {
     vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
-    render(<ProjectDetailPanel project={project} onClose={vi.fn()} />);
+    render(<ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} />);
     expect(await screen.findByRole('region', { name: /activity/i })).toBeInTheDocument();
   });
 
@@ -1331,7 +1333,7 @@ describe('ProjectDetailPanel activity rail', () => {
     const events = vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
     vi.spyOn(api, 'updateAitoProject').mockResolvedValue({ ...project, description: 'Changed' });
     const user = userEvent.setup();
-    render(<ProjectDetailPanel project={project} onClose={vi.fn()} />);
+    render(<ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} />);
 
     await screen.findByRole('region', { name: /activity/i });
     const before = events.mock.calls.length;
@@ -1346,5 +1348,33 @@ describe('ProjectDetailPanel activity rail', () => {
     await user.tab();
 
     await waitFor(() => expect(events.mock.calls.length).toBeGreaterThan(before));
+  });
+});
+
+describe('ProjectDetailPanel delete', () => {
+  it('offers delete in the expanded card, on a 1s hold', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const onDelete = vi.fn();
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(<ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={onDelete} />);
+
+      const button = screen.getByRole('button', { name: /delete/i });
+      await user.pointer({ keys: '[MouseLeft>]', target: button });
+      vi.advanceTimersByTime(600);
+      expect(onDelete).not.toHaveBeenCalled(); // 500ms is not enough — this is the 1s gesture
+
+      vi.advanceTimersByTime(500);
+      expect(onDelete).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('separates the left column from the tasks on wide screens', () => {
+    const { container } = render(<ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} />);
+    // Asserted on the class rather than a rendered pixel: jsdom applies no
+    // stylesheet, so the border is only observable as the utility that draws it.
+    expect(container.querySelector('.lg\\:border-l')).not.toBeNull();
   });
 });

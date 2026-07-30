@@ -1,7 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, GripVertical, Lock, Send } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { DeleteHoldButton } from './DeleteHoldButton';
 import { HoldButton } from './HoldButton';
 import { ServiceBadges } from './ServiceBadges';
 import { quoteStatusLabelKey, quoteStatusStyle } from './quoteStatus';
@@ -23,10 +22,9 @@ const LOCK_LABEL_KEYS = {
 export interface CardViewProps {
   project: AitoProject;
   overlay?: boolean;
-  onDelete?: () => void;
   onExpand?: () => void;
-  /** Marks the quote sent from the board. Omitted by the DragOverlay clone,
-   *  exactly like onDelete — the overlay is a picture, not a control. */
+  /** Marks the quote sent from the board. Omitted by the DragOverlay clone —
+   *  the overlay is a picture, not a control. */
   onMarkSent?: () => void;
   /** True while that mutation is in flight. Disables the button rather than
    *  removing it: HoldButton fires on a timer, not on release, so the request
@@ -38,21 +36,19 @@ export interface CardViewProps {
   dragHandleProps?: Record<string, unknown>;
 }
 
-
 /** Presentational card, shared by the in-column sortable wrapper and the
  *  DragOverlay clone.
  *
  *  Three zones with distinct jobs: the header carries the client name and is
  *  the ONLY drag source (via the grip); the body is the only thing that opens
- *  the detail panel; the footer holds the timestamp and delete. Phone and email
- *  live in the detail panel, not here.
+ *  the detail panel; the footer holds the timestamp and mark-sent. Phone,
+ *  email and delete live in the detail panel, not here.
  *
  *  The footer sits outside the body button because a <button> may not contain
- *  another button — the delete control could not otherwise exist. */
+ *  another button. */
 export function CardView({
   project,
   overlay = false,
-  onDelete,
   onExpand,
   onMarkSent,
   markSentPending,
@@ -234,9 +230,6 @@ export function CardView({
             >
               <Send className="relative w-3.5 h-3.5" />
             </HoldButton>
-          )}
-          {onDelete && (
-            <DeleteHoldButton onDelete={onDelete} label={t('aito.deleteTitle')} hint={t('aito.holdToDelete')} />
           )}
         </span>
       </div>

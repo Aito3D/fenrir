@@ -76,12 +76,15 @@ describe('AitoPage (backend board)', () => {
     expect(screen.queryByText('No projects yet')).not.toBeInTheDocument();
   });
 
+  // Delete moved off the board card into the expanded card (task 11) — the
+  // card no longer offers it at all, so every one of these opens the panel
+  // first via `openCard`, exactly like the panel tests below.
   describe('hold-to-delete', () => {
     afterEach(() => {
       vi.useRealTimers();
     });
 
-    it('fires DELETE after holding the button for 3s, with no confirm modal', async () => {
+    it('fires DELETE after holding the button for 1s from the expanded card, and closes the panel', async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       const deleteSpy = vi.fn();
       server.use(
@@ -91,7 +94,10 @@ describe('AitoPage (backend board)', () => {
         }),
       );
 
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       render(<AitoPage />);
+      await openCard(user);
+
       const deleteButton = await screen.findByLabelText('Delete Project');
 
       await act(async () => {
@@ -103,6 +109,11 @@ describe('AitoPage (backend board)', () => {
       // The old ConfirmModal rendered a "Delete" confirm button distinct
       // from the hold-to-delete control's "Delete Project" aria-label.
       expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+      // AitoPage.tsx closes the panel before the mutation lands (see the
+      // comment on ProjectDetailPanel's onDelete there) so the card morph
+      // isn't lost to a cache invalidation racing the click — confirm the
+      // dialog is actually gone, not just that DELETE fired.
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 
     it('cancels on early release without firing DELETE, and shows the hold hint', async () => {
@@ -115,7 +126,10 @@ describe('AitoPage (backend board)', () => {
         }),
       );
 
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       render(<AitoPage />);
+      await openCard(user);
+
       const deleteButton = await screen.findByLabelText('Delete Project');
 
       await act(async () => {
@@ -126,17 +140,10 @@ describe('AitoPage (backend board)', () => {
 
       expect(deleteSpy).not.toHaveBeenCalled();
       expect(await screen.findByText('Hold 1s to delete')).toBeInTheDocument();
+      // Cancelling the hold leaves the panel open — delete is a control
+      // inside it now, not a separate surface to fall back out of.
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
     });
-  });
-
-  it('does not expand the card when the delete button is clicked', async () => {
-    const user = userEvent.setup();
-    render(<AitoPage />);
-    await screen.findByText('ACME SARL');
-
-    await user.click(screen.getByRole('button', { name: 'Delete Project' }));
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('opens the detail panel with the full description, dates and stage', async () => {

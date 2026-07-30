@@ -9,13 +9,11 @@ import { useQuoteStatusMutation } from '../../hooks/useQuoteStatusMutation';
 
 function SortableCard({
   project,
-  onDelete,
   onExpand,
   transitionConfig,
   animateIn,
 }: {
   project: AitoProject;
-  onDelete: () => void;
   onExpand: () => void;
   transitionConfig: { duration: number; easing: string } | null;
   animateIn: boolean;
@@ -53,7 +51,6 @@ function SortableCard({
     >
       <CardView
         project={project}
-        onDelete={onDelete}
         onExpand={onExpand}
         onMarkSent={() => markSent.mutate('sent')}
         markSentPending={markSent.isPending}
@@ -68,7 +65,6 @@ interface ColumnProps {
   column: ColumnMeta;
   projects: AitoProject[];
   isDropTarget: boolean;
-  onDeleteCard: (id: number) => void;
   onExpandCard: (id: number) => void;
   transitionConfig: { duration: number; easing: string } | null;
   shouldAnimateIn: (id: number) => boolean;
@@ -79,7 +75,6 @@ export function BoardColumn({
   column,
   projects,
   isDropTarget,
-  onDeleteCard,
   onExpandCard,
   transitionConfig,
   shouldAnimateIn,
@@ -115,7 +110,6 @@ export function BoardColumn({
             <SortableCard
               key={project.id}
               project={project}
-              onDelete={() => onDeleteCard(project.id)}
               onExpand={() => onExpandCard(project.id)}
               transitionConfig={transitionConfig}
               animateIn={shouldAnimateIn(project.id)}
