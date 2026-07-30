@@ -3624,6 +3624,42 @@ export interface ZohoQuotePreview {
   existing_project_id: number | null;
 }
 
+export interface AitoEventChange {
+  field: string;
+  from: unknown;
+  to: unknown;
+}
+
+export interface AitoEvent {
+  id: number;
+  occurred_at: string;
+  occurred_until: string | null;
+  kind: string;
+  actor_class: 'user' | 'client' | 'system';
+  actor_name: string | null;
+  subject_type: string | null;
+  subject_id: number | null;
+  subject_label: string | null;
+  changes: AitoEventChange[] | null;
+  detail: Record<string, unknown> | null;
+  note: string | null;
+}
+
+export interface AitoEventPage {
+  events: AitoEvent[];
+  has_more: boolean;
+}
+
+export type AitoHistoryDepth = 'story' | 'detail' | 'everything';
+
+/** Both halves of the timeline's sort key. The server keysets on
+ *  (occurred_at, id); an id-only cursor loses rows once the two diverge, which
+ *  the backfill migration guarantees. */
+export interface AitoEventCursor {
+  id: number;
+  occurredAt: string;
+}
+
 // Permission type - all available permissions
 export type Permission =
   | 'printers:read' | 'printers:create' | 'printers:update' | 'printers:delete' | 'printers:control' | 'printers:files' | 'printers:ams_rfid' | 'printers:clear_plate'
@@ -6351,6 +6387,25 @@ export const api = {
 
   // Aito kanban board
   getAitoProjects: () => request<AitoProject[]>('/aito/'),
+  getAitoEvents: (
+    projectId: number,
+    params: { depth: AitoHistoryDepth; cursor?: AitoEventCursor; limit?: number },
+  ) => {
+    const search = new URLSearchParams({ depth: params.depth });
+    // Both halves or neither: the server keysets on (occurred_at, id) and 422s
+    // on a half-supplied cursor.
+    if (params.cursor) {
+      search.set('before', String(params.cursor.id));
+      search.set('before_at', params.cursor.occurredAt);
+    }
+    if (params.limit !== undefined) search.set('limit', String(params.limit));
+    return request<AitoEventPage>(`/aito/${projectId}/events?${search}`);
+  },
+  addAitoNote: (projectId: number, note: string) =>
+    request<AitoEvent>(`/aito/${projectId}/events`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    }),
   createAitoProject: (data: {
     description: string;
     client_id: string;
