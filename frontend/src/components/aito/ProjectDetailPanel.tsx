@@ -359,6 +359,7 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
                 onRowBlur={(task) => {
                   if (task.id !== null) onRowBlur(task.id);
                 }}
+                canTick={project.quote_status === 'accepted'}
               />
             </div>
           </div>

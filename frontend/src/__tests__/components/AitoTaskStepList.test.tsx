@@ -16,7 +16,7 @@ const task = (overrides: Partial<TaskDraft> = {}): TaskDraft => ({
 
 describe('TaskStepList', () => {
   it('lists only the steps that exist', () => {
-    render(<TaskStepList task={task()} onChange={vi.fn()} />);
+    render(<TaskStepList task={task()} onChange={vi.fn()} canTick />);
     expect(screen.getByText('Scan')).toBeInTheDocument();
     expect(screen.getByText('Printing')).toBeInTheDocument();
     expect(screen.queryByText('Modeling')).not.toBeInTheDocument();
@@ -24,7 +24,7 @@ describe('TaskStepList', () => {
   });
 
   it('shows a step quoted at zero, because free is not absent', () => {
-    render(<TaskStepList task={task({ modelisationCost: 0 })} onChange={vi.fn()} />);
+    render(<TaskStepList task={task({ modelisationCost: 0 })} onChange={vi.fn()} canTick />);
     expect(screen.getByText('Modeling')).toBeInTheDocument();
   });
 
@@ -32,7 +32,7 @@ describe('TaskStepList', () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     const original = task();
-    render(<TaskStepList task={original} onChange={onChange} />);
+    render(<TaskStepList task={original} onChange={onChange} canTick />);
 
     await user.click(screen.getAllByRole('button', { name: /mark done/i })[0]);
 
@@ -45,14 +45,27 @@ describe('TaskStepList', () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     const ticked = task({ done: { scan: true, modelisation: false, impression: false, usinage: false } });
-    render(<TaskStepList task={ticked} onChange={onChange} />);
+    render(<TaskStepList task={ticked} onChange={onChange} canTick />);
 
     await user.click(screen.getByRole('button', { name: /mark not done/i }));
     expect(onChange.mock.calls[0][0].done.scan).toBe(false);
   });
 
   it('says so when a task has no steps yet', () => {
-    render(<TaskStepList task={emptyTaskDraft()} onChange={vi.fn()} />);
+    render(<TaskStepList task={emptyTaskDraft()} onChange={vi.fn()} canTick />);
     expect(screen.getByText(/no steps yet/i)).toBeInTheDocument();
+  });
+
+  it('offers no Done toggle when the quote is not accepted', () => {
+    render(<TaskStepList task={task()} onChange={vi.fn()} canTick={false} />);
+    expect(screen.queryByRole('button', { name: /mark done/i })).not.toBeInTheDocument();
+    expect(screen.getByText('Scan')).toBeInTheDocument();
+  });
+
+  it('still shows a ticked step as history when the quote is not accepted', () => {
+    const ticked = task({ done: { scan: true, modelisation: false, impression: false, usinage: false } });
+    render(<TaskStepList task={ticked} onChange={vi.fn()} canTick={false} />);
+    expect(screen.getByText('Scan')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /mark not done/i })).not.toBeInTheDocument();
   });
 });

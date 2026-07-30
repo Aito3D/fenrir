@@ -105,6 +105,7 @@ function ControlledTaskRow({
       onToggle={() => setExpanded((v) => !v)}
       editing={editing}
       onToggleEdit={() => setEditing((v) => !v)}
+      canTick
     />
   );
 }
@@ -130,6 +131,7 @@ function ControlledTaskEditor({
         setTasks(next);
       }}
       onRemove={vi.fn()}
+      canTick
     />
   );
 }
@@ -157,7 +159,7 @@ describe('TaskEditor', () => {
   it('"Add task" appends a draft with all four services empty', async () => {
     const onChange = vi.fn();
     const user = userEvent.setup();
-    render(<TaskEditor value={[]} onChange={onChange} onRemove={vi.fn()} />);
+    render(<TaskEditor value={[]} onChange={onChange} onRemove={vi.fn()} canTick />);
 
     await user.click(screen.getByRole('button', { name: /add task/i }));
 
@@ -174,7 +176,7 @@ describe('TaskEditor', () => {
   it('never mutates the input array — onChange receives a new array', async () => {
     const value: TaskDraft[] = [emptyTaskDraft()];
     const onChange = vi.fn();
-    render(<TaskEditor value={value} onChange={onChange} onRemove={vi.fn()} />);
+    render(<TaskEditor value={value} onChange={onChange} onRemove={vi.fn()} canTick />);
     await expandTask();
     await editTask();
 
@@ -190,7 +192,7 @@ describe('TaskEditor', () => {
 
   it('renders rows collapsed, showing only the name, services and total', async () => {
     const task: TaskDraft = { ...emptyTaskDraft(), title: 'Boîtier', scanCost: 4000, usinageCost: 500 };
-    render(<TaskEditor value={[task]} onChange={vi.fn()} onRemove={vi.fn()} />);
+    render(<TaskEditor value={[task]} onChange={vi.fn()} onRemove={vi.fn()} canTick />);
 
     // Visible while collapsed: the name, a badge per enabled service, the
     // total, and the remove control.
@@ -213,14 +215,14 @@ describe('TaskEditor', () => {
     // null disables a service, 0 prices it at nothing. A badge row built on
     // truthiness instead of a null check would silently drop this one.
     const task: TaskDraft = { ...emptyTaskDraft(), title: 'Gratuit', scanCost: 0 };
-    render(<TaskEditor value={[task]} onChange={vi.fn()} onRemove={vi.fn()} />);
+    render(<TaskEditor value={[task]} onChange={vi.fn()} onRemove={vi.fn()} canTick />);
 
     expect(await screen.findByText('Scan')).toBeInTheDocument();
   });
 
   it('clicking a row heading expands it, and clicking again collapses it', async () => {
     const user = userEvent.setup();
-    render(<TaskEditor value={[emptyTaskDraft()]} onChange={vi.fn()} onRemove={vi.fn()} />);
+    render(<TaskEditor value={[emptyTaskDraft()]} onChange={vi.fn()} onRemove={vi.fn()} canTick />);
 
     await user.click(await screen.findByRole('button', { name: /^Task 1/, expanded: false }));
     await user.click(screen.getByRole('button', { name: /edit task/i }));
@@ -238,7 +240,7 @@ describe('TaskEditor', () => {
       { ...emptyTaskDraft(), title: 'Un' },
       { ...emptyTaskDraft(), title: 'Deux' },
     ];
-    render(<TaskEditor value={tasks} onChange={vi.fn()} onRemove={vi.fn()} />);
+    render(<TaskEditor value={tasks} onChange={vi.fn()} onRemove={vi.fn()} canTick />);
 
     await user.click(await screen.findByRole('button', { name: /^Deux/, expanded: false }));
 
@@ -279,7 +281,7 @@ describe('TaskEditor', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const onRemove = vi.fn();
     render(
-      <TaskEditor value={[emptyTaskDraft(), emptyTaskDraft()]} onChange={vi.fn()} onRemove={onRemove} />,
+      <TaskEditor value={[emptyTaskDraft(), emptyTaskDraft()]} onChange={vi.fn()} onRemove={onRemove} canTick />,
     );
     const removeButtons = screen.getAllByLabelText('Remove task');
 
@@ -299,7 +301,7 @@ describe('TaskEditor', () => {
     // accidental deletion easy.
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const onRemove = vi.fn();
-    render(<TaskEditor value={[emptyTaskDraft()]} onChange={vi.fn()} onRemove={onRemove} />);
+    render(<TaskEditor value={[emptyTaskDraft()]} onChange={vi.fn()} onRemove={onRemove} canTick />);
     const removeButton = screen.getByLabelText('Remove task');
 
     await act(async () => {
@@ -318,7 +320,7 @@ describe('TaskEditor', () => {
   it('a short press on the remove button does not call onRemove', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const onRemove = vi.fn();
-    render(<TaskEditor value={[emptyTaskDraft()]} onChange={vi.fn()} onRemove={onRemove} />);
+    render(<TaskEditor value={[emptyTaskDraft()]} onChange={vi.fn()} onRemove={onRemove} canTick />);
     const removeButton = screen.getByLabelText('Remove task');
 
     await act(async () => {
@@ -367,6 +369,7 @@ describe('TaskRow', () => {
         // per-step costs, not the aggregate.
         editing
         onToggleEdit={vi.fn()}
+        canTick
       />,
     );
 

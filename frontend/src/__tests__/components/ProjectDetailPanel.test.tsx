@@ -57,9 +57,9 @@ const show = (overrides: Partial<AitoProject> = {}) =>
 // `unmount`, to close the panel without also tearing down the board observer
 // — unmounting the whole tree would remove both at once and race their
 // cleanup order against each other, which is not how production works.
-function BoardHost({ showPanel }: { showPanel: boolean }) {
+function BoardHost({ showPanel, project: projectOverride }: { showPanel: boolean; project?: AitoProject }) {
   useQuery({ queryKey: ['aito-projects'], queryFn: api.getAitoProjects });
-  return showPanel ? <ProjectDetailPanel project={project} onClose={vi.fn()} /> : null;
+  return showPanel ? <ProjectDetailPanel project={projectOverride ?? project} onClose={vi.fn()} /> : null;
 }
 
 // ProjectDetailPanel renders TaskEditor unconditionally, and every TaskRow
@@ -303,7 +303,7 @@ describe('ProjectDetailPanel tasks', () => {
     );
 
     const user = userEvent.setup();
-    show();
+    show({ quote_status: 'accepted' });
     await expandAllTasks();
 
     await user.click(await screen.findByRole('button', { name: /mark done/i }));
@@ -328,7 +328,7 @@ describe('ProjectDetailPanel tasks', () => {
       http.patch('/api/v1/aito/tasks/:id', () => HttpResponse.json({ ...mockTask, scan_done: true })),
     );
     const user = userEvent.setup();
-    render(<BoardHost showPanel />);
+    render(<BoardHost showPanel project={{ ...project, quote_status: 'accepted' }} />);
 
     await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
     boardFetches.mockClear();
@@ -436,9 +436,10 @@ describe('ProjectDetailPanel tasks', () => {
     );
 
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } });
+    const acceptedProject: AitoProject = { ...project, quote_status: 'accepted' };
     const Host = ({ open }: { open: boolean }) => (
       <QueryClientProvider client={client}>
-        <ToastProvider>{open ? <ProjectDetailPanel project={project} onClose={vi.fn()} /> : null}</ToastProvider>
+        <ToastProvider>{open ? <ProjectDetailPanel project={acceptedProject} onClose={vi.fn()} /> : null}</ToastProvider>
       </QueryClientProvider>
     );
 

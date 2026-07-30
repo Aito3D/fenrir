@@ -32,6 +32,10 @@ export interface TaskRowProps {
    *  rather than waiting out its timer. Optional: the create modal holds its
    *  tasks locally and has nothing to flush. */
   onRowBlur?: (task: TaskDraft) => void;
+  /** Passed straight to `TaskStepList` — see its own prop doc. Required, not
+   *  defaulted: a default is exactly how a caller with no quote (the create
+   *  modal) would silently inherit the wrong answer. */
+  canTick: boolean;
 }
 
 /** One task of a project: title/description, the four services (each
@@ -60,6 +64,7 @@ export function TaskRow({
   editing,
   onToggleEdit,
   onRowBlur,
+  canTick,
 }: TaskRowProps) {
   const { t } = useTranslation();
   const reactId = useId();
@@ -145,7 +150,7 @@ export function TaskRow({
           {editing ? (
             <TaskStepFields task={task} onChange={onChange} />
           ) : (
-            <TaskStepList task={task} onChange={onChange} />
+            <TaskStepList task={task} onChange={onChange} canTick={canTick} />
           )}
         </div>
       )}

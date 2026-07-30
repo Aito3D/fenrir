@@ -10,6 +10,12 @@ import type { TaskDraft } from '../../utils/taskDraft';
 export interface TaskStepListProps {
   task: TaskDraft;
   onChange: (next: TaskDraft) => void;
+  /** Whether the steps may be ticked at all — true only on a project whose
+   *  quote is accepted. False renders name and cost with NO toggle rather than
+   *  a disabled one: before acceptance there is no authorised work to tick, so
+   *  there is nothing for an inert control to explain. A step already ticked
+   *  still renders as ticked, because that is stored history. */
+  canTick: boolean;
 }
 
 /** A task's steps, read-only apart from their Done toggles.
@@ -21,8 +27,12 @@ export interface TaskStepListProps {
  *
  *  Done is a one-click toggle both ways, deliberately without the
  *  hold-to-confirm the destructive controls use. Un-ticking is the undo, and
- *  an undo that is expensive is an undo nobody reaches for. */
-export function TaskStepList({ task, onChange }: TaskStepListProps) {
+ *  an undo that is expensive is an undo nobody reaches for.
+ *
+ *  The toggle exists at all only when `canTick` — see that prop. The steps
+ *  themselves always render, ticks included: what a project's quote is now
+ *  does not unsay work that was done. */
+export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
   const { t } = useTranslation();
   const { data: settings } = useQuery({
     queryKey: ['settings'],
@@ -48,20 +58,22 @@ export function TaskStepList({ task, onChange }: TaskStepListProps) {
             value={cost}
             className={`text-sm flex-shrink-0 ${done ? 'text-bambu-gray' : 'text-white'}`}
           />
-          <button
-            type="button"
-            aria-pressed={done}
-            aria-label={done ? t('aito.markNotDone') : t('aito.markDone')}
-            onClick={() => onChange({ ...task, done: { ...task.done, [service]: !done } })}
-            className={`flex-shrink-0 inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs transition-colors ${focusRingCls} ${
-              done
-                ? 'border-bambu-green/40 bg-bambu-green/15 text-bambu-green'
-                : 'border-bambu-dark-tertiary text-bambu-gray hover:text-white hover:border-bambu-green/40'
-            }`}
-          >
-            {done && <Check className="w-3 h-3" aria-hidden="true" />}
-            {t('aito.done')}
-          </button>
+          {canTick && (
+            <button
+              type="button"
+              aria-pressed={done}
+              aria-label={done ? t('aito.markNotDone') : t('aito.markDone')}
+              onClick={() => onChange({ ...task, done: { ...task.done, [service]: !done } })}
+              className={`flex-shrink-0 inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs transition-colors ${focusRingCls} ${
+                done
+                  ? 'border-bambu-green/40 bg-bambu-green/15 text-bambu-green'
+                  : 'border-bambu-dark-tertiary text-bambu-gray hover:text-white hover:border-bambu-green/40'
+              }`}
+            >
+              {done && <Check className="w-3 h-3" aria-hidden="true" />}
+              {t('aito.done')}
+            </button>
+          )}
         </li>
       ))}
     </ul>

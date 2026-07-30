@@ -43,6 +43,10 @@ export interface TaskEditorProps {
    *  rather than waiting out its timer. Optional: the create modal holds its
    *  tasks locally and has nothing to flush. */
   onRowBlur?: (task: TaskDraft) => void;
+  /** Passed straight to `TaskStepList` — see its own prop doc. Required, not
+   *  defaulted: a default is exactly how a caller with no quote (the create
+   *  modal) would silently inherit the wrong answer. */
+  canTick: boolean;
 }
 
 /** The task list for one Aito project: a heading, each task's `TaskRow`, "+
@@ -51,7 +55,7 @@ export interface TaskEditorProps {
  *  new array. That split is what lets the create modal hold this array in
  *  local state and POST it with the project, while the detail panel wires
  *  each change to a PATCH; neither caller is visible from here. */
-export function TaskEditor({ value, onChange, onRemove, minRows = 0, onRowBlur }: TaskEditorProps) {
+export function TaskEditor({ value, onChange, onRemove, canTick, minRows = 0, onRowBlur }: TaskEditorProps) {
   const { t } = useTranslation();
   const { data: settings } = useQuery({
     queryKey: ['settings'],
@@ -135,6 +139,7 @@ export function TaskEditor({ value, onChange, onRemove, minRows = 0, onRowBlur }
             editing={editingKeys.has(rowKey(task))}
             onToggleEdit={() => toggleEdit(rowKey(task))}
             onRowBlur={onRowBlur}
+            canTick={canTick}
           />
         ))}
       </div>

@@ -178,6 +178,9 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
                     onChange={setTasks}
                     onRemove={(index) => setTasks(tasks.filter((_, i) => i !== index))}
                     minRows={1}
+                    // A project being created has no quote, so no step of it
+                    // can be authorised work yet.
+                    canTick={false}
                   />
                 </div>
               </div>
