@@ -1031,6 +1031,37 @@ async def _migrate_aito_board_columns(conn) -> None:
             )
 
 
+async def _backfill_aito_events(conn) -> None:
+    """Seed one project.created event per project that predates the event table.
+
+    Idempotent by construction rather than by flag: the NOT EXISTS clause means
+    a project that already has a created event is skipped, so this is safe on
+    every boot and safe to re-run after a partial failure. A settings flag would
+    have been cheaper but would also have been wrong the first time a boot died
+    halfway through.
+
+    Only this one kind is synthesised. Nothing else about a project's past is
+    recoverable from its current row -- and the Zoho side needs no backfill at
+    all, because Books has kept its comments since the quote was written and the
+    mirror imports the lot on its first poll.
+    """
+    from sqlalchemy import text
+
+    await conn.execute(
+        text(
+            "INSERT INTO aito_events "
+            "(project_id, occurred_at, kind, actor_class, actor_name, subject_type, subject_id, created_at) "
+            "SELECT p.id, p.created_at, 'project.created', 'user', p.created_by, 'project', p.id, "
+            "CURRENT_TIMESTAMP "
+            "FROM aito_projects p "
+            "WHERE NOT EXISTS ("
+            "  SELECT 1 FROM aito_events e "
+            "  WHERE e.project_id = p.id AND e.kind = 'project.created'"
+            ")"
+        )
+    )
+
+
 async def run_migrations(conn):
     """Run all schema migrations and data backfills on startup.
 
@@ -4197,6 +4228,8 @@ async def run_migrations(conn):
     # per poll per project is not affordable.
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN zoho_comments_watermark VARCHAR(30)")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN zoho_comments_checked_at DATETIME")
+
+    await _backfill_aito_events(conn)
 
     # Migration: per-file print progress inside a project (#1897).
     # - print_archives.library_file_id: which library file a queued run was
