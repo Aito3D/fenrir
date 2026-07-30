@@ -27,6 +27,7 @@ from backend.app.schemas.aito import (
 )
 from backend.app.services.aito_board_rules import SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
+from backend.app.utils.http import build_content_disposition
 
 logger = logging.getLogger(__name__)
 
@@ -430,7 +431,12 @@ async def get_quote_pdf(
         media_type="application/pdf",
         # inline, not attachment: the browser fetches this into a blob to
         # drive its own print dialog, and a download prompt would defeat that.
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        # Built with the shared helper rather than a hand-written header:
+        # quote_number is client-supplied and unrestricted, and Starlette
+        # encodes response headers as latin-1 — a curly quote, em dash, or any
+        # other non-Latin-1 character in it would raise UnicodeEncodeError and
+        # turn this into an unhandled 500.
+        headers={"Content-Disposition": build_content_disposition(filename, disposition="inline")},
     )
 
 

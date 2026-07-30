@@ -1464,6 +1464,10 @@ async def test_quote_pdf_404s_without_a_quote(async_client, db_session):
 
     response = await async_client.get(f"/api/v1/aito/{project.id}/quote.pdf")
     assert response.status_code == 404
+    # Assert the BODY, not just the status: FastAPI answers an unmatched path
+    # with 404 too, so a bare status assertion passes even when the route does
+    # not exist and proves nothing about this branch.
+    assert response.json()["detail"] == "This project has no Zoho quote"
 
 
 @pytest.mark.asyncio
