@@ -3,7 +3,6 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { CardView } from '../../components/aito/CardView';
-import { QUOTE_STATUS_NEUTRAL } from '../../components/aito/quoteStatus';
 import type { AitoProject } from '../../api/client';
 
 const project: AitoProject = {
@@ -226,58 +225,19 @@ describe('CardView', () => {
     expect(screen.queryByLabelText(/sync|facturé|invoiced|locked/i)).not.toBeInTheDocument();
   });
 
-  it('shows the quote status next to the quote number', () => {
+  it('does not repeat the quote status the column already states', () => {
+    // The card's column is derived from quote_status by the board's rule
+    // engine (aito_board_rules.evaluate), so a badge restating the status
+    // would just echo the column. The detail panel is the only place that
+    // still shows the exact status.
     render(
       <CardView
-        project={{ ...project, quote_number: 'DEV26-2462', quote_status: 'accepted' }}
+        project={{ ...project, quote_number: 'DEV26-2462', quote_status: 'sent', column: 'waiting' }}
         onExpand={vi.fn()}
       />,
     );
     expect(screen.getByText('DEV26-2462')).toBeInTheDocument();
-    expect(screen.getByText('Accepted')).toBeInTheDocument();
-  });
-
-  it('renders an unrecognised status verbatim rather than dropping it', () => {
-    // Zoho can add statuses. A card that silently drops one is worse than a
-    // card showing a word we have no translation for — same fallback rule
-    // ServiceBadges uses for an unknown service id.
-    render(
-      <CardView
-        project={{ ...project, quote_number: 'DEV26-2462', quote_status: 'partially_invoiced' }}
-        onExpand={vi.fn()}
-      />,
-    );
-    expect(screen.getByText('partially_invoiced')).toBeInTheDocument();
-  });
-
-  it('renders a status named after an Object.prototype member verbatim, in the neutral style', () => {
-    // `quote_status` is a free string up to 30 chars accepted from the client
-    // (POST /aito/), so an unguarded object-literal lookup — `map[status]` —
-    // would resolve 'toString' to Object.prototype.toString instead of
-    // falling through to the neutral default. Same fallback path as any
-    // other unrecognised status; this pins that the guard is actually there.
-    render(
-      <CardView
-        project={{ ...project, quote_number: 'DEV26-2462', quote_status: 'toString' }}
-        onExpand={vi.fn()}
-      />,
-    );
-    const chip = screen.getByText('toString');
-    expect(chip).toBeInTheDocument();
-    for (const cls of QUOTE_STATUS_NEUTRAL.split(' ')) {
-      expect(chip.className).toContain(cls);
-    }
-  });
-
-  it('shows no status chip on a card with no quote status', () => {
-    render(
-      <CardView
-        project={{ ...project, quote_number: 'DEV26-2462', quote_status: null }}
-        onExpand={vi.fn()}
-      />,
-    );
-    expect(screen.getByText('DEV26-2462')).toBeInTheDocument();
-    expect(screen.queryByText('Accepted')).not.toBeInTheDocument();
+    expect(screen.queryByText(/sent/i)).not.toBeInTheDocument();
   });
 
   it('marks a quote-locked card with a lock and says why', () => {

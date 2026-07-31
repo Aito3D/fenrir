@@ -73,8 +73,8 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
 
   // A status rendered through the shared quote-status labels, so the two sides
   // of a block message are localised too rather than raw Zoho English. An
-  // untranslated status falls back to the raw string, the same rule the board
-  // card follows — Zoho can add statuses.
+  // untranslated status falls back to the raw string — Zoho can add statuses,
+  // and this is the only surface left that shows the exact one.
   const statusLabel = (status: string | null): string => {
     if (!status) return '—';
     const key = quoteStatusLabelKey(status);

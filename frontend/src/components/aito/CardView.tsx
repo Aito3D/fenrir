@@ -3,7 +3,6 @@ import { AlertTriangle, GripVertical, Lock, Send } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { HoldButton } from './HoldButton';
 import { ServiceBadges } from './ServiceBadges';
-import { quoteStatusLabelKey, quoteStatusStyle } from './quoteStatus';
 import type { AitoProject } from '../../api/client';
 import { api } from '../../api/client';
 import { Money } from '../calculator/shared';
@@ -196,22 +195,6 @@ export function CardView({
               ) : (
                 <Lock className="w-3.5 h-3.5" />
               )}
-            </span>
-          )}
-          {/* The status as it stood at import — a snapshot, like the rest of
-              the quote fields, so it can lag what Zoho says today. Colour
-              carries the meaning; the label is there for anyone who cannot
-              rely on it. */}
-          {project.quote_status && (
-            <span
-              className={`text-[10px] leading-tight rounded px-1.5 py-0.5 flex-shrink-0 ${quoteStatusStyle(
-                project.quote_status,
-              )}`}
-            >
-              {(() => {
-                const key = quoteStatusLabelKey(project.quote_status);
-                return key ? t(key) : project.quote_status;
-              })()}
             </span>
           )}
         </span>
