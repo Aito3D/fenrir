@@ -199,9 +199,9 @@ Frontend (`frontend/src/__tests__/`):
   - hover for 1s (fake timers) un-clamps the description; `mouseleave` before
     1s does not
   - a description that is not clamped does not expand
-- `pages/AitoPageDragLock.test.tsx` — currently asserts the lock badge is
-  drawn. Rewrite to assert the drop is refused, which is the behaviour that
-  still exists.
+- `pages/AitoPageDragLock.test.tsx` — needs no rewrite. It asserts that a
+  disallowed drop is refused, not that a badge is drawn, and that behaviour is
+  unchanged. If it goes red, something behavioural broke.
 - `utils/aitoBoardRules.test.ts` — `stepsByTask` reproduced from the
   regenerated fixture
 - `utils/aitoOptimistic.test.ts` — ticking a step updates `task_steps` in the
@@ -212,11 +212,13 @@ Frontend (`frontend/src/__tests__/`):
 
 Backend (`backend/tests/`):
 
-- `unit/services/test_aito_board_rules.py` — `steps_by_task` for: no tasks, a
-  task with one service, a task with all four, a free (`0`) step, an absent
-  (`None`) step, and two tasks in position order
-- the Aito route tests — `task_steps` present on list, create, patch and move
-  responses
+- `unit/test_aito_board_summary.py` — `steps_by_task` for: no tasks, an
+  unpriced task, canonical ordering, a free (`0`) step, a done flag on an
+  absent (`None`) service, and two tasks in order
+- `unit/test_aito_routes.py` — `task_steps` on the board response. The golden
+  payload fixture (`tests/fixtures/aito_board_payload.json`) compares the whole
+  JSON and so must be regenerated with `REGENERATE_GOLDEN=1`, diff read before
+  committing.
 - `test_aito_board_rules_contract.py` passes against the regenerated fixture
 
 ## Out of scope
