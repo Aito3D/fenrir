@@ -25,8 +25,10 @@ type QuoteStatus = keyof typeof TOAST_KEYS;
  *
  *  Optimistic: the card relocates the instant the hold completes, predicted
  *  through the mirrored rules. The success handler still writes the server's
- *  own row over the prediction, which is what corrects the position when the
- *  server's `pending` set differs from what the card's counters implied. */
+ *  own row over the prediction — `task_pending` itself now ships from the
+ *  server exactly, so this is no longer correcting a counter mismatch; it is
+ *  what picks up anything else the mutation's own response changed (Zoho
+ *  fields, `updated_at`) that the optimistic write never predicted. */
 export function useQuoteStatusMutation(project: AitoProject) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();

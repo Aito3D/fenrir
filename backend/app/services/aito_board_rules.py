@@ -117,7 +117,9 @@ def evaluate(quote_status: str | None, stored_column: str, pending: Collection[s
     ``move_lock`` names why the card cannot be dragged between columns, and is
     ``None`` only when it can (Finish <-> Done). It is what the card renders its
     lock badge and tooltip from, and what decides which droppables a drag
-    enables — the frontend re-derives none of this.
+    enables — mirrored, not independently re-derived, by the frontend's own
+    ``evaluate`` in frontend/src/utils/aitoBoardRules.ts (see the module
+    docstring above for how that mirror is pinned).
 
     Rule order matters twice. Waiting outranks the steps, so ticking a step on
     a card that is out with the client moves nothing — the work is not
