@@ -15,7 +15,12 @@ import type { AitoProject } from '../api/client';
  *  changes, append the project to the END of its destination column and
  *  renumber the source contiguously. Getting the relocation wrong is not a
  *  correctness risk — the settle-invalidate corrects it one round trip later —
- *  but getting it right is what stops the card visibly jumping twice. */
+ *  but getting it right is what stops the card visibly jumping twice.
+ *
+ *  One deliberate exception: `applyColumnMove` below. Its endpoint is not
+ *  rule-driven — the caller supplies the destination slot outright — so there
+ *  is no "append" for it to reproduce; see its own doc comment for why that
+ *  makes it a HEAD insert instead. */
 
 // Module-level, not per-hook: board create, quote import and trash restore can
 // all have placeholders outstanding at once, and a per-surface counter would
