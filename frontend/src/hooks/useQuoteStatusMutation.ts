@@ -1,5 +1,7 @@
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
+import { useOptimisticBoardMutation } from './useOptimisticBoardMutation';
+import { applyQuoteStatus } from '../utils/aitoOptimistic';
 import { api, type AitoProject } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 
@@ -11,27 +13,37 @@ const TOAST_KEYS = {
   declined: 'aito.quoteDeclined',
 } as const;
 
+type QuoteStatus = keyof typeof TOAST_KEYS;
+
 /** The one quote-status transition, shared by the detail panel's action block
  *  and the board card's mark-as-sent button.
  *
  *  Extracted rather than duplicated because the two surfaces must agree on
  *  more than the request: the optimistic cache write, which toast fires, and
  *  the separate warning when the board moved but the push to Books did not.
- *  A second copy would drift on the third of those first. */
+ *  A second copy would drift on the third of those first.
+ *
+ *  Optimistic: the card relocates the instant the hold completes, predicted
+ *  through the mirrored rules. The success handler still writes the server's
+ *  own row over the prediction, which is what corrects the position when the
+ *  server's `pending` set differs from what the card's counters implied. */
 export function useQuoteStatusMutation(project: AitoProject) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
-  return useMutation({
-    mutationFn: (status: 'sent' | 'accepted' | 'declined') => api.setAitoQuoteStatus(project.id, { status }),
+  return useOptimisticBoardMutation<{ project: AitoProject; zoho_synced: boolean }, QuoteStatus>({
+    mutationFn: (status) => api.setAitoQuoteStatus(project.id, { status }),
+    transform: (previous, status) => applyQuoteStatus(previous, project.id, status),
+    flashId: () => project.id,
     onSuccess: (result, status) => {
       queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
         prev?.map((p) => (p.id === result.project.id ? result.project : p)) ?? prev,
       );
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
       showToast(t(TOAST_KEYS[status]), 'success');
-      // The board is right either way — only the push to Books failed.
+      // The board is right either way — only the push to Books failed. No
+      // rollback: this is a warning about Zoho, not a refused change.
       if (project.quote_id && !result.zoho_synced) showToast(t('aito.zohoNotUpdated'), 'error');
     },
     onError: () => showToast(t('aito.saveFailed'), 'error'),
