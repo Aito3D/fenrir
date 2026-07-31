@@ -1072,7 +1072,8 @@ git commit -m "feat(aito): mirror the board rules in TypeScript, pinned by the f
   - `applyTaskSummary(projects, id, summary: TaskSummary): AitoProject[]`
   - `applyDescription(projects, id, description: string): AitoProject[]`
   - `applyDelete(projects, id): AitoProject[]`
-  - `applyInsert(projects, project: AitoProject): AitoProject[]`
+  - `applyCreate(projects, placeholder: AitoProject): AitoProject[]` — PREPENDS to `devis` and shifts existing Devis cards down, matching `create_project`
+  - `applyRestore(projects, project: AitoProject): AitoProject[]` — APPENDS to the end of its own column, matching `restore_project`
   - `applySyncState(projects, id, state: AitoProject['quote_sync_state']): AitoProject[]`
 
   All take `projects: AitoProject[] | undefined` and return `AitoProject[]` (empty array when given undefined). All are pure.
@@ -2708,7 +2709,7 @@ git commit -m "feat(aito): show task adds, deletes and ticks on the board at onc
 - Modify: `frontend/src/components/aito/TrashModal.tsx:16-27`
 
 **Interfaces:**
-- Consumes: `useOptimisticBoardMutation`, `applyDelete`, `applyInsert`.
+- Consumes: `useOptimisticBoardMutation`, `applyDelete`, `applyRestore`.
 - Produces: nothing new.
 
 - [ ] **Step 1: Write the failing test**
@@ -2744,7 +2745,7 @@ In `frontend/src/pages/AitoPage.tsx`, add the imports:
 
 ```ts
 import { useOptimisticBoardMutation } from '../hooks/useOptimisticBoardMutation';
-import { applyDelete, applyInsert, nextPlaceholderId } from '../utils/aitoOptimistic';
+import { applyDelete } from '../utils/aitoOptimistic';
 ```
 
 Replace `deleteMutation` (lines 196-202):
@@ -2796,7 +2797,9 @@ In `frontend/src/components/aito/TrashModal.tsx`, replace `restoreMutation`:
     // the server on success — the trash row's stored column can be stale, and
     // the rules may relocate it — so this is the one transform that predicts a
     // column it does not compute.
-    transform: (previous, project) => applyInsert(previous, { ...project, status: 'active' }),
+    // applyRestore, not applyCreate: restore_project APPENDS to the end of
+    // the card's own column, where create_project prepends to Devis.
+    transform: (previous, project) => applyRestore(previous, { ...project, status: 'active' }),
     flashId: (project) => project.id,
     onSuccess: (restored) => {
       queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
@@ -2829,7 +2832,7 @@ The trash list itself also needs to lose the row optimistically. Add a second ca
 
 The `onError` path currently invalidates nothing for the trash; add `queryClient.invalidateQueries({ queryKey: ['aito-trash'] });` to it so a refused restore puts the row back.
 
-Delete the unused `useMutation` import from this file if `restoreMutation` was its only consumer, and add `import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';` plus `import { applyInsert } from '../../utils/aitoOptimistic';` and `import type { AitoProject } from '../../api/client';`.
+Delete the unused `useMutation` import from this file if `restoreMutation` was its only consumer, and add `import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';` plus `import { applyRestore } from '../../utils/aitoOptimistic';` and `import type { AitoProject } from '../../api/client';`.
 
 - [ ] **Step 6: Run the tests**
 
@@ -2858,7 +2861,9 @@ git commit -m "feat(aito): delete and restore a project without waiting"
 - Modify: `frontend/src/components/aito/BoardColumn.tsx` (skip the grip and mark-sent for a placeholder)
 
 **Interfaces:**
-- Consumes: `applyInsert`, `nextPlaceholderId`, `isPlaceholder` (Task 5).
+- Consumes: `applyCreate`, `nextPlaceholderId`, `isPlaceholder` (Task 5).
+
+**Use `applyCreate`, not `applyRestore`.** `create_project` (`aito.py:377`) shifts every existing Devis card down and inserts the new one at position 0 — a new card lands on TOP of the quote column. Appending would put the placeholder at the bottom and then jump it to the top when the server answered, which is the exact double-jump the optimistic layer exists to prevent.
 - Produces: `CardView` gains `placeholder?: boolean`.
 
 - [ ] **Step 1: Write the failing test**
@@ -2977,7 +2982,7 @@ In `frontend/src/pages/AitoPage.tsx`, replace `createMutation`:
         client_is_company: draft.isCompany,
         tasks: tasks.map(taskDraftToTaskCreate),
       }),
-    transform: (previous, { placeholder }) => applyInsert(previous, placeholder),
+    transform: (previous, { placeholder }) => applyCreate(previous, placeholder),
     // No flash: the placeholder is REMOVED on failure rather than reverted in
     // place, so there is no card left to ring.
     onSuccess: (created, { placeholder, draft }) => {
