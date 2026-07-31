@@ -5,14 +5,14 @@ import { StepGrid } from '../../components/aito/StepGrid';
 
 describe('StepGrid', () => {
   it('renders nothing for a project with no tasks', () => {
-    // Not `toBeEmptyDOMElement()` on the whole container: the shared `render`
-    // helper always mounts `ToastProvider`, which injects its own
-    // `toast-viewport` div into every tree regardless of children, so the
-    // container is never literally empty. Every other aito test on this
-    // helper (e.g. AitoQuotePrintButton.test.tsx) asserts the absence of the
-    // component's own output instead, for the same reason.
+    // Not just "no rows": an empty wrapper span would also render no rows,
+    // and would still mount inside the card's body <button> on every card
+    // with no tasks. Asserting the grid itself is absent is what pins the
+    // `return null`. (`container` cannot be used here — the shared render
+    // helper always mounts ToastProvider, whose viewport div is in every
+    // tree.)
     render(<StepGrid tasks={[]} />);
-    expect(screen.queryByTestId('aito-step-row')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('aito-step-grid')).not.toBeInTheDocument();
   });
 
   it('draws one row per task', () => {

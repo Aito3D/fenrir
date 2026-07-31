@@ -31,7 +31,7 @@ export function StepGrid({ tasks }: { tasks: AitoTaskSteps[] }) {
   if (tasks.length === 0) return null;
 
   return (
-    <span className="mt-2 block space-y-1">
+    <span data-testid="aito-step-grid" className="mt-2 block space-y-1">
       {tasks.map((task, index) => (
         // Index keys: `task_steps` carries no id, and the array is positional
         // — it is replaced wholesale on every refetch and optimistic write,
