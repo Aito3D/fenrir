@@ -97,6 +97,7 @@ export default {
     serviceUsinage: 'Lavorazione',
     serviceCost: 'Costo',
     done: 'Fatto',
+    stepPending: 'In sospeso',
     markDone: 'Segna come fatto',
     markNotDone: 'Segna come non fatto',
     editTask: 'Modifica attività',

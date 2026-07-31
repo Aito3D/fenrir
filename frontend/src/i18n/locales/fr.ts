@@ -97,6 +97,7 @@ export default {
     serviceUsinage: 'Usinage',
     serviceCost: 'Coût',
     done: 'Terminé',
+    stepPending: 'À faire',
     markDone: 'Marquer comme terminé',
     markNotDone: 'Marquer comme non terminé',
     editTask: 'Modifier la tâche',

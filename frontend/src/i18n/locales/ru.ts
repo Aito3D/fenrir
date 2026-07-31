@@ -97,6 +97,7 @@ export default {
     serviceUsinage: 'Обработка',
     serviceCost: 'Стоимость',
     done: 'Готово',
+    stepPending: 'Ожидает',
     markDone: 'Отметить как готово',
     markNotDone: 'Отметить как не готово',
     editTask: 'Редактировать задачу',

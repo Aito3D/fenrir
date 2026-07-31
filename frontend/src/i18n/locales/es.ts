@@ -97,6 +97,7 @@ export default {
     serviceUsinage: 'Mecanizado',
     serviceCost: 'Coste',
     done: 'Hecho',
+    stepPending: 'Pendiente',
     markDone: 'Marcar como hecho',
     markNotDone: 'Marcar como no hecho',
     editTask: 'Editar tarea',

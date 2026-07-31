@@ -97,6 +97,7 @@ export default {
     serviceUsinage: 'Fräsen',
     serviceCost: 'Kosten',
     done: 'Erledigt',
+    stepPending: 'Ausstehend',
     markDone: 'Als erledigt markieren',
     markNotDone: 'Als nicht erledigt markieren',
     editTask: 'Aufgabe bearbeiten',

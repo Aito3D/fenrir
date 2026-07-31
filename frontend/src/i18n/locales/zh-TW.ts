@@ -97,6 +97,7 @@ export default {
     serviceUsinage: '加工',
     serviceCost: '成本',
     done: '已完成',
+    stepPending: '未完成',
     markDone: '標記為已完成',
     markNotDone: '標記為未完成',
     editTask: '編輯任務',

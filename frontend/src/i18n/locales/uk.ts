@@ -98,6 +98,7 @@ export default {
     serviceUsinage: "Механічна обробка",
     serviceCost: "Вартість",
     done: "Готово",
+    stepPending: "Очікує",
     markDone: "Позначити виконаним",
     markNotDone: "Позначити невиконаним",
     editTask: "Редагувати завдання",

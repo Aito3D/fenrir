@@ -97,6 +97,7 @@ export default {
     serviceUsinage: '機械加工',
     serviceCost: 'コスト',
     done: '完了',
+    stepPending: '未完了',
     markDone: '完了にする',
     markNotDone: '未完了にする',
     editTask: 'タスクを編集',

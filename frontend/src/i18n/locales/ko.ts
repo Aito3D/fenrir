@@ -97,6 +97,7 @@ export default {
     serviceUsinage: '가공',
     serviceCost: '비용',
     done: '완료',
+    stepPending: '미완료',
     markDone: '완료로 표시',
     markNotDone: '미완료로 표시',
     editTask: '작업 편집',

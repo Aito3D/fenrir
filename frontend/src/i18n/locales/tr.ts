@@ -97,6 +97,7 @@ export default {
     serviceUsinage: 'İşleme',
     serviceCost: 'Maliyet',
     done: 'Tamamlandı',
+    stepPending: 'Bekliyor',
     markDone: 'Tamamlandı olarak işaretle',
     markNotDone: 'Tamamlanmadı olarak işaretle',
     editTask: 'Görevi düzenle',

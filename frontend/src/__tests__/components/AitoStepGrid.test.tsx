@@ -33,6 +33,19 @@ describe('StepGrid', () => {
     expect(screen.getByText('Printing')).toHaveAttribute('data-done', 'false');
   });
 
+  it('exposes a done pill\'s state through its accessible name, not just its colour', async () => {
+    // Queried by accessible name (role + label), not by `data-done`: this is
+    // what actually reaches a screen reader. Colour alone would fail both a
+    // screen-reader user and a colour-vision-deficient sighted one.
+    render(<StepGrid tasks={[{ services: ['scan'], done: ['scan'] }]} />);
+    expect(await screen.findByLabelText('Scan — Done')).toBeInTheDocument();
+  });
+
+  it('exposes a pending pill\'s state through its accessible name', async () => {
+    render(<StepGrid tasks={[{ services: ['scan'], done: [] }]} />);
+    expect(await screen.findByLabelText('Scan — Pending')).toBeInTheDocument();
+  });
+
   it('omits a service the task does not carry, keeping four columns', () => {
     render(<StepGrid tasks={[{ services: ['scan', 'impression'], done: [] }]} />);
     expect(screen.queryByText('Modeling')).not.toBeInTheDocument();

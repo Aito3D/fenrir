@@ -17,15 +17,21 @@ import type { AitoTaskSteps } from '../../api/client';
  *  pills that go green as the work lands, which is the thing an operator
  *  actually wants off a collapsed card.
  *
- *  No `aria-label` per pill, and deliberately: the progress bar underneath
- *  already reports "N of M steps done" to assistive technology, and labelling
- *  every pill would read out the same fact up to four times per task. The
- *  pills are the visual affordance for that same value.
+ *  Each pill's accessible name states its own state ("Scan — Done" / "Scan —
+ *  Pending"), via `aria-label`, alongside the plain visible label. The
+ *  progress bar underneath separately reports the aggregate ("N of M steps
+ *  done") — that is a different fact from which step is finished, and a
+ *  screen-reader user needs both: the aggregate to gauge overall progress, the
+ *  per-pill state to know which service is still outstanding. Colour alone
+ *  (green tint vs grey) would otherwise be the only channel carrying that
+ *  fact, which fails both a screen reader and a colour-vision-deficient sighted
+ *  user.
  *
- *  Every element is a `<span>`, and it has to be: this renders inside the
- *  card's body `<button>` until that button becomes an overlay, and a
- *  `<button>` may not contain a `<div>`. `grid` and `flex` set `display`, so a
- *  span lays out exactly as a div would — the tag costs nothing here. */
+ *  Every element is a `<span>`. There is no `<button>` ancestor forcing that
+ *  anymore — the card's click region is a plain `<div>` — but the spans stay:
+ *  `grid` and `flex` set `display`, so a span lays out exactly as a div would,
+ *  and there is nothing to gain by churning every element to a `<div>` for no
+ *  behavioural change. */
 export function StepGrid({ tasks }: { tasks: AitoTaskSteps[] }) {
   const { t } = useTranslation();
   if (tasks.length === 0) return null;
@@ -48,6 +54,9 @@ export function StepGrid({ tasks }: { tasks: AitoTaskSteps[] }) {
                 key={service}
                 data-service={service}
                 data-done={done}
+                // The state lives in the accessible name, not just in colour:
+                // "Scan — Done" / "Scan — Pending". See the module docstring.
+                aria-label={`${label} — ${t(done ? 'aito.done' : 'aito.stepPending')}`}
                 // The full label in `title`: a quarter of a 300px column is
                 // not enough for `Modélisation` at any locale, so the visible
                 // text truncates and the tooltip carries the whole of it.
