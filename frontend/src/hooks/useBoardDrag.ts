@@ -56,21 +56,31 @@ export function useBoardDrag(projects: AitoProject[] | undefined) {
   const [allowedDropColumns, setAllowedDropColumns] = useState<ColumnId[] | null>(null);
 
   // A move is "in flight" from the moment handleDragEnd fires until the PATCH
-  // settles. The local board owns the ordering for that whole window. The
-  // in-flight count and generation are shared module state (useBoardSync) so
-  // every writer that touches ['aito-projects'] — not just moves — feeds the
-  // same arbitration; see useBoardSync.ts for why that must be module-level.
-  const { generation, begin, settle, resyncIfIdle, isIdle } = useBoardSync();
+  // settles. The local board owns the ordering for that whole window.
+  //
+  // `begin`/`settle` feed the shared, module-level `pendingWrites` counter —
+  // every writer that touches ['aito-projects'], not just moves, feeds that
+  // same settle-invalidate arbitration. `beginMove`/`settleMove`/`isDragIdle`
+  // are a SEPARATE, drag-only counter: they exist only to stop the rebuild
+  // effect below from clobbering this hook's local `board` while a drag owns
+  // its ordering. A non-drag write (quote status, delete, restore, create)
+  // has no local state to protect, so it must NOT block that rebuild — see
+  // useBoardSync.ts for why those two concerns used to share one counter and
+  // why that broke optimistic writes everywhere else on the board.
+  const { generation, begin, settle, resyncIfIdle, beginMove, settleMove, isDragIdle } = useBoardSync();
 
   // Keeps the local drag-friendly board in sync with the server, but never
   // while a drag is in flight — a background refetch mid-drag would yank
-  // the card out from under the pointer.
+  // the card out from under the pointer. Gated on `isDragIdle()`, NOT the
+  // general write counter: a non-drag optimistic write (e.g. a quote-status
+  // change) must rebuild `board` from the cache immediately, since the cache
+  // IS the board's truth for that write.
   useEffect(() => {
     if (!projects) return;
     if (activeId !== null) return;
-    if (!isIdle()) return;
+    if (!isDragIdle()) return;
     setBoard(buildBoard(projects));
-  }, [projects, activeId, generation, isIdle]);
+  }, [projects, activeId, generation, isDragIdle]);
 
   const moveMutation = useMutation({
     // Serializes overlapping moves in drop order: without a scope, two quick
@@ -103,6 +113,7 @@ export function useBoardDrag(projects: AitoProject[] | undefined) {
     },
     onSettled: () => {
       settle(queryClient);
+      settleMove();
     },
   });
 
@@ -210,6 +221,7 @@ export function useBoardDrag(projects: AitoProject[] | undefined) {
     queryClient.setQueryData<AitoProject[]>(['aito-projects'], toOptimisticProjects(result.board));
 
     begin();
+    beginMove();
     moveMutation.mutate({
       id: active.id as number,
       column: result.column,

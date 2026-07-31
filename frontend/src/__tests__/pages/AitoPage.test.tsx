@@ -78,13 +78,23 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
 /** Grabs the QueryClient `render()` (from '../utils') creates internally —
  *  its `AllProviders` wrapper builds one with `useState` and never exposes it.
  *  Rendered as a sibling of the page under test so it shares the same
- *  `QueryClientProvider`. Needed because `useBoardDrag`'s local `board` state
- *  (what the compact card actually renders from) only rebuilds from the
- *  `['aito-projects']` cache once every pending board write has settled — see
- *  its docstring — so an in-flight optimistic write is invisible on the
- *  rendered card even though it has already landed in the cache. The cache is
- *  what `useOptimisticBoardMutation` actually promises to update synchronously,
- *  so it's what these tests check while a write is still pending. */
+ *  `QueryClientProvider`.
+ *
+ *  Used to assert on the `['aito-projects']` cache as a SECONDARY check
+ *  alongside the rendered board: `useOptimisticBoardMutation` promises to
+ *  write the optimistic value into the cache synchronously, and the rendered
+ *  assertions above it depend on that being true, so this pins down the
+ *  cache half of the chain explicitly.
+ *
+ *  It used to be the ONLY check a still-pending write's tests could make.
+ *  Before the `useBoardSync` counter split, `useBoardDrag`'s local `board`
+ *  state (what the compact card actually renders from) refused to rebuild
+ *  from the cache while ANY board write was pending, drag or not — so a
+ *  delete or restore's optimistic value was correct in the cache but
+ *  invisible on screen until the request settled, and a test could only
+ *  observe it here. Now that a non-drag write no longer blocks that rebuild,
+ *  the primary assertions check the rendered board directly; this capture is
+ *  kept for the cache-side half of the proof, not as a workaround. */
 let capturedClient: QueryClient;
 function ClientCapture() {
   capturedClient = useQueryClient();
@@ -694,13 +704,15 @@ describe('AitoPage (backend board)', () => {
 
       // The DELETE above is deliberately still pending — resolveDelete has not
       // been called yet — so this is the optimistic write, not a fluke of the
-      // request having already settled. Checked against the cache rather than
-      // the rendered card: see ClientCapture's comment for why the compact
-      // card's own screen position lags an in-flight write by design. The
-      // panel closing (asserted here) is what's actually visible immediately.
-      await waitFor(() =>
-        expect(capturedClient.getQueryData<AitoProject[]>(['aito-projects'])?.some((p) => p.id === 1)).toBe(false),
-      );
+      // request having already settled. Asserted on the RENDERED board, not
+      // just the cache: this is what the useBoardSync counter-split fixed —
+      // before it, `useBoardDrag`'s local `board` state refused to rebuild
+      // from the cache until every pending write (delete included) settled,
+      // so the card stayed on screen despite the cache already being correct.
+      await waitFor(() => expect(screen.queryByRole('button', { name: /doomed/ })).not.toBeInTheDocument());
+      // The cache write is what the rendered assertion above actually depends
+      // on — kept as a secondary check that the optimistic value landed.
+      expect(capturedClient.getQueryData<AitoProject[]>(['aito-projects'])?.some((p) => p.id === 1)).toBe(false);
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
       resolveDelete(HttpResponse.json({ detail: 'nope' }, { status: 500 }));
@@ -743,23 +755,94 @@ describe('AitoPage (backend board)', () => {
       // from its own ['aito-trash'] query, with no board-sync gating between
       // the cache write and the screen.
       await waitFor(() => expect(within(modal).queryByText('Trashed thing')).not.toBeInTheDocument());
-      // ...and already present in the board cache, via the wrapper's onMutate
-      // transform (applyRestore) — before the POST resolves. Checked against
-      // the cache rather than the rendered card; see ClientCapture's comment.
-      await waitFor(() =>
-        expect(capturedClient.getQueryData<AitoProject[]>(['aito-projects'])?.some((p) => p.id === 99)).toBe(true),
-      );
+      // ...and already present on the RENDERED board — via the wrapper's
+      // onMutate transform (applyRestore) — before the POST resolves. This is
+      // the useBoardSync counter split doing its job: a non-drag write (this
+      // restore) must not block `useBoardDrag`'s local-board rebuild the way
+      // a drag's own move does, so the card appears on screen immediately
+      // rather than only in the cache. `getByRole('button', ...)` is
+      // unambiguous even with the trash modal still open: the modal's own
+      // row renders the same description as plain text, not a button.
+      await waitFor(() => expect(screen.getByRole('button', { name: /Trashed thing/ })).toBeInTheDocument());
+      // The cache write the rendered card above depends on.
+      expect(capturedClient.getQueryData<AitoProject[]>(['aito-projects'])?.some((p) => p.id === 99)).toBe(true);
 
       // The server refuses — the quote already has an active project.
       resolveRestore(HttpResponse.json({ detail: 'conflict' }, { status: 409 }));
 
-      // Rolled back out of the board cache...
-      await waitFor(() =>
-        expect(capturedClient.getQueryData<AitoProject[]>(['aito-projects'])?.some((p) => p.id === 99)).toBe(false),
-      );
+      // Rolled back off the rendered board...
+      await waitFor(() => expect(screen.queryByRole('button', { name: /Trashed thing/ })).not.toBeInTheDocument());
+      expect(capturedClient.getQueryData<AitoProject[]>(['aito-projects'])?.some((p) => p.id === 99)).toBe(false);
       // ...and the trash row is back, via onError's invalidate.
       await within(modal).findByText('Trashed thing');
       expect(await screen.findByText('That quote already has an active project')).toBeInTheDocument();
+    });
+
+    // The direct proof of the useBoardSync counter split: a non-drag
+    // optimistic write must be visible on the RENDERED board while its
+    // request is still pending, not merely in the query cache. Before the
+    // split, `useBoardDrag`'s local `board` state (what these columns
+    // actually render from) refused to rebuild until every pending board
+    // write settled — drag or not — so this card would still show under
+    // "Quote" here, and a cache-only assertion would not have caught it.
+    it('moves the card to its new column on screen the instant a quote is accepted, before the request resolves', async () => {
+      const accepted = makeProject({
+        id: 1,
+        description: 'Ready to ship',
+        column: 'devis',
+        quote_status: 'sent',
+        task_services: ['impression'],
+        steps_total: 1,
+        steps_done: 0,
+      });
+      server.use(http.get('/api/v1/aito/', () => HttpResponse.json([accepted])));
+
+      // Controlled by hand, not answered until after the pending assertion
+      // below — a mocked response resolved immediately would make "still
+      // pending" indistinguishable from "already settled".
+      let release: (v: { project: AitoProject; zoho_synced: boolean }) => void = () => {};
+      vi.spyOn(api, 'setAitoQuoteStatus').mockImplementation(
+        () => new Promise((resolve) => { release = resolve; }),
+      );
+
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(<AitoPage />);
+
+      await user.click(await screen.findByRole('button', { name: /Ready to ship/ }));
+      const acceptButton = await screen.findByRole('button', { name: /accept quote/i });
+      await act(async () => {
+        fireEvent.pointerDown(acceptButton);
+        await vi.advanceTimersByTimeAsync(600);
+      });
+
+      // The request above is deliberately still pending — `release` has not
+      // been called yet. Scoped to each column via its heading, so this
+      // checks the card actually relocated between columns on screen, not
+      // just that a second copy of it exists somewhere in the DOM.
+      // `getByRole('heading', ...)` rather than `getByText`: the expanded
+      // panel also shows the project's current stage as a `<dd>` with the
+      // same label text, which a plain text query would collide with. The
+      // column's own label is the only <h2> with that text.
+      const quoteColumn = screen.getByRole('heading', { name: 'Quote' }).closest('.rounded-xl') as HTMLElement;
+      const printColumn = screen
+        .getByRole('heading', { name: 'Printing & Machining' })
+        .closest('.rounded-xl') as HTMLElement;
+      await waitFor(() => {
+        expect(within(quoteColumn).queryByRole('button', { name: /Ready to ship/ })).not.toBeInTheDocument();
+        expect(within(printColumn).getByRole('button', { name: /Ready to ship/ })).toBeInTheDocument();
+      });
+
+      // The settle-invalidate refetches ['aito-projects'], so the GET handler
+      // must now agree with the accepted state — otherwise the refetch would
+      // overwrite the still-correct optimistic value with the stale fixture.
+      const settled = { ...accepted, quote_status: 'accepted' as const, column: 'print' as const };
+      server.use(http.get('/api/v1/aito/', () => HttpResponse.json([settled])));
+      release({ project: settled, zoho_synced: true });
+
+      // Settles cleanly: the card stays put once the server confirms it.
+      await waitFor(() => expect(within(printColumn).getByRole('button', { name: /Ready to ship/ })).toBeInTheDocument());
+      expect(within(quoteColumn).queryByRole('button', { name: /Ready to ship/ })).not.toBeInTheDocument();
     });
   });
 });
