@@ -326,4 +326,52 @@ describe('CardView', () => {
     expect(bar).toHaveClass('h-1.5');
     expect(document.querySelector('[data-aito-card]')).toHaveClass('overflow-hidden');
   });
+
+  it('opens the panel from the footer, not just from the description', async () => {
+    const onExpand = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <CardView project={{ ...project, quote_number: 'DEV26-2462' }} onExpand={onExpand} />,
+    );
+    await user.click(screen.getByText('DEV26-2462'));
+    expect(onExpand).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets an injected action take its own click without opening the panel', async () => {
+    const onExpand = vi.fn();
+    const onAction = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <CardView
+        project={project}
+        onExpand={onExpand}
+        actions={
+          <button type="button" onClick={onAction}>
+            Do the thing
+          </button>
+        }
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Do the thing' }));
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onExpand).not.toHaveBeenCalled();
+  });
+
+  it('offers exactly one target for the whole card body', () => {
+    // One <button>, not one per zone: a card that announced "description",
+    // "steps" and "footer" as three separate controls would be worse to
+    // navigate than the single dead region it replaced.
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    expect(screen.getAllByRole('button', { name: /Support de caméra/ })).toHaveLength(1);
+  });
+
+  it('opens from the keyboard through the same handler as the pointer', async () => {
+    const onExpand = vi.fn();
+    const user = userEvent.setup();
+    render(<CardView project={project} onExpand={onExpand} />);
+    const target = screen.getByRole('button', { name: /Support de caméra/ });
+    target.focus();
+    await user.keyboard('{Enter}');
+    expect(onExpand).toHaveBeenCalledTimes(1);
+  });
 });

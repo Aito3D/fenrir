@@ -34,13 +34,22 @@ export interface CardViewProps {
 /** Presentational card, shared by the in-column sortable wrapper and the
  *  DragOverlay clone.
  *
- *  Three zones with distinct jobs: the header carries the client name and is
- *  the ONLY drag source (via the grip); the body is the only thing that opens
- *  the detail panel; the footer holds the timestamp and whatever actions the
- *  parent injects. Phone, email and delete live in the detail panel, not here.
- *
- *  The footer sits outside the body button because a <button> may not contain
- *  another button. */
+ *  Two zones: the header carries the client name and is the ONLY drag source
+ *  (via the grip); everything below it — description, step pills, money,
+ *  elapsed time, quote number, sync indicator, progress bar, and the padding
+ *  between them — is a single click region that opens the detail panel. The
+ *  click handler lives on that region's wrapper `<div>`, not on a `<button>`
+ *  wrapping the content: the footer holds the parent-injected action buttons,
+ *  and a `<button>` may not contain another. Every click inside the region —
+ *  on text, on a step pill, or on bare padding — bubbles to the wrapper
+ *  because the wrapper is a genuine DOM ancestor of all of it. A transparent
+ *  `<button>` sits underneath purely as the pointerless affordance: it carries
+ *  the accessible name and the focus ring, and the click its Enter/Space
+ *  produces bubbles to the same wrapper handler, so keyboard and pointer
+ *  share one path with nothing to double-fire. The parent-injected actions
+ *  (mark-sent, mark-done, restore, hold-to-delete) opt out by stopping
+ *  propagation, so their own clicks never reach the region handler. Phone,
+ *  email and delete live in the detail panel, not here. */
 export function CardView({
   project,
   overlay = false,
@@ -109,71 +118,88 @@ export function CardView({
         )}
       </div>
 
-      {onExpand && !placeholder ? (
-        <button
-          type="button"
-          onClick={onExpand}
-          className="block w-full text-left px-3 pt-2.5 pb-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bambu-green/40"
-        >
-          <span className="block text-sm text-white whitespace-pre-wrap break-words line-clamp-3">
-            {project.description}
-          </span>
-          <StepGrid tasks={project.task_steps} />
-          {project.task_steps.length > 0 && (
-            <span className="mt-1 flex justify-end">
-              <Money currency={currency} value={project.tasks_total} className="text-xs font-medium text-bambu-green" />
-            </span>
-          )}
-        </button>
-      ) : (
-        <div className="px-3 pt-2.5 pb-1.5">
-          <p className="text-sm text-white whitespace-pre-wrap break-words line-clamp-3">
-            {project.description}
-          </p>
-          <StepGrid tasks={project.task_steps} />
-          {project.task_steps.length > 0 && (
-            <div className="mt-1 flex justify-end">
-              <Money currency={currency} value={project.tasks_total} className="text-xs font-medium text-bambu-green" />
-            </div>
-          )}
-        </div>
-      )}
+      {/* One click region: the body, the footer and the bar. The handler is on
+          this wrapper rather than on a <button> wrapping everything, because
+          the footer holds the parent's injected action buttons and a <button>
+          may not contain another. Every click inside bubbles to here.
 
-      <div className="px-3 pb-2 flex items-center justify-between gap-2">
-        <span className="flex items-baseline gap-2 min-w-0">
-          <span className="text-xs text-bambu-gray flex-shrink-0" title={dateTitle}>
-            {elapsed}
-          </span>
-          {/* Imported cards carry their quote number here. A plain span, not a
-              link: the deep link lives in the detail panel, and the footer
-              already holds hold-to-delete. */}
-          {project.quote_number && (
-            <span className="text-xs text-bambu-gray truncate">{project.quote_number}</span>
-          )}
-          {/* A project whose quote the worker has not created yet. Without
-              this the card is indistinguishable from one that will never have
-              a quote, which is exactly the wrong thing to say for a few
-              seconds after every create. */}
-          {!project.quote_number && project.quote_sync_state === 'pending' && (
-            <span className="text-xs text-bambu-gray/70 truncate italic">{t('aito.quotePending')}</span>
-          )}
-          {(project.quote_sync_state === 'error' || project.quote_sync_state === 'locked') && (
-            <span
-              aria-label={project.quote_sync_state === 'error' ? t('aito.syncError') : t('aito.quoteLocked')}
-              title={project.quote_sync_error || undefined}
-              className="flex-shrink-0 text-bambu-gray"
-            >
-              {project.quote_sync_state === 'error' ? (
-                <AlertTriangle className="w-3.5 h-3.5" />
-              ) : (
-                <Lock className="w-3.5 h-3.5" />
+          The transparent button underneath is what makes that reachable
+          without a pointer: it carries the accessible name and the focus ring,
+          and the click its Enter/Space produces bubbles to this same handler.
+          It sits at z-0 beneath `relative z-10` content, so the content keeps
+          its own hover, cursor and tooltips and the button only takes the
+          clicks that land on bare padding. */}
+      <div className="relative" onClick={onExpand && !placeholder ? onExpand : undefined}>
+        {onExpand && !placeholder && (
+          <button
+            type="button"
+            // The description IS the accessible name — it is what the card is
+            // about, and it saves inventing a label key for 13 locales.
+            aria-label={project.description || (project.client_name ?? t('aito.noClient'))}
+            className="absolute inset-0 z-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bambu-green/40"
+          />
+        )}
+
+        <div className="relative z-10">
+          <div className="px-3 pt-2.5 pb-1.5">
+            <p className="text-sm text-white whitespace-pre-wrap break-words line-clamp-3">
+              {project.description}
+            </p>
+            <StepGrid tasks={project.task_steps} />
+            {project.task_steps.length > 0 && (
+              <div className="mt-1 flex justify-end">
+                <Money
+                  currency={currency}
+                  value={project.tasks_total}
+                  className="text-xs font-medium text-bambu-green"
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="px-3 pb-2 flex items-center justify-between gap-2">
+            <div className="flex items-baseline gap-2 min-w-0">
+              <span className="text-xs text-bambu-gray flex-shrink-0" title={dateTitle}>
+                {elapsed}
+              </span>
+              {project.quote_number && (
+                <span className="text-xs text-bambu-gray truncate">{project.quote_number}</span>
               )}
-            </span>
-          )}
-        </span>
-        <span className="flex items-center gap-1 flex-shrink-0">{!overlay && !placeholder && actions}</span>
+              {/* A project whose quote the worker has not created yet. Without
+                  this the card is indistinguishable from one that will never
+                  have a quote, which is exactly the wrong thing to say for a
+                  few seconds after every create. */}
+              {!project.quote_number && project.quote_sync_state === 'pending' && (
+                <span className="text-xs text-bambu-gray/70 truncate italic">{t('aito.quotePending')}</span>
+              )}
+              {(project.quote_sync_state === 'error' || project.quote_sync_state === 'locked') && (
+                <span
+                  aria-label={project.quote_sync_state === 'error' ? t('aito.syncError') : t('aito.quoteLocked')}
+                  title={project.quote_sync_error || undefined}
+                  className="flex-shrink-0 text-bambu-gray"
+                >
+                  {project.quote_sync_state === 'error' ? (
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                  ) : (
+                    <Lock className="w-3.5 h-3.5" />
+                  )}
+                </span>
+              )}
+            </div>
+            {/* The one region that is NOT a way to open the card: these are
+                real controls, so their clicks must not also reach the region
+                handler above. */}
+            <div
+              className="flex items-center gap-1 flex-shrink-0"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {!overlay && !placeholder && actions}
+            </div>
+          </div>
+
+          <ProjectProgress done={project.steps_done} total={project.steps_total} />
+        </div>
       </div>
-      <ProjectProgress done={project.steps_done} total={project.steps_total} />
     </div>
   );
 }
