@@ -1071,7 +1071,7 @@ git commit -m "feat(aito): mirror the board rules in TypeScript, pinned by the f
   - `applyQuoteStatus(projects, id, status: string): AitoProject[]`
   - `applyTaskSummary(projects, id, summary: TaskSummary): AitoProject[]`
   - `applyDescription(projects, id, description: string): AitoProject[]`
-  - `applyDelete(projects, id): AitoProject[]`
+  - `applyDelete(projects, id): AitoProject[]` — removes the card and does NOT renumber: `delete_project` is a soft delete that only flips `status`, leaving a gap in the survivors' positions. The board sorts by position, so the gap is invisible.
   - `applyCreate(projects, placeholder: AitoProject): AitoProject[]` — PREPENDS to `devis` and shifts existing Devis cards down, matching `create_project`
   - `applyRestore(projects, project: AitoProject): AitoProject[]` — APPENDS to the end of its own column, matching `restore_project`
   - `applySyncState(projects, id, state: AitoProject['quote_sync_state']): AitoProject[]`
