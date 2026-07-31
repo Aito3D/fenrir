@@ -30,6 +30,7 @@ export default {
     lockedWaiting: '견적에 대한 고객의 응답을 기다리는 중입니다',
     lockedDeclined: '견적이 거절되었습니다',
     lockedSteps: '이 카드의 열은 작업 단계에 따라 결정됩니다',
+    progressLabel: '{{total}}개 단계 중 {{done}}개 완료',
     trash: '휴지통',
     trashTitle: '삭제된 프로젝트',
     trashEmpty: '휴지통이 비어 있습니다',

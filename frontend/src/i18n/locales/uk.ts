@@ -31,6 +31,7 @@ export default {
     lockedWaiting: "Очікуємо на відповідь клієнта щодо пропозиції",
     lockedDeclined: "Пропозицію відхилено",
     lockedSteps: "Колонку цієї картки визначають етапи її завдань",
+    progressLabel: "Виконано кроків: {{done}} з {{total}}",
     trash: "Кошик",
     trashTitle: "Видалені проєкти",
     trashEmpty: "У кошику порожньо",

@@ -30,6 +30,7 @@ export default {
     lockedWaiting: '正在等待客户对报价的回复',
     lockedDeclined: '报价已被拒绝',
     lockedSteps: '此卡片所在的列由其任务步骤决定',
+    progressLabel: '已完成 {{total}} 个步骤中的 {{done}} 个',
     trash: '回收站',
     trashTitle: '已删除的项目',
     trashEmpty: '回收站是空的',

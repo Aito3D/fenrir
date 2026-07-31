@@ -30,6 +30,7 @@ export default {
     lockedWaiting: 'En attente de la réponse du client au devis',
     lockedDeclined: 'Le devis a été refusé',
     lockedSteps: 'La colonne de cette carte dépend des étapes de ses tâches',
+    progressLabel: '{{done}} étapes terminées sur {{total}}',
     trash: 'Corbeille',
     trashTitle: 'Projets supprimés',
     trashEmpty: 'La corbeille est vide',

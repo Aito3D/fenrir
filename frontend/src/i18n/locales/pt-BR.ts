@@ -30,6 +30,7 @@ export default {
     lockedWaiting: 'Aguardando a resposta do cliente sobre o orçamento',
     lockedDeclined: 'O orçamento foi recusado',
     lockedSteps: 'A coluna deste cartão é definida pelas etapas de suas tarefas',
+    progressLabel: '{{done}} de {{total}} etapas concluídas',
     trash: 'Lixeira',
     trashTitle: 'Projetos excluídos',
     trashEmpty: 'A lixeira está vazia',

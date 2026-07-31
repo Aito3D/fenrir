@@ -30,6 +30,7 @@ export default {
     lockedWaiting: 'Ожидание ответа клиента по смете',
     lockedDeclined: 'Смета была отклонена',
     lockedSteps: 'Колонка этой карточки определяется шагами её задач',
+    progressLabel: 'Выполнено шагов: {{done}} из {{total}}',
     trash: 'Корзина',
     trashTitle: 'Удалённые проекты',
     trashEmpty: 'Корзина пуста',

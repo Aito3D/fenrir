@@ -30,6 +30,7 @@ export default {
     lockedWaiting: 'Waiting on the client to answer the quote',
     lockedDeclined: 'The quote was declined',
     lockedSteps: "This card's column is set by its task steps",
+    progressLabel: '{{done}} of {{total}} steps done',
     trash: 'Trash',
     trashTitle: 'Deleted projects',
     trashEmpty: 'Nothing in the trash',

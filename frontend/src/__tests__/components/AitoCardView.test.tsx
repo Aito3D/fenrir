@@ -356,4 +356,14 @@ describe('CardView', () => {
     render(<CardView project={project} onExpand={vi.fn()} onMarkSent={vi.fn()} />);
     expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument();
   });
+
+  it('shows the progress bar once the project has steps', () => {
+    render(<CardView project={{ ...project, steps_total: 4, steps_done: 1 }} onExpand={vi.fn()} />);
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '1');
+  });
+
+  it('shows no bar on an unpriced project', () => {
+    render(<CardView project={{ ...project, steps_total: 0, steps_done: 0 }} onExpand={vi.fn()} />);
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+  });
 });

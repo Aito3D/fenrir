@@ -30,6 +30,7 @@ export default {
     lockedWaiting: 'In attesa della risposta del cliente al preventivo',
     lockedDeclined: 'Il preventivo è stato rifiutato',
     lockedSteps: 'La colonna di questa scheda dipende dai passaggi delle sue attività',
+    progressLabel: '{{done}} di {{total}} passaggi completati',
     trash: 'Cestino',
     trashTitle: 'Progetti eliminati',
     trashEmpty: 'Il cestino è vuoto',

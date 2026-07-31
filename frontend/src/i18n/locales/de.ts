@@ -30,6 +30,7 @@ export default {
     lockedWaiting: 'Wartet auf die Antwort des Kunden zum Angebot',
     lockedDeclined: 'Das Angebot wurde abgelehnt',
     lockedSteps: 'Die Spalte dieser Karte wird von ihren Aufgabenschritten bestimmt',
+    progressLabel: '{{done}} von {{total}} Schritten erledigt',
     trash: 'Papierkorb',
     trashTitle: 'Gelöschte Projekte',
     trashEmpty: 'Papierkorb ist leer',

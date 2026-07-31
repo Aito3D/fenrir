@@ -30,6 +30,7 @@ export default {
     lockedWaiting: 'Müşterinin teklife yanıt vermesi bekleniyor',
     lockedDeclined: 'Teklif reddedildi',
     lockedSteps: 'Bu kartın sütunu görev adımlarına göre belirlenir',
+    progressLabel: '{{total}} adımdan {{done}} tanesi tamamlandı',
     trash: 'Çöp Kutusu',
     trashTitle: 'Silinen projeler',
     trashEmpty: 'Çöp kutusu boş',

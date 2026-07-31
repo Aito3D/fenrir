@@ -30,6 +30,7 @@ export default {
     lockedWaiting: '正在等待客戶對報價的回覆',
     lockedDeclined: '報價已被拒絕',
     lockedSteps: '此卡片所在的欄由其任務步驟決定',
+    progressLabel: '已完成 {{total}} 個步驟中的 {{done}} 個',
     trash: '垃圾桶',
     trashTitle: '已刪除的專案',
     trashEmpty: '垃圾桶是空的',

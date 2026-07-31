@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { AlertTriangle, GripVertical, Lock, Send } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { HoldButton } from './HoldButton';
+import { ProjectProgress } from './ProjectProgress';
 import { ServiceBadges } from './ServiceBadges';
 import type { AitoProject } from '../../api/client';
 import { api } from '../../api/client';
@@ -221,6 +222,7 @@ export function CardView({
           )}
         </span>
       </div>
+      <ProjectProgress done={project.steps_done} total={project.steps_total} />
     </div>
   );
 }

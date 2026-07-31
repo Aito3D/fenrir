@@ -30,6 +30,7 @@ export default {
     lockedWaiting: '見積もりへの取引先の回答待ちです',
     lockedDeclined: '見積もりは却下されました',
     lockedSteps: 'このカードの列はタスクのステップによって決まります',
+    progressLabel: '{{total}} 件中 {{done}} 件のステップが完了',
     trash: 'ゴミ箱',
     trashTitle: '削除済みプロジェクト',
     trashEmpty: 'ゴミ箱は空です',
