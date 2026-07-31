@@ -33,6 +33,16 @@ class AppSettings(BaseModel):
             "this print, otherwise it is deleted automatically after the photo is captured."
         ),
     )
+    finish_photo_restore_plate: bool = Field(
+        default=True,
+        description=(
+            "Raise the build plate back into camera framing before taking the finish photo. "
+            "Bambu's end G-code drops the plate ~100mm as the last thing it does, leaving the "
+            "finished print far below the camera's natural framing. Bambuddy moves it back to "
+            "just above the last printed layer, takes the photo, then lowers it again. Skipped "
+            "when the print height is unknown or another job is queued for the printer."
+        ),
+    )
     default_filament_cost: float = Field(default=25.0, description="Default filament cost per kg")
     currency: str = Field(default="USD", description="Currency for cost tracking")
     energy_cost_per_kwh: float = Field(default=0.15, description="Electricity cost per kWh for energy tracking")
@@ -275,6 +285,21 @@ class AppSettings(BaseModel):
         default="",
         description="BambuStudio sidecar URL (e.g. http://localhost:3001). Empty falls back to the BAMBU_STUDIO_API_URL env var.",
     )
+    # How long to keep waiting on a slice that isn't finishing. Measured against
+    # the sidecar's progress channel, not total elapsed time — a heavy model can
+    # legitimately slice for half an hour, and a wall-clock ceiling cannot tell
+    # that apart from a stalled one (#2730). Sidecars too old to report progress
+    # fall back to using this as a total-elapsed ceiling, which is the pre-#2730
+    # behaviour with a configurable number.
+    slicer_stall_timeout_minutes: int = Field(
+        default=15,
+        ge=1,
+        le=240,
+        description=(
+            "Give up on a slice after this many minutes with no progress from the sidecar. "
+            "On sidecars that do not report progress, applies to total slicing time instead."
+        ),
+    )
 
     # Prometheus metrics endpoint
     prometheus_enabled: bool = Field(default=False, description="Enable Prometheus metrics endpoint at /metrics")
@@ -477,6 +502,13 @@ class AppSettings(BaseModel):
         default="",
         description="Self-hosted Obico ML API base URL (e.g., http://192.168.1.10:3333)",
     )
+    obico_ml_token: str = Field(
+        default="",
+        description=(
+            "Bearer token for the Obico ML API, matching the server's ML_API_TOKEN "
+            "environment variable. Empty when the server runs without one."
+        ),
+    )
     obico_sensitivity: str = Field(
         default="medium",
         description="Detection sensitivity: 'low', 'medium', or 'high' (adjusts LOW/HIGH thresholds)",
@@ -516,6 +548,7 @@ class AppSettingsUpdate(BaseModel):
     auto_archive: bool | None = None
     save_thumbnails: bool | None = None
     capture_finish_photo: bool | None = None
+    finish_photo_restore_plate: bool | None = None
     default_filament_cost: float | None = None
     currency: str | None = None
     energy_cost_per_kwh: float | None = None
@@ -585,6 +618,7 @@ class AppSettingsUpdate(BaseModel):
     use_slicer_api: bool | None = None
     orcaslicer_api_url: str | None = None
     bambu_studio_api_url: str | None = None
+    slicer_stall_timeout_minutes: int | None = Field(default=None, ge=1, le=240)
     prometheus_enabled: bool | None = None
     prometheus_token: str | None = None
     low_stock_threshold: float | None = Field(default=None, ge=0.1, le=99.9)
@@ -631,6 +665,7 @@ class AppSettingsUpdate(BaseModel):
     ldap_default_group: str | None = None
     obico_enabled: bool | None = None
     obico_ml_url: str | None = None
+    obico_ml_token: str | None = None
     obico_sensitivity: str | None = None
     obico_action: str | None = None
     obico_poll_interval: int | None = Field(default=None, ge=5, le=120)
