@@ -108,7 +108,16 @@ _PATTERNS: tuple[tuple[re.Pattern, str, str], ...] = (
             re.I,
         ),
         "quote.sent",
-        "client",
+        # 'system', not 'client': a client never sends a quote. Every path that
+        # produces this Books comment is ours -- the user's Mark-as-sent,
+        # advance_estimate_status's draft->sent hop, and the trash/restore
+        # reconciler -- so attributing it to the client would be exactly the
+        # false claim map_comment's own zoho.comment fallback below already
+        # refuses to make ("claiming the client did it is the kind of wrong
+        # an accountability timeline must not be"). viewed/accepted/declined/
+        # expired stay 'client' because only the client can do those; only we
+        # can send.
+        "system",
     ),
 )
 

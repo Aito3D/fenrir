@@ -59,12 +59,16 @@ def test_a_real_french_view_comment_becomes_a_client_story_event():
     assert mapped["actor_class"] == "client"
 
 
-def test_a_real_french_sent_comment_becomes_a_client_story_event():
+def test_a_real_french_sent_comment_is_attributed_to_us_not_the_client():
+    """A client never sends a quote -- every path producing this comment
+    (Mark-as-sent, the draft->sent hop, the trash/restore reconciler) is ours.
+    Attributing it to the client would be the false accountability claim
+    map_comment's own zoho.comment fallback already refuses to make."""
     mapped = map_comment(
         {"description": "Devis envoyé par e-mail à nelson.robiquet@gmail.com", "comment_type": "system"}
     )
     assert mapped["kind"] == "quote.sent"
-    assert mapped["actor_class"] == "client"
+    assert mapped["actor_class"] == "system"
 
 
 def test_a_field_named_expiration_is_not_mistaken_for_the_quote_expiring():
