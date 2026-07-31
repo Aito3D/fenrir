@@ -13,6 +13,7 @@ import {
   placeholderProject,
 } from '../../utils/aitoOptimistic';
 import { buildBoard } from '../../utils/aitoBoard';
+import { summariseTasks } from '../../utils/aitoBoardRules';
 import type { TaskLike, TaskSummary } from '../../utils/aitoBoardRules';
 import type { AitoProject } from '../../api/client';
 
@@ -45,6 +46,7 @@ const card = (over: Partial<AitoProject> = {}): AitoProject => ({
   task_pending: [],
   steps_total: 0,
   steps_done: 0,
+  task_steps: [],
   move_lock: 'quote',
   created_at: '2026-07-01T10:00:00Z',
   updated_at: '2026-07-01T10:00:00Z',
@@ -194,6 +196,7 @@ describe('applyTaskSummary', () => {
       pending: ['impression'],
       stepsTotal: 4,
       stepsDone: 3,
+      stepsByTask: [],
     });
     const updated = find(after, 1);
     expect(updated.task_count).toBe(2);
@@ -213,6 +216,7 @@ describe('applyTaskSummary', () => {
       pending: [],
       stepsTotal: 1,
       stepsDone: 1,
+      stepsByTask: [],
     });
     expect(find(after, 1).column).toBe('finish');
     expect(find(after, 1).move_lock).toBeNull();
@@ -227,19 +231,53 @@ describe('applyTaskSummary', () => {
       pending: [],
       stepsTotal: 1,
       stepsDone: 1,
+      stepsByTask: [],
     });
     expect(find(after, 1).column).toBe('devis');
   });
 
   it('is a no-op for an unknown id', () => {
     const projects = [card({ id: 1 })];
-    const summary: TaskSummary = { count: 1, total: 10, services: ['scan'], pending: [], stepsTotal: 1, stepsDone: 1 };
+    const summary: TaskSummary = {
+      count: 1,
+      total: 10,
+      services: ['scan'],
+      pending: [],
+      stepsTotal: 1,
+      stepsDone: 1,
+      stepsByTask: [],
+    };
     expect(applyTaskSummary(projects, 99, summary)).toEqual(projects);
   });
 
   it('leaves the cache untouched (undefined) on a cache miss, rather than fabricating a board', () => {
-    const summary: TaskSummary = { count: 1, total: 10, services: ['scan'], pending: [], stepsTotal: 1, stepsDone: 1 };
+    const summary: TaskSummary = {
+      count: 1,
+      total: 10,
+      services: ['scan'],
+      pending: [],
+      stepsTotal: 1,
+      stepsDone: 1,
+      stepsByTask: [],
+    };
     expect(applyTaskSummary(undefined, 1, summary)).toBeUndefined();
+  });
+
+  it('writes the per-task step rows so a ticked pill turns green before the refetch', () => {
+    const after = applyTaskSummary(
+      [card({ id: 1, column: 'scan', quote_status: 'accepted' })],
+      1,
+      summariseTasks([
+        {
+          scanCost: 1,
+          modelisationCost: null,
+          impressionCost: 2,
+          usinageCost: null,
+          done: { scan: true, modelisation: false, impression: false, usinage: false },
+        },
+      ]),
+    );
+    expect(find(after, 1).task_steps).toEqual([{ services: ['scan', 'impression'], done: ['scan'] }]);
   });
 });
 

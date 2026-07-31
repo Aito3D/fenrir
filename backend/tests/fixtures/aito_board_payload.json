@@ -32,6 +32,14 @@
     "task_services": [
       "scan"
     ],
+    "task_steps": [
+      {
+        "done": [],
+        "services": [
+          "scan"
+        ]
+      }
+    ],
     "tasks_total": 0.0
   },
   {
@@ -63,6 +71,7 @@
     "task_count": 0,
     "task_pending": [],
     "task_services": [],
+    "task_steps": [],
     "tasks_total": 0.0
   },
   {
@@ -95,6 +104,16 @@
     "task_pending": [],
     "task_services": [
       "modelisation"
+    ],
+    "task_steps": [
+      {
+        "done": [
+          "modelisation"
+        ],
+        "services": [
+          "modelisation"
+        ]
+      }
     ],
     "tasks_total": 3000.0
   },
@@ -134,6 +153,23 @@
       "impression",
       "usinage"
     ],
+    "task_steps": [
+      {
+        "done": [
+          "scan"
+        ],
+        "services": [
+          "scan",
+          "impression"
+        ]
+      },
+      {
+        "done": [],
+        "services": [
+          "usinage"
+        ]
+      }
+    ],
     "tasks_total": 8400.0
   },
   {
@@ -168,6 +204,14 @@
     ],
     "task_services": [
       "scan"
+    ],
+    "task_steps": [
+      {
+        "done": [],
+        "services": [
+          "scan"
+        ]
+      }
     ],
     "tasks_total": 0.0
   }

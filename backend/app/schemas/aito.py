@@ -112,6 +112,18 @@ class AitoProjectUpdate(BaseModel):
         return value
 
 
+class AitoTaskStepsResponse(BaseModel):
+    """One task's steps, for the board card's pill grid.
+
+    Mirrors TaskSteps in services/aito_board_rules.py. Both lists are in
+    canonical SERVICES order; `done` is a subset of `services`, and a service
+    priced None appears in neither — it is absent from the job, not pending.
+    """
+
+    services: list[str]
+    done: list[str]
+
+
 class AitoProjectResponse(BaseModel):
     id: int
     description: str
@@ -154,6 +166,10 @@ class AitoProjectResponse(BaseModel):
     # 0 — an unpriced project has nothing to measure.
     steps_total: int
     steps_done: int
+    # One entry per task, in the same order the detail panel lists them, so
+    # the card's pill rows and the panel's task rows line up. This is the only
+    # per-task detail GET /aito/ ships; everything else stays an aggregate.
+    task_steps: list[AitoTaskStepsResponse]
     # The services with at least one UNTICKED step, in canonical order —
     # exactly what evaluate() takes. task_services above is the union of
     # ENABLED services, a different set that cannot substitute for it: the

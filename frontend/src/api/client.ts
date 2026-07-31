@@ -3452,6 +3452,14 @@ export interface CalculatorInsights {
 // Aito kanban board
 export type AitoColumnId = 'devis' | 'waiting' | 'scan' | 'model' | 'print' | 'finish' | 'done';
 
+/** One task's steps, for the board card's pill grid. Mirrors
+ *  AitoTaskStepsResponse. Both lists are in canonical service order; `done` is
+ *  a subset of `services`, and a service absent from the job is in neither. */
+export interface AitoTaskSteps {
+  services: string[];
+  done: string[];
+}
+
 export interface AitoProject {
   id: number;
   description: string;
@@ -3514,6 +3522,10 @@ export interface AitoProject {
    *  total is 0. */
   steps_total: number;
   steps_done: number;
+  /** One entry per task, in the order the detail panel lists them. The card
+   *  draws a pill row per entry — this is the only per-task detail the board
+   *  response carries. */
+  task_steps: AitoTaskSteps[];
   /** The services with at least one UNTICKED step, canonical order. This is
    *  what `evaluate` takes — `task_services` is the union of ENABLED services
    *  and is a different set. The optimistic layer predicts a card's column

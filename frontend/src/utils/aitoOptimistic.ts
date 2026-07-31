@@ -125,6 +125,7 @@ export function applyTaskSummary(
     task_pending: [...summary.pending],
     steps_total: summary.stepsTotal,
     steps_done: summary.stepsDone,
+    task_steps: summary.stepsByTask.map((steps) => ({ ...steps })),
   };
   return reevaluate(projects, updated, summary.pending);
 }
@@ -288,6 +289,7 @@ export function placeholderProject(fields: {
     task_pending: [...summary.pending],
     steps_total: summary.stepsTotal,
     steps_done: summary.stepsDone,
+    task_steps: summary.stepsByTask.map((steps) => ({ ...steps })),
     move_lock: lock,
     created_at: now,
     updated_at: now,

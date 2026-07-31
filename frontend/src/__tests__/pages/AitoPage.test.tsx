@@ -25,7 +25,8 @@ vi.mock('../../hooks/useRevertFlash', async (importOriginal) => ({
 const project = {
   id: 12, description: 'Support GoPro', column: 'devis', position: 0, status: 'active',
   client_id: 'z1', client_name: 'ACME SARL', client_phone: '+33 6 12 34 56 78',
-  task_count: 0, tasks_total: 0, task_services: [], task_pending: [], steps_total: 0, steps_done: 0, move_lock: null,
+  task_count: 0, tasks_total: 0, task_services: [], task_pending: [], steps_total: 0, steps_done: 0, task_steps: [],
+  move_lock: null,
   created_at: '2026-07-01T10:00:00Z', updated_at: '2026-07-02T10:00:00Z',
 };
 
@@ -63,6 +64,7 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
     task_pending: [],
     steps_total: 0,
     steps_done: 0,
+    task_steps: [],
     move_lock: null,
     created_at: '2026-07-27T00:00:00',
     updated_at: '2026-07-27T00:00:00',
@@ -621,6 +623,7 @@ describe('AitoPage (backend board)', () => {
       task_pending: [],
       steps_total: 0,
       steps_done: 0,
+      task_steps: [],
       move_lock: null,
       created_at: '2026-07-01T10:00:00Z',
       updated_at: '2026-07-02T10:00:00Z',
