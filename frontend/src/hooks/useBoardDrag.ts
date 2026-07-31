@@ -13,6 +13,7 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { api, type AitoProject } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
+import { useBoardSync } from './useBoardSync';
 import {
   COLUMN_IDS,
   allowedColumns,
@@ -55,11 +56,11 @@ export function useBoardDrag(projects: AitoProject[] | undefined) {
   const [allowedDropColumns, setAllowedDropColumns] = useState<ColumnId[] | null>(null);
 
   // A move is "in flight" from the moment handleDragEnd fires until the PATCH
-  // settles. The local board owns the ordering for that whole window — a ref so
-  // the guard closes synchronously, plus a counter so the effect re-runs once
-  // the server agrees even if the query data identity never changes.
-  const pendingMoves = useRef(0);
-  const [syncGeneration, setSyncGeneration] = useState(0);
+  // settles. The local board owns the ordering for that whole window. The
+  // in-flight count and generation are shared module state (useBoardSync) so
+  // every writer that touches ['aito-projects'] — not just moves — feeds the
+  // same arbitration; see useBoardSync.ts for why that must be module-level.
+  const { generation, begin, settle, resyncIfIdle, isIdle } = useBoardSync();
 
   // Keeps the local drag-friendly board in sync with the server, but never
   // while a drag is in flight — a background refetch mid-drag would yank
@@ -67,9 +68,9 @@ export function useBoardDrag(projects: AitoProject[] | undefined) {
   useEffect(() => {
     if (!projects) return;
     if (activeId !== null) return;
-    if (pendingMoves.current > 0) return;
+    if (!isIdle()) return;
     setBoard(buildBoard(projects));
-  }, [projects, activeId, syncGeneration]);
+  }, [projects, activeId, generation, isIdle]);
 
   const moveMutation = useMutation({
     // Serializes overlapping moves in drop order: without a scope, two quick
@@ -79,7 +80,12 @@ export function useBoardDrag(projects: AitoProject[] | undefined) {
     // `previous` snapshot is captured at drop time, so if two moves both fail
     // the second's rollback restores over the first's — self-corrected one
     // round trip later by the settle-invalidate.
-    scope: { id: 'aito-move' },
+    // Widened from 'aito-move' to cover every mutation that writes
+    // ['aito-projects'] — quote status, delete, restore, create — not just
+    // drags. Two overlapping writes otherwise race the endpoint, and the
+    // second's prediction (computed against a board that assumed the first had
+    // landed) can be persisted first.
+    scope: { id: 'aito-board' },
     mutationFn: ({ id, column, position }: MoveVariables) => api.moveAitoProject(id, { column, position }),
     // The optimistic cache write happens synchronously in handleDragEnd, so all
     // this needs to do is stop in-flight refetches and carry the rollback
@@ -96,19 +102,7 @@ export function useBoardDrag(projects: AitoProject[] | undefined) {
       showToast(t('aito.moveFailed'), 'error');
     },
     onSettled: () => {
-      // Must not throw: on the success path React Query runs onSettled inside the
-      // same try as the mutationFn, so a throw here re-runs onError + onSettled
-      // and double-decrements the counter.
-      pendingMoves.current -= 1;
-      setSyncGeneration((generation) => generation + 1);
-      // Only the last move to settle refetches: invalidating while another
-      // move is still queued or in flight lets the resulting GET — which
-      // predates that move — overwrite its optimistic cache entry, which the
-      // generation bump would then rebuild the board from. The last settle
-      // always invalidates, so nothing is left stale.
-      if (pendingMoves.current === 0) {
-        queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
-      }
+      settle(queryClient);
     },
   });
 
@@ -188,9 +182,7 @@ export function useBoardDrag(projects: AitoProject[] | undefined) {
     // Skipped while a move is pending — see onSettled for why.
     if (!over) {
       setAllowedDropColumns(null);
-      if (pendingMoves.current === 0) {
-        queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
-      }
+      resyncIfIdle(queryClient);
       return;
     }
 
@@ -205,9 +197,7 @@ export function useBoardDrag(projects: AitoProject[] | undefined) {
     const result = computeMoveTarget(board, active.id as number, over.id, originColumn);
     if (result.kind === 'resync') {
       // Skipped while a move is pending — see onSettled for why.
-      if (pendingMoves.current === 0) {
-        queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
-      }
+      resyncIfIdle(queryClient);
       return;
     }
     if (result.kind === 'noop') return;
@@ -219,7 +209,7 @@ export function useBoardDrag(projects: AitoProject[] | undefined) {
     const previous = queryClient.getQueryData<AitoProject[]>(['aito-projects']);
     queryClient.setQueryData<AitoProject[]>(['aito-projects'], toOptimisticProjects(result.board));
 
-    pendingMoves.current += 1;
+    begin();
     moveMutation.mutate({
       id: active.id as number,
       column: result.column,
@@ -250,9 +240,7 @@ export function useBoardDrag(projects: AitoProject[] | undefined) {
         // A cancelled drag (e.g. Escape) can leave a cross-column dragOver
         // relocation applied locally with nothing persisted — resync.
         // Skipped while a move is pending — see onSettled for why.
-        if (pendingMoves.current === 0) {
-          queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
-        }
+        resyncIfIdle(queryClient);
       },
     },
   };
