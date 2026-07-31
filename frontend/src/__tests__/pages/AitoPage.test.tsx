@@ -1238,6 +1238,16 @@ describe('AitoPage (backend board)', () => {
       ),
     );
     render(<AitoPage />);
-    expect(await screen.findByText(/no projects yet|aucun projet/i)).toBeInTheDocument();
+    // Wait for the query to SETTLE before asserting. `board` is built from
+    // `aitoQuery.data`, which is undefined until the fetch resolves — so every
+    // column reads empty during the first render whether the count sums the
+    // six rendered columns or all seven. A bare `findByText` resolves on that
+    // transient state and would pass against the very bug this test names.
+    //
+    // The count in the button, not the button itself: the button renders
+    // unconditionally on mount, so its mere presence is not a settle signal.
+    // `(1)` appears only once `board.done` holds the fetched row.
+    await screen.findByRole('button', { name: /show done \(1\)/i });
+    expect(screen.getByText(/no projects yet|aucun projet/i)).toBeInTheDocument();
   });
 });
