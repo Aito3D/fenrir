@@ -108,10 +108,28 @@ describe('CardView', () => {
     expect(await screen.findAllByTestId('aito-step-row')).toHaveLength(2);
     // The count line is gone: the rows themselves say how many tasks there are.
     expect(screen.queryByText(/2 tasks|2 tâches/i)).not.toBeInTheDocument();
-    // Matched on the digits, not the whole formatted string: the currency and
-    // separators come from formatMoney and the settings stub, and pinning them
-    // here would make this a test of formatMoney.
-    expect(screen.getByText(/20[,\s.]?200/)).toBeInTheDocument();
+  });
+
+  it('keeps the money off the card entirely — it belongs to the expanded panel', async () => {
+    // A price is a thing you read once, deliberately, when you open the
+    // project; the collapsed card is for reading progress at a glance across
+    // a whole column. `TaskEditor` shows `aito.projectTotal` in the panel, so
+    // nothing is lost by dropping it here. Matched on the digits rather than
+    // the formatted string — the currency and separators come from formatMoney
+    // and the settings stub, and pinning them would make this a formatMoney test.
+    render(
+      <CardView
+        project={{
+          ...project,
+          task_count: 2,
+          tasks_total: 20200,
+          task_steps: [{ services: ['impression'], done: [] }],
+        }}
+        onExpand={vi.fn()}
+      />,
+    );
+    expect(await screen.findAllByTestId('aito-step-row')).toHaveLength(1);
+    expect(screen.queryByText(/20[,\s.]?200/)).not.toBeInTheDocument();
   });
 
   it('renders no step rows and no total for a project with no tasks', () => {
@@ -160,7 +178,6 @@ describe('CardView', () => {
       />,
     );
     expect(await screen.findByText('Modeling')).toBeInTheDocument();
-    expect(screen.getByText(/20[,\s.]?200/)).toBeInTheDocument();
     expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 
@@ -342,7 +359,7 @@ describe('CardView', () => {
     render(<CardView project={{ ...project, steps_total: 4, steps_done: 1 }} onExpand={vi.fn()} />);
     const bar = screen.getByRole('progressbar');
     expect(bar.className).not.toMatch(/rounded/);
-    expect(bar).toHaveClass('h-1.5');
+    expect(bar).toHaveClass('h-1');
     expect(document.querySelector('[data-aito-card]')).toHaveClass('overflow-hidden');
   });
 

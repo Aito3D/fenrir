@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, GripVertical, Lock } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
 import { ProjectProgress } from './ProjectProgress';
 import { StepGrid } from './StepGrid';
 import type { AitoProject } from '../../api/client';
-import { api } from '../../api/client';
-import { Money } from '../calculator/shared';
 import { formatElapsedTime, parseUTCDate } from '../../utils/date';
 
 export interface CardViewProps {
@@ -84,15 +81,6 @@ export function CardView({
   // whole board, not just that card. Degrading to "no step rows" is the cheap
   // half of that trade.
   const taskSteps = project.task_steps ?? [];
-  // Same query key the task editor and the calculator page use for the
-  // configured currency, so the card rides their cache instead of adding a
-  // fetch per card.
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-    staleTime: 60_000,
-  });
-  const currency = settings?.currency || 'USD';
 
   // Hover-intent reveal of a clamped description. The card floats over its
   // neighbours rather than growing in place: the shell holds the collapsed
@@ -232,16 +220,13 @@ export function CardView({
               >
                 {project.description}
               </p>
+              {/* No money here. A price is read once, deliberately, on the
+                  project you have opened; the collapsed card is for reading
+                  progress at a glance down a whole column, and a column of
+                  totals competes with the pills for exactly the attention the
+                  pills are there to get. `TaskEditor` shows the project total
+                  in the detail panel. */}
               <StepGrid tasks={taskSteps} />
-              {taskSteps.length > 0 && (
-                <div className="mt-1 flex justify-end">
-                  <Money
-                    currency={currency}
-                    value={project.tasks_total}
-                    className="text-xs font-medium text-bambu-green"
-                  />
-                </div>
-              )}
             </div>
 
             <div className="px-3 pb-2 flex items-center justify-between gap-2">

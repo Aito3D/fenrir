@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
  *  like any other; the caller has already applied that rule (see
  *  `summariseTasks`), and this component does no arithmetic beyond the ratio.
  *
- *  No percentage text: at 6px the number is noise, and the card is already
+ *  No percentage text: at 4px the number is noise, and the card is already
  *  dense. The value reaches assistive technology through `aria-valuenow` and
  *  anyone hovering through the title.
  *
@@ -30,7 +30,7 @@ export function ProjectProgress({ done, total }: { done: number; total: number }
       aria-valuemax={total}
       aria-label={label}
       title={label}
-      className="h-1.5 w-full overflow-hidden bg-bambu-dark-tertiary"
+      className="h-1 w-full overflow-hidden bg-bambu-dark-tertiary"
     >
       <div
         data-testid="aito-progress-fill"

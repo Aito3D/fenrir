@@ -44,7 +44,27 @@ export function StepGrid({ tasks }: { tasks: AitoTaskSteps[] }) {
         // never spliced or reordered in place.
         <span key={index} data-testid="aito-step-row" className="grid grid-cols-4 gap-1">
           {SERVICES.map((service) => {
-            if (!task.services.includes(service)) return <span key={service} />;
+            if (!task.services.includes(service)) {
+              return (
+                <span
+                  key={service}
+                  data-testid="aito-step-placeholder"
+                  // Decorative. "This job has no scan" is already said by the
+                  // absence of a scan pill; announcing three empty boxes per
+                  // row would bury the one pill that matters.
+                  aria-hidden="true"
+                  // The non-breaking space is load-bearing: an empty inline
+                  // box collapses to zero height, and the placeholder has to
+                  // match a pill's height exactly. Sharing the pill's padding
+                  // and type scale and giving it one blank character gets that
+                  // for free, with no pixel value to drift when the pill's
+                  // padding changes.
+                  className="rounded border border-dashed border-bambu-dark-tertiary px-1.5 py-0.5 text-[10px] leading-tight"
+                >
+                  {'\u00A0'}
+                </span>
+              );
+            }
             const done = task.done.includes(service);
             const label = AITO_SERVICE_LABEL_KEYS[service]
               ? t(AITO_SERVICE_LABEL_KEYS[service])
@@ -66,7 +86,10 @@ export function StepGrid({ tasks }: { tasks: AitoTaskSteps[] }) {
                 // not enough for `Modélisation` at any locale, so the visible
                 // text truncates and the tooltip carries the whole of it.
                 title={label}
-                className={`truncate rounded px-1.5 py-0.5 text-center text-[10px] leading-tight ${
+                // `border border-transparent` matches the placeholder's box
+                // model exactly, so a pill and an empty slot are the same
+                // height whichever mix a row happens to carry.
+                className={`truncate rounded border border-transparent px-1.5 py-0.5 text-center text-[10px] leading-tight ${
                   done
                     ? 'bg-bambu-green/15 text-bambu-green ring-1 ring-inset ring-bambu-green/30'
                     : 'bg-bambu-dark-tertiary text-bambu-gray-light'

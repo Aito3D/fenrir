@@ -55,10 +55,43 @@ describe('StepGrid', () => {
     expect(screen.getByTestId('aito-step-row').children).toHaveLength(4);
   });
 
+  it('draws an absent step as an empty placeholder, not as nothing', () => {
+    // An invisible cell keeps the COLUMN aligned but leaves the row looking
+    // ragged: a project whose every task carries only printing showed four
+    // lonely pills adrift in the third column with no hint the other three
+    // slots existed. An outlined placeholder makes each row read as one
+    // four-step checklist, so a mostly-empty row looks deliberate rather than
+    // broken.
+    render(<StepGrid tasks={[{ services: ['impression'], done: [] }]} />);
+    const placeholders = screen.getAllByTestId('aito-step-placeholder');
+    expect(placeholders).toHaveLength(3);
+    // Decorative only — it says "no such step", which is already carried by
+    // the absence of a pill. Announcing three empty boxes per row would bury
+    // the one pill that matters.
+    for (const cell of placeholders) {
+      expect(cell).toHaveAttribute('aria-hidden', 'true');
+    }
+  });
+
+  it('gives a placeholder no label of its own', () => {
+    render(<StepGrid tasks={[{ services: ['impression'], done: [] }]} />);
+    expect(screen.queryByText('Scan')).not.toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /Scan/ })).not.toBeInTheDocument();
+  });
+
+  it('draws four placeholders for a task with nothing priced', () => {
+    // The row still has to occupy its line — an unpriced task is a task.
+    render(<StepGrid tasks={[{ services: [], done: [] }]} />);
+    expect(screen.getAllByTestId('aito-step-placeholder')).toHaveLength(4);
+  });
+
   it('orders the pills canonically regardless of the order given', async () => {
     render(<StepGrid tasks={[{ services: ['usinage', 'scan', 'modelisation'], done: [] }]} />);
-    const labels = Array.from(screen.getByTestId('aito-step-row').children).map((cell) =>
-      cell.textContent,
+    // Trimmed, because an absent step's placeholder carries a non-breaking
+    // space to hold its height. `trim()` treats U+00A0 as whitespace, so an
+    // empty slot reads as '' here and the assertion stays about ORDER.
+    const labels = Array.from(screen.getByTestId('aito-step-row').children).map(
+      (cell) => cell.textContent?.trim() ?? '',
     );
     expect(labels).toEqual(['Scan', 'Modeling', '', 'Machining']);
     expect(await screen.findByText('Scan')).toBeInTheDocument();
@@ -71,8 +104,11 @@ describe('StepGrid', () => {
     expect(screen.queryByText('Machining')).not.toBeInTheDocument();
   });
 
-  it('renders a task with no priced service as an empty row', () => {
+  it('names no service on a task with nothing priced', () => {
+    // The row is drawn (four placeholders — see above), but it must not claim
+    // any step exists. Trimmed for the placeholders' spacer character.
     render(<StepGrid tasks={[{ services: [], done: [] }]} />);
-    expect(screen.getByTestId('aito-step-row').textContent).toBe('');
+    expect(screen.getByTestId('aito-step-row').textContent?.trim()).toBe('');
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 });
