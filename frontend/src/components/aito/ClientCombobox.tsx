@@ -116,7 +116,7 @@ export function ClientCombobox({ clientName, onSelect, onCreateNew, onReset, sho
             <div
               role="listbox"
               onMouseDown={(e) => e.preventDefault()}
-              className="absolute z-50 left-0 right-0 mt-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg max-h-64 overflow-y-auto animate-slide-up"
+              className="absolute z-50 left-0 right-0 mt-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg max-h-64 overflow-y-auto animate-slide-up scrollbar-hide"
             >
               {contactsQuery.isFetching && (
                 <div className="flex items-center gap-2 px-3 py-2 text-sm text-bambu-gray">

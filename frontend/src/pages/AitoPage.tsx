@@ -369,7 +369,7 @@ export function AitoPage() {
           {/* min-h-0 is what lets this shrink inside the flex column: without it
               a tall column would push the board past the viewport instead of
               scrolling inside itself. */}
-          <div className="flex gap-4 items-stretch overflow-x-auto pb-4 stagger-parents flex-1 min-h-0">
+          <div className="flex gap-4 items-stretch overflow-x-auto pb-4 stagger-parents flex-1 min-h-0 scrollbar-hide">
             {COLUMNS.map((column) => (
               <div key={column.id} className="animate-rise-lg flex flex-shrink-0">
                 <BoardColumn

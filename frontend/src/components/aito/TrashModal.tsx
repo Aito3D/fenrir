@@ -69,7 +69,7 @@ export function TrashModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <div className="p-4 overflow-y-auto flex-1">
+        <div className="p-4 overflow-y-auto flex-1 scrollbar-hide">
           {projects.length === 0 ? (
             <div className="text-center py-8">
               <Trash2 className="w-8 h-8 text-bambu-gray mx-auto mb-2 opacity-40" />

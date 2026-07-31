@@ -200,7 +200,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
           </span>
         </div>
 
-        <div className="p-4 overflow-y-auto flex-1">
+        <div className="p-4 overflow-y-auto flex-1 scrollbar-hide">
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)_minmax(0,26rem)] gap-4 lg:gap-6">
             <div className="space-y-4 min-w-0">
               <div>

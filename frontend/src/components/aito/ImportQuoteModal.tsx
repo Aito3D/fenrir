@@ -120,7 +120,7 @@ export function ImportQuoteModal({ onClose, onImport, submitting = false }: Impo
           }}
           className="flex flex-col flex-1 min-h-0"
         >
-          <div className="p-4 overflow-y-auto flex-1 space-y-4">
+          <div className="p-4 overflow-y-auto flex-1 space-y-4 scrollbar-hide">
             {zohoNotConfigured ? (
               <div>
                 <label className={labelCls}>{t('aito.quoteSearchLabel')}</label>
