@@ -601,8 +601,77 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
     )
 
 
+async def _rollback_after_terminal_failure(db: AsyncSession) -> None:
+    """Undo any half-flushed writes from the failure just caught, before a
+    terminal branch below writes its own state or calls ``record()`` --
+    itself a flush. A no-op when the session was never actually poisoned.
+
+    The exception just caught can ITSELF be a failed flush: ``record()``'s
+    own ``IntegrityError`` from two overlapping ticks racing the same
+    ``zoho_comment_id``, or ``_apply_estimate``'s writes landing on a
+    ``quote_id`` the partial unique index ``uq_aito_project_active_quote``
+    already holds for another active project. SQLAlchemy auto-aborts the
+    DBAPI transaction the moment a flush fails -- without the caller having
+    to ask -- so left alone, the very next operation against this session,
+    including a bare attribute READ and not only another flush, raises
+    ``PendingRollbackError``. ``Session.rollback()`` is what SQLAlchemy's own
+    error message directs.
+
+    Gated on ``db.is_active`` rather than called unconditionally: an earlier
+    version of this helper always rolled back, on the theory that "nothing of
+    this project's tick is committed yet, so there is nothing here to lose
+    that the caller does not immediately rewrite" -- which is true for the
+    four terminal `except` clauses in ``sync_project`` (each rewrites
+    ``quote_sync_state``/``quote_sync_error``/``quote_sync_failures``
+    immediately after calling this), but FALSE for the comment-mirror
+    recovery site: most of what lands there is an ordinary network or mapping
+    exception from ``list_estimate_comments``/``mirror_comments`` that never
+    touched the database at all, and blindly rolling back there discarded
+    ``reconcile_quote_status``'s already-flushed writes from earlier in the
+    SAME tick with nothing to rewrite them -- caught by the existing test
+    suite once the four terminal handlers stopped being the only callers.
+    ``is_active`` is exactly the fact that matters: it is False only when a
+    flush has already failed and left the session in SQLAlchemy's own
+    "partial rollback" state, which is the one situation ``record()``'s next
+    flush cannot survive.
+
+    Deliberately does NOT read or refresh ``project`` afterwards. A bare
+    attribute access on the now-expired instance, outside the greenlet
+    context an awaited SQLAlchemy call runs inside, is exactly the "lazy
+    reload outside a greenlet context" trap run_sync_once's own loop comment
+    warns about (it would raise ``MissingGreenlet``, not silently reload).
+    Every caller below reads "the state before this failure" from the local
+    variables ``sync_project`` captures at its own top, before the try block,
+    rather than by touching the object again here.
+    """
+    if not db.is_active:
+        await db.rollback()
+
+
 async def sync_project(db: AsyncSession, project: AitoProject) -> None:
     """One project's whole state machine. Never raises: every outcome is a state."""
+    # Captured before anything below can touch the row, and read from these
+    # locals everywhere a terminal branch or the comment-mirror recovery code
+    # needs "was this already the state before this attempt" -- never by
+    # re-reading `project` after a possible mid-function rollback (see
+    # _rollback_after_terminal_failure), which would need an async-unsafe
+    # attribute reload. Nothing between here and any exception site changes
+    # these three columns (the swept branch touches only quote_status and its
+    # block columns; the pending branch's own writes to them only ever happen
+    # on a SUCCESS path or inside the terminal handlers themselves), so a
+    # snapshot taken here is still accurate wherever it is read below.
+    already_in_error = project.quote_sync_state == "error"
+    previous_sync_error = project.quote_sync_error
+    sync_failures_before = project.quote_sync_failures or 0
+    # `project.id` itself is not exempt from this: Session.rollback() expires
+    # EVERY attribute on every instance touched by the transaction, primary
+    # key included, so a bare `project.id` read after
+    # _rollback_after_terminal_failure is the exact async-unsafe lazy reload
+    # the comment above warns about (it raised MissingGreenlet in practice,
+    # not merely a hypothetical -- every record() call below needs the id,
+    # and every terminal handler rolls back first). The id cannot change for
+    # an already-persisted row, so a snapshot taken here is always accurate.
+    project_id = project.id
     try:
         # Swept, not pending: reconcile status and nothing else. Emphatically
         # NOT _update_quote, which rebuilds the entire line_items array —
@@ -652,11 +721,11 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
                 if not was_already_locked:
                     await record(
                         db,
-                        project.id,
+                        project_id,
                         "sync.locked",
                         actor_class="system",
                         subject_type="project",
-                        subject_id=project.id,
+                        subject_id=project_id,
                     )
                 return
             await reconcile_quote_status(db, project, estimate)
@@ -690,7 +759,24 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
                     # a tick where mirror_comments raised: an exception here
                     # skips them, so the watermark still only moves once the
                     # pull has fully succeeded.
-                    logger.warning("Aito comment mirror failed for project %s", project.id, exc_info=True)
+                    #
+                    # The rollback is the same containment as every terminal
+                    # handler below, and for the same reason: the IntegrityError
+                    # this block exists to catch leaves the session's
+                    # transaction aborted, and without an explicit rollback that
+                    # poisoning survives this block -- surfacing two ticks later
+                    # as _apply_rules or run_sync_once's own end-of-loop
+                    # db.commit() failing and getting logged as "failed to
+                    # commit project", which is the comment mirror's failure
+                    # wearing a misleading name. It does mean any of
+                    # reconcile_quote_status's writes still pending from just
+                    # above are discarded along with the failed mirror attempt
+                    # -- accepted here the same way a missed tick is accepted
+                    # everywhere else in this module: the next sweep reconciles
+                    # status again from scratch and costs nothing by being a
+                    # tick late.
+                    await _rollback_after_terminal_failure(db)
+                    logger.warning("Aito comment mirror failed for project %s", project_id, exc_info=True)
 
             # A read that reaches this point succeeded, whatever
             # reconcile_quote_status went on to do with it — proof Books is
@@ -713,7 +799,15 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
             # when it increments, so the message cleared here is guaranteed to
             # be the one that handler wrote — no other subsystem's diagnostic
             # can be destroyed, and no string has to be inspected to know it.
-            if project.quote_sync_state == "error" and (project.quote_sync_failures or 0) >= SYNC_FAILURE_LIMIT:
+            #
+            # Read from the snapshot taken at the top of this function, not
+            # from `project` directly: the comment-mirror block just above can
+            # have rolled the session back (see _rollback_after_terminal_failure),
+            # which expires every attribute, and a bare read here would be the
+            # same async-unsafe lazy reload that helper's own docstring warns
+            # against. Neither column changes between that snapshot and here on
+            # any path that reaches this line, so it is still accurate.
+            if already_in_error and sync_failures_before >= SYNC_FAILURE_LIMIT:
                 project.quote_sync_state = "idle"
                 project.quote_sync_error = None
             project.quote_sync_failures = 0
@@ -748,8 +842,14 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         return
     except ZohoRequestRejected as e:
         # Books rejected the payload. Retrying an identical body cannot help.
-        already_failed = project.quote_sync_state == "error"
-        previous_error = project.quote_sync_error
+        #
+        # The rollback comes before any write: the exception just caught can
+        # itself be a failed flush (see _rollback_after_terminal_failure), and
+        # already_in_error/previous_sync_error are read from the snapshot
+        # taken at the top of this function rather than from `project` here,
+        # for the same reason -- the object's attributes may already be
+        # expired by that failed flush before this handler ever runs.
+        await _rollback_after_terminal_failure(db)
         project.quote_sync_state = "error"
         project.quote_sync_error = str(e)
         # Counter to 0, exactly like _create_quote/_update_quote's terminal
@@ -766,14 +866,14 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         # (see run_sync_once's SELECT, which excludes only 'unmanaged' and
         # 'locked') would write one row per tick for as long as it stays
         # broken.
-        if not already_failed or previous_error != project.quote_sync_error:
+        if not already_in_error or previous_sync_error != project.quote_sync_error:
             await record(
                 db,
-                project.id,
+                project_id,
                 "sync.failed",
                 actor_class="system",
                 subject_type="project",
-                subject_id=project.id,
+                subject_id=project_id,
                 detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
             )
     except ZohoAmbiguousReferenceError as e:
@@ -783,43 +883,46 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         # a human to sort out the duplicate/mismatched estimate in Books —
         # and it must never be treated as "create anyway", which is exactly
         # how a real customer's estimate would get adopted and overwritten.
-        already_failed = project.quote_sync_state == "error"
-        previous_error = project.quote_sync_error
+        await _rollback_after_terminal_failure(db)
         project.quote_sync_state = "error"
         project.quote_sync_error = str(e)
         project.quote_sync_failures = 0
-        if not already_failed or previous_error != project.quote_sync_error:
+        if not already_in_error or previous_sync_error != project.quote_sync_error:
             await record(
                 db,
-                project.id,
+                project_id,
                 "sync.failed",
                 actor_class="system",
                 subject_type="project",
-                subject_id=project.id,
+                subject_id=project_id,
                 detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
             )
     except ZohoNotFound:
-        already_failed = project.quote_sync_state == "error"
-        previous_error = project.quote_sync_error
+        await _rollback_after_terminal_failure(db)
         project.quote_sync_state = "error"
         project.quote_sync_error = "The quote no longer exists in Zoho Books"
         project.quote_sync_failures = 0
-        if not already_failed or previous_error != project.quote_sync_error:
+        if not already_in_error or previous_sync_error != project.quote_sync_error:
             await record(
                 db,
-                project.id,
+                project_id,
                 "sync.failed",
                 actor_class="system",
                 subject_type="project",
-                subject_id=project.id,
+                subject_id=project_id,
                 detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
             )
     except ZohoUpstreamError as e:
-        already_failed = project.quote_sync_state == "error"
-        previous_error = project.quote_sync_error
-        project.quote_sync_failures = (project.quote_sync_failures or 0) + 1
+        # Below the limit, this is a plain in-memory write, no flush -- so
+        # there is nothing here for a poisoned session to break, and no
+        # rollback is needed unless the escalation branch below is taken.
+        failures = sync_failures_before + 1
+        project.quote_sync_failures = failures
         project.quote_sync_error = str(e)
-        if project.quote_sync_failures >= SYNC_FAILURE_LIMIT:
+        if failures >= SYNC_FAILURE_LIMIT:
+            await _rollback_after_terminal_failure(db)
+            project.quote_sync_failures = failures
+            project.quote_sync_error = str(e)
             project.quote_sync_state = "error"
             # Recorded only once the retry budget is actually spent, AND only
             # on the tick that first spends it (or whose message genuinely
@@ -832,17 +935,17 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
             # one row per 300s tick for its entire duration instead of the one
             # row that matters: the moment this project actually stopped
             # retrying and surfaced on the card.
-            if not already_failed or previous_error != project.quote_sync_error:
+            if not already_in_error or previous_sync_error != project.quote_sync_error:
                 await record(
                     db,
-                    project.id,
+                    project_id,
                     "sync.failed",
                     actor_class="system",
                     subject_type="project",
-                    subject_id=project.id,
+                    subject_id=project_id,
                     detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
                 )
-        logger.warning("Aito quote sync failed for project %s: %s", project.id, e)
+        logger.warning("Aito quote sync failed for project %s: %s", project_id, e)
     except Exception as e:
         # Anything not already handled above: a DB error, a bug in
         # build_line_items, an AttributeError on unexpected Zoho data. The
@@ -851,25 +954,30 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         # and skips the commit that persists every other project's write
         # (including a just-created quote_id), which is how a retry turns
         # into a duplicate estimate in Books. Fail this project only.
-        already_failed = project.quote_sync_state == "error"
-        previous_error = project.quote_sync_error
+        #
+        # This is the handler FINDING 1 is really about: the exception `e`
+        # caught here can BE a failed flush (record()'s own IntegrityError, or
+        # any other DB error surfacing as a plain Exception), which is exactly
+        # what _rollback_after_terminal_failure exists to recover from before
+        # the record() call four lines down does its own flush.
+        await _rollback_after_terminal_failure(db)
         project.quote_sync_state = "error"
         project.quote_sync_error = str(e)
         # Same reason as the three handlers above: this is a terminal error of
         # its own, not the outage escalation, and must not be mistaken for one
         # by the sweep path's recovery.
         project.quote_sync_failures = 0
-        if not already_failed or previous_error != project.quote_sync_error:
+        if not already_in_error or previous_sync_error != project.quote_sync_error:
             await record(
                 db,
-                project.id,
+                project_id,
                 "sync.failed",
                 actor_class="system",
                 subject_type="project",
-                subject_id=project.id,
+                subject_id=project_id,
                 detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
             )
-        logger.exception("Aito quote sync hit an unexpected error for project %s", project.id)
+        logger.exception("Aito quote sync hit an unexpected error for project %s", project_id)
 
 
 def _still_selected(project: AitoProject) -> bool:

@@ -5,11 +5,15 @@ the next write overwrites. As events they become history: a card that
 conflicted three times last week can say so.
 """
 
+from datetime import datetime
+
 import httpx
 import pytest
 from sqlalchemy import select
 
 from backend.app.models.aito_event import AitoEvent
+from backend.app.services import aito_quote_sync
+from backend.app.services.aito_events import record as real_record
 from backend.app.services.aito_quote_sync import SYNC_FAILURE_LIMIT, sync_project
 from backend.app.services.zoho import zoho_service
 
@@ -322,3 +326,84 @@ async def test_a_persistent_upstream_failure_is_recorded_once(db_session):
     await db_session.refresh(project)
     assert project.quote_sync_state == "error"
     assert (await _kinds(db_session, project.id)).count("sync.failed") == 1
+
+
+@pytest.mark.asyncio
+async def test_sync_project_does_not_raise_when_a_terminal_handler_hits_a_poisoned_session(db_session, monkeypatch):
+    """FINDING 1's reproducible trigger, in miniature: a terminal exception
+    handler's own record() call does db.add() + await db.flush(), so if the
+    exception being handled was ITSELF a failed flush (the real-world case is
+    two active projects landing on the same quote_id via the partial unique
+    index uq_aito_project_active_quote), the session is already aborted and
+    that second flush raises PendingRollbackError OUT of sync_project --
+    breaking the "never raises" promise its own docstring makes, and (per
+    run_sync_once's loop) aborting every remaining project in the tick.
+
+    A duplicate zoho_comment_id is used here to force a real, deterministic
+    IntegrityError -- easier to arrange in a unit test than the quote_id race
+    -- but the failure mode it reproduces is exactly the one FINDING 1
+    describes: some flush inside the try block fails, and the terminal
+    handler's own record() call is the SECOND flush against the now-poisoned
+    session.
+
+    Before the fix, this test fails with PendingRollbackError propagating out
+    of sync_project. After the fix (rolling the session back before a
+    terminal handler writes or records anything), it passes."""
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    await _configure_zoho(db_session)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "draft",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "draft"}},
+            }
+        )
+    )
+
+    poisoned = {"done": False}
+
+    async def poisoning_record(db, project_id, kind, **kwargs):
+        # sync.pushed is _update_quote's own success-path record() call --
+        # intercepting it lets the successful PUT stand (so the exception
+        # really is "a flush failed", not "Zoho rejected something") while
+        # still landing in sync_project's catch-all below.
+        if kind == "sync.pushed" and not poisoned["done"]:
+            poisoned["done"] = True
+            same_id_kwargs = {
+                "project_id": project_id,
+                "occurred_at": datetime.utcnow(),
+                "kind": "zoho.comment",
+                "actor_class": "system",
+                "zoho_comment_id": "dup-1",
+            }
+            db.add(AitoEvent(**same_id_kwargs))
+            await db.flush()  # succeeds
+            db.add(AitoEvent(**same_id_kwargs))
+            await db.flush()  # UNIQUE constraint on zoho_comment_id: raises, poisoning the session
+            return None
+        return await real_record(db, project_id, kind, **kwargs)
+
+    monkeypatch.setattr(aito_quote_sync, "record", poisoning_record)
+
+    try:
+        await sync_project(db_session, project)  # must not raise
+        await db_session.commit()
+    finally:
+        zoho_service.transport = None
+
+    assert poisoned["done"]  # the poisoning path actually ran, not skipped
+    await db_session.refresh(project)
+    # The IntegrityError is not one of the named Zoho exceptions, so it lands
+    # in sync_project's catch-all, which marks the project 'error' -- and,
+    # critically, records that fact instead of raising while trying to.
+    assert project.quote_sync_state == "error"
+    assert "sync.failed" in await _kinds(db_session, project.id)
