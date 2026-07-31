@@ -107,7 +107,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
     onError: () => showToast(t('aito.saveFailed'), 'error'),
   });
 
-  const { tasks, onTasksChange, onRemoveTask, onRowBlur } = useProjectTasks(project.id);
+  const { tasks, onTasksChange, onRemoveTask, onRowBlur, pendingTaskUids } = useProjectTasks(project.id);
 
   const [editingDesc, setEditingDesc] = useState(false);
   const [draft, setDraft] = useState(project.description);
@@ -428,6 +428,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                   if (task.id !== null) onRowBlur(task.id);
                 }}
                 canTick={project.quote_status === 'accepted'}
+                pendingUids={pendingTaskUids}
               />
             </div>
 

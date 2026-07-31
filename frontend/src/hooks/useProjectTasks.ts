@@ -331,15 +331,38 @@ export function useProjectTasks(projectId: number) {
     for (const taskId of [...pendingRef.current.keys()]) flush(taskId);
   }, [flush]);
 
+  // Uids of rows whose create POST is still in flight. A row in this set
+  // must render inert (see TaskRow's `pending` prop / TaskStepFields'
+  // `disabled`): the row appears the instant "+ Add task" is clicked and
+  // TaskEditor auto-opens it for editing (it has no steps yet, so the
+  // read-only view would show nothing), but `onSuccess` below overwrites
+  // whatever is in this row with `taskDraftFromAitoTask(created)` — the
+  // server's echo of the ORIGINAL, still-empty draft `mutate` captured. Any
+  // edit made in that window has nowhere to go (there is no id to PATCH yet,
+  // see `onTasksChange`'s `edited.id === null` branch) and would otherwise be
+  // silently lost the moment the POST resolves. Disabling the row until then
+  // is the fix; replaying the edits afterwards was considered and rejected —
+  // an edit made against an id that never arrives (the POST fails) has
+  // nowhere to go either.
+  const [pendingTaskUids, setPendingTaskUids] = useState<Set<string>>(new Set());
+
   const addTaskMutation = useMutation({
     mutationFn: ({ draft }: { draft: TaskDraft }) =>
       api.createAitoTask(projectId, taskDraftToTaskCreate(draft)),
+    onMutate: ({ draft }) => {
+      setPendingTaskUids((prev) => new Set(prev).add(draft.uid));
+    },
     onSuccess: (created, { draft }) => {
       // Swap the placeholder for the real row, matched on `uid` — the draft's
       // stable client-side identity. Matching on array position instead would
       // put the id on the wrong row if another add or delete landed meanwhile.
       baselineRef.current.set(created.id, created);
       setTasks((prev) => prev.map((row) => (row.uid === draft.uid ? taskDraftFromAitoTask(created) : row)));
+      setPendingTaskUids((prev) => {
+        const next = new Set(prev);
+        next.delete(draft.uid);
+        return next;
+      });
       tasksDirtyRef.current = true;
       invalidateTasksAndBoard();
     },
@@ -347,12 +370,18 @@ export function useProjectTasks(projectId: number) {
       // The placeholder never became a row. Remove it rather than leaving an
       // un-PATCHable ghost the user can type into.
       setTasks((prev) => prev.filter((row) => row.uid !== draft.uid));
+      setPendingTaskUids((prev) => {
+        const next = new Set(prev);
+        next.delete(draft.uid);
+        return next;
+      });
       showToast(t('aito.saveFailed'), 'error');
     },
   });
 
   const deleteTaskMutation = useMutation({
-    mutationFn: ({ id }: { id: number; removed: TaskDraft; index: number }) => api.deleteAitoTask(id),
+    mutationFn: ({ id }: { id: number; removed: TaskDraft; followingUid: string | null }) =>
+      api.deleteAitoTask(id),
     onSuccess: (_data, { id }) => {
       // The row is gone for good; drop its diff baseline so a late flush
       // cannot PATCH a deleted task.
@@ -360,12 +389,24 @@ export function useProjectTasks(projectId: number) {
       tasksDirtyRef.current = true;
       invalidateTasksAndBoard();
     },
-    onError: (_error, { removed, index }) => {
+    onError: (_error, { removed, followingUid }) => {
       // Put the row back where it was, not at the end: a task list has an
-      // order the user chose, and a failed delete must not silently reorder it.
+      // order the user chose, and a failed delete must not silently reorder
+      // it. "Where it was" is anchored to the STABLE uid of whatever row
+      // followed it at delete time, not the numeric index captured then: two
+      // deletes overlapping (row B, then row A, while B's request is still
+      // open) each shrink the array between one click and the other's
+      // restore, so a numeric index restores at a position the array has
+      // since moved past — see the design doc finding this fixes. `findIndex`
+      // returning -1 (the neighbour was itself deleted or restored meanwhile,
+      // or there was no neighbour — this was the last row) falls back to the
+      // end of the array, same as `-1` would with `splice` if it were used
+      // directly, made explicit here rather than relied upon.
       setTasks((prev) => {
         const restored = [...prev];
-        restored.splice(index, 0, removed);
+        const insertBefore = followingUid === null ? -1 : restored.findIndex((row) => row.uid === followingUid);
+        const insertAt = insertBefore === -1 ? restored.length : insertBefore;
+        restored.splice(insertAt, 0, removed);
         projectOntoBoard(restored);
         return restored;
       });
@@ -442,10 +483,15 @@ export function useProjectTasks(projectId: number) {
         clearTimeout(pending.timer);
         pendingRef.current.delete(task.id);
       }
+      // Captured now, as a stable identity, not read back off `tasks` (or
+      // recomputed from an index) inside `onError`: by the time this DELETE
+      // settles, `tasks` may have moved on — see `deleteTaskMutation`'s own
+      // comment for why a numeric index doesn't survive that.
+      const followingUid = tasks[index + 1]?.uid ?? null;
       const next = tasks.filter((_, i) => i !== index);
       setTasks(next);
       projectOntoBoard(next);
-      deleteTaskMutation.mutate({ id: task.id, removed: task, index });
+      deleteTaskMutation.mutate({ id: task.id, removed: task, followingUid });
     },
     // `deleteTaskMutation.mutate` specifically, not the mutation object — see
     // `flush`'s comment above for why the object's identity isn't stable.
@@ -482,5 +528,5 @@ export function useProjectTasks(projectId: number) {
     [],
   );
 
-  return { tasks, onTasksChange, onRemoveTask, onRowBlur: flush };
+  return { tasks, onTasksChange, onRemoveTask, onRowBlur: flush, pendingTaskUids };
 }

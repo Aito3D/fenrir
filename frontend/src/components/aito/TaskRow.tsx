@@ -36,6 +36,14 @@ export interface TaskRowProps {
    *  defaulted: a default is exactly how a caller with no quote (the create
    *  modal) would silently inherit the wrong answer. */
   canTick: boolean;
+  /** True while this row's create POST is still in flight — see
+   *  `TaskEditor`'s `pendingUids`. Disables the edit form (`TaskStepFields`)
+   *  so nothing typed here can be silently overwritten once the POST
+   *  resolves, and hides the delete control the same way `onRemove` being
+   *  absent already does for a row that cannot be removed. Defaults to
+   *  false, so every existing caller (and every persisted row) is
+   *  unaffected. */
+  pending?: boolean;
 }
 
 /** One task of a project: title/description, the four services (each
@@ -65,6 +73,7 @@ export function TaskRow({
   onToggleEdit,
   onRowBlur,
   canTick,
+  pending = false,
 }: TaskRowProps) {
   const { t } = useTranslation();
   const reactId = useId();
@@ -148,7 +157,7 @@ export function TaskRow({
       {expanded && (
         <div id={`${reactId}-body`} className="animate-slide-up px-3 pb-3 space-y-3">
           {editing ? (
-            <TaskStepFields task={task} onChange={onChange} />
+            <TaskStepFields task={task} onChange={onChange} disabled={pending} />
           ) : (
             <TaskStepList task={task} onChange={onChange} canTick={canTick} />
           )}

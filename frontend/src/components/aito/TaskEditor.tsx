@@ -47,6 +47,19 @@ export interface TaskEditorProps {
    *  defaulted: a default is exactly how a caller with no quote (the create
    *  modal) would silently inherit the wrong answer. */
   canTick: boolean;
+  /** Uids of rows whose create POST is still in flight — `useProjectTasks`'
+   *  `pendingTaskUids`. Such a row renders inert (see `TaskRow`'s `pending`
+   *  prop): its inputs disabled, its delete control absent — otherwise
+   *  anything typed into it is silently lost the moment the POST resolves
+   *  and swaps the placeholder for the server's echo of the request that was
+   *  in flight (see `useProjectTasks`' `addTaskMutation.onSuccess`).
+   *
+   *  Optional, and deliberately never defaulted to a bare `id === null`
+   *  check: the create modal (`NewProjectModal`) reuses this component and
+   *  EVERY one of its rows has `id === null` while none of them are actually
+   *  pending a network call, so it must stay fully editable. It simply
+   *  passes nothing. */
+  pendingUids?: Set<string>;
 }
 
 /** The task list for one Aito project: a heading, each task's `TaskRow`, "+
@@ -55,7 +68,15 @@ export interface TaskEditorProps {
  *  new array. That split is what lets the create modal hold this array in
  *  local state and POST it with the project, while the detail panel wires
  *  each change to a PATCH; neither caller is visible from here. */
-export function TaskEditor({ value, onChange, onRemove, canTick, minRows = 0, onRowBlur }: TaskEditorProps) {
+export function TaskEditor({
+  value,
+  onChange,
+  onRemove,
+  canTick,
+  minRows = 0,
+  onRowBlur,
+  pendingUids,
+}: TaskEditorProps) {
   const { t } = useTranslation();
   const { data: settings } = useQuery({
     queryKey: ['settings'],
@@ -127,21 +148,28 @@ export function TaskEditor({ value, onChange, onRemove, canTick, minRows = 0, on
       </div>
 
       <div className="space-y-3">
-        {value.map((task, index) => (
-          <TaskRow
-            key={rowKey(task)}
-            task={task}
-            index={index}
-            onChange={(next) => onChange(value.map((existing, i) => (i === index ? next : existing)))}
-            onRemove={value.length > minRows ? () => onRemove(index) : undefined}
-            expanded={expandedKeys.has(rowKey(task))}
-            onToggle={() => toggle(rowKey(task))}
-            editing={editingKeys.has(rowKey(task))}
-            onToggleEdit={() => toggleEdit(rowKey(task))}
-            onRowBlur={onRowBlur}
-            canTick={canTick}
-          />
-        ))}
+        {value.map((task, index) => {
+          const pending = pendingUids?.has(task.uid) ?? false;
+          return (
+            <TaskRow
+              key={rowKey(task)}
+              task={task}
+              index={index}
+              onChange={(next) => onChange(value.map((existing, i) => (i === index ? next : existing)))}
+              // Absent (not merely disabled) while pending too, same rule as
+              // `minRows` below it: the row's create hasn't landed, so there
+              // is no id yet to send a DELETE for — see TaskRow's own prop doc.
+              onRemove={value.length > minRows && !pending ? () => onRemove(index) : undefined}
+              expanded={expandedKeys.has(rowKey(task))}
+              onToggle={() => toggle(rowKey(task))}
+              editing={editingKeys.has(rowKey(task))}
+              onToggleEdit={() => toggleEdit(rowKey(task))}
+              onRowBlur={onRowBlur}
+              canTick={canTick}
+              pending={pending}
+            />
+          );
+        })}
       </div>
 
       <button

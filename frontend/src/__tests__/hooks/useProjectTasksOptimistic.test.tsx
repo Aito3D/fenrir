@@ -273,6 +273,45 @@ describe('useProjectTasks optimistic board projection', () => {
     await waitFor(() => expect(screen.queryAllByRole('heading', { level: 4 })).toHaveLength(0));
   });
 
+  it('disables a new row while its create is in flight, and enables it once the id lands', async () => {
+    // Regression for CRITICAL 1: the row TaskEditor auto-opens for editing
+    // (it has no steps yet, so read mode has nothing to show) used to stay
+    // fully live for the whole POST round trip. Anything typed into it in
+    // that window was silently overwritten the instant `onSuccess` swapped
+    // the placeholder for the server's echo of the ORIGINAL, still-empty
+    // draft `mutate` captured. The fix is to make the row inert (disabled
+    // inputs) until its id lands, not to replay the edits afterwards.
+    let resolveCreate: (task: AitoTask) => void = () => {};
+    vi.mocked(api.createAitoTask).mockImplementation(
+      () => new Promise((resolve) => { resolveCreate = resolve; }),
+    );
+    await renderTasks({ projectId: 1, tasks: [] });
+
+    fireEvent.click(await screen.findByRole('button', { name: /add task/i }));
+
+    // The row auto-opens for editing — see TaskEditor's own doc comment on
+    // `addRequestedRef` — so the title input is on screen immediately, and
+    // it must be inert while nothing has an id to PATCH yet.
+    const title = await screen.findByRole('textbox', { name: 'Optional title' });
+    expect(title).toBeDisabled();
+
+    resolveCreate(makeTask({ id: 202, project_id: 1 }));
+
+    // The id landing swaps the row's key from `draft:<uid>` to
+    // `persisted:202` (see taskDraftFromAitoTask's `uid`), which collapses it
+    // back down — TaskEditor's "open a freshly added row" effect fires once,
+    // on the FIRST key it has never seen, and does not re-fire for this
+    // second key change. That collapse is pre-existing UI behaviour, not
+    // something this fix changes; what this fix guarantees is that the row is
+    // no longer inert once re-opened, which is what matters here — a
+    // permanently disabled row would be exactly as much a data-loss trap as
+    // the original race.
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Task 1/i, expanded: false })).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: /^Task 1/i, expanded: false }));
+    await userEvent.click(screen.getByRole('button', { name: /edit task/i }));
+    expect(await screen.findByRole('textbox', { name: 'Optional title' })).not.toBeDisabled();
+  });
+
   it('removes a deleted row at once and restores it when the DELETE fails', async () => {
     // Held open, not `mockRejectedValue`: the hold gesture itself needs a
     // real ~1s of wall-clock time (`holdDelete` waits it out with real
