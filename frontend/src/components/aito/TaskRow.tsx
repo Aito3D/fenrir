@@ -1,13 +1,11 @@
-import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Check, ChevronRight, Pencil } from 'lucide-react';
+import { Check, Pencil } from 'lucide-react';
 import { api } from '../../api/client';
 import { DeleteHoldButton } from './DeleteHoldButton';
-import { ServiceBadges } from './ServiceBadges';
 import { TaskStepFields } from './TaskStepFields';
 import { TaskStepList } from './TaskStepList';
-import { enabledServices, isTaskFinished, taskSteps } from './services';
+import { isTaskFinished, taskSteps } from './services';
 import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
 import { taskTotal } from '../../utils/taskDraft';
@@ -21,11 +19,8 @@ export interface TaskRowProps {
    *  TaskEditor's `minRows`) — the control disappears entirely rather than
    *  sitting there inert. */
   onRemove?: () => void;
-  expanded: boolean;
-  onToggle: () => void;
   /** Whether the row's body is showing the edit form (`TaskStepFields`,
-   *  Task 11) instead of the read-only `TaskStepList`. Owned by the caller,
-   *  same split as `expanded`/`onToggle`. */
+   *  Task 11) instead of the read-only `TaskStepList`. Owned by the caller. */
   editing: boolean;
   onToggleEdit: () => void;
   /** Called when focus leaves this row, so a debounced save can flush early
@@ -36,6 +31,14 @@ export interface TaskRowProps {
    *  defaulted: a default is exactly how a caller with no quote (the create
    *  modal) would silently inherit the wrong answer. */
   canTick: boolean;
+  /** True while this row's create POST is still in flight — see
+   *  `TaskEditor`'s `pendingUids`. Disables the edit form (`TaskStepFields`)
+   *  so nothing typed here can be silently overwritten once the POST
+   *  resolves, and hides the delete control the same way `onRemove` being
+   *  absent already does for a row that cannot be removed. Defaults to
+   *  false, so every existing caller (and every persisted row) is
+   *  unaffected. */
+  pending?: boolean;
 }
 
 /** One task of a project: title/description, the four services (each
@@ -45,29 +48,25 @@ export interface TaskRowProps {
  *  the same row serves a local draft array (create modal) or a row wired to
  *  a PATCH (detail panel) without knowing which.
  *
- *  Collapsible, because a project with several tasks otherwise fills the
- *  surface. Collapsed, the row keeps its name, its service badges, its total
- *  and the remove control — enough to scan and prune a list without opening
- *  anything. `expanded` is owned by TaskEditor, which decides what a freshly
- *  added row starts as.
+ *  Always open. The row was collapsible when it held a form, and the cost of
+ *  that was a click between the user and the one control they reach for most —
+ *  Done. Now that read mode is a short step list, the row is simply a card.
  *
- *  The body is unmounted rather than hidden when collapsed, which keeps the
- *  collapsed row cheap: a closed row runs none of ImpressionFields' three
+ *  `TaskStepFields` (edit mode) still mounts only behind the pencil, so an
+ *  open row in read mode still runs none of ImpressionFields' three
  *  reference-data queries. */
 export function TaskRow({
   task,
   index,
   onChange,
   onRemove,
-  expanded,
-  onToggle,
   editing,
   onToggleEdit,
   onRowBlur,
   canTick,
+  pending = false,
 }: TaskRowProps) {
   const { t } = useTranslation();
-  const reactId = useId();
   // Same query key ImpressionFields and the calculator page use for the
   // configured currency, so this rides their cache instead of adding a fetch.
   const { data: settings } = useQuery({
@@ -79,6 +78,7 @@ export function TaskRow({
 
   const name = task.title.trim() || t('aito.taskFallbackName', { n: index + 1 });
   const finished = isTaskFinished(task);
+  const steps = taskSteps(task);
 
   return (
     <div
@@ -91,69 +91,45 @@ export function TaskRow({
       }}
     >
       <div className="flex items-center gap-2 p-3">
-        {/* The heading IS the toggle, so the whole row is one target rather
-            than a chevron-sized one. Delete stays a sibling — a <button> may
-            not contain another button. */}
-        <h4 className="flex-1 min-w-0">
+        <h4 className="flex-1 min-w-0 flex items-center gap-2">
+          <span className="text-sm font-medium text-white truncate min-w-0">{name}</span>
+          {finished && (
+            <Check className="w-3.5 h-3.5 flex-shrink-0 text-bambu-green" aria-label={t('aito.taskFinished')} />
+          )}
+          <Money
+            currency={currency}
+            value={taskTotal(task)}
+            className="ml-auto flex-shrink-0 text-sm text-white"
+          />
+        </h4>
+        {/* Hidden on a stepless row: that row is already showing the form, so
+            there is no other mode to switch to. */}
+        {steps.length > 0 && (
           <button
             type="button"
-            onClick={onToggle}
-            aria-expanded={expanded}
-            aria-controls={`${reactId}-body`}
-            className={`flex w-full items-center gap-2 text-left rounded-md ${focusRingCls}`}
+            aria-label={t('aito.editTask')}
+            aria-pressed={editing}
+            title={t('aito.editTask')}
+            onClick={onToggleEdit}
+            className={`flex-shrink-0 p-1 -m-1 rounded-md transition-colors ${focusRingCls} ${
+              editing ? 'text-bambu-green' : 'text-bambu-gray hover:text-white'
+            }`}
           >
-            <ChevronRight
-              className={`w-4 h-4 flex-shrink-0 text-bambu-gray transition-transform duration-150 ${
-                expanded ? 'rotate-90' : ''
-              }`}
-              aria-hidden="true"
-            />
-            <span className="text-sm font-medium text-white truncate min-w-0">{name}</span>
-            {finished && (
-              <Check className="w-3.5 h-3.5 flex-shrink-0 text-bambu-green" aria-label={t('aito.taskFinished')} />
-            )}
-            {!expanded && (
-              <>
-                <ServiceBadges
-                  services={enabledServices(task)}
-                  done={taskSteps(task).filter((s) => s.done).map((s) => s.service)}
-                  className="flex-shrink-0"
-                />
-                <Money
-                  currency={currency}
-                  value={taskTotal(task)}
-                  className="ml-auto flex-shrink-0 text-sm text-white"
-                />
-              </>
-            )}
+            <Pencil className="w-3.5 h-3.5" />
           </button>
-        </h4>
-        <button
-          type="button"
-          aria-label={t('aito.editTask')}
-          aria-pressed={editing}
-          title={t('aito.editTask')}
-          onClick={onToggleEdit}
-          className={`flex-shrink-0 p-1 -m-1 rounded-md transition-colors ${focusRingCls} ${
-            editing ? 'text-bambu-green' : 'text-bambu-gray hover:text-white'
-          }`}
-        >
-          <Pencil className="w-3.5 h-3.5" />
-        </button>
+        )}
         {onRemove && (
           <DeleteHoldButton onDelete={onRemove} label={t('aito.removeTask')} hint={t('aito.holdToDelete')} />
         )}
       </div>
 
-      {expanded && (
-        <div id={`${reactId}-body`} className="animate-slide-up px-3 pb-3 space-y-3">
-          {editing ? (
-            <TaskStepFields task={task} onChange={onChange} />
-          ) : (
-            <TaskStepList task={task} onChange={onChange} canTick={canTick} />
-          )}
-        </div>
-      )}
+      <div className="px-3 pb-3 space-y-3">
+        {editing ? (
+          <TaskStepFields task={task} onChange={onChange} disabled={pending} />
+        ) : (
+          <TaskStepList task={task} onChange={onChange} canTick={canTick} />
+        )}
+      </div>
     </div>
   );
 }

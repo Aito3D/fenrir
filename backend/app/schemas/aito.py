@@ -148,6 +148,17 @@ class AitoProjectResponse(BaseModel):
     task_count: int
     tasks_total: float
     task_services: list[str]
+    # Steps, not services: two tasks each carrying a scan are two steps, where
+    # task_services reports 'scan' once. The board card's progress bar is
+    # steps_done / steps_total, and hides itself entirely when steps_total is
+    # 0 — an unpriced project has nothing to measure.
+    steps_total: int
+    steps_done: int
+    # The services with at least one UNTICKED step, in canonical order —
+    # exactly what evaluate() takes. task_services above is the union of
+    # ENABLED services, a different set that cannot substitute for it: the
+    # optimistic frontend predicts a card's column from this field.
+    task_pending: list[str]
     # Why this card cannot be dragged between columns, or None when it can
     # (Finish <-> Done only). Derived, never stored — see
     # services/aito_board_rules.evaluate. The frontend renders its lock badge

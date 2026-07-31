@@ -1,9 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, ApiError, type AitoTask, type AitoTaskCreate, type AitoTaskUpdate } from '../api/client';
+import {
+  api,
+  ApiError,
+  type AitoProject,
+  type AitoTask,
+  type AitoTaskCreate,
+  type AitoTaskUpdate,
+} from '../api/client';
 import { useToast } from '../contexts/ToastContext';
-import { emptyTaskDraft, taskDraftFromAitoTask, taskDraftToTaskCreate } from '../utils/taskDraft';
+import { useBoardSync } from './useBoardSync';
+import { summariseTasks } from '../utils/aitoBoardRules';
+import { applyTaskSummary } from '../utils/aitoOptimistic';
+import { taskDraftFromAitoTask, taskDraftToTaskCreate } from '../utils/taskDraft';
 import type { TaskDraft } from '../utils/taskDraft';
 
 /** Long enough that a typed number lands as one PATCH, short enough that the
@@ -44,12 +54,25 @@ export function useProjectTasks(projectId: number) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+  // `resyncIfIdle`, not a bare `invalidateQueries`: this hook's board
+  // invalidations are the only ones in the codebase that used to bypass
+  // `useBoardSync` entirely, which is what let a task-panel refresh race a
+  // board write it knew nothing about — see the finding this fixes. The
+  // function itself is stable (see useBoardSync's own doc on why the
+  // returned OBJECT, not its methods, is the fresh-per-render part), so it is
+  // safe to depend on directly below.
+  const { resyncIfIdle } = useBoardSync();
 
   const tasksQuery = useQuery({
     queryKey: ['aito-tasks', projectId],
     queryFn: () => api.getAitoTasks(projectId),
   });
   const [tasks, setTasks] = useState<TaskDraft[]>([]);
+
+  // The current draft array, readable from mutation callbacks that outlive the
+  // render they were created in.
+  const tasksRef = useRef<TaskDraft[]>([]);
+  tasksRef.current = tasks;
 
   // The diff baseline: the last-known-persisted row per task id. Deliberately
   // NOT the query cache — writing a PATCH response into ['aito-tasks', id]
@@ -157,9 +180,35 @@ export function useProjectTasks(projectId: number) {
 
   const invalidateTasksAndBoard = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['aito-tasks', projectId] });
-    queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+    // Gated, unlike the two invalidations either side of it: a board write
+    // (delete project, drag, quote status, create) may be mid-flight with
+    // its own optimistic cache entry, and an ungated GET here would land
+    // between that write's `cancelQueries` and its own settle, overwriting
+    // the optimistic value with data that predates it. `resyncIfIdle` is a
+    // no-op in that case — the board write's own `settle()` invalidates once
+    // IT finishes, which is after this hook's optimistic `projectOntoBoard`
+    // write has already applied, so nothing is lost, only reordered.
+    resyncIfIdle(queryClient);
     queryClient.invalidateQueries({ queryKey: ['aito-events', projectId] });
-  }, [queryClient, projectId]);
+  }, [queryClient, projectId, resyncIfIdle]);
+
+  /** Project the current draft array onto the board card: total, badges,
+   *  progress bar and — through the mirrored rules — the column.
+   *
+   *  A setQueryData, never an invalidateQueries. The board is refetched once,
+   *  on close, and only if something was really saved (see `closedRef` and
+   *  `inFlightRef` below); a refetch here would be a full-board GET per
+   *  keystroke, which is the exact cost that arbitration exists to avoid. A
+   *  cache write costs nothing and is corrected by that same close-time
+   *  refetch. */
+  const projectOntoBoard = useCallback(
+    (rows: TaskDraft[]) => {
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
+        applyTaskSummary(prev, projectId, summariseTasks(rows)),
+      );
+    },
+    [queryClient, projectId],
+  );
 
   const updateTaskMutation = useMutation({
     mutationFn: ({ id, patch }: { id: number; patch: AitoTaskUpdate }) => api.updateAitoTask(id, patch),
@@ -181,7 +230,7 @@ export function useProjectTasks(projectId: number) {
       const tickedAStep = ['scan_done', 'modelisation_done', 'impression_done', 'usinage_done'].some(
         (key) => key in patch,
       );
-      if (tickedAStep) queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+      if (tickedAStep) resyncIfIdle(queryClient);
       // Every edit writes an event, not only ticks — this sits outside the
       // guard above deliberately. The two-element prefix (not the query's own
       // three-element key) matches every depth's cache entry, so switching
@@ -215,7 +264,14 @@ export function useProjectTasks(projectId: number) {
         queryClient.invalidateQueries({ queryKey: ['aito-tasks', projectId] });
         return;
       }
-      setTasks((prev) => prev.map((row) => (row.id === id ? taskDraftFromAitoTask(baseline) : row)));
+      // Read from `tasksRef`, not a `setTasks` functional update: the
+      // restored array is also needed for `projectOntoBoard` below, and this
+      // callback belongs to whichever mutation instance was in flight when
+      // the PATCH was fired — by the time it settles, `tasks` may have moved
+      // on (another row added, edited or deleted), so only the ref is current.
+      const restored = tasksRef.current.map((row) => (row.id === id ? taskDraftFromAitoTask(baseline) : row));
+      setTasks(restored);
+      projectOntoBoard(restored);
     },
     // Mutation-level, so React Query still runs it after this hook unmounts —
     // which is the point: the write that lands after close triggers the refresh.
@@ -292,16 +348,87 @@ export function useProjectTasks(projectId: number) {
     for (const taskId of [...pendingRef.current.keys()]) flush(taskId);
   }, [flush]);
 
+  // Uids of rows whose create POST is still in flight. A row in this set
+  // must render inert (see TaskRow's `pending` prop / TaskStepFields'
+  // `disabled`): the row appears the instant "+ Add task" is clicked and
+  // TaskEditor auto-opens it for editing (it has no steps yet, so the
+  // read-only view would show nothing), but `onSuccess` below overwrites
+  // whatever is in this row with `taskDraftFromAitoTask(created)` — the
+  // server's echo of the ORIGINAL, still-empty draft `mutate` captured. Any
+  // edit made in that window has nowhere to go (there is no id to PATCH yet,
+  // see `onTasksChange`'s `edited.id === null` branch) and would otherwise be
+  // silently lost the moment the POST resolves. Disabling the row until then
+  // is the fix; replaying the edits afterwards was considered and rejected —
+  // an edit made against an id that never arrives (the POST fails) has
+  // nowhere to go either.
+  const [pendingTaskUids, setPendingTaskUids] = useState<Set<string>>(new Set());
+
   const addTaskMutation = useMutation({
-    mutationFn: () => api.createAitoTask(projectId, taskDraftToTaskCreate(emptyTaskDraft())),
-    onSuccess: invalidateTasksAndBoard,
-    onError: () => showToast(t('aito.saveFailed'), 'error'),
+    mutationFn: ({ draft }: { draft: TaskDraft }) =>
+      api.createAitoTask(projectId, taskDraftToTaskCreate(draft)),
+    onMutate: ({ draft }) => {
+      setPendingTaskUids((prev) => new Set(prev).add(draft.uid));
+    },
+    onSuccess: (created, { draft }) => {
+      // Swap the placeholder for the real row, matched on `uid` — the draft's
+      // stable client-side identity. Matching on array position instead would
+      // put the id on the wrong row if another add or delete landed meanwhile.
+      baselineRef.current.set(created.id, created);
+      setTasks((prev) => prev.map((row) => (row.uid === draft.uid ? taskDraftFromAitoTask(created) : row)));
+      setPendingTaskUids((prev) => {
+        const next = new Set(prev);
+        next.delete(draft.uid);
+        return next;
+      });
+      tasksDirtyRef.current = true;
+      invalidateTasksAndBoard();
+    },
+    onError: (_error, { draft }) => {
+      // The placeholder never became a row. Remove it rather than leaving an
+      // un-PATCHable ghost the user can type into.
+      setTasks((prev) => prev.filter((row) => row.uid !== draft.uid));
+      setPendingTaskUids((prev) => {
+        const next = new Set(prev);
+        next.delete(draft.uid);
+        return next;
+      });
+      showToast(t('aito.saveFailed'), 'error');
+    },
   });
 
   const deleteTaskMutation = useMutation({
-    mutationFn: (id: number) => api.deleteAitoTask(id),
-    onSuccess: invalidateTasksAndBoard,
-    onError: () => showToast(t('aito.saveFailed'), 'error'),
+    mutationFn: ({ id }: { id: number; removed: TaskDraft; followingUid: string | null }) =>
+      api.deleteAitoTask(id),
+    onSuccess: (_data, { id }) => {
+      // The row is gone for good; drop its diff baseline so a late flush
+      // cannot PATCH a deleted task.
+      baselineRef.current.delete(id);
+      tasksDirtyRef.current = true;
+      invalidateTasksAndBoard();
+    },
+    onError: (_error, { removed, followingUid }) => {
+      // Put the row back where it was, not at the end: a task list has an
+      // order the user chose, and a failed delete must not silently reorder
+      // it. "Where it was" is anchored to the STABLE uid of whatever row
+      // followed it at delete time, not the numeric index captured then: two
+      // deletes overlapping (row B, then row A, while B's request is still
+      // open) each shrink the array between one click and the other's
+      // restore, so a numeric index restores at a position the array has
+      // since moved past — see the design doc finding this fixes. `findIndex`
+      // returning -1 (the neighbour was itself deleted or restored meanwhile,
+      // or there was no neighbour — this was the last row) falls back to the
+      // end of the array, same as `-1` would with `splice` if it were used
+      // directly, made explicit here rather than relied upon.
+      setTasks((prev) => {
+        const restored = [...prev];
+        const insertBefore = followingUid === null ? -1 : restored.findIndex((row) => row.uid === followingUid);
+        const insertAt = insertBefore === -1 ? restored.length : insertBefore;
+        restored.splice(insertAt, 0, removed);
+        projectOntoBoard(restored);
+        return restored;
+      });
+      showToast(t('aito.saveFailed'), 'error');
+    },
   });
 
   // TaskEditor is fully controlled and reports the whole array on every edit.
@@ -311,12 +438,17 @@ export function useProjectTasks(projectId: number) {
   const onTasksChange = useCallback(
     (next: TaskDraft[]) => {
       if (next.length > tasks.length) {
-        addTaskMutation.mutate();
+        // TaskEditor has already appended the draft to `next`; adopt its
+        // array so the row is on screen this render, and POST the same draft.
+        const added = next[next.length - 1];
+        setTasks(next);
+        addTaskMutation.mutate({ draft: added });
         return;
       }
       const changedIndex = next.findIndex((task, i) => task !== tasks[i]);
       if (changedIndex === -1) return;
       setTasks(next);
+      projectOntoBoard(next);
 
       const edited = next[changedIndex];
       if (edited.id === null) return; // not yet persisted; nothing to PATCH
@@ -349,7 +481,7 @@ export function useProjectTasks(projectId: number) {
     // `addTaskMutation.mutate` specifically, not the mutation object — see
     // `flush`'s comment above for why the object's identity isn't stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tasks, addTaskMutation.mutate, flush],
+    [tasks, addTaskMutation.mutate, flush, projectOntoBoard],
   );
 
   const onRemoveTask = useCallback(
@@ -357,7 +489,9 @@ export function useProjectTasks(projectId: number) {
       const task = tasks[index];
       if (!task) return;
       if (task.id === null) {
-        setTasks(tasks.filter((_, i) => i !== index));
+        const next = tasks.filter((_, i) => i !== index);
+        setTasks(next);
+        projectOntoBoard(next);
         return;
       }
       // Drop any queued patch for a row about to be deleted.
@@ -366,12 +500,20 @@ export function useProjectTasks(projectId: number) {
         clearTimeout(pending.timer);
         pendingRef.current.delete(task.id);
       }
-      deleteTaskMutation.mutate(task.id);
+      // Captured now, as a stable identity, not read back off `tasks` (or
+      // recomputed from an index) inside `onError`: by the time this DELETE
+      // settles, `tasks` may have moved on — see `deleteTaskMutation`'s own
+      // comment for why a numeric index doesn't survive that.
+      const followingUid = tasks[index + 1]?.uid ?? null;
+      const next = tasks.filter((_, i) => i !== index);
+      setTasks(next);
+      projectOntoBoard(next);
+      deleteTaskMutation.mutate({ id: task.id, removed: task, followingUid });
     },
     // `deleteTaskMutation.mutate` specifically, not the mutation object — see
     // `flush`'s comment above for why the object's identity isn't stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tasks, deleteTaskMutation.mutate],
+    [tasks, deleteTaskMutation.mutate, projectOntoBoard],
   );
 
   const flushAllRef = useRef(flushAll);
@@ -403,5 +545,5 @@ export function useProjectTasks(projectId: number) {
     [],
   );
 
-  return { tasks, onTasksChange, onRemoveTask, onRowBlur: flush };
+  return { tasks, onTasksChange, onRemoveTask, onRowBlur: flush, pendingTaskUids };
 }

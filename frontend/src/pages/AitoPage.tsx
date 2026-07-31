@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DndContext, DragOverlay, MeasuringStrategy, closestCorners, type DropAnimation } from '@dnd-kit/core';
 import { AlertTriangle, FileInput, Kanban, Plus, Trash2 } from 'lucide-react';
 import { Button } from '../components/Button';
@@ -11,7 +11,7 @@ import { ImportQuoteModal } from '../components/aito/ImportQuoteModal';
 import { NewProjectModal } from '../components/aito/NewProjectModal';
 import { ProjectDetailPanel } from '../components/aito/ProjectDetailPanel';
 import { TrashModal } from '../components/aito/TrashModal';
-import { api, ApiError, type ZohoQuotePreview } from '../api/client';
+import { api, ApiError, type AitoProject, type ZohoQuotePreview } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { formatPhone } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
@@ -20,6 +20,9 @@ import type { TaskDraft } from '../utils/taskDraft';
 import { prefersReducedMotion } from '../utils/motion';
 import { useCardMorph } from '../hooks/useCardMorph';
 import { useBoardDrag } from '../hooks/useBoardDrag';
+import { useBoardSync } from '../hooks/useBoardSync';
+import { useOptimisticBoardMutation } from '../hooks/useOptimisticBoardMutation';
+import { applyCreate, applyDelete, placeholderProject } from '../utils/aitoOptimistic';
 import { COLUMN_IDS } from '../utils/aitoBoard';
 
 // Shared with SortableCard so the dropped card and the neighbours closing
@@ -79,10 +82,29 @@ export function AitoPage() {
   // boolean can only ever go true -> true across that transition and would
   // never notice the new arrival.
   const pollMatchingIdsRef = useRef<Set<number>>(new Set());
+  // Shares the module-level counters every optimistic board mutation feeds —
+  // see that hook's own doc for why there are two. Only `isIdle` (the
+  // `pendingWrites` one) is used here.
+  const boardSync = useBoardSync();
   const aitoQuery = useQuery({
     queryKey: ['aito-projects'],
     queryFn: api.getAitoProjects,
     refetchInterval: (query) => {
+      // A board write's `onMutate` writes its optimistic value into this
+      // same cache entry BEFORE this function is asked to run again (writing
+      // to the cache is itself what re-triggers this evaluation — see
+      // QueryObserver.onQueryUpdate). A poll tick landing inside that
+      // write's [onMutate, onSettled] window would issue a fresh GET that
+      // overwrites the optimistic entry with data that predates the write,
+      // with no ring and no toast — silent, not merely stale. Skipping here,
+      // rather than after computing `matchingIds`, is deliberate: it must
+      // leave `pollDeadlineRef`/`pollMatchingIdsRef` exactly as they were, so
+      // a skipped tick neither consumes the deadline's budget nor loses the
+      // "was this id already matching" state that `hasNewMatch` depends on.
+      // The write's own `settle()` invalidates once it finishes, which
+      // re-triggers this function and lets the poll resume exactly where it
+      // left off.
+      if (!boardSync.isIdle()) return false;
       const matchingIds = new Set(
         (query.state.data ?? [])
           .filter((p) => !p.quote_number && p.quote_sync_state === 'pending')
@@ -140,8 +162,11 @@ export function AitoPage() {
     }
   };
 
-  const createMutation = useMutation({
-    mutationFn: ({ description, draft, tasks }: { description: string; draft: ClientDraft; tasks: TaskDraft[] }) =>
+  const createMutation = useOptimisticBoardMutation<
+    AitoProject,
+    { description: string; draft: ClientDraft; tasks: TaskDraft[]; placeholder: AitoProject }
+  >({
+    mutationFn: ({ description, draft, tasks }) =>
       api.createAitoProject({
         description,
         client_id: draft.id,
@@ -151,12 +176,19 @@ export function AitoPage() {
         client_is_company: draft.isCompany,
         tasks: tasks.map(taskDraftToTaskCreate),
       }),
-    onSuccess: (_data, { draft }) => {
-      queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
-      setShowModal(false);
+    transform: (previous, { placeholder }) => applyCreate(previous, placeholder),
+    // No flash: the placeholder is REMOVED on failure rather than reverted in
+    // place, so there is no card left to ring.
+    onSuccess: (created, { placeholder, draft }) => {
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
+        prev?.map((p) => (p.id === placeholder.id ? created : p)) ?? prev,
+      );
       void syncClientToZoho(draft);
     },
-    onError: () => {
+    onError: (_error, { placeholder }) => {
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
+        prev?.filter((p) => p.id !== placeholder.id) ?? prev,
+      );
       showToast(t('aito.createFailed'), 'error');
     },
   });
@@ -165,8 +197,11 @@ export function AitoPage() {
    *  board's ordering, defaults and landing column all behave identically —
    *  the only difference is the quote snapshot riding along. Nothing is
    *  written back to Zoho. */
-  const importMutation = useMutation({
-    mutationFn: ({ description, preview }: { description: string; preview: ZohoQuotePreview }) =>
+  const importMutation = useOptimisticBoardMutation<
+    AitoProject,
+    { description: string; preview: ZohoQuotePreview; placeholder: AitoProject }
+  >({
+    mutationFn: ({ description, preview }) =>
       api.createAitoProject({
         description,
         client_id: preview.client.id,
@@ -183,22 +218,31 @@ export function AitoPage() {
         quote_salesperson: preview.quote.salesperson,
         quote_status: preview.quote.status,
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
-      setShowImport(false);
+    transform: (previous, { placeholder }) => applyCreate(previous, placeholder),
+    onSuccess: (created, { placeholder }) => {
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
+        prev?.map((p) => (p.id === placeholder.id ? created : p)) ?? prev,
+      );
     },
-    onError: (error) => {
+    onError: (error, { placeholder }) => {
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
+        prev?.filter((p) => p.id !== placeholder.id) ?? prev,
+      );
       const conflict = error instanceof ApiError && error.status === 409;
       showToast(t(conflict ? 'aito.quoteAlreadyHasProject' : 'aito.createFailed'), 'error');
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => api.deleteAitoProject(id),
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+  const deleteMutation = useOptimisticBoardMutation<void, number>({
+    mutationFn: (id) => api.deleteAitoProject(id),
+    transform: (previous, id) => applyDelete(previous, id),
+    flashId: (id) => id,
+    onSuccess: () => {
+      // The board is handled by the wrapper's settle-invalidate; the trash is
+      // a separate query with a new row in it.
       queryClient.invalidateQueries({ queryKey: ['aito-trash'] });
     },
+    onError: () => showToast(t('aito.deleteFailed'), 'error'),
   });
 
   const totalCount = COLUMN_IDS.reduce((sum, col) => sum + board[col].length, 0);
@@ -206,7 +250,28 @@ export function AitoPage() {
   const reducedMotion = useMemo(() => prefersReducedMotion(), []);
 
   const createProject = (description: string, draft: ClientDraft, tasks: TaskDraft[]) => {
-    createMutation.mutate({ description, draft, tasks });
+    // Closed here, not in onSuccess: the whole point is that the modal does
+    // not sit open through a round trip. The placeholder is what tells the
+    // user their card exists.
+    setShowModal(false);
+    createMutation.mutate({
+      description,
+      draft,
+      tasks,
+      placeholder: placeholderProject({
+        description,
+        client_id: draft.id,
+        client_name: draft.name,
+        client_phone: formatPhone(draft) || null,
+        client_email: draft.email.trim() || null,
+        client_is_company: draft.isCompany,
+        // No quote_status: a manual create posts none (see the mutationFn
+        // above), so it defaults to null — the same "waits for Accept" state
+        // a draft import has. `TaskDraft` already structurally matches
+        // `TaskLike` (see aitoBoardRules.ts), so no conversion is needed.
+        tasks,
+      }),
+    });
   };
 
   return (
@@ -297,7 +362,44 @@ export function AitoPage() {
       {showImport && (
         <ImportQuoteModal
           onClose={() => setShowImport(false)}
-          onImport={(payload) => importMutation.mutate(payload)}
+          onImport={({ description, preview }) => {
+            // Closed here, not in onSuccess — same reasoning as createProject.
+            setShowImport(false);
+            importMutation.mutate({
+              description,
+              preview,
+              placeholder: placeholderProject({
+                description,
+                client_id: preview.client.id,
+                client_name: preview.client.name,
+                client_phone: preview.client.phone,
+                client_email: preview.client.email,
+                client_is_company: preview.client.is_company,
+                quote_number: preview.quote.number,
+                quote_total: preview.quote.total,
+                // A non-draft quote (sent/accepted/declined — the normal
+                // import case) must not park on Quote for one round trip;
+                // `placeholderProject` evaluates the same rules the server
+                // does from this status and the tasks below.
+                quote_status: preview.quote.status,
+                // Wire shape (what `preview.tasks` already is — see
+                // ZohoQuotePreview) -> `TaskLike`, the shape `summariseTasks`
+                // reads everywhere else in the mirror.
+                tasks: preview.tasks.map((task) => ({
+                  scanCost: task.scan_cost,
+                  modelisationCost: task.modelisation_cost,
+                  impressionCost: task.impression_cost,
+                  usinageCost: task.usinage_cost,
+                  done: {
+                    scan: task.scan_done ?? false,
+                    modelisation: task.modelisation_done ?? false,
+                    impression: task.impression_done ?? false,
+                    usinage: task.usinage_done ?? false,
+                  },
+                })),
+              }),
+            });
+          }}
           submitting={importMutation.isPending}
         />
       )}

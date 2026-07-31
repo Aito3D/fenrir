@@ -101,6 +101,40 @@ describe('ActivityRail', () => {
     await waitFor(() => expect(box).toHaveValue(''));
   });
 
+  it('shows the note and clears the box before the POST resolves', async () => {
+    vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
+    let release: (value: AitoEvent) => void = () => {};
+    vi.spyOn(api, 'addAitoNote').mockImplementation(
+      () => new Promise((resolve) => { release = resolve; }),
+    );
+    const user = userEvent.setup();
+    render(<ActivityRail projectId={12} />);
+
+    const box = await screen.findByPlaceholderText(/add a note/i);
+    await user.type(box, 'called the client');
+    await user.click(screen.getByRole('button', { name: /add note/i }));
+
+    expect(screen.getByText('called the client')).toBeInTheDocument();
+    expect(box).toHaveValue('');
+
+    release(event({ id: 99, kind: 'note.added', note: 'called the client' }));
+  });
+
+  it('removes the note and restores the text when the POST fails', async () => {
+    vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
+    vi.spyOn(api, 'addAitoNote').mockRejectedValue(new Error('nope'));
+    const user = userEvent.setup();
+    render(<ActivityRail projectId={12} />);
+
+    const box = await screen.findByPlaceholderText(/add a note/i);
+    await user.type(box, 'called the client');
+    await user.click(screen.getByRole('button', { name: /add note/i }));
+
+    await waitFor(() => expect(screen.queryByText('called the client')).not.toBeInTheDocument());
+    // The text comes back so the user does not have to retype it.
+    expect(box).toHaveValue('called the client');
+  });
+
   it('renders the verbatim Books text for an unrecognised zoho.comment', async () => {
     vi.spyOn(api, 'getAitoEvents').mockResolvedValue({
       events: [

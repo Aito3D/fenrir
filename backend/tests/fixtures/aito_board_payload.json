@@ -23,7 +23,12 @@
     "quote_total": null,
     "quote_url": null,
     "status": "active",
+    "steps_done": 0,
+    "steps_total": 1,
     "task_count": 1,
+    "task_pending": [
+      "scan"
+    ],
     "task_services": [
       "scan"
     ],
@@ -53,7 +58,10 @@
     "quote_total": null,
     "quote_url": null,
     "status": "active",
+    "steps_done": 0,
+    "steps_total": 0,
     "task_count": 0,
+    "task_pending": [],
     "task_services": [],
     "tasks_total": 0.0
   },
@@ -81,7 +89,10 @@
     "quote_total": null,
     "quote_url": null,
     "status": "active",
+    "steps_done": 1,
+    "steps_total": 1,
     "task_count": 1,
+    "task_pending": [],
     "task_services": [
       "modelisation"
     ],
@@ -111,7 +122,13 @@
     "quote_total": null,
     "quote_url": null,
     "status": "active",
+    "steps_done": 1,
+    "steps_total": 3,
     "task_count": 2,
+    "task_pending": [
+      "impression",
+      "usinage"
+    ],
     "task_services": [
       "scan",
       "impression",
@@ -143,7 +160,12 @@
     "quote_total": null,
     "quote_url": null,
     "status": "active",
+    "steps_done": 0,
+    "steps_total": 1,
     "task_count": 1,
+    "task_pending": [
+      "scan"
+    ],
     "task_services": [
       "scan"
     ],

@@ -1,12 +1,19 @@
 """The Aito board's rules: a project's column is derived, not dropped.
 
 A project sits where its quote status and its ticked task steps say it sits.
-This module is the ONLY definition of that, deliberately: it is pure (no
-FastAPI, no SQLAlchemy, no models), so it can be unit-tested exhaustively, and
-it is never mirrored in TypeScript. The frontend renders `column` and
-`move_lock` as the server computes them and derives nothing of its own, which
-is what keeps the two languages from drifting the way `taskTotal` in
-taskDraft.ts and `TaskSummary.total` here do.
+This module is the authoritative definition of that, and it is pure (no
+FastAPI, no SQLAlchemy, no models) so it can be unit-tested exhaustively.
+
+It IS mirrored in TypeScript — frontend/src/utils/aitoBoardRules.ts — because
+the board is optimistic: the card has to move the instant a step is ticked,
+which means the frontend must predict the column rather than wait to be told
+it. The mirror is not maintained by discipline. It is pinned by a generated
+contract fixture (backend/tests/aito_rules_fixture.py), so changing anything
+here without updating the mirror fails the build. After editing this file run:
+
+    ./venv/bin/python3 scripts/gen_aito_board_rules_fixture.py
+
+and fix the TypeScript until the frontend suite is green again.
 """
 
 from collections.abc import Collection, Iterable
@@ -44,14 +51,26 @@ class TaskSummary:
     ``services`` and ``pending`` are in ``SERVICES`` order so the card's badge
     row is stable across refetches regardless of the order tasks were created
     in. ``total`` is the definition mirrored by ``taskTotal`` in
-    frontend/src/utils/taskDraft.ts — the two are in different languages and
-    cannot share code, so a change here must be made there too.
+    frontend/src/utils/taskDraft.ts.
+
+    ``steps_total``/``steps_done`` count (task, service) pairs, not services:
+    two tasks each carrying a scan are two steps, where ``services`` would
+    report ``('scan',)`` once. They are what the board card's progress bar
+    reads. A service priced at 0 is a real step; a service priced ``None`` is
+    absent from the job and is not counted at all, done flag or no.
+
+    This whole dataclass is mirrored by ``summariseTasks`` in
+    frontend/src/utils/aitoBoardRules.ts and pinned by the contract fixture —
+    see backend/tests/aito_rules_fixture.py. Changing it here without
+    regenerating that fixture fails the build, by design.
     """
 
     count: int = 0
     total: float = 0.0
     services: tuple[str, ...] = ()
     pending: tuple[str, ...] = ()
+    steps_total: int = 0
+    steps_done: int = 0
 
 
 def summarise(tasks: Iterable[Any]) -> TaskSummary:
@@ -68,6 +87,8 @@ def summarise(tasks: Iterable[Any]) -> TaskSummary:
     total = 0.0
     enabled: set[str] = set()
     unticked: set[str] = set()
+    steps_total = 0
+    steps_done = 0
     for task in rows:
         for service in SERVICES:
             cost = getattr(task, f"{service}_cost")
@@ -75,13 +96,18 @@ def summarise(tasks: Iterable[Any]) -> TaskSummary:
                 continue
             enabled.add(service)
             total += cost
-            if not getattr(task, f"{service}_done"):
+            steps_total += 1
+            if getattr(task, f"{service}_done"):
+                steps_done += 1
+            else:
                 unticked.add(service)
     return TaskSummary(
         count=len(rows),
         total=total,
         services=tuple(service for service in SERVICES if service in enabled),
         pending=tuple(service for service in SERVICES if service in unticked),
+        steps_total=steps_total,
+        steps_done=steps_done,
     )
 
 
@@ -91,7 +117,9 @@ def evaluate(quote_status: str | None, stored_column: str, pending: Collection[s
     ``move_lock`` names why the card cannot be dragged between columns, and is
     ``None`` only when it can (Finish <-> Done). It is what the card renders its
     lock badge and tooltip from, and what decides which droppables a drag
-    enables — the frontend re-derives none of this.
+    enables — mirrored, not independently re-derived, by the frontend's own
+    ``evaluate`` in frontend/src/utils/aitoBoardRules.ts (see the module
+    docstring above for how that mirror is pinned).
 
     Rule order matters twice. Waiting outranks the steps, so ticking a step on
     a card that is out with the client moves nothing — the work is not

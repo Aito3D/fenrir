@@ -2,8 +2,8 @@ import { useTranslation } from 'react-i18next';
 import { AlertTriangle, GripVertical, Lock, Send } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { HoldButton } from './HoldButton';
+import { ProjectProgress } from './ProjectProgress';
 import { ServiceBadges } from './ServiceBadges';
-import { quoteStatusLabelKey, quoteStatusStyle } from './quoteStatus';
 import type { AitoProject } from '../../api/client';
 import { api } from '../../api/client';
 import { Money } from '../calculator/shared';
@@ -34,6 +34,10 @@ export interface CardViewProps {
   dragHandleRef?: (element: HTMLElement | null) => void;
   /** dnd-kit's attributes + listeners, spread onto the grip. */
   dragHandleProps?: Record<string, unknown>;
+  /** A card the server has not acknowledged yet. Renders dimmed with no grip
+   *  and no actions: its id does not exist, so anything acting on it would act
+   *  on nothing. Cleared the instant the real row replaces it. */
+  placeholder?: boolean;
 }
 
 /** Presentational card, shared by the in-column sortable wrapper and the
@@ -54,6 +58,7 @@ export function CardView({
   markSentPending,
   dragHandleRef,
   dragHandleProps,
+  placeholder = false,
 }: CardViewProps) {
   const { t, i18n } = useTranslation();
   // Same query key the task editor and the calculator page use for the
@@ -105,7 +110,7 @@ export function CardView({
         overlay
           ? 'rotate-1 scale-[1.02] border-bambu-green/40 shadow-2xl cursor-grabbing'
           : 'border-bambu-dark-tertiary card-shadow transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-bambu-green/40 hover:shadow-lg motion-reduce:hover:translate-y-0'
-      }`}
+      } ${placeholder ? 'opacity-60' : ''}`}
     >
       <div className="flex items-center gap-2 px-3 py-2 bg-bambu-dark-tertiary rounded-t-xl border-b border-bambu-dark-secondary">
         <p
@@ -125,7 +130,7 @@ export function CardView({
             <Lock className="w-4 h-4" aria-hidden="true" />
           </span>
         )}
-        {dragHandleProps ? (
+        {dragHandleProps && !placeholder ? (
           <button
             type="button"
             ref={dragHandleRef}
@@ -142,7 +147,7 @@ export function CardView({
         )}
       </div>
 
-      {onExpand ? (
+      {onExpand && !placeholder ? (
         <button
           type="button"
           onClick={onExpand}
@@ -193,22 +198,6 @@ export function CardView({
               )}
             </span>
           )}
-          {/* The status as it stood at import — a snapshot, like the rest of
-              the quote fields, so it can lag what Zoho says today. Colour
-              carries the meaning; the label is there for anyone who cannot
-              rely on it. */}
-          {project.quote_status && (
-            <span
-              className={`text-[10px] leading-tight rounded px-1.5 py-0.5 flex-shrink-0 ${quoteStatusStyle(
-                project.quote_status,
-              )}`}
-            >
-              {(() => {
-                const key = quoteStatusLabelKey(project.quote_status);
-                return key ? t(key) : project.quote_status;
-              })()}
-            </span>
-          )}
         </span>
         <span className="flex items-center gap-1 flex-shrink-0">
           {/* The Quote column's one real action, on the card so the column can
@@ -219,7 +208,7 @@ export function CardView({
               invisible button cannot be. `project.column` is the server's
               derived value (aito_board_rules.evaluate); the frontend derives
               nothing of its own here. */}
-          {onMarkSent && project.column === 'devis' && (
+          {onMarkSent && !placeholder && project.column === 'devis' && (
             <HoldButton
               onHold={onMarkSent}
               durationMs={500}
@@ -233,6 +222,7 @@ export function CardView({
           )}
         </span>
       </div>
+      <ProjectProgress done={project.steps_done} total={project.steps_total} />
     </div>
   );
 }

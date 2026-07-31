@@ -43,6 +43,9 @@ function createdProject(overrides: Record<string, unknown>) {
     task_count: 0,
     tasks_total: 0,
     task_services: [],
+    task_pending: [],
+    steps_total: 0,
+    steps_done: 0,
     created_at: '2026-07-26T00:00:00Z',
     updated_at: '2026-07-26T00:00:00Z',
     ...overrides,
@@ -79,12 +82,10 @@ async function openModal(user: ReturnType<typeof userEvent.setup>) {
   // A project needs a task with a priced service before it can be created
   // (see NewProjectModal.test.tsx / taskDraft.ts), and every test in this
   // file submits the form — so price the seeded task here once rather than
-  // in each test. The row is left expanded and in edit mode, so a test that
-  // cares about a specific cost (e.g. 0 vs disabled) can just overwrite this
-  // same field. The seeded row wasn't added through "+ Add task", so it
-  // doesn't auto-open in edit mode — Edit has to be clicked explicitly.
-  await user.click(screen.getByText('Task 1'));
-  await user.click(screen.getByRole('button', { name: /edit task/i }));
+  // in each test. The seeded task has no steps yet, so it is already showing
+  // its form; once priced it stays in edit mode (pricing its first service is
+  // what puts an Edit toggle there at all), so a test that cares about a
+  // specific cost (e.g. 0 vs disabled) can just overwrite this same field.
   fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
 }
 

@@ -86,11 +86,10 @@ function ControlledTaskRow({
   onChangeSpy: (next: TaskDraft) => void;
 }) {
   const [task, setTask] = useState(initial);
-  // Open and editing, because these tests are about the fields inside a row
-  // (title, description, the four cost inputs, ImpressionFields), which only
-  // render in edit mode — not about the disclosure or the read/edit split
-  // themselves. Both are covered by their own tests below.
-  const [expanded, setExpanded] = useState(true);
+  // Editing, because these tests are about the fields inside a row (title,
+  // description, the four cost inputs, ImpressionFields), which only render
+  // in edit mode — not about the read/edit split itself, which has its own
+  // tests below.
   const [editing, setEditing] = useState(true);
   return (
     <TaskRow
@@ -101,8 +100,6 @@ function ControlledTaskRow({
         setTask(next);
       }}
       onRemove={vi.fn()}
-      expanded={expanded}
-      onToggle={() => setExpanded((v) => !v)}
       editing={editing}
       onToggleEdit={() => setEditing((v) => !v)}
       canTick
@@ -136,19 +133,11 @@ function ControlledTaskEditor({
   );
 }
 
-/** Rows render collapsed, so any test that drives the fields inside one has to
- *  open it first. The row heading is the toggle; its accessible name starts
- *  with the task's title, or "Task N" while the title is still blank, and also
- *  carries the badges and total shown while collapsed — hence a regex rather
- *  than an exact string. */
-async function expandTask(name: RegExp = /^Task 1/i) {
-  fireEvent.click(await screen.findByRole('button', { name, expanded: false }));
-}
-
-/** Switches an already-expanded row into edit mode, revealing the raw
+/** Switches a row into edit mode, revealing the raw
  *  title/description/cost/ImpressionFields form in place of the read-only
- *  step list. The Edit button is always rendered (it lives in the row header,
- *  not the collapsible body), so this only disambiguates by index when more
+ *  step list. Only needed for a row that already has a step — a stepless row
+ *  has no Edit button at all (see TaskRow: it IS the form already, so there
+ *  is nothing else to switch to). `index` disambiguates by position when more
  *  than one row is on screen. */
 async function editTask(index = 0) {
   const buttons = await screen.findAllByRole('button', { name: /edit task/i });
@@ -177,8 +166,7 @@ describe('TaskEditor', () => {
     const value: TaskDraft[] = [emptyTaskDraft()];
     const onChange = vi.fn();
     render(<TaskEditor value={value} onChange={onChange} onRemove={vi.fn()} canTick />);
-    await expandTask();
-    await editTask();
+    // A stepless task IS the form already — no expand/edit click needed.
 
     fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '7' } });
 
@@ -190,29 +178,26 @@ describe('TaskEditor', () => {
     expect(result[0].scanCost).toBe(7);
   });
 
-  it('renders rows collapsed, showing only the name, services and total', async () => {
+  it('renders a priced row read-only, as a step list with a total and a remove control, no form', async () => {
     const task: TaskDraft = { ...emptyTaskDraft(), title: 'Boîtier', scanCost: 4000, usinageCost: 500 };
     render(<TaskEditor value={[task]} onChange={vi.fn()} onRemove={vi.fn()} canTick />);
 
-    // Visible while collapsed: the name, a badge per enabled service, the
-    // total, and the remove control.
-    const heading = await screen.findByRole('button', { name: /^Boîtier/, expanded: false });
+    // Visible: the name, the step list (one entry per priced service, plus
+    // its own per-step cost), and the remove control.
+    expect(await screen.findByRole('heading', { name: /^Boîtier/ })).toBeInTheDocument();
     expect(screen.getByText('Scan')).toBeInTheDocument();
     expect(screen.getByText('Machining')).toBeInTheDocument();
-    // Scoped to the heading: the project total above shows the same figure
-    // while this is the only task, so a page-wide text match is ambiguous.
-    expect(heading).toHaveTextContent(/4\D?500/);
     expect(screen.getByLabelText('Remove task')).toBeInTheDocument();
 
-    // A service left disabled gets no badge — and nothing from the body is
-    // reachable, which is the whole point of collapsing.
+    // A service left disabled has no entry, and the row is read-only — the
+    // raw form fields are not reachable without pressing Edit first.
     expect(screen.queryByText('Modeling')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Scan Cost')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Optional title')).not.toBeInTheDocument();
   });
 
-  it('a free service still gets a badge on a collapsed row', async () => {
-    // null disables a service, 0 prices it at nothing. A badge row built on
+  it('a free service still appears in the read-only step list', async () => {
+    // null disables a service, 0 prices it at nothing. A step list built on
     // truthiness instead of a null check would silently drop this one.
     const task: TaskDraft = { ...emptyTaskDraft(), title: 'Gratuit', scanCost: 0 };
     render(<TaskEditor value={[task]} onChange={vi.fn()} onRemove={vi.fn()} canTick />);
@@ -220,61 +205,47 @@ describe('TaskEditor', () => {
     expect(await screen.findByText('Scan')).toBeInTheDocument();
   });
 
-  it('clicking a row heading expands it, and clicking again collapses it', async () => {
-    const user = userEvent.setup();
-    render(<TaskEditor value={[emptyTaskDraft()]} onChange={vi.fn()} onRemove={vi.fn()} canTick />);
-
-    await user.click(await screen.findByRole('button', { name: /^Task 1/, expanded: false }));
-    await user.click(screen.getByRole('button', { name: /edit task/i }));
-    expect(screen.getByLabelText('Optional title')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: /^Task 1/, expanded: true }));
-    expect(screen.queryByLabelText('Optional title')).not.toBeInTheDocument();
-  });
-
-  it('expanding one row leaves its neighbours collapsed', async () => {
-    // Guards the agreement between a row's React key and its expansion key:
-    // if those ever diverge, toggling one row opens a different one.
-    const user = userEvent.setup();
+  it('editing one row leaves its neighbour read-only', async () => {
+    // Guards the agreement between a row's React key and its editing key: if
+    // those ever diverge, opening one row's edit form would open another's.
     const tasks = [
-      { ...emptyTaskDraft(), title: 'Un' },
-      { ...emptyTaskDraft(), title: 'Deux' },
+      { ...emptyTaskDraft(), title: 'Un', scanCost: 10 },
+      { ...emptyTaskDraft(), title: 'Deux', scanCost: 20 },
     ];
     render(<TaskEditor value={tasks} onChange={vi.fn()} onRemove={vi.fn()} canTick />);
 
-    await user.click(await screen.findByRole('button', { name: /^Deux/, expanded: false }));
-
-    expect(screen.getByRole('button', { name: /^Un/, expanded: false })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Deux/, expanded: true })).toBeInTheDocument();
-
-    // The Edit button lives in every row's header, not its collapsible body,
-    // so both rows have one — index 1 is Deux, the expanded one.
+    // Both rows already have a step, so both start read-only — edit Deux
+    // (index 1) only.
     await editTask(1);
 
-    // Exactly one body is mounted.
+    // Exactly one body is in edit mode.
     expect(screen.getAllByLabelText('Optional title')).toHaveLength(1);
+    // Un is untouched, still showing its own step read-only.
+    expect(screen.getByRole('heading', { name: /^Un/ })).toBeInTheDocument();
   });
 
-  it('a task added with "+ Add task" opens expanded', async () => {
+  it('a task added with "+ Add task" opens as the form — it has no steps yet', async () => {
     const user = userEvent.setup();
     render(<ControlledTaskEditor initial={[]} onChangeSpy={vi.fn()} />);
 
     await user.click(screen.getByRole('button', { name: /add task/i }));
 
-    expect(await screen.findByRole('button', { name: /^Task 1/, expanded: true })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /^Task 1/ })).toBeInTheDocument();
     expect(screen.getByLabelText('Optional title')).toBeInTheDocument();
   });
 
-  it('adding a second task leaves the first one as the user left it', async () => {
+  it('adding a second task leaves an already-priced first task read-only', async () => {
     const user = userEvent.setup();
-    render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={vi.fn()} />);
+    const priced: TaskDraft = { ...emptyTaskDraft(), title: 'Priced', scanCost: 10 };
+    render(<ControlledTaskEditor initial={[priced]} onChangeSpy={vi.fn()} />);
 
-    // The pre-existing row starts collapsed and must stay that way; only the
-    // new one opens.
+    // The pre-existing, already-priced row stays read-only; only the new
+    // stepless one opens as a form.
     await user.click(screen.getByRole('button', { name: /add task/i }));
 
-    expect(await screen.findByRole('button', { name: /^Task 2/, expanded: true })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Task 1/, expanded: false })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /^Task 2/ })).toBeInTheDocument();
+    expect(screen.getAllByLabelText('Optional title')).toHaveLength(1);
+    expect(screen.getByRole('heading', { name: /^Priced/ })).toBeInTheDocument();
   });
 
   it('holding the remove button for 1s calls onRemove with that index', async () => {
@@ -339,12 +310,14 @@ describe('TaskRow', () => {
     const onChangeSpy = vi.fn();
     render(<ControlledTaskRow initial={emptyTaskDraft()} onChangeSpy={onChangeSpy} />);
 
-    expect(screen.getByRole('heading', { name: 'Task 1' })).toBeInTheDocument();
+    // The heading also carries the (zero) total now, hence a regex rather
+    // than an exact string.
+    expect(screen.getByRole('heading', { name: /^Task 1/ })).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Optional title'), { target: { value: 'Bracket mount' } });
 
-    expect(screen.getByRole('heading', { name: 'Bracket mount' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Task 1' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^Bracket mount/ })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /^Task 1/ })).not.toBeInTheDocument();
   });
 
   it('the task total reflects the enabled services', () => {
@@ -361,12 +334,9 @@ describe('TaskRow', () => {
         index={0}
         onChange={vi.fn()}
         onRemove={vi.fn()}
-        expanded
-        onToggle={vi.fn()}
         // Edit mode, because the task-total row being asserted on below is
-        // part of the raw form (still in TaskRow verbatim until Task 11
-        // moves it into TaskStepFields) — the read-only TaskStepList shows
-        // per-step costs, not the aggregate.
+        // part of the raw form (TaskStepFields) — the read-only TaskStepList
+        // shows per-step costs, not the aggregate.
         editing
         onToggleEdit={vi.fn()}
         canTick
@@ -377,9 +347,10 @@ describe('TaskRow', () => {
     // getByText's default normalizer collapses all whitespace (including the
     // thin space formatMoney uses as a thousands separator) to a single
     // ASCII space before matching — do the same to the expected string, or
-    // an exact-looking match still misses.
+    // an exact-looking match still misses. It appears twice now: once in the
+    // always-visible header, once in TaskStepFields' own total footer.
     const expected = formatMoney(taskTotal(task), 'USD').replace(/\s+/g, ' ');
-    expect(screen.getByText(expected)).toBeInTheDocument();
+    expect(screen.getAllByText(expected)).toHaveLength(2);
   });
 
   it('typing a Scan cost emits scanCost set; clearing it emits null, not 0', () => {
@@ -448,8 +419,7 @@ describe('TaskRow', () => {
     const onChangeSpy = vi.fn();
     const user = userEvent.setup();
     render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={onChangeSpy} />);
-    await expandTask();
-    await editTask();
+    // A stepless task IS the form already — no expand/edit click needed.
 
     await user.click(await screen.findByRole('combobox', { name: /printer/i }));
     await user.click(await screen.findByRole('option', { name: 'H2S' }));
@@ -486,8 +456,7 @@ describe('TaskRow', () => {
     const onChangeSpy = vi.fn();
     const user = userEvent.setup();
     render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={onChangeSpy} />);
-    await expandTask();
-    await editTask();
+    // A stepless task IS the form already — no expand/edit click needed.
 
     await user.click(await screen.findByRole('combobox', { name: /printer/i }));
     await user.click(await screen.findByRole('option', { name: 'H2S' }));
@@ -580,8 +549,7 @@ describe('TaskRow', () => {
     const onChangeSpy = vi.fn();
     const user = userEvent.setup();
     render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={onChangeSpy} />);
-    await expandTask();
-    await editTask();
+    // A stepless task IS the form already — no expand/edit click needed.
 
     await user.click(await screen.findByRole('combobox', { name: /printer/i }));
     await user.click(await screen.findByRole('option', { name: 'H2S' }));

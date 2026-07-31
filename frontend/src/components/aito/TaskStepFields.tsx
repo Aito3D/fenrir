@@ -65,6 +65,17 @@ function StepBlock({
 export interface TaskStepFieldsProps {
   task: TaskDraft;
   onChange: (next: TaskDraft) => void;
+  /** True while this row's create POST is still in flight (see TaskRow's
+   *  `pending` prop). Renders every input, textarea and select below inert
+   *  via a wrapping `<fieldset disabled>` rather than threading a `disabled`
+   *  prop through each one individually (CostInput, ImpressionFields,
+   *  DurationInput, SearchableSelect): the native disabled-fieldset cascade
+   *  reaches all of them, including the ones nested two components deep, and
+   *  `@testing-library`'s own `isDisabled`/`toBeDisabled` walk the same
+   *  ancestor chain, so this is exercised by `userEvent` and `toBeDisabled()`
+   *  exactly as a real browser would. Optional, defaulting to false, so
+   *  every existing caller is unaffected. */
+  disabled?: boolean;
 }
 
 /** Edit mode for one task: identity, then one block per step.
@@ -72,7 +83,7 @@ export interface TaskStepFieldsProps {
  *  All four blocks are always present here — this is the only surface where a
  *  step that does not exist is visible at all, and where one is created. Read
  *  mode (TaskStepList) shows only steps that exist. */
-export function TaskStepFields({ task, onChange }: TaskStepFieldsProps) {
+export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFieldsProps) {
   const { t } = useTranslation();
   const reactId = useId();
   const { data: settings } = useQuery({
@@ -83,7 +94,7 @@ export function TaskStepFields({ task, onChange }: TaskStepFieldsProps) {
   const currency = settings?.currency || 'USD';
 
   return (
-    <div className="space-y-3">
+    <fieldset disabled={disabled} className="space-y-3">
       <input
         aria-label={t('aito.taskTitlePlaceholder')}
         value={task.title}
@@ -161,6 +172,6 @@ export function TaskStepFields({ task, onChange }: TaskStepFieldsProps) {
         <span className="text-sm text-bambu-gray">{t('aito.taskTotal')}</span>
         <Money currency={currency} value={taskTotal(task)} className="text-white font-medium" />
       </div>
-    </div>
+    </fieldset>
   );
 }

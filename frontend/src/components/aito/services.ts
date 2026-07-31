@@ -1,4 +1,8 @@
+import { SERVICES, taskCost } from '../../utils/aitoBoardRules';
+import type { ServiceId } from '../../utils/aitoBoardRules';
 import type { TaskDraft } from '../../utils/taskDraft';
+
+export type { ServiceId };
 
 /** The four Aito services, keyed by the ids the backend emits.
  *
@@ -19,43 +23,13 @@ export const AITO_SERVICE_LABEL_KEYS: Record<string, string> = {
   usinage: 'aito.serviceUsinage',
 };
 
-/** Which services a draft has enabled, in canonical order.
- *
- *  `null` means the service is disabled and `0` means it is free, so
- *  membership is a null check — never a truthiness or `> 0` test, which would
- *  drop a service quoted at zero. Same rule the backend aggregate follows. */
-export function enabledServices(task: TaskDraft): string[] {
-  const enabled: string[] = [];
-  if (task.scanCost !== null) enabled.push('scan');
-  if (task.modelisationCost !== null) enabled.push('modelisation');
-  if (task.impressionCost !== null) enabled.push('impression');
-  if (task.usinageCost !== null) enabled.push('usinage');
-  return enabled;
-}
-
-export type ServiceId = 'scan' | 'modelisation' | 'impression' | 'usinage';
-
-// Canonical iteration order for the four services. Kept as its own typed
-// tuple rather than `Object.keys(AITO_SERVICE_LABEL_KEYS) as ServiceId[]`:
-// that record is typed `Record<string, string>`, so a fifth entry added
-// there wouldn't widen ServiceId, and COSTS[service] would be `undefined`
-// and throw at runtime with no compile error to catch it.
-const SERVICE_IDS = ['scan', 'modelisation', 'impression', 'usinage'] as const;
-
-const COSTS: Record<ServiceId, (task: TaskDraft) => number | null> = {
-  scan: (t) => t.scanCost,
-  modelisation: (t) => t.modelisationCost,
-  impression: (t) => t.impressionCost,
-  usinage: (t) => t.usinageCost,
-};
-
 /** The task's steps, in canonical order — one per service whose cost is set.
  *  A cost of 0 is a step quoted free, not an absent one, so membership is a
  *  null check and never a truthiness test. */
 export function taskSteps(task: TaskDraft): { service: ServiceId; cost: number; done: boolean }[] {
-  return SERVICE_IDS.filter((service) => COSTS[service](task) !== null).map((service) => ({
+  return SERVICES.filter((service) => taskCost(task, service) !== null).map((service) => ({
     service,
-    cost: COSTS[service](task) as number,
+    cost: taskCost(task, service) as number,
     done: task.done[service],
   }));
 }

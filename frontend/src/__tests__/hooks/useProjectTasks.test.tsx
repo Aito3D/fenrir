@@ -412,6 +412,62 @@ describe('useProjectTasks', () => {
     await waitFor(() => expect(result.current.tasks[0].done.impression).toBe(false));
   });
 
+  it('restores a failed delete before its correct neighbour, even when another delete overlaps it', async () => {
+    // Regression for IMPORTANT 2: `deleteTaskMutation.onError` used to splice
+    // the removed row back in at the numeric INDEX captured at click time.
+    // With [A, B, C]: deleting B captures index 1 and leaves [A, C]; deleting
+    // A while B's DELETE is still open then leaves [C]. A succeeds, B fails
+    // — restoring B at its captured index 1 into [C] produces [C, B],
+    // swapping B and C relative to the true original order [B, C]. The fix
+    // anchors the restore to the STABLE uid of whichever row followed B at
+    // delete time (C), inserting B back in before it wherever it now sits.
+    const ROW_A = { ...ROW, id: 7, title: 'a' };
+    const ROW_B = { ...ROW, id: 8, title: 'b' };
+    const ROW_C = { ...ROW, id: 9, title: 'c' };
+    vi.mocked(api.getAitoTasks)
+      .mockResolvedValueOnce([ROW_A, ROW_B, ROW_C])
+      // A's successful DELETE invalidates ['aito-tasks', 1], and this hook's
+      // query is active, so it refetches in the background. A resolved
+      // refetch here would resync `tasks` from a (mocked, static) server
+      // snapshot mid-race, which is a separate concern from the one under
+      // test — left permanently pending so it cannot land during this test.
+      .mockImplementation(() => new Promise(() => {}));
+
+    let rejectB: (error: unknown) => void = () => {};
+    const pendingB = new Promise<void>((_resolve, reject) => {
+      rejectB = reject;
+    });
+    const deleteAitoTask = vi.spyOn(api, 'deleteAitoTask').mockImplementation((id: number) =>
+      id === 8 ? pendingB : Promise.resolve(undefined),
+    );
+
+    const view = renderHook(() => useProjectTasks(1), { wrapper });
+    await waitFor(() => expect(view.result.current.tasks).toHaveLength(3));
+
+    // Delete B (index 1). Its DELETE hangs.
+    act(() => {
+      view.result.current.onRemoveTask(1);
+    });
+    await waitFor(() => expect(deleteAitoTask).toHaveBeenCalledWith(8));
+    expect(view.result.current.tasks.map((task) => task.id)).toEqual([7, 9]);
+
+    // Delete A (now at index 0) while B's DELETE is still open. A's own
+    // DELETE resolves right away.
+    act(() => {
+      view.result.current.onRemoveTask(0);
+    });
+    await waitFor(() => expect(deleteAitoTask).toHaveBeenCalledWith(7));
+    await waitFor(() => expect(view.result.current.tasks.map((task) => task.id)).toEqual([9]));
+
+    // Now B's DELETE fails. It must land back before C, not after it.
+    await act(async () => {
+      rejectB(new Error('nope'));
+      await pendingB.catch(() => {});
+    });
+
+    await waitFor(() => expect(view.result.current.tasks.map((task) => task.id)).toEqual([8, 9]));
+  });
+
   it('leaves an optimistic edit alone when the failure is not the tick guard', async () => {
     // Only a 422 is the guard. A 500 or an offline PATCH is a transient
     // failure the user should be able to retry from what is still on screen.

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { api } from '../../api/client';
 import { TaskRow } from './TaskRow';
+import { taskSteps } from './services';
 import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
 import { emptyTaskDraft, projectTotal } from '../../utils/taskDraft';
@@ -21,11 +22,11 @@ import type { TaskDraft } from '../../utils/taskDraft';
  *  future draft uid from formatting the same as some row's numeric id
  *  without the prefix).
  *
- *  Doubles as the key for a row's expanded/collapsed state and every
- *  uncontrolled input inside the row — one more reason `key` and toggle state
- *  must use the exact same string, which is why it is a named function
- *  rather than an expression inlined into the `key` prop: those two must
- *  agree, or toggling one row would open another. */
+ *  Doubles as the key for a row's editing state and every uncontrolled input
+ *  inside the row — one more reason `key` and toggle state must use the exact
+ *  same string, which is why it is a named function rather than an
+ *  expression inlined into the `key` prop: those two must agree, or toggling
+ *  one row's form would open another's. */
 function rowKey(task: TaskDraft): string {
   return task.id !== null ? `persisted:${task.id}` : `draft:${task.uid}`;
 }
@@ -47,6 +48,19 @@ export interface TaskEditorProps {
    *  defaulted: a default is exactly how a caller with no quote (the create
    *  modal) would silently inherit the wrong answer. */
   canTick: boolean;
+  /** Uids of rows whose create POST is still in flight — `useProjectTasks`'
+   *  `pendingTaskUids`. Such a row renders inert (see `TaskRow`'s `pending`
+   *  prop): its inputs disabled, its delete control absent — otherwise
+   *  anything typed into it is silently lost the moment the POST resolves
+   *  and swaps the placeholder for the server's echo of the request that was
+   *  in flight (see `useProjectTasks`' `addTaskMutation.onSuccess`).
+   *
+   *  Optional, and deliberately never defaulted to a bare `id === null`
+   *  check: the create modal (`NewProjectModal`) reuses this component and
+   *  EVERY one of its rows has `id === null` while none of them are actually
+   *  pending a network call, so it must stay fully editable. It simply
+   *  passes nothing. */
+  pendingUids?: Set<string>;
 }
 
 /** The task list for one Aito project: a heading, each task's `TaskRow`, "+
@@ -55,7 +69,15 @@ export interface TaskEditorProps {
  *  new array. That split is what lets the create modal hold this array in
  *  local state and POST it with the project, while the detail panel wires
  *  each change to a PATCH; neither caller is visible from here. */
-export function TaskEditor({ value, onChange, onRemove, canTick, minRows = 0, onRowBlur }: TaskEditorProps) {
+export function TaskEditor({
+  value,
+  onChange,
+  onRemove,
+  canTick,
+  minRows = 0,
+  onRowBlur,
+  pendingUids,
+}: TaskEditorProps) {
   const { t } = useTranslation();
   const { data: settings } = useQuery({
     queryKey: ['settings'],
@@ -64,16 +86,9 @@ export function TaskEditor({ value, onChange, onRemove, canTick, minRows = 0, on
   });
   const currency = settings?.currency || 'USD';
 
-  // Which rows are open. Everything starts collapsed — a project with several
-  // tasks is exactly the case this exists for, so the space win has to land on
-  // open rather than after the user collapses each row by hand.
-  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
-
   // Which rows are open for editing (showing the form instead of the
-  // read-only step list), keyed exactly like `expandedKeys` — the two must
-  // agree, or toggling one row's form would open another's. `TaskStepFields`
-  // (Task 11) is what actually renders differently for an editing row; until
-  // then this only drives the Edit button's pressed state.
+  // read-only step list), keyed by `rowKey` — same key `isEditing` below
+  // checks, or toggling one row's form would open another's.
   const [editingKeys, setEditingKeys] = useState<Set<string>>(new Set());
   const toggleEdit = (key: string) =>
     setEditingKeys((current) => {
@@ -82,39 +97,29 @@ export function TaskEditor({ value, onChange, onRemove, canTick, minRows = 0, on
       return next;
     });
 
-  // ...except a row the user just added, which opens so they can fill it in.
-  // Spotting it takes a flag plus a diff, because the key of the new row is
-  // not knowable at the moment "+ Add task" is pressed: the create modal
-  // appends a draft (key `draft:<uid>`), while the detail panel routes the
-  // same click to a POST and only learns the row's real key (`persisted:<id>`)
-  // when the refetch lands. Diffing against the previous keys covers both, and
-  // gating on the flag keeps the initial fetch — which also grows the array
-  // from nothing — from opening every task on the project.
-  //
-  // It opens in EDIT mode too, not just expanded: a freshly added task has no
-  // steps yet, so read mode would show nothing but "No steps yet" — the user
-  // still needs the form to give it its first cost.
-  const addRequestedRef = useRef(false);
-  const previousKeysRef = useRef<string[]>([]);
+  // A row with no steps IS the form — read mode would show nothing but "No
+  // steps yet", so there is nothing to disclose. Deriving this replaces the
+  // effect that used to diff row keys to open a newly added row in edit mode,
+  // and fixes the create modal for free: its first task previously started
+  // both collapsed and not editing, costing two clicks before the user could
+  // type a price.
+  const isEditing = (task: TaskDraft) => editingKeys.has(rowKey(task)) || taskSteps(task).length === 0;
 
-  useEffect(() => {
-    const keys = value.map(rowKey);
-    const previous = previousKeysRef.current;
-    previousKeysRef.current = keys;
-    if (!addRequestedRef.current) return;
-    const added = keys.filter((key) => !previous.includes(key));
-    if (added.length === 0) return; // the add is still in flight
-    addRequestedRef.current = false;
-    setExpandedKeys((current) => new Set([...current, ...added]));
-    setEditingKeys((current) => new Set([...current, ...added]));
-  }, [value]);
-
-  const toggle = (key: string) =>
-    setExpandedKeys((current) => {
-      const next = new Set(current);
-      if (!next.delete(key)) next.add(key);
-      return next;
-    });
+  // A stepless row is auto-edited by `isEditing` above, not by an explicit
+  // `editingKeys` entry — so the instant its FIRST keystroke prices a
+  // service, `taskSteps` stops being empty and the OR's other half stops
+  // being true. Without latching the key in here, that one keystroke would
+  // flip the row to read mode mid-edit and drop focus out of the input the
+  // user is still typing into. This is the only place that can catch the
+  // 0-steps-to-1-step transition without reintroducing the diff-the-previous-
+  // render effect Task 17 removed: it runs inside the same `onChange` the
+  // edit itself flows through, so it sees the row's step count both before
+  // and after in one place, no extra render needed.
+  const graduateToEditing = (before: TaskDraft, after: TaskDraft) => {
+    if (taskSteps(before).length === 0 && taskSteps(after).length > 0) {
+      setEditingKeys((current) => new Set([...current, rowKey(after)]));
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -127,29 +132,34 @@ export function TaskEditor({ value, onChange, onRemove, canTick, minRows = 0, on
       </div>
 
       <div className="space-y-3">
-        {value.map((task, index) => (
-          <TaskRow
-            key={rowKey(task)}
-            task={task}
-            index={index}
-            onChange={(next) => onChange(value.map((existing, i) => (i === index ? next : existing)))}
-            onRemove={value.length > minRows ? () => onRemove(index) : undefined}
-            expanded={expandedKeys.has(rowKey(task))}
-            onToggle={() => toggle(rowKey(task))}
-            editing={editingKeys.has(rowKey(task))}
-            onToggleEdit={() => toggleEdit(rowKey(task))}
-            onRowBlur={onRowBlur}
-            canTick={canTick}
-          />
-        ))}
+        {value.map((task, index) => {
+          const pending = pendingUids?.has(task.uid) ?? false;
+          return (
+            <TaskRow
+              key={rowKey(task)}
+              task={task}
+              index={index}
+              onChange={(next) => {
+                graduateToEditing(task, next);
+                onChange(value.map((existing, i) => (i === index ? next : existing)));
+              }}
+              // Absent (not merely disabled) while pending too, same rule as
+              // `minRows` below it: the row's create hasn't landed, so there
+              // is no id yet to send a DELETE for — see TaskRow's own prop doc.
+              onRemove={value.length > minRows && !pending ? () => onRemove(index) : undefined}
+              editing={isEditing(task)}
+              onToggleEdit={() => toggleEdit(rowKey(task))}
+              onRowBlur={onRowBlur}
+              canTick={canTick}
+              pending={pending}
+            />
+          );
+        })}
       </div>
 
       <button
         type="button"
-        onClick={() => {
-          addRequestedRef.current = true;
-          onChange([...value, emptyTaskDraft()]);
-        }}
+        onClick={() => onChange([...value, emptyTaskDraft()])}
         className={`inline-flex items-center gap-1 text-sm text-bambu-green hover:text-bambu-green/80 transition-colors rounded-md ${focusRingCls}`}
       >
         <Plus className="w-4 h-4" />

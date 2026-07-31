@@ -196,8 +196,10 @@ git commit -m "feat(aito): count a project's steps in the task summary"
 - Test: `backend/tests/unit/test_aito_board_summary.py`
 
 **Interfaces:**
-- Consumes: `TaskSummary.steps_total` / `.steps_done` from Task 1.
-- Produces: `AitoProjectResponse.steps_total: int`, `.steps_done: int`. TS `AitoProject.steps_total: number`, `.steps_done: number`.
+- Consumes: `TaskSummary.steps_total` / `.steps_done` from Task 1, and the pre-existing `TaskSummary.pending`.
+- Produces: `AitoProjectResponse.steps_total: int`, `.steps_done: int`, `.task_pending: list[str]`. TS `AitoProject.steps_total: number`, `.steps_done: number`, `.task_pending: string[]`.
+
+**Why `task_pending` ships too.** The card already carries `task_services` — the union of ENABLED services — but not the pending set, and `evaluate()` takes *pending*. Without it, an optimistic quote-status change would have to guess which services are still unticked from `steps_done < steps_total`, which is right only when the earliest enabled service is also the unticked one. The backend already computes `summary.pending` for `move_lock`; sending it costs one field and makes the prediction exact.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -222,6 +224,26 @@ def test_to_response_carries_the_step_counters():
     response = _to_response(project, summary)
     assert response.steps_total == 2
     assert response.steps_done == 1
+
+
+def test_to_response_carries_the_pending_services():
+    """evaluate() takes `pending`, so an optimistic client that only had
+    `task_services` would have to guess which of them are still unticked."""
+    from backend.app.api.routes.aito import _to_response
+    from backend.app.models.aito_project import AitoProject
+
+    project = AitoProject(
+        id=1,
+        description="x",
+        board_column="print",
+        position=0,
+        status="active",
+        quote_status="accepted",
+    )
+    summary = summarise([_Task(scan_cost=1.0, scan_done=True, impression_cost=2.0)])
+    response = _to_response(project, summary)
+    assert response.task_services == ["scan", "impression"]
+    assert response.task_pending == ["impression"]
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -243,6 +265,11 @@ In `backend/app/schemas/aito.py`, directly after the `task_services: list[str]` 
     # 0 — an unpriced project has nothing to measure.
     steps_total: int
     steps_done: int
+    # The services with at least one UNTICKED step, in canonical order —
+    # exactly what evaluate() takes. task_services above is the union of
+    # ENABLED services, a different set that cannot substitute for it: the
+    # optimistic frontend predicts a card's column from this field.
+    task_pending: list[str]
 ```
 
 - [ ] **Step 4: Set them in `_to_response`**
@@ -250,6 +277,7 @@ In `backend/app/schemas/aito.py`, directly after the `task_services: list[str]` 
 In `backend/app/api/routes/aito.py`, after `task_services=list(summary.services),`:
 
 ```python
+        task_pending=list(summary.pending),
         steps_total=summary.steps_total,
         steps_done=summary.steps_done,
 ```
@@ -266,6 +294,11 @@ In `frontend/src/api/client.ts`, in `interface AitoProject`, after `task_service
    *  total is 0. */
   steps_total: number;
   steps_done: number;
+  /** The services with at least one UNTICKED step, canonical order. This is
+   *  what `evaluate` takes — `task_services` is the union of ENABLED services
+   *  and is a different set. The optimistic layer predicts a card's column
+   *  from this field, so it must never be inferred from the two counters. */
+  task_pending: string[];
 ```
 
 - [ ] **Step 6: Run backend tests**
@@ -284,7 +317,7 @@ Expected: PASS.
 grep -rln "task_services" frontend/src/__tests__/
 ```
 
-Add `steps_total: 0, steps_done: 0,` to every `AitoProject` object literal in each file found (they sit next to `task_services`). Then confirm none were missed:
+Add `task_pending: [], steps_total: 0, steps_done: 0,` to every `AitoProject` object literal in each file found (they sit next to `task_services`). Then confirm none were missed:
 
 ```bash
 grep -rc "task_services" frontend/src/__tests__/ | grep -v ':0'
@@ -436,6 +469,11 @@ _SUMMARISE_SHAPES: tuple[tuple[str, list[dict[str, Any]]], ...] = (
         [{"scan_cost": 1.0, "scan_done": True, "impression_cost": 2.0, "impression_done": True}],
     ),
     (
+        # The design doc's headline example, pinned exactly: three tasks
+        # carrying ten steps between them with three ticked is the 30% the
+        # card's progress bar must show. The free scan on the second task is
+        # deliberate — it makes the tenth step one that a cost-weighted or
+        # truthiness-based implementation would silently drop.
         "three tasks, ten steps, three done",
         [
             {
@@ -445,7 +483,7 @@ _SUMMARISE_SHAPES: tuple[tuple[str, list[dict[str, Any]]], ...] = (
                 "modelisation_done": True,
                 "impression_cost": 3.0,
             },
-            {"impression_cost": 4.0, "impression_done": True, "usinage_cost": 5.0},
+            {"scan_cost": 0.0, "impression_cost": 4.0, "impression_done": True, "usinage_cost": 5.0},
             {"scan_cost": 6.0, "modelisation_cost": 7.0, "impression_cost": 8.0, "usinage_cost": 9.0},
         ],
     ),
@@ -1033,8 +1071,9 @@ git commit -m "feat(aito): mirror the board rules in TypeScript, pinned by the f
   - `applyQuoteStatus(projects, id, status: string): AitoProject[]`
   - `applyTaskSummary(projects, id, summary: TaskSummary): AitoProject[]`
   - `applyDescription(projects, id, description: string): AitoProject[]`
-  - `applyDelete(projects, id): AitoProject[]`
-  - `applyInsert(projects, project: AitoProject): AitoProject[]`
+  - `applyDelete(projects, id): AitoProject[]` — removes the card and does NOT renumber: `delete_project` is a soft delete that only flips `status`, leaving a gap in the survivors' positions. The board sorts by position, so the gap is invisible.
+  - `applyCreate(projects, placeholder: AitoProject): AitoProject[]` — PREPENDS to `devis` and shifts existing Devis cards down, matching `create_project`
+  - `applyRestore(projects, project: AitoProject): AitoProject[]` — APPENDS to the end of its own column, matching `restore_project`
   - `applySyncState(projects, id, state: AitoProject['quote_sync_state']): AitoProject[]`
 
   All take `projects: AitoProject[] | undefined` and return `AitoProject[]` (empty array when given undefined). All are pure.
@@ -1082,6 +1121,7 @@ const card = (over: Partial<AitoProject> = {}): AitoProject => ({
   task_count: 0,
   tasks_total: 0,
   task_services: [],
+  task_pending: [],
   steps_total: 0,
   steps_done: 0,
   move_lock: 'quote',
@@ -1094,17 +1134,29 @@ const find = (projects: AitoProject[], id: number) => projects.find((p) => p.id 
 
 describe('applyQuoteStatus', () => {
   it('relocates an accepted card to its first pending stage', () => {
-    const before = [card({ id: 1, column: 'devis', position: 0, task_services: ['impression'] })];
-    // pending is derived from the card's own summary; a card with one unticked
-    // impression step lands in print.
-    const after = applyQuoteStatus(
-      [{ ...before[0], steps_total: 1, steps_done: 0 }],
-      1,
-      'accepted',
-    );
+    const projects = [
+      card({ id: 1, column: 'devis', position: 0, task_services: ['impression'], task_pending: ['impression'] }),
+    ];
+    const after = applyQuoteStatus(projects, 1, 'accepted');
     expect(find(after, 1).column).toBe('print');
     expect(find(after, 1).quote_status).toBe('accepted');
     expect(find(after, 1).move_lock).toBe('steps');
+  });
+
+  it('reads task_pending, not task_services', () => {
+    // Scan is enabled but already done; only the printing is outstanding. A
+    // transform keying off task_services would wrongly land this in Scan.
+    const projects = [
+      card({
+        id: 1,
+        column: 'devis',
+        task_services: ['scan', 'impression'],
+        task_pending: ['impression'],
+        steps_total: 2,
+        steps_done: 1,
+      }),
+    ];
+    expect(find(applyQuoteStatus(projects, 1, 'accepted'), 1).column).toBe('print');
   });
 
   it('sends a declined card to done', () => {
@@ -1347,21 +1399,6 @@ function reevaluate(projects: AitoProject[], updated: AitoProject, pending: read
   return relocate(next, withLock, column);
 }
 
-/** The card's own pending set, inferred from its summary counters.
- *
- *  `AitoProject` carries `task_services` (the union of ENABLED services) but
- *  not `pending`, so an exact set is not recoverable from a card alone. For a
- *  transform that does not change the tasks — a quote-status change — the only
- *  thing the rules need to know is whether anything is still unticked, and
- *  `steps_done < steps_total` answers that exactly. When work remains, the
- *  enabled services stand in for the pending ones, which lands the card in the
- *  first stage that has any of them: the same answer the server gives whenever
- *  the earliest enabled service is also unticked, and one refetch from correct
- *  otherwise. */
-function inferredPending(project: AitoProject): string[] {
-  return project.steps_done < project.steps_total ? project.task_services : [];
-}
-
 export function applyQuoteStatus(
   projects: AitoProject[] | undefined,
   id: number,
@@ -1371,7 +1408,11 @@ export function applyQuoteStatus(
   const target = projects.find((p) => p.id === id);
   if (!target) return projects;
   const updated = { ...target, quote_status: status };
-  return reevaluate(projects, updated, inferredPending(updated));
+  // `task_pending`, never `task_services`: the rules take the set of services
+  // with unticked work, and `task_services` is the set of ENABLED ones. On a
+  // project whose scan is done but whose printing is not, the two differ and
+  // only the former lands the card in the right stage.
+  return reevaluate(projects, updated, updated.task_pending);
 }
 
 export function applyTaskSummary(
@@ -1387,6 +1428,7 @@ export function applyTaskSummary(
     task_count: summary.count,
     tasks_total: summary.total,
     task_services: [...summary.services],
+    task_pending: [...summary.pending],
     steps_total: summary.stepsTotal,
     steps_done: summary.stepsDone,
   };
@@ -2667,7 +2709,7 @@ git commit -m "feat(aito): show task adds, deletes and ticks on the board at onc
 - Modify: `frontend/src/components/aito/TrashModal.tsx:16-27`
 
 **Interfaces:**
-- Consumes: `useOptimisticBoardMutation`, `applyDelete`, `applyInsert`.
+- Consumes: `useOptimisticBoardMutation`, `applyDelete`, `applyRestore`.
 - Produces: nothing new.
 
 - [ ] **Step 1: Write the failing test**
@@ -2703,7 +2745,7 @@ In `frontend/src/pages/AitoPage.tsx`, add the imports:
 
 ```ts
 import { useOptimisticBoardMutation } from '../hooks/useOptimisticBoardMutation';
-import { applyDelete, applyInsert, nextPlaceholderId } from '../utils/aitoOptimistic';
+import { applyDelete } from '../utils/aitoOptimistic';
 ```
 
 Replace `deleteMutation` (lines 196-202):
@@ -2755,7 +2797,9 @@ In `frontend/src/components/aito/TrashModal.tsx`, replace `restoreMutation`:
     // the server on success — the trash row's stored column can be stale, and
     // the rules may relocate it — so this is the one transform that predicts a
     // column it does not compute.
-    transform: (previous, project) => applyInsert(previous, { ...project, status: 'active' }),
+    // applyRestore, not applyCreate: restore_project APPENDS to the end of
+    // the card's own column, where create_project prepends to Devis.
+    transform: (previous, project) => applyRestore(previous, { ...project, status: 'active' }),
     flashId: (project) => project.id,
     onSuccess: (restored) => {
       queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
@@ -2788,7 +2832,7 @@ The trash list itself also needs to lose the row optimistically. Add a second ca
 
 The `onError` path currently invalidates nothing for the trash; add `queryClient.invalidateQueries({ queryKey: ['aito-trash'] });` to it so a refused restore puts the row back.
 
-Delete the unused `useMutation` import from this file if `restoreMutation` was its only consumer, and add `import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';` plus `import { applyInsert } from '../../utils/aitoOptimistic';` and `import type { AitoProject } from '../../api/client';`.
+Delete the unused `useMutation` import from this file if `restoreMutation` was its only consumer, and add `import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';` plus `import { applyRestore } from '../../utils/aitoOptimistic';` and `import type { AitoProject } from '../../api/client';`.
 
 - [ ] **Step 6: Run the tests**
 
@@ -2817,7 +2861,9 @@ git commit -m "feat(aito): delete and restore a project without waiting"
 - Modify: `frontend/src/components/aito/BoardColumn.tsx` (skip the grip and mark-sent for a placeholder)
 
 **Interfaces:**
-- Consumes: `applyInsert`, `nextPlaceholderId`, `isPlaceholder` (Task 5).
+- Consumes: `applyCreate`, `nextPlaceholderId`, `isPlaceholder` (Task 5).
+
+**Use `applyCreate`, not `applyRestore`.** `create_project` (`aito.py:377`) shifts every existing Devis card down and inserts the new one at position 0 — a new card lands on TOP of the quote column. Appending would put the placeholder at the bottom and then jump it to the top when the server answered, which is the exact double-jump the optimistic layer exists to prevent.
 - Produces: `CardView` gains `placeholder?: boolean`.
 
 - [ ] **Step 1: Write the failing test**
@@ -2907,6 +2953,7 @@ export function placeholderProject(fields: {
     task_count: 0,
     tasks_total: 0,
     task_services: [],
+    task_pending: [],
     steps_total: 0,
     steps_done: 0,
     move_lock: 'quote',
@@ -2935,7 +2982,7 @@ In `frontend/src/pages/AitoPage.tsx`, replace `createMutation`:
         client_is_company: draft.isCompany,
         tasks: tasks.map(taskDraftToTaskCreate),
       }),
-    transform: (previous, { placeholder }) => applyInsert(previous, placeholder),
+    transform: (previous, { placeholder }) => applyCreate(previous, placeholder),
     // No flash: the placeholder is REMOVED on failure rather than reverted in
     // place, so there is no card left to ring.
     onSuccess: (created, { placeholder, draft }) => {

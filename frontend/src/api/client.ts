@@ -3507,6 +3507,18 @@ export interface AitoProject {
   task_count: number;
   tasks_total: number;
   task_services: string[];
+  /** The project's steps: one per (task, service) pair whose cost is not null.
+   *  A service priced 0 is a real step, one priced null is absent from the job.
+   *  Mirrored by `summariseTasks` in utils/aitoBoardRules.ts and pinned by the
+   *  contract fixture. The card's progress bar is done/total, hidden when
+   *  total is 0. */
+  steps_total: number;
+  steps_done: number;
+  /** The services with at least one UNTICKED step, canonical order. This is
+   *  what `evaluate` takes — `task_services` is the union of ENABLED services
+   *  and is a different set. The optimistic layer predicts a card's column
+   *  from this field, so it must never be inferred from the two counters. */
+  task_pending: string[];
   /** Why this card cannot be dragged between columns, or null when it can
    *  (Finish <-> Done only). Derived server-side by the board rule engine —
    *  the frontend never recomputes a column or a lock, it only renders these. */

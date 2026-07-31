@@ -6,6 +6,8 @@ import { CardView } from './CardView';
 import type { ColumnMeta } from './columns';
 import type { AitoProject } from '../../api/client';
 import { useQuoteStatusMutation } from '../../hooks/useQuoteStatusMutation';
+import { useIsReverting } from '../../hooks/useRevertFlash';
+import { isPlaceholder } from '../../utils/aitoOptimistic';
 
 function SortableCard({
   project,
@@ -23,6 +25,8 @@ function SortableCard({
   // server's move endpoint permit it. What a locked card cannot do is LEAVE
   // its column — `useBoardDrag`'s `isDropAllowed` refuses that drop, and the
   // board dims the columns that will refuse it.
+  const placeholder = isPlaceholder(project);
+
   const {
     attributes,
     listeners,
@@ -34,6 +38,7 @@ function SortableCard({
   } = useSortable({
     id: project.id,
     transition: transitionConfig,
+    disabled: placeholder,
   });
 
   // Owned here rather than threaded down from AitoPage: the hook is
@@ -43,14 +48,22 @@ function SortableCard({
   // card is).
   const markSent = useQuoteStatusMutation(project);
 
+  // A card that just snapped back. The ring lives on this wrapper rather than
+  // on CardView so the DragOverlay clone — which renders CardView directly —
+  // never inherits it.
+  const reverting = useIsReverting(project.id);
+
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`${animateIn ? 'animate-rise' : ''} ${isDragging ? 'opacity-30' : ''}`}
+      className={`${animateIn ? 'animate-rise' : ''} ${isDragging ? 'opacity-30' : ''} ${
+        reverting ? 'animate-revert-flash' : ''
+      }`}
     >
       <CardView
         project={project}
+        placeholder={placeholder}
         onExpand={onExpand}
         onMarkSent={() => markSent.mutate('sent')}
         markSentPending={markSent.isPending}

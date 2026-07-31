@@ -1,15 +1,106 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render } from '../utils';
 import { QuoteStatusActions } from '../../components/aito/QuoteStatusActions';
+import { ToastProvider } from '../../contexts/ToastContext';
+import { __resetBoardSync } from '../../hooks/useBoardSync';
 import { api } from '../../api/client';
 import type { AitoProject } from '../../api/client';
+import { flashRevert } from '../../hooks/useRevertFlash';
+
+// `flashRevert` is imported as a direct binding by useOptimisticBoardMutation,
+// so vi.spyOn on the module namespace would patch an object nobody reads.
+// Mock the module instead, spreading the original so useIsReverting (which
+// the card's revert-flash styling relies on) stays real.
+vi.mock('../../hooks/useRevertFlash', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../hooks/useRevertFlash')>()),
+  flashRevert: vi.fn(),
+}));
 
 const project = { id: 12, quote_id: 'EST-9', quote_status: 'draft' } as unknown as AitoProject;
 
+// A project with every field the board cache needs, defaulted so a test can
+// override only what it cares about. `task_pending` mirrors `task_services`
+// unless a test says otherwise — a fresh fixture assumes nothing is done yet,
+// which is what every caller below actually wants.
+function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
+  const base: AitoProject = {
+    id: 1,
+    description: 'Support de caméra',
+    column: 'devis',
+    position: 0,
+    status: 'active',
+    client_id: 'z1',
+    client_name: 'ACME SARL',
+    client_phone: '+689-87123456',
+    client_email: 'hi@acme.pf',
+    client_is_company: null,
+    quote_id: 'EST-1',
+    quote_number: null,
+    quote_date: null,
+    quote_total: null,
+    quote_url: null,
+    quote_salesperson: null,
+    quote_status: 'draft',
+    quote_sync_state: 'idle',
+    quote_sync_error: null,
+    quote_status_block: null,
+    quote_status_remote: null,
+    created_by: null,
+    task_count: 0,
+    tasks_total: 0,
+    task_services: [],
+    task_pending: [],
+    steps_total: 0,
+    steps_done: 0,
+    move_lock: null,
+    created_at: '2026-07-27T00:00:00',
+    updated_at: '2026-07-27T00:00:00',
+  };
+  return {
+    ...base,
+    ...overrides,
+    task_pending: overrides.task_pending ?? overrides.task_services ?? base.task_pending,
+  };
+}
+
+/** Renders QuoteStatusActions against a real QueryClient seeded with one
+ *  project, and returns that client so a test can inspect the
+ *  ['aito-projects'] cache directly — the custom `render` from '../utils'
+ *  hides its client inside its own provider tree, which is no good for tests
+ *  that need to assert on the cache mid-mutation. */
+function renderWithBoard(project: AitoProject) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  client.setQueryData(['aito-projects'], [project]);
+  rtlRender(
+    <QueryClientProvider client={client}>
+      <ToastProvider>
+        <QuoteStatusActions project={project} />
+      </ToastProvider>
+    </QueryClientProvider>,
+  );
+  return client;
+}
+
+/** Holds a button through HoldButton's confirm delay under the suite's fake
+ *  timers, mirroring the `[MouseLeft>]` + `advanceTimersByTime` pattern the
+ *  rest of this file already uses for the 500ms hold. */
+async function holdButton(button: HTMLElement) {
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  await user.pointer({ keys: '[MouseLeft>]', target: button });
+  vi.advanceTimersByTime(600);
+}
+
 describe('QuoteStatusActions', () => {
-  beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    __resetBoardSync();
+    vi.mocked(flashRevert).mockClear();
+  });
   afterEach(() => vi.useRealTimers());
 
   it('does not fire before the hold completes', async () => {
@@ -122,5 +213,51 @@ describe('QuoteStatusActions', () => {
       expect(screen.queryByRole('button', { name: /mark as sent/i })).not.toBeInTheDocument();
       unmount();
     }
+  });
+
+  it('moves the card the moment accept is held, before the request resolves', async () => {
+    // A quote already sent to the client (Accept is only offered once the
+    // quote is out — see the "ACCEPT AND DECLINE ARE HIDDEN" note on
+    // QuoteStatusActions) with one unticked step lands in its first pending
+    // stage as soon as accept is optimistically applied.
+    let release: (v: unknown) => void = () => {};
+    vi.spyOn(api, 'setAitoQuoteStatus').mockImplementation(
+      () => new Promise((resolve) => { release = resolve; }),
+    );
+
+    const project = makeProject({
+      id: 1, column: 'devis', quote_status: 'sent',
+      task_services: ['impression'], steps_total: 1, steps_done: 0,
+    });
+    const client = renderWithBoard(project);
+
+    await holdButton(screen.getByRole('button', { name: /accept/i }));
+
+    // The mutationFn above is deliberately still pending — `release` is not
+    // called until after these assertions — so this is the optimistic write,
+    // not a fluke of the request having already settled. `waitFor` here is
+    // only absorbing React Query's internal microtask chain (onMutate awaits
+    // `cancelQueries`), not the request itself.
+    await waitFor(() => {
+      const cached = client.getQueryData<AitoProject[]>(['aito-projects'])!;
+      expect(cached[0].column).toBe('print');
+      expect(cached[0].quote_status).toBe('accepted');
+    });
+    release(null);
+  });
+
+  it('puts the card back and flashes when the server refuses', async () => {
+    vi.spyOn(api, 'setAitoQuoteStatus').mockRejectedValue(new Error('nope'));
+    const flash = vi.mocked(flashRevert); // see Task 7 Step 7 for the required vi.mock
+
+    const project = makeProject({ id: 1, column: 'devis', quote_status: 'sent' });
+    const client = renderWithBoard(project);
+
+    await holdButton(screen.getByRole('button', { name: /accept/i }));
+
+    await waitFor(() => {
+      expect(client.getQueryData<AitoProject[]>(['aito-projects'])![0].column).toBe('devis');
+    });
+    expect(flash).toHaveBeenCalledWith(1);
   });
 });

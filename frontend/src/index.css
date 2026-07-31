@@ -655,6 +655,28 @@ body {
   animation: rise 0.25s var(--ease-signature) backwards;
 }
 
+/* Aito: a card that just snapped back after the server refused the change.
+   Paired with a toast, never alone — see hooks/useRevertFlash.ts. The ring is
+   drawn on a wrapper around the card, so it reads as "this card" without
+   touching the card's own border, which already carries hover and lock state.
+   600ms matches REVERT_FLASH_MS. */
+@keyframes aito-revert-flash {
+  from { box-shadow: 0 0 0 2px var(--color-status-error, #ef4444); }
+  to { box-shadow: 0 0 0 2px transparent; }
+}
+.animate-revert-flash {
+  border-radius: 0.75rem; /* matches the card's rounded-xl */
+  animation: aito-revert-flash 0.6s var(--ease-exit) forwards;
+}
+/* The ring still appears and clears — only the fade is dropped, so the signal
+   survives for anyone who has asked for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-revert-flash {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--color-status-error, #ef4444);
+  }
+}
+
 /* Route/page transition — the incoming page rises + fades in immediately on
    navigation. AnimatedOutlet mounts the destination right away (no exit
    phase/timer); this is the only animation that plays. */

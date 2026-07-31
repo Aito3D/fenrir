@@ -31,8 +31,14 @@ the flattening of the task list.
 
 Out of scope, deliberately:
 
-- **Offline queueing.** An optimistic write that cannot reach the server is
-  reverted, not held. Retry is the user's, by repeating the action.
+- **Offline queueing.** Not built, and not needed: react-query's default
+  `networkMode: 'online'` already PAUSES a mutation that started while
+  offline — after `onMutate` has already applied the optimistic write. The
+  card stays on screen exactly as if the write had succeeded, with no revert
+  and no toast, and `pendingWrites` stays raised (so the settle-invalidate is
+  deferred, not skipped) until the connection returns and the paused
+  mutation resumes on its own. This is stock `networkMode` behaviour, left
+  as-is deliberately; there is no separate retry to trigger.
 - **Optimistic Zoho state.** `quote_sync_state` and `quote_status_block` are
   the sync worker's to write. The one exception is noted under Retry sync.
 - **WebSocket push for the board.** The settle-invalidate stays the truth
