@@ -30,9 +30,13 @@ export interface CardViewProps {
 
 /** How long the pointer must rest on a card before its description opens.
  *
- *  A second is long enough that crossing the board never triggers it and
- *  short enough to feel like an answer rather than a wait. */
-const HOVER_REVEAL_MS = 1000;
+ *  Two seconds, not one. A second sounds deliberate but is shorter than the
+ *  ordinary act of moving onto a card and clicking it, so every click was
+ *  preceded by the card growing and then — the instant the panel took the
+ *  pointer — shrinking back. The dwell has to be longer than aiming takes, or
+ *  the reveal stops being something you ask for and becomes something that
+ *  happens to you. Pressing cancels it outright; see `cancelHoverIntent`. */
+const HOVER_REVEAL_MS = 2000;
 
 /** Presentational card, shared by the in-column sortable wrapper and the
  *  DragOverlay clone.
@@ -123,7 +127,9 @@ export function CardView({
   const endHoverIntent = useCallback(() => {
     clearTimer();
     setExpanded(false);
+    setShellHeight(null);
   }, [clearTimer]);
+
 
   const created = parseUTCDate(project.created_at);
   const updated = parseUTCDate(project.updated_at);
@@ -140,6 +146,15 @@ export function CardView({
       data-testid="aito-card-shell"
       onMouseEnter={startHoverIntent}
       onMouseLeave={endHoverIntent}
+      // A press states an intent to OPEN the card, which is the opposite of
+      // wanting to read it where it lies — so it abandons the reveal outright,
+      // pending or already open. Two things depend on that. The card has to be
+      // back to its collapsed size before the click starts the morph, or the
+      // panel grows out of a box the wrong size. And since the timer only
+      // restarts on mouseenter, a cancelled reveal stays cancelled until the
+      // pointer genuinely leaves and comes back, rather than being postponed by
+      // one more dwell.
+      onPointerDown={endHoverIntent}
       // The shell holds the collapsed height while the card floats, so the
       // column's layout does not change. It carries no card styling and no
       // `data-aito-card*` — it is space, nothing else.

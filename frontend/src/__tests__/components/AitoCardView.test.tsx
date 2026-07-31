@@ -432,7 +432,7 @@ describe('CardView — hover to read a clamped description', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it('un-clamps the description after a full second of hover', () => {
+  it('un-clamps the description after the full dwell', () => {
     render(<CardView project={project} onExpand={vi.fn()} />);
     const description = screen.getByTestId('aito-card-description');
     setClamped(description, true);
@@ -440,7 +440,7 @@ describe('CardView — hover to read a clamped description', () => {
     setCardHeight(card, 180);
 
     fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
-    act(() => vi.advanceTimersByTime(1000));
+    act(() => vi.advanceTimersByTime(2000));
 
     expect(description).not.toHaveClass('line-clamp-3');
 
@@ -453,16 +453,21 @@ describe('CardView — hover to read a clamped description', () => {
     expect(card).toHaveClass('z-30');
   });
 
-  it('does not expand on a hover shorter than a second', () => {
+  it('does not expand on a hover shorter than the dwell', () => {
     render(<CardView project={project} onExpand={vi.fn()} />);
     const description = screen.getByTestId('aito-card-description');
     setClamped(description, true);
     const shell = screen.getByTestId('aito-card-shell');
 
     fireEvent.mouseEnter(shell);
-    act(() => vi.advanceTimersByTime(800));
+    act(() => vi.advanceTimersByTime(1800));
+    // Asserted BEFORE the pointer leaves, or this passes for the wrong reason:
+    // a leave collapses the card anyway, so checking only afterwards would hold
+    // for any dwell at all and pin nothing.
+    expect(description).toHaveClass('line-clamp-3');
+
     fireEvent.mouseLeave(shell);
-    act(() => vi.advanceTimersByTime(1000));
+    act(() => vi.advanceTimersByTime(2000));
 
     expect(description).toHaveClass('line-clamp-3');
   });
@@ -474,7 +479,7 @@ describe('CardView — hover to read a clamped description', () => {
     const shell = screen.getByTestId('aito-card-shell');
 
     fireEvent.mouseEnter(shell);
-    act(() => vi.advanceTimersByTime(1000));
+    act(() => vi.advanceTimersByTime(2000));
     fireEvent.mouseLeave(shell);
 
     expect(description).toHaveClass('line-clamp-3');
@@ -488,7 +493,7 @@ describe('CardView — hover to read a clamped description', () => {
     setClamped(description, false);
 
     fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
-    act(() => vi.advanceTimersByTime(1000));
+    act(() => vi.advanceTimersByTime(2000));
 
     expect(description).toHaveClass('line-clamp-3');
     // Not "did not pin 0px" — jsdom's unmocked offsetHeight happens to BE 0,
@@ -505,7 +510,7 @@ describe('CardView — hover to read a clamped description', () => {
     setClamped(description, true);
 
     fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
-    act(() => vi.advanceTimersByTime(1000));
+    act(() => vi.advanceTimersByTime(2000));
 
     expect(description).toHaveClass('line-clamp-3');
   });
@@ -519,7 +524,7 @@ describe('CardView — hover to read a clamped description', () => {
     setClamped(description, true);
 
     fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
-    act(() => vi.advanceTimersByTime(1000));
+    act(() => vi.advanceTimersByTime(2000));
 
     expect(description).toHaveClass('line-clamp-3');
   });
@@ -532,5 +537,63 @@ describe('CardView — hover to read a clamped description', () => {
     const shell = screen.getByTestId('aito-card-shell');
     expect(shell).not.toHaveAttribute('data-aito-card-id');
     expect(shell.querySelector('[data-aito-card-id="12"]')).not.toBeNull();
+  });
+
+  it('abandons a pending reveal the moment the pointer goes down', () => {
+    // Aiming at a card and clicking it takes longer than the dwell, so without
+    // this every single click was preceded by the card growing and then, once
+    // the panel took the pointer, shrinking back. Pressing is a statement of
+    // intent to open the card, which is the opposite of wanting to read it in
+    // place — so the press cancels the reveal outright rather than deferring it.
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, true);
+    const shell = screen.getByTestId('aito-card-shell');
+
+    fireEvent.mouseEnter(shell);
+    act(() => vi.advanceTimersByTime(1500));
+    fireEvent.pointerDown(shell);
+    act(() => vi.advanceTimersByTime(5000));
+
+    expect(description).toHaveClass('line-clamp-3');
+  });
+
+  it('collapses an already-open reveal when the pointer goes down', () => {
+    // The other half: dwell long enough to expand, then click. The card must
+    // be back to its collapsed size BEFORE the morph starts, or the panel
+    // grows out of a card that is the wrong size.
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, true);
+    const card = document.querySelector('[data-aito-card]') as HTMLElement;
+    setCardHeight(card, 180);
+    const shell = screen.getByTestId('aito-card-shell');
+
+    fireEvent.mouseEnter(shell);
+    act(() => vi.advanceTimersByTime(2000));
+    expect(description).not.toHaveClass('line-clamp-3');
+
+    fireEvent.pointerDown(shell);
+
+    expect(description).toHaveClass('line-clamp-3');
+    expect(card).not.toHaveClass('absolute');
+    expect(shell.style.height).toBe('');
+  });
+
+  it('does not re-open the reveal while the pointer stays put after a press', () => {
+    // The timer restarts on mouseenter only, so a cancelled reveal stays
+    // cancelled until the pointer actually leaves and comes back. Without
+    // this, pressing would merely postpone the growth by one dwell.
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, true);
+    const shell = screen.getByTestId('aito-card-shell');
+
+    fireEvent.mouseEnter(shell);
+    act(() => vi.advanceTimersByTime(2000));
+    fireEvent.pointerDown(shell);
+    act(() => vi.advanceTimersByTime(10000));
+
+    expect(description).toHaveClass('line-clamp-3');
   });
 });
