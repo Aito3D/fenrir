@@ -1,13 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import {
+  applyCreate,
   applyDelete,
   applyDescription,
-  applyInsert,
+  applyRestore,
   applyQuoteStatus,
+  applySyncState,
   applyTaskSummary,
   isPlaceholder,
   nextPlaceholderId,
 } from '../../utils/aitoOptimistic';
+import type { TaskSummary } from '../../utils/aitoBoardRules';
 import type { AitoProject } from '../../api/client';
 
 const card = (over: Partial<AitoProject> = {}): AitoProject => ({
@@ -128,6 +131,39 @@ describe('applyQuoteStatus', () => {
   it('returns an empty array for undefined input', () => {
     expect(applyQuoteStatus(undefined, 1, 'sent')).toEqual([]);
   });
+
+  it('renumbers a column that leaves array order by POSITION, not array order', () => {
+    // Regression for the bug where the source column was renumbered by
+    // walking the array instead of ranking by `position` (ties on `id`), the
+    // way the server's `_active_in_column` does with `ORDER BY position, id`.
+    //
+    // Start, array order matching position order (as the server would return
+    // it): S1(scan,0), W1(waiting,0), W2(waiting,1).
+    const start = [
+      card({ id: 1, column: 'scan', position: 0, quote_status: 'draft' }),
+      card({ id: 2, column: 'waiting', position: 0, quote_status: 'sent' }),
+      card({ id: 3, column: 'waiting', position: 1, quote_status: 'sent' }),
+    ];
+
+    // Move 1: S1 into waiting. It correctly gets position 2, appended to the
+    // end. Array order is untouched, so the waiting column's array order (S1
+    // last) no longer matches its position order (S1 is highest, W1 is
+    // lowest) — array order and position order have now diverged.
+    const afterMove1 = applyQuoteStatus(start, 1, 'sent');
+    expect(find(afterMove1, 1)).toMatchObject({ column: 'waiting', position: 2 });
+    expect(find(afterMove1, 2)).toMatchObject({ column: 'waiting', position: 0 });
+    expect(find(afterMove1, 3)).toMatchObject({ column: 'waiting', position: 1 });
+
+    // Move 2: W1 (id 2) leaves waiting. The server renumbers the remainder by
+    // `ORDER BY position, id`: W2 (position 1) comes before S1 (position 2),
+    // so W2 -> 0, S1 -> 1. Renumbering by array traversal instead would visit
+    // S1 before W2 (array order is [S1, W1, W2]) and wrongly produce S1 -> 0,
+    // W2 -> 1 — S1 jumping from last to first.
+    const afterMove2 = applyQuoteStatus(afterMove1, 2, 'draft');
+    expect(find(afterMove2, 2).column).toBe('devis');
+    expect(find(afterMove2, 3).position).toBe(0); // W2
+    expect(find(afterMove2, 1).position).toBe(1); // S1
+  });
 });
 
 describe('applyTaskSummary', () => {
@@ -178,6 +214,17 @@ describe('applyTaskSummary', () => {
     });
     expect(find(after, 1).column).toBe('devis');
   });
+
+  it('is a no-op for an unknown id', () => {
+    const projects = [card({ id: 1 })];
+    const summary: TaskSummary = { count: 1, total: 10, services: ['scan'], pending: [], stepsTotal: 1, stepsDone: 1 };
+    expect(applyTaskSummary(projects, 99, summary)).toEqual(projects);
+  });
+
+  it('returns an empty array for undefined input', () => {
+    const summary: TaskSummary = { count: 1, total: 10, services: ['scan'], pending: [], stepsTotal: 1, stepsDone: 1 };
+    expect(applyTaskSummary(undefined, 1, summary)).toEqual([]);
+  });
 });
 
 describe('applyDescription', () => {
@@ -185,6 +232,38 @@ describe('applyDescription', () => {
     const after = applyDescription([card({ id: 1, description: 'old' })], 1, 'new');
     expect(find(after, 1).description).toBe('new');
     expect(find(after, 1).column).toBe('devis');
+  });
+
+  it('is a no-op for an unknown id', () => {
+    const projects = [card({ id: 1 })];
+    expect(applyDescription(projects, 99, 'new')).toEqual(projects);
+  });
+
+  it('returns an empty array for undefined input', () => {
+    expect(applyDescription(undefined, 1, 'new')).toEqual([]);
+  });
+});
+
+describe('applySyncState', () => {
+  it('replaces quote_sync_state and nothing else', () => {
+    const after = applySyncState([card({ id: 1, quote_sync_state: 'idle' })], 1, 'pending');
+    expect(find(after, 1).quote_sync_state).toBe('pending');
+    expect(find(after, 1).column).toBe('devis');
+  });
+
+  it('leaves other projects untouched', () => {
+    const projects = [card({ id: 1, quote_sync_state: 'idle' }), card({ id: 2, quote_sync_state: 'error' })];
+    const after = applySyncState(projects, 1, 'synced');
+    expect(find(after, 2)).toEqual(find(projects, 2));
+  });
+
+  it('is a no-op for an unknown id', () => {
+    const projects = [card({ id: 1, quote_sync_state: 'idle' })];
+    expect(applySyncState(projects, 99, 'error')).toEqual(projects);
+  });
+
+  it('returns an empty array for undefined input', () => {
+    expect(applySyncState(undefined, 1, 'error')).toEqual([]);
   });
 });
 
@@ -207,13 +286,76 @@ describe('applyDelete', () => {
     ];
     expect(find(applyDelete(projects, 1), 2).position).toBe(5);
   });
+
+  it('is a no-op for an unknown id', () => {
+    const projects = [card({ id: 1 })];
+    expect(applyDelete(projects, 99)).toEqual(projects);
+  });
+
+  it('returns an empty array for undefined input', () => {
+    expect(applyDelete(undefined, 1)).toEqual([]);
+  });
 });
 
-describe('applyInsert', () => {
-  it('appends to the end of its column', () => {
+describe('applyCreate', () => {
+  it('prepends a placeholder when Devis is empty', () => {
+    const after = applyCreate([], card({ id: -1, column: 'devis', position: 999 }));
+    expect(after).toHaveLength(1);
+    expect(find(after, -1)).toMatchObject({ column: 'devis', position: 0 });
+  });
+
+  it('prepends and shifts every existing Devis card down', () => {
+    const projects = [
+      card({ id: 1, column: 'devis', position: 0 }),
+      card({ id: 2, column: 'devis', position: 1 }),
+    ];
+    const after = applyCreate(projects, card({ id: -1, column: 'devis', position: 999 }));
+    expect(find(after, -1).position).toBe(0);
+    expect(find(after, 1).position).toBe(1);
+    expect(find(after, 2).position).toBe(2);
+  });
+
+  it('does not disturb other columns', () => {
+    const projects = [
+      card({ id: 1, column: 'devis', position: 0 }),
+      card({ id: 2, column: 'print', position: 3 }),
+    ];
+    const after = applyCreate(projects, card({ id: -1, column: 'devis', position: 999 }));
+    expect(find(after, 2)).toEqual(find(projects, 2));
+  });
+
+  it('forces the placeholder into Devis regardless of the column it was given', () => {
+    const after = applyCreate([], card({ id: -1, column: 'print', position: 999 }));
+    expect(find(after, -1).column).toBe('devis');
+  });
+
+  it('returns just the placeholder for undefined input', () => {
+    const after = applyCreate(undefined, card({ id: -1, column: 'devis', position: 999 }));
+    expect(after).toHaveLength(1);
+    expect(find(after, -1).position).toBe(0);
+  });
+});
+
+describe('applyRestore', () => {
+  it('appends to the end of its own column', () => {
     const projects = [card({ id: 1, column: 'devis', position: 0 })];
-    const after = applyInsert(projects, card({ id: -1, column: 'devis', position: 999 }));
+    const after = applyRestore(projects, card({ id: -1, column: 'devis', position: 999 }));
     expect(find(after, -1).position).toBe(1);
+  });
+
+  it('does not disturb other columns', () => {
+    const projects = [
+      card({ id: 1, column: 'devis', position: 0 }),
+      card({ id: 2, column: 'print', position: 3 }),
+    ];
+    const after = applyRestore(projects, card({ id: -1, column: 'devis', position: 999 }));
+    expect(find(after, 2)).toEqual(find(projects, 2));
+  });
+
+  it('returns just the restored card for undefined input', () => {
+    const after = applyRestore(undefined, card({ id: -1, column: 'finish', position: 999 }));
+    expect(after).toHaveLength(1);
+    expect(find(after, -1).position).toBe(0);
   });
 });
 

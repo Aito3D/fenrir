@@ -45,12 +45,24 @@ function relocate(projects: AitoProject[], moved: AitoProject, column: AitoProje
   const destinationCount = projects.filter((p) => p.column === column && p.id !== moved.id).length;
   const relocated = { ...moved, column, position: destinationCount };
 
-  let sourceIndex = 0;
+  // Rank the remainder by `position, id` — exactly `_active_in_column`'s
+  // `ORDER BY position, id` — NOT by array traversal order. The two agree
+  // only while a column's array order happens to match its position order,
+  // and `relocate` itself breaks that invariant: it gives the moved card the
+  // highest position in its DESTINATION column while leaving it at its
+  // original array index, so the next card to leave that column would be
+  // renumbered wrongly by array order alone. `.filter` above already copies,
+  // so sorting it in place does not mutate the `projects` argument.
+  const sourceRank = new Map<number, number>();
+  projects
+    .filter((p) => p.column === source && p.id !== moved.id)
+    .sort((a, b) => a.position - b.position || a.id - b.id)
+    .forEach((project, index) => sourceRank.set(project.id, index));
+
   return projects.map((project) => {
     if (project.id === moved.id) return relocated;
     if (project.column !== source) return project;
-    const position = sourceIndex;
-    sourceIndex += 1;
+    const position = sourceRank.get(project.id)!;
     return project.position === position ? project : { ...project, position };
   });
 }
@@ -135,9 +147,25 @@ export function applyDelete(projects: AitoProject[] | undefined, id: number): Ai
     });
 }
 
-/** Append a card to the end of its own column. Used by create, import and
- *  restore, all of which land a row the list has never seen. */
-export function applyInsert(projects: AitoProject[] | undefined, project: AitoProject): AitoProject[] {
+/** Mirrors `create_project` (`POST /api/v1/aito/`, backend/app/api/routes/aito.py
+ *  around line 377): board create AND quote import both go through that one
+ *  endpoint, and it does the opposite of appending — every existing Devis
+ *  card is shifted down a position and the new row is inserted at Devis
+ *  position 0. A placeholder from either surface must land on TOP of the
+ *  quote column, not the bottom, which is why this is not `applyRestore`
+ *  below with a different column argument. */
+export function applyCreate(projects: AitoProject[] | undefined, placeholder: AitoProject): AitoProject[] {
+  const list = projects ?? [];
+  const shifted = list.map((p) => (p.column === 'devis' ? { ...p, position: p.position + 1 } : p));
+  return [...shifted, { ...placeholder, column: 'devis', position: 0 }];
+}
+
+/** Mirrors `restore_project` (`POST /api/v1/aito/{id}/restore`,
+ *  backend/app/api/routes/aito.py): un-deleting a card puts it back at the
+ *  END of whatever column it last lived in — the trash restore path has no
+ *  reason to jump the queue the way a freshly created quote does, so unlike
+ *  `applyCreate` above it genuinely appends. */
+export function applyRestore(projects: AitoProject[] | undefined, project: AitoProject): AitoProject[] {
   const list = projects ?? [];
   const count = list.filter((p) => p.column === project.column).length;
   return [...list, { ...project, position: count }];
