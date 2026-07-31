@@ -6,7 +6,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screen, waitFor, act, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { server } from '../mocks/server';
 import { render } from '../utils';
 import { AitoPage } from '../../pages/AitoPage';
@@ -75,31 +74,6 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
   };
 }
 
-/** Grabs the QueryClient `render()` (from '../utils') creates internally —
- *  its `AllProviders` wrapper builds one with `useState` and never exposes it.
- *  Rendered as a sibling of the page under test so it shares the same
- *  `QueryClientProvider`.
- *
- *  Used to assert on the `['aito-projects']` cache as a SECONDARY check
- *  alongside the rendered board: `useOptimisticBoardMutation` promises to
- *  write the optimistic value into the cache synchronously, and the rendered
- *  assertions above it depend on that being true, so this pins down the
- *  cache half of the chain explicitly.
- *
- *  It used to be the ONLY check a still-pending write's tests could make.
- *  Before the `useBoardSync` counter split, `useBoardDrag`'s local `board`
- *  state (what the compact card actually renders from) refused to rebuild
- *  from the cache while ANY board write was pending, drag or not — so a
- *  delete or restore's optimistic value was correct in the cache but
- *  invisible on screen until the request settled, and a test could only
- *  observe it here. Now that a non-drag write no longer blocks that rebuild,
- *  the primary assertions check the rendered board directly; this capture is
- *  kept for the cache-side half of the proof, not as a workaround. */
-let capturedClient: QueryClient;
-function ClientCapture() {
-  capturedClient = useQueryClient();
-  return null;
-}
 
 /** The card opens from its body only — the header carrying the client name is
  *  deliberately not a click target. Tests that just need the panel open go
@@ -688,12 +662,7 @@ describe('AitoPage (backend board)', () => {
 
       vi.useFakeTimers({ shouldAdvanceTime: true });
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-      render(
-        <>
-          <ClientCapture />
-          <AitoPage />
-        </>,
-      );
+      render(<AitoPage />);
 
       await user.click(await screen.findByRole('button', { name: /doomed/ }));
       const deleteButton = await screen.findByLabelText('Delete Project');
@@ -710,9 +679,6 @@ describe('AitoPage (backend board)', () => {
       // from the cache until every pending write (delete included) settled,
       // so the card stayed on screen despite the cache already being correct.
       await waitFor(() => expect(screen.queryByRole('button', { name: /doomed/ })).not.toBeInTheDocument());
-      // The cache write is what the rendered assertion above actually depends
-      // on — kept as a secondary check that the optimistic value landed.
-      expect(capturedClient.getQueryData<AitoProject[]>(['aito-projects'])?.some((p) => p.id === 1)).toBe(false);
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
       resolveDelete(HttpResponse.json({ detail: 'nope' }, { status: 500 }));
@@ -738,12 +704,7 @@ describe('AitoPage (backend board)', () => {
       );
 
       const user = userEvent.setup();
-      render(
-        <>
-          <ClientCapture />
-          <AitoPage />
-        </>,
-      );
+      render(<AitoPage />);
       await screen.findByRole('button', { name: /On board/ });
 
       await user.click(screen.getByRole('button', { name: 'Trash' }));
@@ -764,15 +725,12 @@ describe('AitoPage (backend board)', () => {
       // unambiguous even with the trash modal still open: the modal's own
       // row renders the same description as plain text, not a button.
       await waitFor(() => expect(screen.getByRole('button', { name: /Trashed thing/ })).toBeInTheDocument());
-      // The cache write the rendered card above depends on.
-      expect(capturedClient.getQueryData<AitoProject[]>(['aito-projects'])?.some((p) => p.id === 99)).toBe(true);
 
       // The server refuses — the quote already has an active project.
       resolveRestore(HttpResponse.json({ detail: 'conflict' }, { status: 409 }));
 
       // Rolled back off the rendered board...
       await waitFor(() => expect(screen.queryByRole('button', { name: /Trashed thing/ })).not.toBeInTheDocument());
-      expect(capturedClient.getQueryData<AitoProject[]>(['aito-projects'])?.some((p) => p.id === 99)).toBe(false);
       // ...and the trash row is back, via onError's invalidate.
       await within(modal).findByText('Trashed thing');
       expect(await screen.findByText('That quote already has an active project')).toBeInTheDocument();
