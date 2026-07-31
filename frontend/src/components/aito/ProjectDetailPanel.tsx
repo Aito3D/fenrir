@@ -200,7 +200,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
           </span>
         </div>
 
-        <div className="p-4 overflow-y-auto scrollbar-hide flex-1 min-h-0">
+        <div className="p-4 overflow-y-auto scrollbar-hide flex-1 min-h-0 lg:flex lg:flex-col lg:overflow-hidden">
           {/* Three columns, three scrollers — but only from `lg` up, where the
               grid is actually side by side. Below that the columns stack and
               the body's own scroller is the right one.
@@ -212,11 +212,22 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               column scroll inside it is what keeps the header and the left
               column where the user left them.
 
-              `lg:min-h-0` is the load-bearing part, here and on every child: a
-              grid item defaults to `min-height: auto` and refuses to shrink
-              below its content, so without it the cap does nothing at all.
-              Same reason AitoPage's board row carries it. */}
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)_minmax(0,26rem)] gap-4 lg:gap-6 lg:h-full lg:min-h-0">
+              `lg:h-full` was tried first and silently did nothing: a percentage
+              height only resolves against a parent whose height is definite,
+              and this body's height comes out of the flex algorithm (`flex-1
+              min-h-0` above), not an explicit value, so `h-full` fell back to
+              `auto` — the content height — and never capped anything. The body
+              itself has to become the definite-height parent instead, so at
+              `lg` it turns into a non-scrolling flex column (`lg:flex
+              lg:flex-col lg:overflow-hidden`) and the grid below takes
+              `lg:flex-1` to get a real, definite height from it.
+
+              `lg:min-h-0` is still required on the row and on every column,
+              here and below: a flex/grid item defaults to `min-height: auto`
+              and refuses to shrink below its content, so without it the
+              definite height above is still ignored. Same reason AitoPage's
+              board row carries it. */}
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)_minmax(0,26rem)] gap-4 lg:gap-6 lg:flex-1 lg:min-h-0">
             <div className="space-y-4 min-w-0 lg:min-h-0 lg:overflow-y-auto scrollbar-hide">
               <div>
                 {/* The same name the create modal gives this field, so the

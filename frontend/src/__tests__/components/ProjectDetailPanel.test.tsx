@@ -1376,11 +1376,24 @@ describe('ProjectDetailPanel column badge', () => {
 
 describe('ProjectDetailPanel scroll architecture', () => {
   /** These are class assertions, and they prove less than a layout test would:
-   *  jsdom computes no heights, so nothing here can show the panel actually
-   *  stops growing. What they DO catch is the silent regression — dropping a
-   *  `min-h-0`, or adding a fourth column without a scroller — which changes no
-   *  rendered text, fails no type check, and is invisible until someone opens a
-   *  project with a long history on a wide screen. */
+   *  jsdom computes no layout at all, so nothing here can show the panel
+   *  actually stops growing or that any column actually scrolls. That is not
+   *  a hypothetical gap — it is exactly how this bug shipped once already.
+   *  The previous version of this suite asserted `lg:h-full` on the grid row,
+   *  every asserted class was present and correctly spelled, and the test
+   *  suite was green while the feature was completely broken in a real
+   *  browser: `h-full` is a percentage height, a percentage height needs a
+   *  *definite* parent height to resolve against, and a flex item's height
+   *  (the panel body, `flex-1 min-h-0`) is not definite, so it silently fell
+   *  back to `auto` and never capped anything. jsdom cannot catch that class
+   *  of failure because it does not lay anything out — only a real browser
+   *  (or Playwright) checking actual `scrollHeight`/`clientHeight` can. What
+   *  these tests DO catch is the cruder regression — dropping a `min-h-0`,
+   *  losing `lg:flex-1` off the row, or adding a fourth column without a
+   *  scroller — which changes no rendered text, fails no type check, and is
+   *  invisible until someone opens a project with a long history on a wide
+   *  screen. Treat a pass here as "the structure is intact", never as "the
+   *  scrolling works". */
 
   it('caps the panel at the viewport and lets the body flex inside it', () => {
     show();
@@ -1389,15 +1402,26 @@ describe('ProjectDetailPanel scroll architecture', () => {
     expect(dialog.className).toContain('flex-col');
   });
 
+  it('turns the body into a non-scrolling flex column on wide screens, so the grid can flex inside it', () => {
+    show();
+    const grid = document.querySelector('[class*="lg:grid-cols-"]')!;
+    const body = grid.parentElement!;
+    expect(body.className).toContain('lg:flex');
+    expect(body.className).toContain('lg:flex-col');
+    expect(body.className).toContain('lg:overflow-hidden');
+  });
+
   it('gives every grid column its own scroller on wide screens', () => {
     show();
     const grid = document.querySelector('[class*="lg:grid-cols-"]');
     expect(grid).not.toBeNull();
 
-    // min-h-0 on the row: without it the columns refuse to shrink below their
-    // content and the cap above does nothing.
+    // lg:flex-1 gives the row a definite height from the flex algorithm
+    // (a percentage like lg:h-full cannot get one from a flex-item parent).
+    // lg:min-h-0 is still required alongside it: without it the row refuses
+    // to shrink below its content and the flex-1 height above does nothing.
+    expect(grid!.className).toContain('lg:flex-1');
     expect(grid!.className).toContain('lg:min-h-0');
-    expect(grid!.className).toContain('lg:h-full');
 
     const columns = Array.from(grid!.children) as HTMLElement[];
     expect(columns).toHaveLength(3);
