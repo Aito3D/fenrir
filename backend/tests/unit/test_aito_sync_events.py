@@ -294,6 +294,99 @@ async def test_a_status_conflict_against_a_new_remote_status_records_again(db_se
 
 
 @pytest.mark.asyncio
+async def test_repeated_agreement_is_recorded_once(db_session):
+    """poll.reconciled used to fire unconditionally on every sweep tick, and
+    steady state IS agreement -- so an unchanged, agreeing project wrote a
+    fresh row every 300s tick forever (~4,900 rows/day at 17 active quoted
+    projects, with no retention anywhere in this codebase). Debounced the
+    same shape as sync.conflict above: two consecutive ticks that agree on
+    the exact same remote status must produce exactly one row."""
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    project.quote_sync_state = "idle"
+    project.quote_status = "sent"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "status": "sent",
+                        "line_items": [],
+                        "last_modified_time": "2026-07-29T10:00:00+1100",
+                    }
+                }
+            }
+        )
+    )
+    try:
+        await sync_project(db_session, project)
+        await db_session.commit()
+        await db_session.refresh(project)
+        await sync_project(db_session, project)
+        await db_session.commit()
+    finally:
+        zoho_service.transport = None
+
+    await db_session.refresh(project)
+    assert project.quote_status == "sent"  # agreement held throughout, nothing to reconcile
+    assert (await _kinds(db_session, project.id)).count("poll.reconciled") == 1
+
+
+@pytest.mark.asyncio
+async def test_agreement_on_a_new_status_records_again(db_session):
+    """The debounce must not swallow genuinely new information. A project that
+    settles into agreement on 'sent', then later settles into agreement on
+    'viewed' -- a client opening the quote is news -- must produce a second
+    row, not be treated as a repeat of the first."""
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    project.quote_sync_state = "idle"
+    project.quote_status = "sent"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    def transport_for(status: str) -> httpx.MockTransport:
+        return httpx.MockTransport(
+            zoho_handler(
+                {
+                    ("GET", "/estimates/E1"): {
+                        "estimate": {
+                            "estimate_id": "E1",
+                            "estimate_number": "DEV26-9001",
+                            "status": status,
+                            "line_items": [],
+                            "last_modified_time": "2026-07-29T10:00:00+1100",
+                        }
+                    }
+                }
+            )
+        )
+
+    try:
+        zoho_service.transport = transport_for("sent")
+        await sync_project(db_session, project)
+        await db_session.commit()
+        await db_session.refresh(project)
+
+        # Ours moves too -- this is the only way a SECOND agreement can differ
+        # from the first, since reconcile_quote_status's equality branch only
+        # runs when both sides already match.
+        project.quote_status = "viewed"
+        await db_session.commit()
+        zoho_service.transport = transport_for("viewed")
+        await sync_project(db_session, project)
+        await db_session.commit()
+    finally:
+        zoho_service.transport = None
+
+    kinds = await _kinds(db_session, project.id)
+    assert kinds.count("poll.reconciled") == 2
+
+
+@pytest.mark.asyncio
 async def test_a_persistent_upstream_failure_is_recorded_once(db_session):
     """The ZohoUpstreamError escalation re-fires on every subsequent tick for
     the duration of a Books outage, because an escalated project stays

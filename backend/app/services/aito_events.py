@@ -44,8 +44,10 @@ KINDS: dict[str, str] = {
     "project.updated": "detail",
     "note.added": "detail",
     "zoho.comment": "detail",
-    # trace: machine traffic. poll.reconciled alone is one row per project per
-    # sweep, which is why this is a separate depth rather than part of detail.
+    # trace: machine traffic. Even debounced to transitions (see
+    # aito_quote_sync.reconcile_quote_status), it is still noisier and less
+    # legible than anything a person did by hand, which is why it is a
+    # separate depth rather than part of detail.
     "sync.queued": "trace",
     "sync.pushed": "trace",
     "sync.failed": "trace",

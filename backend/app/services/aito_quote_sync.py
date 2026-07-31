@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import async_session
 from backend.app.core.tasks import spawn_background_task
+from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.filament import Filament
@@ -364,6 +365,46 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
     if zoho_status == local:
         # Genuine agreement: whatever was blocking, is not any more.
         _clear_block(project)
+
+        # Steady state IS agreement, so recording this unconditionally fired
+        # on every quoted project on every tick forever -- at the 300s default
+        # with 17 active quoted projects that is ~4,900 rows/day, ~1.8M/year,
+        # each carrying a JSON detail and three indexes, and it grows with
+        # board size rather than workload: a finished, accepted card is polled
+        # and re-recorded forever. It also drowned the activity rail's
+        # 'Everything' depth in identical poll noise at exactly the volume
+        # someone would need it legible.
+        #
+        # Debounced the same shape as sync.conflict/sync.status_rejected
+        # above: record only on a transition INTO the state, never on a tick
+        # that merely confirms it again. Those two debounce against a column
+        # this same function owns (quote_status_block/quote_status_remote),
+        # but there is no equivalent free column here: quote_status_remote
+        # exists to describe a BLOCK only (see its own docstring on
+        # AitoProject), and every write to quote_status clears it via
+        # _clear_block -- including the one three lines up -- so it can never
+        # carry "the status we last agreed on" across ticks without breaking
+        # the invariant _clear_block's own docstring documents. So this is the
+        # one 'trace' kind that genuinely needs a query rather than a stored
+        # column.
+        #
+        # The natural key for "already reported" is the remote status THIS
+        # tick agreed on: if the last poll.reconciled recorded for this
+        # project already carries that same status in its detail, this tick
+        # is not news. A single indexed lookup (project_id, newest id first)
+        # is enough -- run_sync_once processes one project per commit, so
+        # nothing else can be racing this same row between the read and the
+        # record() below.
+        last = (
+            await db.execute(
+                select(AitoEvent.detail)
+                .where(AitoEvent.project_id == project.id, AitoEvent.kind == "poll.reconciled")
+                .order_by(AitoEvent.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if last is not None and last.get("status") == zoho_status:
+            return
         await record(
             db,
             project.id,
