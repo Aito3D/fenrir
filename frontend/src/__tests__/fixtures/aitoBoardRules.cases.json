@@ -1,0 +1,9157 @@
+{
+  "evaluate": [
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": null,
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": null,
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": null,
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": null,
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": null,
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": null,
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": null,
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": null,
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": null,
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": null,
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": null,
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": null,
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": null,
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": null,
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": null,
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": null,
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": null,
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": null,
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": null,
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": null,
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": null,
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": null,
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": null,
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": null,
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": null,
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": null,
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": null,
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": null,
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": null,
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": null,
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": "draft",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "draft",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "draft",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "draft",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": "draft",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "draft",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "draft",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "draft",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": "draft",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "draft",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "draft",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "draft",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": "draft",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "draft",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "draft",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "draft",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": "draft",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "draft",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "draft",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "draft",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": "draft",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "draft",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "draft",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "draft",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": "draft",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "draft",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "draft",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "draft",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "draft",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "draft",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "sent",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "sent",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "sent",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "sent",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "sent",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "sent",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "sent",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "sent",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "sent",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "sent",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "sent",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "sent",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "sent",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "sent",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "sent",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "sent",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "sent",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "sent",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "sent",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "sent",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "sent",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "sent",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "sent",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "sent",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "sent",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "sent",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "sent",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "sent",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "sent",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "sent",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "viewed",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "viewed",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "viewed",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "viewed",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "viewed",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "viewed",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "viewed",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "viewed",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "expired",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "expired",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "expired",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "expired",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "devis"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "expired",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "expired",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "expired",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "expired",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "expired",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "expired",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "expired",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "expired",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "scan"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "expired",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "expired",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "expired",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "expired",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "model"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "expired",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "expired",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "expired",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "expired",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "print"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "expired",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "expired",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "expired",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "expired",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "finish"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [],
+      "quote_status": "expired",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "expired",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "expired",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "expired",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "expired",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "done"
+    },
+    {
+      "column": "waiting",
+      "move_lock": "waiting",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "expired",
+      "stored_column": "done"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [],
+      "quote_status": "declined",
+      "stored_column": "devis"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "declined",
+      "stored_column": "devis"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "declined",
+      "stored_column": "devis"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "devis"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "devis"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "declined",
+      "stored_column": "devis"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "devis"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "devis"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "devis"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "devis"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "devis"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "devis"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "devis"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "devis"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "devis"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "devis"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [],
+      "quote_status": "declined",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "declined",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "declined",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "declined",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [],
+      "quote_status": "declined",
+      "stored_column": "scan"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "declined",
+      "stored_column": "scan"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "declined",
+      "stored_column": "scan"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "scan"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "scan"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "declined",
+      "stored_column": "scan"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "scan"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "scan"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "scan"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "scan"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "scan"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "scan"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "scan"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "scan"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "scan"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "scan"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [],
+      "quote_status": "declined",
+      "stored_column": "model"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "declined",
+      "stored_column": "model"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "declined",
+      "stored_column": "model"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "model"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "model"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "declined",
+      "stored_column": "model"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "model"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "model"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "model"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "model"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "model"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "model"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "model"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "model"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "model"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "model"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [],
+      "quote_status": "declined",
+      "stored_column": "print"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "declined",
+      "stored_column": "print"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "declined",
+      "stored_column": "print"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "print"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "print"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "declined",
+      "stored_column": "print"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "print"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "print"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "print"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "print"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "print"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "print"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "print"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "print"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "print"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "print"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [],
+      "quote_status": "declined",
+      "stored_column": "finish"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "declined",
+      "stored_column": "finish"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "declined",
+      "stored_column": "finish"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "finish"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "finish"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "declined",
+      "stored_column": "finish"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "finish"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "finish"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "finish"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "finish"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "finish"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "finish"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "finish"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "finish"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "finish"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "finish"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [],
+      "quote_status": "declined",
+      "stored_column": "done"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "declined",
+      "stored_column": "done"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "declined",
+      "stored_column": "done"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "done"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "done"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "declined",
+      "stored_column": "done"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "done"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "done"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "done"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "done"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "done"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "declined",
+      "stored_column": "done"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "done"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "done"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "done"
+    },
+    {
+      "column": "done",
+      "move_lock": "declined",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "declined",
+      "stored_column": "done"
+    },
+    {
+      "column": "finish",
+      "move_lock": null,
+      "pending": [],
+      "quote_status": "accepted",
+      "stored_column": "devis"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "devis"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "devis"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "devis"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "devis"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "devis"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "devis"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "devis"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "devis"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "devis"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "devis"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "devis"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "devis"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "devis"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "devis"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "devis"
+    },
+    {
+      "column": "finish",
+      "move_lock": null,
+      "pending": [],
+      "quote_status": "accepted",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "finish",
+      "move_lock": null,
+      "pending": [],
+      "quote_status": "accepted",
+      "stored_column": "scan"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "scan"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "scan"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "scan"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "scan"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "scan"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "scan"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "scan"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "scan"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "scan"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "scan"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "scan"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "scan"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "scan"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "scan"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "scan"
+    },
+    {
+      "column": "finish",
+      "move_lock": null,
+      "pending": [],
+      "quote_status": "accepted",
+      "stored_column": "model"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "model"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "model"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "model"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "model"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "model"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "model"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "model"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "model"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "model"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "model"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "model"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "model"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "model"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "model"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "model"
+    },
+    {
+      "column": "finish",
+      "move_lock": null,
+      "pending": [],
+      "quote_status": "accepted",
+      "stored_column": "print"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "print"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "print"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "print"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "print"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "print"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "print"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "print"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "print"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "print"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "print"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "print"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "print"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "print"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "print"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "print"
+    },
+    {
+      "column": "finish",
+      "move_lock": null,
+      "pending": [],
+      "quote_status": "accepted",
+      "stored_column": "finish"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "finish"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "finish"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "finish"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "finish"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "finish"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "finish"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "finish"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "finish"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "finish"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "finish"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "finish"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "finish"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "finish"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "finish"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "finish"
+    },
+    {
+      "column": "done",
+      "move_lock": null,
+      "pending": [],
+      "quote_status": "accepted",
+      "stored_column": "done"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "done"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "done"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "done"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "done"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "done"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "done"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "done"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "done"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "done"
+    },
+    {
+      "column": "print",
+      "move_lock": "steps",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "done"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "done"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "done"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "done"
+    },
+    {
+      "column": "model",
+      "move_lock": "steps",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "done"
+    },
+    {
+      "column": "scan",
+      "move_lock": "steps",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "accepted",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "devis"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "waiting"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "scan"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "model"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "print"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "finish"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "done"
+    },
+    {
+      "column": "devis",
+      "move_lock": "quote",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "quote_status": "some_status_zoho_added_later",
+      "stored_column": "done"
+    }
+  ],
+  "summarise": [
+    {
+      "count": 0,
+      "name": "no tasks at all",
+      "pending": [],
+      "services": [],
+      "steps_done": 0,
+      "steps_total": 0,
+      "tasks": [],
+      "total": 0.0
+    },
+    {
+      "count": 1,
+      "name": "one task, nothing priced",
+      "pending": [],
+      "services": [],
+      "steps_done": 0,
+      "steps_total": 0,
+      "tasks": [
+        {
+          "impression_cost": null,
+          "impression_done": false,
+          "modelisation_cost": null,
+          "modelisation_done": false,
+          "scan_cost": null,
+          "scan_done": false,
+          "usinage_cost": null,
+          "usinage_done": false
+        }
+      ],
+      "total": 0.0
+    },
+    {
+      "count": 1,
+      "name": "a free step is a real step",
+      "pending": [
+        "scan"
+      ],
+      "services": [
+        "scan"
+      ],
+      "steps_done": 0,
+      "steps_total": 1,
+      "tasks": [
+        {
+          "impression_cost": null,
+          "impression_done": false,
+          "modelisation_cost": null,
+          "modelisation_done": false,
+          "scan_cost": 0.0,
+          "scan_done": false,
+          "usinage_cost": null,
+          "usinage_done": false
+        }
+      ],
+      "total": 0.0
+    },
+    {
+      "count": 1,
+      "name": "a done flag on an unpriced service is not a step",
+      "pending": [
+        "impression"
+      ],
+      "services": [
+        "impression"
+      ],
+      "steps_done": 0,
+      "steps_total": 1,
+      "tasks": [
+        {
+          "impression_cost": 5.0,
+          "impression_done": false,
+          "modelisation_cost": null,
+          "modelisation_done": false,
+          "scan_cost": null,
+          "scan_done": false,
+          "usinage_cost": null,
+          "usinage_done": true
+        }
+      ],
+      "total": 5.0
+    },
+    {
+      "count": 1,
+      "name": "every service priced on one task, half ticked",
+      "pending": [
+        "impression",
+        "usinage"
+      ],
+      "services": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "steps_done": 2,
+      "steps_total": 4,
+      "tasks": [
+        {
+          "impression_cost": 30.0,
+          "impression_done": false,
+          "modelisation_cost": 20.0,
+          "modelisation_done": true,
+          "scan_cost": 10.0,
+          "scan_done": true,
+          "usinage_cost": 40.0,
+          "usinage_done": false
+        }
+      ],
+      "total": 100.0
+    },
+    {
+      "count": 2,
+      "name": "the same service on two tasks counts twice",
+      "pending": [
+        "scan"
+      ],
+      "services": [
+        "scan"
+      ],
+      "steps_done": 1,
+      "steps_total": 2,
+      "tasks": [
+        {
+          "impression_cost": null,
+          "impression_done": false,
+          "modelisation_cost": null,
+          "modelisation_done": false,
+          "scan_cost": 1.0,
+          "scan_done": true,
+          "usinage_cost": null,
+          "usinage_done": false
+        },
+        {
+          "impression_cost": null,
+          "impression_done": false,
+          "modelisation_cost": null,
+          "modelisation_done": false,
+          "scan_cost": 2.0,
+          "scan_done": false,
+          "usinage_cost": null,
+          "usinage_done": false
+        }
+      ],
+      "total": 3.0
+    },
+    {
+      "count": 1,
+      "name": "floats are summed, never rounded",
+      "pending": [
+        "scan",
+        "modelisation"
+      ],
+      "services": [
+        "scan",
+        "modelisation"
+      ],
+      "steps_done": 0,
+      "steps_total": 2,
+      "tasks": [
+        {
+          "impression_cost": null,
+          "impression_done": false,
+          "modelisation_cost": 0.2,
+          "modelisation_done": false,
+          "scan_cost": 0.1,
+          "scan_done": false,
+          "usinage_cost": null,
+          "usinage_done": false
+        }
+      ],
+      "total": 0.30000000000000004
+    },
+    {
+      "count": 1,
+      "name": "everything ticked",
+      "pending": [],
+      "services": [
+        "scan",
+        "impression"
+      ],
+      "steps_done": 2,
+      "steps_total": 2,
+      "tasks": [
+        {
+          "impression_cost": 2.0,
+          "impression_done": true,
+          "modelisation_cost": null,
+          "modelisation_done": false,
+          "scan_cost": 1.0,
+          "scan_done": true,
+          "usinage_cost": null,
+          "usinage_done": false
+        }
+      ],
+      "total": 3.0
+    },
+    {
+      "count": 3,
+      "name": "three tasks, ten steps, three done",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "services": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "steps_done": 3,
+      "steps_total": 10,
+      "tasks": [
+        {
+          "impression_cost": 3.0,
+          "impression_done": false,
+          "modelisation_cost": 2.0,
+          "modelisation_done": true,
+          "scan_cost": 1.0,
+          "scan_done": true,
+          "usinage_cost": null,
+          "usinage_done": false
+        },
+        {
+          "impression_cost": 4.0,
+          "impression_done": true,
+          "modelisation_cost": null,
+          "modelisation_done": false,
+          "scan_cost": 0.0,
+          "scan_done": false,
+          "usinage_cost": 5.0,
+          "usinage_done": false
+        },
+        {
+          "impression_cost": 8.0,
+          "impression_done": false,
+          "modelisation_cost": 7.0,
+          "modelisation_done": false,
+          "scan_cost": 6.0,
+          "scan_done": false,
+          "usinage_cost": 9.0,
+          "usinage_done": false
+        }
+      ],
+      "total": 45.0
+    }
+  ]
+}

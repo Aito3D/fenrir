@@ -1,12 +1,19 @@
 """The Aito board's rules: a project's column is derived, not dropped.
 
 A project sits where its quote status and its ticked task steps say it sits.
-This module is the ONLY definition of that, deliberately: it is pure (no
-FastAPI, no SQLAlchemy, no models), so it can be unit-tested exhaustively, and
-it is never mirrored in TypeScript. The frontend renders `column` and
-`move_lock` as the server computes them and derives nothing of its own, which
-is what keeps the two languages from drifting the way `taskTotal` in
-taskDraft.ts and `TaskSummary.total` here do.
+This module is the authoritative definition of that, and it is pure (no
+FastAPI, no SQLAlchemy, no models) so it can be unit-tested exhaustively.
+
+It IS mirrored in TypeScript — frontend/src/utils/aitoBoardRules.ts — because
+the board is optimistic: the card has to move the instant a step is ticked,
+which means the frontend must predict the column rather than wait to be told
+it. The mirror is not maintained by discipline. It is pinned by a generated
+contract fixture (backend/tests/aito_rules_fixture.py), so changing anything
+here without updating the mirror fails the build. After editing this file run:
+
+    ./venv/bin/python3 scripts/gen_aito_board_rules_fixture.py
+
+and fix the TypeScript until the frontend suite is green again.
 """
 
 from collections.abc import Collection, Iterable
