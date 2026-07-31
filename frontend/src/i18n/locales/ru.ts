@@ -630,6 +630,8 @@ export default {
     fans: {
       partCooling: "Вентилятор обдува модели",
       auxiliary: "Дополнительный вентилятор",
+      leftAuxiliary: "Левый дополнительный вентилятор",
+      exhaust: "Вытяжка",
       chamber: "Вентилятор камеры",
     },
     clickToViewHmsErrors: "Нажмите, чтобы посмотреть ошибки HMS",
@@ -2173,6 +2175,7 @@ export default {
       connectionFailed: "Не удалось подключиться",
       testFailed: "Проверка завершилась ошибкой",
       cameraConnected: "Камера подключена{{resolution}}",
+      cameraConnectedCoalesced: "Камера подключена{{resolution}} (используется уже выполняющийся захват)",
     },
     testConnection: "Проверить подключение",
     catalog: {

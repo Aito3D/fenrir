@@ -625,6 +625,8 @@ export default {
     fans: {
       partCooling: '파트 냉각 팬',
       auxiliary: '보조 팬',
+      leftAuxiliary: '왼쪽 보조 팬',
+      exhaust: '배기',
       chamber: '챔버 팬'
     },
     clickToViewHmsErrors: 'HMS 오류 보기 클릭',
@@ -2168,6 +2170,7 @@ export default {
       connectionFailed: '연결 실패',
       testFailed: '테스트 실패',
       cameraConnected: '카메라 연결됨{{resolution}}',
+      cameraConnectedCoalesced: '카메라 연결됨{{resolution}} (이미 진행 중인 캡처와 공유됨)',
       passwordNeedsUppercase: '비밀번호에 대문자가 최소 1개 포함되어야 합니다',
       passwordNeedsLowercase: '비밀번호에 소문자가 최소 1개 포함되어야 합니다',
       passwordNeedsDigit: '비밀번호에 숫자가 최소 1개 포함되어야 합니다',

@@ -672,6 +672,8 @@ export default {
     fans: {
       partCooling: 'Part Cooling Fan',
       auxiliary: 'Auxiliary Fan',
+      leftAuxiliary: 'Left Auxiliary Fan',
+      exhaust: 'Exhaust',
       chamber: 'Chamber Fan',
     },
     // HMS errors
@@ -2319,6 +2321,7 @@ export default {
       connectionFailed: 'Connection failed',
       testFailed: 'Test failed',
       cameraConnected: 'Camera connected{{resolution}}',
+      cameraConnectedCoalesced: 'Camera connected{{resolution}} (shared with a capture already running)',
     },
     testConnection: 'Test Connection',
     catalog: {

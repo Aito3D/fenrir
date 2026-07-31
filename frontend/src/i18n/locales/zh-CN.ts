@@ -668,6 +668,8 @@ export default {
     fans: {
       partCooling: '零件冷却风扇',
       auxiliary: '辅助风扇',
+      leftAuxiliary: '左辅助风扇',
+      exhaust: '排气',
       chamber: '腔室风扇',
     },
     // HMS errors
@@ -2301,6 +2303,7 @@ export default {
       connectionFailed: '连接失败',
       testFailed: '测试失败',
       cameraConnected: '摄像头已连接{{resolution}}',
+      cameraConnectedCoalesced: '摄像头已连接{{resolution}}（与正在进行的抓取共享）',
     },
     testConnection: '测试连接',
     catalog: {

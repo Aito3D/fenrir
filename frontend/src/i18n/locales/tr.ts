@@ -668,6 +668,8 @@ export default {
     fans: {
       partCooling: 'Parça Soğutma Fanı',
       auxiliary: 'Yardımcı Fan',
+      leftAuxiliary: 'Sol Yardımcı Fan',
+      exhaust: 'Egzoz',
       chamber: 'Hazne Fanı',
     },
     // HMS hataları
@@ -2304,6 +2306,7 @@ export default {
       connectionFailed: 'Bağlantı başarısız',
       testFailed: 'Test başarısız',
       cameraConnected: 'Kamera bağlandı{{resolution}}',
+      cameraConnectedCoalesced: 'Kamera bağlandı{{resolution}} (hâlihazırda süren bir yakalamayla paylaşıldı)',
     },
     testConnection: 'Bağlantıyı Test Et',
     catalog: {
