@@ -67,3 +67,35 @@ def test_a_service_enabled_on_two_tasks_is_pending_if_either_is_unticked():
 
 def test_a_done_flag_on_an_absent_service_is_ignored():
     assert summarise([_Task(scan_cost=None, scan_done=True)]).pending == ()
+
+
+def test_step_counters_count_priced_services_only():
+    # scan and impression are priced (0 counts — free is real work);
+    # modelisation and usinage are absent from the job.
+    summary = summarise([_Task(scan_cost=10.0, scan_done=True, impression_cost=0.0)])
+    assert summary.steps_total == 2
+    assert summary.steps_done == 1
+
+
+def test_step_counters_ignore_done_flags_on_unpriced_services():
+    # A done flag on a service with no cost is not a step at all.
+    summary = summarise([_Task(usinage_done=True)])
+    assert summary.steps_total == 0
+    assert summary.steps_done == 0
+
+
+def test_step_counters_sum_across_tasks():
+    summary = summarise(
+        [
+            _Task(scan_cost=1.0, scan_done=True, modelisation_cost=2.0, modelisation_done=True, impression_cost=3.0),
+            _Task(impression_cost=4.0, impression_done=True, usinage_cost=5.0),
+            _Task(scan_cost=6.0, modelisation_cost=7.0, impression_cost=8.0, usinage_cost=9.0),
+        ]
+    )
+    assert summary.steps_total == 9
+    assert summary.steps_done == 3
+
+
+def test_empty_summary_has_zero_steps():
+    assert summarise([]).steps_total == 0
+    assert summarise([]).steps_done == 0

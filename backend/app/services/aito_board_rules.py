@@ -44,14 +44,26 @@ class TaskSummary:
     ``services`` and ``pending`` are in ``SERVICES`` order so the card's badge
     row is stable across refetches regardless of the order tasks were created
     in. ``total`` is the definition mirrored by ``taskTotal`` in
-    frontend/src/utils/taskDraft.ts — the two are in different languages and
-    cannot share code, so a change here must be made there too.
+    frontend/src/utils/taskDraft.ts.
+
+    ``steps_total``/``steps_done`` count (task, service) pairs, not services:
+    two tasks each carrying a scan are two steps, where ``services`` would
+    report ``('scan',)`` once. They are what the board card's progress bar
+    reads. A service priced at 0 is a real step; a service priced ``None`` is
+    absent from the job and is not counted at all, done flag or no.
+
+    This whole dataclass is mirrored by ``summariseTasks`` in
+    frontend/src/utils/aitoBoardRules.ts and pinned by the contract fixture —
+    see backend/tests/aito_rules_fixture.py. Changing it here without
+    regenerating that fixture fails the build, by design.
     """
 
     count: int = 0
     total: float = 0.0
     services: tuple[str, ...] = ()
     pending: tuple[str, ...] = ()
+    steps_total: int = 0
+    steps_done: int = 0
 
 
 def summarise(tasks: Iterable[Any]) -> TaskSummary:
@@ -68,6 +80,8 @@ def summarise(tasks: Iterable[Any]) -> TaskSummary:
     total = 0.0
     enabled: set[str] = set()
     unticked: set[str] = set()
+    steps_total = 0
+    steps_done = 0
     for task in rows:
         for service in SERVICES:
             cost = getattr(task, f"{service}_cost")
@@ -75,13 +89,18 @@ def summarise(tasks: Iterable[Any]) -> TaskSummary:
                 continue
             enabled.add(service)
             total += cost
-            if not getattr(task, f"{service}_done"):
+            steps_total += 1
+            if getattr(task, f"{service}_done"):
+                steps_done += 1
+            else:
                 unticked.add(service)
     return TaskSummary(
         count=len(rows),
         total=total,
         services=tuple(service for service in SERVICES if service in enabled),
         pending=tuple(service for service in SERVICES if service in unticked),
+        steps_total=steps_total,
+        steps_done=steps_done,
     )
 
 
