@@ -4,8 +4,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { EventItem } from './EventItem';
 import { useProjectEvents } from '../../../hooks/useProjectEvents';
-import { api, type AitoHistoryDepth } from '../../../api/client';
+import { api, type AitoEvent, type AitoEventPage, type AitoHistoryDepth } from '../../../api/client';
 import { useToast } from '../../../contexts/ToastContext';
+import { nextPlaceholderId } from '../../../utils/aitoOptimistic';
 
 const DEPTH_STORAGE_KEY = 'aito.history.depth';
 
@@ -43,12 +44,47 @@ export function ActivityRail({ projectId }: { projectId: number }) {
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useProjectEvents(projectId, depth);
 
   const addNote = useMutation({
-    mutationFn: (body: string) => api.addAitoNote(projectId, body),
-    onSuccess: () => {
+    mutationFn: ({ body }: { body: string; optimistic: AitoEvent }) => api.addAitoNote(projectId, body),
+    // Prepends into the FIRST page only. The list runs newest-first and the
+    // cursor keysets on (occurred_at, id), so a row at the head cannot shift
+    // any page boundary — an optimistic note is invisible to paging.
+    onMutate: ({ optimistic }) => {
       setNote('');
+      queryClient.setQueryData<{ pages: AitoEventPage[]; pageParams: unknown[] }>(
+        ['aito-events', projectId, depth],
+        (prev) =>
+          prev
+            ? {
+                ...prev,
+                pages: [
+                  { ...prev.pages[0], events: [optimistic, ...prev.pages[0].events] },
+                  ...prev.pages.slice(1),
+                ],
+              }
+            : prev,
+      );
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['aito-events', projectId] });
     },
-    onError: () => showToast(t('aito.history.noteFailed'), 'error'),
+    onError: (_error, { body, optimistic }) => {
+      queryClient.setQueryData<{ pages: AitoEventPage[]; pageParams: unknown[] }>(
+        ['aito-events', projectId, depth],
+        (prev) =>
+          prev
+            ? {
+                ...prev,
+                pages: prev.pages.map((page) => ({
+                  ...page,
+                  events: page.events.filter((event) => event.id !== optimistic.id),
+                })),
+              }
+            : prev,
+      );
+      // Put the text back rather than making the user retype it.
+      setNote(body);
+      showToast(t('aito.history.noteFailed'), 'error');
+    },
   });
 
   const chooseDepth = (next: AitoHistoryDepth) => {
@@ -87,7 +123,24 @@ export function ActivityRail({ projectId }: { projectId: number }) {
         onSubmit={(e) => {
           e.preventDefault();
           const body = note.trim();
-          if (body) addNote.mutate(body);
+          if (!body) return;
+          addNote.mutate({
+            body,
+            optimistic: {
+              id: nextPlaceholderId(),
+              occurred_at: new Date().toISOString(),
+              occurred_until: null,
+              kind: 'note.added',
+              actor_class: 'user',
+              actor_name: null,
+              subject_type: null,
+              subject_id: null,
+              subject_label: null,
+              changes: null,
+              detail: null,
+              note: body,
+            },
+          });
         }}
       >
         <input
