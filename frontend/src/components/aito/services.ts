@@ -23,20 +23,6 @@ export const AITO_SERVICE_LABEL_KEYS: Record<string, string> = {
   usinage: 'aito.serviceUsinage',
 };
 
-/** Which services a draft has enabled, in canonical order.
- *
- *  `null` means the service is disabled and `0` means it is free, so
- *  membership is a null check — never a truthiness or `> 0` test, which would
- *  drop a service quoted at zero. Same rule the backend aggregate follows. */
-export function enabledServices(task: TaskDraft): string[] {
-  const enabled: string[] = [];
-  if (task.scanCost !== null) enabled.push('scan');
-  if (task.modelisationCost !== null) enabled.push('modelisation');
-  if (task.impressionCost !== null) enabled.push('impression');
-  if (task.usinageCost !== null) enabled.push('usinage');
-  return enabled;
-}
-
 /** The task's steps, in canonical order — one per service whose cost is set.
  *  A cost of 0 is a step quoted free, not an absent one, so membership is a
  *  null check and never a truthiness test. */

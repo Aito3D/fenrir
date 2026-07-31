@@ -17,10 +17,10 @@ export interface ImportQuoteModalProps {
   submitting?: boolean;
 }
 
-/** Which services a preview task has enabled, in canonical order. Mirrors
- *  `enabledServices` in components/aito/services.ts, but reads the API shape
- *  rather than a TaskDraft. A NULL cost means disabled; 0 stays meaningful as
- *  free, so this is a null check, never a truthiness test. */
+/** Which services a preview task has enabled, in canonical order. Reads the
+ *  API shape directly rather than a `TaskDraft`. A NULL cost means disabled;
+ *  0 stays meaningful as free, so this is a null check, never a truthiness
+ *  test — the same convention `taskCost` in utils/aitoBoardRules.ts follows. */
 function servicesOf(task: AitoTaskCreate): string[] {
   const enabled: string[] = [];
   if (task.scan_cost !== null) enabled.push('scan');
