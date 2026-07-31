@@ -9,7 +9,7 @@ import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { render } from '../utils';
 import { AitoPage } from '../../pages/AitoPage';
-import { api, ApiError, type AitoProject, type ZohoQuotePreview } from '../../api/client';
+import { api, ApiError, type AitoProject, type AitoTask, type ZohoQuotePreview } from '../../api/client';
 import { __resetBoardSync } from '../../hooks/useBoardSync';
 import { flashRevert } from '../../hooks/useRevertFlash';
 
@@ -240,6 +240,87 @@ describe('AitoPage (backend board)', () => {
       // Cancelling the hold leaves the panel open — delete is a control
       // inside it now, not a separate surface to fall back out of.
       expect(screen.getByRole('dialog')).toBeInTheDocument();
+    });
+
+    it('does not resurrect a deleted card via the task panel\'s unmount cleanup racing a pending delete', async () => {
+      // Regression for the "useProjectTasks invalidates the board through
+      // ungated paths" finding: ticking a step marks the panel dirty, and
+      // that dirtiness used to invalidate `['aito-projects']` directly on
+      // unmount — bypassing `useBoardSync` entirely. Closing the panel to
+      // delete the card unmounts it while the DELETE is still in flight, and
+      // that ungated invalidate fired a GET the delete's own `cancelQueries`
+      // could not catch (it had already resolved) — the GET's answer, which
+      // still shows the project (the DELETE hasn't committed server-side
+      // yet), overwrote the optimistic removal and briefly resurrected the
+      // card. Routing the invalidate through `resyncIfIdle` fixes it: while
+      // `pendingWrites > 0` (the delete is in flight), the cleanup's
+      // invalidate is a no-op, so nothing can undo the optimistic delete
+      // until the delete itself settles.
+      const boardTask: AitoTask = {
+        id: 501,
+        project_id: 12,
+        position: 0,
+        title: null,
+        description: null,
+        scan_cost: 500,
+        modelisation_cost: null,
+        usinage_cost: null,
+        impression_printer_id: null,
+        impression_filament_id: null,
+        impression_weight_g: null,
+        impression_time_min: null,
+        impression_quantity: 1,
+        impression_color: null,
+        impression_cost: null,
+        scan_done: false,
+        modelisation_done: false,
+        impression_done: false,
+        usinage_done: false,
+        created_at: '2026-07-27T00:00:00',
+        updated_at: '2026-07-27T00:00:00',
+      };
+      const boardFetches = vi.fn();
+      let releaseDelete: () => void = () => {};
+      const heldDelete = new Promise<void>((resolve) => {
+        releaseDelete = resolve;
+      });
+      server.use(
+        http.get('/api/v1/aito/', () => {
+          boardFetches();
+          return HttpResponse.json([{ ...project, quote_status: 'accepted' }]);
+        }),
+        http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([boardTask])),
+        http.patch('/api/v1/aito/tasks/:id', () => HttpResponse.json({ ...boardTask, scan_done: true })),
+        http.delete('/api/v1/aito/:id', async () => {
+          await heldDelete;
+          return new HttpResponse(null, { status: 204 });
+        }),
+      );
+
+      const user = userEvent.setup();
+      render(<AitoPage />);
+      await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
+
+      await openCard(user);
+      await user.click(await screen.findByRole('button', { name: /mark done/i }));
+      // The tick's own immediate (and legitimately ungated, since nothing
+      // else is in flight yet) board refresh — see "refreshes the board
+      // immediately when a step is ticked" — must land before the delete
+      // starts, so the assertions below isolate the unmount-cleanup race.
+      await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(2));
+      boardFetches.mockClear();
+
+      const deleteButton = await screen.findByLabelText('Delete Project');
+      fireEvent.pointerDown(deleteButton);
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument(), { timeout: 2000 });
+
+      // The DELETE is still held open. No GET should have fired to
+      // resurrect the card, and the card itself must not be back on screen.
+      expect(boardFetches).not.toHaveBeenCalled();
+      expect(screen.queryByRole('button', { name: /Support GoPro/ })).not.toBeInTheDocument();
+
+      releaseDelete();
+      await waitFor(() => expect(boardFetches).toHaveBeenCalled());
     });
   });
 

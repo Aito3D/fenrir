@@ -10,6 +10,7 @@ import {
   type AitoTaskUpdate,
 } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
+import { useBoardSync } from './useBoardSync';
 import { summariseTasks } from '../utils/aitoBoardRules';
 import { applyTaskSummary } from '../utils/aitoOptimistic';
 import { taskDraftFromAitoTask, taskDraftToTaskCreate } from '../utils/taskDraft';
@@ -53,6 +54,14 @@ export function useProjectTasks(projectId: number) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+  // `resyncIfIdle`, not a bare `invalidateQueries`: this hook's board
+  // invalidations are the only ones in the codebase that used to bypass
+  // `useBoardSync` entirely, which is what let a task-panel refresh race a
+  // board write it knew nothing about — see the finding this fixes. The
+  // function itself is stable (see useBoardSync's own doc on why the
+  // returned OBJECT, not its methods, is the fresh-per-render part), so it is
+  // safe to depend on directly below.
+  const { resyncIfIdle } = useBoardSync();
 
   const tasksQuery = useQuery({
     queryKey: ['aito-tasks', projectId],
@@ -171,9 +180,17 @@ export function useProjectTasks(projectId: number) {
 
   const invalidateTasksAndBoard = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['aito-tasks', projectId] });
-    queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+    // Gated, unlike the two invalidations either side of it: a board write
+    // (delete project, drag, quote status, create) may be mid-flight with
+    // its own optimistic cache entry, and an ungated GET here would land
+    // between that write's `cancelQueries` and its own settle, overwriting
+    // the optimistic value with data that predates it. `resyncIfIdle` is a
+    // no-op in that case — the board write's own `settle()` invalidates once
+    // IT finishes, which is after this hook's optimistic `projectOntoBoard`
+    // write has already applied, so nothing is lost, only reordered.
+    resyncIfIdle(queryClient);
     queryClient.invalidateQueries({ queryKey: ['aito-events', projectId] });
-  }, [queryClient, projectId]);
+  }, [queryClient, projectId, resyncIfIdle]);
 
   /** Project the current draft array onto the board card: total, badges,
    *  progress bar and — through the mirrored rules — the column.
@@ -213,7 +230,7 @@ export function useProjectTasks(projectId: number) {
       const tickedAStep = ['scan_done', 'modelisation_done', 'impression_done', 'usinage_done'].some(
         (key) => key in patch,
       );
-      if (tickedAStep) queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+      if (tickedAStep) resyncIfIdle(queryClient);
       // Every edit writes an event, not only ticks — this sits outside the
       // guard above deliberately. The two-element prefix (not the query's own
       // three-element key) matches every depth's cache entry, so switching
