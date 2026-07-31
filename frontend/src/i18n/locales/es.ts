@@ -668,6 +668,8 @@ export default {
     fans: {
       partCooling: 'Ventilador de refrigeración de piezas',
       auxiliary: 'Ventilador auxiliar',
+      leftAuxiliary: 'Ventilador auxiliar izquierdo',
+      exhaust: 'Extracción',
       chamber: 'Ventilador de la cámara',
     },
     // HMS errors
@@ -2439,6 +2441,8 @@ export default {
     styleGlow: 'Resplandor',
     styleVibrant: 'Vibrante',
     themeToggleHint: 'Alterne entre modo oscuro, claro y sistema con el icono en la barra lateral.',
+    progressInTitle: 'Progreso en la pestaña',
+    progressInTitleDescription: 'Muestra el porcentaje de la impresión activa y un anillo de progreso en la pestaña del navegador.',
     // Archive
     autoArchivePrints: 'Archivar impresiones automáticamente',
     autoArchiveDescription: 'Guardar automáticamente los archivos 3MF cuando se completan las impresiones',
@@ -3671,6 +3675,7 @@ export default {
     showModified: 'Mostrar fechas de modificación',
     hideModified: 'Ocultar fechas de modificación',
     lastModified: 'Última modificación',
+    lastActivity: 'Última actividad',
     resultsCount: '{{showing}} de {{total}} archivos',
     selectAll: 'Seleccionar todo',
     deselectAll: 'Deseleccionar todo',
@@ -5624,6 +5629,9 @@ export default {
     pushoverExpire: 'Expiración de emergencia (s)',
     botToken: 'Token del bot',
     chatId: 'ID del chat',
+    telegramThreadId: 'ID del tema del foro',
+    telegramThreadIdHelp: 'Opcional. Envía a un único tema de un grupo de foro: el último número del enlace del tema (t.me/c/.../25). Déjalo vacío para el tema General.',
+    telegramThreadIdInvalid: 'El ID del tema del foro debe ser un número.',
     smtpServer: 'Servidor SMTP',
     smtpPort: 'Puerto SMTP',
     security: 'Seguridad',

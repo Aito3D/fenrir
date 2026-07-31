@@ -668,6 +668,8 @@ export default {
     fans: {
       partCooling: 'Bauteilkühlung',
       auxiliary: 'Hilfsventilator',
+      leftAuxiliary: 'Linker Hilfsventilator',
+      exhaust: 'Abluft',
       chamber: 'Kammerventilator',
     },
     // HMS errors
@@ -2436,6 +2438,8 @@ export default {
     styleGlow: 'Leuchtend',
     styleVibrant: 'Lebendig',
     themeToggleHint: 'Zwischen Dunkel-, Hell- und Systemmodus mit dem Symbol in der Seitenleiste wechseln.',
+    progressInTitle: 'Druckfortschritt im Tab',
+    progressInTitleDescription: 'Zeigt den Prozentsatz des aktiven Drucks und einen Fortschrittsring im Browser-Tab an.',
     // Archive
     autoArchivePrints: 'Drucke automatisch archivieren',
     autoArchiveDescription: '3MF-Dateien automatisch speichern, wenn Drucke abgeschlossen sind',
@@ -3668,6 +3672,7 @@ export default {
     showModified: 'Änderungsdatum anzeigen',
     hideModified: 'Änderungsdatum ausblenden',
     lastModified: 'Zuletzt geändert',
+    lastActivity: 'Letzte Aktivität',
     resultsCount: '{{showing}} von {{total}} Dateien',
     selectAll: 'Alle auswählen',
     deselectAll: 'Auswahl aufheben',
@@ -5615,6 +5620,9 @@ export default {
     pushoverExpire: 'Notfall-Ablauf (s)',
     botToken: 'Bot-Token',
     chatId: 'Chat-ID',
+    telegramThreadId: 'Forum-Themen-ID',
+    telegramThreadIdHelp: 'Optional. Sendet in ein einzelnes Thema einer Forum-Gruppe — die letzte Zahl im Themen-Link (t.me/c/.../25). Leer lassen für das allgemeine Thema.',
+    telegramThreadIdInvalid: 'Die Forum-Themen-ID muss eine Zahl sein.',
     smtpServer: 'SMTP-Server',
     smtpPort: 'SMTP-Port',
     security: 'Sicherheit',
