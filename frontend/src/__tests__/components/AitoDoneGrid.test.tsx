@@ -64,21 +64,28 @@ describe('DoneGrid', () => {
     expect(rendered).toEqual(['Newest', 'Middle', 'Oldest']);
   });
 
-  it('orders correctly across mixed Z-suffixed and bare timestamps', () => {
-    // The board's rows are inconsistently suffixed. A lexical string compare
-    // puts the bare timestamp first regardless of the actual instant.
+  it('treats a bare timestamp and a Z-suffixed one as the same instant', () => {
+    // The board's rows are inconsistently suffixed, and `parseUTCDate` appends
+    // the missing 'Z' — so these two texts denote the SAME moment and the id
+    // tie-break decides, newest id first.
+    //
+    // The suffix is the ONLY thing that differs, which is what makes this test
+    // falsifying. Any fixture whose dates differ elsewhere sorts identically
+    // under a lexical string compare and under a real date compare, so it
+    // would pass against exactly the bug it claims to catch. Here a string
+    // compare ranks 'Z' above the bare string and yields ['First', 'Second'].
     render(
       <DoneGrid
         projects={[
-          card({ id: 1, description: 'Older', updated_at: '2026-07-01T10:00:00' }),
-          card({ id: 2, description: 'Newer', updated_at: '2026-07-20T10:00:00Z' }),
+          card({ id: 1, description: 'First', updated_at: '2026-07-20T10:00:00Z' }),
+          card({ id: 2, description: 'Second', updated_at: '2026-07-20T10:00:00' }),
         ]}
         query=""
         onExpandCard={vi.fn()}
       />,
     );
-    const rendered = screen.getAllByText(/Older|Newer/).map((el) => el.textContent);
-    expect(rendered).toEqual(['Newer', 'Older']);
+    const rendered = screen.getAllByText(/First|Second/).map((el) => el.textContent);
+    expect(rendered).toEqual(['Second', 'First']);
   });
 
   it('filters on the query', () => {
