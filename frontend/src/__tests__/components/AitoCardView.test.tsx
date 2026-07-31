@@ -125,6 +125,25 @@ describe('CardView', () => {
     expect(screen.queryByText('Scan')).not.toBeInTheDocument();
   });
 
+  it('survives a response that predates task_steps instead of blanking the board', () => {
+    // A server older than this bundle sends no `task_steps` at all. That is a
+    // real window, not a hypothetical: `npm run build` writes into ../static/
+    // for the same FastAPI process to serve, so a cached bundle newer than the
+    // running server — or a dev frontend pointed at a stale backend — sends
+    // `undefined` here. Dereferencing it unmounts EVERY card, because one
+    // card's throw takes the whole board's render with it. Degrading to "no
+    // step rows" costs one card its pills; not degrading costs the operator
+    // the board.
+    const legacy = { ...project } as Record<string, unknown>;
+    delete legacy.task_steps;
+
+    expect(() =>
+      render(<CardView project={legacy as unknown as AitoProject} onExpand={vi.fn()} />),
+    ).not.toThrow();
+    expect(screen.getByText('Support de caméra')).toBeInTheDocument();
+    expect(screen.queryByTestId('aito-step-row')).not.toBeInTheDocument();
+  });
+
   it('shows the same step rows in the drag overlay, which has no buttons', async () => {
     // The overlay clone gets no `onExpand`. Without this test that branch
     // could lose its grid and the suite would stay green while a dragged card

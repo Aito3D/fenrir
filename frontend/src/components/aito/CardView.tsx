@@ -74,6 +74,16 @@ export function CardView({
   placeholder = false,
 }: CardViewProps) {
   const { t, i18n } = useTranslation();
+  // Normalised once, because a server older than this bundle sends no
+  // `task_steps` at all and the type cannot know that. The field is required by
+  // the current API contract, but the contract only binds a server that has
+  // shipped: `npm run build` writes into ../static/ for the same FastAPI
+  // process to serve, so a cached bundle newer than the running server — or a
+  // dev frontend proxying to a stale backend — really does deliver `undefined`
+  // here. Left bare it threw on `.length`, and one card's throw unmounts the
+  // whole board, not just that card. Degrading to "no step rows" is the cheap
+  // half of that trade.
+  const taskSteps = project.task_steps ?? [];
   // Same query key the task editor and the calculator page use for the
   // configured currency, so the card rides their cache instead of adding a
   // fetch per card.
@@ -222,8 +232,8 @@ export function CardView({
               >
                 {project.description}
               </p>
-              <StepGrid tasks={project.task_steps} />
-              {project.task_steps.length > 0 && (
+              <StepGrid tasks={taskSteps} />
+              {taskSteps.length > 0 && (
                 <div className="mt-1 flex justify-end">
                   <Money
                     currency={currency}
