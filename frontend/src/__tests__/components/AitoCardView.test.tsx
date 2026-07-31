@@ -385,6 +385,14 @@ describe('CardView — hover to read a clamped description', () => {
     Object.defineProperty(node, 'clientHeight', { value: 60, configurable: true });
   }
 
+  // jsdom never lays anything out, so the card's real `offsetHeight` is
+  // always 0. Stubbed the same way `setClamped` stubs the description, so the
+  // pinned-height assertion below checks a real, non-zero value rather than
+  // jsdom's default.
+  function setCardHeight(node: HTMLElement, height: number) {
+    Object.defineProperty(node, 'offsetHeight', { value: height, configurable: true });
+  }
+
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
@@ -392,11 +400,21 @@ describe('CardView — hover to read a clamped description', () => {
     render(<CardView project={project} onExpand={vi.fn()} />);
     const description = screen.getByTestId('aito-card-description');
     setClamped(description, true);
+    const card = document.querySelector('[data-aito-card]') as HTMLElement;
+    setCardHeight(card, 180);
 
     fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
     act(() => vi.advanceTimersByTime(1000));
 
     expect(description).not.toHaveClass('line-clamp-3');
+
+    // The invariant the whole design exists for: the shell pins the
+    // collapsed height inline so the column does not reflow, and the card
+    // itself floats free of the document flow to cover its neighbours.
+    const shell = screen.getByTestId('aito-card-shell');
+    expect(shell).toHaveStyle({ height: '180px' });
+    expect(card).toHaveClass('absolute');
+    expect(card).toHaveClass('z-30');
   });
 
   it('does not expand on a hover shorter than a second', () => {
@@ -437,11 +455,29 @@ describe('CardView — hover to read a clamped description', () => {
     act(() => vi.advanceTimersByTime(1000));
 
     expect(description).toHaveClass('line-clamp-3');
-    expect(screen.getByTestId('aito-card-shell')).not.toHaveStyle({ height: '0px' });
+    // Not "did not pin 0px" — jsdom's unmocked offsetHeight happens to BE 0,
+    // which happens to stringify to '0px'; asserting against that is coupled
+    // to a test-environment artifact, not to the invariant. The real
+    // invariant is that no inline height was applied at all.
+    const shell = screen.getByTestId('aito-card-shell');
+    expect(shell.style.height).toBe('');
   });
 
   it('never expands the drag overlay clone', () => {
     render(<CardView project={project} overlay />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, true);
+
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(description).toHaveClass('line-clamp-3');
+  });
+
+  it('never expands a placeholder card', () => {
+    // `startHoverIntent` returns early for `overlay || placeholder`; only the
+    // `overlay` half had a test until now.
+    render(<CardView project={project} placeholder />);
     const description = screen.getByTestId('aito-card-description');
     setClamped(description, true);
 

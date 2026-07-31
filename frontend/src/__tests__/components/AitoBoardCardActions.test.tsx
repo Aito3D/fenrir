@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { act, screen } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DndContext } from '@dnd-kit/core';
 import { render } from '../utils';
@@ -124,6 +124,56 @@ describe('board card actions — mark as sent', () => {
   it('offers no actions on a placeholder card the server has not acknowledged', () => {
     renderColumn(card({ id: -1, column: 'devis' }));
     expect(screen.queryByRole('button', { name: /mark as sent/i })).not.toBeInTheDocument();
+  });
+
+  it('does not also open the card when a real action button completes its hold', async () => {
+    // AitoCardView.test.tsx only ever injects a plain <button> to prove the
+    // actions wrapper's stopPropagation works. Production injects HoldButton
+    // (see BoardColumn.tsx), which drives itself from pointerdown/pointerup
+    // and a timer rather than a click — a different event path a plain
+    // button's user.click() never exercises. This asserts the two are wired
+    // together at the layer that actually does it: BoardColumn + CardView +
+    // the real HoldButton, mounted together.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.spyOn(api, 'setAitoQuoteStatus').mockImplementation(() => new Promise(() => {}));
+    try {
+      const onExpandCard = vi.fn();
+      const meta = COLUMNS.find((c) => c.id === 'devis') ?? COLUMNS[0];
+      render(
+        <DndContext>
+          <BoardColumn
+            column={meta}
+            projects={[card({ column: 'devis' })]}
+            isDropTarget={false}
+            onExpandCard={onExpandCard}
+            transitionConfig={null}
+            shouldAnimateIn={() => false}
+          />
+        </DndContext>,
+      );
+      const button = screen.getByRole('button', { name: /mark as sent/i });
+
+      // Drive HoldButton through its own event contract — pointerdown, the
+      // 500ms timer completing (which fires `onHold`), then the native
+      // `click` a browser dispatches after the matching pointerup/mouseup on
+      // the same element. `fireEvent` (not `user.pointer`) dispatches that
+      // click directly rather than modelling "browsers suppress click on a
+      // disabled control" — the button IS disabled by this point
+      // (`markSent.isPending`), and a higher-fidelity click would be
+      // suppressed by that alone, which would pass for the wrong reason and
+      // hide a real regression in the propagation-stopping this test exists
+      // to cover.
+      fireEvent.pointerDown(button);
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      fireEvent.click(button);
+
+      expect(onExpandCard).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
   });
 });
 
