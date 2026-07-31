@@ -196,8 +196,10 @@ git commit -m "feat(aito): count a project's steps in the task summary"
 - Test: `backend/tests/unit/test_aito_board_summary.py`
 
 **Interfaces:**
-- Consumes: `TaskSummary.steps_total` / `.steps_done` from Task 1.
-- Produces: `AitoProjectResponse.steps_total: int`, `.steps_done: int`. TS `AitoProject.steps_total: number`, `.steps_done: number`.
+- Consumes: `TaskSummary.steps_total` / `.steps_done` from Task 1, and the pre-existing `TaskSummary.pending`.
+- Produces: `AitoProjectResponse.steps_total: int`, `.steps_done: int`, `.task_pending: list[str]`. TS `AitoProject.steps_total: number`, `.steps_done: number`, `.task_pending: string[]`.
+
+**Why `task_pending` ships too.** The card already carries `task_services` — the union of ENABLED services — but not the pending set, and `evaluate()` takes *pending*. Without it, an optimistic quote-status change would have to guess which services are still unticked from `steps_done < steps_total`, which is right only when the earliest enabled service is also the unticked one. The backend already computes `summary.pending` for `move_lock`; sending it costs one field and makes the prediction exact.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -222,6 +224,26 @@ def test_to_response_carries_the_step_counters():
     response = _to_response(project, summary)
     assert response.steps_total == 2
     assert response.steps_done == 1
+
+
+def test_to_response_carries_the_pending_services():
+    """evaluate() takes `pending`, so an optimistic client that only had
+    `task_services` would have to guess which of them are still unticked."""
+    from backend.app.api.routes.aito import _to_response
+    from backend.app.models.aito_project import AitoProject
+
+    project = AitoProject(
+        id=1,
+        description="x",
+        board_column="print",
+        position=0,
+        status="active",
+        quote_status="accepted",
+    )
+    summary = summarise([_Task(scan_cost=1.0, scan_done=True, impression_cost=2.0)])
+    response = _to_response(project, summary)
+    assert response.task_services == ["scan", "impression"]
+    assert response.task_pending == ["impression"]
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -243,6 +265,11 @@ In `backend/app/schemas/aito.py`, directly after the `task_services: list[str]` 
     # 0 — an unpriced project has nothing to measure.
     steps_total: int
     steps_done: int
+    # The services with at least one UNTICKED step, in canonical order —
+    # exactly what evaluate() takes. task_services above is the union of
+    # ENABLED services, a different set that cannot substitute for it: the
+    # optimistic frontend predicts a card's column from this field.
+    task_pending: list[str]
 ```
 
 - [ ] **Step 4: Set them in `_to_response`**
@@ -250,6 +277,7 @@ In `backend/app/schemas/aito.py`, directly after the `task_services: list[str]` 
 In `backend/app/api/routes/aito.py`, after `task_services=list(summary.services),`:
 
 ```python
+        task_pending=list(summary.pending),
         steps_total=summary.steps_total,
         steps_done=summary.steps_done,
 ```
@@ -266,6 +294,11 @@ In `frontend/src/api/client.ts`, in `interface AitoProject`, after `task_service
    *  total is 0. */
   steps_total: number;
   steps_done: number;
+  /** The services with at least one UNTICKED step, canonical order. This is
+   *  what `evaluate` takes — `task_services` is the union of ENABLED services
+   *  and is a different set. The optimistic layer predicts a card's column
+   *  from this field, so it must never be inferred from the two counters. */
+  task_pending: string[];
 ```
 
 - [ ] **Step 6: Run backend tests**
@@ -284,7 +317,7 @@ Expected: PASS.
 grep -rln "task_services" frontend/src/__tests__/
 ```
 
-Add `steps_total: 0, steps_done: 0,` to every `AitoProject` object literal in each file found (they sit next to `task_services`). Then confirm none were missed:
+Add `task_pending: [], steps_total: 0, steps_done: 0,` to every `AitoProject` object literal in each file found (they sit next to `task_services`). Then confirm none were missed:
 
 ```bash
 grep -rc "task_services" frontend/src/__tests__/ | grep -v ':0'
@@ -1082,6 +1115,7 @@ const card = (over: Partial<AitoProject> = {}): AitoProject => ({
   task_count: 0,
   tasks_total: 0,
   task_services: [],
+  task_pending: [],
   steps_total: 0,
   steps_done: 0,
   move_lock: 'quote',
@@ -1094,17 +1128,29 @@ const find = (projects: AitoProject[], id: number) => projects.find((p) => p.id 
 
 describe('applyQuoteStatus', () => {
   it('relocates an accepted card to its first pending stage', () => {
-    const before = [card({ id: 1, column: 'devis', position: 0, task_services: ['impression'] })];
-    // pending is derived from the card's own summary; a card with one unticked
-    // impression step lands in print.
-    const after = applyQuoteStatus(
-      [{ ...before[0], steps_total: 1, steps_done: 0 }],
-      1,
-      'accepted',
-    );
+    const projects = [
+      card({ id: 1, column: 'devis', position: 0, task_services: ['impression'], task_pending: ['impression'] }),
+    ];
+    const after = applyQuoteStatus(projects, 1, 'accepted');
     expect(find(after, 1).column).toBe('print');
     expect(find(after, 1).quote_status).toBe('accepted');
     expect(find(after, 1).move_lock).toBe('steps');
+  });
+
+  it('reads task_pending, not task_services', () => {
+    // Scan is enabled but already done; only the printing is outstanding. A
+    // transform keying off task_services would wrongly land this in Scan.
+    const projects = [
+      card({
+        id: 1,
+        column: 'devis',
+        task_services: ['scan', 'impression'],
+        task_pending: ['impression'],
+        steps_total: 2,
+        steps_done: 1,
+      }),
+    ];
+    expect(find(applyQuoteStatus(projects, 1, 'accepted'), 1).column).toBe('print');
   });
 
   it('sends a declined card to done', () => {
@@ -1347,21 +1393,6 @@ function reevaluate(projects: AitoProject[], updated: AitoProject, pending: read
   return relocate(next, withLock, column);
 }
 
-/** The card's own pending set, inferred from its summary counters.
- *
- *  `AitoProject` carries `task_services` (the union of ENABLED services) but
- *  not `pending`, so an exact set is not recoverable from a card alone. For a
- *  transform that does not change the tasks — a quote-status change — the only
- *  thing the rules need to know is whether anything is still unticked, and
- *  `steps_done < steps_total` answers that exactly. When work remains, the
- *  enabled services stand in for the pending ones, which lands the card in the
- *  first stage that has any of them: the same answer the server gives whenever
- *  the earliest enabled service is also unticked, and one refetch from correct
- *  otherwise. */
-function inferredPending(project: AitoProject): string[] {
-  return project.steps_done < project.steps_total ? project.task_services : [];
-}
-
 export function applyQuoteStatus(
   projects: AitoProject[] | undefined,
   id: number,
@@ -1371,7 +1402,11 @@ export function applyQuoteStatus(
   const target = projects.find((p) => p.id === id);
   if (!target) return projects;
   const updated = { ...target, quote_status: status };
-  return reevaluate(projects, updated, inferredPending(updated));
+  // `task_pending`, never `task_services`: the rules take the set of services
+  // with unticked work, and `task_services` is the set of ENABLED ones. On a
+  // project whose scan is done but whose printing is not, the two differ and
+  // only the former lands the card in the right stage.
+  return reevaluate(projects, updated, updated.task_pending);
 }
 
 export function applyTaskSummary(
@@ -1387,6 +1422,7 @@ export function applyTaskSummary(
     task_count: summary.count,
     tasks_total: summary.total,
     task_services: [...summary.services],
+    task_pending: [...summary.pending],
     steps_total: summary.stepsTotal,
     steps_done: summary.stepsDone,
   };
@@ -2907,6 +2943,7 @@ export function placeholderProject(fields: {
     task_count: 0,
     tasks_total: 0,
     task_services: [],
+    task_pending: [],
     steps_total: 0,
     steps_done: 0,
     move_lock: 'quote',
