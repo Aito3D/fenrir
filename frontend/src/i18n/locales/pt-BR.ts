@@ -935,6 +935,8 @@ export default {
       uploadedBy: 'Enviado por',
       noPermissionReprint: 'Você não tem permissão para reimprimir',
       noFileForReprint: 'Nenhum arquivo 3MF disponível — o arquivo não pôde ser baixado da impressora quando a impressão foi registrada',
+      slicerAmsMapping: 'Mapeamento de AMS salvo ({{printer}})',
+      slicerAmsMappingTooltip: 'A escolha de slot AMS do fatiador foi salva para {{printer}}. Os números de slot só significam algo naquela impressora, portanto uma reimpressão só os reutiliza se voltar a mirar {{printer}}.',
       noPermissionEdit: 'Você não tem permissão para editar arquivos',
       noPermissionDelete: 'Você não tem permissão para excluir arquivos',
       openInBambuStudio: 'Abrir no Bambu Studio',
@@ -1143,6 +1145,10 @@ export default {
       lineItem: 'Slot {{slot}}: precisa de {{required}} g, restam {{remaining}} g',
       unknown: 'desconhecido',
       printAnyway: 'Imprimir mesmo assim',
+    },
+    slicerAmsMapping: {
+      rowBadge: 'Slots AMS salvos para esta impressora',
+      rowTooltip: 'Este arquivo mantém os slots AMS exatos escolhidos pelo fatiador, salvos para a impressora deste item. Uma reimpressão nela pode reutilizar esses carretéis em vez de casar novamente por tipo e cor.',
     },
     title: 'Fila de Impressão',
     subtitle: 'Agende e gerencie seus trabalhos de impressão',
@@ -4612,6 +4618,10 @@ export default {
     selectPrinter: 'Selecionar Impressora',
     selectPlate: 'Selecionar Placa',
     filamentMapping: 'Mapeamento de Filamento',
+    useArchiveMapping: 'Mapeamento',
+    useArchiveMappingTooltip: 'Selecionar todos os slots a partir do mapeamento de AMS salvo com este arquivo (do fatiador), em vez de corresponder por tipo/cor.',
+    clickToChangeSlot: 'Clique para alterar a atribuição do slot',
+    reRead: 'Reler',
     plateN: 'Placa {{n}}',
     plateFilamentsUnreadable: 'Não foi possível ler os filamentos de uma placa selecionada, portanto ela não pode ser mapeada. Desmarque-a para enfileirar as demais.',
     totalCost: 'Custo total:',
@@ -5133,6 +5143,10 @@ export default {
     queueForceColorMatch: {
       title: 'Forçar correspondência de cor',
       description: 'Recusa enviar para uma impressora que não tenha exatamente o tipo e cor de filamento carregados. Desativado por padrão — sem isto, a fila usa apenas correspondência por modelo e pode escolher uma impressora com a cor errada carregada.',
+    },
+    saveAmsMapping: {
+      title: 'Salvar mapeamento de AMS',
+      description: 'Persiste a escolha de slot AMS feita pelo próprio fatiador (do comando MQTT project_file) no arquivo, para que uma reimpressão posterior reutilize o mesmo carretel físico em vez de derivá-lo novamente do tipo/cor do arquivo. Desativado por padrão.',
     },
     gcodeInjection: {
       title: 'Injeção de G-code',

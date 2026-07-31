@@ -935,6 +935,8 @@ export default {
       uploadedBy: '上傳者',
       noPermissionReprint: '您沒有重新列印的權限',
       noFileForReprint: '無可用的 3MF 檔案 — 列印紀錄時無法從印表機下載該檔案',
+      slicerAmsMapping: '已儲存 AMS 對應（{{printer}}）',
+      slicerAmsMappingTooltip: '切片軟體選擇的 AMS 槽位已為 {{printer}} 儲存。槽位編號僅在該印表機上有意義，因此只有再次傳送至 {{printer}} 時，重新列印才會重複使用。',
       noPermissionEdit: '您沒有編輯歸檔的權限',
       noPermissionDelete: '您沒有刪除歸檔的權限',
       openInBambuStudio: '在切片軟體中開啟',
@@ -1143,6 +1145,10 @@ export default {
       lineItem: '槽位 {{slot}}：需要 {{required}} g，剩餘 {{remaining}} g',
       unknown: '不明',
       printAnyway: '仍要列印',
+    },
+    slicerAmsMapping: {
+      rowBadge: '已為此印表機儲存 AMS 槽位',
+      rowTooltip: '此封存保留了切片軟體選擇的確切 AMS 槽位，並為此項目的目標印表機儲存。在該印表機上重新列印時，可重複使用這些料盤，而不必再依類型與顏色重新比對。',
     },
     title: '列印佇列',
     subtitle: '排程和管理您的列印任務',
@@ -4612,6 +4618,10 @@ export default {
     selectPrinter: '選擇印表機',
     selectPlate: '選擇板',
     filamentMapping: '耗材對應',
+    useArchiveMapping: '對應',
+    useArchiveMappingTooltip: '從此封存儲存的 AMS 對應（來自切片軟體）中選取所有槽位，而不是依類型/顏色比對。',
+    clickToChangeSlot: '點擊更改槽位分配',
+    reRead: '重新讀取',
     plateN: '板 {{n}}',
     plateFilamentsUnreadable: '無法讀取所選盤的耗材資訊，因此無法進行對應。取消選取該盤即可將其餘盤加入佇列。',
     totalCost: '總成本：',
@@ -5133,6 +5143,10 @@ export default {
     queueForceColorMatch: {
       title: '強制顏色匹配',
       description: '拒絕派發到沒有完全相同耗材類型和顏色的印表機。預設關閉 — 不啟用時，佇列僅按型號匹配，可能選到顏色錯誤的印表機。',
+    },
+    saveAmsMapping: {
+      title: '儲存 AMS 對應',
+      description: '將切片軟體自行選擇的 AMS 槽位（來自 project_file MQTT 指令）儲存到封存中，讓之後的重新列印能重複使用同一捲實體線材，而不是依檔案的類型/顏色重新推導。預設關閉。',
     },
     gcodeInjection: {
       title: 'G-code 注入',

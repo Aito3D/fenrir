@@ -934,6 +934,8 @@ export default {
       uploadedBy: 'アップロード者',
       noPermissionReprint: '再印刷する権限がありません',
       noFileForReprint: '3MFファイルがありません — 印刷記録時にプリンターからファイルをダウンロードできませんでした',
+      slicerAmsMapping: 'AMSマッピングを保存済み（{{printer}}）',
+      slicerAmsMappingTooltip: 'スライサーが選んだAMSスロットは{{printer}}用に保存されています。スロット番号はそのプリンターでのみ意味を持つため、再印刷で再利用されるのは再び{{printer}}に送る場合だけです。',
       noPermissionEdit: 'プロファイルを編集する権限がありません',
       noPermissionDelete: 'アーカイブを削除する権限がありません',
       openInBambuStudio: 'スライサーで開く',
@@ -1142,6 +1144,10 @@ export default {
       lineItem: 'スロット {{slot}}：必要 {{required}} g、残り {{remaining}} g',
       unknown: '不明',
       printAnyway: 'それでも印刷',
+    },
+    slicerAmsMapping: {
+      rowBadge: 'このプリンター用に保存されたAMSスロット',
+      rowTooltip: 'このアーカイブには、スライサーが選択した正確なAMSスロットが、この項目の対象プリンター用に保存されています。そのプリンターでの再印刷では、タイプと色で照合し直す代わりにそれらのトレイを再利用できます。',
     },
     title: '印刷キュー',
     subtitle: '印刷ジョブのスケジュールと管理',
@@ -4624,6 +4630,10 @@ export default {
     selectPrinter: 'プリンターを選択',
     selectPlate: 'プレートを選択',
     filamentMapping: 'フィラメントマッピング',
+    useArchiveMapping: 'マッピング',
+    useArchiveMappingTooltip: 'タイプ/色で照合する代わりに、このアーカイブに保存されたAMSマッピング（スライサーから）からすべてのスロットを選択します。',
+    clickToChangeSlot: 'クリックしてスロットの割り当てを変更',
+    reRead: '再読み込み',
     plateN: 'プレート {{n}}',
     plateFilamentsUnreadable: '選択したプレートのフィラメントを読み取れなかったため、割り当てできません。そのプレートの選択を解除すると、残りをキューに追加できます。',
     totalCost: '合計コスト:',
@@ -5145,6 +5155,10 @@ export default {
     queueForceColorMatch: {
       title: '色の一致を強制',
       description: '正確なフィラメントタイプと色がロードされていないプリンターへの送信を拒否します。デフォルトはオフ — これがないと、キューはモデルのみのマッチングを使用し、間違った色がロードされたプリンターを選ぶ可能性があります。',
+    },
+    saveAmsMapping: {
+      title: 'AMSマッピングを保存',
+      description: 'スライサー自身が選択したAMSスロット（project_file MQTTコマンドから）をアーカイブに保存し、後で再印刷する際にファイルのタイプ/色から再導出するのではなく、同じ物理スプールを再利用できるようにします。デフォルトはオフです。',
     },
     gcodeInjection: {
       title: 'G-codeインジェクション',

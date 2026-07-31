@@ -935,6 +935,8 @@ export default {
       uploadedBy: 'Caricato da',
       noPermissionReprint: 'Non hai il permesso di ristampare',
       noFileForReprint: 'Nessun file 3MF disponibile — il file non è stato scaricato dalla stampante durante la registrazione',
+      slicerAmsMapping: 'Mappatura AMS salvata ({{printer}})',
+      slicerAmsMappingTooltip: 'La scelta dello slot AMS fatta dallo slicer è stata salvata per {{printer}}. I numeri di slot hanno senso solo su quella stampante, quindi una ristampa li riutilizza solo se torna su {{printer}}.',
       noPermissionEdit: 'Non hai il permesso di modificare archivi',
       noPermissionDelete: 'Non hai il permesso di eliminare archivi',
       openInBambuStudio: 'Apri nello slicer',
@@ -1143,6 +1145,10 @@ export default {
       lineItem: 'Slot {{slot}}: servono {{required}} g, rimangono {{remaining}} g',
       unknown: 'sconosciuto',
       printAnyway: 'Stampa comunque',
+    },
+    slicerAmsMapping: {
+      rowBadge: 'Slot AMS salvati per questa stampante',
+      rowTooltip: 'Questo archivio conserva gli slot AMS esatti scelti dallo slicer, salvati per la stampante di questo elemento. Una ristampa su di essa può riutilizzare quelle bobine invece di rifare l\'abbinamento per tipo e colore.',
     },
     title: 'Coda di stampa',
     subtitle: 'Programma e gestisci i tuoi lavori di stampa',
@@ -4612,6 +4618,10 @@ export default {
     selectPrinter: 'Seleziona stampante',
     selectPlate: 'Seleziona piatto',
     filamentMapping: 'Mappatura filamento',
+    useArchiveMapping: 'Mappatura',
+    useArchiveMappingTooltip: 'Seleziona ogni slot dalla mappatura AMS salvata con questo archivio (dallo slicer), invece di abbinare per tipo/colore.',
+    clickToChangeSlot: 'Fai clic per modificare l\'assegnazione dello slot',
+    reRead: 'Rileggi',
     plateN: 'Piatto {{n}}',
     plateFilamentsUnreadable: 'Non è stato possibile leggere i filamenti di un piatto selezionato, quindi non può essere assegnato. Deselezionalo per accodare gli altri.',
     totalCost: 'Costo totale:',
@@ -5133,6 +5143,10 @@ export default {
     queueForceColorMatch: {
       title: 'Forza corrispondenza colori',
       description: 'Rifiuta di inviare a una stampante che non ha esattamente il tipo di filamento e il colore caricato. Disattivato per impostazione predefinita — senza questo, la coda usa solo la corrispondenza per modello e potrebbe scegliere una stampante con il colore sbagliato.',
+    },
+    saveAmsMapping: {
+      title: 'Salva mappatura AMS',
+      description: 'Salva nell\'archivio la scelta dello slot AMS effettuata dallo slicer stesso (dal comando MQTT project_file), in modo che una ristampa successiva riutilizzi la stessa bobina fisica invece di ricavarla di nuovo dal tipo/colore del file. Disattivato per impostazione predefinita.',
     },
     gcodeInjection: {
       title: 'Iniezione G-code',
