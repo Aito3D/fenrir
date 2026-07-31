@@ -187,24 +187,11 @@ beforeEach(() => {
   );
 });
 
-/** Task rows render collapsed, so a test that reaches a field inside one has
- *  to open it first. Only the row toggles carry aria-expanded at this point —
- *  every other expandable control lives inside a row body, which is unmounted
- *  while collapsed. */
-async function expandAllTasks() {
-  for (const toggle of await screen.findAllByRole('button', { expanded: false })) {
-    fireEvent.click(toggle);
-  }
-}
-
-/** Switches every expanded row into edit mode, revealing the raw
+/** Switches every row into edit mode, revealing the raw
  *  title/description/cost/ImpressionFields form in place of the read-only
- *  step list. The Edit button lives in the row header, not the collapsible
- *  body, so it is present (and clickable) whether or not the row is
- *  expanded — call this only after `expandAllTasks`, which is what actually
- *  mounts the fields these tests go on to touch. Deliberately not used by
- *  tests that click a step's Done toggle: that button lives in the
- *  read-only `TaskStepList`, which edit mode hides. */
+ *  step list. Rows render open (Task 17 — no disclosure left to click first).
+ *  Deliberately not used by tests that click a step's Done toggle: that
+ *  button lives in the read-only `TaskStepList`, which edit mode hides. */
 async function editAllTasks() {
   for (const button of await screen.findAllByRole('button', { name: /edit task/i })) {
     fireEvent.click(button);
@@ -264,10 +251,9 @@ describe('ProjectDetailPanel tasks', () => {
   it('fetches and renders the project\'s tasks on open', async () => {
     show();
 
-    // Collapsed, the row shows its name as text; the title input only exists
-    // once it is open.
-    expect(await screen.findByRole('button', { name: /^Bracket mount/ })).toBeInTheDocument();
-    await expandAllTasks();
+    // Read-only, the row shows its name as a heading; the title input only
+    // exists once Edit is pressed.
+    expect(await screen.findByRole('heading', { name: /^Bracket mount/ })).toBeInTheDocument();
     await editAllTasks();
     expect(screen.getByDisplayValue('Bracket mount')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Print in PA6-CF')).toBeInTheDocument();
@@ -286,7 +272,6 @@ describe('ProjectDetailPanel tasks', () => {
     );
 
     show();
-    await expandAllTasks();
     await editAllTasks();
     const scanInput = await screen.findByLabelText('Scan Cost');
     fireEvent.change(scanInput, { target: { value: '700' } });
@@ -313,7 +298,6 @@ describe('ProjectDetailPanel tasks', () => {
 
     const user = userEvent.setup();
     show({ quote_status: 'accepted' });
-    await expandAllTasks();
 
     await user.click(await screen.findByRole('button', { name: /mark done/i }));
 
@@ -342,7 +326,6 @@ describe('ProjectDetailPanel tasks', () => {
     await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
     boardFetches.mockClear();
 
-    await expandAllTasks();
     await user.click(await screen.findByRole('button', { name: /mark done/i }));
 
     await waitFor(() => expect(boardFetches).toHaveBeenCalled());
@@ -386,7 +369,6 @@ describe('ProjectDetailPanel tasks', () => {
       await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
       boardFetches.mockClear();
 
-      await expandAllTasks();
       await editAllTasks();
       const scanInput = await screen.findByLabelText('Scan Cost');
 
@@ -454,14 +436,12 @@ describe('ProjectDetailPanel tasks', () => {
 
     const user = userEvent.setup();
     const { rerender } = rtlRender(<Host open />);
-    await expandAllTasks();
     await user.click(await screen.findByRole('button', { name: /mark not done/i }));
     await waitFor(() => expect(stored.scan_done).toBe(false));
 
     // Close, then reopen well inside the staleTime window.
     rerender(<Host open={false} />);
     rerender(<Host open />);
-    await expandAllTasks();
 
     expect(await screen.findByRole('button', { name: /mark done/i })).toBeInTheDocument();
   });
@@ -491,7 +471,6 @@ describe('ProjectDetailPanel tasks', () => {
     );
 
     show();
-    await expandAllTasks();
     await editAllTasks();
     const scanInput = await screen.findByLabelText('Scan Cost');
 
@@ -523,8 +502,10 @@ describe('ProjectDetailPanel tasks', () => {
     );
 
     show();
-    await expandAllTasks();
-    await editAllTasks();
+    // The task starts with every service null — stepless, so it is already
+    // showing its form (no Edit press needed, and no pencil to press: see
+    // TaskRow, which hides the toggle when there is no other mode to switch
+    // to).
     const scanInput = await screen.findByLabelText('Scan Cost');
     expect(scanInput).toHaveValue(null);
 
@@ -563,7 +544,6 @@ describe('ProjectDetailPanel tasks', () => {
     );
 
     show();
-    await expandAllTasks();
     await editAllTasks();
     const scanInputs = await screen.findAllByLabelText('Scan Cost');
     expect(scanInputs).toHaveLength(2);
@@ -602,7 +582,6 @@ describe('ProjectDetailPanel tasks', () => {
     );
 
     show();
-    await expandAllTasks();
     await editAllTasks();
     const titleInput = await screen.findByDisplayValue('Bracket mount');
     fireEvent.change(titleInput, { target: { value: '' } });
@@ -630,7 +609,7 @@ describe('ProjectDetailPanel tasks', () => {
 
     const user = userEvent.setup();
     show();
-    await screen.findByRole('button', { name: /^Bracket mount/ });
+    await screen.findByRole('heading', { name: /^Bracket mount/ });
 
     await user.click(screen.getByRole('button', { name: /add task/i }));
 
@@ -688,7 +667,6 @@ describe('ProjectDetailPanel tasks', () => {
     );
 
     show();
-    await expandAllTasks();
     await editAllTasks();
     const scanInput = await screen.findByLabelText('Scan Cost');
     fireEvent.change(scanInput, { target: { value: '700' } });
@@ -718,9 +696,8 @@ describe('ProjectDetailPanel tasks', () => {
     );
 
     show();
-    // Opening the row is the scenario under test: the user expands a task,
-    // sees its stored quote, and touches nothing.
-    await expandAllTasks();
+    // Opening the row's edit form is the scenario under test: the user
+    // presses Edit, sees the task's stored quote, and touches nothing.
     await editAllTasks();
 
     // Give every query (filaments, printers, defaults, settings, tasks)
@@ -746,8 +723,7 @@ describe('ProjectDetailPanel tasks', () => {
     );
 
     show();
-    // Opening the row is the scenario under test.
-    await expandAllTasks();
+    // Opening the row's edit form is the scenario under test.
     await editAllTasks();
 
     await screen.findByRole('combobox', { name: /material/i });
@@ -790,7 +766,6 @@ describe('ProjectDetailPanel tasks', () => {
 
     // Row A (task 101, index 0): edit a print input on the ImpressionFields
     // instance mounted at index 0.
-    await expandAllTasks();
     await editAllTasks();
     const weightInputs = await screen.findAllByLabelText(/weight/i);
     expect(weightInputs).toHaveLength(2);
@@ -892,7 +867,6 @@ describe('ProjectDetailPanel tasks', () => {
 
     await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
 
-    await expandAllTasks();
     await editAllTasks();
     const scan = await screen.findByLabelText('Scan Cost');
     await user.clear(scan);
@@ -956,7 +930,6 @@ describe('ProjectDetailPanel tasks', () => {
     const { rerender } = render(<BoardHost showPanel />);
     await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
 
-    await expandAllTasks();
     await editAllTasks();
     const scan = await screen.findByLabelText('Scan Cost');
 
@@ -1007,7 +980,6 @@ describe('ProjectDetailPanel tasks', () => {
     const { rerender } = render(<BoardHost showPanel />);
     await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
 
-    await expandAllTasks();
     await editAllTasks();
     const scan = await screen.findByLabelText('Scan Cost');
     fireEvent.change(scan, { target: { value: '700' } });
@@ -1064,7 +1036,6 @@ describe('ProjectDetailPanel tasks', () => {
     );
 
     const { rerender } = rtlRender(<Host open />);
-    await expandAllTasks();
     await editAllTasks();
     const scanInput = await screen.findByLabelText('Scan Cost');
     fireEvent.change(scanInput, { target: { value: '700' } });
@@ -1082,7 +1053,6 @@ describe('ProjectDetailPanel tasks', () => {
 
     // Reopen well inside the 60s staleTime window.
     rerender(<Host open />);
-    await expandAllTasks();
     await editAllTasks();
 
     expect(await screen.findByLabelText('Scan Cost')).toHaveValue(700);

@@ -141,8 +141,7 @@ async function createProject(description: string) {
   await waitFor(() =>
     expect(screen.getByRole('combobox', { name: /client/i })).toHaveValue('Client de passage'),
   );
-  await user.click(screen.getByText('Task 1'));
-  await user.click(screen.getByRole('button', { name: /edit task/i }));
+  // The seeded task has no steps yet, so it is already showing its form.
   fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
   await user.type(screen.getByLabelText(/product description/i), description);
   await user.click(screen.getByRole('button', { name: /create project/i }));

@@ -188,11 +188,11 @@ const SERVICE_LABELS: Record<'scan' | 'modelisation' | 'impression' | 'usinage',
   usinage: 'Machining',
 };
 
-/** Expands the project's only task row and clicks that service's Done
- *  toggle in the read-only `TaskStepList` (not edit mode — ticking is a
- *  one-click action, never a form field). */
+/** Clicks that service's Done toggle in the read-only `TaskStepList` (not
+ *  edit mode — ticking is a one-click action, never a form field). The row is
+ *  already open — Task 17 removed the disclosure a click here used to have to
+ *  get past. */
 async function tickStep(service: keyof typeof SERVICE_LABELS) {
-  await userEvent.click(screen.getByRole('button', { expanded: false }));
   const row = screen.getByText(SERVICE_LABELS[service]).closest('li')!;
   await userEvent.click(within(row).getByRole('button', { name: /mark done/i }));
 }
@@ -223,11 +223,10 @@ async function holdDelete(index: number) {
   });
 }
 
-/** Expands the project's only task row into edit mode and rewrites its Scan
+/** Switches the project's only task row into edit mode and rewrites its Scan
  *  Cost field. `id` documents which row a caller means; every test that uses
  *  this helper seeds exactly one task, so there is only one row to find. */
 async function editCost(_id: number, value: string) {
-  await userEvent.click(screen.getByRole('button', { expanded: false }));
   await userEvent.click(screen.getByRole('button', { name: /edit task/i }));
   const input = await screen.findByLabelText('Scan Cost');
   await userEvent.clear(input);
@@ -274,13 +273,14 @@ describe('useProjectTasks optimistic board projection', () => {
   });
 
   it('disables a new row while its create is in flight, and enables it once the id lands', async () => {
-    // Regression for CRITICAL 1: the row TaskEditor auto-opens for editing
-    // (it has no steps yet, so read mode has nothing to show) used to stay
-    // fully live for the whole POST round trip. Anything typed into it in
-    // that window was silently overwritten the instant `onSuccess` swapped
-    // the placeholder for the server's echo of the ORIGINAL, still-empty
-    // draft `mutate` captured. The fix is to make the row inert (disabled
-    // inputs) until its id lands, not to replay the edits afterwards.
+    // Regression for CRITICAL 1: the row is forced into edit mode because it
+    // has no steps yet — see TaskEditor's `isEditing` (read mode would show
+    // nothing but "No steps yet"). That form used to stay fully live for the
+    // whole POST round trip. Anything typed into it in that window was
+    // silently overwritten the instant `onSuccess` swapped the placeholder
+    // for the server's echo of the ORIGINAL, still-empty draft `mutate`
+    // captured. The fix is to make the row inert (disabled inputs) until its
+    // id lands, not to replay the edits afterwards.
     let resolveCreate: (task: AitoTask) => void = () => {};
     vi.mocked(api.createAitoTask).mockImplementation(
       () => new Promise((resolve) => { resolveCreate = resolve; }),
@@ -289,27 +289,25 @@ describe('useProjectTasks optimistic board projection', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /add task/i }));
 
-    // The row auto-opens for editing — see TaskEditor's own doc comment on
-    // `addRequestedRef` — so the title input is on screen immediately, and
-    // it must be inert while nothing has an id to PATCH yet.
+    // The row shows its form immediately — it has no steps yet, so there is
+    // nothing else it could show — and that form must be inert while nothing
+    // has an id to PATCH yet.
     const title = await screen.findByRole('textbox', { name: 'Optional title' });
     expect(title).toBeDisabled();
 
     resolveCreate(makeTask({ id: 202, project_id: 1 }));
 
     // The id landing swaps the row's key from `draft:<uid>` to
-    // `persisted:202` (see taskDraftFromAitoTask's `uid`), which collapses it
-    // back down — TaskEditor's "open a freshly added row" effect fires once,
-    // on the FIRST key it has never seen, and does not re-fire for this
-    // second key change. That collapse is pre-existing UI behaviour, not
-    // something this fix changes; what this fix guarantees is that the row is
-    // no longer inert once re-opened, which is what matters here — a
-    // permanently disabled row would be exactly as much a data-loss trap as
-    // the original race.
-    await waitFor(() => expect(screen.getByRole('button', { name: /^Task 1/i, expanded: false })).toBeInTheDocument());
-    await userEvent.click(screen.getByRole('button', { name: /^Task 1/i, expanded: false }));
-    await userEvent.click(screen.getByRole('button', { name: /edit task/i }));
-    expect(await screen.findByRole('textbox', { name: 'Optional title' })).not.toBeDisabled();
+    // `persisted:202` — a fresh TaskRow instance, but still stepless (the
+    // server echoed back the still-empty draft), so it keeps showing the same
+    // form rather than falling back to a read-only "No steps yet". What this
+    // fix guarantees is that the form is no longer inert once the id lands —
+    // a permanently disabled row would be exactly as much a data-loss trap as
+    // the original race. `waitFor`, not `findByRole` alone: the role/name
+    // query itself already matches the still-disabled element from before
+    // `resolveCreate` was awaited, so only re-asserting `not.toBeDisabled()`
+    // on every retry actually waits out the re-render.
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Optional title' })).not.toBeDisabled());
   });
 
   it('removes a deleted row at once and restores it when the DELETE fails', async () => {
