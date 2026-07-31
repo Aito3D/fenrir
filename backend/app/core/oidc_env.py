@@ -9,6 +9,7 @@ check the UI enforces.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 
@@ -100,8 +101,12 @@ async def apply_env_oidc_provider(db: AsyncSession) -> None:
         # Never str(exc): a DB error message can echo a configured value. Class only.
         logger.error("BAMBUDDY_OIDC_* could not be applied: %s", type(exc).__name__)
         # A commit may have half-applied; roll back so the shared session is
-        # left clean for the rest of startup.
-        await db.rollback()
+        # left clean for the rest of startup. Suppressed because rollback on a
+        # wedged connection can itself raise -- and the whole point here is that
+        # nothing in this path takes the boot down. The session is discarded by
+        # the caller's `async with` regardless.
+        with contextlib.suppress(Exception):
+            await db.rollback()
 
 
 async def _apply_env_oidc_provider(db: AsyncSession) -> None:

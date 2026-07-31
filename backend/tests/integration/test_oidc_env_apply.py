@@ -221,6 +221,29 @@ async def test_a_commit_failure_is_survivable_and_leaks_nothing(db_session, monk
 
 
 @pytest.mark.asyncio
+async def test_a_failing_rollback_is_also_survivable(db_session, monkeypatch, caplog):
+    """The handler rolls back after a failed commit -- but rollback on a wedged
+    connection can raise too, and 'never raises' has to hold for that as well
+    or the boot dies on the recovery path. The rollback is suppressed."""
+
+    async def _raise_on_commit():
+        raise RuntimeError("database is locked")
+
+    async def _raise_on_rollback():
+        raise RuntimeError("connection is closed")
+
+    monkeypatch.setattr(db_session, "commit", _raise_on_commit)
+    monkeypatch.setattr(db_session, "rollback", _raise_on_rollback)
+    _configure(monkeypatch, BAMBUDDY_OIDC_CLIENT_SECRET="leaked-secret")
+
+    with caplog.at_level(logging.ERROR):
+        await apply_env_oidc_provider(db_session)  # must not raise, even here
+
+    assert "could not be applied" in caplog.text
+    assert "leaked-secret" not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_applying_twice_without_changes_is_a_no_op(db_session, monkeypatch):
     """Every boot re-applies; the second run must not create a second row."""
     _configure(monkeypatch)
