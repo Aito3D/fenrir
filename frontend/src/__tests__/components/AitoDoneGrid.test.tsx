@@ -7,9 +7,11 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { DoneGrid } from '../../components/aito/DoneGrid';
+import { api } from '../../api/client';
 import type { AitoProject } from '../../api/client';
 
 const card = (over: Partial<AitoProject> = {}): AitoProject => ({
@@ -115,6 +117,40 @@ describe('DoneGrid', () => {
   it('offers restore on a released card', () => {
     render(<DoneGrid projects={[card({ move_lock: null })]} query="" onExpandCard={vi.fn()} />);
     expect(screen.getByRole('button', { name: /move back to finish|renvoyer en finition/i })).toBeEnabled();
+  });
+
+  it('sends the card back to Finish once the 500ms hold completes', async () => {
+    // The mirror of AitoBoardCardActions' mark-done assertion, and it exists
+    // for the same reason: the destination column literal in DoneGrid.tsx is
+    // otherwise unasserted anywhere, so swapping it for 'done' would re-archive
+    // the card the user just asked to restore — with a fully green suite.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Left deliberately unresolved: MSW has no handler for this endpoint, and
+    // the unmocked call bypasses to the real network, which refuses fast
+    // enough to settle the mutation before the assertions below run.
+    vi.spyOn(api, 'moveAitoProject').mockImplementation(() => new Promise(() => {}));
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(<DoneGrid projects={[card({ id: 4, move_lock: null })]} query="" onExpandCard={vi.fn()} />);
+      const button = screen.getByRole('button', { name: /move back to finish|renvoyer en finition/i });
+
+      await user.pointer({ keys: '[MouseLeft>]', target: button });
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(api.moveAitoProject).not.toHaveBeenCalled();
+
+      // Crossing 500ms fires `restore.mutate`, but React Query's `onMutate`
+      // awaits `cancelQueries` before it reaches `mutationFn` — so the request
+      // is a microtask behind the hold, and the flush has to be awaited.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      expect(api.moveAitoProject).toHaveBeenCalledWith(4, { column: 'finish', position: 0 });
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
   });
 
   it('offers no restore on a declined card the rules pin to Done', () => {

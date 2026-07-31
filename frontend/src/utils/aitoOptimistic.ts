@@ -184,8 +184,11 @@ export function applyColumnMove(
   projects: AitoProject[] | undefined,
   id: number,
   column: AitoProject['column'],
-): AitoProject[] {
-  if (!projects) return [];
+): AitoProject[] | undefined {
+  // `undefined`, like every sibling transform: the board query has no data
+  // (it errored, or has not landed yet), and writing a one-card board over
+  // that would replace the load-failed banner with "No projects yet".
+  if (!projects) return undefined;
   const moved = projects.find((p) => p.id === id);
   if (!moved || moved.column === column) return projects;
 

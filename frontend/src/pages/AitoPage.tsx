@@ -253,15 +253,37 @@ export function AitoPage() {
     onError: () => showToast(t('aito.deleteFailed'), 'error'),
   });
 
+  // Each rendered column's cards after the search filter. Computed once and
+  // used both to render the columns and to decide whether the board has
+  // anything to show — filtering in two places would let the empty state and
+  // the columns disagree, which is exactly how six silently blank columns
+  // shipped instead of a zero-result message.
+  //
   // The six columns the board RENDERS, not COLUMN_IDS — which still carries
-  // `done`. A board whose only projects are finished is an empty board, and
-  // counting the archive here would claim otherwise while showing six empty
-  // columns. The Show Done button above carries the done count.
-  const totalCount = COLUMNS.reduce((sum, column) => sum + board[column.id].length, 0);
+  // `done`. The archive is behind the Show Done button, not on the board.
+  const visibleColumns = useMemo(
+    () =>
+      COLUMNS.map((column) => ({
+        column,
+        projects: board[column.id].filter((project) => matchesSearch(project, search)),
+      })),
+    [board, search],
+  );
+  const visibleCount = visibleColumns.reduce((sum, { projects }) => sum + projects.length, 0);
 
-  // What is actually on the bench. Separate from `totalCount`, which drives
-  // the empty state and counts every rendered column — a board that is nothing
-  // but quotes is not empty, it just has no production on it.
+  // A count badge describes the VIEW; the title describes the BUSINESS.
+  //
+  // `doneCount` follows the query because the Show Done button is a promise
+  // about what the next click will show — offering "(30)" and then landing on
+  // "No projects match your search" is a lie. The column badges already work
+  // this way.
+  //
+  // `inProduction` beside the page title deliberately does NOT: it answers
+  // "how much is on my bench", a fact about the shop rather than about this
+  // view, and filtering it would make the headline number flicker on every
+  // keystroke while describing nothing anyone asked for. The inconsistency is
+  // the intent — please do not "fix" it.
+  const doneCount = board.done.filter((project) => matchesSearch(project, search)).length;
   const inProduction = ACTIVE_COLUMN_IDS.reduce((sum, id) => sum + board[id].length, 0);
 
   const reducedMotion = useMemo(() => prefersReducedMotion(), []);
@@ -349,7 +371,7 @@ export function AitoPage() {
           ) : (
             <>
               <Archive className="w-4 h-4 mr-2" />
-              {t('aito.showDone')} ({board.done.length})
+              {t('aito.showDone')} ({doneCount})
             </>
           )}
         </Button>
@@ -366,12 +388,29 @@ export function AitoPage() {
         </div>
       )}
 
-      {/* Empty state */}
-      {!aitoQuery.isError && !showDone && totalCount === 0 && (
+      {/* Empty state — three different nothings, and telling them apart is the
+          whole point. A query that matched nothing is not an empty board, and
+          a shop whose work is all finished is not a shop with no work. */}
+      {!aitoQuery.isError && !showDone && visibleCount === 0 && (
         <div className="text-center py-8 animate-rise">
           <Kanban className="w-10 h-10 text-bambu-gray mx-auto mb-3" />
-          <p className="text-white font-medium">{t('aito.emptyTitle')}</p>
-          <p className="text-sm text-bambu-gray mt-1">{t('aito.emptyHint')}</p>
+          {filtering ? (
+            // The same sentence the done grid shows for the same query. The
+            // board used to say nothing at all here, leaving six blank columns.
+            <p className="text-white font-medium">{t('aito.searchNoResults')}</p>
+          ) : board.done.length === 0 ? (
+            // Nothing anywhere: not filtering, so `visibleCount === 0` already
+            // means no active cards, and the archive is empty too.
+            <>
+              <p className="text-white font-medium">{t('aito.emptyTitle')}</p>
+              <p className="text-sm text-bambu-gray mt-1">{t('aito.emptyHint')}</p>
+            </>
+          ) : (
+            // Nothing in production, but the archive is not empty. "No
+            // projects yet — add your first card" would be false directly
+            // above a Show Done button reading (30).
+            <p className="text-white font-medium">{t('aito.allDone', { count: board.done.length })}</p>
+          )}
         </div>
       )}
 
@@ -389,11 +428,11 @@ export function AitoPage() {
               a tall column would push the board past the viewport instead of
               scrolling inside itself. */}
           <div className="flex gap-4 items-stretch overflow-x-auto pb-4 stagger-parents flex-1 min-h-0 scrollbar-hide">
-            {COLUMNS.map((column) => (
+            {visibleColumns.map(({ column, projects }) => (
               <div key={column.id} className="animate-rise-lg flex flex-shrink-0">
                 <BoardColumn
                   column={column}
-                  projects={board[column.id].filter((project) => matchesSearch(project, search))}
+                  projects={projects}
                   isDropTarget={dropTarget === column.id}
                   onExpandCard={openCard}
                   transitionConfig={reducedMotion ? null : SORTABLE_TRANSITION}

@@ -28,7 +28,7 @@ export const COLUMNS: ColumnMeta[] = [
  *  the Show Done toggle now, as a grid. The column id itself is untouched
  *  everywhere else — `COLUMN_IDS`, `buildBoard` and the cache all still carry
  *  it; only the board's rendering changed. */
-export const DONE_COLUMN: ColumnMeta = {
+const DONE_COLUMN: ColumnMeta = {
   id: 'done',
   labelKey: 'aito.columns.done',
   dot: 'bg-bambu-gray',

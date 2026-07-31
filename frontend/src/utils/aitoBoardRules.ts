@@ -93,8 +93,10 @@ export function taskCost(task: TaskLike, service: ServiceId): number | null {
 
 /** The whole rule set: `[column, moveLock]`.
  *
- *  `moveLock` names why the card cannot be dragged between columns, and is
- *  null only when it can (Finish <-> Done).
+ *  `moveLock` names why the card is still pinned to a derived column, and is
+ *  null only once the rules let go of it — which happens exactly between
+ *  Finish and Done. That release is what gates the card's mark-done and
+ *  restore buttons; nothing about it is a drag any more.
  *
  *  Rule ORDER matters twice, and is the part a data-driven version could not
  *  express. Waiting outranks the steps, so ticking a step on a card that is
@@ -122,7 +124,8 @@ export function evaluate(
 
   // Nothing left to do. This is the ONLY place the stored column is believed,
   // and only between Finish and Done — which is what makes that one manual
-  // drag possible inside an otherwise fully derived model.
+  // transition (the card's mark-done / restore buttons) possible inside an
+  // otherwise fully derived model.
   return [storedColumn === 'done' ? 'done' : 'finish', null];
 }
 

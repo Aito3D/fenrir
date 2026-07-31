@@ -180,13 +180,13 @@ describe('board card actions — mark as sent', () => {
 describe('board card actions — mark as done', () => {
   it('offers mark-as-done on a released card in Finish', () => {
     renderColumn(card({ column: 'finish', move_lock: null }));
-    expect(screen.getByRole('button', { name: /mark as done/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /mark project as done/i })).toBeEnabled();
   });
 
   it('does not offer mark-as-done in any other column', () => {
     for (const column of ['devis', 'waiting', 'scan', 'model', 'print'] as const) {
       const { unmount } = renderColumn(card({ column, move_lock: null }));
-      expect(screen.queryByRole('button', { name: /mark as done/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
       unmount();
     }
   });
@@ -195,12 +195,12 @@ describe('board card actions — mark as done', () => {
     // move_lock is the server's own derived value. A card the rules have not
     // released cannot leave its column, and the move endpoint would 409.
     renderColumn(card({ column: 'finish', move_lock: 'steps' }));
-    expect(screen.queryByRole('button', { name: /mark as done/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
   });
 
   it('offers no mark-as-done on a placeholder card', () => {
     renderColumn(card({ id: -1, column: 'finish', move_lock: null }));
-    expect(screen.queryByRole('button', { name: /mark as done/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
   });
 
   it('fires the move only once the 500ms hold completes', async () => {
@@ -214,7 +214,7 @@ describe('board card actions — mark as done', () => {
     try {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       renderColumn(card({ column: 'finish', move_lock: null }));
-      const button = screen.getByRole('button', { name: /mark as done/i });
+      const button = screen.getByRole('button', { name: /mark project as done/i });
 
       await user.pointer({ keys: '[MouseLeft>]', target: button });
       act(() => {
@@ -226,6 +226,19 @@ describe('board card actions — mark as done', () => {
         vi.advanceTimersByTime(300);
       });
       expect(button).toBeDisabled();
+
+      // React Query's `onMutate` awaits `cancelQueries` before it ever reaches
+      // `mutationFn`, so the request is a microtask behind the `isPending`
+      // flip asserted above — flush before asking what was actually sent.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      // The destination column, spelled out. Without this the literal in
+      // BoardColumn.tsx is unasserted anywhere: swapping it for 'finish' would
+      // turn mark-done into a silent no-op (the card is already in Finish) with
+      // the whole suite still green, because every other assertion here only
+      // asks whether SOMETHING was mutated.
+      expect(api.moveAitoProject).toHaveBeenCalledWith(12, { column: 'done', position: 0 });
     } finally {
       vi.useRealTimers();
       vi.restoreAllMocks();

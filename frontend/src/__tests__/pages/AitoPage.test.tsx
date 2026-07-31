@@ -1227,31 +1227,73 @@ describe('AitoPage (backend board)', () => {
     );
     render(<AitoPage />);
 
-    await screen.findByRole('button', { name: /show done/i });
+    // The COUNT, not the bare button. The button mounts unconditionally, so
+    // `findByRole('button', { name: /show done/i })` resolves in a microtask
+    // before MSW ever answers — and the "Archived work" assertion below would
+    // then run against an empty pre-fetch board, where it cannot fail. `(1)`
+    // appears only once `board.done` actually holds the fetched row.
+    await screen.findByRole('button', { name: /show done \(1\)/i });
     expect(screen.queryByRole('heading', { name: /^(Done|Terminé)$/i })).not.toBeInTheDocument();
     expect(screen.queryByText('Archived work')).not.toBeInTheDocument();
   });
 
-  it('reads as empty when every project is done', async () => {
-    // The board really is empty. Counting the done column here would claim it
-    // is populated while showing six empty columns.
-    server.use(
-      http.get('*/api/v1/aito/', () =>
-        HttpResponse.json([makeProject({ id: 1, column: 'done' })]),
-      ),
-    );
-    render(<AitoPage />);
-    // Wait for the query to SETTLE before asserting. `board` is built from
-    // `aitoQuery.data`, which is undefined until the fetch resolves — so every
-    // column reads empty during the first render whether the count sums the
-    // six rendered columns or all seven. A bare `findByText` resolves on that
-    // transient state and would pass against the very bug this test names.
-    //
-    // The count in the button, not the button itself: the button renders
-    // unconditionally on mount, so its mere presence is not a settle signal.
-    // `(1)` appears only once `board.done` holds the fetched row.
-    await screen.findByRole('button', { name: /show done \(1\)/i });
-    expect(screen.getByText(/no projects yet|aucun projet/i)).toBeInTheDocument();
+  // The board's empty region is three-way, and each arm says something the
+  // other two would get wrong.
+  describe('empty board', () => {
+    it('says nothing is in production, not "no projects yet", when every project is done', async () => {
+      // The board really is empty — counting the done column would claim it is
+      // populated while showing six empty columns. But "No projects yet / add
+      // your first card" is false directly above a Show done button reading
+      // (1): there ARE projects, they are all finished.
+      server.use(
+        http.get('*/api/v1/aito/', () =>
+          HttpResponse.json([makeProject({ id: 1, column: 'done' })]),
+        ),
+      );
+      render(<AitoPage />);
+      // Wait for the query to SETTLE before asserting. `board` is built from
+      // `aitoQuery.data`, which is undefined until the fetch resolves — so
+      // every column reads empty during the first render whether the count
+      // sums the six rendered columns or all seven. A bare `findByText`
+      // resolves on that transient state and would pass against the very bug
+      // this test names.
+      //
+      // The count in the button, not the button itself: the button renders
+      // unconditionally on mount, so its mere presence is not a settle signal.
+      // `(1)` appears only once `board.done` holds the fetched row.
+      await screen.findByRole('button', { name: /show done \(1\)/i });
+      expect(screen.getByText(/nothing in production/i)).toBeInTheDocument();
+      expect(screen.queryByText(/no projects yet|aucun projet/i)).not.toBeInTheDocument();
+    });
+
+    it('says there are no projects yet when nothing exists anywhere, archive included', async () => {
+      server.use(http.get('*/api/v1/aito/', () => HttpResponse.json([])));
+      render(<AitoPage />);
+
+      await screen.findByRole('button', { name: /show done \(0\)/i });
+      expect(screen.getByText(/no projects yet|aucun projet/i)).toBeInTheDocument();
+      expect(screen.queryByText(/nothing in production/i)).not.toBeInTheDocument();
+    });
+
+    it('says the query matched nothing rather than leaving six blank columns', async () => {
+      // The done grid already said this for the same query; the board said
+      // nothing at all, so a search that matched no card looked like a bug.
+      server.use(
+        http.get('*/api/v1/aito/', () =>
+          HttpResponse.json([makeProject({ id: 1, description: 'Support GoPro', column: 'devis' })]),
+        ),
+      );
+      const user = userEvent.setup();
+      render(<AitoPage />);
+      await screen.findByText('Support GoPro');
+
+      await user.type(screen.getByRole('searchbox'), 'zzzz');
+
+      expect(screen.getByText(/no projects match|aucun projet ne correspond/i)).toBeInTheDocument();
+      // Not the board-is-empty copy: the board is not empty, the query is.
+      expect(screen.queryByText(/no projects yet|aucun projet pour/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/nothing in production/i)).not.toBeInTheDocument();
+    });
   });
 
   it('filters board cards on the search query', async () => {
@@ -1384,6 +1426,35 @@ describe('AitoPage (backend board)', () => {
     );
     render(<AitoPage />);
     expect(await screen.findByText(/1 project in production|1 projet en production/i)).toBeInTheDocument();
+  });
+
+  it('filters the Show-done count but not the title count', async () => {
+    // Two different promises. The button's count says what the next click will
+    // show, so it has to follow the query — offering "(2)" and then landing on
+    // "No projects match your search" is a lie. The title's count describes
+    // the shop, not the view, and must not flicker on every keystroke.
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([
+          makeProject({ id: 1, description: 'Support GoPro', column: 'print' }),
+          makeProject({ id: 2, description: 'Boîtier', column: 'finish' }),
+          makeProject({ id: 3, description: 'GoPro archivé', column: 'done', move_lock: null }),
+          makeProject({ id: 4, description: 'Boîtier archivé', column: 'done', move_lock: null }),
+        ]),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<AitoPage />);
+
+    await screen.findByRole('button', { name: /show done \(2\)/i });
+    expect(within(screen.getByRole('heading', { level: 1 })).getByText('2')).toBeInTheDocument();
+
+    await user.type(screen.getByRole('searchbox'), 'gopro');
+
+    // One of the two archived cards matches...
+    expect(screen.getByRole('button', { name: /show done \(1\)/i })).toBeInTheDocument();
+    // ...and the bench still holds two projects, query or no query.
+    expect(within(screen.getByRole('heading', { level: 1 })).getByText('2')).toBeInTheDocument();
   });
 
   it('keeps the query when switching to the done grid', async () => {

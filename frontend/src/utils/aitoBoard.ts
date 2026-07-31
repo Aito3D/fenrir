@@ -112,14 +112,20 @@ export function toOptimisticProjects(board: Board): AitoProject[] {
   );
 }
 
-/** Which columns this card may be dropped into.
+/** Which columns this card may be dropped into: always, and only, its own.
  *
- *  Reordering INSIDE a column is always allowed — it changes priority, not
- *  state — so a locked card's own column is always in the list. Crossing
- *  columns is only ever Finish <-> Done, and only once the rules have released
- *  the card (`move_lock === null`). The server enforces the same thing with a
- *  409; this is what stops dnd-kit relocating the card visually first. */
+ *  Dragging is reordering now. It changes priority, not state, which is why a
+ *  rule-locked card is still grabbable — and why a RELEASED one gets no extra
+ *  destinations either: the one cross-column transition a user can make by
+ *  hand (Finish <-> Done) rides the card's own hold buttons instead, since
+ *  Done is no longer a rendered column and has no droppable to aim at. Listing
+ *  `done` here would dim five columns mid-drag and offer nothing reachable in
+ *  return.
+ *
+ *  Kept as a function returning a list, rather than collapsed into the caller,
+ *  because `useBoardDrag` gates every drop on this — the server enforces the
+ *  same rules with a 409, and this is what stops dnd-kit relocating the card
+ *  visually before that refusal arrives. */
 export function allowedColumns(project: AitoProject): ColumnId[] {
-  if (project.move_lock !== null) return [project.column];
-  return ['finish', 'done'];
+  return [project.column];
 }

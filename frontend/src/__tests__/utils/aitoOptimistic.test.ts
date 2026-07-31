@@ -562,8 +562,8 @@ describe('applyColumnMove', () => {
     expect(applyColumnMove(projects, 404, 'done')).toBe(projects);
   });
 
-  it('returns an empty array for undefined input', () => {
-    expect(applyColumnMove(undefined, 9, 'done')).toEqual([]);
+  it('leaves the cache untouched (undefined) on a cache miss, rather than fabricating a board', () => {
+    expect(applyColumnMove(undefined, 9, 'done')).toBeUndefined();
   });
 
   it('lands the card at the top of its destination column on the board', () => {
@@ -571,7 +571,9 @@ describe('applyColumnMove', () => {
       card({ id: 1, column: 'done', position: 0 }),
       card({ id: 9, column: 'finish', position: 0 }),
     ];
-    const board = buildBoard(applyColumnMove(projects, 9, 'done'));
+    // `!` because the transform is `AitoProject[] | undefined` — the
+    // undefined arm is the cache-miss case above, and `projects` is real here.
+    const board = buildBoard(applyColumnMove(projects, 9, 'done')!);
     expect(board.done.map((p) => p.id)).toEqual([9, 1]);
     expect(board.finish).toEqual([]);
   });
