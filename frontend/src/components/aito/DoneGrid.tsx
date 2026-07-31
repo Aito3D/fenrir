@@ -1,0 +1,109 @@
+import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Archive, Undo2 } from 'lucide-react';
+import { CardView } from './CardView';
+import { HoldButton } from './HoldButton';
+import { useColumnMoveMutation } from '../../hooks/useColumnMoveMutation';
+import { useIsReverting } from '../../hooks/useRevertFlash';
+import { isPlaceholder } from '../../utils/aitoOptimistic';
+import { matchesSearch } from '../../utils/aitoSearch';
+import { parseUTCDate } from '../../utils/date';
+import type { AitoProject } from '../../api/client';
+
+/** One project in the grid.
+ *
+ *  Its own component because the restore mutation is per-project, and this is
+ *  already the one-per-project layer — the same reason `SortableCard` owns
+ *  mark-sent rather than `BoardColumn` owning one mutation per column. */
+function DoneCard({ project, onExpand }: { project: AitoProject; onExpand: () => void }) {
+  const { t } = useTranslation();
+  const restore = useColumnMoveMutation(project, 'finish');
+  // A card whose restore failed and snapped back. On this wrapper rather than
+  // on CardView, matching how the board does it.
+  const reverting = useIsReverting(project.id);
+
+  return (
+    <div className={reverting ? 'animate-revert-flash' : ''}>
+      <CardView
+        project={project}
+        placeholder={isPlaceholder(project)}
+        onExpand={onExpand}
+        actions={
+          // `move_lock === null` is the rules' own release. A declined quote
+          // sits here with move_lock 'declined' and cannot leave — offering a
+          // button the server would 409 is worse than offering none.
+          project.move_lock === null ? (
+            <HoldButton
+              onHold={() => restore.mutate()}
+              durationMs={500}
+              disabled={restore.isPending}
+              label={t('aito.restoreToFinish')}
+              hint={t('aito.holdToConfirm')}
+              className="p-1 -m-1 text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary focus-visible:ring-bambu-green/40 data-[holding=true]:text-white"
+            >
+              <Undo2 className="relative w-3.5 h-3.5" />
+            </HoldButton>
+          ) : null
+        }
+      />
+    </div>
+  );
+}
+
+/** Finished projects, as a grid rather than a column.
+ *
+ *  Done is an archive: it only grows, and a 300px-wide vertical list is the
+ *  wrong shape for hundreds of cards. The grid is the same `CardView` the
+ *  board renders — no drag handle, no mark-sent, a restore button instead —
+ *  so a card looks the same wherever you meet it, and `data-aito-card-id`
+ *  keeps the morph into the detail panel working from here too.
+ *
+ *  Ordered by `updated_at` descending, NOT by the stored board position: once
+ *  Done is the dumping ground, its positions are arbitrary drop-order history
+ *  and mean nothing to anyone reading the archive. */
+export function DoneGrid({
+  projects,
+  query,
+  onExpandCard,
+}: {
+  projects: AitoProject[];
+  query: string;
+  onExpandCard: (id: number) => void;
+}) {
+  const { t } = useTranslation();
+
+  const visible = useMemo(() => {
+    // `parseUTCDate`, not a string compare: the board's timestamps are
+    // inconsistently suffixed ('…:00Z' on some rows, '…:00' on others) and a
+    // lexical compare orders those two forms by their suffix, not their
+    // instant. Ties break on id descending so the order is stable.
+    const time = (project: AitoProject) => parseUTCDate(project.updated_at)?.getTime() ?? 0;
+    return projects
+      .filter((project) => matchesSearch(project, query))
+      .slice()
+      .sort((a, b) => time(b) - time(a) || b.id - a.id);
+  }, [projects, query]);
+
+  if (visible.length === 0) {
+    return (
+      <div className="flex-1 text-center py-8 animate-rise">
+        <Archive className="w-10 h-10 text-bambu-gray mx-auto mb-3" />
+        <p className="text-white font-medium">
+          {t(query.trim() ? 'aito.searchNoResults' : 'aito.doneEmpty')}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide pb-4">
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 stagger-parents">
+        {visible.map((project) => (
+          <div key={project.id} className="animate-rise">
+            <DoneCard project={project} onExpand={() => onExpandCard(project.id)} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

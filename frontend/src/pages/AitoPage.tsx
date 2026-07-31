@@ -2,11 +2,12 @@ import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DndContext, DragOverlay, MeasuringStrategy, closestCorners, type DropAnimation } from '@dnd-kit/core';
-import { AlertTriangle, FileInput, Kanban, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, Archive, ArrowLeft, FileInput, Kanban, Plus, Trash2 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { CardView } from '../components/aito/CardView';
 import { BoardColumn } from '../components/aito/BoardColumn';
 import { COLUMNS } from '../components/aito/columns';
+import { DoneGrid } from '../components/aito/DoneGrid';
 import { ImportQuoteModal } from '../components/aito/ImportQuoteModal';
 import { NewProjectModal } from '../components/aito/NewProjectModal';
 import { ProjectDetailPanel } from '../components/aito/ProjectDetailPanel';
@@ -129,6 +130,10 @@ export function AitoPage() {
   const [showModal, setShowModal] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
+  // Deliberately not persisted — not in the URL, not in storage. The board is
+  // the working view; landing on the archive after a reload would be wrong
+  // every time but the one you asked for it.
+  const [showDone, setShowDone] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const { open: openCard, close: closeCard } = useCardMorph(setExpandedId);
 
@@ -306,6 +311,24 @@ export function AitoPage() {
         </div>
       </div>
 
+      {/* Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 animate-rise">
+        <div className="flex-1" />
+        <Button variant="secondary" onClick={() => setShowDone((shown) => !shown)}>
+          {showDone ? (
+            <>
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              {t('aito.backToBoard')}
+            </>
+          ) : (
+            <>
+              <Archive className="w-4 h-4 mr-2" />
+              {t('aito.showDone')} ({board.done.length})
+            </>
+          )}
+        </Button>
+      </div>
+
       {/* Error state */}
       {aitoQuery.isError && (
         <div className="text-center py-8 animate-rise">
@@ -318,7 +341,7 @@ export function AitoPage() {
       )}
 
       {/* Empty state */}
-      {!aitoQuery.isError && totalCount === 0 && (
+      {!aitoQuery.isError && !showDone && totalCount === 0 && (
         <div className="text-center py-8 animate-rise">
           <Kanban className="w-10 h-10 text-bambu-gray mx-auto mb-3" />
           <p className="text-white font-medium">{t('aito.emptyTitle')}</p>
@@ -327,35 +350,39 @@ export function AitoPage() {
       )}
 
       {/* Board */}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCorners}
-        measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
-        {...dndHandlers}
-      >
-        {/* min-h-0 is what lets this shrink inside the flex column: without it
-            a tall column would push the board past the viewport instead of
-            scrolling inside itself. */}
-        <div className="flex gap-4 items-stretch overflow-x-auto pb-4 stagger-parents flex-1 min-h-0">
-          {COLUMNS.map((column) => (
-            <div key={column.id} className="animate-rise-lg flex flex-shrink-0">
-              <BoardColumn
-                column={column}
-                projects={board[column.id]}
-                isDropTarget={dropTarget === column.id}
-                onExpandCard={openCard}
-                transitionConfig={reducedMotion ? null : SORTABLE_TRANSITION}
-                shouldAnimateIn={shouldAnimateIn}
-                dropDisabled={allowedDropColumns !== null && !allowedDropColumns.includes(column.id)}
-              />
-            </div>
-          ))}
-        </div>
+      {showDone ? (
+        <DoneGrid projects={board.done} query="" onExpandCard={openCard} />
+      ) : (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCorners}
+          measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+          {...dndHandlers}
+        >
+          {/* min-h-0 is what lets this shrink inside the flex column: without it
+              a tall column would push the board past the viewport instead of
+              scrolling inside itself. */}
+          <div className="flex gap-4 items-stretch overflow-x-auto pb-4 stagger-parents flex-1 min-h-0">
+            {COLUMNS.map((column) => (
+              <div key={column.id} className="animate-rise-lg flex flex-shrink-0">
+                <BoardColumn
+                  column={column}
+                  projects={board[column.id]}
+                  isDropTarget={dropTarget === column.id}
+                  onExpandCard={openCard}
+                  transitionConfig={reducedMotion ? null : SORTABLE_TRANSITION}
+                  shouldAnimateIn={shouldAnimateIn}
+                  dropDisabled={allowedDropColumns !== null && !allowedDropColumns.includes(column.id)}
+                />
+              </div>
+            ))}
+          </div>
 
-        <DragOverlay dropAnimation={reducedMotion ? null : DROP_ANIMATION}>
-          {activeProject ? <CardView project={activeProject} overlay /> : null}
-        </DragOverlay>
-      </DndContext>
+          <DragOverlay dropAnimation={reducedMotion ? null : DROP_ANIMATION}>
+            {activeProject ? <CardView project={activeProject} overlay /> : null}
+          </DragOverlay>
+        </DndContext>
+      )}
 
       {showModal && <NewProjectModal onClose={() => setShowModal(false)} onCreate={createProject} />}
 

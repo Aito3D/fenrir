@@ -1191,4 +1191,28 @@ describe('AitoPage (backend board)', () => {
       await waitFor(() => expect(screen.getByRole('button', { name: /new on top/ })).toBeInTheDocument());
     });
   });
+
+  it('swaps the board for the done grid, and back', async () => {
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([
+          makeProject({ id: 1, description: 'On the board', column: 'devis' }),
+          makeProject({ id: 2, description: 'Archived work', column: 'done', move_lock: null }),
+        ]),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<AitoPage />);
+
+    await screen.findByText('On the board');
+    const toggle = screen.getByRole('button', { name: /show done/i });
+    expect(toggle).toHaveTextContent('(1)');
+
+    await user.click(toggle);
+    expect(await screen.findByText('Archived work')).toBeInTheDocument();
+    expect(screen.queryByText('On the board')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /back to board/i }));
+    expect(await screen.findByText('On the board')).toBeInTheDocument();
+  });
 });
