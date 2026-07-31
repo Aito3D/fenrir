@@ -40,6 +40,7 @@ export default {
     deletedOn: "Видалено {{date}}",
     moveFailed: "Не вдалося перемістити проєкт. Спробуйте ще раз.",
     createFailed: "Не вдалося створити проєкт. Спробуйте ще раз.",
+    deleteFailed: "Не вдалося видалити цей проєкт",
     client: "Клієнт",
     noClient: "Без клієнта",
     clientPlaceholder: "Пошук клієнта…",

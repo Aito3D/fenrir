@@ -20,6 +20,8 @@ import type { TaskDraft } from '../utils/taskDraft';
 import { prefersReducedMotion } from '../utils/motion';
 import { useCardMorph } from '../hooks/useCardMorph';
 import { useBoardDrag } from '../hooks/useBoardDrag';
+import { useOptimisticBoardMutation } from '../hooks/useOptimisticBoardMutation';
+import { applyDelete } from '../utils/aitoOptimistic';
 import { COLUMN_IDS } from '../utils/aitoBoard';
 
 // Shared with SortableCard so the dropped card and the neighbours closing
@@ -193,12 +195,16 @@ export function AitoPage() {
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => api.deleteAitoProject(id),
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+  const deleteMutation = useOptimisticBoardMutation<void, number>({
+    mutationFn: (id) => api.deleteAitoProject(id),
+    transform: (previous, id) => applyDelete(previous, id),
+    flashId: (id) => id,
+    onSuccess: () => {
+      // The board is handled by the wrapper's settle-invalidate; the trash is
+      // a separate query with a new row in it.
       queryClient.invalidateQueries({ queryKey: ['aito-trash'] });
     },
+    onError: () => showToast(t('aito.deleteFailed'), 'error'),
   });
 
   const totalCount = COLUMN_IDS.reduce((sum, col) => sum + board[col].length, 0);

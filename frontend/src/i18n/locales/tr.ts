@@ -39,6 +39,7 @@ export default {
     deletedOn: '{{date}} tarihinde silindi',
     moveFailed: 'Proje taşınamadı. Lütfen tekrar deneyin.',
     createFailed: 'Proje oluşturulamadı. Lütfen tekrar deneyin.',
+    deleteFailed: 'Bu proje silinemedi',
     client: 'Müşteri',
     noClient: 'Müşteri yok',
     clientPlaceholder: 'Müşteri ara…',

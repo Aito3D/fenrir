@@ -39,6 +39,7 @@ export default {
     deletedOn: '{{date}}に削除',
     moveFailed: 'プロジェクトを移動できませんでした。もう一度お試しください。',
     createFailed: 'プロジェクトを作成できませんでした。もう一度お試しください。',
+    deleteFailed: 'このプロジェクトを削除できませんでした',
     client: '取引先',
     noClient: '顧客なし',
     clientPlaceholder: '取引先を検索…',

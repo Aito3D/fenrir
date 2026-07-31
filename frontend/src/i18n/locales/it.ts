@@ -39,6 +39,7 @@ export default {
     deletedOn: 'Eliminato il {{date}}',
     moveFailed: 'Impossibile spostare il progetto. Riprova.',
     createFailed: 'Impossibile creare il progetto. Riprova.',
+    deleteFailed: 'Impossibile eliminare questo progetto',
     client: 'Cliente',
     noClient: 'Nessun cliente',
     clientPlaceholder: 'Cerca un cliente…',

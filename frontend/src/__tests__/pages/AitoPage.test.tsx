@@ -6,10 +6,22 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screen, waitFor, act, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { server } from '../mocks/server';
 import { render } from '../utils';
 import { AitoPage } from '../../pages/AitoPage';
 import { api, type AitoProject, type ZohoQuotePreview } from '../../api/client';
+import { __resetBoardSync } from '../../hooks/useBoardSync';
+import { flashRevert } from '../../hooks/useRevertFlash';
+
+// `flashRevert` is imported as a direct binding by useOptimisticBoardMutation,
+// so vi.spyOn on the module namespace would patch an object nobody reads.
+// Mock the module instead, spreading the original so useIsReverting (which
+// the card's revert-flash styling relies on) stays real.
+vi.mock('../../hooks/useRevertFlash', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../hooks/useRevertFlash')>()),
+  flashRevert: vi.fn(),
+}));
 
 const project = {
   id: 12, description: 'Support GoPro', column: 'devis', position: 0, status: 'active',
@@ -17,6 +29,67 @@ const project = {
   task_count: 0, tasks_total: 0, task_services: [], task_pending: [], steps_total: 0, steps_done: 0, move_lock: null,
   created_at: '2026-07-01T10:00:00Z', updated_at: '2026-07-02T10:00:00Z',
 };
+
+// A project with every field the board cache needs, defaulted so a test can
+// override only what it cares about. Copied from AitoQuoteStatusActions.test.tsx
+// rather than shared — see that file's own fixture for the reasoning on
+// `task_pending` defaulting to `task_services`.
+function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
+  const base: AitoProject = {
+    id: 1,
+    description: 'Support de caméra',
+    column: 'devis',
+    position: 0,
+    status: 'active',
+    client_id: 'z1',
+    client_name: 'ACME SARL',
+    client_phone: '+689-87123456',
+    client_email: 'hi@acme.pf',
+    client_is_company: null,
+    quote_id: 'EST-1',
+    quote_number: null,
+    quote_date: null,
+    quote_total: null,
+    quote_url: null,
+    quote_salesperson: null,
+    quote_status: 'draft',
+    quote_sync_state: 'idle',
+    quote_sync_error: null,
+    quote_status_block: null,
+    quote_status_remote: null,
+    created_by: null,
+    task_count: 0,
+    tasks_total: 0,
+    task_services: [],
+    task_pending: [],
+    steps_total: 0,
+    steps_done: 0,
+    move_lock: null,
+    created_at: '2026-07-27T00:00:00',
+    updated_at: '2026-07-27T00:00:00',
+  };
+  return {
+    ...base,
+    ...overrides,
+    task_pending: overrides.task_pending ?? overrides.task_services ?? base.task_pending,
+  };
+}
+
+/** Grabs the QueryClient `render()` (from '../utils') creates internally —
+ *  its `AllProviders` wrapper builds one with `useState` and never exposes it.
+ *  Rendered as a sibling of the page under test so it shares the same
+ *  `QueryClientProvider`. Needed because `useBoardDrag`'s local `board` state
+ *  (what the compact card actually renders from) only rebuilds from the
+ *  `['aito-projects']` cache once every pending board write has settled — see
+ *  its docstring — so an in-flight optimistic write is invisible on the
+ *  rendered card even though it has already landed in the cache. The cache is
+ *  what `useOptimisticBoardMutation` actually promises to update synchronously,
+ *  so it's what these tests check while a write is still pending. */
+let capturedClient: QueryClient;
+function ClientCapture() {
+  capturedClient = useQueryClient();
+  return null;
+}
 
 /** The card opens from its body only — the header carrying the client name is
  *  deliberately not a click target. Tests that just need the panel open go
@@ -43,6 +116,12 @@ beforeEach(() => {
   // Mock scrollIntoView which is not available in jsdom (useCardMorph calls
   // it before assigning the view-transition name).
   Element.prototype.scrollIntoView = vi.fn();
+
+  // useBoardSync's pending-write counter is module-level and survives between
+  // tests in this file — a test that leaves an optimistic write pending (or
+  // fails before it settles) would otherwise leak into the next one.
+  __resetBoardSync();
+  vi.mocked(flashRevert).mockClear();
 
   server.use(
     http.get('/api/v1/aito/', () => HttpResponse.json([project])),
@@ -450,6 +529,12 @@ describe('AitoPage (backend board)', () => {
 
     afterEach(() => {
       vi.useRealTimers();
+      // Every test in this describe replaces `api.getAitoProjects` with
+      // `vi.spyOn(...).mockResolvedValue(...)` instead of an MSW handler, and
+      // nothing else in the file restores it — left alone, the last spy here
+      // would keep intercepting `api.getAitoProjects` for every test that
+      // runs after this describe, silently bypassing their own MSW handlers.
+      vi.mocked(api.getAitoProjects).mockRestore();
     });
 
     it('polls while a quote is still being created, and stops when none is pending', async () => {
@@ -564,6 +649,117 @@ describe('AitoPage (backend board)', () => {
       const callsAfterNewCard = getAitoProjects.mock.calls.length;
       await vi.advanceTimersByTimeAsync(10_000);
       expect(getAitoProjects.mock.calls.length).toBeGreaterThan(callsAfterNewCard);
+    });
+  });
+
+  describe('optimistic delete and restore', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('removes the card at once on delete and puts it back on failure', async () => {
+      // Controlled by hand, not answered until after the pending assertion
+      // below — a DELETE mocked to resolve immediately would make "still
+      // pending" indistinguishable from "already settled".
+      let resolveDelete: (response: Response) => void = () => {};
+      server.use(
+        http.get('/api/v1/aito/', () =>
+          HttpResponse.json([
+            makeProject({ id: 1, description: 'doomed' }),
+            makeProject({ id: 2, description: 'safe' }),
+          ]),
+        ),
+        http.delete(
+          '/api/v1/aito/:id',
+          () => new Promise<Response>((resolve) => { resolveDelete = resolve; }),
+        ),
+      );
+      const flash = vi.mocked(flashRevert);
+
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(
+        <>
+          <ClientCapture />
+          <AitoPage />
+        </>,
+      );
+
+      await user.click(await screen.findByRole('button', { name: /doomed/ }));
+      const deleteButton = await screen.findByLabelText('Delete Project');
+      await act(async () => {
+        fireEvent.pointerDown(deleteButton);
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+
+      // The DELETE above is deliberately still pending — resolveDelete has not
+      // been called yet — so this is the optimistic write, not a fluke of the
+      // request having already settled. Checked against the cache rather than
+      // the rendered card: see ClientCapture's comment for why the compact
+      // card's own screen position lags an in-flight write by design. The
+      // panel closing (asserted here) is what's actually visible immediately.
+      await waitFor(() =>
+        expect(capturedClient.getQueryData<AitoProject[]>(['aito-projects'])?.some((p) => p.id === 1)).toBe(false),
+      );
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+      resolveDelete(HttpResponse.json({ detail: 'nope' }, { status: 500 }));
+
+      await waitFor(() => expect(screen.getByText('doomed')).toBeInTheDocument());
+      expect(flash).toHaveBeenCalledWith(1);
+    });
+
+    it('restoring from the trash removes the row from the trash list and puts the card on the board immediately, and a 409 puts the trash row back', async () => {
+      const boardProject = makeProject({ id: 10, description: 'On board', column: 'devis' });
+      const trashedProject = makeProject({ id: 99, description: 'Trashed thing', column: 'print' });
+
+      // Controlled by hand so the test can inspect both caches while the
+      // restore is still in flight, then choose how it resolves.
+      let resolveRestore: (response: Response) => void = () => {};
+      server.use(
+        http.get('/api/v1/aito/', () => HttpResponse.json([boardProject])),
+        http.get('/api/v1/aito/trash', () => HttpResponse.json([trashedProject])),
+        http.post(
+          '/api/v1/aito/99/restore',
+          () => new Promise<Response>((resolve) => { resolveRestore = resolve; }),
+        ),
+      );
+
+      const user = userEvent.setup();
+      render(
+        <>
+          <ClientCapture />
+          <AitoPage />
+        </>,
+      );
+      await screen.findByRole('button', { name: /On board/ });
+
+      await user.click(screen.getByRole('button', { name: 'Trash' }));
+      const modal = (await screen.findByText('Trashed thing')).closest('div.animate-modal-in') as HTMLElement;
+      await user.click(within(modal).getByRole('button', { name: 'Restore' }));
+
+      // Optimistic, before the POST resolves: gone from the trash list. This
+      // one IS visible immediately in the DOM — TrashModal renders straight
+      // from its own ['aito-trash'] query, with no board-sync gating between
+      // the cache write and the screen.
+      await waitFor(() => expect(within(modal).queryByText('Trashed thing')).not.toBeInTheDocument());
+      // ...and already present in the board cache, via the wrapper's onMutate
+      // transform (applyRestore) — before the POST resolves. Checked against
+      // the cache rather than the rendered card; see ClientCapture's comment.
+      await waitFor(() =>
+        expect(capturedClient.getQueryData<AitoProject[]>(['aito-projects'])?.some((p) => p.id === 99)).toBe(true),
+      );
+
+      // The server refuses — the quote already has an active project.
+      resolveRestore(HttpResponse.json({ detail: 'conflict' }, { status: 409 }));
+
+      // Rolled back out of the board cache...
+      await waitFor(() =>
+        expect(capturedClient.getQueryData<AitoProject[]>(['aito-projects'])?.some((p) => p.id === 99)).toBe(false),
+      );
+      // ...and the trash row is back, via onError's invalidate.
+      await within(modal).findByText('Trashed thing');
+      expect(await screen.findByText('That quote already has an active project')).toBeInTheDocument();
     });
   });
 });

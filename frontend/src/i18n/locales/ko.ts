@@ -39,6 +39,7 @@ export default {
     deletedOn: '{{date}} 삭제됨',
     moveFailed: '프로젝트를 이동할 수 없습니다. 다시 시도해 주세요.',
     createFailed: '프로젝트를 만들 수 없습니다. 다시 시도해 주세요.',
+    deleteFailed: '이 프로젝트를 삭제할 수 없습니다',
     client: '고객',
     noClient: '고객 없음',
     clientPlaceholder: '고객 검색…',

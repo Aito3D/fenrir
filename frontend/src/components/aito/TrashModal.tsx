@@ -1,11 +1,13 @@
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2, X } from 'lucide-react';
-import { api, ApiError } from '../../api/client';
+import { api, ApiError, type AitoProject } from '../../api/client';
 import { Button } from '../Button';
 import { useToast } from '../../contexts/ToastContext';
 import { formatElapsedTime } from '../../utils/date';
+import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
+import { applyRestore } from '../../utils/aitoOptimistic';
 
 export function TrashModal({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
@@ -13,16 +15,27 @@ export function TrashModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const trashQuery = useQuery({ queryKey: ['aito-trash'], queryFn: api.getAitoTrash });
 
-  const restoreMutation = useMutation({
-    mutationFn: (id: number) => api.restoreAitoProject(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+  const restoreMutation = useOptimisticBoardMutation<AitoProject, AitoProject>({
+    mutationFn: (project) => api.restoreAitoProject(project.id),
+    // The restored card lands on the board immediately. Its column comes from
+    // the server on success — the trash row's stored column can be stale, and
+    // the rules may relocate it — so this is the one transform that predicts a
+    // column it does not compute.
+    // applyRestore, not applyCreate: restore_project APPENDS to the end of
+    // the card's own column, where create_project prepends to Devis.
+    transform: (previous, project) => applyRestore(previous, { ...project, status: 'active' }),
+    flashId: (project) => project.id,
+    onSuccess: (restored) => {
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
+        prev?.map((p) => (p.id === restored.id ? restored : p)) ?? prev,
+      );
       queryClient.invalidateQueries({ queryKey: ['aito-trash'] });
       showToast(t('aito.restored'));
     },
     onError: (error) => {
       const conflict = error instanceof ApiError && error.status === 409;
       showToast(t(conflict ? 'aito.restoreBlockedByQuote' : 'aito.restoreFailed'), 'error');
+      queryClient.invalidateQueries({ queryKey: ['aito-trash'] });
     },
   });
 
@@ -86,8 +99,15 @@ export function TrashModal({ onClose }: { onClose: () => void }) {
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => restoreMutation.mutate(project.id)}
-                    disabled={restoreMutation.isPending && restoreMutation.variables === project.id}
+                    onClick={() => {
+                      // Drop it from the trash list too — the wrapper's
+                      // transform only owns the board query.
+                      queryClient.setQueryData<AitoProject[]>(['aito-trash'], (prev) =>
+                        prev?.filter((p) => p.id !== project.id) ?? prev,
+                      );
+                      restoreMutation.mutate(project);
+                    }}
+                    disabled={restoreMutation.isPending && restoreMutation.variables?.id === project.id}
                   >
                     {t('aito.restore')}
                   </Button>

@@ -39,6 +39,7 @@ export default {
     deletedOn: '刪除於 {{date}}',
     moveFailed: '無法移動專案，請再試一次。',
     createFailed: '無法建立專案，請再試一次。',
+    deleteFailed: '無法刪除此專案',
     client: '客戶',
     noClient: '無客戶',
     clientPlaceholder: '搜尋客戶…',
