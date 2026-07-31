@@ -74,7 +74,11 @@ export function CardView({
     <div
       data-aito-card
       data-aito-card-id={project.id}
-      className={`group relative rounded-xl border bg-bambu-dark-secondary select-none ${
+      // overflow-hidden clips the progress bar to the card's rounded corner.
+      // Safe here: the focus ring is `focus-visible:ring-inset` (drawn inside),
+      // `card-shadow` is a box-shadow and is not clipped by `overflow`, and the
+      // grip's `p-2 -m-2` pulls padding inward rather than pushing content out.
+      className={`group relative rounded-xl border bg-bambu-dark-secondary select-none overflow-hidden ${
         overlay
           ? 'rotate-1 scale-[1.02] border-bambu-green/40 shadow-2xl cursor-grabbing'
           : 'border-bambu-dark-tertiary card-shadow transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-bambu-green/40 hover:shadow-lg motion-reduce:hover:translate-y-0'

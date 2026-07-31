@@ -314,4 +314,16 @@ describe('CardView', () => {
     render(<CardView project={{ ...project, steps_total: 0, steps_done: 0 }} onExpand={vi.fn()} />);
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
+
+  it('lets the card clip the progress bar instead of the bar rounding itself', () => {
+    // The bar sits INSIDE the card's 1px border, so its own `rounded-b-xl` is
+    // a different radius than the card's inner corner and the fill squares off
+    // against it. The card clips it now, so the only curve involved is the
+    // card's own.
+    render(<CardView project={{ ...project, steps_total: 4, steps_done: 1 }} onExpand={vi.fn()} />);
+    const bar = screen.getByRole('progressbar');
+    expect(bar.className).not.toMatch(/rounded/);
+    expect(bar).toHaveClass('h-1.5');
+    expect(document.querySelector('[data-aito-card]')).toHaveClass('overflow-hidden');
+  });
 });
