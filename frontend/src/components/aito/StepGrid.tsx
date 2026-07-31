@@ -54,6 +54,11 @@ export function StepGrid({ tasks }: { tasks: AitoTaskSteps[] }) {
                 key={service}
                 data-service={service}
                 data-done={done}
+                // role="img" permits an author-supplied aria-label. Without it,
+                // the span is role-generic, and ARIA prohibits an author-supplied
+                // name on generic — browsers drop aria-label, and "— Done" never
+                // reaches the screen reader. See ARIA 1.2 spec, name-from-author.
+                role="img"
                 // The state lives in the accessible name, not just in colour:
                 // "Scan — Done" / "Scan — Pending". See the module docstring.
                 aria-label={`${label} — ${t(done ? 'aito.done' : 'aito.stepPending')}`}

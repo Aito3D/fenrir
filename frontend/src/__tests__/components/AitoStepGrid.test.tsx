@@ -38,12 +38,12 @@ describe('StepGrid', () => {
     // what actually reaches a screen reader. Colour alone would fail both a
     // screen-reader user and a colour-vision-deficient sighted one.
     render(<StepGrid tasks={[{ services: ['scan'], done: ['scan'] }]} />);
-    expect(await screen.findByLabelText('Scan — Done')).toBeInTheDocument();
+    expect(await screen.findByRole('img', { name: 'Scan — Done' })).toBeInTheDocument();
   });
 
   it('exposes a pending pill\'s state through its accessible name', async () => {
     render(<StepGrid tasks={[{ services: ['scan'], done: [] }]} />);
-    expect(await screen.findByLabelText('Scan — Pending')).toBeInTheDocument();
+    expect(await screen.findByRole('img', { name: 'Scan — Pending' })).toBeInTheDocument();
   });
 
   it('omits a service the task does not carry, keeping four columns', () => {
