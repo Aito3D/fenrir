@@ -281,79 +281,37 @@ describe('CardView', () => {
     expect(screen.queryByTitle(/Locked|set by its task steps|declined/)).not.toBeInTheDocument();
   });
 
-  it('offers mark-as-sent on a card in the Quote column', () => {
+  it('renders whatever actions the parent injects', () => {
     render(
-      <CardView
-        project={{ ...project, column: 'devis' }}
-        onExpand={vi.fn()}
-        onMarkSent={vi.fn()}
-      />,
+      <CardView project={project} onExpand={vi.fn()} actions={<button type="button">Do the thing</button>} />,
     );
-    expect(screen.getByRole('button', { name: /mark as sent/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Do the thing' })).toBeInTheDocument();
   });
 
-  it('does not offer mark-as-sent outside the Quote column', () => {
-    for (const column of ['waiting', 'scan', 'model', 'print', 'finish', 'done'] as const) {
-      const { unmount } = render(
-        <CardView project={{ ...project, column }} onExpand={vi.fn()} onMarkSent={vi.fn()} />,
-      );
-      expect(screen.queryByRole('button', { name: /mark as sent/i })).not.toBeInTheDocument();
-      unmount();
-    }
-  });
-
-  it('omits mark-as-sent from the drag overlay clone', () => {
+  it('omits injected actions from the drag overlay clone', () => {
     // Same rule delete follows: the overlay is a picture of the card being
     // dragged, and its buttons would be unreachable anyway.
-    render(<CardView project={{ ...project, column: 'devis' }} overlay />);
-    expect(screen.queryByRole('button', { name: /mark as sent/i })).not.toBeInTheDocument();
+    render(<CardView project={project} overlay actions={<button type="button">Do the thing</button>} />);
+    expect(screen.queryByRole('button', { name: 'Do the thing' })).not.toBeInTheDocument();
   });
 
-  it('disables mark-as-sent while the request is in flight, rather than removing it', () => {
-    // HoldButton fires on a timer, not on pointer release, so the mutation
-    // starts with the user's finger still down. A button that vanishes at that
-    // moment vanishes from under them.
+  it('omits injected actions on a placeholder card', () => {
     render(
       <CardView
-        project={{ ...project, column: 'devis' }}
+        project={project}
+        placeholder
         onExpand={vi.fn()}
-        onMarkSent={vi.fn()}
-        markSentPending
+        actions={<button type="button">Do the thing</button>}
       />,
     );
-    expect(screen.getByRole('button', { name: /mark as sent/i })).toBeDisabled();
-  });
-
-  it('fires mark-as-sent only once the 500ms hold completes', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      const onMarkSent = vi.fn();
-      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-      render(
-        <CardView
-          project={{ ...project, column: 'devis' }}
-          onExpand={vi.fn()}
-          onMarkSent={onMarkSent}
-        />,
-      );
-
-      const button = screen.getByRole('button', { name: /mark as sent/i });
-      await user.pointer({ keys: '[MouseLeft>]', target: button });
-      vi.advanceTimersByTime(300);
-      expect(onMarkSent).not.toHaveBeenCalled();
-
-      vi.advanceTimersByTime(300);
-      expect(onMarkSent).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(screen.queryByRole('button', { name: 'Do the thing' })).not.toBeInTheDocument();
   });
 
   it('does not offer delete on the board card', () => {
     // Delete moved to the expanded card: a destructive action belongs on the
     // surface that shows you what you are destroying, not on a three-line
     // summary one mis-hold away from it.
-    render(<CardView project={project} onExpand={vi.fn()} onMarkSent={vi.fn()} />);
+    render(<CardView project={project} onExpand={vi.fn()} />);
     expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument();
   });
 

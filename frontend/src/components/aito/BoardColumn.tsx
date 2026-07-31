@@ -2,7 +2,9 @@ import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useTranslation } from 'react-i18next';
+import { Send } from 'lucide-react';
 import { CardView } from './CardView';
+import { HoldButton } from './HoldButton';
 import type { ColumnMeta } from './columns';
 import type { AitoProject } from '../../api/client';
 import { useQuoteStatusMutation } from '../../hooks/useQuoteStatusMutation';
@@ -26,6 +28,7 @@ function SortableCard({
   // its column — `useBoardDrag`'s `isDropAllowed` refuses that drop, and the
   // board dims the columns that will refuse it.
   const placeholder = isPlaceholder(project);
+  const { t } = useTranslation();
 
   const {
     attributes,
@@ -65,8 +68,28 @@ function SortableCard({
         project={project}
         placeholder={placeholder}
         onExpand={onExpand}
-        onMarkSent={() => markSent.mutate('sent')}
-        markSentPending={markSent.isPending}
+        actions={
+          project.column === 'devis' ? (
+            // The Quote column's one real action, on the card so the column can
+            // be cleared without opening anything. Deliberately NOT hidden
+            // behind group-hover the way delete is: delete hides because a
+            // destructive action should be hard to hit by accident, and this is
+            // the opposite — the primary action of the column, which an
+            // invisible button cannot be. `project.column` is the server's
+            // derived value (aito_board_rules.evaluate); the frontend derives
+            // nothing of its own here.
+            <HoldButton
+              onHold={() => markSent.mutate('sent')}
+              durationMs={500}
+              disabled={markSent.isPending}
+              label={t('aito.markSent')}
+              hint={t('aito.holdToConfirm')}
+              className="p-1 -m-1 text-amber-400/70 hover:text-amber-400 hover:bg-amber-400/10 focus-visible:ring-amber-400/40 data-[holding=true]:text-amber-400"
+            >
+              <Send className="relative w-3.5 h-3.5" />
+            </HoldButton>
+          ) : null
+        }
         dragHandleRef={setActivatorNodeRef}
         dragHandleProps={{ ...attributes, ...listeners }}
       />
