@@ -154,6 +154,48 @@ export function applyDelete(projects: AitoProject[] | undefined, id: number): Ai
   return projects.filter((p) => p.id !== id);
 }
 
+/** Mirrors `PATCH /aito/{id}/move` called with `position: 0` — the board's one
+ *  remaining manual transition, now that Done is off the board and finish <->
+ *  done rides the card's own hold buttons instead of a drag.
+ *
+ *  Deliberately NOT `relocate` above. That mirrors `_apply_rules`, which
+ *  APPENDS to the destination because the rules choose the column and the
+ *  server picks the slot. Here the caller supplies the slot explicitly, and it
+ *  always supplies 0 — a restored card belongs at the top of Finish, where the
+ *  user can see the thing they just un-archived. Predicting an append would
+ *  park it at the far end of the column for one round trip.
+ *
+ *  The source column is renumbered contiguously, ranked by `position, id` to
+ *  match `_active_in_column`'s `ORDER BY position, id`. Ranking by array order
+ *  instead only agrees while a column's array order happens to match its
+ *  position order, which nothing guarantees. */
+export function applyColumnMove(
+  projects: AitoProject[] | undefined,
+  id: number,
+  column: AitoProject['column'],
+): AitoProject[] {
+  if (!projects) return [];
+  const moved = projects.find((p) => p.id === id);
+  if (!moved || moved.column === column) return projects;
+
+  const source = moved.column;
+  const sourceRank = new Map<number, number>();
+  projects
+    .filter((p) => p.column === source && p.id !== id)
+    .sort((a, b) => a.position - b.position || a.id - b.id)
+    .forEach((project, index) => sourceRank.set(project.id, index));
+
+  return projects.map((project) => {
+    if (project.id === id) return { ...project, column, position: 0 };
+    if (project.column === column) return { ...project, position: project.position + 1 };
+    if (project.column === source) {
+      const position = sourceRank.get(project.id)!;
+      return project.position === position ? project : { ...project, position };
+    }
+    return project;
+  });
+}
+
 /** Mirrors `create_project` (`POST /api/v1/aito/`, backend/app/api/routes/aito.py
  *  around line 377): board create AND quote import both go through that one
  *  endpoint, which inserts the new row at Devis position 0 (shifting every

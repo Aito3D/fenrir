@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  applyColumnMove,
   applyCreate,
   applyDelete,
   applyDescription,
@@ -452,6 +453,89 @@ describe('placeholderProject', () => {
     const placeholder = placeholderProject({ ...placeholderFields, quote_status: 'sent' });
     expect(placeholder.column).toBe('waiting');
     expect(placeholder.move_lock).toBe('waiting');
+  });
+});
+
+describe('applyColumnMove', () => {
+  it('inserts at the HEAD of the destination and shifts the rest down', () => {
+    const projects = [
+      card({ id: 1, column: 'done', position: 0 }),
+      card({ id: 2, column: 'done', position: 1 }),
+      card({ id: 9, column: 'finish', position: 0, move_lock: null }),
+    ];
+    const next = applyColumnMove(projects, 9, 'done');
+    expect(find(next, 9)).toMatchObject({ column: 'done', position: 0 });
+    expect(find(next, 1).position).toBe(1);
+    expect(find(next, 2).position).toBe(2);
+  });
+
+  it('renumbers the source column contiguously', () => {
+    const projects = [
+      card({ id: 1, column: 'finish', position: 0 }),
+      card({ id: 2, column: 'finish', position: 1 }),
+      card({ id: 3, column: 'finish', position: 2 }),
+    ];
+    const next = applyColumnMove(projects, 2, 'done');
+    expect(find(next, 1).position).toBe(0);
+    expect(find(next, 3).position).toBe(1);
+  });
+
+  it('ranks the source column by POSITION, not array order', () => {
+    // Array order deliberately disagrees with position order. Renumbering by
+    // traversal would give id 5 position 0 and id 4 position 1, inverting them.
+    const projects = [
+      card({ id: 5, column: 'finish', position: 3 }),
+      card({ id: 4, column: 'finish', position: 1 }),
+      card({ id: 6, column: 'finish', position: 0 }),
+    ];
+    const next = applyColumnMove(projects, 6, 'done');
+    expect(find(next, 4).position).toBe(0);
+    expect(find(next, 5).position).toBe(1);
+  });
+
+  it('moves a card back out of done', () => {
+    const projects = [
+      card({ id: 1, column: 'finish', position: 0 }),
+      card({ id: 7, column: 'done', position: 0, move_lock: null }),
+    ];
+    const next = applyColumnMove(projects, 7, 'finish');
+    expect(find(next, 7)).toMatchObject({ column: 'finish', position: 0 });
+    expect(find(next, 1).position).toBe(1);
+  });
+
+  it('leaves projects in unrelated columns untouched', () => {
+    const projects = [
+      card({ id: 1, column: 'devis', position: 0 }),
+      card({ id: 2, column: 'scan', position: 0 }),
+      card({ id: 9, column: 'finish', position: 0 }),
+    ];
+    const next = applyColumnMove(projects, 9, 'done');
+    expect(find(next, 1)).toBe(projects[0]);
+    expect(find(next, 2)).toBe(projects[1]);
+  });
+
+  it('is a no-op when the card is already in the target column', () => {
+    const projects = [card({ id: 9, column: 'done', position: 3 })];
+    expect(applyColumnMove(projects, 9, 'done')).toBe(projects);
+  });
+
+  it('is a no-op for an unknown id', () => {
+    const projects = [card({ id: 9, column: 'finish' })];
+    expect(applyColumnMove(projects, 404, 'done')).toBe(projects);
+  });
+
+  it('returns an empty array for undefined input', () => {
+    expect(applyColumnMove(undefined, 9, 'done')).toEqual([]);
+  });
+
+  it('lands the card at the top of its destination column on the board', () => {
+    const projects = [
+      card({ id: 1, column: 'done', position: 0 }),
+      card({ id: 9, column: 'finish', position: 0 }),
+    ];
+    const board = buildBoard(applyColumnMove(projects, 9, 'done'));
+    expect(board.done.map((p) => p.id)).toEqual([9, 1]);
+    expect(board.finish).toEqual([]);
   });
 });
 
