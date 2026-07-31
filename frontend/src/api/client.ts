@@ -3512,10 +3512,8 @@ export interface AitoProject {
   created_by: string | null;
   /** Aggregates over the project's tasks — see the Aito board response.
    *  `task_steps` below is the one per-task exception; these three are not.
-   *  `task_count` and `task_services` have no UI consumer as of the card
-   *  redesign (the card draws its pill grid from `task_steps` via
-   *  `StepGrid`) — kept because they are part of the API contract, written
-   *  into the optimistic cache, and read by nothing. */
+   *  `task_count` and `task_services` are part of the API contract and are
+   *  written into the optimistic cache, though nothing currently reads them. */
   task_count: number;
   tasks_total: number;
   task_services: string[];

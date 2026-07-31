@@ -111,6 +111,8 @@ Pill states:
 | pending           | `bg-bambu-dark-tertiary text-bambu-gray-light`                          |
 | absent            | nothing rendered                                                        |
 
+Each pill exposes `role="img"` with an accessible name of `<label> — <Done|Pending>` (e.g. `"Scan — Done"`), guaranteeing that the per-pill state reaches screen-reader users. This is necessary because the visual state (green vs grey) is the only other channel; colour alone fails both screen-reader users and colour-vision-deficient sighted users. Without the explicit name, browsers drop the `aria-label` on a role-generic element, and nothing reaches assistive tech.
+
 Labels reuse `AITO_SERVICE_LABEL_KEYS` — no new translation keys. Each pill is
 `truncate` with the full label in `title`, since `Modélisation` does not fit a
 quarter of a 300px column at every locale.

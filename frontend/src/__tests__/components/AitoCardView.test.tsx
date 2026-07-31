@@ -476,8 +476,9 @@ describe('CardView — hover to read a clamped description', () => {
 
   it('never expands a placeholder card', () => {
     // `startHoverIntent` returns early for `overlay || placeholder`; only the
-    // `overlay` half had a test until now.
-    render(<CardView project={project} placeholder />);
+    // `overlay` half had a test until now. Placeholder is typically paired with
+    // `onExpand` by its parent (BoardColumn), so render that shape too.
+    render(<CardView project={project} placeholder onExpand={vi.fn()} />);
     const description = screen.getByTestId('aito-card-description');
     setClamped(description, true);
 
