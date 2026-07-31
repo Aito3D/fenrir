@@ -10,6 +10,7 @@ import {
   isPlaceholder,
   nextPlaceholderId,
 } from '../../utils/aitoOptimistic';
+import { buildBoard } from '../../utils/aitoBoard';
 import type { TaskSummary } from '../../utils/aitoBoardRules';
 import type { AitoProject } from '../../api/client';
 
@@ -268,7 +269,7 @@ describe('applySyncState', () => {
 });
 
 describe('applyDelete', () => {
-  it('removes the card and renumbers its column', () => {
+  it('removes the card and leaves survivors with their original positions (gap is expected)', () => {
     const projects = [
       card({ id: 1, column: 'devis', position: 0 }),
       card({ id: 2, column: 'devis', position: 1 }),
@@ -276,7 +277,10 @@ describe('applyDelete', () => {
     ];
     const after = applyDelete(projects, 2);
     expect(after.map((p) => p.id)).toEqual([1, 3]);
-    expect(find(after, 3).position).toBe(1);
+    // Survivors keep their original positions; the gap (position 1) is left behind
+    // and invisible to the UI since buildBoard sorts by position.
+    expect(find(after, 1).position).toBe(0);
+    expect(find(after, 3).position).toBe(2);
   });
 
   it('leaves other columns alone', () => {
@@ -294,6 +298,19 @@ describe('applyDelete', () => {
 
   it('returns an empty array for undefined input', () => {
     expect(applyDelete(undefined, 1)).toEqual([]);
+  });
+
+  it('preserves relative order through buildBoard despite the position gap', () => {
+    const projects = [
+      card({ id: 1, column: 'devis', position: 0 }),
+      card({ id: 2, column: 'devis', position: 1 }),
+      card({ id: 3, column: 'devis', position: 2 }),
+    ];
+    const after = applyDelete(projects, 2);
+    // Gap: positions are now 0, 2. buildBoard sorts by position, so the rendered
+    // order should still be [1, 3] even though there's a gap.
+    const board = buildBoard(after);
+    expect(board.devis.map((p) => p.id)).toEqual([1, 3]);
   });
 });
 

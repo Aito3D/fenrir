@@ -132,19 +132,16 @@ export function applySyncState(
   return projects.map((p) => (p.id === id ? { ...p, quote_sync_state: state } : p));
 }
 
+/** Remove the project without renumbering survivors in its column. Mirrors the
+ *  server's soft delete (backend/app/api/routes/aito.py:delete_project), which
+ *  only sets `status = "deleted"` and never touches other rows' positions. The
+ *  gap left behind (e.g., positions 0, 2, 3 after deleting position 1) is
+ *  invisible to the UI — `buildBoard` sorts each column by position, so relative
+ *  order is preserved and the gap does not render. Predicting a renumber the
+ *  server never performs would put the cache out of step with the next fetch. */
 export function applyDelete(projects: AitoProject[] | undefined, id: number): AitoProject[] {
   if (!projects) return [];
-  const target = projects.find((p) => p.id === id);
-  if (!target) return projects;
-  let position = 0;
-  return projects
-    .filter((p) => p.id !== id)
-    .map((project) => {
-      if (project.column !== target.column) return project;
-      const next = position;
-      position += 1;
-      return project.position === next ? project : { ...project, position: next };
-    });
+  return projects.filter((p) => p.id !== id);
 }
 
 /** Mirrors `create_project` (`POST /api/v1/aito/`, backend/app/api/routes/aito.py
