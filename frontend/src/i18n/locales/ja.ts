@@ -667,6 +667,8 @@ export default {
     fans: {
       partCooling: 'パーツ冷却ファン',
       auxiliary: '補助ファン',
+      leftAuxiliary: '左補助ファン',
+      exhaust: '排気',
       chamber: 'チャンバーファン',
     },
     // HMS errors
@@ -2299,6 +2301,7 @@ export default {
       connectionFailed: '接続失敗',
       testFailed: 'テスト通知の送信に失敗しました',
       cameraConnected: 'カメラ接続{{resolution}}',
+      cameraConnectedCoalesced: 'カメラ接続{{resolution}}（実行中のキャプチャと共有）',
     },
     testConnection: '接続テスト',
     catalog: {

@@ -668,6 +668,8 @@ export default {
     fans: {
       partCooling: 'Bauteilkühlung',
       auxiliary: 'Hilfsventilator',
+      leftAuxiliary: 'Linker Hilfsventilator',
+      exhaust: 'Abluft',
       chamber: 'Kammerventilator',
     },
     // HMS errors
@@ -2300,6 +2302,7 @@ export default {
       connectionFailed: 'Verbindung fehlgeschlagen',
       testFailed: 'Test fehlgeschlagen',
       cameraConnected: 'Kamera verbunden{{resolution}}',
+      cameraConnectedCoalesced: 'Kamera verbunden{{resolution}} (geteilt mit einer bereits laufenden Aufnahme)',
     },
     testConnection: 'Verbindung testen',
     catalog: {
