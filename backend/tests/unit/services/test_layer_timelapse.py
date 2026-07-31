@@ -254,11 +254,11 @@ class TestCaptureLayerAppliesRotation:
     buffer, before writing to disk."""
 
     @pytest.mark.asyncio
-    async def test_rotates_fresh_capture_when_configured(self):
+    async def test_rotates_fresh_capture_when_configured(self, tmp_path):
         from backend.app.services.layer_timelapse import TimelapseSession
 
         with patch("backend.app.services.layer_timelapse.settings") as mock_settings:
-            mock_settings.base_dir = Path("/tmp/test")
+            mock_settings.base_dir = tmp_path
 
             with patch.object(Path, "mkdir"):
                 session = TimelapseSession(1, 100, "/dev/video1", "usb", rotation=180)
@@ -283,11 +283,11 @@ class TestCaptureLayerAppliesRotation:
         mock_write.assert_called_once_with(b"\xff\xd8rotated\xff\xd9")
 
     @pytest.mark.asyncio
-    async def test_rotates_buffered_frame_when_configured(self):
+    async def test_rotates_buffered_frame_when_configured(self, tmp_path):
         from backend.app.services.layer_timelapse import TimelapseSession
 
         with patch("backend.app.services.layer_timelapse.settings") as mock_settings:
-            mock_settings.base_dir = Path("/tmp/test")
+            mock_settings.base_dir = tmp_path
 
             with patch.object(Path, "mkdir"):
                 session = TimelapseSession(1, 100, "/dev/video1", "usb", rotation=90)
@@ -310,13 +310,13 @@ class TestCaptureLayerAppliesRotation:
         mock_write.assert_called_once_with(b"\xff\xd8rotated\xff\xd9")
 
     @pytest.mark.asyncio
-    async def test_skips_rotation_when_not_configured(self):
+    async def test_skips_rotation_when_not_configured(self, tmp_path):
         """Default rotation=0 - no-op, and must not even call apply_camera_rotation
         (avoids the PIL decode/re-encode round trip for the common case)."""
         from backend.app.services.layer_timelapse import TimelapseSession
 
         with patch("backend.app.services.layer_timelapse.settings") as mock_settings:
-            mock_settings.base_dir = Path("/tmp/test")
+            mock_settings.base_dir = tmp_path
 
             with patch.object(Path, "mkdir"):
                 session = TimelapseSession(1, 100, "/dev/video1", "usb")
