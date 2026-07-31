@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { Check, ExternalLink, Loader2, X } from 'lucide-react';
-import { COLUMNS } from './columns';
+import { ALL_COLUMNS } from './columns';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ActivityRail } from './history/ActivityRail';
 import { QuotePrintButton } from './QuotePrintButton';
@@ -67,7 +67,7 @@ function SaveIndicator({ state }: { state: SaveState }) {
 export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetailPanelProps) {
   const { t, i18n } = useTranslation();
   const closeRef = useRef<HTMLButtonElement>(null);
-  const column = COLUMNS.find((c) => c.id === project.column);
+  const column = ALL_COLUMNS.find((c) => c.id === project.column);
   const created = parseUTCDate(project.created_at);
   const updated = parseUTCDate(project.updated_at);
 

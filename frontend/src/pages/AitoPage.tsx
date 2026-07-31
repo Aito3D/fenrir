@@ -24,7 +24,6 @@ import { useBoardDrag } from '../hooks/useBoardDrag';
 import { useBoardSync } from '../hooks/useBoardSync';
 import { useOptimisticBoardMutation } from '../hooks/useOptimisticBoardMutation';
 import { applyCreate, applyDelete, placeholderProject } from '../utils/aitoOptimistic';
-import { COLUMN_IDS } from '../utils/aitoBoard';
 
 // Shared with SortableCard so the dropped card and the neighbours closing
 // the gap around it settle on the same curve.
@@ -250,7 +249,11 @@ export function AitoPage() {
     onError: () => showToast(t('aito.deleteFailed'), 'error'),
   });
 
-  const totalCount = COLUMN_IDS.reduce((sum, col) => sum + board[col].length, 0);
+  // The six columns the board RENDERS, not COLUMN_IDS — which still carries
+  // `done`. A board whose only projects are finished is an empty board, and
+  // counting the archive here would claim otherwise while showing six empty
+  // columns. The Show Done button above carries the done count.
+  const totalCount = COLUMNS.reduce((sum, column) => sum + board[column.id].length, 0);
 
   const reducedMotion = useMemo(() => prefersReducedMotion(), []);
 

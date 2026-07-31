@@ -1215,4 +1215,29 @@ describe('AitoPage (backend board)', () => {
     await user.click(screen.getByRole('button', { name: /back to board/i }));
     expect(await screen.findByText('On the board')).toBeInTheDocument();
   });
+
+  it('does not render a Done column on the board', async () => {
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([makeProject({ id: 1, description: 'Archived work', column: 'done' })]),
+      ),
+    );
+    render(<AitoPage />);
+
+    await screen.findByRole('button', { name: /show done/i });
+    expect(screen.queryByRole('heading', { name: /^(Done|Terminé)$/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Archived work')).not.toBeInTheDocument();
+  });
+
+  it('reads as empty when every project is done', async () => {
+    // The board really is empty. Counting the done column here would claim it
+    // is populated while showing six empty columns.
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([makeProject({ id: 1, column: 'done' })]),
+      ),
+    );
+    render(<AitoPage />);
+    expect(await screen.findByText(/no projects yet|aucun projet/i)).toBeInTheDocument();
+  });
 });

@@ -1356,3 +1356,19 @@ describe('ProjectDetailPanel delete', () => {
     expect(container.querySelectorAll('.lg\\:border-l')).toHaveLength(2);
   });
 });
+
+describe('ProjectDetailPanel column badge', () => {
+  it('still labels the column of a done project', () => {
+    // COLUMNS lost its `done` entry when Done came off the board. The panel
+    // must read ALL_COLUMNS, or every finished card loses its badge.
+    show({ column: 'done', move_lock: null });
+    // A bare `COLUMNS.find` miss falls back to rendering the raw
+    // `project.column` string ("done"), which coincidentally still matches
+    // this regex on its own — so the text assertion alone would not catch a
+    // regression back to `COLUMNS`. The dot indicator only renders when a
+    // column was actually found, which is what distinguishes a real
+    // `ALL_COLUMNS` hit from that fallback.
+    const stageValue = screen.getByText(/^(Done|Terminé)$/i);
+    expect(stageValue.querySelector('.bg-bambu-gray')).not.toBeNull();
+  });
+});
