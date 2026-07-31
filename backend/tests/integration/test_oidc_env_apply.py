@@ -262,6 +262,38 @@ async def test_a_name_collision_adopts_the_existing_provider(db_session, monkeyp
 
 
 @pytest.mark.asyncio
+async def test_adopting_a_ui_provider_logs_a_distinct_warning(db_session, monkeypatch, caplog):
+    """Overwriting a UI-created provider in place is a bigger deal than a
+    routine re-apply -- it must not be silent at the same INFO level."""
+    ui_provider = OIDCProvider(name="Keycloak", issuer_url="https://old.example.com", client_id="ui-client")
+    ui_provider.client_secret = "ui-secret"
+    db_session.add(ui_provider)
+    await db_session.commit()
+
+    _configure(monkeypatch)
+    with caplog.at_level(logging.INFO):
+        await apply_env_oidc_provider(db_session)
+
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert any("adopted" in r.message for r in warnings)
+
+
+@pytest.mark.asyncio
+async def test_a_routine_reapply_does_not_log_an_adoption_warning(db_session, monkeypatch, caplog):
+    """The same provider re-applying on the next boot is not an adoption --
+    it was already env-managed."""
+    _configure(monkeypatch)
+    await apply_env_oidc_provider(db_session)
+    caplog.clear()
+
+    with caplog.at_level(logging.INFO):
+        await apply_env_oidc_provider(db_session)
+
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert not any("adopted" in r.message for r in warnings)
+
+
+@pytest.mark.asyncio
 async def test_removing_the_config_releases_the_provider_to_the_ui(db_session, monkeypatch):
     """Nothing manages it any more, so the API must stop refusing edits and
     deletes -- otherwise the row is a dead end only reachable via the database."""

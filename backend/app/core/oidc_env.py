@@ -190,6 +190,11 @@ async def _apply_env_oidc_provider(db: AsyncSession) -> None:
         logger.error("BAMBUDDY_OIDC_* config could not be applied: %s", type(exc).__name__)
         return
 
+    # Computed before `existing` is reassigned below: a freshly-created row is
+    # not an adoption, and a found row that was already env-managed is a
+    # routine re-apply -- only a found row that the UI created is an adoption.
+    adopted_ui_provider = existing is not None and not existing.is_env_managed
+
     if existing is None:
         existing = OIDCProvider(is_env_managed=True)
         db.add(existing)
@@ -219,4 +224,11 @@ async def _apply_env_oidc_provider(db: AsyncSession) -> None:
             .values(is_autologin=False)
         )
     await db.commit()
-    logger.info("Env-managed OIDC provider %r applied.", existing.name)
+    if adopted_ui_provider:
+        logger.warning(
+            "Env-managed OIDC provider %r adopted an existing UI-created provider of the "
+            "same name; its issuer, client and secret are now managed by BAMBUDDY_OIDC_*.",
+            existing.name,
+        )
+    else:
+        logger.info("Env-managed OIDC provider %r applied.", existing.name)
