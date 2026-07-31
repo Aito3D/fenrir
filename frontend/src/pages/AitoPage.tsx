@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DndContext, DragOverlay, MeasuringStrategy, closestCorners, type DropAnimation } from '@dnd-kit/core';
 import { AlertTriangle, FileInput, Kanban, Plus, Trash2 } from 'lucide-react';
 import { Button } from '../components/Button';
@@ -11,7 +11,7 @@ import { ImportQuoteModal } from '../components/aito/ImportQuoteModal';
 import { NewProjectModal } from '../components/aito/NewProjectModal';
 import { ProjectDetailPanel } from '../components/aito/ProjectDetailPanel';
 import { TrashModal } from '../components/aito/TrashModal';
-import { api, ApiError, type ZohoQuotePreview } from '../api/client';
+import { api, ApiError, type AitoProject, type ZohoQuotePreview } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { formatPhone } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
@@ -21,7 +21,7 @@ import { prefersReducedMotion } from '../utils/motion';
 import { useCardMorph } from '../hooks/useCardMorph';
 import { useBoardDrag } from '../hooks/useBoardDrag';
 import { useOptimisticBoardMutation } from '../hooks/useOptimisticBoardMutation';
-import { applyDelete } from '../utils/aitoOptimistic';
+import { applyCreate, applyDelete, placeholderProject } from '../utils/aitoOptimistic';
 import { COLUMN_IDS } from '../utils/aitoBoard';
 
 // Shared with SortableCard so the dropped card and the neighbours closing
@@ -142,8 +142,11 @@ export function AitoPage() {
     }
   };
 
-  const createMutation = useMutation({
-    mutationFn: ({ description, draft, tasks }: { description: string; draft: ClientDraft; tasks: TaskDraft[] }) =>
+  const createMutation = useOptimisticBoardMutation<
+    AitoProject,
+    { description: string; draft: ClientDraft; tasks: TaskDraft[]; placeholder: AitoProject }
+  >({
+    mutationFn: ({ description, draft, tasks }) =>
       api.createAitoProject({
         description,
         client_id: draft.id,
@@ -153,12 +156,19 @@ export function AitoPage() {
         client_is_company: draft.isCompany,
         tasks: tasks.map(taskDraftToTaskCreate),
       }),
-    onSuccess: (_data, { draft }) => {
-      queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
-      setShowModal(false);
+    transform: (previous, { placeholder }) => applyCreate(previous, placeholder),
+    // No flash: the placeholder is REMOVED on failure rather than reverted in
+    // place, so there is no card left to ring.
+    onSuccess: (created, { placeholder, draft }) => {
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
+        prev?.map((p) => (p.id === placeholder.id ? created : p)) ?? prev,
+      );
       void syncClientToZoho(draft);
     },
-    onError: () => {
+    onError: (_error, { placeholder }) => {
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
+        prev?.filter((p) => p.id !== placeholder.id) ?? prev,
+      );
       showToast(t('aito.createFailed'), 'error');
     },
   });
@@ -167,8 +177,11 @@ export function AitoPage() {
    *  board's ordering, defaults and landing column all behave identically —
    *  the only difference is the quote snapshot riding along. Nothing is
    *  written back to Zoho. */
-  const importMutation = useMutation({
-    mutationFn: ({ description, preview }: { description: string; preview: ZohoQuotePreview }) =>
+  const importMutation = useOptimisticBoardMutation<
+    AitoProject,
+    { description: string; preview: ZohoQuotePreview; placeholder: AitoProject }
+  >({
+    mutationFn: ({ description, preview }) =>
       api.createAitoProject({
         description,
         client_id: preview.client.id,
@@ -185,11 +198,16 @@ export function AitoPage() {
         quote_salesperson: preview.quote.salesperson,
         quote_status: preview.quote.status,
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
-      setShowImport(false);
+    transform: (previous, { placeholder }) => applyCreate(previous, placeholder),
+    onSuccess: (created, { placeholder }) => {
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
+        prev?.map((p) => (p.id === placeholder.id ? created : p)) ?? prev,
+      );
     },
-    onError: (error) => {
+    onError: (error, { placeholder }) => {
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
+        prev?.filter((p) => p.id !== placeholder.id) ?? prev,
+      );
       const conflict = error instanceof ApiError && error.status === 409;
       showToast(t(conflict ? 'aito.quoteAlreadyHasProject' : 'aito.createFailed'), 'error');
     },
@@ -212,7 +230,23 @@ export function AitoPage() {
   const reducedMotion = useMemo(() => prefersReducedMotion(), []);
 
   const createProject = (description: string, draft: ClientDraft, tasks: TaskDraft[]) => {
-    createMutation.mutate({ description, draft, tasks });
+    // Closed here, not in onSuccess: the whole point is that the modal does
+    // not sit open through a round trip. The placeholder is what tells the
+    // user their card exists.
+    setShowModal(false);
+    createMutation.mutate({
+      description,
+      draft,
+      tasks,
+      placeholder: placeholderProject({
+        description,
+        client_id: draft.id,
+        client_name: draft.name,
+        client_phone: formatPhone(draft) || null,
+        client_email: draft.email.trim() || null,
+        client_is_company: draft.isCompany,
+      }),
+    });
   };
 
   return (
@@ -303,7 +337,24 @@ export function AitoPage() {
       {showImport && (
         <ImportQuoteModal
           onClose={() => setShowImport(false)}
-          onImport={(payload) => importMutation.mutate(payload)}
+          onImport={({ description, preview }) => {
+            // Closed here, not in onSuccess — same reasoning as createProject.
+            setShowImport(false);
+            importMutation.mutate({
+              description,
+              preview,
+              placeholder: placeholderProject({
+                description,
+                client_id: preview.client.id,
+                client_name: preview.client.name,
+                client_phone: preview.client.phone,
+                client_email: preview.client.email,
+                client_is_company: preview.client.is_company,
+                quote_number: preview.quote.number,
+                quote_total: preview.quote.total,
+              }),
+            });
+          }}
           submitting={importMutation.isPending}
         />
       )}

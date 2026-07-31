@@ -9,7 +9,7 @@ import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { render } from '../utils';
 import { AitoPage } from '../../pages/AitoPage';
-import { api, type AitoProject, type ZohoQuotePreview } from '../../api/client';
+import { api, ApiError, type AitoProject, type ZohoQuotePreview } from '../../api/client';
 import { __resetBoardSync } from '../../hooks/useBoardSync';
 import { flashRevert } from '../../hooks/useRevertFlash';
 
@@ -109,9 +109,44 @@ beforeEach(() => {
 
   server.use(
     http.get('/api/v1/aito/', () => HttpResponse.json([project])),
-    http.get('/api/v1/zoho/status', () => HttpResponse.json({ configured: true, reachable: true })),
+    http.get('/api/v1/zoho/status', () =>
+      HttpResponse.json({
+        configured: true,
+        reachable: true,
+        // The status endpoint always returns a default (walk-in) contact —
+        // needed so the create-project tests below can submit the form
+        // without picking a client of their own.
+        default_contact_id: 'walk-in',
+        default_contact_name: 'Client de passage',
+      }),
+    ),
   );
 });
+
+/** Overrides the board fixture and renders, for a test that needs specific
+ *  initial data rather than the shared single-project fixture above. */
+function renderPage(initialProjects: AitoProject[]) {
+  server.use(http.get('/api/v1/aito/', () => HttpResponse.json(initialProjects)));
+  render(<AitoPage />);
+}
+
+/** Opens the new-project modal, prices the seeded task (a project needs at
+ *  least one priced service to submit — see taskDraft.ts), fills the
+ *  description and submits. Mirrors AitoPageClientSync.test.tsx's own
+ *  `openModal` helper, collapsed into one call for tests that don't care
+ *  about the client fields. */
+async function createProject(description: string) {
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole('button', { name: 'Project' }));
+  await waitFor(() =>
+    expect(screen.getByRole('combobox', { name: /client/i })).toHaveValue('Client de passage'),
+  );
+  await user.click(screen.getByText('Task 1'));
+  await user.click(screen.getByRole('button', { name: /edit task/i }));
+  fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
+  await user.type(screen.getByLabelText(/product description/i), description);
+  await user.click(screen.getByRole('button', { name: /create project/i }));
+}
 
 describe('AitoPage (backend board)', () => {
   it('leads with the client name in the header, without the row id or a phone link', async () => {
@@ -801,6 +836,180 @@ describe('AitoPage (backend board)', () => {
       // Settles cleanly: the card stays put once the server confirms it.
       await waitFor(() => expect(within(printColumn).getByRole('button', { name: /Ready to ship/ })).toBeInTheDocument());
       expect(within(quoteColumn).queryByRole('button', { name: /Ready to ship/ })).not.toBeInTheDocument();
+    });
+  });
+
+  // Task 13: the only two writes left that used to hold a modal open through
+  // a round trip. Both now close their modal in the click handler and hand
+  // the user a placeholder card instead — inert (no grip, no expand, no
+  // mark-sent) until the server's real row replaces it.
+  describe('optimistic create and import', () => {
+    afterEach(() => {
+      vi.mocked(api.createAitoProject).mockRestore();
+    });
+
+    it('closes the modal and shows an inert placeholder card at once', async () => {
+      // Controlled by hand, not answered until after the pending assertions
+      // below — a create mocked to resolve immediately would make "still
+      // pending" indistinguishable from "already settled".
+      let release: (v: AitoProject) => void = () => {};
+      vi.spyOn(api, 'createAitoProject').mockImplementation(
+        () => new Promise((resolve) => { release = resolve; }),
+      );
+      renderPage([]);
+
+      await createProject('a new job');
+
+      // The modal is really gone, not just covered — its title text is the
+      // one thing on screen that only exists while it is mounted.
+      expect(screen.queryByText('New Project')).not.toBeInTheDocument();
+      expect(screen.getByText('a new job')).toBeInTheDocument();
+      // Inert: no grip, so it cannot be dragged before it exists server-side.
+      expect(screen.queryByRole('button', { name: /drag/i })).not.toBeInTheDocument();
+
+      const created = makeProject({ id: 42, description: 'a new job' });
+      // The settle-invalidate refetches ['aito-projects'] once this is the
+      // last write pending — the GET handler must already agree with the
+      // server's answer, or that refetch would overwrite the just-landed
+      // real row with the stale (empty) fixture.
+      server.use(http.get('/api/v1/aito/', () => HttpResponse.json([created])));
+      release(created);
+
+      // Real once the server answers: the grip is back.
+      await waitFor(() => expect(screen.getByRole('button', { name: /drag/i })).toBeInTheDocument());
+    });
+
+    it('removes the placeholder when the create fails', async () => {
+      vi.spyOn(api, 'createAitoProject').mockRejectedValue(new Error('nope'));
+      renderPage([]);
+
+      await createProject('doomed job');
+
+      await waitFor(() => expect(screen.queryByText('doomed job')).not.toBeInTheDocument());
+    });
+
+    describe('quote import', () => {
+      // Minimal preview with one priced line — enough to satisfy
+      // ImportQuoteModal's canImport gate (a task with a priced service) and
+      // to render the "Printing" badge this suite waits on as its signal that
+      // the preview actually loaded before submitting.
+      const preview: ZohoQuotePreview = {
+        quote: {
+          id: 'e9',
+          number: 'DEV26-9001',
+          date: '2026-07-29',
+          status: 'draft',
+          total: 1200,
+          currency_code: 'XPF',
+          url: 'https://books.zoho.eu/app/999#/estimates/e9',
+          salesperson: null,
+        },
+        client: { id: 'c9', name: 'Import Client', phone: '87000000', email: null, is_company: false },
+        suggested_description: 'Imported job',
+        tasks: [
+          {
+            title: '',
+            description: '',
+            scan_cost: null,
+            modelisation_cost: null,
+            usinage_cost: null,
+            impression_printer_id: null,
+            impression_filament_id: null,
+            impression_weight_g: null,
+            impression_time_min: null,
+            impression_quantity: null,
+            impression_color: null,
+            impression_cost: 800,
+          },
+        ],
+        skipped_lines: [],
+        existing_project_id: null,
+      };
+
+      async function startImport(user: ReturnType<typeof userEvent.setup>) {
+        server.use(
+          http.get('/api/v1/zoho/estimates', () =>
+            HttpResponse.json([
+              {
+                id: 'e9',
+                number: 'DEV26-9001',
+                customer_name: 'Import Client',
+                date: '2026-07-29',
+                total: 1200,
+                currency_code: 'XPF',
+                status: 'draft',
+              },
+            ]),
+          ),
+          http.get('/api/v1/zoho/estimates/:id/preview', () => HttpResponse.json(preview)),
+        );
+        await user.click(await screen.findByRole('button', { name: /^import$/i }));
+        const modal = (await screen.findByText('Import a quote')).closest('div.animate-modal-in') as HTMLElement;
+        await user.click(within(modal).getByRole('combobox'));
+        await user.click(await screen.findByText('DEV26-9001'));
+        // Waits for the preview to render before submitting — same signal the
+        // pre-existing "POSTs the full quote snapshot" test above uses.
+        await within(modal).findByText('Printing');
+        await user.click(within(modal).getByRole('button', { name: /^import$/i }));
+      }
+
+      it('closes the modal and shows an inert placeholder card at once', async () => {
+        let release: (v: AitoProject) => void = () => {};
+        vi.spyOn(api, 'createAitoProject').mockImplementation(
+          () => new Promise((resolve) => { release = resolve; }),
+        );
+        renderPage([]);
+        const user = userEvent.setup();
+        await startImport(user);
+
+        expect(screen.queryByText('Import a quote')).not.toBeInTheDocument();
+        expect(screen.getByText('Imported job')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /drag/i })).not.toBeInTheDocument();
+
+        const created = makeProject({ id: 43, description: 'Imported job', quote_number: 'DEV26-9001' });
+        server.use(http.get('/api/v1/aito/', () => HttpResponse.json([created])));
+        release(created);
+
+        await waitFor(() => expect(screen.getByRole('button', { name: /drag/i })).toBeInTheDocument());
+      });
+
+      it('removes the placeholder and toasts that the quote already has a project on a 409', async () => {
+        vi.spyOn(api, 'createAitoProject').mockRejectedValue(new ApiError('conflict', 409));
+        renderPage([]);
+        const user = userEvent.setup();
+        await startImport(user);
+
+        await waitFor(() => expect(screen.queryByText('Imported job')).not.toBeInTheDocument());
+        expect(await screen.findByText('This quote already has a project')).toBeInTheDocument();
+        // Not the generic failure message — the 409 branch, specifically.
+        expect(screen.queryByText('Could not create the project. Please try again.')).not.toBeInTheDocument();
+      });
+    });
+
+    // The direct proof that this uses `applyCreate`, not `applyRestore`: the
+    // server's own `create_project` shifts every existing Devis card down and
+    // inserts the new one at position 0, so a placeholder that merely
+    // appended (as a restore does) would render at the bottom and then jump
+    // to the top once the server answered — the exact double-jump this
+    // feature exists to avoid.
+    it('lands the new placeholder at the top of the Quote column, above an existing card', async () => {
+      let release: (v: AitoProject) => void = () => {};
+      vi.spyOn(api, 'createAitoProject').mockImplementation(
+        () => new Promise((resolve) => { release = resolve; }),
+      );
+      renderPage([makeProject({ id: 5, description: 'already there', column: 'devis', position: 0 })]);
+
+      await createProject('new on top');
+
+      const quoteColumn = screen.getByRole('heading', { name: 'Quote' }).closest('.rounded-xl') as HTMLElement;
+      const cards = within(quoteColumn).getAllByText(/^already there$|^new on top$/);
+      expect(cards.map((el) => el.textContent)).toEqual(['new on top', 'already there']);
+
+      const created = makeProject({ id: 44, description: 'new on top', column: 'devis', position: 0 });
+      const shifted = makeProject({ id: 5, description: 'already there', column: 'devis', position: 1 });
+      server.use(http.get('/api/v1/aito/', () => HttpResponse.json([shifted, created])));
+      release(created);
+      await waitFor(() => expect(screen.getByRole('button', { name: /new on top/ })).toBeInTheDocument());
     });
   });
 });

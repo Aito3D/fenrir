@@ -7,6 +7,7 @@ import type { ColumnMeta } from './columns';
 import type { AitoProject } from '../../api/client';
 import { useQuoteStatusMutation } from '../../hooks/useQuoteStatusMutation';
 import { useIsReverting } from '../../hooks/useRevertFlash';
+import { isPlaceholder } from '../../utils/aitoOptimistic';
 
 function SortableCard({
   project,
@@ -24,6 +25,8 @@ function SortableCard({
   // server's move endpoint permit it. What a locked card cannot do is LEAVE
   // its column — `useBoardDrag`'s `isDropAllowed` refuses that drop, and the
   // board dims the columns that will refuse it.
+  const placeholder = isPlaceholder(project);
+
   const {
     attributes,
     listeners,
@@ -35,6 +38,7 @@ function SortableCard({
   } = useSortable({
     id: project.id,
     transition: transitionConfig,
+    disabled: placeholder,
   });
 
   // Owned here rather than threaded down from AitoPage: the hook is
@@ -59,6 +63,7 @@ function SortableCard({
     >
       <CardView
         project={project}
+        placeholder={placeholder}
         onExpand={onExpand}
         onMarkSent={() => markSent.mutate('sent')}
         markSentPending={markSent.isPending}

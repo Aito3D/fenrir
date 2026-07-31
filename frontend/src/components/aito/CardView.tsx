@@ -34,6 +34,10 @@ export interface CardViewProps {
   dragHandleRef?: (element: HTMLElement | null) => void;
   /** dnd-kit's attributes + listeners, spread onto the grip. */
   dragHandleProps?: Record<string, unknown>;
+  /** A card the server has not acknowledged yet. Renders dimmed with no grip
+   *  and no actions: its id does not exist, so anything acting on it would act
+   *  on nothing. Cleared the instant the real row replaces it. */
+  placeholder?: boolean;
 }
 
 /** Presentational card, shared by the in-column sortable wrapper and the
@@ -54,6 +58,7 @@ export function CardView({
   markSentPending,
   dragHandleRef,
   dragHandleProps,
+  placeholder = false,
 }: CardViewProps) {
   const { t, i18n } = useTranslation();
   // Same query key the task editor and the calculator page use for the
@@ -105,7 +110,7 @@ export function CardView({
         overlay
           ? 'rotate-1 scale-[1.02] border-bambu-green/40 shadow-2xl cursor-grabbing'
           : 'border-bambu-dark-tertiary card-shadow transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-bambu-green/40 hover:shadow-lg motion-reduce:hover:translate-y-0'
-      }`}
+      } ${placeholder ? 'opacity-60' : ''}`}
     >
       <div className="flex items-center gap-2 px-3 py-2 bg-bambu-dark-tertiary rounded-t-xl border-b border-bambu-dark-secondary">
         <p
@@ -125,7 +130,7 @@ export function CardView({
             <Lock className="w-4 h-4" aria-hidden="true" />
           </span>
         )}
-        {dragHandleProps ? (
+        {dragHandleProps && !placeholder ? (
           <button
             type="button"
             ref={dragHandleRef}
@@ -142,7 +147,7 @@ export function CardView({
         )}
       </div>
 
-      {onExpand ? (
+      {onExpand && !placeholder ? (
         <button
           type="button"
           onClick={onExpand}
@@ -219,7 +224,7 @@ export function CardView({
               invisible button cannot be. `project.column` is the server's
               derived value (aito_board_rules.evaluate); the frontend derives
               nothing of its own here. */}
-          {onMarkSent && project.column === 'devis' && (
+          {onMarkSent && !placeholder && project.column === 'devis' && (
             <HoldButton
               onHold={onMarkSent}
               durationMs={500}

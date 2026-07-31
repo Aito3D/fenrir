@@ -157,6 +157,58 @@ export function applyCreate(projects: AitoProject[] | undefined, placeholder: Ai
   return [...shifted, { ...placeholder, column: 'devis', position: 0 }];
 }
 
+/** A card that exists on screen but not yet on the server.
+ *
+ *  Every field the board renders must be present and honest: `column: 'devis'`
+ *  and `move_lock: 'quote'` because a brand-new project has no accepted quote,
+ *  which is what `evaluate(null, 'devis', [])` returns. Nothing here guesses —
+ *  the server's own row replaces this wholesale on success. */
+export function placeholderProject(fields: {
+  description: string;
+  client_id: string | null;
+  client_name: string | null;
+  client_phone: string | null;
+  client_email: string | null;
+  client_is_company: boolean | null;
+  quote_number?: string | null;
+  quote_total?: number | null;
+}): AitoProject {
+  const now = new Date().toISOString();
+  return {
+    id: nextPlaceholderId(),
+    description: fields.description,
+    column: 'devis',
+    position: 0,
+    status: 'active',
+    client_id: fields.client_id,
+    client_name: fields.client_name,
+    client_phone: fields.client_phone,
+    client_email: fields.client_email,
+    client_is_company: fields.client_is_company,
+    quote_id: null,
+    quote_number: fields.quote_number ?? null,
+    quote_date: null,
+    quote_total: fields.quote_total ?? null,
+    quote_url: null,
+    quote_salesperson: null,
+    quote_status: null,
+    quote_sync_state: 'pending',
+    quote_sync_error: null,
+    quote_status_block: null,
+    quote_status_remote: null,
+    created_by: null,
+    task_count: 0,
+    tasks_total: 0,
+    task_services: [],
+    task_pending: [],
+    steps_total: 0,
+    steps_done: 0,
+    move_lock: 'quote',
+    created_at: now,
+    updated_at: now,
+  };
+}
+
 /** Mirrors `restore_project` (`POST /api/v1/aito/{id}/restore`,
  *  backend/app/api/routes/aito.py): un-deleting a card puts it back at the
  *  END of whatever column it last lived in — the trash restore path has no
