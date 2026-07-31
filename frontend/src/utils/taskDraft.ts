@@ -1,3 +1,4 @@
+import { summariseTasks } from './aitoBoardRules';
 import { computePricing } from './pricing';
 import type { PricingDefaults, PricingFilament, PricingPrinter, PricingResult } from './pricing';
 import type { AitoTask, AitoTaskCreate } from '../api/client';
@@ -186,21 +187,18 @@ export function taskDraftToTaskCreate(t: TaskDraft): AitoTaskCreate {
   };
 }
 
-const orZero = (n: number | null) => n ?? 0;
-
-/** Sums a task's four cost fields, treating a disabled service (`null`) as 0.
+/** Sums a task's four cost fields, treating a disabled service (null) as 0.
  *
- *  Mirrored by `TaskSummary.total` in
- *  backend/app/services/aito_board_rules.py, which computes the same figure
- *  for the board card. The two are in different languages and cannot share
- *  code — if this definition changes, change that one too. */
+ *  Delegates to the mirrored rule engine rather than re-adding the fields:
+ *  this figure has to agree with `TaskSummary.total` in
+ *  backend/app/services/aito_board_rules.py, and going through the mirror is
+ *  what puts it under the contract fixture instead of under a comment. */
 export function taskTotal(task: TaskDraft): number {
-  return orZero(task.scanCost) + orZero(task.modelisationCost) + orZero(task.usinageCost)
-    + orZero(task.impressionCost);
+  return summariseTasks([task]).total;
 }
 
 export function projectTotal(tasks: TaskDraft[]): number {
-  return tasks.reduce((sum, t) => sum + taskTotal(t), 0);
+  return summariseTasks(tasks).total;
 }
 
 /** True when at least one of the four services is priced on this task.
