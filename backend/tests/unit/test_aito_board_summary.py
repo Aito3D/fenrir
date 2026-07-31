@@ -6,6 +6,7 @@ iterable of anything.
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from backend.app.services.aito_board_rules import TaskSummary, summarise
 
@@ -99,3 +100,53 @@ def test_step_counters_sum_across_tasks():
 def test_empty_summary_has_zero_steps():
     assert summarise([]).steps_total == 0
     assert summarise([]).steps_done == 0
+
+
+def test_to_response_carries_the_step_counters():
+    """The card's progress bar reads these; a handler that dropped them would
+    render every bar at zero with nothing failing."""
+    from backend.app.api.routes.aito import _to_response
+    from backend.app.models.aito_project import AitoProject
+
+    project = AitoProject(
+        id=1,
+        description="x",
+        board_column="print",
+        position=0,
+        status="active",
+        quote_status="accepted",
+        # AitoProject.created_at/updated_at carry only a server_default, so an
+        # in-memory instance that never went through a DB flush leaves them
+        # None; AitoProjectResponse requires real datetimes.
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+    )
+    summary = summarise([_Task(scan_cost=1.0, scan_done=True, impression_cost=2.0)])
+    response = _to_response(project, summary)
+    assert response.steps_total == 2
+    assert response.steps_done == 1
+
+
+def test_to_response_carries_the_pending_services():
+    """evaluate() takes `pending`, so an optimistic client that only had
+    `task_services` would have to guess which of them are still unticked."""
+    from backend.app.api.routes.aito import _to_response
+    from backend.app.models.aito_project import AitoProject
+
+    project = AitoProject(
+        id=1,
+        description="x",
+        board_column="print",
+        position=0,
+        status="active",
+        quote_status="accepted",
+        # AitoProject.created_at/updated_at carry only a server_default, so an
+        # in-memory instance that never went through a DB flush leaves them
+        # None; AitoProjectResponse requires real datetimes.
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+    )
+    summary = summarise([_Task(scan_cost=1.0, scan_done=True, impression_cost=2.0)])
+    response = _to_response(project, summary)
+    assert response.task_services == ["scan", "impression"]
+    assert response.task_pending == ["impression"]
