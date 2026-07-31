@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { Check, ExternalLink, Loader2, X } from 'lucide-react';
 import { COLUMNS } from './columns';
 import { DeleteHoldButton } from './DeleteHoldButton';
@@ -10,9 +10,11 @@ import { QuoteStatusActions } from './QuoteStatusActions';
 import { quoteStatusLabelKey } from './quoteStatus';
 import { TaskEditor } from './TaskEditor';
 import { AITO_CARD_VT_NAME } from '../../hooks/useCardMorph';
+import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { useProjectTasks } from '../../hooks/useProjectTasks';
 import { api, type AitoProject, type AitoProjectUpdate } from '../../api/client';
 import { parseUTCDate } from '../../utils/date';
+import { applyDescription, applySyncState } from '../../utils/aitoOptimistic';
 import { inputCls, labelCls } from '../formStyles';
 import { useToast } from '../../contexts/ToastContext';
 
@@ -83,8 +85,19 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
-  const updateMutation = useMutation({
-    mutationFn: (patch: AitoProjectUpdate) => api.updateAitoProject(project.id, patch),
+  const updateMutation = useOptimisticBoardMutation<AitoProject, AitoProjectUpdate>({
+    mutationFn: (patch) => api.updateAitoProject(project.id, patch),
+    // A description edit shows immediately; the retry-sync button sends the
+    // description UNCHANGED (its only job is to re-mark the project pending
+    // for the worker), so it writes the sync state instead. One transform,
+    // branching on which of the two this is.
+    transform: (previous, patch) => {
+      if (patch.description !== undefined && patch.description !== project.description) {
+        return applyDescription(previous, project.id, patch.description);
+      }
+      return applySyncState(previous, project.id, 'pending');
+    },
+    flashId: () => project.id,
     onSuccess: (updatedProject) => {
       queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
         prev?.map((p) => (p.id === updatedProject.id ? updatedProject : p)) ?? prev,
