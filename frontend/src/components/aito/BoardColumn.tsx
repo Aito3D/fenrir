@@ -6,6 +6,7 @@ import { CardView } from './CardView';
 import type { ColumnMeta } from './columns';
 import type { AitoProject } from '../../api/client';
 import { useQuoteStatusMutation } from '../../hooks/useQuoteStatusMutation';
+import { useIsReverting } from '../../hooks/useRevertFlash';
 
 function SortableCard({
   project,
@@ -43,11 +44,18 @@ function SortableCard({
   // card is).
   const markSent = useQuoteStatusMutation(project);
 
+  // A card that just snapped back. The ring lives on this wrapper rather than
+  // on CardView so the DragOverlay clone — which renders CardView directly —
+  // never inherits it.
+  const reverting = useIsReverting(project.id);
+
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`${animateIn ? 'animate-rise' : ''} ${isDragging ? 'opacity-30' : ''}`}
+      className={`${animateIn ? 'animate-rise' : ''} ${isDragging ? 'opacity-30' : ''} ${
+        reverting ? 'animate-revert-flash' : ''
+      }`}
     >
       <CardView
         project={project}
