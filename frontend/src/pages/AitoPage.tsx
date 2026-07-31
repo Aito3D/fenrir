@@ -20,6 +20,7 @@ import type { TaskDraft } from '../utils/taskDraft';
 import { prefersReducedMotion } from '../utils/motion';
 import { useCardMorph } from '../hooks/useCardMorph';
 import { useBoardDrag } from '../hooks/useBoardDrag';
+import { useBoardSync } from '../hooks/useBoardSync';
 import { useOptimisticBoardMutation } from '../hooks/useOptimisticBoardMutation';
 import { applyCreate, applyDelete, placeholderProject } from '../utils/aitoOptimistic';
 import { COLUMN_IDS } from '../utils/aitoBoard';
@@ -81,10 +82,29 @@ export function AitoPage() {
   // boolean can only ever go true -> true across that transition and would
   // never notice the new arrival.
   const pollMatchingIdsRef = useRef<Set<number>>(new Set());
+  // Shares the module-level counters every optimistic board mutation feeds —
+  // see that hook's own doc for why there are two. Only `isIdle` (the
+  // `pendingWrites` one) is used here.
+  const boardSync = useBoardSync();
   const aitoQuery = useQuery({
     queryKey: ['aito-projects'],
     queryFn: api.getAitoProjects,
     refetchInterval: (query) => {
+      // A board write's `onMutate` writes its optimistic value into this
+      // same cache entry BEFORE this function is asked to run again (writing
+      // to the cache is itself what re-triggers this evaluation — see
+      // QueryObserver.onQueryUpdate). A poll tick landing inside that
+      // write's [onMutate, onSettled] window would issue a fresh GET that
+      // overwrites the optimistic entry with data that predates the write,
+      // with no ring and no toast — silent, not merely stale. Skipping here,
+      // rather than after computing `matchingIds`, is deliberate: it must
+      // leave `pollDeadlineRef`/`pollMatchingIdsRef` exactly as they were, so
+      // a skipped tick neither consumes the deadline's budget nor loses the
+      // "was this id already matching" state that `hasNewMatch` depends on.
+      // The write's own `settle()` invalidates once it finishes, which
+      // re-triggers this function and lets the poll resume exactly where it
+      // left off.
+      if (!boardSync.isIdle()) return false;
       const matchingIds = new Set(
         (query.state.data ?? [])
           .filter((p) => !p.quote_number && p.quote_sync_state === 'pending')

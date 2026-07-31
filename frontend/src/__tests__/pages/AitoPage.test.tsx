@@ -634,6 +634,11 @@ describe('AitoPage (backend board)', () => {
       // would keep intercepting `api.getAitoProjects` for every test that
       // runs after this describe, silently bypassing their own MSW handlers.
       vi.mocked(api.getAitoProjects).mockRestore();
+      // Only the in-flight-write poll test spies this one, but restore it
+      // unconditionally for the same reason as above — a held-open mock
+      // implementation left in place would swallow every later test's own
+      // DELETE, MSW handler or not.
+      if (vi.isMockFunction(api.deleteAitoProject)) vi.mocked(api.deleteAitoProject).mockRestore();
     });
 
     it('polls while a quote is still being created, and stops when none is pending', async () => {
@@ -748,6 +753,62 @@ describe('AitoPage (backend board)', () => {
       const callsAfterNewCard = getAitoProjects.mock.calls.length;
       await vi.advanceTimersByTimeAsync(10_000);
       expect(getAitoProjects.mock.calls.length).toBeGreaterThan(callsAfterNewCard);
+    });
+
+    it('skips a poll tick while a board write is in flight, and resumes once it settles', async () => {
+      // Regression for "the board poll bypasses the settle guard": a poll
+      // tick firing inside a write's [onMutate, onSettled] window used to
+      // issue a fresh GET that overwrote the optimistic cache entry with
+      // data that predates the write — silently, with no ring and no toast,
+      // so it read as flakiness rather than a deliberate revert.
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      // Two cards: #1 stays pending throughout (so the poll would keep
+      // matching it regardless of the write below) and #2 is the one that
+      // gets deleted. Deleting the ONLY pending card would stop the poll for
+      // an unrelated reason (nothing left to match) and prove nothing about
+      // the gate under test.
+      const stillPending = { ...baseProject, id: 1, quote_sync_state: 'pending' as const, quote_number: null };
+      const other = {
+        ...baseProject,
+        id: 2,
+        description: 'Delete me',
+        quote_sync_state: 'idle' as const,
+        quote_number: 'DEV26-2',
+      };
+      const getAitoProjects = vi.spyOn(api, 'getAitoProjects').mockResolvedValue([stillPending, other]);
+      getAitoProjects.mockClear();
+      let releaseDelete: () => void = () => {};
+      const heldDelete = new Promise<void>((resolve) => {
+        releaseDelete = resolve;
+      });
+      vi.spyOn(api, 'deleteAitoProject').mockImplementation(() => heldDelete);
+
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(<AitoPage />);
+      await waitFor(() => expect(getAitoProjects).toHaveBeenCalledTimes(1));
+
+      await user.click(await screen.findByRole('button', { name: /Delete me/ }));
+      const deleteButton = await screen.findByLabelText('Delete Project');
+      await act(async () => {
+        fireEvent.pointerDown(deleteButton);
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+
+      // Card #1 is still pending and still in the cache — only #2 was
+      // optimistically removed — so the poll would still match it were it
+      // not for the in-flight write. A whole poll interval elapses; the tick
+      // must be skipped entirely, not merely delayed.
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(getAitoProjects).toHaveBeenCalledTimes(1);
+
+      // Settling re-triggers the poll's own evaluation (settle()'s
+      // invalidate), and the skip must not have cost the poll its budget or
+      // deadline — it keeps polling normally afterward.
+      releaseDelete();
+      await waitFor(() => expect(getAitoProjects.mock.calls.length).toBeGreaterThan(1));
+      const callsAfterSettle = getAitoProjects.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(getAitoProjects.mock.calls.length).toBeGreaterThan(callsAfterSettle);
     });
   });
 
