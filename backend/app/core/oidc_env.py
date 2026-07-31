@@ -90,9 +90,21 @@ _APPLIED_FIELDS = (
 async def apply_env_oidc_provider(db: AsyncSession) -> None:
     """Upsert the env-managed provider, or release it when the config is gone.
 
-    Never raises: this runs during startup, and a typo in one variable must not
-    stop the app from booting. A rejected config is logged and skipped.
+    Never raises: this runs during startup, and a typo in one variable -- or a
+    DB error on commit -- must not stop the app from booting. A rejected
+    config is logged and skipped.
     """
+    try:
+        await _apply_env_oidc_provider(db)
+    except Exception as exc:  # noqa: BLE001 -- startup must survive any failure here
+        # Never str(exc): a DB error message can echo a configured value. Class only.
+        logger.error("BAMBUDDY_OIDC_* could not be applied: %s", type(exc).__name__)
+        # A commit may have half-applied; roll back so the shared session is
+        # left clean for the rest of startup.
+        await db.rollback()
+
+
+async def _apply_env_oidc_provider(db: AsyncSession) -> None:
     # Imported here rather than at module scope: app.core is imported by the
     # models themselves, so a top-level import would be a cycle.
     from backend.app.models.group import Group

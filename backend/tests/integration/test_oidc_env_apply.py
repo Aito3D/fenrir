@@ -199,6 +199,28 @@ async def test_a_non_validation_error_is_survivable_and_leaks_nothing(db_session
 
 
 @pytest.mark.asyncio
+async def test_a_commit_failure_is_survivable_and_leaks_nothing(db_session, monkeypatch, caplog):
+    """The upsert's db.execute/db.commit calls sit outside the inner
+    ValidationError guard -- a Postgres blip or a SQLite WAL lock at startup
+    must not propagate out of the lifespan either. Only the exception class
+    may be logged, never str(exc), since a DB error message can echo a
+    configured value."""
+
+    async def _raise_on_commit():
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(db_session, "commit", _raise_on_commit)
+    _configure(monkeypatch, BAMBUDDY_OIDC_CLIENT_SECRET="leaked-secret")
+
+    with caplog.at_level(logging.ERROR):
+        await apply_env_oidc_provider(db_session)  # must not raise
+
+    assert "could not be applied" in caplog.text
+    assert "RuntimeError" in caplog.text  # class is logged...
+    assert "leaked-secret" not in caplog.text  # ...but nothing from the message
+
+
+@pytest.mark.asyncio
 async def test_applying_twice_without_changes_is_a_no_op(db_session, monkeypatch):
     """Every boot re-applies; the second run must not create a second row."""
     _configure(monkeypatch)
