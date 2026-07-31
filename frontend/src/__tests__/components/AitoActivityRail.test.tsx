@@ -101,6 +101,46 @@ describe('ActivityRail', () => {
     await waitFor(() => expect(box).toHaveValue(''));
   });
 
+  it('renders the verbatim Books text for an unrecognised zoho.comment', async () => {
+    vi.spyOn(api, 'getAitoEvents').mockResolvedValue({
+      events: [
+        event({
+          kind: 'zoho.comment',
+          actor_class: 'system',
+          actor_name: null,
+          subject_type: null,
+          subject_id: null,
+          subject_label: null,
+          detail: { text: 'La mise à jour du champ set expiration est exécutée' },
+        }),
+      ],
+      has_more: false,
+    });
+    render(<ActivityRail projectId={12} />);
+
+    expect(await screen.findByText(/set expiration est exécutée/)).toBeInTheDocument();
+  });
+
+  it('renders the reason for a sync.failed event', async () => {
+    vi.spyOn(api, 'getAitoEvents').mockResolvedValue({
+      events: [
+        event({
+          kind: 'sync.failed',
+          actor_class: 'system',
+          actor_name: null,
+          subject_type: null,
+          subject_id: null,
+          subject_label: null,
+          detail: { error: 'Zoho rejected the request: duplicate reference number', failures: 3 },
+        }),
+      ],
+      has_more: false,
+    });
+    render(<ActivityRail projectId={12} />);
+
+    expect(await screen.findByText(/duplicate reference number/)).toBeInTheDocument();
+  });
+
   it('says so when there is nothing to show', async () => {
     vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
     render(<ActivityRail projectId={12} />);

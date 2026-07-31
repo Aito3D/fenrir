@@ -10,6 +10,44 @@ function formatValue(value: unknown): string {
   return String(value);
 }
 
+/** `detail` is stored on every event but the label alone only carries the
+ *  full story for a handful of kinds — the ones with nothing else to show:
+ *
+ *  - `zoho.comment` carries Books' verbatim text in `detail.text`. It is the
+ *    lossless fallback tier for a comment the pattern table did not
+ *    recognise, and without this the bare label "Comment in Zoho Books"
+ *    tells the reader nothing.
+ *  - `sync.failed` (and the two ambiguous-outcome kinds that share its
+ *    shape) carries the reason in `detail.error`, or the two sides of a
+ *    disagreement in `detail.ours`/`detail.theirs` — without this a card
+ *    that failed last week can say THAT it failed but never WHY.
+ *
+ *  `detail` is `Record<string, unknown> | null` from the wire, so every read
+ *  here is narrowed before use — never rendered as an object.
+ *
+ *  Deliberately returns plain text, not a translated sentence: the brief for
+ *  this fix is explicit that no new i18n keys may be added, so the conflict
+ *  sides are shown as bare values rather than composed into a phrase. */
+function detailText(kind: string, detail: Record<string, unknown> | null): string | null {
+  if (!detail) return null;
+
+  if (kind === 'zoho.comment') {
+    return typeof detail.text === 'string' && detail.text ? detail.text : null;
+  }
+
+  if (kind === 'sync.failed') {
+    return typeof detail.error === 'string' && detail.error ? detail.error : null;
+  }
+
+  if (kind === 'sync.conflict' || kind === 'sync.status_rejected') {
+    const hasSides =
+      (typeof detail.ours === 'string' && detail.ours) || (typeof detail.theirs === 'string' && detail.theirs);
+    return hasSides ? `${formatValue(detail.ours)} → ${formatValue(detail.theirs)}` : null;
+  }
+
+  return null;
+}
+
 /** The gap from the PREVIOUS (older) entry to this one, in the reader's locale.
  *
  *  Rendered at Story depth only, where the entries are sparse enough for the
@@ -64,6 +102,7 @@ export function EventItem({
   const changes = event.changes ?? [];
   const hasMany = changes.length > 1;
   const shown = expanded || !hasMany ? changes : changes.slice(0, 1);
+  const detail = detailText(event.kind, event.detail);
 
   return (
     <li className="relative pl-4 pb-3">
@@ -87,6 +126,10 @@ export function EventItem({
       </div>
 
       {event.note && <p className="mt-0.5 text-sm text-white whitespace-pre-wrap break-words">{event.note}</p>}
+
+      {detail && (
+        <p className="mt-0.5 text-xs text-bambu-gray whitespace-pre-wrap break-words">{detail}</p>
+      )}
 
       {shown.length > 0 && (
         <dl className="mt-0.5 text-xs text-bambu-gray">
