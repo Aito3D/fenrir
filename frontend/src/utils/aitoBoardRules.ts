@@ -15,7 +15,6 @@ import type { AitoColumnId } from '../api/client';
  *  Imports nothing local but a type. `services.ts` and `taskDraft.ts` both
  *  import FROM here; importing either of them back would close a cycle. */
 
-export type ServiceId = 'scan' | 'modelisation' | 'impression' | 'usinage';
 export type MoveLock = 'quote' | 'waiting' | 'declined' | 'steps' | null;
 
 /** Board order, left to right. */
@@ -30,8 +29,24 @@ export const COLUMN_ORDER: readonly AitoColumnId[] = [
 ];
 
 /** Canonical service order — every derived list is emitted in it, so a badge
- *  row is stable across refetches regardless of task creation order. */
-export const SERVICES: readonly ServiceId[] = ['scan', 'modelisation', 'impression', 'usinage'];
+ *  row is stable across refetches regardless of task creation order.
+ *
+ *  This is the single declaration of which services exist. `ServiceId` below
+ *  is derived FROM this array (`as const` + indexed access) rather than
+ *  hand-typed alongside it, and deliberately so: a plain `Record<string, ...>`
+ *  keyed by service, or a union typed by hand next to this array, would let a
+ *  fifth service compile into `ServiceId` without ever landing here — and
+ *  every lookup keyed by the union (`COST_KEYS`, `TaskLike.done`) would then
+ *  miss it silently at runtime, `undefined` with no compile error to catch
+ *  it. Making `SERVICES` authoritative closes that: a service can only be
+ *  added by editing this array, which immediately fails compilation of every
+ *  `Record<ServiceId, ...>` until it is filled in too. `STAGES` below can't be
+ *  pinned this way — TypeScript has no way to express "every union member
+ *  appears in this nested array" — so it is covered by a test instead
+ *  (aitoBoardRules.test.ts: "every service is staged exactly once"). */
+export const SERVICES = ['scan', 'modelisation', 'impression', 'usinage'] as const;
+
+export type ServiceId = (typeof SERVICES)[number];
 
 /** Statuses meaning the quote has left the shop: the answer is the client's to
  *  give, not ours to write. `viewed` only says they opened it and `expired`
@@ -40,8 +55,13 @@ export const AWAY_STATUSES: ReadonlySet<string> = new Set(['sent', 'viewed', 'ex
 
 /** Which services each work stage covers, in board order. Printing and
  *  machining share one column while remaining two separate steps on a task:
- *  the column is left only once BOTH are ticked everywhere they appear. */
-const STAGES: readonly (readonly [AitoColumnId, readonly ServiceId[]])[] = [
+ *  the column is left only once BOTH are ticked everywhere they appear.
+ *
+ *  Exported only so the contract test can assert every member of `SERVICES`
+ *  appears in exactly one stage — unlike `ServiceId`, that completeness can't
+ *  be pinned by the type system, since nothing stops a tuple entry from being
+ *  duplicated or omitted while still type-checking as `readonly ServiceId[]`. */
+export const STAGES: readonly (readonly [AitoColumnId, readonly ServiceId[]])[] = [
   ['scan', ['scan']],
   ['model', ['modelisation']],
   ['print', ['impression', 'usinage']],

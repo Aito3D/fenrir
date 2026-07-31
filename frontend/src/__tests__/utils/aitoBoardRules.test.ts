@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import cases from '../fixtures/aitoBoardRules.cases.json';
-import { evaluate, summariseTasks } from '../../utils/aitoBoardRules';
+import { evaluate, summariseTasks, SERVICES, STAGES } from '../../utils/aitoBoardRules';
 import type { ServiceId, TaskLike } from '../../utils/aitoBoardRules';
 import type { AitoColumnId } from '../../api/client';
 
@@ -49,7 +49,19 @@ describe('the board-rules contract', () => {
     // Guards against an empty or truncated fixture quietly passing the loop
     // below by iterating zero times.
     expect(evaluateCases).toHaveLength(8 * 7 * 16);
-    expect(summariseCases.length).toBeGreaterThan(0);
+    expect(summariseCases).toHaveLength(9);
+  });
+
+  it('stages every service exactly once', () => {
+    // STAGES can't be tied to SERVICES by the type system the way ServiceId
+    // is tied to COST_KEYS (a `Record<ServiceId, ...>`), so a service dropped
+    // from — or duplicated across — a stage would compile fine and only show
+    // up here.
+    const staged = STAGES.flatMap(([, services]) => services);
+    for (const service of SERVICES) {
+      expect(staged.filter((s) => s === service)).toHaveLength(1);
+    }
+    expect(staged).toHaveLength(SERVICES.length);
   });
 
   it('reproduces every evaluate case', () => {
