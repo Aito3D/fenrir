@@ -1250,4 +1250,94 @@ describe('AitoPage (backend board)', () => {
     await screen.findByRole('button', { name: /show done \(1\)/i });
     expect(screen.getByText(/no projects yet|aucun projet/i)).toBeInTheDocument();
   });
+
+  it('filters board cards on the search query', async () => {
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([
+          makeProject({ id: 1, description: 'Support GoPro', column: 'devis' }),
+          makeProject({ id: 2, description: 'Boîtier étanche', column: 'scan', client_name: 'Dupont' }),
+        ]),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await screen.findByText('Support GoPro');
+
+    await user.type(screen.getByRole('searchbox'), 'gopro');
+    expect(screen.getByText('Support GoPro')).toBeInTheDocument();
+    expect(screen.queryByText('Boîtier étanche')).not.toBeInTheDocument();
+  });
+
+  it('matches an unaccented query against accented card text', async () => {
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([makeProject({ id: 1, description: 'Boîtier étanche', column: 'devis' })]),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await screen.findByText('Boîtier étanche');
+
+    await user.type(screen.getByRole('searchbox'), 'etanche');
+    expect(screen.getByText('Boîtier étanche')).toBeInTheDocument();
+  });
+
+  it('clears the query from the clear button', async () => {
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([
+          makeProject({ id: 1, description: 'Support GoPro', column: 'devis' }),
+          makeProject({ id: 2, description: 'Boîtier', column: 'scan' }),
+        ]),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await screen.findByText('Support GoPro');
+
+    await user.type(screen.getByRole('searchbox'), 'gopro');
+    expect(screen.queryByText('Boîtier')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /clear search|effacer la recherche/i }));
+    expect(await screen.findByText('Boîtier')).toBeInTheDocument();
+  });
+
+  it('takes the grip off every card while a query is active', async () => {
+    // A drop index computed against a filtered column is not the card's real
+    // position, and the PATCH would persist the wrong one.
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([makeProject({ id: 1, description: 'Support GoPro', column: 'devis' })]),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await screen.findByText('Support GoPro');
+    expect(screen.getAllByRole('button', { name: /drag|glisser/i }).length).toBeGreaterThan(0);
+
+    await user.type(screen.getByRole('searchbox'), 'gopro');
+    expect(screen.queryByRole('button', { name: /drag|glisser/i })).not.toBeInTheDocument();
+  });
+
+  it('keeps the query when switching to the done grid', async () => {
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([
+          makeProject({ id: 1, description: 'Support GoPro', column: 'devis' }),
+          makeProject({ id: 2, description: 'GoPro archivé', column: 'done', move_lock: null }),
+          makeProject({ id: 3, description: 'Boîtier archivé', column: 'done', move_lock: null }),
+        ]),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await screen.findByText('Support GoPro');
+
+    await user.type(screen.getByRole('searchbox'), 'gopro');
+    await user.click(screen.getByRole('button', { name: /show done/i }));
+
+    expect(await screen.findByText('GoPro archivé')).toBeInTheDocument();
+    expect(screen.queryByText('Boîtier archivé')).not.toBeInTheDocument();
+  });
 });

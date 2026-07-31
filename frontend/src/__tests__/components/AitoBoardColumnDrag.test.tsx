@@ -126,8 +126,13 @@ const project: AitoProject = {
 
 function Harness({
   dropDisabled,
+  dragDisabled,
   moveLock = null,
-}: { dropDisabled?: boolean; moveLock?: AitoProject['move_lock'] } = {}) {
+}: {
+  dropDisabled?: boolean;
+  dragDisabled?: boolean;
+  moveLock?: AitoProject['move_lock'];
+} = {}) {
   return (
     <DndContext>
       <BoardColumn
@@ -138,6 +143,7 @@ function Harness({
         transitionConfig={null}
         shouldAnimateIn={() => false}
         dropDisabled={dropDisabled}
+        dragDisabled={dragDisabled}
       />
     </DndContext>
   );
@@ -227,6 +233,11 @@ describe('BoardColumn — dropDisabled', () => {
   it('defaults to enabled when dropDisabled is omitted (no drag in progress)', () => {
     render(<Harness />);
     expect(mockUseDroppable).toHaveBeenCalledWith({ id: COLUMNS[0].id, disabled: undefined });
+  });
+
+  it('refuses drops while the board is filtered', () => {
+    render(<Harness dragDisabled />);
+    expect(mockUseDroppable).toHaveBeenCalledWith({ id: COLUMNS[0].id, disabled: true });
   });
 
   /** BoardColumn's own outer div, reached from its <h2>: heading -> header

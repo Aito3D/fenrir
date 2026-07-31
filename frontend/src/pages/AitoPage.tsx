@@ -6,6 +6,7 @@ import { AlertTriangle, Archive, ArrowLeft, FileInput, Kanban, Plus, Trash2 } fr
 import { Button } from '../components/Button';
 import { CardView } from '../components/aito/CardView';
 import { BoardColumn } from '../components/aito/BoardColumn';
+import { BoardSearch } from '../components/aito/BoardSearch';
 import { COLUMNS } from '../components/aito/columns';
 import { DoneGrid } from '../components/aito/DoneGrid';
 import { ImportQuoteModal } from '../components/aito/ImportQuoteModal';
@@ -19,6 +20,7 @@ import type { ClientDraft } from '../utils/clientDraft';
 import { taskDraftToTaskCreate } from '../utils/taskDraft';
 import type { TaskDraft } from '../utils/taskDraft';
 import { prefersReducedMotion } from '../utils/motion';
+import { matchesSearch } from '../utils/aitoSearch';
 import { useCardMorph } from '../hooks/useCardMorph';
 import { useBoardDrag } from '../hooks/useBoardDrag';
 import { useBoardSync } from '../hooks/useBoardSync';
@@ -133,6 +135,8 @@ export function AitoPage() {
   // the working view; landing on the archive after a reload would be wrong
   // every time but the one you asked for it.
   const [showDone, setShowDone] = useState(false);
+  const [search, setSearch] = useState('');
+  const filtering = search.trim().length > 0;
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const { open: openCard, close: closeCard } = useCardMorph(setExpandedId);
 
@@ -316,7 +320,7 @@ export function AitoPage() {
 
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-2 animate-rise">
-        <div className="flex-1" />
+        <BoardSearch value={search} onChange={setSearch} className="flex-1" />
         <Button variant="secondary" onClick={() => setShowDone((shown) => !shown)}>
           {showDone ? (
             <>
@@ -354,7 +358,7 @@ export function AitoPage() {
 
       {/* Board */}
       {showDone ? (
-        <DoneGrid projects={board.done} query="" onExpandCard={openCard} />
+        <DoneGrid projects={board.done} query={search} onExpandCard={openCard} />
       ) : (
         <DndContext
           sensors={sensors}
@@ -370,12 +374,13 @@ export function AitoPage() {
               <div key={column.id} className="animate-rise-lg flex flex-shrink-0">
                 <BoardColumn
                   column={column}
-                  projects={board[column.id]}
+                  projects={board[column.id].filter((project) => matchesSearch(project, search))}
                   isDropTarget={dropTarget === column.id}
                   onExpandCard={openCard}
                   transitionConfig={reducedMotion ? null : SORTABLE_TRANSITION}
                   shouldAnimateIn={shouldAnimateIn}
                   dropDisabled={allowedDropColumns !== null && !allowedDropColumns.includes(column.id)}
+                  dragDisabled={filtering}
                 />
               </div>
             ))}

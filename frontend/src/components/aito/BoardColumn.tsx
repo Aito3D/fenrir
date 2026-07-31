@@ -17,11 +17,13 @@ function SortableCard({
   onExpand,
   transitionConfig,
   animateIn,
+  dragDisabled,
 }: {
   project: AitoProject;
   onExpand: () => void;
   transitionConfig: { duration: number; easing: string } | null;
   animateIn: boolean;
+  dragDisabled?: boolean;
 }) {
   // Every card is grabbable, including a rule-locked one: reordering inside a
   // column changes priority, not state, and both `allowedColumns` and the
@@ -30,6 +32,12 @@ function SortableCard({
   // board dims the columns that will refuse it.
   const placeholder = isPlaceholder(project);
   const { t } = useTranslation();
+
+  // A card cannot be dragged while the board is filtered: `computeMoveTarget`
+  // derives the persisted position from the card's index in the column it is
+  // handed, and with cards hidden that index is not the real position. Also
+  // covers the placeholder case, whose id does not exist yet.
+  const dragLocked = placeholder || Boolean(dragDisabled);
 
   const {
     attributes,
@@ -42,7 +50,7 @@ function SortableCard({
   } = useSortable({
     id: project.id,
     transition: transitionConfig,
-    disabled: placeholder,
+    disabled: dragLocked,
   });
 
   // Owned here rather than threaded down from AitoPage: the hook is
@@ -115,7 +123,11 @@ function SortableCard({
           </>
         }
         dragHandleRef={setActivatorNodeRef}
-        dragHandleProps={{ ...attributes, ...listeners }}
+        // Undefined, not disabled: CardView already renders an inert grip on
+        // this path — it is how the DragOverlay clone renders — so a filtered
+        // card becomes undraggable with no new markup and no dead button in
+        // the tab order.
+        dragHandleProps={dragLocked ? undefined : { ...attributes, ...listeners }}
       />
     </div>
   );
@@ -129,6 +141,10 @@ interface ColumnProps {
   transitionConfig: { duration: number; easing: string } | null;
   shouldAnimateIn: (id: number) => boolean;
   dropDisabled?: boolean;
+  // Board-wide: a search query is active, so no card's index reflects its
+  // real position. Distinct from `dropDisabled`, which is per-column and only
+  // meaningful mid-drag.
+  dragDisabled?: boolean;
 }
 
 export function BoardColumn({
@@ -139,9 +155,18 @@ export function BoardColumn({
   transitionConfig,
   shouldAnimateIn,
   dropDisabled,
+  dragDisabled,
 }: ColumnProps) {
   const { t } = useTranslation();
-  const { setNodeRef } = useDroppable({ id: column.id, disabled: dropDisabled });
+  // Both reasons a column may refuse a drop: `dropDisabled` is the per-card
+  // rule gate during a drag, `dragDisabled` is the board-wide filter.
+  //
+  // A ternary rather than `dropDisabled || dragDisabled`, because `||`
+  // collapses an explicit `false` to `undefined` when the right-hand side is
+  // unset — and AitoBoardColumnDrag.test.tsx asserts the exact value passed
+  // here, distinguishing `false` (a drag is in progress and this column is
+  // allowed) from `undefined` (no drag at all).
+  const { setNodeRef } = useDroppable({ id: column.id, disabled: dragDisabled ? true : dropDisabled });
 
   return (
     <div
@@ -165,7 +190,7 @@ export function BoardColumn({
       </div>
 
       <SortableContext items={projects.map((p) => p.id)} strategy={verticalListSortingStrategy}>
-        <div ref={setNodeRef} className="flex-1 flex flex-col gap-2 p-2 min-h-[10rem] overflow-y-auto">
+        <div ref={setNodeRef} className="flex-1 flex flex-col gap-2 p-2 min-h-[10rem] overflow-y-auto scrollbar-hide">
           {projects.map((project) => (
             <SortableCard
               key={project.id}
@@ -173,6 +198,7 @@ export function BoardColumn({
               onExpand={() => onExpandCard(project.id)}
               transitionConfig={transitionConfig}
               animateIn={shouldAnimateIn(project.id)}
+              dragDisabled={dragDisabled}
             />
           ))}
           {projects.length === 0 && (
