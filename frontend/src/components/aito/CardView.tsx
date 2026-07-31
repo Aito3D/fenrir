@@ -3,21 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { AlertTriangle, GripVertical, Lock } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { ProjectProgress } from './ProjectProgress';
-import { ServiceBadges } from './ServiceBadges';
+import { StepGrid } from './StepGrid';
 import type { AitoProject } from '../../api/client';
 import { api } from '../../api/client';
 import { Money } from '../calculator/shared';
 import { formatElapsedTime, parseUTCDate } from '../../utils/date';
-
-// Module scope: a plain object literal, identical on every render, so it
-// need not be reconstructed (and re-diffed by anything memoizing on it)
-// each time the card renders.
-const LOCK_LABEL_KEYS = {
-  quote: 'aito.lockedQuote',
-  waiting: 'aito.lockedWaiting',
-  declined: 'aito.lockedDeclined',
-  steps: 'aito.lockedSteps',
-} as const;
 
 export interface CardViewProps {
   project: AitoProject;
@@ -80,28 +70,6 @@ export function CardView({
     .filter(Boolean)
     .join(' · ');
 
-  // A locked card keeps its grip: reordering inside a column changes priority,
-  // not state, so the rules allow it. The badge sits beside the grip rather
-  // than replacing it and says which rule pins the card to this column;
-  // `useBoardDrag` refuses every other destination, and the board dims the
-  // columns that will refuse.
-  const lockTitle = project.move_lock ? t(LOCK_LABEL_KEYS[project.move_lock]) : null;
-
-  // Every element here is phrasing content (<span>, and Money renders a
-  // <span>): this block is rendered INSIDE the body <button>, and a <button>
-  // may not contain <div> or <p>. Keeping it inside the button is deliberate —
-  // it makes the whole content area one target that opens the panel.
-  const summary =
-    project.task_count > 0 ? (
-      <span className="mt-2 block">
-        <ServiceBadges services={project.task_services} />
-        <span className="mt-1 flex items-baseline justify-between gap-2">
-          <span className="text-xs text-bambu-gray">{t('aito.taskCount', { count: project.task_count })}</span>
-          <Money currency={currency} value={project.tasks_total} className="text-xs font-medium text-bambu-green" />
-        </span>
-      </span>
-    ) : null;
-
   return (
     <div
       data-aito-card
@@ -120,16 +88,6 @@ export function CardView({
         >
           {project.client_name ?? t('aito.noClient')}
         </p>
-        {lockTitle && (
-          <span
-            title={lockTitle}
-            role="img"
-            aria-label={lockTitle}
-            className="flex-shrink-0 p-1 -m-1 text-bambu-gray"
-          >
-            <Lock className="w-4 h-4" aria-hidden="true" />
-          </span>
-        )}
         {dragHandleProps && !placeholder ? (
           <button
             type="button"
@@ -156,14 +114,24 @@ export function CardView({
           <span className="block text-sm text-white whitespace-pre-wrap break-words line-clamp-3">
             {project.description}
           </span>
-          {summary}
+          <StepGrid tasks={project.task_steps} />
+          {project.task_steps.length > 0 && (
+            <span className="mt-1 flex justify-end">
+              <Money currency={currency} value={project.tasks_total} className="text-xs font-medium text-bambu-green" />
+            </span>
+          )}
         </button>
       ) : (
         <div className="px-3 pt-2.5 pb-1.5">
           <p className="text-sm text-white whitespace-pre-wrap break-words line-clamp-3">
             {project.description}
           </p>
-          {summary}
+          <StepGrid tasks={project.task_steps} />
+          {project.task_steps.length > 0 && (
+            <div className="mt-1 flex justify-end">
+              <Money currency={currency} value={project.tasks_total} className="text-xs font-medium text-bambu-green" />
+            </div>
+          )}
         </div>
       )}
 

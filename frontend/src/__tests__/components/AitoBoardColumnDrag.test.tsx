@@ -201,10 +201,16 @@ describe('BoardColumn — a locked card is grabbable for reordering', () => {
     expect(mockSetActivatorNodeRef).toHaveBeenCalledWith(grip);
   });
 
-  it('keeps the lock badge alongside the grip so the card still says why it is pinned', () => {
+  it('draws no lock badge on a locked card, even though the grip stays', () => {
+    // CardView no longer draws a lock badge at all (Done left the board, so
+    // every card is pinned to its column without exception — see CardView's
+    // own test for the full reasoning). Covered here too because BoardColumn
+    // is what actually wraps CardView in a column, and a regression that
+    // reintroduced the badge only at this layer would slip past CardView's
+    // suite.
     render(<Harness moveLock="quote" />);
 
-    expect(screen.getByRole('img', { name: /locked to quote/i })).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /locked/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /drag|glisser/i })).toBeInTheDocument();
   });
 

@@ -89,63 +89,68 @@ describe('CardView', () => {
     expect(screen.queryByRole('button', { name: /drag|glisser/i })).not.toBeInTheDocument();
   });
 
-  it('shows a badge per enabled service, the task count and the total', async () => {
+  it('shows a step row per task and the total, and no task count', async () => {
     render(
       <CardView
-        project={{ ...project, task_count: 2, tasks_total: 20200, task_services: ['modelisation', 'impression'] }}
+        project={{
+          ...project,
+          task_count: 2,
+          tasks_total: 20200,
+          task_services: ['modelisation', 'impression'],
+          task_steps: [
+            { services: ['modelisation', 'impression'], done: ['modelisation'] },
+            { services: ['impression'], done: [] },
+          ],
+        }}
         onExpand={vi.fn()}
       />,
     );
-    expect(await screen.findByText('Modeling')).toBeInTheDocument();
-    expect(screen.getByText('Printing')).toBeInTheDocument();
-    expect(screen.queryByText('Scan')).not.toBeInTheDocument();
-    expect(screen.getByText(/2 tasks|2 tâches/i)).toBeInTheDocument();
+    expect(await screen.findAllByTestId('aito-step-row')).toHaveLength(2);
+    // The count line is gone: the rows themselves say how many tasks there are.
+    expect(screen.queryByText(/2 tasks|2 tâches/i)).not.toBeInTheDocument();
     // Matched on the digits, not the whole formatted string: the currency and
     // separators come from formatMoney and the settings stub, and pinning them
     // here would make this a test of formatMoney.
     expect(screen.getByText(/20[,\s.]?200/)).toBeInTheDocument();
   });
 
-  it('renders no summary row at all for a project with no tasks', () => {
+  it('renders no step rows and no total for a project with no tasks', () => {
     render(
       <CardView
-        project={{ ...project, task_count: 0, tasks_total: 0, task_services: [] }}
+        project={{ ...project, task_count: 0, tasks_total: 0, task_services: [], task_steps: [] }}
         onExpand={vi.fn()}
       />,
     );
-    expect(screen.queryByText(/0 tasks|0 tâches/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('aito-step-row')).not.toBeInTheDocument();
     expect(screen.queryByText('Scan')).not.toBeInTheDocument();
-    expect(screen.queryByText('Printing')).not.toBeInTheDocument();
   });
 
-  it('shows the same summary in the drag overlay, which has no body button', async () => {
-    // CardView inserts the summary at two points — inside the body <button>
-    // when `onExpand` is passed, and inside a plain <div> for the DragOverlay
-    // clone, which gets no `onExpand` at all. Every other summary
-    // test above passes `onExpand`, so without this one the overlay's
-    // insertion point could be dropped and the suite would stay green while a
-    // dragged card visibly lost its badges, count and total.
+  it('shows the same step rows in the drag overlay, which has no buttons', async () => {
+    // The overlay clone gets no `onExpand`. Without this test that branch
+    // could lose its grid and the suite would stay green while a dragged card
+    // visibly lost its pills.
     render(
       <CardView
-        project={{ ...project, task_count: 2, tasks_total: 20200, task_services: ['modelisation', 'impression'] }}
+        project={{
+          ...project,
+          task_count: 1,
+          tasks_total: 20200,
+          task_steps: [{ services: ['modelisation', 'impression'], done: ['modelisation'] }],
+        }}
         overlay
       />,
     );
     expect(await screen.findByText('Modeling')).toBeInTheDocument();
-    expect(screen.getByText('Printing')).toBeInTheDocument();
-    expect(screen.getByText(/2 tasks|2 tâches/i)).toBeInTheDocument();
     expect(screen.getByText(/20[,\s.]?200/)).toBeInTheDocument();
-    // The overlay clone really is the no-onExpand branch: nothing here is a
-    // button, so this cannot have been the body-button path in disguise.
     expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 
-  it('keeps the summary inside the body button, so it opens the panel', async () => {
+  it('keeps the step grid inside the click target, so a pill opens the panel', async () => {
     const onExpand = vi.fn();
     const user = userEvent.setup();
     render(
       <CardView
-        project={{ ...project, task_count: 1, tasks_total: 4000, task_services: ['scan'] }}
+        project={{ ...project, task_count: 1, tasks_total: 4000, task_steps: [{ services: ['scan'], done: [] }] }}
         onExpand={onExpand}
       />,
     );
@@ -241,33 +246,22 @@ describe('CardView', () => {
     expect(screen.queryByText(/sent/i)).not.toBeInTheDocument();
   });
 
-  it('marks a quote-locked card with a lock and says why', () => {
-    render(<CardView project={{ ...project, move_lock: 'quote' }} onExpand={vi.fn()} />);
-    expect(screen.getByTitle('Locked to Quote until the quote is accepted')).toBeInTheDocument();
+  it('draws no lock badge, whatever the rules say about this card', () => {
+    // Done left the board, so `finish <-> done` — the only cross-column drag
+    // the rules ever allowed — is unreachable and EVERY card is pinned to its
+    // column. A badge that applies without exception explains nothing.
+    // `move_lock` itself is untouched: allowedColumns still reads it, the
+    // server still enforces it, and DoneGrid still gates Restore on it.
+    for (const lock of ['quote', 'waiting', 'declined', 'steps'] as const) {
+      const { unmount } = render(<CardView project={{ ...project, move_lock: lock }} onExpand={vi.fn()} />);
+      expect(screen.queryByTitle(/Locked|set by its task steps|declined|Waiting on/i)).not.toBeInTheDocument();
+      unmount();
+    }
   });
 
-  it('says a waiting card is stalled on the client, not on us', () => {
-    render(<CardView project={{ ...project, move_lock: 'waiting' }} onExpand={vi.fn()} />);
-    expect(screen.getByTitle('Waiting on the client to answer the quote')).toBeInTheDocument();
-  });
-
-  it('names the step rule on a card the checkboxes are driving', () => {
-    render(<CardView project={{ ...project, move_lock: 'steps' }} onExpand={vi.fn()} />);
-    expect(screen.getByTitle("This card's column is set by its task steps")).toBeInTheDocument();
-  });
-
-  it('shows both the lock and the grip on a locked card', () => {
-    render(
-      <CardView
-        project={{ ...project, move_lock: 'quote' }}
-        onExpand={vi.fn()}
-        dragHandleProps={{}}
-      />,
-    );
-    // The grip is for reordering inside the column, which the rules allow;
-    // the lock badge explains why the card cannot leave that column.
+  it('keeps the grip on a locked card, because reordering is still allowed', () => {
+    render(<CardView project={{ ...project, move_lock: 'quote' }} onExpand={vi.fn()} dragHandleProps={{}} />);
     expect(screen.getByRole('button', { name: /drag|glisser/i })).toBeInTheDocument();
-    expect(screen.getByTitle('Locked to Quote until the quote is accepted')).toBeInTheDocument();
   });
 
   it('keeps the grip on an unlocked card', () => {
@@ -275,11 +269,6 @@ describe('CardView', () => {
       <CardView project={{ ...project, move_lock: null }} onExpand={vi.fn()} dragHandleProps={{}} />,
     );
     expect(screen.getByRole('button', { name: /drag|glisser/i })).toBeInTheDocument();
-  });
-
-  it('shows no lock on a card free to move between Finish and Done', () => {
-    render(<CardView project={{ ...project, move_lock: null }} onExpand={vi.fn()} />);
-    expect(screen.queryByTitle(/Locked|set by its task steps|declined/)).not.toBeInTheDocument();
   });
 
   it('renders whatever actions the parent injects', () => {
