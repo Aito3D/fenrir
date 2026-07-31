@@ -265,6 +265,11 @@ export function AitoPage() {
         client_phone: formatPhone(draft) || null,
         client_email: draft.email.trim() || null,
         client_is_company: draft.isCompany,
+        // No quote_status: a manual create posts none (see the mutationFn
+        // above), so it defaults to null — the same "waits for Accept" state
+        // a draft import has. `TaskDraft` already structurally matches
+        // `TaskLike` (see aitoBoardRules.ts), so no conversion is needed.
+        tasks,
       }),
     });
   };
@@ -372,6 +377,26 @@ export function AitoPage() {
                 client_is_company: preview.client.is_company,
                 quote_number: preview.quote.number,
                 quote_total: preview.quote.total,
+                // A non-draft quote (sent/accepted/declined — the normal
+                // import case) must not park on Quote for one round trip;
+                // `placeholderProject` evaluates the same rules the server
+                // does from this status and the tasks below.
+                quote_status: preview.quote.status,
+                // Wire shape (what `preview.tasks` already is — see
+                // ZohoQuotePreview) -> `TaskLike`, the shape `summariseTasks`
+                // reads everywhere else in the mirror.
+                tasks: preview.tasks.map((task) => ({
+                  scanCost: task.scan_cost,
+                  modelisationCost: task.modelisation_cost,
+                  impressionCost: task.impression_cost,
+                  usinageCost: task.usinage_cost,
+                  done: {
+                    scan: task.scan_done ?? false,
+                    modelisation: task.modelisation_done ?? false,
+                    impression: task.impression_done ?? false,
+                    usinage: task.usinage_done ?? false,
+                  },
+                })),
               }),
             });
           }}

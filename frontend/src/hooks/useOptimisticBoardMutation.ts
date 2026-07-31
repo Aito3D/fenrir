@@ -6,8 +6,12 @@ import type { AitoProject } from '../api/client';
 export interface OptimisticBoardOptions<TData, TVars> {
   mutationFn: (vars: TVars) => Promise<TData>;
   /** The optimistic cache write, applied synchronously before the request
-   *  goes out. Pure — see utils/aitoOptimistic.ts for the transforms. */
-  transform: (previous: AitoProject[] | undefined, vars: TVars) => AitoProject[];
+   *  goes out. Pure — see utils/aitoOptimistic.ts for the transforms.
+   *  `undefined` means "leave the cache as it is" (a cache miss — the board
+   *  query has no data yet, e.g. it errored) rather than fabricating a board
+   *  out of just this one write; `setQueryData` already treats an `undefined`
+   *  updater result as a no-op, so returning it here costs nothing extra. */
+  transform: (previous: AitoProject[] | undefined, vars: TVars) => AitoProject[] | undefined;
   /** Which card to flash if this reverts. Omit for a write with no card of its
    *  own (adding a note, for instance). */
   flashId?: (vars: TVars) => number | null;

@@ -1125,6 +1125,44 @@ describe('AitoPage (backend board)', () => {
         // Not the generic failure message — the 409 branch, specifically.
         expect(screen.queryByText('Could not create the project. Please try again.')).not.toBeInTheDocument();
       });
+
+      it('lands the placeholder in Waiting, not Quote, when the imported quote is already sent', async () => {
+        // `preview` above (status: 'draft') is the one value for which
+        // forcing the placeholder onto Quote used to be accidentally
+        // correct — every other status must relocate immediately, since a
+        // sent/accepted/declined quote is the normal thing to import.
+        const sentPreview: ZohoQuotePreview = { ...preview, quote: { ...preview.quote, status: 'sent' } };
+        vi.spyOn(api, 'createAitoProject').mockImplementation(() => new Promise(() => {})); // never resolves
+        server.use(
+          http.get('/api/v1/zoho/estimates', () =>
+            HttpResponse.json([
+              {
+                id: 'e9',
+                number: 'DEV26-9001',
+                customer_name: 'Import Client',
+                date: '2026-07-29',
+                total: 1200,
+                currency_code: 'XPF',
+                status: 'sent',
+              },
+            ]),
+          ),
+          http.get('/api/v1/zoho/estimates/:id/preview', () => HttpResponse.json(sentPreview)),
+        );
+        renderPage([]);
+        const user = userEvent.setup();
+        await user.click(await screen.findByRole('button', { name: /^import$/i }));
+        const modal = (await screen.findByText('Import a quote')).closest('div.animate-modal-in') as HTMLElement;
+        await user.click(within(modal).getByRole('combobox'));
+        await user.click(await screen.findByText('DEV26-9001'));
+        await within(modal).findByText('Printing');
+        await user.click(within(modal).getByRole('button', { name: /^import$/i }));
+
+        const waitingColumn = screen.getByRole('heading', { name: 'Waiting' }).closest('.rounded-xl') as HTMLElement;
+        expect(within(waitingColumn).getByText('Imported job')).toBeInTheDocument();
+        const quoteColumn = screen.getByRole('heading', { name: 'Quote' }).closest('.rounded-xl') as HTMLElement;
+        expect(within(quoteColumn).queryByText('Imported job')).not.toBeInTheDocument();
+      });
     });
 
     // The direct proof that this uses `applyCreate`, not `applyRestore`: the

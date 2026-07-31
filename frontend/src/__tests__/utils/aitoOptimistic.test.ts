@@ -9,9 +9,10 @@ import {
   applyTaskSummary,
   isPlaceholder,
   nextPlaceholderId,
+  placeholderProject,
 } from '../../utils/aitoOptimistic';
 import { buildBoard } from '../../utils/aitoBoard';
-import type { TaskSummary } from '../../utils/aitoBoardRules';
+import type { TaskLike, TaskSummary } from '../../utils/aitoBoardRules';
 import type { AitoProject } from '../../api/client';
 
 const card = (over: Partial<AitoProject> = {}): AitoProject => ({
@@ -129,8 +130,21 @@ describe('applyQuoteStatus', () => {
     expect(applyQuoteStatus(projects, 99, 'sent')).toEqual(projects);
   });
 
-  it('returns an empty array for undefined input', () => {
-    expect(applyQuoteStatus(undefined, 1, 'sent')).toEqual([]);
+  it('leaves the cache untouched (undefined) on a cache miss, rather than fabricating a board', () => {
+    // A board write while the projects query has no data — e.g. it errored —
+    // must not synthesize a one-card board: `setQueryData` treats an
+    // `undefined` updater result as a no-op, so this is what keeps the error
+    // state (and its retry banner) on screen instead of quietly clearing it.
+    expect(applyQuoteStatus(undefined, 1, 'sent')).toBeUndefined();
+  });
+
+  it('clears a recorded Zoho conflict/rejection: our side just moved', () => {
+    const projects = [
+      card({ id: 1, quote_status_block: 'conflict', quote_status_remote: 'sent' }),
+    ];
+    const after = applyQuoteStatus(projects, 1, 'accepted')!;
+    expect(find(after, 1).quote_status_block).toBeNull();
+    expect(find(after, 1).quote_status_remote).toBeNull();
   });
 
   it('renumbers a column that leaves array order by POSITION, not array order', () => {
@@ -222,9 +236,9 @@ describe('applyTaskSummary', () => {
     expect(applyTaskSummary(projects, 99, summary)).toEqual(projects);
   });
 
-  it('returns an empty array for undefined input', () => {
+  it('leaves the cache untouched (undefined) on a cache miss, rather than fabricating a board', () => {
     const summary: TaskSummary = { count: 1, total: 10, services: ['scan'], pending: [], stepsTotal: 1, stepsDone: 1 };
-    expect(applyTaskSummary(undefined, 1, summary)).toEqual([]);
+    expect(applyTaskSummary(undefined, 1, summary)).toBeUndefined();
   });
 });
 
@@ -240,8 +254,8 @@ describe('applyDescription', () => {
     expect(applyDescription(projects, 99, 'new')).toEqual(projects);
   });
 
-  it('returns an empty array for undefined input', () => {
-    expect(applyDescription(undefined, 1, 'new')).toEqual([]);
+  it('leaves the cache untouched (undefined) on a cache miss, rather than fabricating a board', () => {
+    expect(applyDescription(undefined, 1, 'new')).toBeUndefined();
   });
 });
 
@@ -263,8 +277,8 @@ describe('applySyncState', () => {
     expect(applySyncState(projects, 99, 'error')).toEqual(projects);
   });
 
-  it('returns an empty array for undefined input', () => {
-    expect(applySyncState(undefined, 1, 'error')).toEqual([]);
+  it('leaves the cache untouched (undefined) on a cache miss, rather than fabricating a board', () => {
+    expect(applySyncState(undefined, 1, 'error')).toBeUndefined();
   });
 });
 
@@ -296,8 +310,8 @@ describe('applyDelete', () => {
     expect(applyDelete(projects, 99)).toEqual(projects);
   });
 
-  it('returns an empty array for undefined input', () => {
-    expect(applyDelete(undefined, 1)).toEqual([]);
+  it('leaves the cache untouched (undefined) on a cache miss, rather than fabricating a board', () => {
+    expect(applyDelete(undefined, 1)).toBeUndefined();
   });
 
   it('preserves relative order through buildBoard despite the position gap', () => {
@@ -346,10 +360,25 @@ describe('applyCreate', () => {
     expect(find(after, -1).column).toBe('devis');
   });
 
-  it('returns just the placeholder for undefined input', () => {
-    const after = applyCreate(undefined, card({ id: -1, column: 'devis', position: 999 }));
-    expect(after).toHaveLength(1);
-    expect(find(after, -1).position).toBe(0);
+  it('relocates a placeholder whose quote_status is already away, instead of parking it on Quote', () => {
+    // The normal import case: a quote imported already sent/viewed/expired
+    // must land straight in Waiting, never visibly park on Quote for one
+    // round trip. `applyCreate` re-derives the destination from the rules —
+    // via the same `reevaluate` every other transform uses — rather than
+    // forcing 'devis' the way it used to.
+    const projects = [card({ id: 1, column: 'waiting', position: 0 })];
+    const after = applyCreate(
+      projects,
+      card({ id: -1, column: 'devis', position: 999, quote_status: 'sent' }),
+    )!;
+    expect(find(after, -1).column).toBe('waiting');
+    // Appended to the end of Waiting, same as every other relocation.
+    expect(find(after, -1).position).toBe(1);
+    expect(find(after, 1).position).toBe(0);
+  });
+
+  it('leaves the cache untouched (undefined) on a cache miss, rather than fabricating a board', () => {
+    expect(applyCreate(undefined, card({ id: -1, column: 'devis', position: 999 }))).toBeUndefined();
   });
 });
 
@@ -369,10 +398,60 @@ describe('applyRestore', () => {
     expect(find(after, 2)).toEqual(find(projects, 2));
   });
 
-  it('returns just the restored card for undefined input', () => {
-    const after = applyRestore(undefined, card({ id: -1, column: 'finish', position: 999 }));
-    expect(after).toHaveLength(1);
-    expect(find(after, -1).position).toBe(0);
+  it('leaves the cache untouched (undefined) on a cache miss, rather than fabricating a board', () => {
+    expect(applyRestore(undefined, card({ id: -1, column: 'finish', position: 999 }))).toBeUndefined();
+  });
+});
+
+const placeholderFields = {
+  description: 'placeholder',
+  client_id: null,
+  client_name: null,
+  client_phone: null,
+  client_email: null,
+  client_is_company: null,
+};
+
+const task = (over: Partial<TaskLike> = {}): TaskLike => ({
+  scanCost: null,
+  modelisationCost: null,
+  impressionCost: null,
+  usinageCost: null,
+  done: { scan: false, modelisation: false, impression: false, usinage: false },
+  ...over,
+});
+
+describe('placeholderProject', () => {
+  it('derives its task summary from the posted tasks, not all-zero defaults', () => {
+    // Both create surfaces POST priced tasks, so a placeholder that always
+    // showed empty badges/zero total/hidden progress would pop those in one
+    // round trip later — the exact double-jump this transform exists to
+    // prevent.
+    const placeholder = placeholderProject({
+      ...placeholderFields,
+      tasks: [task({ scanCost: 500, done: { scan: true, modelisation: false, impression: false, usinage: false } })],
+    });
+    expect(placeholder.task_count).toBe(1);
+    expect(placeholder.tasks_total).toBe(500);
+    expect(placeholder.task_services).toEqual(['scan']);
+    expect(placeholder.task_pending).toEqual([]);
+    expect(placeholder.steps_total).toBe(1);
+    expect(placeholder.steps_done).toBe(1);
+  });
+
+  it('defaults quote_status to null (a manual create posts none) and lands on Quote', () => {
+    const placeholder = placeholderProject(placeholderFields);
+    expect(placeholder.quote_status).toBeNull();
+    expect(placeholder.column).toBe('devis');
+    expect(placeholder.move_lock).toBe('quote');
+  });
+
+  it('evaluates the rules from a posted non-draft quote_status, not always Quote', () => {
+    // The normal import case: a quote already sent/accepted/declined must be
+    // honest about its destination from the moment it appears on screen.
+    const placeholder = placeholderProject({ ...placeholderFields, quote_status: 'sent' });
+    expect(placeholder.column).toBe('waiting');
+    expect(placeholder.move_lock).toBe('waiting');
   });
 });
 
