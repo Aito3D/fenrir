@@ -469,6 +469,11 @@ _SUMMARISE_SHAPES: tuple[tuple[str, list[dict[str, Any]]], ...] = (
         [{"scan_cost": 1.0, "scan_done": True, "impression_cost": 2.0, "impression_done": True}],
     ),
     (
+        # The design doc's headline example, pinned exactly: three tasks
+        # carrying ten steps between them with three ticked is the 30% the
+        # card's progress bar must show. The free scan on the second task is
+        # deliberate — it makes the tenth step one that a cost-weighted or
+        # truthiness-based implementation would silently drop.
         "three tasks, ten steps, three done",
         [
             {
@@ -478,7 +483,7 @@ _SUMMARISE_SHAPES: tuple[tuple[str, list[dict[str, Any]]], ...] = (
                 "modelisation_done": True,
                 "impression_cost": 3.0,
             },
-            {"impression_cost": 4.0, "impression_done": True, "usinage_cost": 5.0},
+            {"scan_cost": 0.0, "impression_cost": 4.0, "impression_done": True, "usinage_cost": 5.0},
             {"scan_cost": 6.0, "modelisation_cost": 7.0, "impression_cost": 8.0, "usinage_cost": 9.0},
         ],
     ),
