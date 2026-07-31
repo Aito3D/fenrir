@@ -184,7 +184,7 @@ class ZohoService:
             self._expires_at = time.monotonic() + int(payload.get("expires_in", 3600)) - _EXPIRY_MARGIN_SECONDS
             return token
 
-    async def _request(
+    async def _send(
         self,
         db: AsyncSession,
         method: str,
@@ -192,10 +192,13 @@ class ZohoService:
         *,
         params: dict | None = None,
         json: dict | None = None,
-    ) -> dict:
-        """One Books API call: token, org scoping, 401-retry-once, error mapping.
+    ) -> httpx.Response:
+        """One Books API call: token, org scoping, 401-retry-once.
 
-        ``path`` is relative to ``/books/v3`` (e.g. ``"/contacts/z1"``).
+        Returns the raw response and interprets nothing. Split out of
+        ``_request`` so a binary endpoint (``get_estimate_pdf``) can share the
+        token handling without inheriting the JSON parse that would choke on
+        a PDF body. ``path`` is relative to ``/books/v3``.
         """
         config = await self._load_config(db)
         request_params = {"organization_id": config["zoho_organization_id"], **(params or {})}
@@ -215,18 +218,65 @@ class ZohoService:
             if response.status_code == 401 and attempt == 1:
                 self.invalidate_token()  # token revoked/expired early — refresh once
                 continue
+            return response
+        raise ZohoUpstreamError("Zoho Books rejected the refreshed token")  # unreachable guard
+
+    def _raise_for_status(self, response: httpx.Response, payload: dict) -> None:
+        """Books' error mapping, shared by the JSON and binary paths.
+
+        Error responses are JSON even when the success response is a PDF, so
+        both callers can supply a parsed payload for the message.
+        """
+        if response.status_code == 404:
+            raise ZohoNotFound(payload.get("message") or "Not found in Zoho Books")
+        if response.status_code == 400:
+            raise ZohoRequestRejected(payload.get("message") or "Zoho rejected the request")
+        if response.status_code >= 400:
+            raise ZohoUpstreamError(f"Zoho Books error (HTTP {response.status_code})")
+
+    async def _request(
+        self,
+        db: AsyncSession,
+        method: str,
+        path: str,
+        *,
+        params: dict | None = None,
+        json: dict | None = None,
+    ) -> dict:
+        """One Books API call returning parsed JSON.
+
+        ``path`` is relative to ``/books/v3`` (e.g. ``"/contacts/z1"``).
+        """
+        response = await self._send(db, method, path, params=params, json=json)
+        try:
+            payload = response.json() if response.content else {}
+        except ValueError as e:
+            raise ZohoUpstreamError(f"Zoho returned a non-JSON response (HTTP {response.status_code})") from e
+        self._raise_for_status(response, payload)
+        return payload
+
+    async def get_estimate_pdf(self, db: AsyncSession, estimate_id: str) -> bytes:
+        """The estimate rendered as a PDF, for printing.
+
+        Deliberately not routed through ``_request``: that parses every
+        response as JSON, which is correct for every other endpoint here and
+        fatal for a PDF body. Error responses ARE still JSON, so the failure
+        path parses and the success path does not.
+        """
+        response = await self._send(db, "GET", f"/estimates/{estimate_id}", params={"accept": "pdf"})
+        if response.status_code >= 400:
             try:
                 payload = response.json() if response.content else {}
-            except ValueError as e:
-                raise ZohoUpstreamError(f"Zoho returned a non-JSON response (HTTP {response.status_code})") from e
-            if response.status_code == 404:
-                raise ZohoNotFound(payload.get("message") or "Not found in Zoho Books")
-            if response.status_code == 400:
-                raise ZohoRequestRejected(payload.get("message") or "Zoho rejected the request")
-            if response.status_code >= 400:
-                raise ZohoUpstreamError(f"Zoho Books error (HTTP {response.status_code})")
-            return payload
-        raise ZohoUpstreamError("Zoho Books rejected the refreshed token")  # unreachable guard
+            except ValueError:
+                payload = {}
+            self._raise_for_status(response, payload)
+        if not response.content.startswith(b"%PDF-"):
+            # A 200 that is not a PDF means Books answered with something else
+            # entirely (an HTML login page on a bad token, or a JSON error it
+            # forgot to give a 4xx). Streaming that to the browser as a PDF
+            # produces a blank print dialog and no clue why.
+            raise ZohoUpstreamError("Zoho Books did not return a PDF")
+        return response.content
 
     async def search_contacts(self, db: AsyncSession, query: str) -> list[dict]:
         payload = await self._request(db, "GET", "/contacts", params={"search_text": query})
@@ -249,6 +299,17 @@ class ZohoService:
     async def get_estimate(self, db: AsyncSession, estimate_id: str) -> dict:
         """The full estimate, line items included."""
         return (await self._request(db, "GET", f"/estimates/{estimate_id}")).get("estimate", {})
+
+    async def list_estimate_comments(self, db: AsyncSession, estimate_id: str) -> list[dict]:
+        """The estimate's comments AND its system history.
+
+        This is where Books records "viewed by the customer" and "accepted",
+        with the timestamp of when it actually happened rather than when we
+        next polled. That difference is the whole reason the timeline mirrors
+        this instead of inferring status changes from the estimate itself.
+        """
+        payload = await self._request(db, "GET", f"/estimates/{estimate_id}/comments")
+        return payload.get("comments") or []
 
     async def find_estimate_by_reference(
         self, db: AsyncSession, reference_number: str, customer_id: str

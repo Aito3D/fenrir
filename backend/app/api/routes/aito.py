@@ -2,18 +2,23 @@
 
 import logging
 from datetime import datetime
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.user import User
 from backend.app.schemas.aito import (
+    AitoEventPage,
+    AitoEventResponse,
+    AitoNoteCreate,
     AitoProjectCreate,
     AitoProjectImport,
     AitoProjectMove,
@@ -26,7 +31,9 @@ from backend.app.schemas.aito import (
     AitoTaskUpdate,
 )
 from backend.app.services.aito_board_rules import SERVICES, TaskSummary, evaluate, summarise
-from backend.app.services.zoho import zoho_service
+from backend.app.services.aito_events import diff_fields, kinds_for_depth, record
+from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
+from backend.app.utils.http import build_content_disposition
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +167,7 @@ async def _active_in_column(db: AsyncSession, column: str, exclude_id: int | Non
     return [r for r in rows if r.id != exclude_id]
 
 
-async def _apply_rules(db: AsyncSession, project: AitoProject, summary: TaskSummary) -> None:
+async def _apply_rules(db: AsyncSession, project: AitoProject, summary: TaskSummary, actor: str | None = None) -> None:
     """Recompute ``project.board_column`` from the rules and relocate it.
 
     Takes the summary rather than loading the tasks itself: several callers
@@ -174,6 +181,14 @@ async def _apply_rules(db: AsyncSession, project: AitoProject, summary: TaskSumm
     observe the half-applied move.
 
     Does not commit: every caller is already inside a request that does.
+
+    ``actor`` is the acting user's name, or None. actor_class is 'user', not
+    'system': the machinery here is automatic, but a person caused it by
+    ticking a step or editing a card, and the timeline should say who. The
+    sync worker's call (``run_sync_once``, via a function-level import to
+    avoid a circular import) passes nothing, which reads as an unattributed
+    move rather than a false attribution to whichever user happened to be
+    online when the worker's tick ran.
     """
     column, _ = evaluate(project.quote_status, project.board_column, summary.pending)
     if column == project.board_column:
@@ -186,6 +201,18 @@ async def _apply_rules(db: AsyncSession, project: AitoProject, summary: TaskSumm
     project.position = len(destination_rows)
     for index, row in enumerate(source_rows):
         row.position = index
+
+    await record(
+        db,
+        project.id,
+        "stage.changed",
+        actor_class="user" if actor else "system",
+        actor_name=actor,
+        subject_type="project",
+        subject_id=project.id,
+        changes=[{"field": "column", "from": source, "to": project.board_column}],
+        detail={"cause": "rule"},
+    )
 
 
 def _mark_pending(project: AitoProject) -> None:
@@ -245,15 +272,37 @@ def _mark_pending_if_ours(project: AitoProject) -> None:
         _mark_pending(project)
 
 
-async def _mark_project_pending_for_task(db: AsyncSession, project_id: int) -> AitoProject | None:
+def _actor(user: User | None) -> str | None:
+    """The username to snapshot on an event.
+
+    None for auth-disabled installs and for API-key requests, which carry no
+    user identity — the same rule ``created_by`` already follows on the
+    project itself, so the two never disagree about who did something.
+    """
+    return user.username if user is not None else None
+
+
+async def _mark_project_pending_for_task(db: AsyncSession, project_id: int) -> tuple[AitoProject | None, bool]:
     """Task endpoints address a task, not a project, so the parent has to be
     loaded to be marked. A missing parent is not an error here: the task's own
     404 already covers the case that matters. Returns the project (or None) so
-    callers that also need to run `_apply_rules` on it don't load it twice."""
+    callers that also need to run `_apply_rules` on it don't load it twice.
+
+    Also returns whether the project was ALREADY pending before this call.
+    ``_mark_pending_if_ours`` is unconditional and idempotent — it re-marks a
+    project that is already pending just as readily as one that was idle — so
+    a caller emitting ``sync.queued`` off the post-call state alone would fire
+    on every single task edit made before the sync worker's next tick, not
+    just the one that actually queued the project. Callers compare this
+    against the post-call state to catch only the genuine idle/error/locked
+    -> pending transition.
+    """
     project = (await db.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one_or_none()
-    if project:
-        _mark_pending_if_ours(project)
-    return project
+    if project is None:
+        return None, False
+    was_pending = project.quote_sync_state == "pending"
+    _mark_pending_if_ours(project)
+    return project, was_pending
 
 
 def _imported_created_at(quote_id: str | None, quote_date: str | None) -> datetime | None:
@@ -371,6 +420,16 @@ async def create_project(
     # Flush so the project has an id the tasks can reference; one commit still
     # covers both, so a failure creates neither.
     await db.flush()
+    await record(
+        db,
+        project.id,
+        "project.created",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="project",
+        subject_id=project.id,
+        detail={"imported_from": project.quote_number} if project.quote_number else None,
+    )
     new_tasks = [
         AitoTask(project_id=project.id, position=position, **task_payload.model_dump())
         for position, task_payload in enumerate(payload.tasks)
@@ -379,7 +438,7 @@ async def create_project(
     # The tasks were just inserted from the payload, so they are already in
     # hand: summarise them rather than reading them back.
     summary = summarise(new_tasks)
-    await _apply_rules(db, project, summary)
+    await _apply_rules(db, project, summary, actor=_actor(current_user))
     await db.commit()
     await db.refresh(project)
     return _to_response(project, summary)
@@ -393,6 +452,133 @@ async def list_tasks(
 ):
     stmt = select(AitoTask).where(AitoTask.project_id == project_id).order_by(AitoTask.position, AitoTask.id)
     return [_task_to_response(t) for t in (await db.execute(stmt)).scalars().all()]
+
+
+@router.get("/{project_id}/events", response_model=AitoEventPage)
+async def list_events(
+    project_id: int,
+    depth: Literal["story", "detail", "everything"] = "detail",
+    before: int | None = None,
+    before_at: datetime | None = None,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+) -> AitoEventPage:
+    """This project's timeline, newest first.
+
+    Ordered by occurred_at then id, so the cursor must be the PAIR
+    (occurred_at, id), not id alone. An id-only cursor is only equivalent to
+    the compound sort while id order and occurred_at order agree, and the
+    backfill breaks that: it inserts each project's synthesised
+    'project.created' row with a freshly-assigned HIGH id but an OLD
+    occurred_at (the project's own created_at, possibly years earlier than
+    every organic event). Filtering on `id < before` alone makes that row's
+    id un-crossable — the cursor only ever shrinks past it — so it would never
+    appear on any page, not merely be mis-ordered. Keying on both halves keeps
+    the cursor stable when several events share a timestamp (also routine
+    after a backfill) while still reaching rows whose id and occurred_at
+    disagree.
+    """
+    project = await db.get(AitoProject, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if (before is None) != (before_at is None):
+        raise HTTPException(status_code=422, detail="The cursor needs both 'before' and 'before_at'")
+
+    limit = max(1, min(limit, 200))
+    query = (
+        select(AitoEvent)
+        .where(AitoEvent.project_id == project_id, AitoEvent.kind.in_(kinds_for_depth(depth)))
+        .order_by(AitoEvent.occurred_at.desc(), AitoEvent.id.desc())
+        .limit(limit + 1)  # one extra row is how has_more is answered without a count
+    )
+    if before is not None:
+        query = query.where(
+            or_(AitoEvent.occurred_at < before_at, and_(AitoEvent.occurred_at == before_at, AitoEvent.id < before))
+        )
+
+    rows = list((await db.execute(query)).scalars().all())
+    return AitoEventPage(
+        events=[AitoEventResponse.model_validate(row) for row in rows[:limit]],
+        has_more=len(rows) > limit,
+    )
+
+
+@router.post("/{project_id}/events", response_model=AitoEventResponse, status_code=201)
+async def add_note(
+    project_id: int,
+    payload: AitoNoteCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+) -> AitoEventResponse:
+    """Append a note to the timeline.
+
+    Local only — notes are never pushed to Zoho. The kind and actor_class are
+    fixed here rather than taken from the body: this is the one client-writable
+    event, and a caller able to name its own kind could fabricate an acceptance.
+    """
+    project = await db.get(AitoProject, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    event = await record(
+        db,
+        project_id,
+        "note.added",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="project",
+        subject_id=project_id,
+        note=payload.note,
+    )
+    await db.commit()
+    await db.refresh(event)
+    return AitoEventResponse.model_validate(event)
+
+
+@router.get("/{project_id}/quote.pdf")
+async def get_quote_pdf(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+) -> Response:
+    """This project's Zoho estimate, rendered as a PDF for printing.
+
+    A proxy rather than a redirect: the Books OAuth token is server-side only,
+    and the browser has no way to authenticate against Zoho directly.
+
+    Returned whole rather than streamed. A quote is a few pages, ``httpx`` has
+    already buffered the whole body inside ``get_estimate_pdf`` by the time we
+    see it, and a StreamingResponse over an in-memory ``bytes`` buys nothing
+    but a harder failure mode: a mid-stream Zoho error becomes a truncated
+    PDF the browser renders as a blank print dialog, instead of the 502 below.
+    """
+    project = await db.get(AitoProject, project_id)
+    if project is None or project.status == "deleted":
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.quote_id:
+        raise HTTPException(status_code=404, detail="This project has no Zoho quote")
+    try:
+        pdf = await zoho_service.get_estimate_pdf(db, project.quote_id)
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        # 502, not 500: the failure is upstream, and the distinction is what
+        # tells the operator to check Zoho rather than the app's own logs.
+        logger.warning("Aito quote PDF failed for project %s: %s", project_id, e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    filename = f"{project.quote_number or project.quote_id}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        # inline, not attachment: the browser fetches this into a blob to
+        # drive its own print dialog, and a download prompt would defeat that.
+        # Built with the shared helper rather than a hand-written header:
+        # quote_number is client-supplied and unrestricted, and Starlette
+        # encodes response headers as latin-1 — a curly quote, em dash, or any
+        # other non-Latin-1 character in it would raise UnicodeEncodeError and
+        # turn this into an unhandled 500.
+        headers={"Content-Disposition": build_content_disposition(filename, disposition="inline")},
+    )
 
 
 def _reject_ticks_without_acceptance(quote_status: str | None, fields: dict) -> None:
@@ -429,18 +615,34 @@ async def add_task(
     project_id: int,
     payload: AitoTaskCreate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     project = (await db.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     _reject_ticks_without_acceptance(project.quote_status, payload.model_dump())
+    # Captured before the mark: it is unconditional and idempotent, so
+    # checking the post-mark state alone would fire sync.queued on every task
+    # added to an already-pending project, not just the transition into it.
+    was_pending = project.quote_sync_state == "pending"
     _mark_pending_if_ours(project)
     highest = await db.scalar(select(func.max(AitoTask.position)).where(AitoTask.project_id == project_id))
     task = AitoTask(project_id=project_id, position=(highest + 1) if highest is not None else 0, **payload.model_dump())
     db.add(task)
     await db.flush()  # so _summary_for's SELECT sees the new row
-    await _apply_rules(db, project, await _summary_for(db, project_id))
+    await record(
+        db,
+        project_id,
+        "task.added",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="task",
+        subject_id=task.id,
+        subject_label=task.title,
+    )
+    if not was_pending and project.quote_sync_state == "pending":
+        await record(db, project.id, "sync.queued", actor_class="system")
+    await _apply_rules(db, project, await _summary_for(db, project_id), actor=_actor(current_user))
     await db.commit()
     await db.refresh(task)
     return _task_to_response(task)
@@ -451,7 +653,7 @@ async def update_task(
     task_id: int,
     payload: AitoTaskUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Only fields present in the body are written, so an omitted key is left
     alone and an explicit null disables that service.
@@ -477,7 +679,7 @@ async def update_task(
     # Marking pending ahead of a possible 422 is safe — get_db rolls back on
     # ANY exception (core/database.py:220), so a rejected PATCH persists
     # nothing, including this mark.
-    project = await _mark_project_pending_for_task(db, task.project_id)
+    project, was_pending = await _mark_project_pending_for_task(db, task.project_id)
     _reject_ticks_without_acceptance(project.quote_status if project else None, fields)
 
     for service in SERVICES:
@@ -490,10 +692,49 @@ async def update_task(
             if merged_done:
                 fields[done_key] = False
 
+    # Captured after the SERVICES loop above but before the setattr loop
+    # below applies fields to task: diff_fields must still run before the
+    # write (it compares against task's pre-patch state), but the SERVICES
+    # loop can itself flip a *_done flag to False when a cost is cleared —
+    # a diff taken before that loop would miss that implicit untick, and
+    # the board can move on it via _apply_rules even though no client ever
+    # sent the flag, so skipping it here would silently drop the
+    # task.step.unticked event an audit is most likely to be asked about.
+    changes = diff_fields(task, fields)
+    tick_changes = [c for c in changes if c["field"].endswith("_done")]
+    field_changes = [c for c in changes if not c["field"].endswith("_done")]
+
     for key, value in fields.items():
         setattr(task, key, value)
+    await record(
+        db,
+        task.project_id,
+        "task.updated",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="task",
+        subject_id=task.id,
+        subject_label=task.title,
+        changes=field_changes,
+    )
+    for change in tick_changes:
+        # One event per tick, never coalesced: each is a discrete decision
+        # about whether work is finished, and the board column moves on it.
+        await record(
+            db,
+            task.project_id,
+            "task.step.ticked" if change["to"] else "task.step.unticked",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="task",
+            subject_id=task.id,
+            subject_label=task.title,
+            detail={"service": change["field"].removesuffix("_done")},
+        )
+    if project is not None and not was_pending and project.quote_sync_state == "pending":
+        await record(db, project.id, "sync.queued", actor_class="system")
     if project:
-        await _apply_rules(db, project, await _summary_for(db, task.project_id))
+        await _apply_rules(db, project, await _summary_for(db, task.project_id), actor=_actor(current_user))
     await db.commit()
     await db.refresh(task)
     return _task_to_response(task)
@@ -503,16 +744,26 @@ async def update_task(
 async def delete_task(
     task_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_DELETE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_DELETE),
 ):
     """Hard delete, unlike projects: tasks need no stable visible number, and
     hold-to-remove is already a deliberate gesture."""
     task = await _get_task_or_404(db, task_id)
-    project = await _mark_project_pending_for_task(db, task.project_id)
+    project, _was_pending = await _mark_project_pending_for_task(db, task.project_id)
+    await record(
+        db,
+        task.project_id,
+        "task.removed",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="task",
+        subject_id=task.id,
+        subject_label=task.title,
+    )
     await db.delete(task)
     await db.flush()  # so the deleted row is out of _summary_for's SELECT
     if project:
-        await _apply_rules(db, project, await _summary_for(db, task.project_id))
+        await _apply_rules(db, project, await _summary_for(db, task.project_id), actor=_actor(current_user))
     await db.commit()
 
 
@@ -567,7 +818,7 @@ async def move_project(
     project_id: int,
     payload: AitoProjectMove,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     project = (
         await db.execute(select(AitoProject).where(AitoProject.id == project_id, AitoProject.status == "active"))
@@ -602,6 +853,20 @@ async def move_project(
     if source_column != payload.column:
         for i, row in enumerate(await _active_in_column(db, source_column, exclude_id=project.id)):
             row.position = i
+        # Only a genuine cross-column move is a stage change — reordering
+        # within a column has source_column == payload.column and must stay
+        # silent, or every in-column drag would fill the timeline with
+        # from == to non-events.
+        await record(
+            db,
+            project.id,
+            "stage.changed",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=project.id,
+            changes=[{"field": "column", "from": source_column, "to": project.board_column}],
+        )
     await db.commit()
     await db.refresh(project)
     return _to_response(project, summary)
@@ -612,7 +877,7 @@ async def update_project(
     project_id: int,
     payload: AitoProjectUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Edit a card's content. Only fields present in the body are written, so a
     null client_phone clears it while an omitted one is left alone."""
@@ -623,6 +888,9 @@ async def update_project(
         raise HTTPException(status_code=404, detail="Project not found")
 
     fields = payload.model_dump(exclude_unset=True)
+    # Captured before anything is applied, or diff_fields would compare the
+    # new value against itself and return [].
+    changes = diff_fields(project, fields)
 
     # The client fields are a snapshot, so consistency has to hold for the MERGED
     # row, not just the payload: a lone {"client_name": null} passes any
@@ -638,7 +906,23 @@ async def update_project(
     for key in ("client_id", "client_name", "client_phone", "client_email", "client_is_company"):
         if key in fields:
             setattr(project, key, fields[key])
+    # Captured before the mark: it is unconditional and idempotent, so
+    # checking the post-mark state alone would fire sync.queued on every edit
+    # to an already-pending project, not just the transition into it.
+    was_pending = project.quote_sync_state == "pending"
     _mark_pending_if_ours(project)
+    await record(
+        db,
+        project.id,
+        "project.updated",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="project",
+        subject_id=project.id,
+        changes=changes,
+    )
+    if not was_pending and project.quote_sync_state == "pending":
+        await record(db, project.id, "sync.queued", actor_class="system")
     await db.commit()
     await db.refresh(project)
     return _to_response(project, await _summary_for(db, project.id))
@@ -649,7 +933,7 @@ async def set_quote_status(
     project_id: int,
     payload: AitoQuoteStatusUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Move a project's quote to sent, accepted or declined.
 
@@ -678,7 +962,16 @@ async def set_quote_status(
     project.quote_status_block = None
     project.quote_status_remote = None
     summary = await _summary_for(db, project.id)
-    await _apply_rules(db, project, summary)
+    await _apply_rules(db, project, summary, actor=_actor(current_user))
+    await record(
+        db,
+        project.id,
+        f"quote.{payload.status}",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="project",
+        subject_id=project.id,
+    )
     await db.commit()
     await db.refresh(project)
 
@@ -722,7 +1015,7 @@ async def set_quote_status(
 async def restore_project(
     project_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Un-delete: back onto the board at the end of its original column."""
     project = (
@@ -740,7 +1033,16 @@ async def restore_project(
     project.position = position
     _mark_pending_if_ours(project)
     summary = await _summary_for(db, project.id)
-    await _apply_rules(db, project, summary)
+    await _apply_rules(db, project, summary, actor=_actor(current_user))
+    await record(
+        db,
+        project.id,
+        "project.restored",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="project",
+        subject_id=project.id,
+    )
     await db.commit()
     await db.refresh(project)
     return _to_response(project, summary)
@@ -750,7 +1052,7 @@ async def restore_project(
 async def delete_project(
     project_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_DELETE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_DELETE),
 ):
     """Soft delete: the row is kept forever, only hidden from the board."""
     project = (
@@ -760,4 +1062,13 @@ async def delete_project(
         raise HTTPException(status_code=404, detail="Project not found")
     project.status = "deleted"
     _mark_pending_if_ours(project)
+    await record(
+        db,
+        project.id,
+        "project.trashed",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="project",
+        subject_id=project.id,
+    )
     await db.commit()

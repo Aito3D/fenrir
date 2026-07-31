@@ -3,6 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, ExternalLink, Loader2, X } from 'lucide-react';
 import { COLUMNS } from './columns';
+import { DeleteHoldButton } from './DeleteHoldButton';
+import { ActivityRail } from './history/ActivityRail';
+import { QuotePrintButton } from './QuotePrintButton';
 import { QuoteStatusActions } from './QuoteStatusActions';
 import { quoteStatusLabelKey } from './quoteStatus';
 import { TaskEditor } from './TaskEditor';
@@ -37,6 +40,7 @@ const BLOCK_MESSAGE_KEY: Record<string, string> = {
 interface ProjectDetailPanelProps {
   project: AitoProject;
   onClose: () => void;
+  onDelete: () => void;
 }
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -58,22 +62,12 @@ function SaveIndicator({ state }: { state: SaveState }) {
 /** Everything a card cannot fit: the untruncated description, the timestamps
  *  and the stage. Shares AITO_CARD_VT_NAME with the card it grew out of, so the
  *  browser morphs one into the other (see useCardMorph). */
-export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps) {
+export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetailPanelProps) {
   const { t, i18n } = useTranslation();
   const closeRef = useRef<HTMLButtonElement>(null);
   const column = COLUMNS.find((c) => c.id === project.column);
   const created = parseUTCDate(project.created_at);
   const updated = parseUTCDate(project.updated_at);
-
-  // "28 Jul 2026 · 5 600 XPF" — the QUOTE's own date and total, which can
-  // exceed the project total when non-AITO lines were skipped at import.
-  const quoteDate = project.quote_date ? new Date(project.quote_date + 'T00:00:00') : null;
-  const quoteDetail = [
-    quoteDate && !Number.isNaN(quoteDate.getTime()) ? quoteDate.toLocaleDateString(i18n.language) : '',
-    project.quote_total != null ? project.quote_total.toLocaleString(i18n.language) : '',
-  ]
-    .filter(Boolean)
-    .join(' · ');
 
   // A status rendered through the shared quote-status labels, so the two sides
   // of a block message are localised too rather than raw Zoho English. An
@@ -95,6 +89,7 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
       queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
         prev?.map((p) => (p.id === updatedProject.id ? updatedProject : p)) ?? prev,
       );
+      queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
     },
     onError: () => showToast(t('aito.saveFailed'), 'error'),
   });
@@ -172,25 +167,28 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
         aria-modal="true"
         aria-label={project.client_name ?? t('aito.noClient')}
         style={{ viewTransitionName: AITO_CARD_VT_NAME }}
-        className="bg-bambu-dark-secondary rounded-xl w-full max-w-7xl border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)]"
+        className="bg-bambu-dark-secondary rounded-xl w-full max-w-[100rem] border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)]"
       >
-        <div className="p-4 border-b border-bambu-dark-tertiary flex items-start justify-between gap-3 flex-shrink-0">
+        <div className="group p-4 border-b border-bambu-dark-tertiary flex items-start justify-between gap-3 flex-shrink-0">
           <h2 className="text-lg font-semibold text-white truncate min-w-0">
             {t('aito.projectRef', { id: project.id })}
           </h2>
-          <button
-            type="button"
-            ref={closeRef}
-            aria-label={t('common.close')}
-            onClick={onClose}
-            className="p-1 -m-1 rounded-md text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <span className="flex items-center gap-3 flex-shrink-0">
+            <DeleteHoldButton onDelete={onDelete} label={t('aito.deleteTitle')} hint={t('aito.holdToDelete')} />
+            <button
+              type="button"
+              ref={closeRef}
+              aria-label={t('common.close')}
+              onClick={onClose}
+              className="p-1 -m-1 rounded-md text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </span>
         </div>
 
         <div className="p-4 overflow-y-auto flex-1">
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] gap-4 lg:gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)_minmax(0,26rem)] gap-4 lg:gap-6">
             <div className="space-y-4 min-w-0">
               <div>
                 {/* The same name the create modal gives this field, so the
@@ -286,22 +284,25 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
                 {project.quote_number && (
                   <div className="flex items-baseline justify-between gap-2 border-t border-bambu-dark-tertiary pt-2 mt-2">
                     <dt className="text-bambu-gray flex-shrink-0">{t('aito.quoteSearchLabel')}:</dt>
-                    <dd className="text-white min-w-0 truncate text-right">
+                    <dd className="text-white min-w-0 truncate text-right flex items-center justify-end gap-2">
                       {project.quote_url ? (
                         <a
                           href={project.quote_url}
                           target="_blank"
                           rel="noopener noreferrer"
                           title={t('aito.quoteOpenInZoho')}
-                          className="text-white hover:text-bambu-green inline-flex items-center gap-1"
+                          className="text-white hover:text-bambu-green inline-flex items-center gap-1 min-w-0 truncate"
                         >
                           {project.quote_number}
-                          <ExternalLink className="w-3.5 h-3.5" />
+                          <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
                         </a>
                       ) : (
-                        project.quote_number
+                        <span className="min-w-0 truncate">{project.quote_number}</span>
                       )}
-                      {quoteDetail && <span className="text-bambu-gray"> · {quoteDetail}</span>}
+                      {/* Replaces the quote's date and total, which said less
+                          than the one thing an operator actually does with a
+                          quote at this point in the job. */}
+                      <QuotePrintButton project={project} />
                     </dd>
                   </div>
                 )}
@@ -405,7 +406,7 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
               <QuoteStatusActions project={project} />
             </div>
 
-            <div className="min-w-0 border-t border-bambu-dark-tertiary pt-4 lg:border-t-0 lg:pt-0">
+            <div className="min-w-0 border-t border-bambu-dark-tertiary pt-4 lg:border-t-0 lg:pt-0 lg:border-l lg:border-bambu-dark-tertiary lg:pl-6">
               <TaskEditor
                 value={tasks}
                 onChange={onTasksChange}
@@ -415,6 +416,10 @@ export function ProjectDetailPanel({ project, onClose }: ProjectDetailPanelProps
                 }}
                 canTick={project.quote_status === 'accepted'}
               />
+            </div>
+
+            <div className="min-w-0 border-t border-bambu-dark-tertiary pt-4 lg:border-t-0 lg:pt-0 lg:border-l lg:pl-6">
+              <ActivityRail projectId={project.id} />
             </div>
           </div>
         </div>

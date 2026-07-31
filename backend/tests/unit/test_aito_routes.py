@@ -12,6 +12,7 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.schemas.aito import AitoProjectImportItem
 from backend.app.services.aito_board_rules import summarise
+from backend.app.services.zoho import ZohoUpstreamError, zoho_service
 
 
 async def _create(client, **overrides):
@@ -1430,3 +1431,56 @@ async def test_changing_the_board_status_clears_a_recorded_block(async_client, d
     await db_session.refresh(row)
     assert row.quote_status_block is None
     assert row.quote_status_remote is None
+
+
+@pytest.mark.asyncio
+async def test_quote_pdf_streams_the_document(async_client, db_session, monkeypatch):
+    project = AitoProject(description="Trophy", board_column="devis", quote_id="EST-7")
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+
+    async def fake_pdf(db, estimate_id):
+        assert estimate_id == "EST-7"
+        return b"%PDF-1.4 body"
+
+    monkeypatch.setattr(zoho_service, "get_estimate_pdf", fake_pdf)
+
+    response = await async_client.get(f"/api/v1/aito/{project.id}/quote.pdf")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content == b"%PDF-1.4 body"
+    assert "inline" in response.headers["content-disposition"]
+
+
+@pytest.mark.asyncio
+async def test_quote_pdf_404s_without_a_quote(async_client, db_session):
+    """A hand-made card has no estimate to print, and must say so rather than
+    ask Zoho for the PDF of ``None``."""
+    project = AitoProject(description="Hand-made", board_column="devis")
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+
+    response = await async_client.get(f"/api/v1/aito/{project.id}/quote.pdf")
+    assert response.status_code == 404
+    # Assert the BODY, not just the status: FastAPI answers an unmatched path
+    # with 404 too, so a bare status assertion passes even when the route does
+    # not exist and proves nothing about this branch.
+    assert response.json()["detail"] == "This project has no Zoho quote"
+
+
+@pytest.mark.asyncio
+async def test_quote_pdf_maps_zoho_failure_to_502(async_client, db_session, monkeypatch):
+    project = AitoProject(description="Trophy", board_column="devis", quote_id="EST-7")
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+
+    async def boom(db, estimate_id):
+        raise ZohoUpstreamError("Zoho Books unreachable: ConnectError")
+
+    monkeypatch.setattr(zoho_service, "get_estimate_pdf", boom)
+
+    response = await async_client.get(f"/api/v1/aito/{project.id}/quote.pdf")
+    assert response.status_code == 502

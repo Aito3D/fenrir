@@ -278,7 +278,6 @@ export function AitoPage() {
                 column={column}
                 projects={board[column.id]}
                 isDropTarget={dropTarget === column.id}
-                onDeleteCard={(id) => deleteMutation.mutate(id)}
                 onExpandCard={openCard}
                 transitionConfig={reducedMotion ? null : SORTABLE_TRANSITION}
                 shouldAnimateIn={shouldAnimateIn}
@@ -306,7 +305,19 @@ export function AitoPage() {
       {showTrash && <TrashModal onClose={() => setShowTrash(false)} />}
 
       {expandedProject && (
-        <ProjectDetailPanel project={expandedProject} onClose={() => closeCard(expandedProject.id)} />
+        <ProjectDetailPanel
+          project={expandedProject}
+          onClose={() => closeCard(expandedProject.id)}
+          onDelete={() => {
+            // Close first, then delete. The panel is rendered from
+            // `expandedProject`, which is derived from the projects query — so
+            // letting the delete land first would unmount the panel out from
+            // under its own click via a cache invalidation, losing the card
+            // morph. Closing first keeps the morph and the mutation ordered.
+            closeCard(expandedProject.id);
+            deleteMutation.mutate(expandedProject.id);
+          }}
+        />
       )}
     </div>
   );

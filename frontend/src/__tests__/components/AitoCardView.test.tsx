@@ -39,7 +39,7 @@ const project: AitoProject = {
 
 describe('CardView', () => {
   it('puts the client name in the header and never renders phone or email', () => {
-    render(<CardView project={project} onExpand={vi.fn()} onDelete={vi.fn()} />);
+    render(<CardView project={project} onExpand={vi.fn()} />);
     expect(screen.getByText('ACME SARL')).toBeInTheDocument();
     expect(screen.queryByText(/87123456/)).not.toBeInTheDocument();
     expect(screen.queryByText(/hi@acme\.pf/)).not.toBeInTheDocument();
@@ -55,7 +55,7 @@ describe('CardView', () => {
   it('opens from the body, and the body is reachable by keyboard', async () => {
     const onExpand = vi.fn();
     const user = userEvent.setup();
-    render(<CardView project={project} onExpand={onExpand} onDelete={vi.fn()} />);
+    render(<CardView project={project} onExpand={onExpand} />);
     const body = screen.getByRole('button', { name: /Support de caméra/ });
     await user.click(body);
     expect(onExpand).toHaveBeenCalledTimes(1);
@@ -72,7 +72,6 @@ describe('CardView', () => {
       <CardView
         project={project}
         onExpand={onExpand}
-        onDelete={vi.fn()}
         dragHandleRef={vi.fn()}
         dragHandleProps={{}}
       />,
@@ -119,7 +118,7 @@ describe('CardView', () => {
   it('shows the same summary in the drag overlay, which has no body button', async () => {
     // CardView inserts the summary at two points — inside the body <button>
     // when `onExpand` is passed, and inside a plain <div> for the DragOverlay
-    // clone, which gets neither `onExpand` nor `onDelete`. Every other summary
+    // clone, which gets no `onExpand` at all. Every other summary
     // test above passes `onExpand`, so without this one the overlay's
     // insertion point could be dropped and the suite would stay green while a
     // dragged card visibly lost its badges, count and total.
@@ -156,7 +155,6 @@ describe('CardView', () => {
       <CardView
         project={{ ...project, quote_number: 'DEV26-2462', quote_id: 'e2' }}
         onExpand={vi.fn()}
-        onDelete={vi.fn()}
       />,
     );
     expect(screen.getByText('DEV26-2462')).toBeInTheDocument();
@@ -166,7 +164,7 @@ describe('CardView', () => {
   });
 
   it('shows no quote chip on a manually created card', () => {
-    render(<CardView project={project} onExpand={vi.fn()} onDelete={vi.fn()} />);
+    render(<CardView project={project} onExpand={vi.fn()} />);
     expect(screen.queryByText(/DEV26-/)).not.toBeInTheDocument();
   });
 
@@ -175,7 +173,6 @@ describe('CardView', () => {
       <CardView
         project={{ ...project, quote_number: null, quote_sync_state: 'pending' }}
         onExpand={vi.fn()}
-        onDelete={vi.fn()}
       />,
     );
     expect(screen.getByText(/devis…|quote…/i)).toBeInTheDocument();
@@ -189,7 +186,6 @@ describe('CardView', () => {
       <CardView
         project={{ ...project, quote_number: 'DEV26-2462', quote_sync_state: 'pending' }}
         onExpand={vi.fn()}
-        onDelete={vi.fn()}
       />,
     );
     expect(screen.getByText('DEV26-2462')).toBeInTheDocument();
@@ -201,7 +197,6 @@ describe('CardView', () => {
       <CardView
         project={{ ...project, quote_number: 'DEV26-2471', quote_sync_state: 'error', quote_sync_error: 'boom' }}
         onExpand={vi.fn()}
-        onDelete={vi.fn()}
       />,
     );
     expect(screen.getByLabelText(/sync/i)).toBeInTheDocument();
@@ -212,7 +207,6 @@ describe('CardView', () => {
       <CardView
         project={{ ...project, quote_number: 'DEV26-2471', quote_sync_state: 'locked' }}
         onExpand={vi.fn()}
-        onDelete={vi.fn()}
       />,
     );
     expect(screen.getByText('DEV26-2471')).toBeInTheDocument();
@@ -224,7 +218,6 @@ describe('CardView', () => {
       <CardView
         project={{ ...project, quote_number: 'DEV26-2462', quote_sync_state: 'idle' }}
         onExpand={vi.fn()}
-        onDelete={vi.fn()}
       />,
     );
     expect(screen.queryByLabelText(/sync|facturé|invoiced|locked/i)).not.toBeInTheDocument();
@@ -235,7 +228,6 @@ describe('CardView', () => {
       <CardView
         project={{ ...project, quote_number: 'DEV26-2462', quote_status: 'accepted' }}
         onExpand={vi.fn()}
-        onDelete={vi.fn()}
       />,
     );
     expect(screen.getByText('DEV26-2462')).toBeInTheDocument();
@@ -250,7 +242,6 @@ describe('CardView', () => {
       <CardView
         project={{ ...project, quote_number: 'DEV26-2462', quote_status: 'partially_invoiced' }}
         onExpand={vi.fn()}
-        onDelete={vi.fn()}
       />,
     );
     expect(screen.getByText('partially_invoiced')).toBeInTheDocument();
@@ -266,7 +257,6 @@ describe('CardView', () => {
       <CardView
         project={{ ...project, quote_number: 'DEV26-2462', quote_status: 'toString' }}
         onExpand={vi.fn()}
-        onDelete={vi.fn()}
       />,
     );
     const chip = screen.getByText('toString');
@@ -281,7 +271,6 @@ describe('CardView', () => {
       <CardView
         project={{ ...project, quote_number: 'DEV26-2462', quote_status: null }}
         onExpand={vi.fn()}
-        onDelete={vi.fn()}
       />,
     );
     expect(screen.getByText('DEV26-2462')).toBeInTheDocument();
@@ -289,17 +278,17 @@ describe('CardView', () => {
   });
 
   it('marks a quote-locked card with a lock and says why', () => {
-    render(<CardView project={{ ...project, move_lock: 'quote' }} onExpand={vi.fn()} onDelete={vi.fn()} />);
+    render(<CardView project={{ ...project, move_lock: 'quote' }} onExpand={vi.fn()} />);
     expect(screen.getByTitle('Locked to Quote until the quote is accepted')).toBeInTheDocument();
   });
 
   it('says a waiting card is stalled on the client, not on us', () => {
-    render(<CardView project={{ ...project, move_lock: 'waiting' }} onExpand={vi.fn()} onDelete={vi.fn()} />);
+    render(<CardView project={{ ...project, move_lock: 'waiting' }} onExpand={vi.fn()} />);
     expect(screen.getByTitle('Waiting on the client to answer the quote')).toBeInTheDocument();
   });
 
   it('names the step rule on a card the checkboxes are driving', () => {
-    render(<CardView project={{ ...project, move_lock: 'steps' }} onExpand={vi.fn()} onDelete={vi.fn()} />);
+    render(<CardView project={{ ...project, move_lock: 'steps' }} onExpand={vi.fn()} />);
     expect(screen.getByTitle("This card's column is set by its task steps")).toBeInTheDocument();
   });
 
@@ -308,7 +297,6 @@ describe('CardView', () => {
       <CardView
         project={{ ...project, move_lock: 'quote' }}
         onExpand={vi.fn()}
-        onDelete={vi.fn()}
         dragHandleProps={{}}
       />,
     );
@@ -320,13 +308,89 @@ describe('CardView', () => {
 
   it('keeps the grip on an unlocked card', () => {
     render(
-      <CardView project={{ ...project, move_lock: null }} onExpand={vi.fn()} onDelete={vi.fn()} dragHandleProps={{}} />,
+      <CardView project={{ ...project, move_lock: null }} onExpand={vi.fn()} dragHandleProps={{}} />,
     );
     expect(screen.getByRole('button', { name: /drag|glisser/i })).toBeInTheDocument();
   });
 
   it('shows no lock on a card free to move between Finish and Done', () => {
-    render(<CardView project={{ ...project, move_lock: null }} onExpand={vi.fn()} onDelete={vi.fn()} />);
+    render(<CardView project={{ ...project, move_lock: null }} onExpand={vi.fn()} />);
     expect(screen.queryByTitle(/Locked|set by its task steps|declined/)).not.toBeInTheDocument();
+  });
+
+  it('offers mark-as-sent on a card in the Quote column', () => {
+    render(
+      <CardView
+        project={{ ...project, column: 'devis' }}
+        onExpand={vi.fn()}
+        onMarkSent={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /mark as sent/i })).toBeEnabled();
+  });
+
+  it('does not offer mark-as-sent outside the Quote column', () => {
+    for (const column of ['waiting', 'scan', 'model', 'print', 'finish', 'done'] as const) {
+      const { unmount } = render(
+        <CardView project={{ ...project, column }} onExpand={vi.fn()} onMarkSent={vi.fn()} />,
+      );
+      expect(screen.queryByRole('button', { name: /mark as sent/i })).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('omits mark-as-sent from the drag overlay clone', () => {
+    // Same rule delete follows: the overlay is a picture of the card being
+    // dragged, and its buttons would be unreachable anyway.
+    render(<CardView project={{ ...project, column: 'devis' }} overlay />);
+    expect(screen.queryByRole('button', { name: /mark as sent/i })).not.toBeInTheDocument();
+  });
+
+  it('disables mark-as-sent while the request is in flight, rather than removing it', () => {
+    // HoldButton fires on a timer, not on pointer release, so the mutation
+    // starts with the user's finger still down. A button that vanishes at that
+    // moment vanishes from under them.
+    render(
+      <CardView
+        project={{ ...project, column: 'devis' }}
+        onExpand={vi.fn()}
+        onMarkSent={vi.fn()}
+        markSentPending
+      />,
+    );
+    expect(screen.getByRole('button', { name: /mark as sent/i })).toBeDisabled();
+  });
+
+  it('fires mark-as-sent only once the 500ms hold completes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const onMarkSent = vi.fn();
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(
+        <CardView
+          project={{ ...project, column: 'devis' }}
+          onExpand={vi.fn()}
+          onMarkSent={onMarkSent}
+        />,
+      );
+
+      const button = screen.getByRole('button', { name: /mark as sent/i });
+      await user.pointer({ keys: '[MouseLeft>]', target: button });
+      vi.advanceTimersByTime(300);
+      expect(onMarkSent).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(300);
+      expect(onMarkSent).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not offer delete on the board card', () => {
+    // Delete moved to the expanded card: a destructive action belongs on the
+    // surface that shows you what you are destroying, not on a three-line
+    // summary one mis-hold away from it.
+    render(<CardView project={project} onExpand={vi.fn()} onMarkSent={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument();
   });
 });

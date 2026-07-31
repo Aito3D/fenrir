@@ -7,7 +7,7 @@ import { HoldButton } from './HoldButton';
 //
 // A thin wrapper over `HoldButton` (task-12-brief.md): same timer, hint and
 // ring, red styling and Trash2 icon, `durationMs={1000}`. Public props and
-// behaviour are unchanged — `AitoCardView.test.tsx` and `TaskRow` both
+// behaviour are unchanged — `ProjectDetailPanel.test.tsx` and `TaskRow` both
 // depend on them.
 export function DeleteHoldButton({
   onDelete,

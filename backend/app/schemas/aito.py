@@ -173,3 +173,43 @@ class AitoQuoteStatusResponse(BaseModel):
 
     project: AitoProjectResponse
     zoho_synced: bool
+
+
+class AitoEventResponse(BaseModel):
+    id: int
+    occurred_at: datetime
+    occurred_until: datetime | None
+    kind: str
+    actor_class: str
+    actor_name: str | None
+    subject_type: str | None
+    subject_id: int | None
+    subject_label: str | None
+    changes: list[dict] | None
+    detail: dict | None
+    note: str | None
+
+    model_config = {"from_attributes": True}
+
+
+class AitoEventPage(BaseModel):
+    events: list[AitoEventResponse]
+    has_more: bool
+
+
+class AitoNoteCreate(BaseModel):
+    """The ONLY thing a client may append to the timeline.
+
+    Deliberately carries no kind, actor or timestamp: the handler fixes all
+    three. A body that could name its own kind could fabricate an acceptance.
+    """
+
+    note: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("note")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("note must not be blank")
+        return stripped

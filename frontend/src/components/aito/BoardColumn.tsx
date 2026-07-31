@@ -5,16 +5,15 @@ import { useTranslation } from 'react-i18next';
 import { CardView } from './CardView';
 import type { ColumnMeta } from './columns';
 import type { AitoProject } from '../../api/client';
+import { useQuoteStatusMutation } from '../../hooks/useQuoteStatusMutation';
 
 function SortableCard({
   project,
-  onDelete,
   onExpand,
   transitionConfig,
   animateIn,
 }: {
   project: AitoProject;
-  onDelete: () => void;
   onExpand: () => void;
   transitionConfig: { duration: number; easing: string } | null;
   animateIn: boolean;
@@ -37,6 +36,13 @@ function SortableCard({
     transition: transitionConfig,
   });
 
+  // Owned here rather than threaded down from AitoPage: the hook is
+  // per-project, and this component is already the one-per-project layer.
+  // Hoisting it to the board would mean either one mutation per column (wrong
+  // project) or a lookup by id (a second source of truth for which project a
+  // card is).
+  const markSent = useQuoteStatusMutation(project);
+
   return (
     <div
       ref={setNodeRef}
@@ -45,8 +51,9 @@ function SortableCard({
     >
       <CardView
         project={project}
-        onDelete={onDelete}
         onExpand={onExpand}
+        onMarkSent={() => markSent.mutate('sent')}
+        markSentPending={markSent.isPending}
         dragHandleRef={setActivatorNodeRef}
         dragHandleProps={{ ...attributes, ...listeners }}
       />
@@ -58,7 +65,6 @@ interface ColumnProps {
   column: ColumnMeta;
   projects: AitoProject[];
   isDropTarget: boolean;
-  onDeleteCard: (id: number) => void;
   onExpandCard: (id: number) => void;
   transitionConfig: { duration: number; easing: string } | null;
   shouldAnimateIn: (id: number) => boolean;
@@ -69,7 +75,6 @@ export function BoardColumn({
   column,
   projects,
   isDropTarget,
-  onDeleteCard,
   onExpandCard,
   transitionConfig,
   shouldAnimateIn,
@@ -105,7 +110,6 @@ export function BoardColumn({
             <SortableCard
               key={project.id}
               project={project}
-              onDelete={() => onDeleteCard(project.id)}
               onExpand={() => onExpandCard(project.id)}
               transitionConfig={transitionConfig}
               animateIn={shouldAnimateIn(project.id)}

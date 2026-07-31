@@ -10,7 +10,7 @@ from sqlalchemy import select
 from backend.app.api.routes.settings import set_setting
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
-from backend.app.services.aito_quote_sync import SYNC_FAILURE_LIMIT, run_sync_once
+from backend.app.services.aito_quote_sync import SYNC_FAILURE_LIMIT, run_sync_once, sync_project
 from backend.app.services.zoho import zoho_service
 
 
@@ -1072,10 +1072,10 @@ async def test_project_state_changed_away_from_pending_before_the_loop_reaches_i
 
 
 @pytest.mark.asyncio
-async def test_sync_interval_falls_back_to_sixty_seconds(db_session):
+async def test_sync_interval_falls_back_to_three_hundred_seconds(db_session):
     from backend.app.services.aito_quote_sync import sync_interval_seconds
 
-    assert await sync_interval_seconds(db_session) == 60
+    assert await sync_interval_seconds(db_session) == 300
 
 
 @pytest.mark.asyncio
@@ -1623,7 +1623,7 @@ async def test_trashing_before_first_tick_then_restoring_and_editing_is_re_enque
     created = await create_project(payload=payload, db=db_session, current_user=None)
     assert created.quote_sync_state == "pending"
 
-    await delete_project(project_id=created.id, db=db_session, _=None)
+    await delete_project(project_id=created.id, db=db_session, current_user=None)
     row = (await db_session.execute(select(AitoProject).where(AitoProject.id == created.id))).scalar_one()
     assert row.status == "deleted"
     assert row.quote_sync_state == "pending"  # still queued — the tick hasn't run yet
@@ -1642,14 +1642,14 @@ async def test_trashing_before_first_tick_then_restoring_and_editing_is_re_enque
     assert row.quote_sync_state != "pending"
     assert row.quote_sync_state != "unmanaged"
 
-    restored = await restore_project(project_id=created.id, db=db_session, _=None)
+    restored = await restore_project(project_id=created.id, db=db_session, current_user=None)
     assert restored.quote_sync_state == "pending"
 
     edited = await update_project(
         project_id=created.id,
         payload=AitoProjectUpdate(description="Helice modifiee"),
         db=db_session,
-        _=None,
+        current_user=None,
     )
     assert edited.quote_sync_state == "pending"
 
@@ -1730,6 +1730,7 @@ async def test_an_accepted_board_pushes_to_a_draft_quote(db_session):
         zoho_handler(
             {
                 ("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "draft"}},
+                ("GET", "/estimates/E1/comments"): {"comments": []},
                 ("POST", "/status/sent"): {"message": "ok"},
                 ("POST", "/status/accepted"): {"message": "ok"},
             },
@@ -1740,7 +1741,11 @@ async def test_an_accepted_board_pushes_to_a_draft_quote(db_session):
 
     await run_sync_once(db_session)
     await db_session.refresh(project)
-    gets = [entry for entry in seen if entry[0] == "GET"]
+    # Scoped to the estimate GET specifically (not just "GET"): the sweep now
+    # also fires a GET at /estimates/E1/comments to mirror Books' history
+    # (Task 7), which is unrelated to what this test is proving and would
+    # otherwise be conflated with a redundant estimate re-read.
+    estimate_gets = [entry for entry in seen if entry[0] == "GET" and entry[1].endswith("/estimates/E1")]
     posts = [entry[1] for entry in seen if entry[0] == "POST"]
     assert len(posts) == 2
     assert posts[0].endswith("/status/sent")
@@ -1750,9 +1755,53 @@ async def test_an_accepted_board_pushes_to_a_draft_quote(db_session):
     # default None — with current=None the sent-first chain would re-read the
     # estimate itself before POSTing, costing a second GET this mock does not
     # even provide a route for.
-    assert len(gets) == 1
+    assert len(estimate_gets) == 1
     assert project.quote_status == "accepted"
     assert project.quote_sync_error is None
+
+
+@pytest.mark.asyncio
+async def test_a_comment_mirror_failure_does_not_corrupt_the_syncs_own_state(db_session, monkeypatch):
+    """AitoEvent.zoho_comment_id is a UNIQUE column, so mirror_comments' own
+    write path can raise (e.g. an IntegrityError from two overlapping ticks
+    racing the same comment_id), not just the network fetch. Before the fix,
+    only the fetch sat inside sync_project's try -- mirror_comments and the
+    watermark writes ran in the else branch, outside it, so a raise from
+    mirror_comments escaped straight to sync_project's own outer catch-all.
+    That flips quote_sync_state to 'error' and overwrites quote_sync_error,
+    discarding this tick's already-successful reconcile_quote_status result
+    for what is only a history-mirroring problem. Mirror failures must stay
+    contained."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "accepted"}},
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    from backend.app.services import aito_quote_sync
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("simulated IntegrityError from a racing tick")
+
+    monkeypatch.setattr(aito_quote_sync, "mirror_comments", boom)
+
+    await sync_project(db_session, project)
+
+    assert project.quote_sync_state != "error"
+    assert project.quote_sync_error is None
+    # The reconciler's own successful work from this same tick must survive
+    # the mirror's failure too.
+    assert project.quote_status == "accepted"
 
 
 @pytest.mark.asyncio

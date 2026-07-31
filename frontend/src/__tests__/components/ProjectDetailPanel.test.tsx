@@ -45,7 +45,7 @@ const project: AitoProject = {
 };
 
 const show = (overrides: Partial<AitoProject> = {}) =>
-  render(<ProjectDetailPanel project={{ ...project, ...overrides }} onClose={vi.fn()} />);
+  render(<ProjectDetailPanel project={{ ...project, ...overrides }} onClose={vi.fn()} onDelete={vi.fn()} />);
 
 // Mirrors AitoPage.tsx: `AitoPage` owns a `useQuery(['aito-projects'])`
 // (AitoPage.tsx:83) — no longer the only one in production; `QuoteCombobox`
@@ -63,7 +63,9 @@ const show = (overrides: Partial<AitoProject> = {}) =>
 // cleanup order against each other, which is not how production works.
 function BoardHost({ showPanel, project: projectOverride }: { showPanel: boolean; project?: AitoProject }) {
   useQuery({ queryKey: ['aito-projects'], queryFn: api.getAitoProjects });
-  return showPanel ? <ProjectDetailPanel project={projectOverride ?? project} onClose={vi.fn()} /> : null;
+  return showPanel ? (
+    <ProjectDetailPanel project={projectOverride ?? project} onClose={vi.fn()} onDelete={vi.fn()} />
+  ) : null;
 }
 
 // ProjectDetailPanel renders TaskEditor unconditionally, and every TaskRow
@@ -443,7 +445,7 @@ describe('ProjectDetailPanel tasks', () => {
     const acceptedProject: AitoProject = { ...project, quote_status: 'accepted' };
     const Host = ({ open }: { open: boolean }) => (
       <QueryClientProvider client={client}>
-        <ToastProvider>{open ? <ProjectDetailPanel project={acceptedProject} onClose={vi.fn()} /> : null}</ToastProvider>
+        <ToastProvider>{open ? <ProjectDetailPanel project={acceptedProject} onClose={vi.fn()} onDelete={vi.fn()} /> : null}</ToastProvider>
       </QueryClientProvider>
     );
 
@@ -1053,7 +1055,7 @@ describe('ProjectDetailPanel tasks', () => {
     const Host = ({ open }: { open: boolean }) => (
       <QueryClientProvider client={client}>
         <BrowserRouter>
-          <ToastProvider>{open ? <ProjectDetailPanel project={project} onClose={vi.fn()} /> : null}</ToastProvider>
+          <ToastProvider>{open ? <ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} /> : null}</ToastProvider>
         </BrowserRouter>
       </QueryClientProvider>
     );
@@ -1127,6 +1129,12 @@ describe('ProjectDetailPanel quote row', () => {
     expect(link).toHaveAttribute('href', 'https://books.zoho.eu/app/999#/estimates/e2');
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+  });
+
+  it('shows the print button for a project with a quote', () => {
+    // Replaces the quote's own date and total, which are no longer shown here.
+    show({ quote_id: 'e2', quote_number: 'DEV26-2462' });
+    expect(screen.getByRole('button', { name: /print quote/i })).toBeInTheDocument();
   });
 
   it('labels the description field', async () => {
@@ -1311,5 +1319,67 @@ describe('diffTaskDraft', () => {
     const patch = diffTaskDraft(before, after);
     const wireKeys = Object.keys(taskDraftToTaskCreate(after));
     expect(Object.keys(patch).sort()).toEqual(wireKeys.sort());
+  });
+});
+
+describe('ProjectDetailPanel activity rail', () => {
+  it('shows the activity rail alongside the tasks', async () => {
+    vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
+    render(<ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} />);
+    expect(await screen.findByRole('region', { name: /activity/i })).toBeInTheDocument();
+  });
+
+  it('refetches the timeline after the description is edited', async () => {
+    const events = vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
+    vi.spyOn(api, 'updateAitoProject').mockResolvedValue({ ...project, description: 'Changed' });
+    const user = userEvent.setup();
+    render(<ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} />);
+
+    await screen.findByRole('region', { name: /activity/i });
+    const before = events.mock.calls.length;
+
+    await user.click(screen.getByRole('button', { name: /edit description/i }));
+    // getByRole('textbox') is now ambiguous: ActivityRail's note <input> is a
+    // second textbox alongside the description <textarea>. Filter to the
+    // <textarea> specifically rather than relying on DOM order.
+    const box = screen.getAllByRole('textbox').find((el) => el.tagName === 'TEXTAREA')!;
+    await user.clear(box);
+    await user.type(box, 'Changed');
+    await user.tab();
+
+    await waitFor(() => expect(events.mock.calls.length).toBeGreaterThan(before));
+  });
+});
+
+describe('ProjectDetailPanel delete', () => {
+  it('offers delete in the expanded card, on a 1s hold', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const onDelete = vi.fn();
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(<ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={onDelete} />);
+
+      const button = screen.getByRole('button', { name: /delete/i });
+      await user.pointer({ keys: '[MouseLeft>]', target: button });
+      vi.advanceTimersByTime(600);
+      expect(onDelete).not.toHaveBeenCalled(); // 500ms is not enough — this is the 1s gesture
+
+      vi.advanceTimersByTime(500);
+      expect(onDelete).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('separates the left column from the tasks on wide screens', () => {
+    const { container } = render(<ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} />);
+    // Asserted on the class rather than a rendered pixel: jsdom applies no
+    // stylesheet, so the border is only observable as the utility that draws it.
+    //
+    // COUNTED, not merely found. The activity rail already carried lg:border-l
+    // before this column did, so `querySelector(...) !== null` matched the rail
+    // and passed identically with the task column's rule removed — a test that
+    // could not fail. Both dividers must be present: tasks and activity.
+    expect(container.querySelectorAll('.lg\\:border-l')).toHaveLength(2);
   });
 });

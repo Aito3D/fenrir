@@ -1,8 +1,8 @@
 """Route-level guards that decide WHETHER a project is handed to the Zoho sync
 worker at all (`_mark_pending` vs. `_mark_pending_if_ours` in
 `backend/app/api/routes/aito.py`). These are exercised by calling the route
-coroutines directly with a plain `db_session` and `current_user=None` /
-`_=None` — bypassing FastAPI's dependency injection and HTTP layer entirely,
+coroutines directly with a plain `db_session` and `current_user=None` —
+bypassing FastAPI's dependency injection and HTTP layer entirely,
 so this file has no dependency on auth wiring or the (separately in-flight)
 HTTP-level route tests.
 
@@ -79,7 +79,7 @@ async def test_editing_a_legacy_quote_less_project_never_marks_it_pending(db_ses
         project_id=project.id,
         payload=AitoProjectUpdate(description="Vieille piece modifiee"),
         db=db_session,
-        _=None,
+        current_user=None,
     )
     assert response.description == "Vieille piece modifiee"
     assert response.quote_sync_state == "unmanaged"
@@ -107,7 +107,7 @@ async def test_editing_a_project_of_ours_that_already_has_a_quote_still_marks_it
         project_id=project.id,
         payload=AitoProjectUpdate(description="Piece suivie modifiee"),
         db=db_session,
-        _=None,
+        current_user=None,
     )
     assert response.quote_sync_state == "pending"
 
@@ -134,7 +134,7 @@ async def test_editing_a_project_whose_first_creation_failed_still_retries(db_se
         project_id=project.id,
         payload=AitoProjectUpdate(description="Piece en echec modifiee"),
         db=db_session,
-        _=None,
+        current_user=None,
     )
     assert response.quote_sync_state == "pending"
 
@@ -154,7 +154,7 @@ async def test_deleting_a_legacy_quote_less_project_never_marks_it_pending(db_se
     await db_session.commit()
     await db_session.refresh(project)
 
-    await delete_project(project_id=project.id, db=db_session, _=None)
+    await delete_project(project_id=project.id, db=db_session, current_user=None)
     await db_session.refresh(project)
     assert project.status == "deleted"
     assert project.quote_sync_state == "unmanaged"
@@ -173,7 +173,7 @@ async def test_restoring_a_legacy_quote_less_project_never_marks_it_pending(db_s
     await db_session.commit()
     await db_session.refresh(project)
 
-    response = await restore_project(project_id=project.id, db=db_session, _=None)
+    response = await restore_project(project_id=project.id, db=db_session, current_user=None)
     assert response.column == "devis"
     assert response.quote_sync_state == "unmanaged"
 
@@ -204,7 +204,7 @@ async def test_trashing_before_first_quote_then_restoring_and_editing_is_re_enqu
     created = await create_project(payload=payload, db=db_session, current_user=None)
     assert created.quote_sync_state == "pending"
 
-    await delete_project(project_id=created.id, db=db_session, _=None)
+    await delete_project(project_id=created.id, db=db_session, current_user=None)
     project = (await db_session.execute(select(AitoProject).where(AitoProject.id == created.id))).scalar_one()
     assert project.status == "deleted"
     assert project.quote_sync_state == "pending"  # still queued, the tick hasn't run yet
@@ -215,13 +215,13 @@ async def test_trashing_before_first_quote_then_restoring_and_editing_is_re_enqu
     project.quote_sync_state = "idle"
     await db_session.commit()
 
-    restored = await restore_project(project_id=project.id, db=db_session, _=None)
+    restored = await restore_project(project_id=project.id, db=db_session, current_user=None)
     assert restored.quote_sync_state == "pending"
 
     edited = await update_project(
         project_id=project.id,
         payload=AitoProjectUpdate(description="Helice modifiee"),
         db=db_session,
-        _=None,
+        current_user=None,
     )
     assert edited.quote_sync_state == "pending"

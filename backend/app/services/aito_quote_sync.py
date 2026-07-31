@@ -12,16 +12,20 @@ Phase 2 poller.
 
 import asyncio
 import logging
+from datetime import datetime
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import async_session
 from backend.app.core.tasks import spawn_background_task
+from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.filament import Filament
+from backend.app.services.aito_events import record
 from backend.app.services.aito_quote_export import ExportTask, build_line_items
+from backend.app.services.aito_zoho_comments import mirror_comments, should_pull_comments
 from backend.app.services.zoho import (
     ZohoAmbiguousReferenceError,
     ZohoNotConfiguredError,
@@ -34,8 +38,8 @@ from backend.app.services.zoho import (
 logger = logging.getLogger(__name__)
 
 # Consecutive upstream failures before a project's push is escalated to
-# 'error'. Five minutes of a Books outage at the default 60s tick, which rides
-# out a restart without giving up.
+# 'error'. Twenty-five minutes of a Books outage at the default 300s tick, which
+# rides out a restart without giving up.
 #
 # It does NOT stop the project being polled, and never claim it does: the sweep
 # deliberately keeps selecting 'error' projects (see run_sync_once's SELECT,
@@ -250,6 +254,15 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
     )
     await _write_back_rounded_impression(db, project.id)
     _apply_estimate(project, estimate)
+    await record(
+        db,
+        project.id,
+        "quote.created",
+        actor_class="system",
+        subject_type="project",
+        subject_id=project.id,
+        detail={"quote_number": project.quote_number},
+    )
     if project.quote_id:
         project.quote_url = await zoho_service.books_app_url(db, project.quote_id)
     if estimate.get("is_inclusive_tax") is not True:
@@ -262,10 +275,15 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         # invoiced quote so no further line items are ever written to it, and
         # record why. `is not True` fails closed: an absent field is treated
         # the same as an explicit False, never assumed safe.
+        was_already_locked = project.quote_sync_state == "locked"
         project.quote_sync_state = "locked"
         project.quote_sync_error = (
             "This quote is tax-exclusive; Aito costs are tax-inclusive and cannot be pushed without inflating the total"
         )
+        if not was_already_locked:
+            await record(
+                db, project.id, "sync.locked", actor_class="system", subject_type="project", subject_id=project.id
+            )
 
 
 def _is_locked(estimate: dict) -> bool:
@@ -347,21 +365,89 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
     if zoho_status == local:
         # Genuine agreement: whatever was blocking, is not any more.
         _clear_block(project)
+
+        # Steady state IS agreement, so recording this unconditionally fired
+        # on every quoted project on every tick forever -- at the 300s default
+        # with 17 active quoted projects that is ~4,900 rows/day, ~1.8M/year,
+        # each carrying a JSON detail and three indexes, and it grows with
+        # board size rather than workload: a finished, accepted card is polled
+        # and re-recorded forever. It also drowned the activity rail's
+        # 'Everything' depth in identical poll noise at exactly the volume
+        # someone would need it legible.
+        #
+        # Debounced the same shape as sync.conflict/sync.status_rejected
+        # above: record only on a transition INTO the state, never on a tick
+        # that merely confirms it again. Those two debounce against a column
+        # this same function owns (quote_status_block/quote_status_remote),
+        # but there is no equivalent free column here: quote_status_remote
+        # exists to describe a BLOCK only (see its own docstring on
+        # AitoProject), and every write to quote_status clears it via
+        # _clear_block -- including the one three lines up -- so it can never
+        # carry "the status we last agreed on" across ticks without breaking
+        # the invariant _clear_block's own docstring documents. So this is the
+        # one 'trace' kind that genuinely needs a query rather than a stored
+        # column.
+        #
+        # The natural key for "already reported" is the remote status THIS
+        # tick agreed on: if the last poll.reconciled recorded for this
+        # project already carries that same status in its detail, this tick
+        # is not news. A single indexed lookup (project_id, newest id first)
+        # is enough -- run_sync_once processes one project per commit, so
+        # nothing else can be racing this same row between the read and the
+        # record() below.
+        last = (
+            await db.execute(
+                select(AitoEvent.detail)
+                .where(AitoEvent.project_id == project.id, AitoEvent.kind == "poll.reconciled")
+                .order_by(AitoEvent.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if last is not None and last.get("status") == zoho_status:
+            return
+        await record(
+            db,
+            project.id,
+            "poll.reconciled",
+            actor_class="system",
+            subject_type="project",
+            subject_id=project.id,
+            detail={"status": project.quote_status},
+        )
         return
 
     ours_decided = local in _DECIDED
     theirs_decided = zoho_status in _DECIDED
 
     if ours_decided and theirs_decided:
+        # Recorded only on the tick this conflict first arises: a conflict
+        # clears solely via a human calling set_quote_status (see
+        # _clear_block's docstring), so an untouched conflict is otherwise
+        # re-selected and re-diagnosed every single tick forever — the same
+        # "one row per moment, not per tick" property the 'rejected' branch
+        # below already enforces for its own repeated failure. The columns
+        # are still written every time (nothing here changes what the card
+        # displays); only the event is debounced.
+        already_this_conflict = project.quote_status_block == "conflict" and project.quote_status_remote == zoho_status
         project.quote_status_block = "conflict"
         project.quote_status_remote = zoho_status
+        if not already_this_conflict:
+            await record(
+                db,
+                project.id,
+                "sync.conflict",
+                actor_class="system",
+                subject_type="project",
+                subject_id=project.id,
+                detail={"ours": project.quote_status, "theirs": project.quote_status_remote},
+            )
         return
 
     if ours_decided:
         if project.quote_status_block == "rejected" and project.quote_status_remote == zoho_status:
             # Books rejected this exact attempt on an earlier tick and nothing
             # has moved since — retrying an identical payload cannot help, and
-            # a POST every 60s forever against a real customer estimate is the
+            # a POST every 300s forever against a real customer estimate is the
             # failure this record exists to stop. `quote_status_remote` alone
             # is enough to identify the attempt: our side cannot have changed
             # without `set_quote_status` clearing both columns (see the model).
@@ -388,6 +474,15 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
                 project.id,
                 zoho_status,
                 e,
+            )
+            await record(
+                db,
+                project.id,
+                "sync.status_rejected",
+                actor_class="system",
+                subject_type="project",
+                subject_id=project.id,
+                detail={"ours": project.quote_status, "theirs": project.quote_status_remote},
             )
             return
         _clear_block(project)
@@ -462,6 +557,7 @@ async def _reconcile_status(db: AsyncSession, project: AitoProject, estimate: di
 async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
     estimate = await zoho_service.get_estimate(db, project.quote_id)
     if _is_locked(estimate):
+        was_already_locked = project.quote_sync_state == "locked"
         project.quote_sync_state = "locked"
         if estimate.get("status") is not None:
             project.quote_status = estimate["status"]
@@ -473,6 +569,10 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         # again.
         _clear_block(project)
         project.quote_sync_failures = 0
+        if not was_already_locked:
+            await record(
+                db, project.id, "sync.locked", actor_class="system", subject_type="project", subject_id=project.id
+            )
         return
     if await _reconcile_status(db, project, estimate):
         return
@@ -498,6 +598,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         # sweep permanently, so nothing would ever clear a stale block again.
         _clear_block(project)
         project.quote_sync_failures = 0
+        await record(db, project.id, "sync.locked", actor_class="system", subject_type="project", subject_id=project.id)
         return
     catalogue = await zoho_service.get_catalogue(db)
     line_items = build_line_items(
@@ -511,20 +612,107 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         # array, and Books deletes every Aito line a live quote had. A
         # terminal state, not a silent no-op: without one, this project would
         # be re-selected every tick forever — an unbounded GET
-        # /estimates/{id} against Books every 60s for as long as it sits
+        # /estimates/{id} against Books every 300s for as long as it sits
         # empty. The next edit that adds a service back re-marks it pending
         # as normal, same as create.
         project.quote_sync_state = "error"
         project.quote_sync_error = "Project has no priced service left; nothing was written to the quote"
         project.quote_sync_failures = 0
+        await record(
+            db,
+            project.id,
+            "sync.failed",
+            actor_class="system",
+            subject_type="project",
+            subject_id=project.id,
+            detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
+        )
         return
     updated = await zoho_service.update_estimate_lines(db, project.quote_id, line_items)
     await _write_back_rounded_impression(db, project.id)
     _apply_estimate(project, updated)
+    await record(
+        db,
+        project.id,
+        "sync.pushed",
+        actor_class="system",
+        subject_type="project",
+        subject_id=project.id,
+        detail={"lines": len(line_items)},
+    )
+
+
+async def _rollback_after_terminal_failure(db: AsyncSession) -> None:
+    """Undo any half-flushed writes from the failure just caught, before a
+    terminal branch below writes its own state or calls ``record()`` --
+    itself a flush. A no-op when the session was never actually poisoned.
+
+    The exception just caught can ITSELF be a failed flush: ``record()``'s
+    own ``IntegrityError`` from two overlapping ticks racing the same
+    ``zoho_comment_id``, or ``_apply_estimate``'s writes landing on a
+    ``quote_id`` the partial unique index ``uq_aito_project_active_quote``
+    already holds for another active project. SQLAlchemy auto-aborts the
+    DBAPI transaction the moment a flush fails -- without the caller having
+    to ask -- so left alone, the very next operation against this session,
+    including a bare attribute READ and not only another flush, raises
+    ``PendingRollbackError``. ``Session.rollback()`` is what SQLAlchemy's own
+    error message directs.
+
+    Gated on ``db.is_active`` rather than called unconditionally: an earlier
+    version of this helper always rolled back, on the theory that "nothing of
+    this project's tick is committed yet, so there is nothing here to lose
+    that the caller does not immediately rewrite" -- which is true for the
+    four terminal `except` clauses in ``sync_project`` (each rewrites
+    ``quote_sync_state``/``quote_sync_error``/``quote_sync_failures``
+    immediately after calling this), but FALSE for the comment-mirror
+    recovery site: most of what lands there is an ordinary network or mapping
+    exception from ``list_estimate_comments``/``mirror_comments`` that never
+    touched the database at all, and blindly rolling back there discarded
+    ``reconcile_quote_status``'s already-flushed writes from earlier in the
+    SAME tick with nothing to rewrite them -- caught by the existing test
+    suite once the four terminal handlers stopped being the only callers.
+    ``is_active`` is exactly the fact that matters: it is False only when a
+    flush has already failed and left the session in SQLAlchemy's own
+    "partial rollback" state, which is the one situation ``record()``'s next
+    flush cannot survive.
+
+    Deliberately does NOT read or refresh ``project`` afterwards. A bare
+    attribute access on the now-expired instance, outside the greenlet
+    context an awaited SQLAlchemy call runs inside, is exactly the "lazy
+    reload outside a greenlet context" trap run_sync_once's own loop comment
+    warns about (it would raise ``MissingGreenlet``, not silently reload).
+    Every caller below reads "the state before this failure" from the local
+    variables ``sync_project`` captures at its own top, before the try block,
+    rather than by touching the object again here.
+    """
+    if not db.is_active:
+        await db.rollback()
 
 
 async def sync_project(db: AsyncSession, project: AitoProject) -> None:
     """One project's whole state machine. Never raises: every outcome is a state."""
+    # Captured before anything below can touch the row, and read from these
+    # locals everywhere a terminal branch or the comment-mirror recovery code
+    # needs "was this already the state before this attempt" -- never by
+    # re-reading `project` after a possible mid-function rollback (see
+    # _rollback_after_terminal_failure), which would need an async-unsafe
+    # attribute reload. Nothing between here and any exception site changes
+    # these three columns (the swept branch touches only quote_status and its
+    # block columns; the pending branch's own writes to them only ever happen
+    # on a SUCCESS path or inside the terminal handlers themselves), so a
+    # snapshot taken here is still accurate wherever it is read below.
+    already_in_error = project.quote_sync_state == "error"
+    previous_sync_error = project.quote_sync_error
+    sync_failures_before = project.quote_sync_failures or 0
+    # `project.id` itself is not exempt from this: Session.rollback() expires
+    # EVERY attribute on every instance touched by the transaction, primary
+    # key included, so a bare `project.id` read after
+    # _rollback_after_terminal_failure is the exact async-unsafe lazy reload
+    # the comment above warns about (it raised MissingGreenlet in practice,
+    # not merely a hypothetical -- every record() call below needs the id,
+    # and every terminal handler rolls back first). The id cannot change for
+    # an already-persisted row, so a snapshot taken here is always accurate.
+    project_id = project.id
     try:
         # Swept, not pending: reconcile status and nothing else. Emphatically
         # NOT _update_quote, which rebuilds the entire line_items array —
@@ -561,6 +749,7 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
                 # quote_status and quote_sync_error alone: 'locked' is
                 # excluded from every later sweep, so there is no ongoing
                 # status to keep in sync, and no error to clear away either.
+                was_already_locked = project.quote_sync_state == "locked"
                 project.quote_sync_state = "locked"
                 # quote_status and quote_sync_error are deliberately left
                 # alone (above), but a recorded block is neither: 'locked'
@@ -570,8 +759,66 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
                 # attempt again.
                 _clear_block(project)
                 project.quote_sync_failures = 0
+                if not was_already_locked:
+                    await record(
+                        db,
+                        project_id,
+                        "sync.locked",
+                        actor_class="system",
+                        subject_type="project",
+                        subject_id=project_id,
+                    )
                 return
             await reconcile_quote_status(db, project, estimate)
+
+            now = datetime.utcnow()
+            if should_pull_comments(project, estimate, now):
+                try:
+                    comments = await zoho_service.list_estimate_comments(db, project.quote_id)
+                    await mirror_comments(db, project, comments)
+                    project.zoho_comments_watermark = estimate.get("last_modified_time")
+                    project.zoho_comments_checked_at = now
+                except Exception:
+                    # The try covers the fetch AND mirror_comments AND the two
+                    # watermark writes, not just the network call. AitoEvent's
+                    # zoho_comment_id is a UNIQUE column, so mirror_comments'
+                    # own write path can raise (IntegrityError from two
+                    # overlapping ticks racing the same comment_id) just as
+                    # easily as the fetch can, and any other bug in the
+                    # mapping or write path deserves the same containment. A
+                    # failed comment pull must never fail the sync: the
+                    # line-item and status work above is what the board
+                    # depends on, and history that arrives one tick late costs
+                    # nothing. Anything that escaped this block would instead
+                    # reach sync_project's own outer catch-all below, which
+                    # flips quote_sync_state to 'error' and overwrites
+                    # quote_sync_error -- discarding this tick's
+                    # already-successful reconcile_quote_status result and
+                    # surfacing a misleading "sync error" for what is only a
+                    # history-mirroring problem. Keeping the watermark writes
+                    # inside the try is also what keeps them from advancing on
+                    # a tick where mirror_comments raised: an exception here
+                    # skips them, so the watermark still only moves once the
+                    # pull has fully succeeded.
+                    #
+                    # The rollback is the same containment as every terminal
+                    # handler below, and for the same reason: the IntegrityError
+                    # this block exists to catch leaves the session's
+                    # transaction aborted, and without an explicit rollback that
+                    # poisoning survives this block -- surfacing two ticks later
+                    # as _apply_rules or run_sync_once's own end-of-loop
+                    # db.commit() failing and getting logged as "failed to
+                    # commit project", which is the comment mirror's failure
+                    # wearing a misleading name. It does mean any of
+                    # reconcile_quote_status's writes still pending from just
+                    # above are discarded along with the failed mirror attempt
+                    # -- accepted here the same way a missed tick is accepted
+                    # everywhere else in this module: the next sweep reconciles
+                    # status again from scratch and costs nothing by being a
+                    # tick late.
+                    await _rollback_after_terminal_failure(db)
+                    logger.warning("Aito comment mirror failed for project %s", project_id, exc_info=True)
+
             # A read that reaches this point succeeded, whatever
             # reconcile_quote_status went on to do with it — proof Books is
             # reachable right now. Reset the failure counter so a run of past
@@ -593,7 +840,15 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
             # when it increments, so the message cleared here is guaranteed to
             # be the one that handler wrote — no other subsystem's diagnostic
             # can be destroyed, and no string has to be inspected to know it.
-            if project.quote_sync_state == "error" and (project.quote_sync_failures or 0) >= SYNC_FAILURE_LIMIT:
+            #
+            # Read from the snapshot taken at the top of this function, not
+            # from `project` directly: the comment-mirror block just above can
+            # have rolled the session back (see _rollback_after_terminal_failure),
+            # which expires every attribute, and a bare read here would be the
+            # same async-unsafe lazy reload that helper's own docstring warns
+            # against. Neither column changes between that snapshot and here on
+            # any path that reaches this line, so it is still accurate.
+            if already_in_error and sync_failures_before >= SYNC_FAILURE_LIMIT:
                 project.quote_sync_state = "idle"
                 project.quote_sync_error = None
             project.quote_sync_failures = 0
@@ -628,6 +883,14 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         return
     except ZohoRequestRejected as e:
         # Books rejected the payload. Retrying an identical body cannot help.
+        #
+        # The rollback comes before any write: the exception just caught can
+        # itself be a failed flush (see _rollback_after_terminal_failure), and
+        # already_in_error/previous_sync_error are read from the snapshot
+        # taken at the top of this function rather than from `project` here,
+        # for the same reason -- the object's attributes may already be
+        # expired by that failed flush before this handler ever runs.
+        await _rollback_after_terminal_failure(db)
         project.quote_sync_state = "error"
         project.quote_sync_error = str(e)
         # Counter to 0, exactly like _create_quote/_update_quote's terminal
@@ -638,6 +901,22 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         # the next successful read would erase this message as if it were the
         # outage's.
         project.quote_sync_failures = 0
+        # Recorded only on the tick this failure first arises (or genuinely
+        # changes) — same transition-only rule as sync.conflict above. Without
+        # it, a project stuck in 'error' but still re-selected by the sweep
+        # (see run_sync_once's SELECT, which excludes only 'unmanaged' and
+        # 'locked') would write one row per tick for as long as it stays
+        # broken.
+        if not already_in_error or previous_sync_error != project.quote_sync_error:
+            await record(
+                db,
+                project_id,
+                "sync.failed",
+                actor_class="system",
+                subject_type="project",
+                subject_id=project_id,
+                detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
+            )
     except ZohoAmbiguousReferenceError as e:
         # find_estimate_by_reference found more than one plausible match, or
         # the lone survivor belongs to a different customer. Like a rejected
@@ -645,19 +924,69 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         # a human to sort out the duplicate/mismatched estimate in Books —
         # and it must never be treated as "create anyway", which is exactly
         # how a real customer's estimate would get adopted and overwritten.
+        await _rollback_after_terminal_failure(db)
         project.quote_sync_state = "error"
         project.quote_sync_error = str(e)
         project.quote_sync_failures = 0
+        if not already_in_error or previous_sync_error != project.quote_sync_error:
+            await record(
+                db,
+                project_id,
+                "sync.failed",
+                actor_class="system",
+                subject_type="project",
+                subject_id=project_id,
+                detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
+            )
     except ZohoNotFound:
+        await _rollback_after_terminal_failure(db)
         project.quote_sync_state = "error"
         project.quote_sync_error = "The quote no longer exists in Zoho Books"
         project.quote_sync_failures = 0
+        if not already_in_error or previous_sync_error != project.quote_sync_error:
+            await record(
+                db,
+                project_id,
+                "sync.failed",
+                actor_class="system",
+                subject_type="project",
+                subject_id=project_id,
+                detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
+            )
     except ZohoUpstreamError as e:
-        project.quote_sync_failures = (project.quote_sync_failures or 0) + 1
+        # Below the limit, this is a plain in-memory write, no flush -- so
+        # there is nothing here for a poisoned session to break, and no
+        # rollback is needed unless the escalation branch below is taken.
+        failures = sync_failures_before + 1
+        project.quote_sync_failures = failures
         project.quote_sync_error = str(e)
-        if project.quote_sync_failures >= SYNC_FAILURE_LIMIT:
+        if failures >= SYNC_FAILURE_LIMIT:
+            await _rollback_after_terminal_failure(db)
+            project.quote_sync_failures = failures
+            project.quote_sync_error = str(e)
             project.quote_sync_state = "error"
-        logger.warning("Aito quote sync failed for project %s: %s", project.id, e)
+            # Recorded only once the retry budget is actually spent, AND only
+            # on the tick that first spends it (or whose message genuinely
+            # changes): every tick below the limit is a transient blip
+            # _apply_estimate's own caller will simply retry, and — this is
+            # the bug this guard fixes — an escalated project stays selected
+            # by the sweep for as long as Books stays down (the escalation
+            # does not stop it being polled, see the module-level comment on
+            # SYNC_FAILURE_LIMIT), so without the guard a single outage wrote
+            # one row per 300s tick for its entire duration instead of the one
+            # row that matters: the moment this project actually stopped
+            # retrying and surfaced on the card.
+            if not already_in_error or previous_sync_error != project.quote_sync_error:
+                await record(
+                    db,
+                    project_id,
+                    "sync.failed",
+                    actor_class="system",
+                    subject_type="project",
+                    subject_id=project_id,
+                    detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
+                )
+        logger.warning("Aito quote sync failed for project %s: %s", project_id, e)
     except Exception as e:
         # Anything not already handled above: a DB error, a bug in
         # build_line_items, an AttributeError on unexpected Zoho data. The
@@ -666,13 +995,30 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         # and skips the commit that persists every other project's write
         # (including a just-created quote_id), which is how a retry turns
         # into a duplicate estimate in Books. Fail this project only.
+        #
+        # This is the handler FINDING 1 is really about: the exception `e`
+        # caught here can BE a failed flush (record()'s own IntegrityError, or
+        # any other DB error surfacing as a plain Exception), which is exactly
+        # what _rollback_after_terminal_failure exists to recover from before
+        # the record() call four lines down does its own flush.
+        await _rollback_after_terminal_failure(db)
         project.quote_sync_state = "error"
         project.quote_sync_error = str(e)
         # Same reason as the three handlers above: this is a terminal error of
         # its own, not the outage escalation, and must not be mistaken for one
         # by the sweep path's recovery.
         project.quote_sync_failures = 0
-        logger.exception("Aito quote sync hit an unexpected error for project %s", project.id)
+        if not already_in_error or previous_sync_error != project.quote_sync_error:
+            await record(
+                db,
+                project_id,
+                "sync.failed",
+                actor_class="system",
+                subject_type="project",
+                subject_id=project_id,
+                detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
+            )
+        logger.exception("Aito quote sync hit an unexpected error for project %s", project_id)
 
 
 def _still_selected(project: AitoProject) -> bool:
@@ -811,7 +1157,11 @@ async def run_sync_once(db: AsyncSession) -> int:
     return attempted
 
 
-_DEFAULT_INTERVAL_SECONDS = 60
+# 300s, not 60s: run_sync_once spends one Books call per active quoted
+# project per tick, and Zoho allows 1,000-10,000 requests/day per org
+# depending on plan. At 60s a single active quote cost 1,440 calls/day and
+# two of them exhausted a Standard plan. See test_aito_quote_sync_interval.
+_DEFAULT_INTERVAL_SECONDS = 300
 
 
 async def sync_interval_seconds(db: AsyncSession) -> int:
