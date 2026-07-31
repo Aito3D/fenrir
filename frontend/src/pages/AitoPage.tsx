@@ -2,11 +2,13 @@ import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DndContext, DragOverlay, MeasuringStrategy, closestCorners, type DropAnimation } from '@dnd-kit/core';
-import { AlertTriangle, FileInput, Kanban, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, Archive, ArrowLeft, FileInput, Kanban, Plus, Trash2 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { CardView } from '../components/aito/CardView';
 import { BoardColumn } from '../components/aito/BoardColumn';
+import { BoardSearch } from '../components/aito/BoardSearch';
 import { COLUMNS } from '../components/aito/columns';
+import { DoneGrid } from '../components/aito/DoneGrid';
 import { ImportQuoteModal } from '../components/aito/ImportQuoteModal';
 import { NewProjectModal } from '../components/aito/NewProjectModal';
 import { ProjectDetailPanel } from '../components/aito/ProjectDetailPanel';
@@ -18,12 +20,12 @@ import type { ClientDraft } from '../utils/clientDraft';
 import { taskDraftToTaskCreate } from '../utils/taskDraft';
 import type { TaskDraft } from '../utils/taskDraft';
 import { prefersReducedMotion } from '../utils/motion';
+import { matchesSearch } from '../utils/aitoSearch';
 import { useCardMorph } from '../hooks/useCardMorph';
 import { useBoardDrag } from '../hooks/useBoardDrag';
 import { useBoardSync } from '../hooks/useBoardSync';
 import { useOptimisticBoardMutation } from '../hooks/useOptimisticBoardMutation';
 import { applyCreate, applyDelete, placeholderProject } from '../utils/aitoOptimistic';
-import { COLUMN_IDS } from '../utils/aitoBoard';
 
 // Shared with SortableCard so the dropped card and the neighbours closing
 // the gap around it settle on the same curve.
@@ -129,6 +131,12 @@ export function AitoPage() {
   const [showModal, setShowModal] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
+  // Deliberately not persisted — not in the URL, not in storage. The board is
+  // the working view; landing on the archive after a reload would be wrong
+  // every time but the one you asked for it.
+  const [showDone, setShowDone] = useState(false);
+  const [search, setSearch] = useState('');
+  const filtering = search.trim().length > 0;
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const { open: openCard, close: closeCard } = useCardMorph(setExpandedId);
 
@@ -245,7 +253,11 @@ export function AitoPage() {
     onError: () => showToast(t('aito.deleteFailed'), 'error'),
   });
 
-  const totalCount = COLUMN_IDS.reduce((sum, col) => sum + board[col].length, 0);
+  // The six columns the board RENDERS, not COLUMN_IDS — which still carries
+  // `done`. A board whose only projects are finished is an empty board, and
+  // counting the archive here would claim otherwise while showing six empty
+  // columns. The Show Done button above carries the done count.
+  const totalCount = COLUMNS.reduce((sum, column) => sum + board[column.id].length, 0);
 
   const reducedMotion = useMemo(() => prefersReducedMotion(), []);
 
@@ -306,6 +318,24 @@ export function AitoPage() {
         </div>
       </div>
 
+      {/* Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 animate-rise">
+        <BoardSearch value={search} onChange={setSearch} className="flex-1" />
+        <Button variant="secondary" onClick={() => setShowDone((shown) => !shown)}>
+          {showDone ? (
+            <>
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              {t('aito.backToBoard')}
+            </>
+          ) : (
+            <>
+              <Archive className="w-4 h-4 mr-2" />
+              {t('aito.showDone')} ({board.done.length})
+            </>
+          )}
+        </Button>
+      </div>
+
       {/* Error state */}
       {aitoQuery.isError && (
         <div className="text-center py-8 animate-rise">
@@ -318,7 +348,7 @@ export function AitoPage() {
       )}
 
       {/* Empty state */}
-      {!aitoQuery.isError && totalCount === 0 && (
+      {!aitoQuery.isError && !showDone && totalCount === 0 && (
         <div className="text-center py-8 animate-rise">
           <Kanban className="w-10 h-10 text-bambu-gray mx-auto mb-3" />
           <p className="text-white font-medium">{t('aito.emptyTitle')}</p>
@@ -327,35 +357,40 @@ export function AitoPage() {
       )}
 
       {/* Board */}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCorners}
-        measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
-        {...dndHandlers}
-      >
-        {/* min-h-0 is what lets this shrink inside the flex column: without it
-            a tall column would push the board past the viewport instead of
-            scrolling inside itself. */}
-        <div className="flex gap-4 items-stretch overflow-x-auto pb-4 stagger-parents flex-1 min-h-0">
-          {COLUMNS.map((column) => (
-            <div key={column.id} className="animate-rise-lg flex flex-shrink-0">
-              <BoardColumn
-                column={column}
-                projects={board[column.id]}
-                isDropTarget={dropTarget === column.id}
-                onExpandCard={openCard}
-                transitionConfig={reducedMotion ? null : SORTABLE_TRANSITION}
-                shouldAnimateIn={shouldAnimateIn}
-                dropDisabled={allowedDropColumns !== null && !allowedDropColumns.includes(column.id)}
-              />
-            </div>
-          ))}
-        </div>
+      {showDone ? (
+        <DoneGrid projects={board.done} query={search} onExpandCard={openCard} />
+      ) : (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCorners}
+          measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+          {...dndHandlers}
+        >
+          {/* min-h-0 is what lets this shrink inside the flex column: without it
+              a tall column would push the board past the viewport instead of
+              scrolling inside itself. */}
+          <div className="flex gap-4 items-stretch overflow-x-auto pb-4 stagger-parents flex-1 min-h-0 scrollbar-hide">
+            {COLUMNS.map((column) => (
+              <div key={column.id} className="animate-rise-lg flex flex-shrink-0">
+                <BoardColumn
+                  column={column}
+                  projects={board[column.id].filter((project) => matchesSearch(project, search))}
+                  isDropTarget={dropTarget === column.id}
+                  onExpandCard={openCard}
+                  transitionConfig={reducedMotion ? null : SORTABLE_TRANSITION}
+                  shouldAnimateIn={shouldAnimateIn}
+                  dropDisabled={allowedDropColumns !== null && !allowedDropColumns.includes(column.id)}
+                  dragDisabled={filtering}
+                />
+              </div>
+            ))}
+          </div>
 
-        <DragOverlay dropAnimation={reducedMotion ? null : DROP_ANIMATION}>
-          {activeProject ? <CardView project={activeProject} overlay /> : null}
-        </DragOverlay>
-      </DndContext>
+          <DragOverlay dropAnimation={reducedMotion ? null : DROP_ANIMATION}>
+            {activeProject ? <CardView project={activeProject} overlay /> : null}
+          </DragOverlay>
+        </DndContext>
+      )}
 
       {showModal && <NewProjectModal onClose={() => setShowModal(false)} onCreate={createProject} />}
 

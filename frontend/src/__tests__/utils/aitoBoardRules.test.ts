@@ -21,6 +21,7 @@ interface SummariseCase {
   pending: string[];
   steps_total: number;
   steps_done: number;
+  steps_by_task: { services: string[]; done: string[] }[];
 }
 
 const SERVICE_IDS: ServiceId[] = ['scan', 'modelisation', 'impression', 'usinage'];
@@ -91,6 +92,7 @@ describe('the board-rules contract', () => {
     expect(summary.pending).toEqual(c.pending);
     expect(summary.stepsTotal).toBe(c.steps_total);
     expect(summary.stepsDone).toBe(c.steps_done);
+    expect(summary.stepsByTask).toEqual(c.steps_by_task);
   });
 });
 

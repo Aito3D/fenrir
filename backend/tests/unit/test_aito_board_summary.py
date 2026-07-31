@@ -8,7 +8,7 @@ iterable of anything.
 from dataclasses import dataclass
 from datetime import datetime
 
-from backend.app.services.aito_board_rules import TaskSummary, summarise
+from backend.app.services.aito_board_rules import TaskSteps, TaskSummary, summarise
 
 
 @dataclass
@@ -150,3 +150,43 @@ def test_to_response_carries_the_pending_services():
     response = _to_response(project, summary)
     assert response.task_services == ["scan", "impression"]
     assert response.task_pending == ["impression"]
+
+
+def test_steps_by_task_is_empty_for_no_tasks():
+    assert summarise([]).steps_by_task == ()
+
+
+def test_steps_by_task_has_one_entry_per_task_even_when_unpriced():
+    """A task with nothing priced still owns a row on the card — an empty one."""
+    summary = summarise([_Task(), _Task(scan_cost=1)])
+    assert summary.steps_by_task == (
+        TaskSteps(services=(), done=()),
+        TaskSteps(services=("scan",), done=()),
+    )
+
+
+def test_steps_by_task_lists_services_in_canonical_order_not_field_order():
+    summary = summarise([_Task(usinage_cost=1, scan_cost=2, impression_cost=3)])
+    assert summary.steps_by_task == (TaskSteps(services=("scan", "impression", "usinage"), done=()),)
+
+
+def test_a_free_step_is_in_steps_by_task():
+    """0 is quoted free and is a real step; None is absent from the job."""
+    summary = summarise([_Task(modelisation_cost=0.0)])
+    assert summary.steps_by_task == (TaskSteps(services=("modelisation",), done=()),)
+
+
+def test_done_lists_only_ticked_priced_services():
+    """A done flag on an unpriced service is not a step and must not appear."""
+    summary = summarise([_Task(scan_cost=1, scan_done=True, usinage_done=True, impression_cost=2)])
+    assert summary.steps_by_task == (TaskSteps(services=("scan", "impression"), done=("scan",)),)
+
+
+def test_steps_by_task_preserves_task_order():
+    """The card's rows must line up with the detail panel's, which is the
+    order the caller hands them in."""
+    summary = summarise([_Task(impression_cost=1), _Task(scan_cost=1, scan_done=True)])
+    assert summary.steps_by_task == (
+        TaskSteps(services=("impression",), done=()),
+        TaskSteps(services=("scan",), done=("scan",)),
+    )

@@ -150,6 +150,9 @@ def _summarise_cases() -> list[dict[str, Any]]:
                 "pending": list(summary.pending),
                 "steps_total": summary.steps_total,
                 "steps_done": summary.steps_done,
+                "steps_by_task": [
+                    {"services": list(steps.services), "done": list(steps.done)} for steps in summary.steps_by_task
+                ],
             }
         )
     return cases

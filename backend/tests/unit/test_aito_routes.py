@@ -1484,3 +1484,31 @@ async def test_quote_pdf_maps_zoho_failure_to_502(async_client, db_session, monk
 
     response = await async_client.get(f"/api/v1/aito/{project.id}/quote.pdf")
     assert response.status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_board_ships_a_step_row_per_task(async_client, db_session):
+    """The card draws one pill row per entry, so the shape matters as much as
+    the counters: canonical order regardless of the order the costs were
+    given, a free (0) step present, and a done flag on an unpriced service
+    absent from both lists."""
+    await async_client.post(
+        "/api/v1/aito/",
+        json={
+            "description": "steps per task",
+            "client_id": "S1",
+            "client_name": "Steps",
+            "quote_status": "accepted",
+            "tasks": [
+                {"title": "t1", "impression_cost": 2000, "scan_cost": 1000, "scan_done": True},
+                {"title": "t2", "usinage_cost": 0, "modelisation_done": True},
+            ],
+        },
+    )
+
+    board = (await async_client.get("/api/v1/aito/")).json()
+    card = next(p for p in board if p["description"] == "steps per task")
+    assert card["task_steps"] == [
+        {"services": ["scan", "impression"], "done": ["scan"]},
+        {"services": ["usinage"], "done": []},
+    ]

@@ -3,17 +3,21 @@ import { AITO_SERVICE_LABEL_KEYS } from './services';
 
 /** Compact badge row naming a task's services.
  *
- *  Every element is a `<span>` because both callers render this inside a
- *  `<button>` — the card's body button and a task row's collapse toggle — and
- *  a `<button>` may not contain `<div>` or `<p>`. An unrecognised id falls
- *  back to itself rather than rendering blank, so a service added server-side
- *  shows up instead of disappearing.
+ *  The board card does not use this at all — it draws its own per-task pill
+ *  grid via `StepGrid`. The sole remaining caller is `ImportQuoteModal`,
+ *  which never passes `done` and so always renders the plain, undimmed row.
+ *  Every element is still a `<span>`, but that is no longer load-bearing: it
+ *  used to be forced by a `<button>` ancestor (a `<button>` may not contain
+ *  `<div>` or `<p>`), and that ancestor is gone. Kept anyway — `grid`/`flex`
+ *  set `display`, so a span costs nothing here, and churning it to a `<div>`
+ *  would be work for no behavioural change. An unrecognised id falls back to
+ *  itself rather than rendering blank, so a service added server-side shows
+ *  up instead of disappearing.
  *
- *  `done` is optional and, when omitted, changes nothing: the board card
- *  never passes it, so a badge there renders exactly as before. A task row's
- *  collapsed header passes the ids whose step is ticked, and those badges dim
- *  with a strikethrough — the same "quiet, not hidden" treatment the step
- *  list itself uses. */
+ *  `done` is optional and, when omitted, changes nothing — the sole caller
+ *  never passes it. Any future caller that does gets those services dimmed
+ *  with a strikethrough, the same "quiet, not hidden" treatment the step list
+ *  itself uses. */
 export function ServiceBadges({
   services,
   done = [],

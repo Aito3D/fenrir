@@ -25,7 +25,8 @@ vi.mock('../../hooks/useRevertFlash', async (importOriginal) => ({
 const project = {
   id: 12, description: 'Support GoPro', column: 'devis', position: 0, status: 'active',
   client_id: 'z1', client_name: 'ACME SARL', client_phone: '+33 6 12 34 56 78',
-  task_count: 0, tasks_total: 0, task_services: [], task_pending: [], steps_total: 0, steps_done: 0, move_lock: null,
+  task_count: 0, tasks_total: 0, task_services: [], task_pending: [], steps_total: 0, steps_done: 0, task_steps: [],
+  move_lock: null,
   created_at: '2026-07-01T10:00:00Z', updated_at: '2026-07-02T10:00:00Z',
 };
 
@@ -63,6 +64,7 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
     task_pending: [],
     steps_total: 0,
     steps_done: 0,
+    task_steps: [],
     move_lock: null,
     created_at: '2026-07-27T00:00:00',
     updated_at: '2026-07-27T00:00:00',
@@ -621,6 +623,7 @@ describe('AitoPage (backend board)', () => {
       task_pending: [],
       steps_total: 0,
       steps_done: 0,
+      task_steps: [],
       move_lock: null,
       created_at: '2026-07-01T10:00:00Z',
       updated_at: '2026-07-02T10:00:00Z',
@@ -1190,5 +1193,154 @@ describe('AitoPage (backend board)', () => {
       release(created);
       await waitFor(() => expect(screen.getByRole('button', { name: /new on top/ })).toBeInTheDocument());
     });
+  });
+
+  it('swaps the board for the done grid, and back', async () => {
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([
+          makeProject({ id: 1, description: 'On the board', column: 'devis' }),
+          makeProject({ id: 2, description: 'Archived work', column: 'done', move_lock: null }),
+        ]),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<AitoPage />);
+
+    await screen.findByText('On the board');
+    const toggle = screen.getByRole('button', { name: /show done/i });
+    expect(toggle).toHaveTextContent('(1)');
+
+    await user.click(toggle);
+    expect(await screen.findByText('Archived work')).toBeInTheDocument();
+    expect(screen.queryByText('On the board')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /back to board/i }));
+    expect(await screen.findByText('On the board')).toBeInTheDocument();
+  });
+
+  it('does not render a Done column on the board', async () => {
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([makeProject({ id: 1, description: 'Archived work', column: 'done' })]),
+      ),
+    );
+    render(<AitoPage />);
+
+    await screen.findByRole('button', { name: /show done/i });
+    expect(screen.queryByRole('heading', { name: /^(Done|Terminé)$/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Archived work')).not.toBeInTheDocument();
+  });
+
+  it('reads as empty when every project is done', async () => {
+    // The board really is empty. Counting the done column here would claim it
+    // is populated while showing six empty columns.
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([makeProject({ id: 1, column: 'done' })]),
+      ),
+    );
+    render(<AitoPage />);
+    // Wait for the query to SETTLE before asserting. `board` is built from
+    // `aitoQuery.data`, which is undefined until the fetch resolves — so every
+    // column reads empty during the first render whether the count sums the
+    // six rendered columns or all seven. A bare `findByText` resolves on that
+    // transient state and would pass against the very bug this test names.
+    //
+    // The count in the button, not the button itself: the button renders
+    // unconditionally on mount, so its mere presence is not a settle signal.
+    // `(1)` appears only once `board.done` holds the fetched row.
+    await screen.findByRole('button', { name: /show done \(1\)/i });
+    expect(screen.getByText(/no projects yet|aucun projet/i)).toBeInTheDocument();
+  });
+
+  it('filters board cards on the search query', async () => {
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([
+          makeProject({ id: 1, description: 'Support GoPro', column: 'devis' }),
+          makeProject({ id: 2, description: 'Boîtier étanche', column: 'scan', client_name: 'Dupont' }),
+        ]),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await screen.findByText('Support GoPro');
+
+    await user.type(screen.getByRole('searchbox'), 'gopro');
+    expect(screen.getByText('Support GoPro')).toBeInTheDocument();
+    expect(screen.queryByText('Boîtier étanche')).not.toBeInTheDocument();
+  });
+
+  it('matches an unaccented query against accented card text', async () => {
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([makeProject({ id: 1, description: 'Boîtier étanche', column: 'devis' })]),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await screen.findByText('Boîtier étanche');
+
+    await user.type(screen.getByRole('searchbox'), 'etanche');
+    expect(screen.getByText('Boîtier étanche')).toBeInTheDocument();
+  });
+
+  it('clears the query from the clear button', async () => {
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([
+          makeProject({ id: 1, description: 'Support GoPro', column: 'devis' }),
+          makeProject({ id: 2, description: 'Boîtier', column: 'scan' }),
+        ]),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await screen.findByText('Support GoPro');
+
+    await user.type(screen.getByRole('searchbox'), 'gopro');
+    expect(screen.queryByText('Boîtier')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /clear search|effacer la recherche/i }));
+    expect(await screen.findByText('Boîtier')).toBeInTheDocument();
+  });
+
+  it('takes the grip off every card while a query is active', async () => {
+    // A drop index computed against a filtered column is not the card's real
+    // position, and the PATCH would persist the wrong one.
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([makeProject({ id: 1, description: 'Support GoPro', column: 'devis' })]),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await screen.findByText('Support GoPro');
+    expect(screen.getAllByRole('button', { name: /drag|glisser/i }).length).toBeGreaterThan(0);
+
+    await user.type(screen.getByRole('searchbox'), 'gopro');
+    expect(screen.queryByRole('button', { name: /drag|glisser/i })).not.toBeInTheDocument();
+  });
+
+  it('keeps the query when switching to the done grid', async () => {
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([
+          makeProject({ id: 1, description: 'Support GoPro', column: 'devis' }),
+          makeProject({ id: 2, description: 'GoPro archivé', column: 'done', move_lock: null }),
+          makeProject({ id: 3, description: 'Boîtier archivé', column: 'done', move_lock: null }),
+        ]),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await screen.findByText('Support GoPro');
+
+    await user.type(screen.getByRole('searchbox'), 'gopro');
+    await user.click(screen.getByRole('button', { name: /show done/i }));
+
+    expect(await screen.findByText('GoPro archivé')).toBeInTheDocument();
+    expect(screen.queryByText('Boîtier archivé')).not.toBeInTheDocument();
   });
 });

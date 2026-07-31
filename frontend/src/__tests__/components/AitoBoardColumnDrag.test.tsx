@@ -119,6 +119,7 @@ const project: AitoProject = {
   task_pending: [],
   steps_total: 0,
   steps_done: 0,
+  task_steps: [],
   move_lock: null,
   created_at: '2026-07-27T00:00:00',
   updated_at: '2026-07-27T00:00:00',
@@ -126,8 +127,13 @@ const project: AitoProject = {
 
 function Harness({
   dropDisabled,
+  dragDisabled,
   moveLock = null,
-}: { dropDisabled?: boolean; moveLock?: AitoProject['move_lock'] } = {}) {
+}: {
+  dropDisabled?: boolean;
+  dragDisabled?: boolean;
+  moveLock?: AitoProject['move_lock'];
+} = {}) {
   return (
     <DndContext>
       <BoardColumn
@@ -138,6 +144,7 @@ function Harness({
         transitionConfig={null}
         shouldAnimateIn={() => false}
         dropDisabled={dropDisabled}
+        dragDisabled={dragDisabled}
       />
     </DndContext>
   );
@@ -194,10 +201,16 @@ describe('BoardColumn — a locked card is grabbable for reordering', () => {
     expect(mockSetActivatorNodeRef).toHaveBeenCalledWith(grip);
   });
 
-  it('keeps the lock badge alongside the grip so the card still says why it is pinned', () => {
+  it('draws no lock badge on a locked card, even though the grip stays', () => {
+    // CardView no longer draws a lock badge at all (Done left the board, so
+    // every card is pinned to its column without exception — see CardView's
+    // own test for the full reasoning). Covered here too because BoardColumn
+    // is what actually wraps CardView in a column, and a regression that
+    // reintroduced the badge only at this layer would slip past CardView's
+    // suite.
     render(<Harness moveLock="quote" />);
 
-    expect(screen.getByRole('img', { name: /locked to quote/i })).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /locked/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /drag|glisser/i })).toBeInTheDocument();
   });
 
@@ -227,6 +240,11 @@ describe('BoardColumn — dropDisabled', () => {
   it('defaults to enabled when dropDisabled is omitted (no drag in progress)', () => {
     render(<Harness />);
     expect(mockUseDroppable).toHaveBeenCalledWith({ id: COLUMNS[0].id, disabled: undefined });
+  });
+
+  it('refuses drops while the board is filtered', () => {
+    render(<Harness dragDisabled />);
+    expect(mockUseDroppable).toHaveBeenCalledWith({ id: COLUMNS[0].id, disabled: true });
   });
 
   /** BoardColumn's own outer div, reached from its <h2>: heading -> header
@@ -273,11 +291,13 @@ describe('BoardColumn — revert flash', () => {
     fireEvent.pointerDown(markSent);
     await waitFor(() => expect(api.setAitoQuoteStatus).toHaveBeenCalled(), { timeout: 2000 });
 
-    // CardView's own root carries `data-aito-card`; its parent is
-    // SortableCard's wrapper, the element that actually holds the
-    // conditional class under test.
-    const cardBody = document.querySelector('[data-aito-card]')!;
-    const wrapper = cardBody.parentElement!;
+    // CardView's own root carries `data-aito-card`; its parent is the
+    // hover-reveal shell, anchored here by its own `data-testid` rather than a
+    // hop count — a DOM-depth magic number drifts the moment another wrapper
+    // is added, as it already did once this branch when the shell itself
+    // showed up. The shell's parent is SortableCard's wrapper, the element
+    // that actually holds the conditional class under test.
+    const wrapper = screen.getByTestId('aito-card-shell').parentElement!;
     await waitFor(() => expect(wrapper.className).toContain('animate-revert-flash'));
 
     // `useRevertFlash`'s flagged id is module-level state with its own
@@ -289,7 +309,7 @@ describe('BoardColumn — revert flash', () => {
 
   it('leaves the class off an idle card', () => {
     render(<Harness />);
-    const cardBody = document.querySelector('[data-aito-card]')!;
-    expect(cardBody.parentElement!.className).not.toContain('animate-revert-flash');
+    const wrapper = screen.getByTestId('aito-card-shell').parentElement!;
+    expect(wrapper.className).not.toContain('animate-revert-flash');
   });
 });

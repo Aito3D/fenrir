@@ -6,10 +6,11 @@ export type { ServiceId };
 
 /** The four Aito services, keyed by the ids the backend emits.
  *
- *  Shared by the board card (which receives its ids from `task_services` on
- *  the project response) and a collapsed task row (which derives them from the
- *  draft in hand) so the two can never disagree about a label. The insertion
- *  order here is the canonical order `SERVICES` emits — see
+ *  Shared by `StepGrid` (the board card's per-task pill row, which iterates
+ *  `SERVICES` directly rather than reading ids off the project response) and
+ *  `ImportQuoteModal` (which derives them from the draft in hand) so the two
+ *  can never disagree about a label. The insertion order here is the
+ *  canonical order `SERVICES` emits — see
  *  backend/app/services/aito_board_rules.py — so a derived badge row reads
  *  the same way as a server-supplied one.
  *

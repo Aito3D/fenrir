@@ -135,7 +135,7 @@ export function QuoteCombobox({ selected, onSelect }: QuoteComboboxProps) {
           <div
             role="listbox"
             onMouseDown={(e) => e.preventDefault()}
-            className="absolute z-50 left-0 right-0 mt-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg max-h-72 overflow-y-auto animate-slide-up"
+            className="absolute z-50 left-0 right-0 mt-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg max-h-72 overflow-y-auto animate-slide-up scrollbar-hide"
           >
             {!debouncedQuery && !pending && !quotesQuery.isError && (
               <p className="px-3 pt-2 text-xs uppercase tracking-wide text-bambu-gray">

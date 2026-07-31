@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { Check, ExternalLink, Loader2, X } from 'lucide-react';
-import { COLUMNS } from './columns';
+import { ALL_COLUMNS } from './columns';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ActivityRail } from './history/ActivityRail';
 import { QuotePrintButton } from './QuotePrintButton';
@@ -67,7 +67,7 @@ function SaveIndicator({ state }: { state: SaveState }) {
 export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetailPanelProps) {
   const { t, i18n } = useTranslation();
   const closeRef = useRef<HTMLButtonElement>(null);
-  const column = COLUMNS.find((c) => c.id === project.column);
+  const column = ALL_COLUMNS.find((c) => c.id === project.column);
   const created = parseUTCDate(project.created_at);
   const updated = parseUTCDate(project.updated_at);
 
@@ -200,9 +200,24 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
           </span>
         </div>
 
-        <div className="p-4 overflow-y-auto flex-1">
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)_minmax(0,26rem)] gap-4 lg:gap-6">
-            <div className="space-y-4 min-w-0">
+        <div className="p-4 overflow-y-auto scrollbar-hide flex-1 min-h-0">
+          {/* Three columns, three scrollers — but only from `lg` up, where the
+              grid is actually side by side. Below that the columns stack and
+              the body's own scroller is the right one.
+
+              The history rail is an infinite query with no height of its own,
+              so with a single shared scroller every "load more" pushed the
+              description, the client and the tasks off the top of the screen.
+              Capping the row at the panel's available height and letting each
+              column scroll inside it is what keeps the header and the left
+              column where the user left them.
+
+              `lg:min-h-0` is the load-bearing part, here and on every child: a
+              grid item defaults to `min-height: auto` and refuses to shrink
+              below its content, so without it the cap does nothing at all.
+              Same reason AitoPage's board row carries it. */}
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)_minmax(0,26rem)] gap-4 lg:gap-6 lg:h-full lg:min-h-0">
+            <div className="space-y-4 min-w-0 lg:min-h-0 lg:overflow-y-auto scrollbar-hide">
               <div>
                 {/* The same name the create modal gives this field, so the
                     create surface and the edit surface agree on what it is.
@@ -419,7 +434,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               <QuoteStatusActions project={project} />
             </div>
 
-            <div className="min-w-0 border-t border-bambu-dark-tertiary pt-4 lg:border-t-0 lg:pt-0 lg:border-l lg:border-bambu-dark-tertiary lg:pl-6">
+            <div className="min-w-0 lg:min-h-0 lg:overflow-y-auto scrollbar-hide border-t border-bambu-dark-tertiary pt-4 lg:border-t-0 lg:pt-0 lg:border-l lg:border-bambu-dark-tertiary lg:pl-6">
               <TaskEditor
                 value={tasks}
                 onChange={onTasksChange}
@@ -432,7 +447,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               />
             </div>
 
-            <div className="min-w-0 border-t border-bambu-dark-tertiary pt-4 lg:border-t-0 lg:pt-0 lg:border-l lg:pl-6">
+            <div className="min-w-0 lg:min-h-0 lg:overflow-y-auto scrollbar-hide border-t border-bambu-dark-tertiary pt-4 lg:border-t-0 lg:pt-0 lg:border-l lg:pl-6">
               <ActivityRail projectId={project.id} />
             </div>
           </div>

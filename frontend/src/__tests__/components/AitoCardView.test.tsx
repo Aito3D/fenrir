@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { CardView } from '../../components/aito/CardView';
@@ -34,6 +34,7 @@ const project: AitoProject = {
   task_pending: [],
   steps_total: 0,
   steps_done: 0,
+  task_steps: [],
   move_lock: null,
   created_at: '2026-07-27T00:00:00',
   updated_at: '2026-07-27T00:00:00',
@@ -88,63 +89,87 @@ describe('CardView', () => {
     expect(screen.queryByRole('button', { name: /drag|glisser/i })).not.toBeInTheDocument();
   });
 
-  it('shows a badge per enabled service, the task count and the total', async () => {
+  it('shows a step row per task and the total, and no task count', async () => {
     render(
       <CardView
-        project={{ ...project, task_count: 2, tasks_total: 20200, task_services: ['modelisation', 'impression'] }}
+        project={{
+          ...project,
+          task_count: 2,
+          tasks_total: 20200,
+          task_services: ['modelisation', 'impression'],
+          task_steps: [
+            { services: ['modelisation', 'impression'], done: ['modelisation'] },
+            { services: ['impression'], done: [] },
+          ],
+        }}
         onExpand={vi.fn()}
       />,
     );
-    expect(await screen.findByText('Modeling')).toBeInTheDocument();
-    expect(screen.getByText('Printing')).toBeInTheDocument();
-    expect(screen.queryByText('Scan')).not.toBeInTheDocument();
-    expect(screen.getByText(/2 tasks|2 tâches/i)).toBeInTheDocument();
+    expect(await screen.findAllByTestId('aito-step-row')).toHaveLength(2);
+    // The count line is gone: the rows themselves say how many tasks there are.
+    expect(screen.queryByText(/2 tasks|2 tâches/i)).not.toBeInTheDocument();
     // Matched on the digits, not the whole formatted string: the currency and
     // separators come from formatMoney and the settings stub, and pinning them
     // here would make this a test of formatMoney.
     expect(screen.getByText(/20[,\s.]?200/)).toBeInTheDocument();
   });
 
-  it('renders no summary row at all for a project with no tasks', () => {
+  it('renders no step rows and no total for a project with no tasks', () => {
     render(
       <CardView
-        project={{ ...project, task_count: 0, tasks_total: 0, task_services: [] }}
+        project={{ ...project, task_count: 0, tasks_total: 0, task_services: [], task_steps: [] }}
         onExpand={vi.fn()}
       />,
     );
-    expect(screen.queryByText(/0 tasks|0 tâches/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('aito-step-row')).not.toBeInTheDocument();
     expect(screen.queryByText('Scan')).not.toBeInTheDocument();
-    expect(screen.queryByText('Printing')).not.toBeInTheDocument();
   });
 
-  it('shows the same summary in the drag overlay, which has no body button', async () => {
-    // CardView inserts the summary at two points — inside the body <button>
-    // when `onExpand` is passed, and inside a plain <div> for the DragOverlay
-    // clone, which gets no `onExpand` at all. Every other summary
-    // test above passes `onExpand`, so without this one the overlay's
-    // insertion point could be dropped and the suite would stay green while a
-    // dragged card visibly lost its badges, count and total.
+  it('survives a response that predates task_steps instead of blanking the board', () => {
+    // A server older than this bundle sends no `task_steps` at all. That is a
+    // real window, not a hypothetical: `npm run build` writes into ../static/
+    // for the same FastAPI process to serve, so a cached bundle newer than the
+    // running server — or a dev frontend pointed at a stale backend — sends
+    // `undefined` here. Dereferencing it unmounts EVERY card, because one
+    // card's throw takes the whole board's render with it. Degrading to "no
+    // step rows" costs one card its pills; not degrading costs the operator
+    // the board.
+    const legacy = { ...project } as Record<string, unknown>;
+    delete legacy.task_steps;
+
+    expect(() =>
+      render(<CardView project={legacy as unknown as AitoProject} onExpand={vi.fn()} />),
+    ).not.toThrow();
+    expect(screen.getByText('Support de caméra')).toBeInTheDocument();
+    expect(screen.queryByTestId('aito-step-row')).not.toBeInTheDocument();
+  });
+
+  it('shows the same step rows in the drag overlay, which has no buttons', async () => {
+    // The overlay clone gets no `onExpand`. Without this test that branch
+    // could lose its grid and the suite would stay green while a dragged card
+    // visibly lost its pills.
     render(
       <CardView
-        project={{ ...project, task_count: 2, tasks_total: 20200, task_services: ['modelisation', 'impression'] }}
+        project={{
+          ...project,
+          task_count: 1,
+          tasks_total: 20200,
+          task_steps: [{ services: ['modelisation', 'impression'], done: ['modelisation'] }],
+        }}
         overlay
       />,
     );
     expect(await screen.findByText('Modeling')).toBeInTheDocument();
-    expect(screen.getByText('Printing')).toBeInTheDocument();
-    expect(screen.getByText(/2 tasks|2 tâches/i)).toBeInTheDocument();
     expect(screen.getByText(/20[,\s.]?200/)).toBeInTheDocument();
-    // The overlay clone really is the no-onExpand branch: nothing here is a
-    // button, so this cannot have been the body-button path in disguise.
     expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 
-  it('keeps the summary inside the body button, so it opens the panel', async () => {
+  it('keeps the step grid inside the click target, so a pill opens the panel', async () => {
     const onExpand = vi.fn();
     const user = userEvent.setup();
     render(
       <CardView
-        project={{ ...project, task_count: 1, tasks_total: 4000, task_services: ['scan'] }}
+        project={{ ...project, task_count: 1, tasks_total: 4000, task_steps: [{ services: ['scan'], done: [] }] }}
         onExpand={onExpand}
       />,
     );
@@ -240,33 +265,22 @@ describe('CardView', () => {
     expect(screen.queryByText(/sent/i)).not.toBeInTheDocument();
   });
 
-  it('marks a quote-locked card with a lock and says why', () => {
-    render(<CardView project={{ ...project, move_lock: 'quote' }} onExpand={vi.fn()} />);
-    expect(screen.getByTitle('Locked to Quote until the quote is accepted')).toBeInTheDocument();
+  it('draws no lock badge, whatever the rules say about this card', () => {
+    // Done left the board, so `finish <-> done` — the only cross-column drag
+    // the rules ever allowed — is unreachable and EVERY card is pinned to its
+    // column. A badge that applies without exception explains nothing.
+    // `move_lock` itself is untouched: allowedColumns still reads it, the
+    // server still enforces it, and DoneGrid still gates Restore on it.
+    for (const lock of ['quote', 'waiting', 'declined', 'steps'] as const) {
+      const { unmount } = render(<CardView project={{ ...project, move_lock: lock }} onExpand={vi.fn()} />);
+      expect(screen.queryByTitle(/Locked|set by its task steps|declined|Waiting on/i)).not.toBeInTheDocument();
+      unmount();
+    }
   });
 
-  it('says a waiting card is stalled on the client, not on us', () => {
-    render(<CardView project={{ ...project, move_lock: 'waiting' }} onExpand={vi.fn()} />);
-    expect(screen.getByTitle('Waiting on the client to answer the quote')).toBeInTheDocument();
-  });
-
-  it('names the step rule on a card the checkboxes are driving', () => {
-    render(<CardView project={{ ...project, move_lock: 'steps' }} onExpand={vi.fn()} />);
-    expect(screen.getByTitle("This card's column is set by its task steps")).toBeInTheDocument();
-  });
-
-  it('shows both the lock and the grip on a locked card', () => {
-    render(
-      <CardView
-        project={{ ...project, move_lock: 'quote' }}
-        onExpand={vi.fn()}
-        dragHandleProps={{}}
-      />,
-    );
-    // The grip is for reordering inside the column, which the rules allow;
-    // the lock badge explains why the card cannot leave that column.
+  it('keeps the grip on a locked card, because reordering is still allowed', () => {
+    render(<CardView project={{ ...project, move_lock: 'quote' }} onExpand={vi.fn()} dragHandleProps={{}} />);
     expect(screen.getByRole('button', { name: /drag|glisser/i })).toBeInTheDocument();
-    expect(screen.getByTitle('Locked to Quote until the quote is accepted')).toBeInTheDocument();
   });
 
   it('keeps the grip on an unlocked card', () => {
@@ -276,84 +290,37 @@ describe('CardView', () => {
     expect(screen.getByRole('button', { name: /drag|glisser/i })).toBeInTheDocument();
   });
 
-  it('shows no lock on a card free to move between Finish and Done', () => {
-    render(<CardView project={{ ...project, move_lock: null }} onExpand={vi.fn()} />);
-    expect(screen.queryByTitle(/Locked|set by its task steps|declined/)).not.toBeInTheDocument();
-  });
-
-  it('offers mark-as-sent on a card in the Quote column', () => {
+  it('renders whatever actions the parent injects', () => {
     render(
-      <CardView
-        project={{ ...project, column: 'devis' }}
-        onExpand={vi.fn()}
-        onMarkSent={vi.fn()}
-      />,
+      <CardView project={project} onExpand={vi.fn()} actions={<button type="button">Do the thing</button>} />,
     );
-    expect(screen.getByRole('button', { name: /mark as sent/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Do the thing' })).toBeInTheDocument();
   });
 
-  it('does not offer mark-as-sent outside the Quote column', () => {
-    for (const column of ['waiting', 'scan', 'model', 'print', 'finish', 'done'] as const) {
-      const { unmount } = render(
-        <CardView project={{ ...project, column }} onExpand={vi.fn()} onMarkSent={vi.fn()} />,
-      );
-      expect(screen.queryByRole('button', { name: /mark as sent/i })).not.toBeInTheDocument();
-      unmount();
-    }
-  });
-
-  it('omits mark-as-sent from the drag overlay clone', () => {
+  it('omits injected actions from the drag overlay clone', () => {
     // Same rule delete follows: the overlay is a picture of the card being
     // dragged, and its buttons would be unreachable anyway.
-    render(<CardView project={{ ...project, column: 'devis' }} overlay />);
-    expect(screen.queryByRole('button', { name: /mark as sent/i })).not.toBeInTheDocument();
+    render(<CardView project={project} overlay actions={<button type="button">Do the thing</button>} />);
+    expect(screen.queryByRole('button', { name: 'Do the thing' })).not.toBeInTheDocument();
   });
 
-  it('disables mark-as-sent while the request is in flight, rather than removing it', () => {
-    // HoldButton fires on a timer, not on pointer release, so the mutation
-    // starts with the user's finger still down. A button that vanishes at that
-    // moment vanishes from under them.
+  it('omits injected actions on a placeholder card', () => {
     render(
       <CardView
-        project={{ ...project, column: 'devis' }}
+        project={project}
+        placeholder
         onExpand={vi.fn()}
-        onMarkSent={vi.fn()}
-        markSentPending
+        actions={<button type="button">Do the thing</button>}
       />,
     );
-    expect(screen.getByRole('button', { name: /mark as sent/i })).toBeDisabled();
-  });
-
-  it('fires mark-as-sent only once the 500ms hold completes', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      const onMarkSent = vi.fn();
-      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-      render(
-        <CardView
-          project={{ ...project, column: 'devis' }}
-          onExpand={vi.fn()}
-          onMarkSent={onMarkSent}
-        />,
-      );
-
-      const button = screen.getByRole('button', { name: /mark as sent/i });
-      await user.pointer({ keys: '[MouseLeft>]', target: button });
-      vi.advanceTimersByTime(300);
-      expect(onMarkSent).not.toHaveBeenCalled();
-
-      vi.advanceTimersByTime(300);
-      expect(onMarkSent).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(screen.queryByRole('button', { name: 'Do the thing' })).not.toBeInTheDocument();
   });
 
   it('does not offer delete on the board card', () => {
     // Delete moved to the expanded card: a destructive action belongs on the
     // surface that shows you what you are destroying, not on a three-line
     // summary one mis-hold away from it.
-    render(<CardView project={project} onExpand={vi.fn()} onMarkSent={vi.fn()} />);
+    render(<CardView project={project} onExpand={vi.fn()} />);
     expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument();
   });
 
@@ -365,5 +332,188 @@ describe('CardView', () => {
   it('shows no bar on an unpriced project', () => {
     render(<CardView project={{ ...project, steps_total: 0, steps_done: 0 }} onExpand={vi.fn()} />);
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+  });
+
+  it('lets the card clip the progress bar instead of the bar rounding itself', () => {
+    // The bar sits INSIDE the card's 1px border, so its own `rounded-b-xl` is
+    // a different radius than the card's inner corner and the fill squares off
+    // against it. The card clips it now, so the only curve involved is the
+    // card's own.
+    render(<CardView project={{ ...project, steps_total: 4, steps_done: 1 }} onExpand={vi.fn()} />);
+    const bar = screen.getByRole('progressbar');
+    expect(bar.className).not.toMatch(/rounded/);
+    expect(bar).toHaveClass('h-1.5');
+    expect(document.querySelector('[data-aito-card]')).toHaveClass('overflow-hidden');
+  });
+
+  it('opens the panel from the footer, not just from the description', async () => {
+    const onExpand = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <CardView project={{ ...project, quote_number: 'DEV26-2462' }} onExpand={onExpand} />,
+    );
+    await user.click(screen.getByText('DEV26-2462'));
+    expect(onExpand).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets an injected action take its own click without opening the panel', async () => {
+    const onExpand = vi.fn();
+    const onAction = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <CardView
+        project={project}
+        onExpand={onExpand}
+        actions={
+          <button type="button" onClick={onAction}>
+            Do the thing
+          </button>
+        }
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Do the thing' }));
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onExpand).not.toHaveBeenCalled();
+  });
+
+  it('offers exactly one target for the whole card body', () => {
+    // One <button>, not one per zone: a card that announced "description",
+    // "steps" and "footer" as three separate controls would be worse to
+    // navigate than the single dead region it replaced.
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    expect(screen.getAllByRole('button', { name: /Support de caméra/ })).toHaveLength(1);
+  });
+
+  it('opens from the keyboard through the same handler as the pointer', async () => {
+    const onExpand = vi.fn();
+    const user = userEvent.setup();
+    render(<CardView project={project} onExpand={onExpand} />);
+    const target = screen.getByRole('button', { name: /Support de caméra/ });
+    target.focus();
+    await user.keyboard('{Enter}');
+    expect(onExpand).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('CardView — hover to read a clamped description', () => {
+  // jsdom lays nothing out, so scrollHeight and clientHeight are both 0 and
+  // the "is it actually clamped?" guard would refuse every card. Stub them
+  // per test to state which case is being exercised.
+  function setClamped(node: HTMLElement, clamped: boolean) {
+    Object.defineProperty(node, 'scrollHeight', { value: clamped ? 240 : 60, configurable: true });
+    Object.defineProperty(node, 'clientHeight', { value: 60, configurable: true });
+  }
+
+  // jsdom never lays anything out, so the card's real `offsetHeight` is
+  // always 0. Stubbed the same way `setClamped` stubs the description, so the
+  // pinned-height assertion below checks a real, non-zero value rather than
+  // jsdom's default.
+  function setCardHeight(node: HTMLElement, height: number) {
+    Object.defineProperty(node, 'offsetHeight', { value: height, configurable: true });
+  }
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('un-clamps the description after a full second of hover', () => {
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, true);
+    const card = document.querySelector('[data-aito-card]') as HTMLElement;
+    setCardHeight(card, 180);
+
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(description).not.toHaveClass('line-clamp-3');
+
+    // The invariant the whole design exists for: the shell pins the
+    // collapsed height inline so the column does not reflow, and the card
+    // itself floats free of the document flow to cover its neighbours.
+    const shell = screen.getByTestId('aito-card-shell');
+    expect(shell).toHaveStyle({ height: '180px' });
+    expect(card).toHaveClass('absolute');
+    expect(card).toHaveClass('z-30');
+  });
+
+  it('does not expand on a hover shorter than a second', () => {
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, true);
+    const shell = screen.getByTestId('aito-card-shell');
+
+    fireEvent.mouseEnter(shell);
+    act(() => vi.advanceTimersByTime(800));
+    fireEvent.mouseLeave(shell);
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(description).toHaveClass('line-clamp-3');
+  });
+
+  it('collapses again when the pointer leaves', () => {
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, true);
+    const shell = screen.getByTestId('aito-card-shell');
+
+    fireEvent.mouseEnter(shell);
+    act(() => vi.advanceTimersByTime(1000));
+    fireEvent.mouseLeave(shell);
+
+    expect(description).toHaveClass('line-clamp-3');
+  });
+
+  it('does not move a card whose description is not clamped', () => {
+    // Nothing hidden means nothing to reveal, and a card that jumps for no
+    // visible reason is worse than one that never jumps.
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, false);
+
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(description).toHaveClass('line-clamp-3');
+    // Not "did not pin 0px" — jsdom's unmocked offsetHeight happens to BE 0,
+    // which happens to stringify to '0px'; asserting against that is coupled
+    // to a test-environment artifact, not to the invariant. The real
+    // invariant is that no inline height was applied at all.
+    const shell = screen.getByTestId('aito-card-shell');
+    expect(shell.style.height).toBe('');
+  });
+
+  it('never expands the drag overlay clone', () => {
+    render(<CardView project={project} overlay />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, true);
+
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(description).toHaveClass('line-clamp-3');
+  });
+
+  it('never expands a placeholder card', () => {
+    // `startHoverIntent` returns early for `overlay || placeholder`; only the
+    // `overlay` half had a test until now. Placeholder is typically paired with
+    // `onExpand` by its parent (BoardColumn), so render that shape too.
+    render(<CardView project={project} placeholder onExpand={vi.fn()} />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, true);
+
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(description).toHaveClass('line-clamp-3');
+  });
+
+  it('keeps the morph anchor on the card, not on the shell', () => {
+    // useCardMorph queries [data-aito-card-id] and assigns viewTransitionName
+    // to whatever it finds. On the shell that would morph an invisible
+    // spacer into the detail panel.
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    const shell = screen.getByTestId('aito-card-shell');
+    expect(shell).not.toHaveAttribute('data-aito-card-id');
+    expect(shell.querySelector('[data-aito-card-id="12"]')).not.toBeNull();
   });
 });

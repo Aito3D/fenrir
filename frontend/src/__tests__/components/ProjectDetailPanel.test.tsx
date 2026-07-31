@@ -42,6 +42,7 @@ const project: AitoProject = {
   task_pending: [],
   steps_total: 0,
   steps_done: 0,
+  task_steps: [],
   move_lock: null,
   created_at: '2026-07-27T00:00:00',
   updated_at: '2026-07-27T00:00:00',
@@ -1354,5 +1355,64 @@ describe('ProjectDetailPanel delete', () => {
     // and passed identically with the task column's rule removed — a test that
     // could not fail. Both dividers must be present: tasks and activity.
     expect(container.querySelectorAll('.lg\\:border-l')).toHaveLength(2);
+  });
+});
+
+describe('ProjectDetailPanel column badge', () => {
+  it('still labels the column of a done project', () => {
+    // COLUMNS lost its `done` entry when Done came off the board. The panel
+    // must read ALL_COLUMNS, or every finished card loses its badge.
+    show({ column: 'done', move_lock: null });
+    // A bare `COLUMNS.find` miss falls back to rendering the raw
+    // `project.column` string ("done"), which coincidentally still matches
+    // this regex on its own — so the text assertion alone would not catch a
+    // regression back to `COLUMNS`. The dot indicator only renders when a
+    // column was actually found, which is what distinguishes a real
+    // `ALL_COLUMNS` hit from that fallback.
+    const stageValue = screen.getByText(/^(Done|Terminé)$/i);
+    expect(stageValue.querySelector('.bg-bambu-gray')).not.toBeNull();
+  });
+});
+
+describe('ProjectDetailPanel scroll architecture', () => {
+  /** These are class assertions, and they prove less than a layout test would:
+   *  jsdom computes no heights, so nothing here can show the panel actually
+   *  stops growing. What they DO catch is the silent regression — dropping a
+   *  `min-h-0`, or adding a fourth column without a scroller — which changes no
+   *  rendered text, fails no type check, and is invisible until someone opens a
+   *  project with a long history on a wide screen. */
+
+  it('caps the panel at the viewport and lets the body flex inside it', () => {
+    show();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.className).toContain('max-h-[calc(100vh-2rem)]');
+    expect(dialog.className).toContain('flex-col');
+  });
+
+  it('gives every grid column its own scroller on wide screens', () => {
+    show();
+    const grid = document.querySelector('[class*="lg:grid-cols-"]');
+    expect(grid).not.toBeNull();
+
+    // min-h-0 on the row: without it the columns refuse to shrink below their
+    // content and the cap above does nothing.
+    expect(grid!.className).toContain('lg:min-h-0');
+    expect(grid!.className).toContain('lg:h-full');
+
+    const columns = Array.from(grid!.children) as HTMLElement[];
+    expect(columns).toHaveLength(3);
+    for (const column of columns) {
+      expect(column.className).toContain('lg:overflow-y-auto');
+      expect(column.className).toContain('lg:min-h-0');
+      expect(column.className).toContain('scrollbar-hide');
+    }
+  });
+
+  it('keeps the body a shrinkable flex child', () => {
+    show();
+    const grid = document.querySelector('[class*="lg:grid-cols-"]')!;
+    const body = grid.parentElement!;
+    expect(body.className).toContain('flex-1');
+    expect(body.className).toContain('min-h-0');
   });
 });

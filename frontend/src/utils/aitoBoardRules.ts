@@ -126,6 +126,14 @@ export function evaluate(
   return [storedColumn === 'done' ? 'done' : 'finish', null];
 }
 
+/** One task's steps, as the card draws them. Mirrors `TaskSteps` in
+ *  backend/app/services/aito_board_rules.py. `services` is what the task
+ *  carries and `done` the ticked subset, both in `SERVICES` order. */
+export interface TaskSteps {
+  services: ServiceId[];
+  done: ServiceId[];
+}
+
 export interface TaskSummary {
   count: number;
   total: number;
@@ -133,6 +141,8 @@ export interface TaskSummary {
   pending: ServiceId[];
   stepsTotal: number;
   stepsDone: number;
+  /** One entry per task, in the order given — the card draws a row each. */
+  stepsByTask: TaskSteps[];
 }
 
 /** Everything a project's tasks say about it, in one pass.
@@ -150,17 +160,26 @@ export function summariseTasks(tasks: readonly TaskLike[]): TaskSummary {
   let stepsDone = 0;
   const enabled = new Set<ServiceId>();
   const unticked = new Set<ServiceId>();
+  const stepsByTask: TaskSteps[] = [];
 
   for (const task of tasks) {
+    const taskServices: ServiceId[] = [];
+    const taskDone: ServiceId[] = [];
     for (const service of SERVICES) {
       const cost = taskCost(task, service);
       if (cost === null) continue;
       enabled.add(service);
+      taskServices.push(service);
       total += cost;
       stepsTotal += 1;
-      if (task.done[service]) stepsDone += 1;
-      else unticked.add(service);
+      if (task.done[service]) {
+        stepsDone += 1;
+        taskDone.push(service);
+      } else {
+        unticked.add(service);
+      }
     }
+    stepsByTask.push({ services: taskServices, done: taskDone });
   }
 
   return {
@@ -170,5 +189,6 @@ export function summariseTasks(tasks: readonly TaskLike[]): TaskSummary {
     pending: SERVICES.filter((service) => unticked.has(service)),
     stepsTotal,
     stepsDone,
+    stepsByTask,
   };
 }

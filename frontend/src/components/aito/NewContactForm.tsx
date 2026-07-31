@@ -89,7 +89,7 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
       }}
       className="flex flex-col flex-1 min-h-0"
     >
-      <div className="p-4 overflow-y-auto flex-1 space-y-4">
+      <div className="p-4 overflow-y-auto flex-1 space-y-4 scrollbar-hide">
         <div>
           <label htmlFor="aito-company" className={labelCls}>
             {t('aito.companyName')}

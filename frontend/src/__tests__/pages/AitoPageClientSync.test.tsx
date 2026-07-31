@@ -46,6 +46,7 @@ function createdProject(overrides: Record<string, unknown>) {
     task_pending: [],
     steps_total: 0,
     steps_done: 0,
+    task_steps: [],
     created_at: '2026-07-26T00:00:00Z',
     updated_at: '2026-07-26T00:00:00Z',
     ...overrides,

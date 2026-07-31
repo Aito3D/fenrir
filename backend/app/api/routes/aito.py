@@ -28,6 +28,7 @@ from backend.app.schemas.aito import (
     AitoQuoteStatusUpdate,
     AitoTaskCreate,
     AitoTaskResponse,
+    AitoTaskStepsResponse,
     AitoTaskUpdate,
 )
 from backend.app.services.aito_board_rules import SERVICES, TaskSummary, evaluate, summarise
@@ -102,6 +103,10 @@ def _to_response(p: AitoProject, summary: TaskSummary) -> AitoProjectResponse:
         task_pending=list(summary.pending),
         steps_total=summary.steps_total,
         steps_done=summary.steps_done,
+        task_steps=[
+            AitoTaskStepsResponse(services=list(steps.services), done=list(steps.done))
+            for steps in summary.steps_by_task
+        ],
         move_lock=lock,
         created_at=p.created_at,
         updated_at=p.updated_at,
