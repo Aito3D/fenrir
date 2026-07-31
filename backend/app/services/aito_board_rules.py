@@ -45,6 +45,20 @@ STAGES: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 
 @dataclass(frozen=True)
+class TaskSteps:
+    """One task's steps, as the card draws them.
+
+    ``services`` is what the task carries, ``done`` the ticked subset, both in
+    ``SERVICES`` order. Deliberately the same ``(services, done)`` pair the
+    frontend's ``ServiceBadges`` takes, so the API, the board card and a
+    collapsed task row all describe a task's steps the same way.
+    """
+
+    services: tuple[str, ...] = ()
+    done: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class TaskSummary:
     """Everything a project's tasks say about it, in one value.
 
@@ -71,6 +85,11 @@ class TaskSummary:
     pending: tuple[str, ...] = ()
     steps_total: int = 0
     steps_done: int = 0
+    # One entry per task, in the order the caller handed them over — the card
+    # draws a row per entry and the detail panel lists them in that same order.
+    # This is what makes the card's pill grid possible without shipping every
+    # task row on GET /aito/.
+    steps_by_task: tuple[TaskSteps, ...] = ()
 
 
 def summarise(tasks: Iterable[Any]) -> TaskSummary:
@@ -89,18 +108,24 @@ def summarise(tasks: Iterable[Any]) -> TaskSummary:
     unticked: set[str] = set()
     steps_total = 0
     steps_done = 0
+    by_task: list[TaskSteps] = []
     for task in rows:
+        task_services: list[str] = []
+        task_done: list[str] = []
         for service in SERVICES:
             cost = getattr(task, f"{service}_cost")
             if cost is None:
                 continue
             enabled.add(service)
+            task_services.append(service)
             total += cost
             steps_total += 1
             if getattr(task, f"{service}_done"):
                 steps_done += 1
+                task_done.append(service)
             else:
                 unticked.add(service)
+        by_task.append(TaskSteps(services=tuple(task_services), done=tuple(task_done)))
     return TaskSummary(
         count=len(rows),
         total=total,
@@ -108,6 +133,7 @@ def summarise(tasks: Iterable[Any]) -> TaskSummary:
         pending=tuple(service for service in SERVICES if service in unticked),
         steps_total=steps_total,
         steps_done=steps_done,
+        steps_by_task=tuple(by_task),
     )
 
 

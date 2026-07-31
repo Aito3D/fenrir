@@ -8911,6 +8911,7 @@
       "name": "no tasks at all",
       "pending": [],
       "services": [],
+      "steps_by_task": [],
       "steps_done": 0,
       "steps_total": 0,
       "tasks": [],
@@ -8921,6 +8922,12 @@
       "name": "one task, nothing priced",
       "pending": [],
       "services": [],
+      "steps_by_task": [
+        {
+          "done": [],
+          "services": []
+        }
+      ],
       "steps_done": 0,
       "steps_total": 0,
       "tasks": [
@@ -8946,6 +8953,14 @@
       "services": [
         "scan"
       ],
+      "steps_by_task": [
+        {
+          "done": [],
+          "services": [
+            "scan"
+          ]
+        }
+      ],
       "steps_done": 0,
       "steps_total": 1,
       "tasks": [
@@ -8970,6 +8985,14 @@
       ],
       "services": [
         "impression"
+      ],
+      "steps_by_task": [
+        {
+          "done": [],
+          "services": [
+            "impression"
+          ]
+        }
       ],
       "steps_done": 0,
       "steps_total": 1,
@@ -9000,6 +9023,20 @@
         "impression",
         "usinage"
       ],
+      "steps_by_task": [
+        {
+          "done": [
+            "scan",
+            "modelisation"
+          ],
+          "services": [
+            "scan",
+            "modelisation",
+            "impression",
+            "usinage"
+          ]
+        }
+      ],
       "steps_done": 2,
       "steps_total": 4,
       "tasks": [
@@ -9024,6 +9061,22 @@
       ],
       "services": [
         "scan"
+      ],
+      "steps_by_task": [
+        {
+          "done": [
+            "scan"
+          ],
+          "services": [
+            "scan"
+          ]
+        },
+        {
+          "done": [],
+          "services": [
+            "scan"
+          ]
+        }
       ],
       "steps_done": 1,
       "steps_total": 2,
@@ -9062,6 +9115,15 @@
         "scan",
         "modelisation"
       ],
+      "steps_by_task": [
+        {
+          "done": [],
+          "services": [
+            "scan",
+            "modelisation"
+          ]
+        }
+      ],
       "steps_done": 0,
       "steps_total": 2,
       "tasks": [
@@ -9085,6 +9147,18 @@
       "services": [
         "scan",
         "impression"
+      ],
+      "steps_by_task": [
+        {
+          "done": [
+            "scan",
+            "impression"
+          ],
+          "services": [
+            "scan",
+            "impression"
+          ]
+        }
       ],
       "steps_done": 2,
       "steps_total": 2,
@@ -9116,6 +9190,38 @@
         "modelisation",
         "impression",
         "usinage"
+      ],
+      "steps_by_task": [
+        {
+          "done": [
+            "scan",
+            "modelisation"
+          ],
+          "services": [
+            "scan",
+            "modelisation",
+            "impression"
+          ]
+        },
+        {
+          "done": [
+            "impression"
+          ],
+          "services": [
+            "scan",
+            "impression",
+            "usinage"
+          ]
+        },
+        {
+          "done": [],
+          "services": [
+            "scan",
+            "modelisation",
+            "impression",
+            "usinage"
+          ]
+        }
       ],
       "steps_done": 3,
       "steps_total": 10,
