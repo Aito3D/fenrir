@@ -84,8 +84,6 @@ export default {
     saved: 'Guardado',
     saveFailed: 'No se pudieron guardar los cambios. Inténtalo de nuevo.',
     tasks: 'Tareas',
-    taskCount_one: '{{count}} tarea',
-    taskCount_other: '{{count}} tareas',
     addTask: 'Añadir tarea',
     taskFallbackName: 'Tarea {{n}}',
     taskTitlePlaceholder: 'Título (opcional)',

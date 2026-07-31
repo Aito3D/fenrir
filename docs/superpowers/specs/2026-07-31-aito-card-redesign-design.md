@@ -117,7 +117,8 @@ quarter of a 300px column at every locale.
 
 **Removed.** The `task_count` line, and the project-level `ServiceBadges` row —
 the latter is the union of exactly what the pills now show per task.
-`ServiceBadges` itself stays; `TaskRow`'s collapsed header still uses it.
+`ServiceBadges` itself stays; its sole remaining caller is `ImportQuoteModal`
+(`TaskRow` does not import it).
 
 `tasks_total` (the money) moves up to sit right-aligned on its own line under
 the grid.
@@ -139,21 +140,35 @@ overflowing.
 
 ### 4. The whole card below the header is one click target
 
-A transparent `<button className="absolute inset-0">` covers the body, the
-footer and the progress bar. The visible content renders above it with
-`pointer-events-none`; the footer's injected action buttons (mark-sent,
-mark-done, restore, hold-to-delete) get `pointer-events-auto` so they still
-receive their own clicks.
+Not what shipped: an earlier version of this section proposed a transparent
+overlay `<button className="absolute inset-0">` with `pointer-events-none`
+content and `pointer-events-auto` actions. That design was abandoned before
+implementation — `@testing-library/user-event` dispatches a click on the
+queried node and bubbles it only through real DOM ancestors; it never
+redirects a click to an overlapping-but-sibling element the way a browser does
+for `pointer-events: none`. An overlay button covering content with
+`pointer-events: none` is therefore unverifiable by any behavioural test: a
+test clicking "on" the description would always land on the overlay directly,
+never proving the overlay actually sits above real, interactive content.
 
-One real `<button>` rather than a click handler on a `<div>`: keyboard and
-assistive technology get exactly one target with one accessible name, and no
-`<button>` ends up nested inside another, which is what forced the footer
-outside the click target in the first place.
+What shipped instead: the region wrapper `<div>` (body, step grid, footer,
+progress bar) owns the `onClick`. A transparent, handler-less
+`<button className="absolute inset-0 z-0">` sits underneath purely to supply
+the accessible name (`aria-label={project.description}`) and the focus ring —
+its native Enter/Space activation produces a `click` that bubbles to the same
+wrapper handler, so keyboard and pointer share one path. Content sits at
+`relative z-10` above it and keeps its own hover, cursor and tooltips
+untouched, since nothing here sets `pointer-events-none`. The parent-injected
+actions (mark-sent, mark-done, restore, hold-to-delete) opt out with
+`onClick={(event) => event.stopPropagation()}` on their wrapper, so their own
+clicks never reach the region handler.
 
-Known cost: the `7 days ago` text loses its created/updated `title` tooltip,
-because `pointer-events: none` suppresses tooltips. The detail panel shows both
-timestamps. Carving a live zone out of the middle of the click target to keep a
-hover hint is the worse trade.
+One real `<button>` rather than a click handler on a bare `<div>` with no
+button at all: keyboard and assistive technology get exactly one target with
+one accessible name, and no `<button>` ends up nested inside another, which is
+what forced the footer outside the click target in the first place. The
+`7 days ago` text keeps its created/updated `title` tooltip — nothing here
+suppresses pointer events on it.
 
 `data-aito-card-id` stays on the card root — `useCardMorph` queries it to
 assign `viewTransitionName`, and the styled root is the correct snapshot.
@@ -184,6 +199,12 @@ Guards:
 
 Touch devices get no `mouseenter` and are unaffected; tapping opens the panel,
 which shows the full description.
+
+Known limitation: the expanded card is `absolute` inside the column's
+`overflow-y-auto` scroller. For a card resting near the bottom of a scrolled
+column, part of the revealed description can fall below the visible fold.
+Scrolling to read it moves the card out from under the pointer, which
+collapses it again. Not addressed on this branch.
 
 ## Testing
 

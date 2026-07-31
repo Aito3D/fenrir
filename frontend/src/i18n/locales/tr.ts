@@ -84,8 +84,6 @@ export default {
     saved: 'Kaydedildi',
     saveFailed: 'Değişiklikleriniz kaydedilemedi. Lütfen tekrar deneyin.',
     tasks: 'Görevler',
-    taskCount_one: '{{count}} görev',
-    taskCount_other: '{{count}} görev',
     addTask: 'Görev ekle',
     taskFallbackName: 'Görev {{n}}',
     taskTitlePlaceholder: 'Başlık (isteğe bağlı)',

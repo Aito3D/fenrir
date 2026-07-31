@@ -85,8 +85,6 @@ export default {
     saved: "Збережено",
     saveFailed: "Не вдалося зберегти зміни. Спробуйте ще раз.",
     tasks: "Завдання",
-    taskCount_one: "{{count}} завдання",
-    taskCount_other: "{{count}} завдань",
     addTask: "Додати завдання",
     taskFallbackName: "Завдання {{n}}",
     taskTitlePlaceholder: "Необов’язкова назва",

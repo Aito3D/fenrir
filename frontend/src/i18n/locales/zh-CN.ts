@@ -84,8 +84,6 @@ export default {
     saved: '已保存',
     saveFailed: '无法保存更改，请重试。',
     tasks: '任务',
-    taskCount_one: '{{count}} 个任务',
-    taskCount_other: '{{count}} 个任务',
     addTask: '添加任务',
     taskFallbackName: '任务 {{n}}',
     taskTitlePlaceholder: '标题（可选）',

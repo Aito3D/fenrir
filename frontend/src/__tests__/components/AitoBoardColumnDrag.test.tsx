@@ -292,11 +292,12 @@ describe('BoardColumn — revert flash', () => {
     await waitFor(() => expect(api.setAitoQuoteStatus).toHaveBeenCalled(), { timeout: 2000 });
 
     // CardView's own root carries `data-aito-card`; its parent is the
-    // hover-reveal shell (Task 7), and that shell's parent is SortableCard's
-    // wrapper, the element that actually holds the conditional class under
-    // test.
-    const cardBody = document.querySelector('[data-aito-card]')!;
-    const wrapper = cardBody.parentElement!.parentElement!;
+    // hover-reveal shell, anchored here by its own `data-testid` rather than a
+    // hop count — a DOM-depth magic number drifts the moment another wrapper
+    // is added, as it already did once this branch when the shell itself
+    // showed up. The shell's parent is SortableCard's wrapper, the element
+    // that actually holds the conditional class under test.
+    const wrapper = screen.getByTestId('aito-card-shell').parentElement!;
     await waitFor(() => expect(wrapper.className).toContain('animate-revert-flash'));
 
     // `useRevertFlash`'s flagged id is module-level state with its own
@@ -308,7 +309,7 @@ describe('BoardColumn — revert flash', () => {
 
   it('leaves the class off an idle card', () => {
     render(<Harness />);
-    const cardBody = document.querySelector('[data-aito-card]')!;
-    expect(cardBody.parentElement!.parentElement!.className).not.toContain('animate-revert-flash');
+    const wrapper = screen.getByTestId('aito-card-shell').parentElement!;
+    expect(wrapper.className).not.toContain('animate-revert-flash');
   });
 });

@@ -84,8 +84,6 @@ export default {
     saved: '保存しました',
     saveFailed: '変更を保存できませんでした。もう一度お試しください。',
     tasks: 'タスク',
-    taskCount_one: '{{count}}件のタスク',
-    taskCount_other: '{{count}}件のタスク',
     addTask: 'タスクを追加',
     taskFallbackName: 'タスク {{n}}',
     taskTitlePlaceholder: 'タイトル（任意）',

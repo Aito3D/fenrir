@@ -84,8 +84,6 @@ export default {
     saved: 'Salvato',
     saveFailed: 'Impossibile salvare le modifiche. Riprova.',
     tasks: 'Attività',
-    taskCount_one: '{{count}} attività',
-    taskCount_other: '{{count}} attività',
     addTask: 'Aggiungi attività',
     taskFallbackName: 'Attività {{n}}',
     taskTitlePlaceholder: 'Titolo (opzionale)',
