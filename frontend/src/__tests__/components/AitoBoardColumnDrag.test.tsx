@@ -41,11 +41,12 @@
  * inside a real drag context provider to not throw.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '../utils';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '../utils';
 import { DndContext } from '@dnd-kit/core';
 import { BoardColumn } from '../../components/aito/BoardColumn';
 import { COLUMNS } from '../../components/aito/columns';
+import { api } from '../../api/client';
 import type { AitoProject } from '../../api/client';
 
 // Vitest hoists `vi.mock` above module-level `const`s, so the factory below
@@ -245,5 +246,50 @@ describe('BoardColumn — dropDisabled', () => {
   it('leaves an accepting column at full opacity', () => {
     render(<Harness dropDisabled={false} />);
     expect(columnWrapper().className).not.toContain('opacity-40');
+  });
+});
+
+describe('BoardColumn — revert flash', () => {
+  // Regression for the review finding that every failure-path test mocks
+  // `flashRevert` and asserts it was called, and `useIsReverting` is only
+  // tested in isolation — so nothing ever asserted the actual DOM
+  // consequence. Deleting `animate-revert-flash` from SortableCard's wrapper
+  // below would leave every one of those tests green while the whole
+  // revert-signal feature silently stopped rendering. `useRevertFlash` is
+  // deliberately left real here (unlike AitoPage.test.tsx and friends, which
+  // mock it to assert the call) so this test observes the actual class.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('puts animate-revert-flash on the card wrapper when a board write is rejected', async () => {
+    vi.spyOn(api, 'setAitoQuoteStatus').mockRejectedValue(new Error('nope'));
+    render(<Harness />);
+
+    // "Mark as sent" (CardView's HoldButton, devis-only) drives
+    // useQuoteStatusMutation, one of useOptimisticBoardMutation's real
+    // callers — a 500ms hold, per CardView's own `durationMs={500}`.
+    const markSent = screen.getByRole('button', { name: 'Mark as sent' });
+    fireEvent.pointerDown(markSent);
+    await waitFor(() => expect(api.setAitoQuoteStatus).toHaveBeenCalled(), { timeout: 2000 });
+
+    // CardView's own root carries `data-aito-card`; its parent is
+    // SortableCard's wrapper, the element that actually holds the
+    // conditional class under test.
+    const cardBody = document.querySelector('[data-aito-card]')!;
+    const wrapper = cardBody.parentElement!;
+    await waitFor(() => expect(wrapper.className).toContain('animate-revert-flash'));
+
+    // `useRevertFlash`'s flagged id is module-level state with its own
+    // 600ms timer, with no test-only reset (unlike useBoardSync's
+    // `__resetBoardSync`) — wait it out so it cannot bleed into whatever
+    // test runs next in this file.
+    await waitFor(() => expect(wrapper.className).not.toContain('animate-revert-flash'), { timeout: 2000 });
+  });
+
+  it('leaves the class off an idle card', () => {
+    render(<Harness />);
+    const cardBody = document.querySelector('[data-aito-card]')!;
+    expect(cardBody.parentElement!.className).not.toContain('animate-revert-flash');
   });
 });
