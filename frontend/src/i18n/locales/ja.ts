@@ -156,6 +156,8 @@ export default {
     searchPlaceholder: '案件を検索…',
     searchNoResults: '一致する案件がありません',
     clearSearch: '検索をクリア',
+    inProduction_one: '進行中の案件 {{count}} 件',
+    inProduction_other: '進行中の案件 {{count}} 件',
     columns: {
       devis: '見積もり',
       waiting: '待機中',

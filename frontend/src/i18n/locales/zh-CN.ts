@@ -156,6 +156,8 @@ export default {
     searchPlaceholder: '搜索项目…',
     searchNoResults: '没有匹配的项目',
     clearSearch: '清除搜索',
+    inProduction_one: '进行中 {{count}} 个项目',
+    inProduction_other: '进行中 {{count}} 个项目',
     columns: {
       devis: '报价',
       waiting: '等待中',

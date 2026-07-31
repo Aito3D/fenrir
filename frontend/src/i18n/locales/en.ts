@@ -160,6 +160,8 @@ export default {
     searchPlaceholder: 'Search projects…',
     searchNoResults: 'No projects match your search',
     clearSearch: 'Clear search',
+    inProduction_one: '{{count}} project in production',
+    inProduction_other: '{{count}} projects in production',
     columns: {
       devis: 'Quote',
       waiting: 'Waiting',

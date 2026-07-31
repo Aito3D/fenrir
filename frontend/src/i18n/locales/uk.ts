@@ -157,6 +157,8 @@ export default {
     searchPlaceholder: 'Пошук проєктів…',
     searchNoResults: 'Немає проєктів, що відповідають запиту',
     clearSearch: 'Очистити пошук',
+    inProduction_one: '{{count}} проєкт у роботі',
+    inProduction_other: '{{count}} проєктів у роботі',
     columns: {
       devis: "Пропозиція",
       waiting: "Очікування",

@@ -1323,6 +1323,69 @@ describe('AitoPage (backend board)', () => {
     expect(screen.queryByRole('button', { name: /drag|glisser/i })).not.toBeInTheDocument();
   });
 
+  it('counts only the columns where work is actually happening', async () => {
+    // Quote and Waiting are parked on the client, Done is finished. Scan,
+    // Modeling, Printing and Finish are the bench.
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([
+          makeProject({ id: 1, column: 'devis' }),
+          makeProject({ id: 2, column: 'waiting' }),
+          makeProject({ id: 3, column: 'scan' }),
+          makeProject({ id: 4, column: 'model' }),
+          makeProject({ id: 5, column: 'print' }),
+          makeProject({ id: 6, column: 'finish' }),
+          makeProject({ id: 7, column: 'done' }),
+        ]),
+      ),
+    );
+    render(<AitoPage />);
+
+    // The <h1> renders unconditionally at mount, with `inProduction` stuck at
+    // 0 while `aitoQuery.data` is still undefined — so a bare
+    // `findByRole('heading', ...)` resolves on that very first render, before
+    // the fetch above ever lands, and a plain `getByText('4')` right after it
+    // would just be asserting against the transient pre-fetch 0. Waiting for
+    // the Show Done button's own count first is a signal that only reads
+    // `(1)` once the fetched board actually holds this fixture's one done
+    // card, which guarantees the heading below reflects real data too.
+    await screen.findByRole('button', { name: /show done \(1\)/i });
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(within(heading).getByText('4')).toBeInTheDocument();
+  });
+
+  it('reads as zero when everything is parked or finished', async () => {
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([
+          makeProject({ id: 1, column: 'devis' }),
+          makeProject({ id: 2, column: 'done' }),
+        ]),
+      ),
+    );
+    render(<AitoPage />);
+
+    // Zero happens to be both the pre-fetch and the post-fetch value here, so
+    // waiting on the heading alone would pass whether or not the real fetch
+    // ever landed — it would even pass against a version of `inProduction`
+    // that never read the board at all. The Show Done button's `(1)` only
+    // appears once this fixture's one done card has actually loaded, so
+    // waiting for it first proves the `0` below came from real data.
+    await screen.findByRole('button', { name: /show done \(1\)/i });
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(within(heading).getByText('0')).toBeInTheDocument();
+  });
+
+  it('spells the count out for screen readers rather than leaving a bare number', async () => {
+    server.use(
+      http.get('*/api/v1/aito/', () =>
+        HttpResponse.json([makeProject({ id: 1, column: 'print' })]),
+      ),
+    );
+    render(<AitoPage />);
+    expect(await screen.findByText(/1 project in production|1 projet en production/i)).toBeInTheDocument();
+  });
+
   it('keeps the query when switching to the done grid', async () => {
     server.use(
       http.get('*/api/v1/aito/', () =>

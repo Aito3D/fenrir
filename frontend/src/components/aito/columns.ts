@@ -39,3 +39,21 @@ export const DONE_COLUMN: ColumnMeta = {
  *  card is in rather than render the board — the detail panel. Reading
  *  `COLUMNS` there would leave every finished card with no badge at all. */
 export const ALL_COLUMNS: ColumnMeta[] = [...COLUMNS, DONE_COLUMN];
+
+/** Columns whose cards are NOT work in production.
+ *
+ *  A card in Quote is waiting on an acceptance and a card in Waiting is out
+ *  with the client — in both the ball is in someone else's court, so neither
+ *  is anybody's workload. Done is excluded for free: it is not in `COLUMNS`.  */
+const PARKED_COLUMN_IDS: ColumnId[] = ['devis', 'waiting'];
+
+/** The columns the title's count adds up: everything on the board that someone
+ *  is actually doing.
+ *
+ *  Derived by exclusion rather than listed, and deliberately not
+ *  `COLUMNS.slice(2)`. Both are correct today; only this one stays correct
+ *  when a stage is reordered or a new one is inserted, which would silently
+ *  change what the number beside the page title means. */
+export const ACTIVE_COLUMN_IDS: ColumnId[] = COLUMNS.map((column) => column.id).filter(
+  (id) => !PARKED_COLUMN_IDS.includes(id),
+);

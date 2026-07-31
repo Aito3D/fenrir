@@ -7,7 +7,7 @@ import { Button } from '../components/Button';
 import { CardView } from '../components/aito/CardView';
 import { BoardColumn } from '../components/aito/BoardColumn';
 import { BoardSearch } from '../components/aito/BoardSearch';
-import { COLUMNS } from '../components/aito/columns';
+import { ACTIVE_COLUMN_IDS, COLUMNS } from '../components/aito/columns';
 import { DoneGrid } from '../components/aito/DoneGrid';
 import { ImportQuoteModal } from '../components/aito/ImportQuoteModal';
 import { NewProjectModal } from '../components/aito/NewProjectModal';
@@ -259,6 +259,11 @@ export function AitoPage() {
   // columns. The Show Done button above carries the done count.
   const totalCount = COLUMNS.reduce((sum, column) => sum + board[column.id].length, 0);
 
+  // What is actually on the bench. Separate from `totalCount`, which drives
+  // the empty state and counts every rendered column — a board that is nothing
+  // but quotes is not empty, it just has no production on it.
+  const inProduction = ACTIVE_COLUMN_IDS.reduce((sum, id) => sum + board[id].length, 0);
+
   const reducedMotion = useMemo(() => prefersReducedMotion(), []);
 
   const createProject = (description: string, draft: ClientDraft, tasks: TaskDraft[]) => {
@@ -299,6 +304,20 @@ export function AitoPage() {
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
             <Kanban className="w-7 h-7 text-bambu-green" />
             {t('aito.title')}
+            {/* Keyed on the value so the tick animation replays when it
+                changes — the same trick the column count badges use.
+
+                The number alone is meaningless read aloud ("Aito, four"), so
+                the digits are aria-hidden and the phrase sits beside them for
+                screen readers. `title` covers the mouse. */}
+            <span
+              key={inProduction}
+              title={t('aito.inProduction', { count: inProduction })}
+              className="px-2 py-0.5 text-sm font-medium text-bambu-gray-light bg-bambu-dark-tertiary rounded-full tabular-nums animate-value-tick"
+            >
+              <span aria-hidden="true">{inProduction}</span>
+              <span className="sr-only">{t('aito.inProduction', { count: inProduction })}</span>
+            </span>
           </h1>
           <p className="text-bambu-gray mt-1">{t('aito.subtitle')}</p>
         </div>

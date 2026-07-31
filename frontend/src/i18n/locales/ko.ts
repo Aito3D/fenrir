@@ -156,6 +156,8 @@ export default {
     searchPlaceholder: '프로젝트 검색…',
     searchNoResults: '검색과 일치하는 프로젝트가 없습니다',
     clearSearch: '검색 지우기',
+    inProduction_one: '진행 중인 프로젝트 {{count}}개',
+    inProduction_other: '진행 중인 프로젝트 {{count}}개',
     columns: {
       devis: '견적',
       waiting: '대기 중',

@@ -156,6 +156,8 @@ export default {
     searchPlaceholder: 'Buscar projetos…',
     searchNoResults: 'Nenhum projeto corresponde à busca',
     clearSearch: 'Limpar busca',
+    inProduction_one: '{{count}} projeto em produção',
+    inProduction_other: '{{count}} projetos em produção',
     columns: {
       devis: 'Orçamento',
       waiting: 'Aguardando',

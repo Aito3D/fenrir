@@ -156,6 +156,8 @@ export default {
     searchPlaceholder: 'Proje ara…',
     searchNoResults: 'Aramayla eşleşen proje yok',
     clearSearch: 'Aramayı temizle',
+    inProduction_one: 'üretimde {{count}} proje',
+    inProduction_other: 'üretimde {{count}} proje',
     columns: {
       devis: 'Teklif',
       waiting: 'Bekliyor',

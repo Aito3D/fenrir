@@ -156,6 +156,8 @@ export default {
     searchPlaceholder: '搜尋專案…',
     searchNoResults: '沒有符合的專案',
     clearSearch: '清除搜尋',
+    inProduction_one: '進行中 {{count}} 個專案',
+    inProduction_other: '進行中 {{count}} 個專案',
     columns: {
       devis: '報價',
       waiting: '等待中',

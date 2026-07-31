@@ -156,6 +156,8 @@ export default {
     searchPlaceholder: 'Поиск проектов…',
     searchNoResults: 'Нет проектов, соответствующих запросу',
     clearSearch: 'Очистить поиск',
+    inProduction_one: '{{count}} проект в работе',
+    inProduction_other: '{{count}} проектов в работе',
     columns: {
       devis: 'Смета',
       waiting: 'Ожидание',
