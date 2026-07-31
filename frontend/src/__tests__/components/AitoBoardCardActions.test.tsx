@@ -125,3 +125,59 @@ describe('board card actions — mark as sent', () => {
     expect(screen.queryByRole('button', { name: /mark as sent/i })).not.toBeInTheDocument();
   });
 });
+
+describe('board card actions — mark as done', () => {
+  it('offers mark-as-done on a released card in Finish', () => {
+    renderColumn(card({ column: 'finish', move_lock: null }));
+    expect(screen.getByRole('button', { name: /mark as done/i })).toBeEnabled();
+  });
+
+  it('does not offer mark-as-done in any other column', () => {
+    for (const column of ['devis', 'waiting', 'scan', 'model', 'print'] as const) {
+      const { unmount } = renderColumn(card({ column, move_lock: null }));
+      expect(screen.queryByRole('button', { name: /mark as done/i })).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('does not offer mark-as-done while the rules still hold the card', () => {
+    // move_lock is the server's own derived value. A card the rules have not
+    // released cannot leave its column, and the move endpoint would 409.
+    renderColumn(card({ column: 'finish', move_lock: 'steps' }));
+    expect(screen.queryByRole('button', { name: /mark as done/i })).not.toBeInTheDocument();
+  });
+
+  it('offers no mark-as-done on a placeholder card', () => {
+    renderColumn(card({ id: -1, column: 'finish', move_lock: null }));
+    expect(screen.queryByRole('button', { name: /mark as done/i })).not.toBeInTheDocument();
+  });
+
+  it('fires the move only once the 500ms hold completes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Same reasoning as the mark-as-sent equivalent above: MSW has no handler
+    // for this endpoint either, and the unmocked call bypasses to the real
+    // network, which refuses fast enough to settle the mutation before the
+    // assertion below runs. Held open by hand so "still pending" is actually
+    // observable.
+    vi.spyOn(api, 'moveAitoProject').mockImplementation(() => new Promise(() => {}));
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderColumn(card({ column: 'finish', move_lock: null }));
+      const button = screen.getByRole('button', { name: /mark as done/i });
+
+      await user.pointer({ keys: '[MouseLeft>]', target: button });
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(button).toBeEnabled();
+
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(button).toBeDisabled();
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+  });
+});
