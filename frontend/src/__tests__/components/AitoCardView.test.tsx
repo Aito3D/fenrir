@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { CardView } from '../../components/aito/CardView';
@@ -373,5 +373,91 @@ describe('CardView', () => {
     target.focus();
     await user.keyboard('{Enter}');
     expect(onExpand).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('CardView — hover to read a clamped description', () => {
+  // jsdom lays nothing out, so scrollHeight and clientHeight are both 0 and
+  // the "is it actually clamped?" guard would refuse every card. Stub them
+  // per test to state which case is being exercised.
+  function setClamped(node: HTMLElement, clamped: boolean) {
+    Object.defineProperty(node, 'scrollHeight', { value: clamped ? 240 : 60, configurable: true });
+    Object.defineProperty(node, 'clientHeight', { value: 60, configurable: true });
+  }
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('un-clamps the description after a full second of hover', () => {
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, true);
+
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(description).not.toHaveClass('line-clamp-3');
+  });
+
+  it('does not expand on a hover shorter than a second', () => {
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, true);
+    const shell = screen.getByTestId('aito-card-shell');
+
+    fireEvent.mouseEnter(shell);
+    act(() => vi.advanceTimersByTime(800));
+    fireEvent.mouseLeave(shell);
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(description).toHaveClass('line-clamp-3');
+  });
+
+  it('collapses again when the pointer leaves', () => {
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, true);
+    const shell = screen.getByTestId('aito-card-shell');
+
+    fireEvent.mouseEnter(shell);
+    act(() => vi.advanceTimersByTime(1000));
+    fireEvent.mouseLeave(shell);
+
+    expect(description).toHaveClass('line-clamp-3');
+  });
+
+  it('does not move a card whose description is not clamped', () => {
+    // Nothing hidden means nothing to reveal, and a card that jumps for no
+    // visible reason is worse than one that never jumps.
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, false);
+
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(description).toHaveClass('line-clamp-3');
+    expect(screen.getByTestId('aito-card-shell')).not.toHaveStyle({ height: '0px' });
+  });
+
+  it('never expands the drag overlay clone', () => {
+    render(<CardView project={project} overlay />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, true);
+
+    fireEvent.mouseEnter(screen.getByTestId('aito-card-shell'));
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(description).toHaveClass('line-clamp-3');
+  });
+
+  it('keeps the morph anchor on the card, not on the shell', () => {
+    // useCardMorph queries [data-aito-card-id] and assigns viewTransitionName
+    // to whatever it finds. On the shell that would morph an invisible
+    // spacer into the detail panel.
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    const shell = screen.getByTestId('aito-card-shell');
+    expect(shell).not.toHaveAttribute('data-aito-card-id');
+    expect(shell.querySelector('[data-aito-card-id="12"]')).not.toBeNull();
   });
 });

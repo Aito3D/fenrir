@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, GripVertical, Lock } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -31,8 +31,22 @@ export interface CardViewProps {
   placeholder?: boolean;
 }
 
+/** How long the pointer must rest on a card before its description opens.
+ *
+ *  A second is long enough that crossing the board never triggers it and
+ *  short enough to feel like an answer rather than a wait. */
+const HOVER_REVEAL_MS = 1000;
+
 /** Presentational card, shared by the in-column sortable wrapper and the
  *  DragOverlay clone.
+ *
+ *  The outermost element is a shell, not the card: it holds the collapsed
+ *  height so the column never reflows while the card itself floats over its
+ *  neighbours to reveal a clamped description (see the hover-intent state
+ *  below). The shell carries no card styling and none of the
+ *  `data-aito-card*` attributes — those stay on the card element inside it,
+ *  because `useCardMorph` queries `[data-aito-card-id]` to assign the view
+ *  transition name and must keep finding the styled element, not empty space.
  *
  *  Two zones: the header carries the client name and is the ONLY drag source
  *  (via the grip); everything below it — description, step pills, money,
@@ -69,6 +83,50 @@ export function CardView({
     staleTime: 60_000,
   });
   const currency = settings?.currency || 'USD';
+
+  // Hover-intent reveal of a clamped description. The card floats over its
+  // neighbours rather than growing in place: the shell holds the collapsed
+  // height so the column never reflows, which is what stops the cards below
+  // jumping out from under the pointer that is resting on this one.
+  const [expanded, setExpanded] = useState(false);
+  const [shellHeight, setShellHeight] = useState<number | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const descriptionRef = useRef<HTMLParagraphElement>(null);
+  const timerRef = useRef<number | null>(null);
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  // A card can be unmounted mid-hover by a refetch, a filter or a drag.
+  useEffect(() => clearTimer, [clearTimer]);
+
+  const startHoverIntent = useCallback(() => {
+    // The overlay is a picture of a card mid-drag and a placeholder has no id
+    // yet; neither should grow under the pointer.
+    if (overlay || placeholder) return;
+    clearTimer();
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      const description = descriptionRef.current;
+      const card = cardRef.current;
+      if (!description || !card) return;
+      // Nothing hidden means nothing to reveal. The +1 absorbs the sub-pixel
+      // rounding a fractional line-height leaves behind.
+      if (description.scrollHeight <= description.clientHeight + 1) return;
+      setShellHeight(card.offsetHeight);
+      setExpanded(true);
+    }, HOVER_REVEAL_MS);
+  }, [clearTimer, overlay, placeholder]);
+
+  const endHoverIntent = useCallback(() => {
+    clearTimer();
+    setExpanded(false);
+  }, [clearTimer]);
+
   const created = parseUTCDate(project.created_at);
   const updated = parseUTCDate(project.updated_at);
   const elapsed = formatElapsedTime(project.created_at, t);
@@ -81,123 +139,143 @@ export function CardView({
 
   return (
     <div
-      data-aito-card
-      data-aito-card-id={project.id}
-      // overflow-hidden clips the progress bar to the card's rounded corner.
-      // Safe here: the focus ring is `focus-visible:ring-inset` (drawn inside),
-      // `card-shadow` is a box-shadow and is not clipped by `overflow`, and the
-      // grip's `p-2 -m-2` pulls padding inward rather than pushing content out.
-      className={`group relative rounded-xl border bg-bambu-dark-secondary select-none overflow-hidden ${
-        overlay
-          ? 'rotate-1 scale-[1.02] border-bambu-green/40 shadow-2xl cursor-grabbing'
-          : 'border-bambu-dark-tertiary card-shadow transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-bambu-green/40 hover:shadow-lg motion-reduce:hover:translate-y-0'
-      } ${placeholder ? 'opacity-60' : ''}`}
+      data-testid="aito-card-shell"
+      onMouseEnter={startHoverIntent}
+      onMouseLeave={endHoverIntent}
+      // The shell holds the collapsed height while the card floats, so the
+      // column's layout does not change. It carries no card styling and no
+      // `data-aito-card*` — it is space, nothing else.
+      className="relative"
+      style={expanded && shellHeight !== null ? { height: shellHeight } : undefined}
     >
-      <div className="flex items-center gap-2 px-3 py-2 bg-bambu-dark-tertiary rounded-t-xl border-b border-bambu-dark-secondary">
-        <p
-          className={`flex-1 text-sm font-medium truncate ${
-            project.client_name ? 'text-white' : 'text-bambu-gray'
-          }`}
-        >
-          {project.client_name ?? t('aito.noClient')}
-        </p>
-        {dragHandleProps && !placeholder ? (
-          <button
-            type="button"
-            ref={dragHandleRef}
-            aria-label={t('aito.dragHandle')}
-            {...dragHandleProps}
-            // touch-none belongs on the grip, not the card: on the card it
-            // would block touch-scrolling the column from anywhere on a card.
-            className="touch-none flex-shrink-0 p-2 -m-2 rounded-md text-bambu-gray cursor-grab active:cursor-grabbing hover:text-white hover:bg-bambu-dark-secondary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
+      <div
+        ref={cardRef}
+        data-aito-card
+        data-aito-card-id={project.id}
+        // overflow-hidden clips the progress bar to the card's rounded corner.
+        // Safe here: the focus ring is `focus-visible:ring-inset` (drawn inside),
+        // `card-shadow` is a box-shadow and is not clipped by `overflow`, and the
+        // grip's `p-2 -m-2` pulls padding inward rather than pushing content out.
+        className={`group rounded-xl border bg-bambu-dark-secondary select-none overflow-hidden ${
+          expanded ? 'absolute inset-x-0 top-0 z-30 shadow-2xl' : 'relative'
+        } ${
+          overlay
+            ? 'rotate-1 scale-[1.02] border-bambu-green/40 shadow-2xl cursor-grabbing'
+            : 'border-bambu-dark-tertiary card-shadow transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-bambu-green/40 hover:shadow-lg motion-reduce:hover:translate-y-0'
+        } ${placeholder ? 'opacity-60' : ''}`}
+      >
+        <div className="flex items-center gap-2 px-3 py-2 bg-bambu-dark-tertiary rounded-t-xl border-b border-bambu-dark-secondary">
+          <p
+            className={`flex-1 text-sm font-medium truncate ${
+              project.client_name ? 'text-white' : 'text-bambu-gray'
+            }`}
           >
-            <GripVertical className="w-4 h-4" />
-          </button>
-        ) : (
-          <GripVertical className="w-4 h-4 flex-shrink-0 text-bambu-gray" aria-hidden="true" />
-        )}
-      </div>
-
-      {/* One click region: the body, the footer and the bar. The handler is on
-          this wrapper rather than on a <button> wrapping everything, because
-          the footer holds the parent's injected action buttons and a <button>
-          may not contain another. Every click inside bubbles to here.
-
-          The transparent button underneath is what makes that reachable
-          without a pointer: it carries the accessible name and the focus ring,
-          and the click its Enter/Space produces bubbles to this same handler.
-          It sits at z-0 beneath `relative z-10` content, so the content keeps
-          its own hover, cursor and tooltips and the button only takes the
-          clicks that land on bare padding. */}
-      <div className="relative" onClick={onExpand && !placeholder ? onExpand : undefined}>
-        {onExpand && !placeholder && (
-          <button
-            type="button"
-            // The description IS the accessible name — it is what the card is
-            // about, and it saves inventing a label key for 13 locales.
-            aria-label={project.description || (project.client_name ?? t('aito.noClient'))}
-            className="absolute inset-0 z-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bambu-green/40"
-          />
-        )}
-
-        <div className="relative z-10">
-          <div className="px-3 pt-2.5 pb-1.5">
-            <p className="text-sm text-white whitespace-pre-wrap break-words line-clamp-3">
-              {project.description}
-            </p>
-            <StepGrid tasks={project.task_steps} />
-            {project.task_steps.length > 0 && (
-              <div className="mt-1 flex justify-end">
-                <Money
-                  currency={currency}
-                  value={project.tasks_total}
-                  className="text-xs font-medium text-bambu-green"
-                />
-              </div>
-            )}
-          </div>
-
-          <div className="px-3 pb-2 flex items-center justify-between gap-2">
-            <div className="flex items-baseline gap-2 min-w-0">
-              <span className="text-xs text-bambu-gray flex-shrink-0" title={dateTitle}>
-                {elapsed}
-              </span>
-              {project.quote_number && (
-                <span className="text-xs text-bambu-gray truncate">{project.quote_number}</span>
-              )}
-              {/* A project whose quote the worker has not created yet. Without
-                  this the card is indistinguishable from one that will never
-                  have a quote, which is exactly the wrong thing to say for a
-                  few seconds after every create. */}
-              {!project.quote_number && project.quote_sync_state === 'pending' && (
-                <span className="text-xs text-bambu-gray/70 truncate italic">{t('aito.quotePending')}</span>
-              )}
-              {(project.quote_sync_state === 'error' || project.quote_sync_state === 'locked') && (
-                <span
-                  aria-label={project.quote_sync_state === 'error' ? t('aito.syncError') : t('aito.quoteLocked')}
-                  title={project.quote_sync_error || undefined}
-                  className="flex-shrink-0 text-bambu-gray"
-                >
-                  {project.quote_sync_state === 'error' ? (
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                  ) : (
-                    <Lock className="w-3.5 h-3.5" />
-                  )}
-                </span>
-              )}
-            </div>
-            {/* The one region that is NOT a way to open the card: these are
-                real controls, so their clicks must not also reach the region
-                handler above. */}
-            <div
-              className="flex items-center gap-1 flex-shrink-0"
-              onClick={(event) => event.stopPropagation()}
+            {project.client_name ?? t('aito.noClient')}
+          </p>
+          {dragHandleProps && !placeholder ? (
+            <button
+              type="button"
+              ref={dragHandleRef}
+              aria-label={t('aito.dragHandle')}
+              {...dragHandleProps}
+              // touch-none belongs on the grip, not the card: on the card it
+              // would block touch-scrolling the column from anywhere on a card.
+              className="touch-none flex-shrink-0 p-2 -m-2 rounded-md text-bambu-gray cursor-grab active:cursor-grabbing hover:text-white hover:bg-bambu-dark-secondary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
             >
-              {!overlay && !placeholder && actions}
-            </div>
-          </div>
+              <GripVertical className="w-4 h-4" />
+            </button>
+          ) : (
+            <GripVertical className="w-4 h-4 flex-shrink-0 text-bambu-gray" aria-hidden="true" />
+          )}
+        </div>
 
-          <ProjectProgress done={project.steps_done} total={project.steps_total} />
+        {/* One click region: the body, the footer and the bar. The handler is on
+            this wrapper rather than on a <button> wrapping everything, because
+            the footer holds the parent's injected action buttons and a <button>
+            may not contain another. Every click inside bubbles to here.
+
+            The transparent button underneath is what makes that reachable
+            without a pointer: it carries the accessible name and the focus ring,
+            and the click its Enter/Space produces bubbles to this same handler.
+            It sits at z-0 beneath `relative z-10` content, so the content keeps
+            its own hover, cursor and tooltips and the button only takes the
+            clicks that land on bare padding. */}
+        <div className="relative" onClick={onExpand && !placeholder ? onExpand : undefined}>
+          {onExpand && !placeholder && (
+            <button
+              type="button"
+              // The description IS the accessible name — it is what the card is
+              // about, and it saves inventing a label key for 13 locales.
+              aria-label={project.description || (project.client_name ?? t('aito.noClient'))}
+              className="absolute inset-0 z-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bambu-green/40"
+            />
+          )}
+
+          <div className="relative z-10">
+            <div className="px-3 pt-2.5 pb-1.5">
+              <p
+                ref={descriptionRef}
+                data-testid="aito-card-description"
+                className={`text-sm text-white whitespace-pre-wrap break-words ${
+                  expanded ? '' : 'line-clamp-3'
+                }`}
+              >
+                {project.description}
+              </p>
+              <StepGrid tasks={project.task_steps} />
+              {project.task_steps.length > 0 && (
+                <div className="mt-1 flex justify-end">
+                  <Money
+                    currency={currency}
+                    value={project.tasks_total}
+                    className="text-xs font-medium text-bambu-green"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="px-3 pb-2 flex items-center justify-between gap-2">
+              <div className="flex items-baseline gap-2 min-w-0">
+                <span className="text-xs text-bambu-gray flex-shrink-0" title={dateTitle}>
+                  {elapsed}
+                </span>
+                {project.quote_number && (
+                  <span className="text-xs text-bambu-gray truncate">{project.quote_number}</span>
+                )}
+                {/* A project whose quote the worker has not created yet. Without
+                    this the card is indistinguishable from one that will never
+                    have a quote, which is exactly the wrong thing to say for a
+                    few seconds after every create. */}
+                {!project.quote_number && project.quote_sync_state === 'pending' && (
+                  <span className="text-xs text-bambu-gray/70 truncate italic">{t('aito.quotePending')}</span>
+                )}
+                {(project.quote_sync_state === 'error' || project.quote_sync_state === 'locked') && (
+                  <span
+                    aria-label={project.quote_sync_state === 'error' ? t('aito.syncError') : t('aito.quoteLocked')}
+                    title={project.quote_sync_error || undefined}
+                    className="flex-shrink-0 text-bambu-gray"
+                  >
+                    {project.quote_sync_state === 'error' ? (
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                    ) : (
+                      <Lock className="w-3.5 h-3.5" />
+                    )}
+                  </span>
+                )}
+              </div>
+              {/* The one region that is NOT a way to open the card: these are
+                  real controls, so their clicks must not also reach the region
+                  handler above. */}
+              <div
+                className="flex items-center gap-1 flex-shrink-0"
+                onClick={(event) => event.stopPropagation()}
+              >
+                {!overlay && !placeholder && actions}
+              </div>
+            </div>
+
+            <ProjectProgress done={project.steps_done} total={project.steps_total} />
+          </div>
         </div>
       </div>
     </div>
