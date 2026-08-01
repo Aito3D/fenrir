@@ -132,4 +132,23 @@ describe('TaskRow', () => {
     expect(screen.getAllByText('Scan')).toHaveLength(1);
     expect(screen.getAllByText('Machining')).toHaveLength(1);
   });
+
+  it('shows how far through its own steps the task is', () => {
+    renderRow(
+      makeTask({
+        scanCost: 3500,
+        modelisationCost: 4500,
+        impressionCost: 10000,
+        done: { scan: true, modelisation: false, impression: false, usinage: false },
+      }),
+      { canTick: true },
+    );
+    expect(screen.getByText('1/3 steps')).toBeInTheDocument();
+    expect(screen.getByTestId('task-progress-0')).toHaveStyle({ width: '33%' });
+  });
+
+  it('renders no progress for a task with no priced steps', () => {
+    renderRow(makeTask({}), { canTick: false });
+    expect(screen.queryByTestId('task-progress-0')).not.toBeInTheDocument();
+  });
 });

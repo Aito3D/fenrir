@@ -15,7 +15,18 @@ import { useTranslation } from 'react-i18next';
  *  Renders nothing at all when there are no steps. An unpriced project has
  *  nothing to measure, and an empty track on every freshly created card is
  *  clutter rather than information. */
-export function ProjectProgress({ done, total }: { done: number; total: number }) {
+export function ProjectProgress({
+  done,
+  total,
+  /** Defaults to the board card's id so existing callers and their tests are
+   *  untouched; the detail panel passes one per task, since a page holding
+   *  several bars cannot share a single testid. */
+  testId = 'aito-progress-fill',
+}: {
+  done: number;
+  total: number;
+  testId?: string;
+}) {
   const { t } = useTranslation();
   if (total <= 0) return null;
 
@@ -33,7 +44,7 @@ export function ProjectProgress({ done, total }: { done: number; total: number }
       className="h-1 w-full overflow-hidden bg-bambu-dark-tertiary"
     >
       <div
-        data-testid="aito-progress-fill"
+        data-testid={testId}
         style={{ width: `${percent}%` }}
         // The width transition is what makes an optimistic tick visible as
         // motion rather than a jump. motion-reduce drops it, keeping the

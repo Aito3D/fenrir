@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Check, Pencil } from 'lucide-react';
 import { api } from '../../api/client';
 import { DeleteHoldButton } from './DeleteHoldButton';
+import { ProjectProgress } from './ProjectProgress';
 import { TaskStepFields } from './TaskStepFields';
 import { TaskStepList } from './TaskStepList';
 import { isTaskFinished, taskSteps } from './services';
@@ -104,6 +105,11 @@ export function TaskRow({
           {finished && (
             <Check className="w-3.5 h-3.5 flex-shrink-0 text-bambu-green" aria-label={t('aito.taskFinished')} />
           )}
+          {steps.length > 0 && (
+            <span className="text-xs text-bambu-gray flex-shrink-0 tabular-nums">
+              {t('aito.stepsCount', { done: steps.filter((s) => s.done).length, total: steps.length })}
+            </span>
+          )}
           <Money
             currency={currency}
             value={taskTotal(task)}
@@ -129,6 +135,16 @@ export function TaskRow({
         {onRemove && (
           <DeleteHoldButton onDelete={onRemove} label={t('aito.removeTask')} hint={t('aito.holdToDelete')} />
         )}
+      </div>
+
+      {/* The task's own progress, under its header. `ProjectProgress` renders
+          nothing at zero steps, so an unpriced row shows no empty track. */}
+      <div className="px-3 pb-2">
+        <ProjectProgress
+          done={steps.filter((s) => s.done).length}
+          total={steps.length}
+          testId={`task-progress-${index}`}
+        />
       </div>
 
       <div className="px-3 pb-3 space-y-3">
