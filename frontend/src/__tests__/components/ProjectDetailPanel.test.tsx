@@ -343,8 +343,12 @@ describe('ProjectDetailPanel client fields', () => {
   });
 
   it('omits a field entirely when it has no value', () => {
+    // The "Email" label moved into the CopyableValue button's aria-label
+    // during the redesign, so queryByText(/email/i) matches no text node
+    // whether or not the field renders — assert on the copy button's
+    // accessible name (which embeds the address) instead.
     show({ client_email: null });
-    expect(screen.queryByText(/email/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /hi@acme\.pf/i })).not.toBeInTheDocument();
   });
 });
 
@@ -1311,6 +1315,27 @@ describe('ProjectDetailPanel left column cards', () => {
     await waitFor(() => expect(screen.getByTestId('record-activity')).toBeInTheDocument());
     expect(screen.getByTestId('record-activity')).not.toHaveTextContent('·');
   });
+
+  // ACTOR_FALLBACK_KEY (ProjectDetailPanel.tsx) picks a translated stand-in
+  // by actor_class when the event carries no actor_name — user-visible copy
+  // shipped in 13 locales, previously untested because mockEvent always
+  // carries actor_name: 'admin'.
+  it.each([
+    ['user', 'unknown user'],
+    ['client', 'the client'],
+    ['system', 'automatic'],
+  ] as const)('falls back to "%s" -> "%s" when a %s event has no actor_name', async (actorClass, expected) => {
+    server.use(
+      http.get('/api/v1/aito/12/events', () =>
+        HttpResponse.json({
+          events: [{ ...mockEvent, actor_class: actorClass, actor_name: null }],
+          has_more: false,
+        }),
+      ),
+    );
+    show();
+    await waitFor(() => expect(screen.getByTestId('record-activity')).toHaveTextContent(`· ${expected}`));
+  });
 });
 
 describe('ProjectDetailPanel sync row', () => {
@@ -1657,13 +1682,19 @@ describe('ProjectDetailPanel scroll architecture', () => {
 });
 
 describe('ProjectDetailPanel surfaces', () => {
-  it('ranks elevation: only the task cards cast a shadow', () => {
+  it('ranks elevation: only the task cards cast a shadow', async () => {
     show();
     expect(screen.getByTestId('panel-column-tasks')).toBeInTheDocument();
     // Reference cards carry a border and no shadow.
     const referenceCard = screen.getAllByTestId('panel-card-heading')[0].parentElement!;
     expect(referenceCard.className).toContain('border-bambu-dark-tertiary');
     expect(referenceCard.className).not.toContain('card-shadow');
+    // Task cards are the front plane: they DO cast a shadow. Selected via a
+    // class the fix doesn't touch (`rounded-lg border`), not `card-shadow`
+    // itself, so this half of the test can actually fail if the class is
+    // dropped from TaskRow.
+    const taskCard = (await screen.findByRole('heading', { name: /^Bracket mount/ })).closest('.rounded-lg.border')!;
+    expect(taskCard.className).toContain('card-shadow');
   });
 
   it('puts the body on the canvas tier, not the panel tier', () => {
