@@ -119,6 +119,16 @@ function ensureLayer(ref: { current: HTMLElement | null }): HTMLElement {
     pointerEvents: 'none',
     zIndex: '40',
   });
+  // A ghost is a picture of a card, not a card: it carries the same
+  // hold-to-confirm buttons, drag grip and text as the real `CardView` it
+  // was cloned from. `pointer-events: none` keeps a pointer off them but
+  // does nothing for the tab order or the accessibility tree, so without
+  // this a sighted keyboard user could tab into a control that vanishes
+  // mid-flight and a screen reader would announce the card twice. `inert`
+  // covers both; `aria-hidden` rides along because `inert` is younger than
+  // the pointer-events rule and the two are cheap together.
+  layer.inert = true;
+  layer.setAttribute('aria-hidden', 'true');
   document.body.appendChild(layer);
   ref.current = layer;
   return layer;
@@ -134,6 +144,15 @@ function buildGhost(source: HTMLElement, from: Rect): { ghost: HTMLElement; face
   // `useCardMorph` finds the card to morph the detail panel into by exactly
   // this selector. A ghost carrying it would be a second match.
   for (const node of ghost.querySelectorAll('[data-aito-card-id]')) node.removeAttribute('data-aito-card-id');
+  // A `view-transition-name` may be claimed by only one element at a time.
+  // `useCardMorph.close` parks one on the real `[data-aito-card-id]` node
+  // while its own transition finishes, and `expandedId` is already `null`
+  // for that whole window — so a relocation landing in it clones a node that
+  // still carries the name. Two elements claiming one name aborts the
+  // running transition, so strip it from the root and every descendant,
+  // the same sweep as the id above.
+  ghost.style.viewTransitionName = '';
+  for (const node of ghost.querySelectorAll<HTMLElement>('*')) node.style.viewTransitionName = '';
   Object.assign(ghost.style, {
     position: 'absolute',
     left: `${from.left}px`,
@@ -218,6 +237,12 @@ function launch(spec: LaunchSpec): void {
     { duration: ms, easing: archive ? 'ease-in' : 'ease-in-out', fill: 'forwards' },
   );
 
+  // Set only if this flight actually starts a pan (`panBy !== 0`) below —
+  // read by `stop()` so a retarget or a rollback that lands ON screen
+  // (panBy === 0) still cancels the pan the flight it replaces was driving,
+  // rather than leaving that pan to reach its own terminal frame and snap
+  // the board to a target this flight never asked for.
+  let panRun: PanRun | null = null;
   let stopped = false;
   const stop = () => {
     if (stopped) return;
@@ -226,6 +251,7 @@ function launch(spec: LaunchSpec): void {
     travel.cancel();
     ghost.remove();
     reveal();
+    if (panRun && panOwner.current === panRun) panRun.cancel();
   };
   flights.set(key, { ghost, stop });
   // Resolves on landing, rejects on cancel; `stop` is idempotent either way,
@@ -235,7 +261,7 @@ function launch(spec: LaunchSpec): void {
     stop();
   }, stop);
 
-  if (panBy !== 0) pan(board, panBy, travel, ghost, panOwner);
+  if (panBy !== 0) panRun = pan(board, panBy, travel, ghost, panOwner);
 }
 
 /** One pan in flight; a new one cancels it. */
@@ -257,14 +283,18 @@ interface PanRun {
  *  ABSOLUTE `scrollLeft` every frame, fighting each other for as long as both
  *  run. A new pan cancels whatever is running first, and a cancelled loop
  *  writes nothing further — not even its final snap — so a callback that was
- *  already queued when it got cancelled is a no-op if it still fires. */
+ *  already queued when it got cancelled is a no-op if it still fires.
+ *
+ *  Returns the `PanRun` it started so the caller can hand it to the flight
+ *  that owns it — `stop()` needs the handle to cancel this specific run,
+ *  not just whatever happens to be current when it runs. */
 function pan(
   board: HTMLElement,
   panBy: number,
   travel: Animation,
   ghost: HTMLElement,
   owner: { current: PanRun | null },
-): void {
+): PanRun {
   owner.current?.cancel();
   const start = board.scrollLeft; // where the board IS, not where a previous pan began
   let cancelled = false;
@@ -288,6 +318,7 @@ function pan(
     frame = requestAnimationFrame(step);
   };
   step();
+  return run;
 }
 
 /** The archive's acknowledgement that it caught something. Its count has

@@ -233,6 +233,44 @@ describe('useCardFlight', () => {
     expect(ghost.className).toBe('');
   });
 
+  it('clears an inline view-transition-name from the ghost, root and descendants alike', () => {
+    const { board, left, right } = buildBoard();
+    const card = buildCard('12', SLOT_A);
+    // `useCardMorph.close` parks this on the real card while its own
+    // transition finishes; a clone still carrying it would claim the same
+    // name twice and abort that transition. Set it on both the wrapper and
+    // a descendant so the sweep is proven, not just the id-bearing node.
+    card.style.viewTransitionName = 'aito-card';
+    const face = card.querySelector('[data-aito-card]') as HTMLElement;
+    face.style.viewTransitionName = 'aito-card-face';
+    left.appendChild(card);
+    const { rerender } = renderHook(() => useCardFlight({ current: board }, options));
+
+    right.appendChild(card);
+    place(card, SLOT_B);
+    rerender();
+
+    const ghost = ghosts()[0] as HTMLElement;
+    expect(ghost.style.viewTransitionName).toBe('');
+    const ghostFace = ghost.querySelector('[data-aito-card]') as HTMLElement;
+    expect(ghostFace.style.viewTransitionName).toBe('');
+  });
+
+  it('makes the ghost layer inert, so a duplicate card is unreachable by tab or a screen reader', () => {
+    const { board, left, right } = buildBoard();
+    const card = buildCard('12', SLOT_A);
+    left.appendChild(card);
+    const { rerender } = renderHook(() => useCardFlight({ current: board }, options));
+
+    right.appendChild(card);
+    place(card, SLOT_B);
+    rerender();
+
+    const layer = document.querySelector('[data-aito-flight-layer]') as HTMLElement & { inert: boolean };
+    expect(layer.inert).toBe(true);
+    expect(layer.getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('retargets an interrupted flight instead of stacking a second ghost', () => {
     const { board, left, right } = buildBoard();
     const card = buildCard('12', SLOT_A);
@@ -477,6 +515,55 @@ describe('useCardFlight pan', () => {
 
     expect(board.scrollLeft).toBe(60);
   });
+
+  it('pans left to reveal a destination past the board’s LEFT edge, clamped so scrollLeft cannot go negative', () => {
+    const { board, left, right } = buildBoard();
+    makeScrollable(board, 2400);
+    board.scrollLeft = 30; // already panned partway right
+    const card = buildCard('12', SLOT_A);
+    left.appendChild(card);
+    const { rerender } = renderHook(() => useCardFlight({ current: board }, options));
+
+    // Lands 1000px past the board's LEFT edge (0), so the raw pan from
+    // `panFor` is 1000's negative overrun: -1000 - 0 - 16 = -1016 — far more
+    // than the 30px of scrollLeft there is to give back. The clamp's
+    // `Math.max(-board.scrollLeft, …)` limits it to -30, landing the board
+    // at exactly 0 rather than a negative scrollLeft a browser would
+    // silently floor anyway.
+    right.appendChild(card);
+    place(card, { left: -1000, top: 40, width: 280, height: 120 });
+    rerender();
+
+    expect(board.scrollLeft).toBe(0);
+    // to.left = -1000 - panBy(-30) = -970; dx = -970 - from.left(20) = -990.
+    const travel = travelOf(ghosts()[0]);
+    expect(travel.keyframes[1].transform).toBe('translate(-990px, 0px)');
+  });
+
+  it('moves the board progressively rather than snapping, on a fractional frame', () => {
+    const progress = { value: 0.25 };
+    stubRunningAnimate(progress);
+    const raf = stubRaf();
+    try {
+      const { board, left, right } = buildBoard();
+      makeScrollable(board, 2400);
+      const card = buildCard('12', SLOT_A);
+      left.appendChild(card);
+      const { rerender } = renderHook(() => useCardFlight({ current: board }, options));
+
+      // Same geometry as the first pan test above: panBy = 116. A running
+      // animation at 25% progress must show 25% of the pan on its
+      // synchronous first step, not the full 116 a finished stub would
+      // (that's the snap the deleted progressive line would leave behind).
+      right.appendChild(card);
+      place(card, { left: 1020, top: 40, width: 280, height: 120 });
+      rerender();
+
+      expect(board.scrollLeft).toBe(116 * 0.25);
+    } finally {
+      raf.restore();
+    }
+  });
 });
 
 describe('useCardFlight pan concurrency', () => {
@@ -518,6 +605,48 @@ describe('useCardFlight pan concurrency', () => {
       // queue, is what stops it from clobbering B's position.
       staleFrame();
       expect(board.scrollLeft).toBe(58 + 596);
+    } finally {
+      raf.restore();
+    }
+  });
+
+  it('cancels a stopped flight’s own pan, so its stale frame cannot snap the board', () => {
+    const progress = { value: 0.5 };
+    stubRunningAnimate(progress);
+    const raf = stubRaf();
+    try {
+      const { board, left, right } = buildBoard();
+      makeScrollable(board, 2400);
+      const card = buildCard('12', SLOT_A);
+      left.appendChild(card);
+      const { rerender } = renderHook(() => useCardFlight({ current: board }, options));
+
+      // Flight A: relocate off-screen right, panBy = 116 (the first pan
+      // test's geometry). Its synchronous first step runs and queues a
+      // second frame.
+      right.appendChild(card);
+      place(card, { left: 1020, top: 40, width: 280, height: 120 });
+      rerender();
+      expect(board.scrollLeft).toBe(116 * 0.5);
+
+      // Flight B: retarget the SAME card to a slot already on screen —
+      // panBy 0, so B never calls pan() and never takes ownership. This is
+      // the rollback shape: a failed mutation flies the card back to where
+      // it's already visible. B's launch stops A, which must cancel A's
+      // pan too, or nothing owns cancelling it.
+      left.appendChild(card);
+      place(card, { left: 500, top: 40, width: 280, height: 120 });
+      rerender();
+
+      expect(raf.callbacks).toHaveLength(1);
+      raf.callbacks[0]();
+
+      // Without the fix, A's stale frame finds its ghost removed (`stop()`
+      // took it out of the DOM) and falls into pan()'s terminal branch,
+      // snapping the board straight to A's target (0 + 116 = 116) even
+      // though B landed with no pan of its own and the board never moved
+      // again after A's first step.
+      expect(board.scrollLeft).toBe(58);
     } finally {
       raf.restore();
     }
