@@ -151,4 +151,24 @@ describe('TaskRow', () => {
     renderRow(makeTask({}), { canTick: false });
     expect(screen.queryByTestId('task-progress-0')).not.toBeInTheDocument();
   });
+
+  it('gives a finished card a background mixed from the surface tier, not the canvas', () => {
+    // Task 10 put the task column on `bg-bambu-dark` canvas. A flat
+    // `bg-bambu-green/5` wash — 5%-alpha green with nothing under it — blends
+    // over that near-black canvas to something DARKER than an unfinished
+    // sibling's plain `bg-bambu-dark-secondary`, so a completed task read as
+    // recessed rather than complete: the exact hierarchy inversion Task 10
+    // exists to prevent. The fix mixes the accent over the surface-tier
+    // variable instead, so this pins the mix target rather than merely the
+    // presence of some green class.
+    const { container } = renderRow(
+      makeTask({ scanCost: 20, done: { scan: true, modelisation: false, impression: false, usinage: false } }),
+      { canTick: true },
+    );
+    const card = container.firstElementChild as HTMLElement;
+    expect(card.className).toContain(
+      'color-mix(in_srgb,var(--color-bambu-green)_5%,var(--color-bambu-dark-secondary))',
+    );
+    expect(card.className).not.toContain('bg-bambu-green/5');
+  });
 });
