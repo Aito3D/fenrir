@@ -565,7 +565,7 @@ describe('AitoPage (backend board)', () => {
   });
 
   describe('trash view', () => {
-    it('lists deleted projects and restores them', async () => {
+    it('lists deleted projects as cards and restores them on a completed hold', async () => {
       const restoreSpy = vi.fn();
       server.use(
         http.get('/api/v1/aito/trash', () =>
@@ -577,19 +577,57 @@ describe('AitoPage (backend board)', () => {
         }),
       );
 
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+        render(<AitoPage />);
+        await screen.findByText('ACME SARL');
+
+        await user.click(screen.getByRole('button', { name: 'Trash' }));
+
+        // A trashed project is the same CardView as everywhere else now, so
+        // its description is the card's accessible name rather than a row of
+        // plain text in a modal.
+        await screen.findByRole('button', { name: /Trashed doohickey/ });
+        // The one fact the board's cards do not carry: when it was deleted.
+        expect(screen.getByText(/^Deleted /)).toBeInTheDocument();
+
+        const restore = screen.getByRole('button', { name: 'Restore' });
+        await user.pointer({ keys: '[MouseLeft>]', target: restore });
+        // Short of the 500ms gate: a click is not a restore.
+        act(() => {
+          vi.advanceTimersByTime(300);
+        });
+        expect(restoreSpy).not.toHaveBeenCalled();
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(300);
+        });
+        await waitFor(() => expect(restoreSpy).toHaveBeenCalled());
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('fetches nothing until the trash view is opened', async () => {
+      const trashSpy = vi.fn();
+      server.use(
+        http.get('/api/v1/aito/trash', () => {
+          trashSpy();
+          return HttpResponse.json([]);
+        }),
+      );
+
       const user = userEvent.setup();
       render(<AitoPage />);
       await screen.findByText('ACME SARL');
 
+      // The button carries no count, which is the whole reason it is allowed
+      // to cost nothing until it is pressed.
+      expect(trashSpy).not.toHaveBeenCalled();
+
       await user.click(screen.getByRole('button', { name: 'Trash' }));
-
-      const modal = (await screen.findByText('Trashed doohickey')).closest('div.animate-modal-in') as HTMLElement;
-      expect(modal).toBeTruthy();
-      expect(within(modal).getByText('#12')).toBeInTheDocument();
-
-      await user.click(within(modal).getByRole('button', { name: 'Restore' }));
-
-      await waitFor(() => expect(restoreSpy).toHaveBeenCalled());
+      await waitFor(() => expect(trashSpy).toHaveBeenCalled());
     });
   });
 
@@ -882,37 +920,51 @@ describe('AitoPage (backend board)', () => {
         ),
       );
 
-      const user = userEvent.setup();
-      render(<AitoPage />);
-      await screen.findByRole('button', { name: /On board/ });
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+        render(<AitoPage />);
+        await screen.findByRole('button', { name: /On board/ });
 
-      await user.click(screen.getByRole('button', { name: 'Trash' }));
-      const modal = (await screen.findByText('Trashed thing')).closest('div.animate-modal-in') as HTMLElement;
-      await user.click(within(modal).getByRole('button', { name: 'Restore' }));
+        await user.click(screen.getByRole('button', { name: 'Trash' }));
+        await screen.findByRole('button', { name: /Trashed thing/ });
 
-      // Optimistic, before the POST resolves: gone from the trash list. This
-      // one IS visible immediately in the DOM — TrashModal renders straight
-      // from its own ['aito-trash'] query, with no board-sync gating between
-      // the cache write and the screen.
-      await waitFor(() => expect(within(modal).queryByText('Trashed thing')).not.toBeInTheDocument());
-      // ...and already present on the RENDERED board — via the wrapper's
-      // onMutate transform (applyRestore) — before the POST resolves. This is
-      // the useBoardSync counter split doing its job: a non-drag write (this
-      // restore) must not block `useBoardDrag`'s local-board rebuild the way
-      // a drag's own move does, so the card appears on screen immediately
-      // rather than only in the cache. `getByRole('button', ...)` is
-      // unambiguous even with the trash modal still open: the modal's own
-      // row renders the same description as plain text, not a button.
-      await waitFor(() => expect(screen.getByRole('button', { name: /Trashed thing/ })).toBeInTheDocument());
+        await user.pointer({ keys: '[MouseLeft>]', target: screen.getByRole('button', { name: 'Restore' }) });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(600);
+        });
 
-      // The server refuses — the quote already has an active project.
-      resolveRestore(HttpResponse.json({ detail: 'conflict' }, { status: 409 }));
+        // Optimistic, before the POST resolves: gone from the trash grid. This
+        // one IS visible immediately in the DOM — the grid renders straight
+        // from the page's ['aito-trash'] query, with no board-sync gating
+        // between the cache write and the screen.
+        await waitFor(() =>
+          expect(screen.queryByRole('button', { name: /Trashed thing/ })).not.toBeInTheDocument(),
+        );
 
-      // Rolled back off the rendered board...
-      await waitFor(() => expect(screen.queryByRole('button', { name: /Trashed thing/ })).not.toBeInTheDocument());
-      // ...and the trash row is back, via onError's invalidate.
-      await within(modal).findByText('Trashed thing');
-      expect(await screen.findByText('That quote already has an active project')).toBeInTheDocument();
+        // ...and already on the board — via the wrapper's onMutate transform
+        // (applyRestore) — before the POST resolves. This is the useBoardSync
+        // counter split doing its job: a non-drag write (this restore) must
+        // not block `useBoardDrag`'s local-board rebuild the way a drag's own
+        // move does, so the card is on the board the moment you go back to it
+        // rather than only in the cache.
+        await user.click(screen.getByRole('button', { name: 'Back to board' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: /Trashed thing/ })).toBeInTheDocument());
+
+        // The server refuses — the quote already has an active project.
+        resolveRestore(HttpResponse.json({ detail: 'conflict' }, { status: 409 }));
+
+        // Rolled back off the rendered board...
+        await waitFor(() =>
+          expect(screen.queryByRole('button', { name: /Trashed thing/ })).not.toBeInTheDocument(),
+        );
+        // ...and the trash row is back, via onError's invalidate.
+        await user.click(screen.getByRole('button', { name: 'Trash' }));
+        await screen.findByRole('button', { name: /Trashed thing/ });
+        expect(await screen.findByText('That quote already has an active project')).toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     // The direct proof of the useBoardSync counter split: a non-drag

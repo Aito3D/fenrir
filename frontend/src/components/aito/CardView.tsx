@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, GripVertical, Lock } from 'lucide-react';
 import { ProjectProgress } from './ProjectProgress';
 import { StepGrid } from './StepGrid';
 import type { AitoProject } from '../../api/client';
 import { formatElapsedTime, parseUTCDate } from '../../utils/date';
+import { prefersReducedMotion } from '../../utils/motion';
 
 export interface CardViewProps {
   project: AitoProject;
@@ -22,6 +23,10 @@ export interface CardViewProps {
   dragHandleRef?: (element: HTMLElement | null) => void;
   /** dnd-kit's attributes + listeners, spread onto the grip. */
   dragHandleProps?: Record<string, unknown>;
+  /** An extra line of text for the footer, beside the elapsed time. Exists for
+   *  the trash grid, where "created 3 weeks ago" is not the fact you are
+   *  looking for — "deleted yesterday" is. Every other surface omits it. */
+  footerNote?: ReactNode;
   /** A card the server has not acknowledged yet. Renders dimmed with no grip
    *  and no actions: its id does not exist, so anything acting on it would act
    *  on nothing. Cleared the instant the real row replaces it. */
@@ -72,6 +77,7 @@ export function CardView({
   actions,
   dragHandleRef,
   dragHandleProps,
+  footerNote,
   placeholder = false,
 }: CardViewProps) {
   const { t, i18n } = useTranslation();
@@ -129,6 +135,40 @@ export function CardView({
     setExpanded(false);
     setShellHeight(null);
   }, [clearTimer]);
+
+  // Grow into the reveal instead of jumping to it. The dwell is two seconds
+  // long — deliberately longer than aiming at the card takes — so by the time
+  // this fires the user is holding still and looking straight at it, which is
+  // the worst possible moment to teleport. `shellHeight` is the collapsed
+  // height, already measured by the timer above before the state flipped, so
+  // both ends of the tween are known and nothing has to be guessed.
+  //
+  // A layout effect, and WAAPI rather than a CSS transition, for the same two
+  // reasons `useFlipReorder` uses them: the animation has to be in flight
+  // before the browser paints the expanded height, and inline styles would
+  // fight the card's own Tailwind transition on transform/box-shadow — which
+  // is what carries the lift and the shadow at the same time.
+  //
+  // Only the opening is animated. On leave the pointer has already moved on,
+  // and a card still shrinking under the NEXT card's hover is worse than one
+  // that is simply gone.
+  useLayoutEffect(() => {
+    const card = cardRef.current;
+    if (!expanded || !card || shellHeight === null) return;
+    if (typeof card.animate !== 'function' || prefersReducedMotion()) return;
+    const target = card.offsetHeight;
+    // Nothing to travel: the reveal only fires when the description is
+    // clipped, but a one-word overflow can round to the same height.
+    if (target <= shellHeight) return;
+    card.animate([{ height: `${shellHeight}px` }, { height: `${target}px` }], {
+      // Fast for an entrance (the 250ms budget is for things arriving from
+      // off-screen); this box is already there and is only changing size, and
+      // the text inside it is being read, so it must settle promptly.
+      duration: 200,
+      // easeOutQuint — var(--ease-signature) in index.css.
+      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    });
+  }, [expanded, shellHeight]);
 
 
   const created = parseUTCDate(project.created_at);
@@ -249,6 +289,7 @@ export function CardView({
                 <span className="text-xs text-bambu-gray flex-shrink-0" title={dateTitle}>
                   {elapsed}
                 </span>
+                {footerNote && <span className="text-xs text-bambu-gray truncate">{footerNote}</span>}
                 {project.quote_number && (
                   <span className="text-xs text-bambu-gray truncate">{project.quote_number}</span>
                 )}

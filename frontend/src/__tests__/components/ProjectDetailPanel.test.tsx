@@ -229,17 +229,33 @@ describe('ProjectDetailPanel client fields', () => {
     expect(screen.getByText(/client name/i)).toBeInTheDocument();
   });
 
-  it('labels the phone and email, and keeps their links', () => {
-    show();
-    expect(screen.getByText(/phone/i)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: '+689-87123456' })).toHaveAttribute(
-      'href',
-      'tel:+689-87123456',
-    );
-    expect(screen.getByRole('link', { name: 'hi@acme.pf' })).toHaveAttribute(
-      'href',
-      'mailto:hi@acme.pf',
-    );
+  it('labels the phone and email, and copies rather than dialling them', async () => {
+    // They used to be `tel:` / `mailto:` links, which hand the value to
+    // whatever application claimed the protocol. On a shop machine that is
+    // usually nothing; what the value is for is pasting.
+    // userEvent installs its own working clipboard, so this exercises the real
+    // `copyTextToClipboard` end to end and reads back what actually landed —
+    // no writeText spy to drift from the behaviour. The secure-context flag is
+    // what routes it down the modern branch; the plain-HTTP fallback has its
+    // own coverage in PrinterInfoModal.test.tsx.
+    const secure = Object.getOwnPropertyDescriptor(window, 'isSecureContext');
+    Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true });
+
+    try {
+      const user = userEvent.setup();
+      show();
+      expect(screen.getByText(/phone/i)).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: '+689-87123456' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'hi@acme.pf' })).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /\+689-87123456/ }));
+      expect(await navigator.clipboard.readText()).toBe('+689-87123456');
+
+      await user.click(screen.getByRole('button', { name: /hi@acme\.pf/ }));
+      expect(await navigator.clipboard.readText()).toBe('hi@acme.pf');
+    } finally {
+      if (secure) Object.defineProperty(window, 'isSecureContext', secure);
+    }
   });
 
   it('omits a field entirely when it has no value', () => {

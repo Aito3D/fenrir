@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
-import { Check, ExternalLink, Loader2, X } from 'lucide-react';
+import { Check, Copy, ExternalLink, Loader2, X } from 'lucide-react';
 import { ALL_COLUMNS } from './columns';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ActivityRail } from './history/ActivityRail';
@@ -13,6 +13,7 @@ import { AITO_CARD_VT_NAME } from '../../hooks/useCardMorph';
 import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { useProjectTasks } from '../../hooks/useProjectTasks';
 import { api, type AitoProject, type AitoProjectUpdate } from '../../api/client';
+import { copyTextToClipboard } from '../../utils/clipboard';
 import { parseUTCDate } from '../../utils/date';
 import { applyDescription, applySyncState } from '../../utils/aitoOptimistic';
 import { inputCls, labelCls } from '../formStyles';
@@ -42,10 +43,67 @@ const BLOCK_MESSAGE_KEY: Record<string, string> = {
 interface ProjectDetailPanelProps {
   project: AitoProject;
   onClose: () => void;
-  onDelete: () => void;
+  /** Omitted for a project that is already in the trash — see AitoPage. The
+   *  delete button is then not rendered at all. */
+  onDelete?: () => void;
 }
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+
+/** A contact detail that copies itself.
+ *
+ *  It used to be a `tel:` / `mailto:` link, which on a desktop workshop machine
+ *  is a way to hand the number to whatever application once claimed the
+ *  protocol — usually nothing, sometimes something unwanted. What the value is
+ *  actually FOR is pasting: into a phone, into a mail client that is already
+ *  open, into the shop's own paperwork. So the click copies, and does only
+ *  that.
+ *
+ *  `copyTextToClipboard`, not `navigator.clipboard` directly: Bambuddy is
+ *  normally reached over plain HTTP on a LAN address, where the async clipboard
+ *  API does not exist and the helper's textarea fallback is the only path that
+ *  works.
+ *
+ *  The acknowledgement is a check mark for 1.5s — the same dwell
+ *  `SaveIndicator` uses below, so the two transient confirmations in this panel
+ *  behave alike. A copy that fails leaves the icon alone rather than raising a
+ *  toast, which is what `PrinterInfoModal` does with the same helper: the check
+ *  mark IS the claim that it worked, so withholding it is the honest report. */
+function CopyableValue({ value, label }: { value: string; label: string }) {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const id = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(id);
+  }, [copied]);
+
+  return (
+    <button
+      type="button"
+      // The value alone is the name a screen reader would read; this says what
+      // pressing it does, which is the part that is not obvious.
+      aria-label={`${label}: ${value} — ${t('common.copy')}`}
+      title={copied ? t('common.copied') : t('common.copy')}
+      onClick={async () => {
+        if (await copyTextToClipboard(value)) setCopied(true);
+      }}
+      className="group inline-flex items-center gap-1.5 max-w-full min-w-0 rounded-md text-white hover:text-bambu-green transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
+    >
+      <span className="truncate">{value}</span>
+      {copied ? (
+        <Check className="w-3.5 h-3.5 flex-shrink-0 text-bambu-green animate-tick-in" />
+      ) : (
+        // Hinted rather than announced: the row is a definition list of facts,
+        // and a permanent icon on two of them would read as two buttons in a
+        // list of text. It surfaces when the pointer is on the value it
+        // belongs to.
+        <Copy className="w-3.5 h-3.5 flex-shrink-0 opacity-0 group-hover:opacity-60 group-focus-visible:opacity-60 transition-opacity" />
+      )}
+    </button>
+  );
+}
 
 function SaveIndicator({ state }: { state: SaveState }) {
   const { t } = useTranslation();
@@ -187,7 +245,9 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
             {t('aito.projectRef', { id: project.id })}
           </h2>
           <span className="flex items-center gap-3 flex-shrink-0">
-            <DeleteHoldButton onDelete={onDelete} label={t('aito.deleteTitle')} hint={t('aito.holdToDelete')} />
+            {onDelete && (
+              <DeleteHoldButton onDelete={onDelete} label={t('aito.deleteTitle')} hint={t('aito.holdToDelete')} />
+            )}
             <button
               type="button"
               ref={closeRef}
@@ -300,20 +360,16 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                 {project.client_phone && (
                   <div className="flex items-baseline justify-between gap-2">
                     <dt className="text-bambu-gray flex-shrink-0">{t('aito.phoneLabel')}:</dt>
-                    <dd className="min-w-0 truncate text-right">
-                      <a href={`tel:${project.client_phone}`} className="text-white hover:text-bambu-green">
-                        {project.client_phone}
-                      </a>
+                    <dd className="min-w-0 text-right">
+                      <CopyableValue value={project.client_phone} label={t('aito.phoneLabel')} />
                     </dd>
                   </div>
                 )}
                 {project.client_email && (
                   <div className="flex items-baseline justify-between gap-2">
                     <dt className="text-bambu-gray flex-shrink-0">{t('aito.emailLabel')}:</dt>
-                    <dd className="min-w-0 truncate text-right">
-                      <a href={`mailto:${project.client_email}`} className="text-white hover:text-bambu-green">
-                        {project.client_email}
-                      </a>
+                    <dd className="min-w-0 text-right">
+                      <CopyableValue value={project.client_email} label={t('aito.emailLabel')} />
                     </dd>
                   </div>
                 )}

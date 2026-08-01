@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
@@ -41,6 +41,14 @@ export function ActivityRail({ projectId }: { projectId: number }) {
   const [depth, setDepth] = useState<AitoHistoryDepth>(initialDepth);
   const [note, setNote] = useState('');
 
+  // Which rows have already been on screen, so an arrival can be told from a
+  // re-render. Same idea as the board's `shouldAnimateIn`, and needed for the
+  // same reason: `animate-rise` is an entrance, not a repaint. It only ever
+  // grows — an event that scrolls out of a page and back is not arriving — and
+  // it dies with the panel, so it is bounded by one sitting's history.
+  const seenIds = useRef<Set<number>>(new Set());
+  const shouldAnimateIn = (id: number) => !seenIds.current.has(id);
+
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useProjectEvents(projectId, depth);
 
   const addNote = useMutation({
@@ -64,7 +72,12 @@ export function ActivityRail({ projectId }: { projectId: number }) {
             : prev,
       );
     },
-    onSuccess: () => {
+    onSuccess: (created) => {
+      // The optimistic row and the persisted one are different ids, so the
+      // refetch below remounts the note under a new key. Marking the real id
+      // as already seen BEFORE that data can render is what stops the note
+      // fading in a second time, a beat after it first appeared.
+      seenIds.current.add(created.id);
       queryClient.invalidateQueries({ queryKey: ['aito-events', projectId] });
     },
     onError: (_error, { body, optimistic }) => {
@@ -97,6 +110,13 @@ export function ActivityRail({ projectId }: { projectId: number }) {
   };
 
   const events = data?.pages.flatMap((page) => page.events) ?? [];
+
+  // Post-commit, never during render: StrictMode's double-invoke would
+  // otherwise consume the entrance before the first paint and nothing would
+  // ever animate.
+  useEffect(() => {
+    for (const event of events) seenIds.current.add(event.id);
+  });
 
   return (
     <section aria-label={t('aito.history.title')} className="min-w-0">
@@ -172,6 +192,10 @@ export function ActivityRail({ projectId }: { projectId: number }) {
               // the list runs newest-first.
               previous={events[index + 1]}
               showElapsed={depth === 'story'}
+              // First load, a note just written, a page just fetched, or a row
+              // a deeper filter just revealed — anything the reader has not
+              // had on screen yet arrives rather than appearing.
+              animateIn={shouldAnimateIn(event.id)}
             />
           ))}
         </ol>

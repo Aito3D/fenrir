@@ -50,13 +50,23 @@ export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
     <ul className="space-y-1.5">
       {steps.map(({ service, cost, done }) => (
         <li key={service} className="flex items-center gap-3">
-          <span className={`text-sm flex-1 min-w-0 truncate ${done ? 'text-bambu-gray' : 'text-white'}`}>
+          {/* Ticking a step recedes its whole row — the label and the price go
+              grey together with the button turning green. All three carry the
+              same 300ms so the row settles as one gesture; on the old snap the
+              button animated and the text it belongs to did not. */}
+          <span
+            className={`text-sm flex-1 min-w-0 truncate transition-colors duration-300 ease-[var(--ease-signature)] motion-reduce:transition-none ${
+              done ? 'text-bambu-gray' : 'text-white'
+            }`}
+          >
             {t(AITO_SERVICE_LABEL_KEYS[service])}
           </span>
           <Money
             currency={currency}
             value={cost}
-            className={`text-sm flex-shrink-0 ${done ? 'text-bambu-gray' : 'text-white'}`}
+            className={`text-sm flex-shrink-0 transition-colors duration-300 ease-[var(--ease-signature)] motion-reduce:transition-none ${
+              done ? 'text-bambu-gray' : 'text-white'
+            }`}
           />
           {canTick && (
             <button
@@ -70,7 +80,11 @@ export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
                   : 'border-bambu-dark-tertiary text-bambu-gray hover:text-white hover:border-bambu-green/40'
               }`}
             >
-              {done && <Check className="w-3 h-3" aria-hidden="true" />}
+              {/* Deliberately faster than the 300ms the row's colours take:
+                  the button is what the operator just pressed, so its own
+                  feedback lands immediately and the consequences settle after
+                  it. */}
+              {done && <Check className="w-3 h-3 animate-tick-in" aria-hidden="true" />}
               {t('aito.done')}
             </button>
           )}

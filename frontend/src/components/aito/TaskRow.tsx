@@ -82,7 +82,15 @@ export function TaskRow({
 
   return (
     <div
-      className={`animate-rise group rounded-lg border ${finished ? 'border-bambu-green/40 bg-bambu-green/5' : 'border-bambu-dark-tertiary'}`}
+      // Finishing the last step turns the whole row green. That is the largest
+      // state change in the panel and it used to arrive on a single frame, so
+      // it gets the same 300ms the pills and the progress bar use — one tick,
+      // one settling motion, wherever it shows up. The transition composes with
+      // the mount `animate-rise` above: an animation and a transition on the
+      // same element drive different properties here.
+      className={`animate-rise group rounded-lg border transition-colors duration-300 ease-[var(--ease-signature)] motion-reduce:transition-none ${
+        finished ? 'border-bambu-green/40 bg-bambu-green/5' : 'border-bambu-dark-tertiary'
+      }`}
       onBlur={(e) => {
         // focusout bubbles in React, so one handler covers every input in the
         // row. relatedTarget is where focus went: inside the row means the

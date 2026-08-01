@@ -89,7 +89,14 @@ export function StepGrid({ tasks }: { tasks: AitoTaskSteps[] }) {
                 // `border border-transparent` matches the placeholder's box
                 // model exactly, so a pill and an empty slot are the same
                 // height whichever mix a row happens to carry.
-                className={`truncate rounded border border-transparent px-1.5 py-0.5 text-center text-[10px] leading-tight ${
+                //
+                // The transition is the same 300ms the progress bar directly
+                // below uses (see ProjectProgress): a tick lands on both at
+                // once, and one of them snapping while the other travels reads
+                // as two unrelated events instead of one. `box-shadow` is in
+                // the list because Tailwind's `ring-1` IS a box-shadow — left
+                // out, the green outline would appear a frame before the fill.
+                className={`truncate rounded border border-transparent px-1.5 py-0.5 text-center text-[10px] leading-tight transition-[color,background-color,box-shadow] duration-300 ease-[var(--ease-signature)] motion-reduce:transition-none ${
                   done
                     ? 'bg-bambu-green/15 text-bambu-green ring-1 ring-inset ring-bambu-green/30'
                     : 'bg-bambu-dark-tertiary text-bambu-gray-light'

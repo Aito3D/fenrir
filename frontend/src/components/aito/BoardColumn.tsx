@@ -1,3 +1,4 @@
+import { useCallback, useRef } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -9,6 +10,7 @@ import type { ColumnMeta } from './columns';
 import type { AitoProject } from '../../api/client';
 import { useColumnMoveMutation } from '../../hooks/useColumnMoveMutation';
 import { useQuoteStatusMutation } from '../../hooks/useQuoteStatusMutation';
+import { useColumnReflow } from '../../hooks/useColumnReflow';
 import { useIsReverting } from '../../hooks/useRevertFlash';
 import { isPlaceholder } from '../../utils/aitoOptimistic';
 
@@ -73,6 +75,10 @@ function SortableCard({
   return (
     <div
       ref={setNodeRef}
+      // Read by `useColumnReflow` on the column below, so a card that stays
+      // when its neighbours are filtered away slides into the gap instead of
+      // teleporting. The id, not the index: the index is what changes.
+      data-flip-key={project.id}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={`${animateIn ? 'animate-rise' : ''} ${isDragging ? 'opacity-30' : ''} ${
         reverting ? 'animate-revert-flash' : ''
@@ -145,6 +151,11 @@ interface ColumnProps {
   // real position. Distinct from `dropDisabled`, which is per-column and only
   // meaningful mid-drag.
   dragDisabled?: boolean;
+  // A drag is in progress anywhere on the board. Suspends the reflow slide:
+  // dnd-kit is already transforming these same nodes, and two systems
+  // animating one element fight visibly. Optional so a caller that renders a
+  // column outside a drag context need not think about it.
+  dragActive?: boolean;
 }
 
 export function BoardColumn({
@@ -156,6 +167,7 @@ export function BoardColumn({
   shouldAnimateIn,
   dropDisabled,
   dragDisabled,
+  dragActive = false,
 }: ColumnProps) {
   const { t } = useTranslation();
   // Both reasons a column may refuse a drop: `dropDisabled` is the per-card
@@ -167,6 +179,22 @@ export function BoardColumn({
   // here, distinguishing `false` (a drag is in progress and this column is
   // allowed) from `undefined` (no drag at all).
   const { setNodeRef } = useDroppable({ id: column.id, disabled: dragDisabled ? true : dropDisabled });
+
+  // The droppable's ref and our own on one node: `useDroppable` hands back a
+  // callback ref, so it has to be called rather than assigned, and the reflow
+  // hook needs a stable object ref to measure from.
+  const cardsRef = useRef<HTMLDivElement | null>(null);
+  const setCardsRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      cardsRef.current = node;
+      setNodeRef(node);
+    },
+    [setNodeRef],
+  );
+  // `null` while a drag is live — see the `dragActive` prop. The key is the
+  // membership AND order of the column, so removing a card, restoring one, or
+  // reordering all count as a change worth sliding.
+  useColumnReflow(cardsRef, dragActive ? null : projects.map((project) => project.id).join(','));
 
   return (
     <div
@@ -191,7 +219,7 @@ export function BoardColumn({
       </div>
 
       <SortableContext items={projects.map((p) => p.id)} strategy={verticalListSortingStrategy}>
-        <div ref={setNodeRef} className="flex-1 flex flex-col gap-2 p-2 min-h-[10rem] overflow-y-auto scrollbar-hide">
+        <div ref={setCardsRef} className="flex-1 flex flex-col gap-2 p-2 min-h-[10rem] overflow-y-auto scrollbar-hide">
           {projects.map((project) => (
             <SortableCard
               key={project.id}

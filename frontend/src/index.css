@@ -640,6 +640,13 @@ body {
   --ease-signature: cubic-bezier(0.22, 1, 0.36, 1);
   /* accelerating exit curve */
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  /* Shape changes, not entrances. easeOutQuint covers 78% of its distance in
+     the first quarter of its duration — right for something arriving from
+     off-screen, wrong for a box changing shape in place, which reads as a
+     lurch followed by a crawl. This curve is quicker than an ease-in-out off
+     the mark and still settles without a bounce. Used by the Aito card ->
+     detail-panel morph. */
+  --ease-morph: cubic-bezier(0.32, 0.72, 0, 1);
   /* .animate-sidebar-in's duration — read by Layout.tsx's dev-mode banner
      delay so the two can never desync. */
   --sidebar-in-duration: 400ms;
@@ -722,41 +729,76 @@ body {
 /* Aito card → detail panel morph. The card and the panel share one
    view-transition-name; the page-level root/page-title animations are
    suppressed for the duration via html[data-vt='aito-card'] so only the card
-   group animates instead of crossfading the whole board. 350ms matches the
-   page-title morph — a card expanding is the same class of scene change. */
+   group animates instead of crossfading the whole board. */
 html[data-vt='aito-card']::view-transition-old(root),
 html[data-vt='aito-card']::view-transition-new(root),
 html[data-vt='aito-card']::view-transition-old(page-title),
 html[data-vt='aito-card']::view-transition-new(page-title) {
   animation: none;
 }
-/* Both snapshots are drawn into the SAME animating group box, and the card and
-   the panel are wildly different shapes (about 210x100 against 1100x310). The
-   UA default `inline-size: 100%; block-size: auto` keeps each snapshot's own
-   aspect ratio, so the card's image gets drawn 1100 wide and ~520 tall — it
-   balloons well past the panel it is morphing into and then settles back. That
-   was the visible bug on open, and on close the same image is painted huge
-   across the backdrop for the first frames.
+/* A container transform, not a cross-fade. The card is about 290x125 and the
+   panel about 1100x310 — no scale factor maps one onto the other, so any
+   attempt to draw either snapshot AT the other's size distorts it. Scaling the
+   card's bitmap to cover the panel's box magnifies it around 4x: giant blurred
+   text sliding under the panel, which is the "superposed" look this replaces.
 
-   Pinning both to the group box stops the overflow, and the outgoing snapshot
-   is then cross-faded out FAST. That is the part that matters: at 350ms you
-   would spend the whole morph staring at a stretched, cropped bitmap of the
-   wrong element. At 120ms it is gone before the eye resolves it, and what you
-   actually watch is the destination growing into place. */
+   So neither snapshot is scaled at all. The GROUP — the box that travels from
+   the card's rectangle to the panel's — carries the card's own surface
+   (background, border, radius, shadow), and it is what visibly changes shape.
+   The two snapshots ride inside it at their natural size, pinned to the top-
+   left corner, and `object-fit: none` clips whatever does not fit. Growing the
+   box therefore UNCOVERS the panel rather than stretching it, and shrinking it
+   covers the panel back up. It is the card itself changing form.
+
+   The surface on the group is also what closes the hole in the old version.
+   There, the outgoing snapshot finished fading at 120ms and the incoming one
+   was still at 2% opacity (`reverse` inverts the timing function too, turning
+   easeOutQuint into easeInQuint — `t^5`, i.e. invisible until the very end),
+   so for roughly a third of the morph the box was fully transparent and the
+   board showed straight through the card as it flew. An opaque group cannot
+   have that gap whatever the snapshots are doing. */
+::view-transition-group(aito-card) {
+  z-index: 2;
+  box-sizing: border-box;
+  /* Rounds the snapshots' corners to the box's own radius while it travels. */
+  overflow: hidden;
+  background-color: var(--color-bambu-dark-secondary);
+  border: 1px solid var(--color-bambu-dark-tertiary);
+  border-radius: 0.75rem;
+  box-shadow: 0 24px 48px -12px rgb(0 0 0 / 0.55);
+  animation-duration: 320ms;
+  animation-timing-function: var(--ease-morph);
+}
 ::view-transition-old(aito-card),
 ::view-transition-new(aito-card) {
   block-size: 100%;
   inline-size: 100%;
-  object-fit: cover;
+  object-fit: none;
   object-position: top left;
 }
+/* Explicit keyframes in both directions rather than one set played `reverse`:
+   reversing an animation reverses its easing as well, which is what made the
+   incoming snapshot pop in at the last moment.
+
+   The outgoing content leaves quickly and linearly — it is a still image of a
+   layout that no longer exists, and every extra frame of it is a frame of two
+   layouts at once. The incoming content waits 80ms so the box has committed to
+   its new shape before the eye has anything to read inside it. */
 ::view-transition-old(aito-card) {
-  animation: aito-card-fade 120ms var(--ease-exit) forwards;
+  animation: aito-morph-fade-out 90ms linear forwards;
 }
 ::view-transition-new(aito-card) {
-  animation: aito-card-fade 220ms var(--ease-signature) reverse;
+  animation: aito-morph-fade-in 200ms var(--ease-signature) 80ms backwards;
 }
-@keyframes aito-card-fade {
+@keyframes aito-morph-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes aito-morph-fade-out {
   from {
     opacity: 1;
   }
@@ -764,48 +806,38 @@ html[data-vt='aito-card']::view-transition-new(page-title) {
     opacity: 0;
   }
 }
-/* The group is what actually carries the box from the card's rectangle to the
-   panel's, and it defaults to the UA's 250ms. Pinned to 350ms here so the box
-   is still travelling while the incoming snapshot fades in over 220ms, rather
-   than landing early and leaving a still image to catch up. */
-::view-transition-group(aito-card) {
-  animation-duration: 350ms;
-  animation-timing-function: var(--ease-signature);
-}
-/* Paint order for the card morph, and both values are load-bearing.
-   `aito-card` above `aito-backdrop` is the original reason this block exists:
+/* Paint order, and both values are load-bearing — the card's own z-index: 2
+   is set on its group above.
+
+   `aito-card` above `aito-backdrop` is the original reason this pair exists:
    without it the browser falls back to capture order, and on OPEN that order is
    wrong — `aito-card` already exists in the old state (as the board card) and is
    captured first, while `aito-backdrop` is new and appended after it, so the
    darkening backdrop would paint over the morphing card for the whole animation.
 
-   Both must also sit above the ROOT group, which is why neither is 0 any more.
-   The root group's z-index is auto, i.e. 0, so a backdrop at 0 was merely tied
-   with it — and the root's NEW snapshot is the fully opaque board. On CLOSE that
-   opaque board could paint over the backdrop's fade-out, so the dark overlay did
-   not fade at all: it was simply gone from the first frame, which is the "blink"
-   this fixes. */
+   Both must also sit above the ROOT group, which is why neither is 0. The root
+   group's z-index is auto, i.e. 0, so a backdrop at 0 was merely tied with it —
+   and the root's NEW snapshot is the fully opaque board, which on CLOSE could
+   paint over the backdrop's fade-out entirely. */
 ::view-transition-group(aito-backdrop) {
   z-index: 1;
 }
-::view-transition-group(aito-card) {
-  z-index: 2;
-}
 /* The backdrop is new in the post-transition state and has nothing to morph
-   from, so it gets its own group and a plain fade. */
+   from, so it gets its own group and a plain fade.
+
+   The exit is the half that was wrong, and it is the blink the user sees on
+   close. It was the fade-IN keyframes played `reverse`, and `reverse` reverses
+   the timing function too: var(--ease-exit) is an accelerating curve, so
+   reversed it decelerates — the overlay dumped most of its opacity in the
+   opening frames (measured 1.00 -> 0.62 by 90ms, 0.32 by half-time) and the
+   page snapped back to full brightness while the card was still in flight.
+   Played forwards with the same accelerating curve it holds the room dark and
+   then lets go, which is the shape an exit is supposed to have. */
 ::view-transition-new(aito-backdrop) {
-  animation: aito-backdrop-in 350ms var(--ease-signature);
+  animation: aito-morph-fade-in 320ms var(--ease-signature);
 }
 ::view-transition-old(aito-backdrop) {
-  animation: aito-backdrop-in 350ms var(--ease-exit) reverse;
-}
-@keyframes aito-backdrop-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  animation: aito-morph-fade-out 320ms var(--ease-exit) forwards;
 }
 
 /* dnd-kit drop flight. The overlay's lift unwinds across the 250ms flight
@@ -994,6 +1026,29 @@ html[data-vt='aito-card']::view-transition-new(page-title) {
 
 @media (prefers-reduced-motion: reduce) {
   .animate-calc-badge-pop {
+    animation: none;
+  }
+}
+
+/* Aito: the ✓ that appears the instant a step is ticked done. The tick is the
+   one control an operator opens the panel to press, and the glyph mounts fresh
+   on every press, so it grows in rather than appearing fully formed. Scaled
+   from 0.5 and not 0.9 (calc-badge-pop above) because this is a 12px glyph —
+   a tenth of its size is not a visible difference. 150ms keeps it inside the
+   sub-100–200ms feedback budget so it never lags the button's own colour
+   change. */
+@keyframes aito-tick-in {
+  from { opacity: 0; transform: scale(0.5); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-tick-in {
+  animation: aito-tick-in 0.15s var(--ease-signature);
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-tick-in {
     animation: none;
   }
 }

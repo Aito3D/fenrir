@@ -84,11 +84,17 @@ export function EventItem({
   event,
   previous,
   showElapsed = false,
+  animateIn = false,
 }: {
   event: AitoEvent;
   /** The next-older event, for the elapsed gutter. Undefined on the last row. */
   previous?: AitoEvent;
   showElapsed?: boolean;
+  /** Whether this row is arriving now (first load, a note just written, a page
+   *  just fetched) rather than already being on screen. Owned by the rail —
+   *  see its `seenIds` ref — because only the rail can tell an arrival from a
+   *  row that merely re-rendered under a new key. */
+  animateIn?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const [expanded, setExpanded] = useState(false);
@@ -105,7 +111,7 @@ export function EventItem({
   const detail = detailText(event.kind, event.detail);
 
   return (
-    <li className="relative pl-4 pb-3">
+    <li className={`relative pl-4 pb-3 ${animateIn ? 'animate-rise' : ''}`}>
       <span
         aria-hidden="true"
         className={`absolute left-0 top-1.5 w-1.5 h-1.5 rounded-full ${dotClass(event.kind, event.actor_class)}`}
@@ -133,8 +139,14 @@ export function EventItem({
 
       {shown.length > 0 && (
         <dl className="mt-0.5 text-xs text-bambu-gray">
-          {shown.map((change) => (
-            <div key={change.field} className="flex gap-1">
+          {shown.map((change, i) => (
+            // Only the rows the expander just revealed carry the entrance: the
+            // first row is keyed by its own field and stays mounted across the
+            // toggle, so it would not replay anyway — but stating the index
+            // keeps a collapsed row from animating if the changes ever
+            // reorder. Without this the extra rows appeared on one frame and
+            // the timestamp under them jumped down to meet them.
+            <div key={change.field} className={`flex gap-1 ${expanded && i > 0 ? 'animate-rise' : ''}`}>
               <dt className="flex-shrink-0">{change.field}</dt>
               <dd className="min-w-0 truncate text-white">
                 {formatValue(change.from)} → {formatValue(change.to)}

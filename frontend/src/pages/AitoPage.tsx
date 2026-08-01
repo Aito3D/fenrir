@@ -1,8 +1,8 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DndContext, DragOverlay, MeasuringStrategy, closestCorners, type DropAnimation } from '@dnd-kit/core';
-import { AlertTriangle, Archive, ArrowLeft, FileInput, Kanban, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, Archive, FileInput, Kanban, Plus, Trash2 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { CardView } from '../components/aito/CardView';
 import { BoardColumn } from '../components/aito/BoardColumn';
@@ -12,16 +12,17 @@ import { DoneGrid } from '../components/aito/DoneGrid';
 import { ImportQuoteModal } from '../components/aito/ImportQuoteModal';
 import { NewProjectModal } from '../components/aito/NewProjectModal';
 import { ProjectDetailPanel } from '../components/aito/ProjectDetailPanel';
-import { TrashModal } from '../components/aito/TrashModal';
+import { TrashGrid } from '../components/aito/TrashGrid';
+import { ViewToggleButton } from '../components/aito/ViewToggleButton';
 import { api, ApiError, type AitoProject, type ZohoQuotePreview } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { formatPhone } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
 import { taskDraftToTaskCreate } from '../utils/taskDraft';
 import type { TaskDraft } from '../utils/taskDraft';
-import { prefersReducedMotion } from '../utils/motion';
 import { matchesSearch } from '../utils/aitoSearch';
 import { useCardMorph } from '../hooks/useCardMorph';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useBoardDrag } from '../hooks/useBoardDrag';
 import { useBoardSync } from '../hooks/useBoardSync';
 import { useOptimisticBoardMutation } from '../hooks/useOptimisticBoardMutation';
@@ -130,20 +131,36 @@ export function AitoPage() {
 
   const [showModal, setShowModal] = useState(false);
   const [showImport, setShowImport] = useState(false);
-  const [showTrash, setShowTrash] = useState(false);
+  // One view at a time, as one value rather than a boolean per view: two
+  // booleans have a fourth state (done AND trash) that means nothing, and
+  // every render would have to decide which of them wins.
+  //
   // Deliberately not persisted — not in the URL, not in storage. The board is
-  // the working view; landing on the archive after a reload would be wrong
+  // the working view; landing on an archive after a reload would be wrong
   // every time but the one you asked for it.
-  const [showDone, setShowDone] = useState(false);
+  const [view, setView] = useState<'board' | 'done' | 'trash'>('board');
   const [search, setSearch] = useState('');
   const filtering = search.trim().length > 0;
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const { open: openCard, close: closeCard } = useCardMorph(setExpandedId);
 
-  const expandedProject = useMemo(
-    () => (expandedId !== null ? (aitoQuery.data ?? []).find((p) => p.id === expandedId) ?? null : null),
-    [expandedId, aitoQuery.data],
-  );
+  // Deleted projects. Fetched only while their view is on screen: the trash is
+  // the one surface that needs them, its button carries no count, and the board
+  // is loaded far more often than the trash is opened.
+  const trashQuery = useQuery({
+    queryKey: ['aito-trash'],
+    queryFn: api.getAitoTrash,
+    enabled: view === 'trash',
+  });
+
+  // Both lists, because a card opens the same detail panel from either. The
+  // board query holds active rows only, so a trashed card looked up there
+  // would set `expandedId` and then open nothing at all.
+  const expandedProject = useMemo(() => {
+    if (expandedId === null) return null;
+    const find = (rows: AitoProject[] | undefined) => rows?.find((p) => p.id === expandedId);
+    return find(aitoQuery.data) ?? find(trashQuery.data) ?? null;
+  }, [expandedId, aitoQuery.data, trashQuery.data]);
 
   const { board, activeProject, dropTarget, allowedDropColumns, shouldAnimateIn, sensors, dndHandlers } =
     useBoardDrag(aitoQuery.data);
@@ -286,7 +303,33 @@ export function AitoPage() {
   const doneCount = board.done.filter((project) => matchesSearch(project, search)).length;
   const inProduction = ACTIVE_COLUMN_IDS.reduce((sum, id) => sum + board[id].length, 0);
 
-  const reducedMotion = useMemo(() => prefersReducedMotion(), []);
+  // Live, not read once into a `useMemo`: the CSS half of the motion system
+  // re-evaluates its media query the moment the OS setting flips, and the two
+  // JS-driven animations on this page (dnd-kit's drop flight and the sortable
+  // reflow) have no reason to wait for a reload to agree with it.
+  const reducedMotion = useReducedMotion();
+
+  // Whether the columns' reflow slide (see BoardColumn's `dragActive`) must
+  // stay out of the way. It covers the drag itself AND the beat after it: a
+  // within-column reorder is committed on drop, in the same render that clears
+  // `activeProject`, and dnd-kit is already animating exactly those cards into
+  // their new slots. Unfreezing on that render would animate them twice, from
+  // two different systems, and the two do not agree on where the card is.
+  //
+  // Nothing is lost by waiting: the reflow measures positions on every render
+  // whether or not it is allowed to animate, so by the time it resumes the
+  // drop is simply the world as it now stands, with no stale delta to replay.
+  const dragging = activeProject !== null;
+  const [dragSettling, setDragSettling] = useState(false);
+  useEffect(() => {
+    if (dragging) {
+      setDragSettling(true);
+      return;
+    }
+    // 300ms: both DROP_ANIMATION and SORTABLE_TRANSITION above run 250ms.
+    const timer = window.setTimeout(() => setDragSettling(false), 300);
+    return () => window.clearTimeout(timer);
+  }, [dragging]);
 
   const createProject = (description: string, draft: ClientDraft, tasks: TaskDraft[]) => {
     // Closed here, not in onSuccess: the whole point is that the modal does
@@ -343,11 +386,10 @@ export function AitoPage() {
           </h1>
           <p className="text-bambu-gray mt-1">{t('aito.subtitle')}</p>
         </div>
+        {/* Actions that CREATE work. The two view switches (Done, Trash) live
+            in the toolbar below instead — they change what you are looking at,
+            which is a different kind of control. */}
         <div className="flex gap-2 sm:w-auto w-full">
-          <Button variant="secondary" onClick={() => setShowTrash(true)} className="flex-1 sm:flex-none">
-            <Trash2 className="w-4 h-4 mr-2" />
-            {t('aito.trash')}
-          </Button>
           <Button variant="secondary" onClick={() => setShowImport(true)} className="flex-1 sm:flex-none">
             <FileInput className="w-4 h-4 mr-2" />
             {t('aito.importQuote')}
@@ -362,19 +404,21 @@ export function AitoPage() {
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-2 animate-rise">
         <BoardSearch value={search} onChange={setSearch} className="flex-1" />
-        <Button variant="secondary" onClick={() => setShowDone((shown) => !shown)}>
-          {showDone ? (
-            <>
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              {t('aito.backToBoard')}
-            </>
-          ) : (
-            <>
-              <Archive className="w-4 h-4 mr-2" />
-              {t('aito.showDone')} ({doneCount})
-            </>
-          )}
-        </Button>
+        {/* Each toggle returns to the board, so switching straight from one
+            archive to the other is not possible — and does not need to be.
+            They are both detours; the board is where the work is. */}
+        <ViewToggleButton
+          active={view === 'done'}
+          onToggle={() => setView((current) => (current === 'done' ? 'board' : 'done'))}
+          icon={Archive}
+          label={`${t('aito.showDone')} (${doneCount})`}
+        />
+        <ViewToggleButton
+          active={view === 'trash'}
+          onToggle={() => setView((current) => (current === 'trash' ? 'board' : 'trash'))}
+          icon={Trash2}
+          label={t('aito.trash')}
+        />
       </div>
 
       {/* Error state */}
@@ -391,7 +435,7 @@ export function AitoPage() {
       {/* Empty state — three different nothings, and telling them apart is the
           whole point. A query that matched nothing is not an empty board, and
           a shop whose work is all finished is not a shop with no work. */}
-      {!aitoQuery.isError && !showDone && visibleCount === 0 && (
+      {!aitoQuery.isError && view === 'board' && visibleCount === 0 && (
         <div className="text-center py-8 animate-rise">
           <Kanban className="w-10 h-10 text-bambu-gray mx-auto mb-3" />
           {filtering ? (
@@ -415,8 +459,17 @@ export function AitoPage() {
       )}
 
       {/* Board */}
-      {showDone ? (
+      {view === 'done' ? (
         <DoneGrid projects={board.done} query={search} onExpandCard={openCard} />
+      ) : view === 'trash' ? (
+        <TrashGrid
+          projects={trashQuery.data ?? []}
+          query={search}
+          isLoading={trashQuery.isLoading}
+          isError={trashQuery.isError}
+          onRetry={() => trashQuery.refetch()}
+          onExpandCard={openCard}
+        />
       ) : (
         <DndContext
           sensors={sensors}
@@ -439,6 +492,7 @@ export function AitoPage() {
                   shouldAnimateIn={shouldAnimateIn}
                   dropDisabled={allowedDropColumns !== null && !allowedDropColumns.includes(column.id)}
                   dragDisabled={filtering}
+                  dragActive={dragging || dragSettling}
                 />
               </div>
             ))}
@@ -497,21 +551,28 @@ export function AitoPage() {
         />
       )}
 
-      {showTrash && <TrashModal onClose={() => setShowTrash(false)} />}
-
       {expandedProject && (
         <ProjectDetailPanel
           project={expandedProject}
           onClose={() => closeCard(expandedProject.id)}
-          onDelete={() => {
-            // Close first, then delete. The panel is rendered from
-            // `expandedProject`, which is derived from the projects query — so
-            // letting the delete land first would unmount the panel out from
-            // under its own click via a cache invalidation, losing the card
-            // morph. Closing first keeps the morph and the mutation ordered.
-            closeCard(expandedProject.id);
-            deleteMutation.mutate(expandedProject.id);
-          }}
+          // Omitted for a project that is already in the trash, which takes the
+          // panel's delete button away with it. Deleting a deleted project is a
+          // no-op the server accepts, so the button would look live, do
+          // nothing, and still ask you to hold it down to be sure.
+          onDelete={
+            expandedProject.status === 'deleted'
+              ? undefined
+              : () => {
+                  // Close first, then delete. The panel is rendered from
+                  // `expandedProject`, which is derived from the projects
+                  // query — so letting the delete land first would unmount the
+                  // panel out from under its own click via a cache
+                  // invalidation, losing the card morph. Closing first keeps
+                  // the morph and the mutation ordered.
+                  closeCard(expandedProject.id);
+                  deleteMutation.mutate(expandedProject.id);
+                }
+          }
         />
       )}
     </div>
