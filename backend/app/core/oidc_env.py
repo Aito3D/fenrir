@@ -51,13 +51,13 @@ def read_env_oidc_config() -> dict | None:
         "issuer_url": os.environ["BAMBUDDY_OIDC_ISSUER_URL"],
         "client_id": os.environ["BAMBUDDY_OIDC_CLIENT_ID"],
         "client_secret": os.environ["BAMBUDDY_OIDC_CLIENT_SECRET"],
-        "scopes": os.environ.get("BAMBUDDY_OIDC_SCOPES", "openid email profile"),
+        "scopes": (os.environ.get("BAMBUDDY_OIDC_SCOPES") or "").strip() or "openid email profile",
         "is_enabled": _env_bool("BAMBUDDY_OIDC_ENABLED", True),
         "auto_create_users": _env_bool("BAMBUDDY_OIDC_AUTO_CREATE_USERS", False),
         "auto_link_existing_accounts": _env_bool("BAMBUDDY_OIDC_AUTO_LINK_EXISTING", False),
-        "email_claim": os.environ.get("BAMBUDDY_OIDC_EMAIL_CLAIM", "email"),
+        "email_claim": (os.environ.get("BAMBUDDY_OIDC_EMAIL_CLAIM") or "").strip() or "email",
         "require_email_verified": _env_bool("BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED", True),
-        "icon_url": os.environ.get("BAMBUDDY_OIDC_ICON_URL"),
+        "icon_url": (os.environ.get("BAMBUDDY_OIDC_ICON_URL") or "").strip() or None,
         "is_autologin": _env_bool("BAMBUDDY_OIDC_AUTOLOGIN", False),
         # A name, not an id: ids are assigned per install, so the same compose
         # file would point at a different group on every deployment. Resolved

@@ -547,6 +547,41 @@ async def test_an_empty_group_variable_counts_as_unset(db_session, monkeypatch):
     assert provider.default_group_id is None
 
 
+# --- blank optional strings count as unset, not a refusal ---------------------
+# `.env.example` ships `# BAMBUDDY_OIDC_ICON_URL=` commented out, so uncommenting
+# it must not take the provider down -- same rule default_group already follows.
+
+
+@pytest.mark.asyncio
+async def test_a_blank_scopes_still_creates_the_provider(db_session, monkeypatch):
+    _configure(monkeypatch, BAMBUDDY_OIDC_SCOPES="")
+    await apply_env_oidc_provider(db_session)
+
+    provider = await _env_provider(db_session)
+    assert provider is not None, "a blank optional var must not refuse the whole provider"
+    assert provider.scopes == "openid email profile"
+
+
+@pytest.mark.asyncio
+async def test_a_blank_email_claim_still_creates_the_provider(db_session, monkeypatch):
+    _configure(monkeypatch, BAMBUDDY_OIDC_EMAIL_CLAIM="")
+    await apply_env_oidc_provider(db_session)
+
+    provider = await _env_provider(db_session)
+    assert provider is not None, "a blank optional var must not refuse the whole provider"
+    assert provider.email_claim == "email"
+
+
+@pytest.mark.asyncio
+async def test_a_blank_icon_url_still_creates_the_provider(db_session, monkeypatch):
+    _configure(monkeypatch, BAMBUDDY_OIDC_ICON_URL="")
+    await apply_env_oidc_provider(db_session)
+
+    provider = await _env_provider(db_session)
+    assert provider is not None, "a blank optional var must not refuse the whole provider"
+    assert provider.icon_url is None
+
+
 # --- account links and collision behavior ------------------------------------
 
 

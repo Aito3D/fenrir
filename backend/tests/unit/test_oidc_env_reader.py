@@ -119,6 +119,33 @@ def test_optional_strings_override_their_defaults(monkeypatch):
     assert cfg["icon_url"] == "https://sso.example.com/logo.png"
 
 
+@pytest.mark.parametrize("raw", ["", "   "])
+def test_a_blank_scopes_is_unset(monkeypatch, raw):
+    """`BAMBUDDY_OIDC_SCOPES=` in a compose file is a forgotten value, not a
+    request for a provider with no scopes -- same rule as default_group."""
+    _set_required(monkeypatch)
+    monkeypatch.setenv("BAMBUDDY_OIDC_SCOPES", raw)
+    assert read_env_oidc_config()["scopes"] == "openid email profile"
+
+
+@pytest.mark.parametrize("raw", ["", "   "])
+def test_a_blank_email_claim_is_unset(monkeypatch, raw):
+    _set_required(monkeypatch)
+    monkeypatch.setenv("BAMBUDDY_OIDC_EMAIL_CLAIM", raw)
+    assert read_env_oidc_config()["email_claim"] == "email"
+
+
+@pytest.mark.parametrize("raw", ["", "   "])
+def test_a_blank_icon_url_is_unset(monkeypatch, raw):
+    """Uncommenting `# BAMBUDDY_OIDC_ICON_URL=` in .env.example must not take
+    the provider down -- the reader must still return a config, not refuse it."""
+    _set_required(monkeypatch)
+    monkeypatch.setenv("BAMBUDDY_OIDC_ICON_URL", raw)
+    cfg = read_env_oidc_config()
+    assert cfg is not None, "a blank optional var must not refuse the whole provider"
+    assert cfg["icon_url"] is None
+
+
 def test_the_default_group_is_read_as_a_name(monkeypatch):
     """A name, not an id: group ids differ per install, so an id in a compose
     file would point at whatever group happened to be created third."""
