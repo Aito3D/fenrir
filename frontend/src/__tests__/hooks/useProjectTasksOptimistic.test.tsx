@@ -195,7 +195,7 @@ const SERVICE_LABELS: Record<'scan' | 'modelisation' | 'impression' | 'usinage',
  *  get past. */
 async function tickStep(service: keyof typeof SERVICE_LABELS) {
   const row = screen.getByText(SERVICE_LABELS[service]).closest('li')!;
-  await userEvent.click(within(row).getByRole('button', { name: /mark done/i }));
+  await userEvent.click(within(row).getByRole('button', { name: new RegExp(SERVICE_LABELS[service]) }));
 }
 
 /** Holds the row's delete button for its full 1s, the same gesture

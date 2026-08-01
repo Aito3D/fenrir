@@ -316,7 +316,7 @@ describe('ProjectDetailPanel tasks', () => {
     const user = userEvent.setup();
     show({ quote_status: 'accepted' });
 
-    await user.click(await screen.findByRole('button', { name: /mark done/i }));
+    await user.click(await screen.findByRole('button', { name: /Scan/i }));
 
     await waitFor(() => expect(capturedBody).toBeDefined());
     expect(capturedId).toBe('101');
@@ -343,7 +343,7 @@ describe('ProjectDetailPanel tasks', () => {
     await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
     boardFetches.mockClear();
 
-    await user.click(await screen.findByRole('button', { name: /mark done/i }));
+    await user.click(await screen.findByRole('button', { name: /Scan/i }));
 
     await waitFor(() => expect(boardFetches).toHaveBeenCalled());
   });
@@ -453,14 +453,21 @@ describe('ProjectDetailPanel tasks', () => {
 
     const user = userEvent.setup();
     const { rerender } = rtlRender(<Host open />);
-    await user.click(await screen.findByRole('button', { name: /mark not done/i }));
+    await user.click(await screen.findByRole('button', { name: /Scan/i }));
     await waitFor(() => expect(stored.scan_done).toBe(false));
 
     // Close, then reopen well inside the staleTime window.
     rerender(<Host open={false} />);
     rerender(<Host open />);
 
-    expect(await screen.findByRole('button', { name: /mark done/i })).toBeInTheDocument();
+    // The button's accessible name no longer encodes state (that moved to
+    // aria-pressed, see Task 5), so this needs its own `waitFor`: the
+    // element is found the instant it first renders, even mid-resync, and
+    // only the (possibly still-stale) attribute read afterwards proves the
+    // resync actually finished with the fresh, un-resurrected value.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Scan/i })).toHaveAttribute('aria-pressed', 'false'),
+    );
   });
 
   it('editing a value back to its original after a successful save still issues a second PATCH', async () => {

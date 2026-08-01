@@ -34,7 +34,7 @@ describe('TaskStepList', () => {
     const original = task();
     render(<TaskStepList task={original} onChange={onChange} canTick />);
 
-    await user.click(screen.getAllByRole('button', { name: /mark done/i })[0]);
+    await user.click(screen.getByRole('button', { name: /Scan/i }));
 
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange.mock.calls[0][0].done.scan).toBe(true);
@@ -47,7 +47,7 @@ describe('TaskStepList', () => {
     const ticked = task({ done: { scan: true, modelisation: false, impression: false, usinage: false } });
     render(<TaskStepList task={ticked} onChange={onChange} canTick />);
 
-    await user.click(screen.getByRole('button', { name: /mark not done/i }));
+    await user.click(screen.getByRole('button', { name: /Scan/i }));
     expect(onChange.mock.calls[0][0].done.scan).toBe(false);
   });
 
@@ -58,7 +58,7 @@ describe('TaskStepList', () => {
 
   it('offers no Done toggle when the quote is not accepted', () => {
     render(<TaskStepList task={task()} onChange={vi.fn()} canTick={false} />);
-    expect(screen.queryByRole('button', { name: /mark done/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
     expect(screen.getByText('Scan')).toBeInTheDocument();
   });
 
@@ -67,5 +67,45 @@ describe('TaskStepList', () => {
     render(<TaskStepList task={ticked} onChange={vi.fn()} canTick={false} />);
     expect(screen.getByText('Scan')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /mark not done/i })).not.toBeInTheDocument();
+  });
+
+  it('makes the whole row the toggle, not just a pill at its end', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<TaskStepList task={task({ scanCost: 3500 })} onChange={onChange} canTick />);
+
+    // The accessible name is the row's, and pressing anywhere in it ticks.
+    const row = screen.getByRole('button', { name: /Scan/ });
+    await user.click(row);
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ done: expect.objectContaining({ scan: true }) }),
+    );
+  });
+
+  it('gives the row a checkbox-style pressed state rather than a Done label', async () => {
+    render(<TaskStepList task={task({ scanCost: 3500 })} onChange={vi.fn()} canTick />);
+    expect(screen.getByRole('button', { name: /Scan/ })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('colours each step by the board stage that performs it', () => {
+    render(
+      <TaskStepList
+        task={task({ scanCost: 3500, modelisationCost: 4500, impressionCost: 1000, usinageCost: 2000 })}
+        onChange={vi.fn()}
+        canTick
+      />,
+    );
+    expect(screen.getByTestId('step-swatch-scan')).toHaveClass('bg-teal-400');
+    expect(screen.getByTestId('step-swatch-modelisation')).toHaveClass('bg-violet-400');
+    // Printing and machining share the print column, so they share its colour.
+    expect(screen.getByTestId('step-swatch-impression')).toHaveClass('bg-orange-400');
+    expect(screen.getByTestId('step-swatch-usinage')).toHaveClass('bg-orange-400');
+  });
+
+  it('still renders a step with no toggle when the quote is not accepted', () => {
+    render(<TaskStepList task={task({ scanCost: 3500 })} onChange={vi.fn()} canTick={false} />);
+    expect(screen.getByText('Scan')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 });

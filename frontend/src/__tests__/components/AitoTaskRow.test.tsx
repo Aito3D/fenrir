@@ -98,7 +98,7 @@ describe('TaskRow', () => {
       canTick: true,
     });
     // Straight to the Done toggle — no disclosure click in between.
-    expect(screen.getByRole('button', { name: /mark done/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Scan/i })).toBeInTheDocument();
   });
 
   it('has no disclosure control at all', () => {

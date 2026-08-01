@@ -304,7 +304,7 @@ describe('AitoPage (backend board)', () => {
       await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
 
       await openCard(user);
-      await user.click(await screen.findByRole('button', { name: /mark done/i }));
+      await user.click(await screen.findByRole('button', { name: /Scan/i }));
       // The tick's own immediate (and legitimately ungated, since nothing
       // else is in flight yet) board refresh — see "refreshes the board
       // immediately when a step is ticked" — must land before the delete
