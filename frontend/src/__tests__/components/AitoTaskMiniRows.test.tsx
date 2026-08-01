@@ -39,9 +39,9 @@ describe('TaskMiniRows', () => {
   });
 
   it('renders nothing for a project with no tasks', () => {
-    // Not `container` — the shared render helper always mounts ToastProvider,
-    // whose viewport div is in every tree (see AitoStepGrid.test.tsx). Assert
-    // the rows wrapper itself is absent instead.
+    // Not `container` — the shared render helper (`../utils`) always mounts
+    // ToastProvider, whose viewport div is in every tree. Assert the rows
+    // wrapper itself is absent instead.
     render(<TaskMiniRows tasks={[]} />);
     expect(screen.queryByTestId('aito-task-rows')).not.toBeInTheDocument();
   });

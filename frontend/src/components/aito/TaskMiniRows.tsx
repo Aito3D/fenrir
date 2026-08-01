@@ -7,9 +7,10 @@ import type { AitoTaskSteps } from '../../api/client';
  *  how much was left but never WHICH task it belonged to.
  *
  *  The row is `role="img"` with the title and count in its accessible name,
- *  the same name-from-author rule StepGrid used; the segments are decoration
- *  and stay hidden. An untitled task renders through aito.taskFallbackName,
- *  the panel's own rule, so the two surfaces name tasks identically. */
+ *  the same name-from-author rule the old pill grid used; the segments are
+ *  decoration and stay hidden. An untitled task renders through
+ *  aito.taskFallbackName, the panel's own rule, so the two surfaces name
+ *  tasks identically. */
 export function TaskMiniRows({ tasks }: { tasks: AitoTaskSteps[] }) {
   const { t } = useTranslation();
   if (tasks.length === 0) return null;
@@ -18,7 +19,7 @@ export function TaskMiniRows({ tasks }: { tasks: AitoTaskSteps[] }) {
     <span data-testid="aito-task-rows" className="mt-2 block space-y-1.5">
       {tasks.map((task, index) => {
         // Index keys: task_steps is positional and replaced wholesale on
-        // every refetch, never spliced — same reasoning StepGrid recorded.
+        // every refetch, never spliced — same reasoning the old pill grid used.
         const name = task.title?.trim() || t('aito.taskFallbackName', { n: index + 1 });
         return (
           <span

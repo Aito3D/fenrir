@@ -3452,7 +3452,7 @@ export interface CalculatorInsights {
 // Aito kanban board
 export type AitoColumnId = 'devis' | 'waiting' | 'scan' | 'model' | 'print' | 'finish' | 'done';
 
-/** One task's steps, for the board card's pill grid. Mirrors
+/** One task's steps, for the board card's task rows. Mirrors
  *  AitoTaskStepsResponse. Both lists are in canonical service order; `done` is
  *  a subset of `services`, and a service absent from the job is in neither. */
 export interface AitoTaskSteps {

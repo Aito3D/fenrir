@@ -217,10 +217,14 @@ export function CardView({
         ref={cardRef}
         data-aito-card
         data-aito-card-id={project.id}
-        // overflow-hidden keeps every child square against the card's rounded
-        // corner. Safe here: the focus ring is `focus-visible:ring-inset` (drawn inside),
-        // `card-shadow` is a box-shadow and is not clipped by `overflow`, and the
-        // grip's `p-2 -m-2` pulls padding inward rather than pushing content out.
+        // overflow-hidden clips the grip's hover highlight to the card's
+        // rounded corner. The name row's `px-3 pt-2.5` padding minus the
+        // grip's `-m-2` pull leaves it only ~4px inset from the top-right
+        // corner — well inside the 12px `rounded-xl` radius — so the
+        // highlight's own square corner (`rounded-md`) would poke past the
+        // card's curve there without this. Safe otherwise: the focus ring is
+        // `focus-visible:ring-inset` (drawn inside), and `card-shadow` is a
+        // box-shadow, which `overflow` does not clip.
         className={`group rounded-xl border bg-bambu-dark-secondary select-none overflow-hidden ${
           expanded ? 'absolute inset-x-0 top-0 z-30 shadow-2xl' : 'relative'
         } ${
@@ -249,7 +253,7 @@ export function CardView({
             />
           )}
           <p
-            className={`flex-1 min-w-0 text-sm font-medium truncate ${
+            className={`flex-1 min-w-0 text-sm font-semibold tracking-[-0.01em] truncate ${
               project.client_name ? 'text-white' : 'text-bambu-gray'
             }`}
           >
