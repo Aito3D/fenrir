@@ -812,6 +812,63 @@ html[data-vt='aito-card']::view-transition-new(page-title) {
     opacity: 0;
   }
 }
+
+/* Closing with nothing to morph INTO — its own scope, because CSS has no way
+   to ask whether a transition name got a `new` snapshot, and the answer
+   changes what these rules have to do.
+
+   `useCardMorph.close` writes html[data-vt='aito-card-exit'] when it is not
+   handing the shared name back to a card: a deferred flight is about to carry
+   that card across the board (Accept and Decline exist only in the panel, so
+   their move is remembered while the panel is up and replayed when it goes),
+   or the card has left the board entirely. Either way `aito-card` has an old
+   snapshot and no new one.
+
+   The finding this exists for, measured in Chrome: a group with only an `old`
+   gets NO UA-generated animation — the browser only generates the group
+   keyframes when there are two snapshots to interpolate between. The rules
+   above are written for that pair, so on an exit they leave the group's
+   deliberately opaque surface (the background, border and shadow that make the
+   morph read as one object changing shape) parked at panel size, unanimated,
+   until the slowest other animation in the transition ends. That is the
+   backdrop's 320ms: the content fades in 90ms and a blank slab holds the
+   middle of the board for the rest — over the card flight this is all for.
+
+   So both halves need saying explicitly here. The content leaves first and
+   quickly, as it does in the morph, being a still image of a layout that is
+   already gone; the group carries the panel itself out, fading and receding
+   slightly, on the app's exit curve. Both are done by 200ms, well inside the
+   backdrop's fade, so the room is still dim when the board is uncovered and
+   the flight is unobstructed for the rest of its trip.
+
+   `scale`, not a `transform` keyframe: the UA positions this group with its
+   own `transform`, and animating that property would clobber the placement
+   and fling the panel to the origin. The individual transform properties
+   compose with it instead — the same reason `.aito-card-dropping` below
+   overrides `rotate`/`scale` rather than `transform`. */
+html[data-vt='aito-card-exit']::view-transition-old(root),
+html[data-vt='aito-card-exit']::view-transition-new(root),
+html[data-vt='aito-card-exit']::view-transition-old(page-title),
+html[data-vt='aito-card-exit']::view-transition-new(page-title) {
+  animation: none;
+}
+html[data-vt='aito-card-exit']::view-transition-old(aito-card) {
+  animation: aito-morph-fade-out 120ms linear forwards;
+}
+html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
+  animation: aito-panel-exit 200ms var(--ease-exit) forwards;
+}
+@keyframes aito-panel-exit {
+  from {
+    opacity: 1;
+    scale: 1;
+  }
+  to {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+
 /* Paint order, and both values are load-bearing — the card's own z-index: 2
    is set on its group above.
 

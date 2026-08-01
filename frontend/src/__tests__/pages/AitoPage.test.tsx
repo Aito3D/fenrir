@@ -362,6 +362,38 @@ describe('AitoPage (backend board)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
+  it('lets go of a project that disappears from the cache, so the panel is not stuck open in state', async () => {
+    const user = userEvent.setup();
+    render(<AitoPage />);
+    await openCard(user);
+    await screen.findByRole('dialog');
+
+    // The row goes: another operator deleted it, or the delete button's own
+    // optimistic write landed before the close transition's callback did.
+    // The panel is derived from it, so it unmounts — but `expandedId` is not,
+    // and nothing else would ever put it back to null.
+    server.use(http.get('/api/v1/aito/', () => HttpResponse.json([])));
+    act(() => {
+      window.dispatchEvent(new Event('visibilitychange'));
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    // The row comes back. A stuck `expandedId` would re-derive the project and
+    // pop the panel open again on its own, with nobody having asked for it —
+    // and it would also freeze useCardFlight's snapshot map for good.
+    server.use(http.get('/api/v1/aito/', () => HttpResponse.json([project])));
+    act(() => {
+      window.dispatchEvent(new Event('visibilitychange'));
+    });
+    await screen.findByRole('button', { name: /Support GoPro/ });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    // And the card still opens, which a stuck `expandedId` would also break:
+    // setting it to the id it already holds is not a state change.
+    await openCard(user);
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
   it('drives the morph through startViewTransition when the API is present', async () => {
     const startViewTransition = vi.fn((cb: () => void) => {
       cb();

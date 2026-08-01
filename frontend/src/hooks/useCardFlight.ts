@@ -1,19 +1,41 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { prefersReducedMotion } from '../utils/motion';
 
 /** Where a card that has left the board went. `null` — deleted, filtered out
  *  by the search box, dropped by the server — animates nothing. */
 export type FlightDeparture = 'archive' | null;
 
+/** Why animation is being held, and — the whole point of there being two —
+ *  what lifting the hold owes the user.
+ *
+ *  - `'absorb'` swallows whatever happened during the window. Positions are
+ *    still recorded, so resuming replays nothing. That is right when the
+ *    system that suspended us has ALREADY moved the card in front of the
+ *    user: dnd-kit animates its own drop, and a flight on top of it would be
+ *    two systems animating one node from two positions they disagree about.
+ *  - `'defer'` remembers instead. Nothing is measured and nothing is written,
+ *    so the pre-suspension positions stay frozen and a relocation that
+ *    happened during the window is still outstanding when the window lifts —
+ *    at which point the ordinary arrival and departure loops fire against the
+ *    frozen snapshots and the card flies. That is right when the suspending
+ *    system HID the move rather than performing it: the detail panel is a
+ *    fullscreen modal, and Accept and Decline live only inside it. */
+export type FlightSuspension = false | 'absorb' | 'defer';
+
 export interface CardFlightOptions {
-  /** Suspends animation. Positions are still recorded while suspended, so
-   *  resuming never replays a delta that accumulated behind a modal or under
-   *  a drag — the same contract `useColumnReflow`'s nullable key has. */
-  suspended: boolean;
+  /** Suspends animation; see `FlightSuspension` for what each hold means.
+   *  `'absorb'` is the contract `useColumnReflow`'s nullable key has. */
+  suspended: FlightSuspension;
   /** Answers for a card that is no longer on the board. Three different
    *  reasons look identical in the DOM — archived, trashed, filtered — and
    *  only the first has somewhere to fly to. */
   departureTarget: (key: string) => FlightDeparture;
+}
+
+export interface CardFlightHandle {
+  /** Whether this card has a relocation waiting to fly — see
+   *  `useCardFlight`'s return value. */
+  hasDeferredFlight: (id: number) => boolean;
 }
 
 interface Rect {
@@ -348,11 +370,15 @@ function pulse(pad: HTMLElement): void {
  *  The ghost is a clone on a fixed layer rather than the real node, because
  *  every column is its own `overflow-y-auto` scroller inside a horizontally
  *  scrolling board: a translated card would be sliced at the column edge for
- *  the whole trip. */
+ *  the whole trip.
+ *
+ *  Returns a way to ask whether a card is still owed a flight, which the
+ *  detail panel needs before it decides how to close — see
+ *  `hasDeferredFlight`. */
 export function useCardFlight(
   boardRef: React.RefObject<HTMLElement | null>,
   { suspended, departureTarget }: CardFlightOptions,
-): void {
+): CardFlightHandle {
   const snapshotsRef = useRef(new Map<string, Snapshot>());
   const flightsRef = useRef(new Map<string, Flight>());
   const layerRef = useRef<HTMLElement | null>(null);
@@ -368,10 +394,23 @@ export function useCardFlight(
     // fly the entire board at once.
     if (!board) {
       for (const flight of [...flights.values()]) flight.stop();
+      // The one write that outranks a `'defer'` freeze, deliberately. A frozen
+      // map that outlived the columns it was measured in IS the whole-board
+      // stampede described above, and there is nothing left on screen for a
+      // deferred flight to depart from anyway. Unreachable in practice — the
+      // panel is a fullscreen modal, so the view cannot change underneath it —
+      // but the failure it guards against is far worse than the flight lost.
       snapshotsRef.current = new Map();
       panOwnerRef.current?.cancel();
       return;
     }
+
+    // Deferring: measure nothing, animate nothing, write nothing. Freezing the
+    // map IS the replay — leave the pre-panel positions exactly where they
+    // are and the first live render below sees the relocation as if it had
+    // only just happened. Anything written here, on any path, is the memory
+    // of that move being erased.
+    if (suspended === 'defer') return;
 
     const previous = snapshotsRef.current;
     const next = new Map<string, Snapshot>();
@@ -381,7 +420,8 @@ export function useCardFlight(
       next.set(key, { el: node, parent: node.parentElement, rect: layoutRect(node) });
     }
 
-    // Measure always, animate only when live.
+    // Measure always (a `'defer'` hold has already returned), animate only
+    // when live.
     if (!suspended && !prefersReducedMotion() && typeof Element.prototype.animate === 'function') {
       for (const [key, snapshot] of next) {
         const prev = previous.get(key);
@@ -462,4 +502,33 @@ export function useCardFlight(
     },
     [],
   );
+
+  /** Whether this card is owed a flight the hook has not run yet: the map
+   *  remembers where it was, and the DOM no longer agrees.
+   *
+   *  Only true during a `'defer'` window, because that is the only time the
+   *  map is allowed to fall behind the DOM — every other render reconciles
+   *  the two before it returns, and a flight that has launched has already
+   *  been recorded at its destination. Read from refs and the live DOM rather
+   *  than from state, so asking costs nothing and answers as of the moment of
+   *  the question: `ProjectDetailPanel`'s close button asks in an event
+   *  handler, long after the render that froze the map. */
+  const hasDeferredFlight = useCallback(
+    (id: number) => {
+      const board = boardRef.current;
+      if (!board) return false;
+      const frozen = snapshotsRef.current.get(String(id));
+      if (!frozen) return false;
+      const node = board.querySelector<HTMLElement>(`[data-flip-key="${id}"]`);
+      // Gone from the board (an archive departure), or standing under a
+      // different column than the one it was measured in (a relocation).
+      // Either way the panel has no card worth morphing back into: the
+      // departed one no longer exists, and the relocated one is about to be
+      // covered by a ghost and held at opacity 0.
+      return node === null || node.parentElement !== frozen.parent;
+    },
+    [boardRef],
+  );
+
+  return { hasDeferredFlight };
 }

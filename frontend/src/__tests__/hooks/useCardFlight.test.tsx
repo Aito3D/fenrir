@@ -155,11 +155,13 @@ describe('useCardFlight', () => {
     expect(ghosts()).toHaveLength(0);
   });
 
-  it('records positions while suspended, so lifting the suspension replays nothing', () => {
+  it('records positions while absorbing, so lifting the suspension replays nothing', () => {
     const { board, left, right } = buildBoard();
     const card = buildCard('12', SLOT_A);
     left.appendChild(card);
-    options = { suspended: true };
+    // A drag: dnd-kit has already shown the user this move, so the hook must
+    // swallow it rather than fly it a second time.
+    options = { ...options, suspended: 'absorb' };
     const { rerender } = renderHook(() => useCardFlight({ current: board }, options));
 
     right.appendChild(card);
@@ -170,6 +172,104 @@ describe('useCardFlight', () => {
     options = { ...options, suspended: false };
     rerender();
     expect(ghosts()).toHaveLength(0);
+  });
+
+  it('defers a relocation that happened behind the panel, and flies it from where the card WAS', () => {
+    const { board, left, right } = buildBoard();
+    const card = buildCard('12', SLOT_A);
+    left.appendChild(card);
+    const { rerender } = renderHook(() => useCardFlight({ current: board }, options));
+
+    // The panel opens over the board. Accept lands, and the card relocates
+    // where nobody can see it.
+    options = { ...options, suspended: 'defer' };
+    rerender();
+    right.appendChild(card);
+    // Deliberately NOT its final slot: if the hook measured anything during
+    // the window, this decoy is what it would fly from, and both assertions
+    // below would read from here instead of from SLOT_A.
+    place(card, { left: 700, top: 300, width: 280, height: 120 });
+    rerender();
+    expect(ghosts()).toHaveLength(0);
+
+    // The panel closes; the board settles the card into its real slot.
+    place(card, SLOT_B);
+    options = { ...options, suspended: false };
+    rerender();
+
+    expect(ghosts()).toHaveLength(1);
+    const ghost = ghosts()[0] as HTMLElement;
+    // Parked on the pre-panel rect, not on the decoy.
+    expect(ghost.style.left).toBe('20px');
+    expect(ghost.style.top).toBe('40px');
+    // SLOT_A -> SLOT_B, exactly the flight an unsuspended relocation gets.
+    expect(travelOf(ghost).keyframes[1].transform).toBe('translate(320px, 0px)');
+  });
+
+  it('leaves a card born during a defer window to its own entrance', () => {
+    const { board, left, right } = buildBoard();
+    const existing = buildCard('12', SLOT_A);
+    left.appendChild(existing);
+    const { rerender } = renderHook(() => useCardFlight({ current: board }, options));
+
+    options = { ...options, suspended: 'defer' };
+    rerender();
+    // Created while the map is frozen — a card restored from the trash, or
+    // another operator's new project arriving over the socket.
+    const born = buildCard('13', SLOT_B);
+    right.appendChild(born);
+    rerender();
+
+    options = { ...options, suspended: false };
+    rerender();
+
+    // Absent from the frozen map, so it reads as an arrival: `animate-rise`
+    // owns it, and nothing here may hold it invisible behind a ghost.
+    expect(ghosts()).toHaveLength(0);
+    expect(born.style.opacity).toBe('');
+  });
+
+  it('reports a pending flight only while one is actually owed', () => {
+    const { board, left, right } = buildBoard();
+    const card = buildCard('12', SLOT_A);
+    left.appendChild(card);
+    const { result, rerender } = renderHook(() => useCardFlight({ current: board }, options));
+
+    expect(result.current.hasDeferredFlight(12)).toBe(false);
+
+    options = { ...options, suspended: 'defer' };
+    rerender();
+    // Still nothing owed: the panel is open but the card has not moved.
+    expect(result.current.hasDeferredFlight(12)).toBe(false);
+
+    right.appendChild(card);
+    place(card, SLOT_B);
+    rerender();
+    expect(result.current.hasDeferredFlight(12)).toBe(true);
+
+    options = { ...options, suspended: false };
+    rerender();
+    expect(ghosts()).toHaveLength(1);
+    // Flown: the map and the DOM agree again, and asking a second time must
+    // not claim a second flight is due.
+    expect(result.current.hasDeferredFlight(12)).toBe(false);
+  });
+
+  it('reports a pending flight for a card that left the board behind the panel', () => {
+    const { board, left } = buildBoard();
+    const card = buildCard('12', SLOT_A);
+    left.appendChild(card);
+    const { result, rerender } = renderHook(() => useCardFlight({ current: board }, options));
+
+    options = { ...options, suspended: 'defer' };
+    rerender();
+    // Mark done from inside the panel: the card leaves for the archive.
+    card.remove();
+    rerender();
+
+    // There is no card left to morph the panel back into, so this answer is
+    // what stops the panel aiming at one.
+    expect(result.current.hasDeferredFlight(12)).toBe(true);
   });
 
   it('flies nothing under prefers-reduced-motion', () => {

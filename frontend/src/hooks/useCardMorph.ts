@@ -11,6 +11,24 @@ export const AITO_CARD_VT_NAME = 'aito-card';
  *  whole board. */
 const VT_SCOPE = 'aito-card';
 
+/** The scope for a close with nothing to morph INTO, which needs its own
+ *  because CSS cannot ask whether a transition name has a `new` snapshot.
+ *
+ *  It is not a cosmetic distinction. Measured in Chrome: a group with only an
+ *  `old` gets no UA-generated animation at all, so `aito-card`'s deliberately
+ *  opaque group (see index.css) simply sits there, at panel size, until the
+ *  slowest OTHER animation in the transition ends — a blank slab over the
+ *  board long after the panel's content has faded. The exit scope is what
+ *  gives the group an animation of its own. */
+const VT_EXIT_SCOPE = 'aito-card-exit';
+
+export interface CardMorphCloseOptions {
+  /** Hand the shared name back to the board card, so the panel morphs into
+   *  it. Pass `false` when something else is about to move that card — a
+   *  deferred flight — and let the panel play its own exit instead. */
+  toCard?: boolean;
+}
+
 function cardNode(id: number): HTMLElement | null {
   return document.querySelector<HTMLElement>(`[data-aito-card-id="${id}"]`);
 }
@@ -46,19 +64,36 @@ export function useCardMorph(setExpandedId: (id: number | null) => void) {
     [setExpandedId],
   );
 
+  /** Closes the panel. By default it morphs back into the board card it grew
+   *  out of; with `toCard: false` it plays an exit and leaves the card alone.
+   *
+   *  That option exists because the morph and a card flight are both motion
+   *  toward the same point, and the morph wins by arriving first. When a
+   *  relocation is waiting to fly (Accept, Decline — they live only in the
+   *  panel), the card under the morph's destination is already covered by a
+   *  ghost and held at `opacity: 0`, so handing it the shared name morphs the
+   *  panel into an invisible element and pre-empts the very flight the user is
+   *  meant to see. */
   const close = useCallback(
-    (id: number) => {
+    (id: number, { toCard = true }: CardMorphCloseOptions = {}) => {
       if (typeof document.startViewTransition !== 'function' || prefersReducedMotion()) {
         setExpandedId(null);
         return;
       }
 
-      document.documentElement.dataset.vt = VT_SCOPE;
+      document.documentElement.dataset.vt = toCard ? VT_SCOPE : VT_EXIT_SCOPE;
       const transition = document.startViewTransition(() => {
         flushSync(() => setExpandedId(null));
         // Panel is gone; hand the name back so the card is the new snapshot.
-        const node = cardNode(id);
+        const node = toCard ? cardNode(id) : null;
         if (node) node.style.viewTransitionName = AITO_CARD_VT_NAME;
+        // Nobody claimed it — either we were told not to, or the card left
+        // while the panel was closing (the delete path mutates the cache in
+        // the same tick, and this callback runs a frame later). The pseudo
+        // styles are resolved after this callback returns, so switching the
+        // scope here still lands, and it is what keeps that slab off the
+        // board.
+        else document.documentElement.dataset.vt = VT_EXIT_SCOPE;
       });
 
       Promise.resolve(transition?.finished).finally(() => {

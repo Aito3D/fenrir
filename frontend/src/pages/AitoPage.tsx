@@ -163,6 +163,25 @@ export function AitoPage() {
     return find(aitoQuery.data) ?? find(trashQuery.data) ?? null;
   }, [expandedId, aitoQuery.data, trashQuery.data]);
 
+  // The panel is rendered from `expandedProject`, so a project that vanishes
+  // from both queries unmounts it — and nothing else would ever put
+  // `expandedId` back to null. That leaves the page permanently in the state
+  // an open panel puts it in, with no panel on screen to close.
+  //
+  // It happens on the delete path below: `closeCard` sets `expandedId` inside
+  // a view transition callback, a frame later, while the mutation's optimistic
+  // write removes the row immediately.
+  //
+  // Cheap before, since a stuck `expandedId` only suppressed flights.
+  // Expensive now: it freezes `useCardFlight`'s snapshot map for the rest of
+  // the session, and every subsequent move would be measured against
+  // positions from before the panel opened. There is no loading state to race
+  // — neither query's `data` is ever cleared back to `undefined`, so the only
+  // way to lose the row is for it to genuinely be gone.
+  useEffect(() => {
+    if (expandedId !== null && expandedProject === null) setExpandedId(null);
+  }, [expandedId, expandedProject]);
+
   const { board, activeProject, dropTarget, allowedDropColumns, shouldAnimateIn, sensors, dndHandlers } =
     useBoardDrag(aitoQuery.data);
 
@@ -337,12 +356,18 @@ export function AitoPage() {
   // Deleted and search-filtered cards leave exactly the same way, and neither
   // belongs in that flight.
   const doneIds = useMemo(() => new Set(board.done.map((project) => project.id)), [board.done]);
-  useCardFlight(boardRef, {
-    // dnd-kit owns a drag and its settle window — two systems animating one
-    // card fight visibly. The detail panel is a fullscreen modal, so a flight
-    // under it plays where nobody can see it; closing the panel morphs it back
-    // into the card at its NEW column, which is where that move reads.
-    suspended: dragging || dragSettling || expandedId !== null,
+  const { hasDeferredFlight } = useCardFlight(boardRef, {
+    // Two holds, and which one matters. dnd-kit owns a drag and its settle
+    // window and has already moved the card in front of the user, so that
+    // window is absorbed — replaying it would animate one card from two
+    // systems that disagree about where it is.
+    //
+    // The panel only HIDES the move. It is a fullscreen modal, so a flight
+    // under it plays where nobody can see it — and Accept and Decline live
+    // nowhere else, which is why for most of this feature's life its headline
+    // transition could never animate at all. So that window is deferred: the
+    // relocation is remembered and flies once the panel is out of the way.
+    suspended: dragging || dragSettling ? 'absorb' : expandedId !== null ? 'defer' : false,
     departureTarget: (key) => (doneIds.has(Number(key)) ? 'archive' : null),
   });
 
@@ -573,7 +598,12 @@ export function AitoPage() {
       {expandedProject && (
         <ProjectDetailPanel
           project={expandedProject}
-          onClose={() => closeCard(expandedProject.id)}
+          // Asked here rather than remembered, because `expandedId` is still
+          // non-null at this moment: the map is still frozen and can still
+          // answer. A card with a flight waiting gets the panel's own exit —
+          // morphing into it would land on the destination before the ghost
+          // does, which is the one thing the flight must not race.
+          onClose={() => closeCard(expandedProject.id, { toCard: !hasDeferredFlight(expandedProject.id) })}
           // Omitted for a project that is already in the trash, which takes the
           // panel's delete button away with it. Deleting a deleted project is a
           // no-op the server accepts, so the button would look live, do
