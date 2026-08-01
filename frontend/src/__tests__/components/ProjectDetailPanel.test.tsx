@@ -200,11 +200,17 @@ async function editAllTasks() {
 }
 
 describe('ProjectDetailPanel client fields', () => {
-  it('titles the panel with the project reference, not the client', () => {
+  it('titles the panel with the client, and keeps the project reference as its eyebrow', () => {
     // level: 2 disambiguates from TaskEditor's "Tasks" <h3> section heading,
     // which now always renders alongside the project title.
     show();
-    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/Project #12|Projet n°12/);
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('ACME SARL');
+    expect(screen.getByText(/Project #12|Projet n°12/)).toBeInTheDocument();
+  });
+
+  it('falls back to the no-client label when the card has none', () => {
+    show({ client_name: null });
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/no client/i);
   });
 
   it('still names the dialog after the client for assistive technology', () => {
@@ -212,24 +218,35 @@ describe('ProjectDetailPanel client fields', () => {
     expect(screen.getByRole('dialog')).toHaveAccessibleName('ACME SARL');
   });
 
-  it('labels a company client as Company name', () => {
+  it('weights the header ring by money rather than by step count', async () => {
+    // 3 500 of 18 000 done is 1 of 3 steps: 19%, not 33%. The three costs
+    // below land in three different STAGES groups (scan / model / print), so
+    // each contributes exactly one step to stagesWithWork's stepsTotal —
+    // giving "1 of 3 steps" done while only 19% of the money is done.
+    server.use(
+      http.get('/api/v1/aito/12/tasks', () =>
+        HttpResponse.json([
+          {
+            ...mockTask,
+            scan_cost: 3500,
+            scan_done: true,
+            modelisation_cost: 7000,
+            modelisation_done: false,
+            usinage_cost: 7500,
+            usinage_done: false,
+          },
+        ]),
+      ),
+    );
     show();
-    expect(screen.getByText(/company name/i)).toBeInTheDocument();
-    expect(screen.queryByText(/^client name/i)).not.toBeInTheDocument();
+    // The ring renders immediately at 0/0 — before the tasks fetch resolves —
+    // so the assertion itself has to be the thing waited on, not just the
+    // node's presence.
+    await waitFor(() => expect(screen.getByTestId('panel-value-ring')).toHaveAttribute('aria-valuenow', '3500'));
+    expect(screen.getByTestId('panel-value-ring')).toHaveAttribute('aria-valuemax', '18000');
   });
 
-  it('labels a person client as Client name', () => {
-    show({ client_is_company: false, client_name: 'Paul THEIS' });
-    expect(screen.getByText(/client name/i)).toBeInTheDocument();
-    expect(screen.queryByText(/company name/i)).not.toBeInTheDocument();
-  });
-
-  it('labels a legacy card with a null flag as Client name', () => {
-    show({ client_is_company: null });
-    expect(screen.getByText(/client name/i)).toBeInTheDocument();
-  });
-
-  it('labels the phone and email, and copies rather than dialling them', async () => {
+  it('copies the phone and email rather than dialling them', async () => {
     // They used to be `tel:` / `mailto:` links, which hand the value to
     // whatever application claimed the protocol. On a shop machine that is
     // usually nothing; what the value is for is pasting.
@@ -244,7 +261,6 @@ describe('ProjectDetailPanel client fields', () => {
     try {
       const user = userEvent.setup();
       show();
-      expect(screen.getByText(/phone/i)).toBeInTheDocument();
       expect(screen.queryByRole('link', { name: '+689-87123456' })).not.toBeInTheDocument();
       expect(screen.queryByRole('link', { name: 'hi@acme.pf' })).not.toBeInTheDocument();
 
@@ -1103,10 +1119,16 @@ describe('ProjectDetailPanel tasks', () => {
 });
 
 describe('ProjectDetailPanel quote row', () => {
-  it('right-aligns the metadata values', () => {
+  it('right-aligns the project total', async () => {
+    // mockTask's only priced step (scan, 500) is not done, so the header
+    // total is the full 500 — waiting for it also waits out the tasks fetch.
+    // '$500.00' also appears in TaskEditor's own running total below, so the
+    // header's copy is picked out by its distinctive size/weight classes.
     show();
-    const value = screen.getByText('ACME SARL');
-    expect(value.className).toContain('text-right');
+    const totals = await screen.findAllByText('$500.00');
+    const headerTotal = totals.find((el) => el.className.includes('text-2xl'));
+    expect(headerTotal).toBeDefined();
+    expect(headerTotal?.closest('div')?.className).toContain('text-right');
   });
 
   it('shows nothing about a quote on a manually created project', () => {
@@ -1114,7 +1136,10 @@ describe('ProjectDetailPanel quote row', () => {
     expect(document.querySelector('a[href*="books.zoho"]')).toBeNull();
   });
 
-  it('links an imported project to its quote in Zoho Books', () => {
+  it('links an imported project to its quote in Zoho Books, from both the header eyebrow and the quote row', () => {
+    // Two links now share the accessible name: the header's compact eyebrow
+    // (Project #12 · DEV26-2462) and the quote row's full entry with the
+    // print button. Both must point at the same quote.
     show({
       quote_id: 'e2',
       quote_number: 'DEV26-2462',
@@ -1122,10 +1147,13 @@ describe('ProjectDetailPanel quote row', () => {
       quote_total: 5600,
       quote_url: 'https://books.zoho.eu/app/999#/estimates/e2',
     });
-    const link = screen.getByRole('link', { name: /DEV26-2462/ });
-    expect(link).toHaveAttribute('href', 'https://books.zoho.eu/app/999#/estimates/e2');
-    expect(link).toHaveAttribute('target', '_blank');
-    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+    const links = screen.getAllByRole('link', { name: /DEV26-2462/ });
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      expect(link).toHaveAttribute('href', 'https://books.zoho.eu/app/999#/estimates/e2');
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+    }
   });
 
   it('shows the print button for a project with a quote', () => {
@@ -1151,7 +1179,9 @@ describe('ProjectDetailPanel quote row', () => {
     // because "nobody is recorded" is itself worth stating for a card that
     // predates the column or was made with auth off.
     show({ quote_number: 'DEV26-2462', quote_salesperson: null, created_by: null });
-    await screen.findByText('DEV26-2462');
+    // 'DEV26-2462' now also appears in the header eyebrow, so this waits on
+    // the quote row specifically rather than the ambiguous text.
+    await screen.findByText('Created by:');
     expect(screen.queryByText('Seller:')).not.toBeInTheDocument();
     expect(screen.getByText('Created by:')).toBeInTheDocument();
   });

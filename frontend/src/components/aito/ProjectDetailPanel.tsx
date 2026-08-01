@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, ExternalLink, Loader2, X } from 'lucide-react';
 import { ALL_COLUMNS } from './columns';
 import { DeleteHoldButton } from './DeleteHoldButton';
@@ -8,13 +8,16 @@ import { ActivityRail } from './history/ActivityRail';
 import { QuotePrintButton } from './QuotePrintButton';
 import { QuoteStatusActions } from './QuoteStatusActions';
 import { quoteStatusLabelKey } from './quoteStatus';
+import { stagesWithWork } from './services';
 import { TaskEditor } from './TaskEditor';
 import { AITO_CARD_VT_NAME } from '../../hooks/useCardMorph';
 import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { useProjectTasks } from '../../hooks/useProjectTasks';
 import { api, type AitoProject, type AitoProjectUpdate } from '../../api/client';
+import { Money } from '../calculator/shared';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import { parseUTCDate } from '../../utils/date';
+import { formatMoney } from '../../utils/pricing';
 import { applyDescription, applySyncState } from '../../utils/aitoOptimistic';
 import { inputCls, labelCls } from '../formStyles';
 import { useToast } from '../../contexts/ToastContext';
@@ -105,6 +108,128 @@ function CopyableValue({ value, label }: { value: string; label: string }) {
   );
 }
 
+/** Money done over money quoted, as a ring.
+ *
+ *  Deliberately not the step count the card's bar uses. Seven steps on a
+ *  typical project are worth between 3 500 and 10 000 FCFP each, so "3/7" and
+ *  "how much of this job is done" are different numbers; the line beneath the
+ *  ring gives both so neither reading is lost. */
+function ValueRing({ done, total }: { done: number; total: number }) {
+  const { t } = useTranslation();
+  const size = 42;
+  const radius = (size - 4) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const fraction = total > 0 ? done / total : 0;
+
+  return (
+    <svg
+      data-testid="panel-value-ring"
+      role="progressbar"
+      aria-valuenow={done}
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-label={t('aito.amountDone', { amount: `${done}` })}
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      className="-rotate-90 flex-shrink-0"
+    >
+      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" strokeWidth={3} className="stroke-bambu-dark-tertiary" />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        strokeWidth={3}
+        strokeLinecap="round"
+        strokeDasharray={circumference}
+        strokeDashoffset={circumference * (1 - fraction)}
+        className="stroke-bambu-green transition-[stroke-dashoffset] duration-300 ease-[var(--ease-signature)] motion-reduce:transition-none"
+      />
+    </svg>
+  );
+}
+
+/** The panel's title band: the client as the heading (with the project
+ *  reference and quote number as an eyebrow above it and the phone/email as
+ *  copyable chips below), and the value-weighted ring plus project total on
+ *  the right. Everything a card cannot fit is below this in the body; this is
+ *  everything the operator needs before reading any of it. */
+function PanelHeader({
+  project,
+  currency,
+  valueDone,
+  valueTotal,
+}: {
+  project: AitoProject;
+  currency: string;
+  valueDone: number;
+  valueTotal: number;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      className="flex-shrink-0 px-5 py-4 flex items-center gap-5 border-b"
+      style={{
+        // 135deg, not 180: on a ~1200x90 band a diagonal axis reads as a
+        // near-horizontal fade, so the wash sits behind the client name and
+        // clears before the total. The vertical version tints the top of
+        // the band — where the small grey eyebrow lives — and casts over the
+        // one number that must not compete with a colour.
+        backgroundImage:
+          'linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, var(--bg-secondary)), var(--bg-secondary))',
+        borderBottomColor: 'color-mix(in srgb, var(--accent) 40%, var(--border-color))',
+      }}
+    >
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-0.5">
+          <span className="text-xs uppercase tracking-wide text-bambu-gray">
+            {t('aito.projectRef', { id: project.id })}
+          </span>
+          {project.quote_number && (
+            <>
+              <span className="text-xs text-bambu-gray opacity-50">·</span>
+              {project.quote_url ? (
+                <a
+                  href={project.quote_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={t('aito.quoteOpenInZoho')}
+                  className="text-xs uppercase tracking-wide text-bambu-green hover:text-bambu-green/80 inline-flex items-center gap-1"
+                >
+                  {project.quote_number}
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              ) : (
+                <span className="text-xs uppercase tracking-wide text-bambu-gray">{project.quote_number}</span>
+              )}
+            </>
+          )}
+        </div>
+        <h2 className="text-xl font-semibold text-white truncate">{project.client_name ?? t('aito.noClient')}</h2>
+        <div className="flex items-center gap-4 mt-1 text-sm">
+          {project.client_phone && <CopyableValue value={project.client_phone} label={t('aito.phoneLabel')} />}
+          {project.client_email && <CopyableValue value={project.client_email} label={t('aito.emailLabel')} />}
+        </div>
+      </div>
+
+      <div className="w-px self-stretch bg-bambu-dark-tertiary" />
+
+      <div className="flex items-center gap-3 flex-shrink-0">
+        <ValueRing done={valueDone} total={valueTotal} />
+        <div className="text-right">
+          <Money currency={currency} value={valueTotal} className="block text-2xl font-semibold text-white" />
+          <span className="block text-xs text-bambu-gray tabular-nums">
+            {t('aito.amountDone', { amount: formatMoney(valueDone, currency) })}
+            {' · '}
+            {t('aito.stepsCount', { done: project.steps_done, total: project.steps_total })}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SaveIndicator({ state }: { state: SaveState }) {
   const { t } = useTranslation();
   if (state === 'saving') return <Loader2 className="w-3.5 h-3.5 text-bambu-gray animate-spin" />;
@@ -166,6 +291,15 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   });
 
   const { tasks, onTasksChange, onRemoveTask, onRowBlur, pendingTaskUids } = useProjectTasks(project.id);
+
+  // Value-weighted, not step-weighted — see ValueRing's doc. Rides the same
+  // ['settings'] cache TaskEditor's own currency lookup uses (staleTime
+  // 60s), so this adds no fetch of its own.
+  const stageWork = stagesWithWork(tasks);
+  const valueTotal = stageWork.reduce((sum, s) => sum + s.value, 0);
+  const valueDone = stageWork.reduce((sum, s) => sum + s.valueDone, 0);
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings, staleTime: 60_000 });
+  const currency = settings?.currency || 'USD';
 
   const [editingDesc, setEditingDesc] = useState(false);
   const [draft, setDraft] = useState(project.description);
@@ -240,25 +374,27 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
         style={{ viewTransitionName: AITO_CARD_VT_NAME }}
         className="bg-bambu-dark-secondary rounded-xl w-full max-w-[100rem] border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)]"
       >
-        <div className="group p-4 border-b border-bambu-dark-tertiary flex items-start justify-between gap-3 flex-shrink-0">
-          <h2 className="text-lg font-semibold text-white truncate min-w-0">
-            {t('aito.projectRef', { id: project.id })}
-          </h2>
-          <span className="flex items-center gap-3 flex-shrink-0">
-            {onDelete && (
-              <DeleteHoldButton onDelete={onDelete} label={t('aito.deleteTitle')} hint={t('aito.holdToDelete')} />
-            )}
-            <button
-              type="button"
-              ref={closeRef}
-              aria-label={t('common.close')}
-              onClick={onClose}
-              className="p-1 -m-1 rounded-md text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </span>
+        {/* A slim strip above the header for the two controls the header
+            itself has no room for: the title band below is a client's name,
+            a ring and a total, not a place for a delete-hold gesture to
+            live. `group` here (not on the header) is what
+            `DeleteHoldButton`'s group-hover reveal keys off. */}
+        <div className="group flex-shrink-0 px-3 pt-2 flex items-center justify-end gap-3">
+          {onDelete && (
+            <DeleteHoldButton onDelete={onDelete} label={t('aito.deleteTitle')} hint={t('aito.holdToDelete')} />
+          )}
+          <button
+            type="button"
+            ref={closeRef}
+            aria-label={t('common.close')}
+            onClick={onClose}
+            className="p-1 -m-1 rounded-md text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
+
+        <PanelHeader project={project} currency={currency} valueDone={valueDone} valueTotal={valueTotal} />
 
         <div className="p-4 overflow-y-auto scrollbar-hide flex-1 min-h-0 lg:flex lg:flex-col lg:overflow-hidden">
           {/* Three columns, three scrollers — but only from `lg` up, where the
@@ -338,46 +474,21 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
 
               {/* One description list for the whole record. <dt>/<dd> gives
                   assistive technology the label-to-value association for free; the
-                  colon is markup, so no locale string carries punctuation. Client
-                  rows with no value are omitted entirely — an empty "Email:" is
-                  noise, not information. The mid-list border separates the client
-                  group from the project metadata. Rows are `justify-between` with
-                  right-aligned <dd>s, turning the block into a spec sheet: labels
-                  flush left, values flush right. */}
+                  colon is markup, so no locale string carries punctuation. The
+                  client's own name/phone/email left this list for the header
+                  above — a name is the panel's title now, not a labelled row
+                  buried under the description — so what remains is purely
+                  project metadata: the quote, the seller, sync state and the
+                  timestamps. Rows with no value are omitted entirely — an
+                  empty "Seller:" is noise, not information. Rows are
+                  `justify-between` with right-aligned <dd>s, turning the
+                  block into a spec sheet: labels flush left, values flush
+                  right. */}
               <dl className="border-t border-bambu-dark-tertiary pt-4 space-y-2 text-sm">
-                <div className="flex items-baseline justify-between gap-2">
-                  <dt className="text-bambu-gray flex-shrink-0">
-                    {project.client_is_company ? t('aito.companyNameLabel') : t('aito.clientNameLabel')}:
-                  </dt>
-                  <dd
-                    className={`min-w-0 truncate text-right ${
-                      project.client_name ? 'text-white' : 'text-bambu-gray'
-                    }`}
-                  >
-                    {project.client_name ?? t('aito.noClient')}
-                  </dd>
-                </div>
-                {project.client_phone && (
-                  <div className="flex items-baseline justify-between gap-2">
-                    <dt className="text-bambu-gray flex-shrink-0">{t('aito.phoneLabel')}:</dt>
-                    <dd className="min-w-0 text-right">
-                      <CopyableValue value={project.client_phone} label={t('aito.phoneLabel')} />
-                    </dd>
-                  </div>
-                )}
-                {project.client_email && (
-                  <div className="flex items-baseline justify-between gap-2">
-                    <dt className="text-bambu-gray flex-shrink-0">{t('aito.emailLabel')}:</dt>
-                    <dd className="min-w-0 text-right">
-                      <CopyableValue value={project.client_email} label={t('aito.emailLabel')} />
-                    </dd>
-                  </div>
-                )}
-
                 {/* Imported projects only. The quote is a snapshot, so this row
                     renders with Zoho unreachable; only the link needs Zoho. */}
                 {project.quote_number && (
-                  <div className="flex items-baseline justify-between gap-2 border-t border-bambu-dark-tertiary pt-2 mt-2">
+                  <div className="flex items-baseline justify-between gap-2">
                     <dt className="text-bambu-gray flex-shrink-0">{t('aito.quoteSearchLabel')}:</dt>
                     <dd className="text-white min-w-0 truncate text-right flex items-center justify-end gap-2">
                       {project.quote_url ? (
