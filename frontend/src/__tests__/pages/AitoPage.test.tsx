@@ -333,10 +333,11 @@ describe('AitoPage (backend board)', () => {
 
     const panel = await screen.findByRole('dialog');
     expect(within(panel).getByText('Support GoPro')).toBeInTheDocument();
-    expect(within(panel).getByText('Created:')).toBeInTheDocument();
-    expect(within(panel).getByText('Last activity:')).toBeInTheDocument();
-    expect(within(panel).getByText('Stage:')).toBeInTheDocument();
-    expect(within(panel).getByText('Quote')).toBeInTheDocument();
+    expect(within(panel).getByTestId('record-created')).toBeInTheDocument();
+    expect(within(panel).getByTestId('record-activity')).toBeInTheDocument();
+    // project.column is 'devis' — StageRail marks that stage's node current.
+    expect(within(panel).getByTestId('stage-node-devis')).toHaveAttribute('data-state', 'current');
+    expect(within(panel).getAllByText('Quote').length).toBeGreaterThan(0);
   });
 
   it('opens the panel from the keyboard via the card body', async () => {
@@ -454,7 +455,7 @@ describe('AitoPage (backend board)', () => {
     await user.click(within(panel).getByText('Support GoPro'));
     const textarea = findDescriptionTextarea(panel);
     expect(textarea).toHaveFocus();
-    const lastActivityBefore = within(panel).getByText('Last activity:').nextElementSibling?.textContent;
+    const lastActivityBefore = within(panel).getByTestId('record-activity').textContent;
 
     // React Query's tracked-properties + structural sharing means a refetch
     // that returns byte-identical data causes NO re-render at all -- the
@@ -471,7 +472,7 @@ describe('AitoPage (backend board)', () => {
     // Wait for the fresh data to actually land (proves AitoPage re-rendered)
     // before asserting focus was preserved.
     await waitFor(() =>
-      expect(within(panel).getByText('Last activity:').nextElementSibling?.textContent).not.toBe(lastActivityBefore),
+      expect(within(panel).getByTestId('record-activity').textContent).not.toBe(lastActivityBefore),
     );
 
     expect(textarea).toHaveFocus();

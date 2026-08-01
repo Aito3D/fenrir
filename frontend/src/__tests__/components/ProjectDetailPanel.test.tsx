@@ -10,8 +10,9 @@ import { ProjectDetailPanel } from '../../components/aito/ProjectDetailPanel';
 import { diffTaskDraft } from '../../hooks/useProjectTasks';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { api } from '../../api/client';
-import type { AitoProject, AitoTask } from '../../api/client';
+import type { AitoEvent, AitoProject, AitoTask } from '../../api/client';
 import { emptyTaskDraft, taskDraftToTaskCreate } from '../../utils/taskDraft';
+import { formatMoney } from '../../utils/pricing';
 
 const project: AitoProject = {
   id: 12,
@@ -179,6 +180,24 @@ const mockDanglingPrinterTask: AitoTask = {
   impression_printer_id: 999,
 };
 
+// A single event standing in for the project's timeline, used by the Record
+// card's "last activity" tests to prove it reads occurred_at + actor_name
+// from the newest EVENT rather than the project's own updated_at.
+const mockEvent: AitoEvent = {
+  id: 501,
+  occurred_at: '2026-07-29T10:15:00',
+  occurred_until: null,
+  kind: 'note',
+  actor_class: 'user',
+  actor_name: 'admin',
+  subject_type: null,
+  subject_id: null,
+  subject_label: null,
+  changes: null,
+  detail: null,
+  note: null,
+};
+
 beforeEach(() => {
   server.use(
     http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(mockFilaments)),
@@ -244,6 +263,53 @@ describe('ProjectDetailPanel client fields', () => {
     // node's presence.
     await waitFor(() => expect(screen.getByTestId('panel-value-ring')).toHaveAttribute('aria-valuenow', '3500'));
     expect(screen.getByTestId('panel-value-ring')).toHaveAttribute('aria-valuemax', '18000');
+  });
+
+  it('gives the ring the same formatted amount the visible caption shows', async () => {
+    // Regression: the ring's aria-label used to interpolate the raw number
+    // (`t('aito.amountDone', { amount: `${done}` })`) while the caption right
+    // beside it used formatMoney — "3500 done" next to "$3,500.00 done".
+    // Screen-reader and sighted users must be told the same figure.
+    server.use(
+      http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([{ ...mockTask, scan_cost: 3500, scan_done: true }])),
+    );
+    show();
+    await waitFor(() => expect(screen.getByTestId('panel-value-ring')).toHaveAttribute('aria-valuenow', '3500'));
+    const ring = screen.getByTestId('panel-value-ring');
+    expect(ring.getAttribute('aria-label')).toContain(formatMoney(3500, 'USD'));
+    // The old label had no currency symbol and no thousands separator — this
+    // fails against the raw-number regression directly, not just by omission.
+    expect(ring.getAttribute('aria-label')).not.toContain('3500 ');
+  });
+
+  it('sources both halves of the header caption from the same tally', async () => {
+    // project.steps_done/steps_total are server board fields and lag behind a
+    // local tick; stagesWithWork(tasks) is local and updates immediately.
+    // The fixture below leaves steps_done/steps_total at the default 0/0
+    // while giving stagesWithWork three real steps, one of them done — if the
+    // step count still came from the stale project fields, this would read
+    // "0/3 steps" (or "0/0") while the money reads one third done.
+    server.use(
+      http.get('/api/v1/aito/12/tasks', () =>
+        HttpResponse.json([
+          {
+            ...mockTask,
+            scan_cost: 3500,
+            scan_done: true,
+            modelisation_cost: 7000,
+            modelisation_done: false,
+            usinage_cost: 7500,
+            usinage_done: false,
+          },
+        ]),
+      ),
+    );
+    show({ steps_done: 0, steps_total: 0 });
+    await waitFor(() => expect(screen.getByTestId('panel-value-ring')).toHaveAttribute('aria-valuenow', '3500'));
+    // Scoped to the header's own caption — TaskEditor's row-level step count
+    // ("Bracket mount 1/3 steps") coincidentally reads the same digits, so an
+    // unscoped text query would pass whether or not the header itself agreed.
+    expect(screen.getByTestId('panel-header-caption')).toHaveTextContent(/1\/3 steps|1\/3 étapes/);
   });
 
   it('copies the phone and email rather than dialling them', async () => {
@@ -1170,20 +1236,57 @@ describe('ProjectDetailPanel quote row', () => {
   it('shows the seller and the creator', async () => {
     show({ quote_number: 'DEV26-2462', quote_salesperson: 'Marie VENDEUSE', created_by: 'paul' });
     expect(await screen.findByText('Marie VENDEUSE')).toBeInTheDocument();
-    expect(screen.getByText('paul')).toBeInTheDocument();
+    expect(screen.getByTestId('record-created')).toHaveTextContent('· paul');
   });
 
   it('omits the seller row entirely when the project has no seller', async () => {
-    // An empty "Seller:" is noise, not information — the same rule the phone
-    // and email rows follow. Created by is different: it renders an em dash,
-    // because "nobody is recorded" is itself worth stating for a card that
-    // predates the column or was made with auth off.
+    // An empty "Seller" is noise, not information — the same rule the phone
+    // and email rows follow. Created is different: it names the creator
+    // "unknown" rather than trailing off, because "nobody is recorded" is
+    // itself worth stating for a card that predates the column or was made
+    // with auth off.
     show({ quote_number: 'DEV26-2462', quote_salesperson: null, created_by: null });
-    // 'DEV26-2462' now also appears in the header eyebrow, so this waits on
-    // the quote row specifically rather than the ambiguous text.
-    await screen.findByText('Created by:');
-    expect(screen.queryByText('Seller:')).not.toBeInTheDocument();
-    expect(screen.getByText('Created by:')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('record-created')).toBeInTheDocument());
+    expect(screen.queryByText('Seller')).not.toBeInTheDocument();
+    expect(screen.getByTestId('record-created')).toHaveTextContent('· unknown');
+  });
+});
+
+describe('ProjectDetailPanel left column cards', () => {
+  it('groups the left column into four cards, description first', () => {
+    show();
+    const headings = screen.getAllByTestId('panel-card-heading').map((n) => n.textContent);
+    expect(headings).toEqual(['Product description', 'Stage & work left', 'Quote', 'Record']);
+  });
+
+  it('folds the creator into the created timestamp', async () => {
+    show({ created_by: 'admin' });
+    await waitFor(() => expect(screen.getByTestId('record-created')).toBeInTheDocument());
+    expect(screen.getByTestId('record-created')).toHaveTextContent('· admin');
+    expect(screen.queryByText(/^created by/i)).not.toBeInTheDocument();
+  });
+
+  it('says the creator is unknown rather than trailing off', async () => {
+    show({ created_by: null });
+    await waitFor(() => expect(screen.getByTestId('record-created')).toHaveTextContent(/· unknown/));
+  });
+
+  it('takes both halves of last activity from the newest event', async () => {
+    // occurred_at and the actor belong together; updated_at paired with the
+    // newest actor's name would describe two different moments.
+    server.use(
+      http.get('/api/v1/aito/12/events', () => HttpResponse.json({ events: [mockEvent], has_more: false })),
+    );
+    show();
+    await waitFor(() => expect(screen.getByTestId('record-activity')).toHaveTextContent('· admin'));
+  });
+
+  it('falls back to updated_at with no actor when the project has no events', async () => {
+    // A card created before the history feature landed.
+    server.use(http.get('/api/v1/aito/12/events', () => HttpResponse.json({ events: [], has_more: false })));
+    show();
+    await waitFor(() => expect(screen.getByTestId('record-activity')).toBeInTheDocument());
+    expect(screen.getByTestId('record-activity')).not.toHaveTextContent('·');
   });
 });
 
@@ -1412,18 +1515,12 @@ describe('ProjectDetailPanel delete', () => {
 });
 
 describe('ProjectDetailPanel column badge', () => {
-  it('still labels the column of a done project', () => {
-    // COLUMNS lost its `done` entry when Done came off the board. The panel
-    // must read ALL_COLUMNS, or every finished card loses its badge.
+  it('marks a done project current on the rail', () => {
+    // COLUMNS lost its `done` entry when Done came off the board; the rail
+    // must read ALL_COLUMNS (via StageRail), or every finished card would
+    // fail to find itself among the stages and render nothing as current.
     show({ column: 'done', move_lock: null });
-    // A bare `COLUMNS.find` miss falls back to rendering the raw
-    // `project.column` string ("done"), which coincidentally still matches
-    // this regex on its own — so the text assertion alone would not catch a
-    // regression back to `COLUMNS`. The dot indicator only renders when a
-    // column was actually found, which is what distinguishes a real
-    // `ALL_COLUMNS` hit from that fallback.
-    const stageValue = screen.getByText(/^(Done|Terminé)$/i);
-    expect(stageValue.querySelector('.bg-bambu-gray')).not.toBeNull();
+    expect(screen.getByTestId('stage-node-done')).toHaveAttribute('data-state', 'current');
   });
 });
 

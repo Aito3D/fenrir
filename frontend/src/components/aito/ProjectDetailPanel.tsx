@@ -1,25 +1,26 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, ExternalLink, Loader2, X } from 'lucide-react';
-import { ALL_COLUMNS } from './columns';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ActivityRail } from './history/ActivityRail';
 import { QuotePrintButton } from './QuotePrintButton';
 import { QuoteStatusActions } from './QuoteStatusActions';
 import { quoteStatusLabelKey } from './quoteStatus';
 import { stagesWithWork } from './services';
+import { StageRail } from './StageRail';
 import { TaskEditor } from './TaskEditor';
 import { AITO_CARD_VT_NAME } from '../../hooks/useCardMorph';
+import { useLatestProjectEvent } from '../../hooks/useLatestProjectEvent';
 import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { useProjectTasks } from '../../hooks/useProjectTasks';
-import { api, type AitoProject, type AitoProjectUpdate } from '../../api/client';
+import { api, type AitoEvent, type AitoProject, type AitoProjectUpdate } from '../../api/client';
 import { Money } from '../calculator/shared';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import { parseUTCDate } from '../../utils/date';
 import { formatMoney } from '../../utils/pricing';
 import { applyDescription, applySyncState } from '../../utils/aitoOptimistic';
-import { inputCls, labelCls } from '../formStyles';
+import { inputCls } from '../formStyles';
 import { useToast } from '../../contexts/ToastContext';
 
 /** Explicit map rather than a template literal key: the i18n gate scans for
@@ -114,7 +115,7 @@ function CopyableValue({ value, label }: { value: string; label: string }) {
  *  typical project are worth between 3 500 and 10 000 FCFP each, so "3/7" and
  *  "how much of this job is done" are different numbers; the line beneath the
  *  ring gives both so neither reading is lost. */
-function ValueRing({ done, total }: { done: number; total: number }) {
+function ValueRing({ done, total, currency }: { done: number; total: number; currency: string }) {
   const { t } = useTranslation();
   const size = 42;
   const radius = (size - 4) / 2;
@@ -128,7 +129,10 @@ function ValueRing({ done, total }: { done: number; total: number }) {
       aria-valuenow={done}
       aria-valuemin={0}
       aria-valuemax={total}
-      aria-label={t('aito.amountDone', { amount: `${done}` })}
+      // formatMoney, not the raw number: the visible caption right beside the
+      // ring uses formatMoney too, and a screen reader announcing "3500 done"
+      // next to a sighted "$3,500.00 done" would disagree about the figure.
+      aria-label={t('aito.amountDone', { amount: formatMoney(done, currency) })}
       width={size}
       height={size}
       viewBox={`0 0 ${size} ${size}`}
@@ -160,11 +164,20 @@ function PanelHeader({
   currency,
   valueDone,
   valueTotal,
+  stepsDone,
+  stepsTotal,
 }: {
   project: AitoProject;
   currency: string;
   valueDone: number;
   valueTotal: number;
+  /** Summed from `stagesWithWork(tasks)`, NOT `project.steps_done`/`steps_total`.
+   *  Those are server board fields that lag a local tick; stagesWithWork is
+   *  local and updates the instant a step is ticked. Money and step count used
+   *  to come from two different sources, so ticking a step made the caption
+   *  visibly disagree with itself until the next board refresh. */
+  stepsDone: number;
+  stepsTotal: number;
 }) {
   const { t } = useTranslation();
   return (
@@ -216,17 +229,80 @@ function PanelHeader({
       <div className="w-px self-stretch bg-bambu-dark-tertiary" />
 
       <div className="flex items-center gap-3 flex-shrink-0">
-        <ValueRing done={valueDone} total={valueTotal} />
+        <ValueRing done={valueDone} total={valueTotal} currency={currency} />
         <div className="text-right">
           <Money currency={currency} value={valueTotal} className="block text-2xl font-semibold text-white" />
-          <span className="block text-xs text-bambu-gray tabular-nums">
+          <span data-testid="panel-header-caption" className="block text-xs text-bambu-gray tabular-nums">
             {t('aito.amountDone', { amount: formatMoney(valueDone, currency) })}
             {' · '}
-            {t('aito.stepsCount', { done: project.steps_done, total: project.steps_total })}
+            {t('aito.stepsCount', { done: stepsDone, total: stepsTotal })}
           </span>
         </div>
       </div>
     </div>
+  );
+}
+
+/** One group of the left rail. `bg-bambu-dark-secondary` with a border and NO
+ *  shadow: only the task cards cast one, so the column the operator works in
+ *  stays the front plane. Spreading the shadow over every group is what makes
+ *  the task list stop being the focus. */
+function PanelCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3">
+      <p data-testid="panel-card-heading" className="text-xs uppercase tracking-wide text-bambu-gray mb-2">
+        {title}
+      </p>
+      {children}
+    </section>
+  );
+}
+
+/** Explicit map, same reason as SYNC_LABEL_KEY: a dynamic key is invisible to
+ *  the i18n gate's literal scan. */
+const ACTOR_FALLBACK_KEY: Record<string, string> = {
+  user: 'aito.actorUnknownUser',
+  client: 'aito.actorClient',
+  system: 'aito.actorAutomatic',
+};
+
+function RecordCard({ project, latestEvent }: { project: AitoProject; latestEvent: AitoEvent | undefined }) {
+  const { t, i18n } = useTranslation();
+  const created = parseUTCDate(project.created_at);
+  // Both halves from the same event. A mirrored Zoho comment carries Books'
+  // timestamp rather than ours — which is exactly why occurred_at is stored
+  // apart from created_at — so pairing updated_at with this actor's name would
+  // produce a line whose time and name describe different things.
+  const activityAt = latestEvent ? parseUTCDate(latestEvent.occurred_at) : parseUTCDate(project.updated_at);
+  const actor = latestEvent
+    ? (latestEvent.actor_name ?? t(ACTOR_FALLBACK_KEY[latestEvent.actor_class] ?? 'aito.actorUnknown'))
+    : null;
+
+  // Short, not the bare toLocaleString the old rows used: "{when} · {who}" has
+  // to fit one line of a 17rem rail. The exact timestamps stay in the timeline.
+  const short = (d: Date | null) =>
+    d ? d.toLocaleString(i18n.language, { dateStyle: 'short', timeStyle: 'short' }) : '—';
+
+  return (
+    <PanelCard title={t('aito.recordLabel')}>
+      <dl className="grid gap-0.5">
+        {project.quote_salesperson && (
+          <>
+            <dt className="text-xs text-bambu-gray opacity-80">{t('aito.sellerLabel')}</dt>
+            <dd className="text-sm text-bambu-gray-light mb-2">{project.quote_salesperson}</dd>
+          </>
+        )}
+        <dt className="text-xs text-bambu-gray opacity-80">{t('aito.createdLabel')}</dt>
+        <dd data-testid="record-created" className="text-sm text-bambu-gray-light mb-2">
+          {short(created)} · {project.created_by ?? t('aito.actorUnknown')}
+        </dd>
+        <dt className="text-xs text-bambu-gray opacity-80">{t('aito.lastActivity')}</dt>
+        <dd data-testid="record-activity" className="text-sm text-bambu-gray-light">
+          {short(activityAt)}
+          {actor && ` · ${actor}`}
+        </dd>
+      </dl>
+    </PanelCard>
   );
 }
 
@@ -248,11 +324,8 @@ function SaveIndicator({ state }: { state: SaveState }) {
  *  and the stage. Shares AITO_CARD_VT_NAME with the card it grew out of, so the
  *  browser morphs one into the other (see useCardMorph). */
 export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetailPanelProps) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const closeRef = useRef<HTMLButtonElement>(null);
-  const column = ALL_COLUMNS.find((c) => c.id === project.column);
-  const created = parseUTCDate(project.created_at);
-  const updated = parseUTCDate(project.updated_at);
 
   // A status rendered through the shared quote-status labels, so the two sides
   // of a block message are localised too rather than raw Zoho English. An
@@ -291,6 +364,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   });
 
   const { tasks, onTasksChange, onRemoveTask, onRowBlur, pendingTaskUids } = useProjectTasks(project.id);
+  const { data: latestEvent } = useLatestProjectEvent(project.id);
 
   // Value-weighted, not step-weighted — see ValueRing's doc. Rides the same
   // ['settings'] cache TaskEditor's own currency lookup uses (staleTime
@@ -298,6 +372,10 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   const stageWork = stagesWithWork(tasks);
   const valueTotal = stageWork.reduce((sum, s) => sum + s.value, 0);
   const valueDone = stageWork.reduce((sum, s) => sum + s.valueDone, 0);
+  // Same source as the money above, not project.steps_done/steps_total — see
+  // PanelHeader's doc on why those two used to visibly disagree.
+  const stepsDone = stageWork.reduce((sum, s) => sum + s.stepsDone, 0);
+  const stepsTotal = stageWork.reduce((sum, s) => sum + s.stepsTotal, 0);
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings, staleTime: 60_000 });
   const currency = settings?.currency || 'USD';
 
@@ -394,7 +472,14 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
           </button>
         </div>
 
-        <PanelHeader project={project} currency={currency} valueDone={valueDone} valueTotal={valueTotal} />
+        <PanelHeader
+          project={project}
+          currency={currency}
+          valueDone={valueDone}
+          valueTotal={valueTotal}
+          stepsDone={stepsDone}
+          stepsTotal={stepsTotal}
+        />
 
         <div className="p-4 overflow-y-auto scrollbar-hide flex-1 min-h-0 lg:flex lg:flex-col lg:overflow-hidden">
           {/* Three columns, three scrollers — but only from `lg` up, where the
@@ -425,12 +510,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               board row carries it. */}
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)_minmax(0,26rem)] gap-4 lg:gap-6 lg:flex-1 lg:min-h-0">
             <div className="space-y-4 min-w-0 lg:min-h-0 lg:overflow-y-auto scrollbar-hide">
-              <div>
-                {/* The same name the create modal gives this field, so the
-                    create surface and the edit surface agree on what it is.
-                    Not a <dt>: the description sits above the <dl>, and the
-                    <p>/<textarea> swap below is not a <dd>. */}
-                <p className={labelCls}>{t('aito.productDescription')}</p>
+              <PanelCard title={t('aito.productDescription')}>
                 <div className="flex items-start justify-between gap-2">
                   {editingDesc ? (
                     <textarea
@@ -470,55 +550,46 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                   )}
                   <SaveIndicator state={descState} />
                 </div>
-              </div>
+              </PanelCard>
 
-              {/* One description list for the whole record. <dt>/<dd> gives
-                  assistive technology the label-to-value association for free; the
-                  colon is markup, so no locale string carries punctuation. The
-                  client's own name/phone/email left this list for the header
-                  above — a name is the panel's title now, not a labelled row
-                  buried under the description — so what remains is purely
-                  project metadata: the quote, the seller, sync state and the
-                  timestamps. Rows with no value are omitted entirely — an
-                  empty "Seller:" is noise, not information. Rows are
-                  `justify-between` with right-aligned <dd>s, turning the
-                  block into a spec sheet: labels flush left, values flush
-                  right. */}
-              <dl className="border-t border-bambu-dark-tertiary pt-4 space-y-2 text-sm">
+              <PanelCard title={t('aito.stageAndWorkLeft')}>
+                <StageRail tasks={tasks} column={project.column} moveLock={project.move_lock} currency={currency} />
+              </PanelCard>
+
+              <PanelCard title={t('aito.quoteSearchLabel')}>
                 {/* Imported projects only. The quote is a snapshot, so this row
                     renders with Zoho unreachable; only the link needs Zoho. */}
                 {project.quote_number && (
-                  <div className="flex items-baseline justify-between gap-2">
-                    <dt className="text-bambu-gray flex-shrink-0">{t('aito.quoteSearchLabel')}:</dt>
-                    <dd className="text-white min-w-0 truncate text-right flex items-center justify-end gap-2">
-                      {project.quote_url ? (
-                        <a
-                          href={project.quote_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title={t('aito.quoteOpenInZoho')}
-                          className="text-white hover:text-bambu-green inline-flex items-center gap-1 min-w-0 truncate"
-                        >
-                          {project.quote_number}
-                          <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
-                        </a>
-                      ) : (
-                        <span className="min-w-0 truncate">{project.quote_number}</span>
-                      )}
-                      {/* Replaces the quote's date and total, which said less
-                          than the one thing an operator actually does with a
-                          quote at this point in the job. */}
-                      <QuotePrintButton project={project} />
-                    </dd>
+                  <div className="flex items-center gap-2 text-sm">
+                    {project.quote_url ? (
+                      <a
+                        href={project.quote_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={t('aito.quoteOpenInZoho')}
+                        className="text-white hover:text-bambu-green inline-flex items-center gap-1 min-w-0 truncate"
+                      >
+                        {project.quote_number}
+                        <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
+                      </a>
+                    ) : (
+                      <span className="min-w-0 truncate text-white">{project.quote_number}</span>
+                    )}
+                    {/* Replaces the quote's date and total, which said less
+                        than the one thing an operator actually does with a
+                        quote at this point in the job. */}
+                    <QuotePrintButton project={project} />
                   </div>
                 )}
-                {project.quote_salesperson && (
-                  <div className="flex items-baseline justify-between gap-2">
-                    <dt className="text-bambu-gray flex-shrink-0">{t('aito.sellerLabel')}:</dt>
-                    <dd className="text-white min-w-0 truncate text-right">{project.quote_salesperson}</dd>
-                  </div>
-                )}
+              </PanelCard>
 
+              {/* Full-width, between the Quote and Record cards — not a card of
+                  its own. <dt>/<dd> gives assistive technology the
+                  label-to-value association for free; the colon is markup, so
+                  no locale string carries punctuation. Rendered only when
+                  there is something to say: a row reading "up to date" on
+                  every idle card would be noise, not information. */}
+              <dl className="space-y-2 text-sm">
                 {/* Only when there is something to say. An idle project is the
                     normal case and a row reading "up to date" on every card
                     would be noise. */}
@@ -578,36 +649,9 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                     </dd>
                   </div>
                 )}
-
-                <div className="flex items-baseline justify-between gap-2 border-t border-bambu-dark-tertiary pt-2 mt-2">
-                  <dt className="text-bambu-gray flex-shrink-0">{t('aito.createdLabel')}:</dt>
-                  <dd className="text-white min-w-0 text-right">
-                    {created ? created.toLocaleString(i18n.language) : '—'}
-                  </dd>
-                </div>
-                <div className="flex items-baseline justify-between gap-2">
-                  <dt className="text-bambu-gray flex-shrink-0">{t('aito.createdByLabel')}:</dt>
-                  {/* An em dash rather than an omitted row: a card created
-                      with auth disabled, by an API key, or before this column
-                      existed has no creator, and saying so is information. */}
-                  <dd className="text-white min-w-0 truncate text-right">{project.created_by ?? '—'}</dd>
-                </div>
-                <div className="flex items-baseline justify-between gap-2">
-                  <dt className="text-bambu-gray flex-shrink-0">{t('aito.lastActivity')}:</dt>
-                  <dd className="text-white min-w-0 text-right">
-                    {updated ? updated.toLocaleString(i18n.language) : '—'}
-                  </dd>
-                </div>
-                <div className="flex items-baseline justify-between gap-2">
-                  <dt className="text-bambu-gray flex-shrink-0">{t('aito.stage')}:</dt>
-                  {/* The dot lives inside the <dd> so it travels right with its
-                      label text instead of stranding mid-row. */}
-                  <dd className="text-white flex items-center justify-end gap-2 text-right">
-                    {column && <span className={`w-2 h-2 rounded-full ${column.dot}`} />}
-                    {column ? t(column.labelKey) : project.column}
-                  </dd>
-                </div>
               </dl>
+
+              <RecordCard project={project} latestEvent={latestEvent} />
 
               <QuoteStatusActions project={project} />
             </div>
