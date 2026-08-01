@@ -277,7 +277,7 @@ describe('applyTaskSummary', () => {
         },
       ]),
     );
-    expect(find(after, 1).task_steps).toEqual([{ services: ['scan', 'impression'], done: ['scan'] }]);
+    expect(find(after, 1).task_steps).toEqual([{ services: ['scan', 'impression'], done: ['scan'], title: '' }]);
   });
 });
 

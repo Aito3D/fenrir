@@ -76,6 +76,9 @@ export interface TaskLike {
   impressionCost: number | null;
   usinageCost: number | null;
   done: Record<ServiceId, boolean>;
+  /** Optional so every existing cost/done literal still compiles; absent
+   *  reads as '' — the mirror's fallback name, same as a task with none. */
+  title?: string;
 }
 
 const COST_KEYS: Record<ServiceId, keyof TaskLike> = {
@@ -135,6 +138,7 @@ export function evaluate(
 export interface TaskSteps {
   services: ServiceId[];
   done: ServiceId[];
+  title: string;
 }
 
 export interface TaskSummary {
@@ -182,7 +186,7 @@ export function summariseTasks(tasks: readonly TaskLike[]): TaskSummary {
         unticked.add(service);
       }
     }
-    stepsByTask.push({ services: taskServices, done: taskDone });
+    stepsByTask.push({ services: taskServices, done: taskDone, title: task.title ?? '' });
   }
 
   return {

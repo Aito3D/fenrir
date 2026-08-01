@@ -587,6 +587,10 @@ export function AitoPage() {
                     impression: task.impression_done ?? false,
                     usinage: task.usinage_done ?? false,
                   },
+                  // `AitoTaskCreate.title` is nullable (a quote line can be
+                  // untitled); `TaskLike.title` is optional-string, not
+                  // nullable, so null collapses to undefined here.
+                  title: task.title ?? undefined,
                 })),
               }),
             });

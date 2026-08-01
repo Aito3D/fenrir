@@ -3458,6 +3458,11 @@ export type AitoColumnId = 'devis' | 'waiting' | 'scan' | 'model' | 'print' | 'f
 export interface AitoTaskSteps {
   services: string[];
   done: string[];
+  /** The task's name, '' when it has none — the card renders '' through the
+   *  aito.taskFallbackName rule. Optional at the type level: a server older
+   *  than this bundle omits it, and the card must degrade to the fallback
+   *  name rather than throw (same posture as `task_steps ?? []`). */
+  title?: string;
 }
 
 export interface AitoProject {

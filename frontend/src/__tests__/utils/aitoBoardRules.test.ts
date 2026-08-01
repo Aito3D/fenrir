@@ -14,20 +14,20 @@ interface EvaluateCase {
 
 interface SummariseCase {
   name: string;
-  tasks: Record<string, number | boolean | null>[];
+  tasks: Record<string, number | boolean | string | null>[];
   count: number;
   total: number;
   services: string[];
   pending: string[];
   steps_total: number;
   steps_done: number;
-  steps_by_task: { services: string[]; done: string[] }[];
+  steps_by_task: { services: string[]; done: string[]; title: string }[];
 }
 
 const SERVICE_IDS: ServiceId[] = ['scan', 'modelisation', 'impression', 'usinage'];
 
 /** The fixture's wire shape -> the client shape the mirror consumes. */
-function toTaskLike(row: Record<string, number | boolean | null>): TaskLike {
+function toTaskLike(row: Record<string, number | boolean | string | null>): TaskLike {
   return {
     scanCost: row.scan_cost as number | null,
     modelisationCost: row.modelisation_cost as number | null,
@@ -39,6 +39,7 @@ function toTaskLike(row: Record<string, number | boolean | null>): TaskLike {
       impression: row.impression_done === true,
       usinage: row.usinage_done === true,
     },
+    title: row.title as string,
   };
 }
 
