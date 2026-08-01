@@ -1509,6 +1509,32 @@ async def test_board_ships_a_step_row_per_task(async_client, db_session):
     board = (await async_client.get("/api/v1/aito/")).json()
     card = next(p for p in board if p["description"] == "steps per task")
     assert card["task_steps"] == [
-        {"services": ["scan", "impression"], "done": ["scan"]},
-        {"services": ["usinage"], "done": []},
+        {"services": ["scan", "impression"], "done": ["scan"], "title": "t1"},
+        {"services": ["usinage"], "done": [], "title": "t2"},
     ]
+
+
+@pytest.mark.asyncio
+async def test_task_steps_carry_titles(async_client):
+    """A task's own name rides along on its step row, so a per-task card row
+    can say WHICH task is stuck rather than showing an anonymous pill grid.
+    An untitled task still needs a row — it normalises to "" and the frontend
+    supplies the fallback name, it does not vanish from the list."""
+    await async_client.post(
+        "/api/v1/aito/",
+        json={
+            "description": "titled steps",
+            "client_id": "T1",
+            "client_name": "Titles",
+            "tasks": [
+                {"title": "Support principal", "scan_cost": 10},
+                {"scan_cost": 20},
+            ],
+        },
+    )
+
+    body = (await async_client.get("/api/v1/aito/")).json()
+    card = next(p for p in body if p["description"] == "titled steps")
+    steps = card["task_steps"]
+    assert steps[0]["title"] == "Support principal"
+    assert steps[1]["title"] == ""

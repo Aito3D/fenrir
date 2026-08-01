@@ -104,7 +104,7 @@ def _to_response(p: AitoProject, summary: TaskSummary) -> AitoProjectResponse:
         steps_total=summary.steps_total,
         steps_done=summary.steps_done,
         task_steps=[
-            AitoTaskStepsResponse(services=list(steps.services), done=list(steps.done))
+            AitoTaskStepsResponse(services=list(steps.services), done=list(steps.done), title=steps.title)
             for steps in summary.steps_by_task
         ],
         move_lock=lock,

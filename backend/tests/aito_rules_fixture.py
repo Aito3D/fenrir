@@ -41,6 +41,7 @@ class _Task:
         for service in SERVICES:
             setattr(self, f"{service}_cost", kwargs.get(f"{service}_cost"))
             setattr(self, f"{service}_done", kwargs.get(f"{service}_done", False))
+        self.title = kwargs.get("title", "")
 
 
 def _powerset(items: tuple[str, ...]) -> list[list[str]]:
@@ -83,6 +84,7 @@ _SUMMARISE_SHAPES: tuple[tuple[str, list[dict[str, Any]]], ...] = (
         "every service priced on one task, half ticked",
         [
             {
+                "title": "Support principal",
                 "scan_cost": 10.0,
                 "scan_done": True,
                 "modelisation_cost": 20.0,
@@ -94,7 +96,10 @@ _SUMMARISE_SHAPES: tuple[tuple[str, list[dict[str, Any]]], ...] = (
     ),
     (
         "the same service on two tasks counts twice",
-        [{"scan_cost": 1.0, "scan_done": True}, {"scan_cost": 2.0}],
+        [
+            {"title": "Pièce A", "scan_cost": 1.0, "scan_done": True},
+            {"scan_cost": 2.0},
+        ],
     ),
     (
         "floats are summed, never rounded",
@@ -151,7 +156,8 @@ def _summarise_cases() -> list[dict[str, Any]]:
                 "steps_total": summary.steps_total,
                 "steps_done": summary.steps_done,
                 "steps_by_task": [
-                    {"services": list(steps.services), "done": list(steps.done)} for steps in summary.steps_by_task
+                    {"services": list(steps.services), "done": list(steps.done), "title": steps.title}
+                    for steps in summary.steps_by_task
                 ],
             }
         )

@@ -56,6 +56,10 @@ class TaskSteps:
 
     services: tuple[str, ...] = ()
     done: tuple[str, ...] = ()
+    # The task's own name, "" when it has none — the card shows a per-task row
+    # now, and an anonymous row cannot say WHICH task is stuck. The frontend
+    # renders "" through its existing fallback name ("Task N").
+    title: str = ""
 
 
 @dataclass(frozen=True)
@@ -125,7 +129,13 @@ def summarise(tasks: Iterable[Any]) -> TaskSummary:
                 task_done.append(service)
             else:
                 unticked.add(service)
-        by_task.append(TaskSteps(services=tuple(task_services), done=tuple(task_done)))
+        by_task.append(
+            TaskSteps(
+                services=tuple(task_services),
+                done=tuple(task_done),
+                title=(getattr(task, "title", "") or ""),
+            )
+        )
     return TaskSummary(
         count=len(rows),
         total=total,

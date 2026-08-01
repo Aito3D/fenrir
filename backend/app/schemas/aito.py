@@ -113,15 +113,18 @@ class AitoProjectUpdate(BaseModel):
 
 
 class AitoTaskStepsResponse(BaseModel):
-    """One task's steps, for the board card's pill grid.
+    """One task's steps, for the board card's per-task rows.
 
     Mirrors TaskSteps in services/aito_board_rules.py. Both lists are in
     canonical SERVICES order; `done` is a subset of `services`, and a service
     priced None appears in neither — it is absent from the job, not pending.
+    `title` is the task's own name, "" when it has none — the frontend
+    supplies the fallback name ("Task N") for that case.
     """
 
     services: list[str]
     done: list[str]
+    title: str = ""
 
 
 class AitoProjectResponse(BaseModel):

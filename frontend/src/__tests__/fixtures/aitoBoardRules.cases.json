@@ -8925,7 +8925,8 @@
       "steps_by_task": [
         {
           "done": [],
-          "services": []
+          "services": [],
+          "title": ""
         }
       ],
       "steps_done": 0,
@@ -8958,7 +8959,8 @@
           "done": [],
           "services": [
             "scan"
-          ]
+          ],
+          "title": ""
         }
       ],
       "steps_done": 0,
@@ -8991,7 +8993,8 @@
           "done": [],
           "services": [
             "impression"
-          ]
+          ],
+          "title": ""
         }
       ],
       "steps_done": 0,
@@ -9034,7 +9037,8 @@
             "modelisation",
             "impression",
             "usinage"
-          ]
+          ],
+          "title": "Support principal"
         }
       ],
       "steps_done": 2,
@@ -9069,13 +9073,15 @@
           ],
           "services": [
             "scan"
-          ]
+          ],
+          "title": "Pi\u00e8ce A"
         },
         {
           "done": [],
           "services": [
             "scan"
-          ]
+          ],
+          "title": ""
         }
       ],
       "steps_done": 1,
@@ -9121,7 +9127,8 @@
           "services": [
             "scan",
             "modelisation"
-          ]
+          ],
+          "title": ""
         }
       ],
       "steps_done": 0,
@@ -9157,7 +9164,8 @@
           "services": [
             "scan",
             "impression"
-          ]
+          ],
+          "title": ""
         }
       ],
       "steps_done": 2,
@@ -9201,7 +9209,8 @@
             "scan",
             "modelisation",
             "impression"
-          ]
+          ],
+          "title": ""
         },
         {
           "done": [
@@ -9211,7 +9220,8 @@
             "scan",
             "impression",
             "usinage"
-          ]
+          ],
+          "title": ""
         },
         {
           "done": [],
@@ -9220,7 +9230,8 @@
             "modelisation",
             "impression",
             "usinage"
-          ]
+          ],
+          "title": ""
         }
       ],
       "steps_done": 3,

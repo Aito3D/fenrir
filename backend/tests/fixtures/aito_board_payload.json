@@ -37,7 +37,8 @@
         "done": [],
         "services": [
           "scan"
-        ]
+        ],
+        "title": "free scan"
       }
     ],
     "tasks_total": 0.0
@@ -112,7 +113,8 @@
         ],
         "services": [
           "modelisation"
-        ]
+        ],
+        "title": "c"
       }
     ],
     "tasks_total": 3000.0
@@ -161,13 +163,15 @@
         "services": [
           "scan",
           "impression"
-        ]
+        ],
+        "title": "a"
       },
       {
         "done": [],
         "services": [
           "usinage"
-        ]
+        ],
+        "title": "b"
       }
     ],
     "tasks_total": 8400.0
@@ -210,7 +214,8 @@
         "done": [],
         "services": [
           "scan"
-        ]
+        ],
+        "title": "d"
       }
     ],
     "tasks_total": 0.0
