@@ -105,6 +105,7 @@ function SortableCard({
                 disabled={markSent.isPending}
                 label={t('aito.markSent')}
                 hint={t('aito.holdToConfirm')}
+                progress="perimeter"
                 className="p-1 -m-1 text-amber-400/70 hover:text-amber-400 hover:bg-amber-400/10 focus-visible:ring-amber-400/40 data-[holding=true]:text-amber-400"
               >
                 <Send className="relative w-3.5 h-3.5" />
@@ -121,6 +122,7 @@ function SortableCard({
                 disabled={markDone.isPending}
                 label={t('aito.markProjectDone')}
                 hint={t('aito.holdToConfirm')}
+                progress="perimeter"
                 className="p-1 -m-1 text-bambu-green/70 hover:text-bambu-green hover:bg-bambu-green/10 focus-visible:ring-bambu-green/40 data-[holding=true]:text-bambu-green"
               >
                 <Check className="relative w-3.5 h-3.5" />

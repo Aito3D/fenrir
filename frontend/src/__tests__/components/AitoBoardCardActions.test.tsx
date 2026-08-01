@@ -77,6 +77,27 @@ describe('board card actions — mark as sent', () => {
     expect(screen.getByRole('button', { name: /mark as sent/i })).toBeEnabled();
   });
 
+  it('traces hold progress around the button outline, not as a ring inside it', () => {
+    // These are icon-sized buttons where a bar sweeping under a single glyph
+    // would read as a highlight. `pathLength=1` normalises the perimeter so
+    // one dasharray works at any rendered size, and rx follows the button's
+    // own rounded-md so the trace turns the corners instead of cutting them.
+    renderColumn(card({ column: 'devis' }));
+    const button = screen.getByRole('button', { name: /mark as sent/i });
+    const trace = button.querySelector('[data-testid="hold-progress-perimeter"] rect');
+
+    expect(trace).not.toBeNull();
+    expect(trace).toHaveAttribute('pathLength', '1');
+    expect(trace).toHaveAttribute('rx', '5.4');
+    // Empty until held: a full outline at rest would read as a focus state.
+    expect(trace).toHaveAttribute('stroke-dashoffset', '1');
+    // And invisible until held. A fully-offset dash still paints a sub-pixel
+    // stub at the path start, which showed as a dot on the button's top edge
+    // before it was ever pressed.
+    expect(trace).toHaveAttribute('stroke-opacity', '0');
+    expect(button.querySelector('circle')).toBeNull();
+  });
+
   it('does not offer mark-as-sent outside the Quote column', () => {
     for (const column of ['waiting', 'scan', 'model', 'print', 'finish'] as const) {
       const { unmount } = renderColumn(card({ column, move_lock: 'steps' }));

@@ -25,6 +25,10 @@ const BAR_DURATION_CLS: Record<HoldDurationMs, string> = {
   500: 'transition-transform duration-[500ms] ease-linear motion-reduce:duration-200',
   1000: 'transition-transform duration-[1000ms] ease-linear motion-reduce:duration-200',
 };
+// The perimeter variant animates the same stroke-dashoffset the ring does, so
+// it shares the ring's transition property — kept as its own map anyway, since
+// the two are free to diverge and a shared constant would hide that.
+const PERIMETER_DURATION_CLS = RING_DURATION_CLS;
 
 /** How the hold's progress is drawn.
  *
@@ -32,8 +36,13 @@ const BAR_DURATION_CLS: Record<HoldDurationMs, string> = {
  *  IS its icon. `bar` fills the button left to right like a loading bar, for
  *  wide labelled pills: the ring's `viewBox="0 0 24 24"` scales to fit the
  *  shorter axis, so on a 130×28 pill it lands as a small circle floating over
- *  the middle of the label rather than as progress. */
-export type HoldProgress = 'ring' | 'bar';
+ *  the middle of the label rather than as progress.
+ *
+ *  `perimeter` traces the button's own outline, corners included, so the
+ *  border itself becomes the progress track. Right where the button is small
+ *  but not round — the board card's icon actions — and where a bar sweeping
+ *  under a single glyph would read as a highlight rather than as progress. */
+export type HoldProgress = 'ring' | 'bar' | 'perimeter';
 // A press released before this threshold counts as a "tap" and surfaces the
 // hold hint; anything longer (but still short of completing) is treated as
 // an intentional-but-abandoned hold and cancels silently.
@@ -190,6 +199,44 @@ export function HoldButton({
               holding ? `scale-x-100 ${BAR_DURATION_CLS[durationMs]}` : 'scale-x-0 transition-none'
             }`}
           />
+        ) : progress === 'perimeter' ? (
+          // The outline itself as the track. `pathLength={1}` normalises the
+          // perimeter to 1 regardless of the button's rendered size, so one
+          // dasharray/dashoffset pair works at any width without measuring —
+          // which matters because these buttons size to their icon and their
+          // padding, not to anything this component knows.
+          //
+          // `overflow-visible`: the stroke is centred on the rect's edge, so
+          // half of it falls outside the 100%x100% box and would be clipped.
+          // rx matches the button's own `rounded-md` (.375rem = 5.4px) so the
+          // trace follows the corners rather than cutting across them.
+          <svg
+            className="pointer-events-none absolute inset-0 w-full h-full overflow-visible"
+            fill="none"
+            aria-hidden="true"
+            data-testid="hold-progress-perimeter"
+          >
+            <rect
+              x="0"
+              y="0"
+              width="100%"
+              height="100%"
+              rx="5.4"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              pathLength={1}
+              strokeDasharray={1}
+              strokeDashoffset={holding ? 0 : 1}
+              // Hidden outright at rest rather than relying on the dash
+              // pattern to draw nothing. A fully-offset dash still renders a
+              // sub-pixel stub where the path starts, which showed as a dot on
+              // the button's top edge before it was ever pressed. The switch
+              // is instant and the trace begins at zero length, so there is
+              // nothing to flash on press.
+              strokeOpacity={holding ? 1 : 0}
+              className={holding ? PERIMETER_DURATION_CLS[durationMs] : 'transition-none'}
+            />
+          </svg>
         ) : (
           <svg className="absolute inset-0 -rotate-90 w-full h-full" viewBox="0 0 24 24" aria-hidden="true">
             <circle

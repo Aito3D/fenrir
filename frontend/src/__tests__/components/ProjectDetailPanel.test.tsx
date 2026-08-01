@@ -1757,7 +1757,11 @@ describe('ProjectDetailPanel surfaces', () => {
     // strip level with it. Both halves shipped missing, which is why the
     // header read as flat however the type was tuned. `--bg-tertiary` rather
     // than a white percentage, so the lift survives light mode.
-    const header = screen.getByRole('heading', { level: 2 }).closest('div.border-b') as HTMLElement;
+    // Selected by the z-index that gives the band its stacking context, not
+    // by `border-b` — the bottom border is gone, the cast shadow separates it
+    // from the body now, and keying on a border made this fail for a reason
+    // unrelated to what it asserts.
+    const header = screen.getByRole('heading', { level: 2 }).closest('div.z-\\[2\\]') as HTMLElement;
     expect(header.style.backgroundImage).toContain('var(--bg-tertiary)');
     expect(header.style.boxShadow).toBe('0 12px 26px -14px rgba(0, 0, 0, 0.8)');
     // Needs its own stacking context or the body paints over the shadow.

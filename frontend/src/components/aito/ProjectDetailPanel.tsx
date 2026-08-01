@@ -227,7 +227,7 @@ function PanelHeader({
       // `relative z-[2]` so the cast shadow below paints ONTO the body rather
       // than under it — without a stacking context the body's own background
       // covers it and the lift disappears.
-      className="flex-shrink-0 relative z-[2] px-5 py-3 flex items-center gap-5 border-b"
+      className="flex-shrink-0 relative z-[2] px-5 py-3 flex items-center gap-5"
       style={{
         // The band is a RAISED masthead, not a tinted strip. Two things carry
         // that and both were missing: the base is a step above the surface
@@ -250,7 +250,9 @@ function PanelHeader({
           'linear-gradient(135deg,' +
           ' color-mix(in srgb, var(--accent) 12%, color-mix(in srgb, var(--bg-tertiary) 45%, var(--bg-secondary))),' +
           ' color-mix(in srgb, var(--bg-tertiary) 45%, var(--bg-secondary)))',
-        borderBottomColor: 'color-mix(in srgb, var(--accent) 40%, var(--border-color))',
+        // No bottom border — the cast shadow below is what separates the band
+        // from the body now, and a tinted hairline on top of it read as two
+        // separators doing one job.
         boxShadow: '0 12px 26px -14px rgba(0, 0, 0, 0.8)',
       }}
     >
@@ -314,13 +316,13 @@ function PanelHeader({
               default the icon reads as a lighter, unrelated mark. */}
           {project.client_is_company ? (
             <Building2
-              className="w-[1.1rem] h-[1.1rem] flex-shrink-0 text-bambu-gray"
+              className="w-[1.1rem] h-[1.1rem] flex-shrink-0 text-white"
               strokeWidth={2.5}
               aria-hidden="true"
             />
           ) : (
             <User
-              className="w-[1.1rem] h-[1.1rem] flex-shrink-0 text-bambu-gray"
+              className="w-[1.1rem] h-[1.1rem] flex-shrink-0 text-white"
               strokeWidth={2.5}
               aria-hidden="true"
             />
