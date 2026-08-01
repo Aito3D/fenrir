@@ -44,6 +44,8 @@ const LIFT_SCALE = 1.02;
 const ARCHIVE_SELECTOR = '[data-flight-target]';
 const ARCHIVE_END_SCALE = 0.28;
 const PULSE_MS = 180;
+/** Breathing room between a landed card and the edge it was panned past. */
+const PAN_MARGIN_PX = 16;
 
 /** A flight is timed by how far it travels. A constant is wrong at both ends:
  *  280ms is leisurely for a one-column hop and a blur across the whole board. */
@@ -83,6 +85,20 @@ function onScreen(board: HTMLElement, rect: Rect): boolean {
     rect.top < view.bottom &&
     rect.top + rect.height > view.top
   );
+}
+
+/** How far the board must scroll for `rect` to sit inside its viewport,
+ *  clamped to the scroller's real range. Positive scrolls right. Arithmetic
+ *  only — nothing scrolls here, so the landing rect can be expressed in
+ *  post-pan coordinates before a single pixel moves. */
+function panFor(board: HTMLElement, rect: Rect): number {
+  const view = board.getBoundingClientRect();
+  let delta = 0;
+  if (rect.left < view.left) delta = rect.left - view.left - PAN_MARGIN_PX;
+  else if (rect.left + rect.width > view.right) delta = rect.left + rect.width - view.right + PAN_MARGIN_PX;
+  if (delta === 0) return 0;
+  const room = board.scrollWidth - board.clientWidth;
+  return Math.max(-board.scrollLeft, Math.min(room - board.scrollLeft, delta));
 }
 
 /** One fixed, inert layer for every ghost. Created on the first flight because
@@ -138,6 +154,7 @@ interface LaunchSpec {
   key: string;
   flights: Map<string, Flight>;
   layer: HTMLElement;
+  board: HTMLElement;
   source: HTMLElement;
   from: Rect;
   to: Rect;
@@ -145,12 +162,15 @@ interface LaunchSpec {
   reveal: () => void;
   /** Shrink and fade into the target instead of landing at full size. */
   archive: boolean;
+  /** How far the board must pan to reveal the landing column; 0 for targets
+   *  — like the archive toggle — that never move with the board. */
+  panBy: number;
   /** Fires when the ghost lands. */
   onLand?: () => void;
 }
 
 function launch(spec: LaunchSpec): void {
-  const { key, flights, layer, source, to, reveal, archive, onLand } = spec;
+  const { key, flights, layer, board, source, to, reveal, archive, panBy, onLand } = spec;
 
   // Retarget: a card relocated twice in quick succession continues from where
   // its ghost visually IS, not from a layout position it no longer occupies.
@@ -212,6 +232,30 @@ function launch(spec: LaunchSpec): void {
     onLand?.();
     stop();
   }, stop);
+
+  if (panBy !== 0) pan(board, panBy, travel, ghost);
+}
+
+/** Ride the flight's own clock rather than starting a second one.
+ *  `getComputedTiming().progress` reports progress with the effect's easing
+ *  already applied, so the board and the card cannot drift apart or settle on
+ *  different frames — which is what a separately-timed smooth scroll does, and
+ *  it lands the card somewhere the slot no longer is.
+ *
+ *  The first step runs synchronously so the pan is never a frame behind the
+ *  ghost it is following. */
+function pan(board: HTMLElement, panBy: number, travel: Animation, ghost: HTMLElement): void {
+  const start = board.scrollLeft;
+  const step = () => {
+    const progress = travel.effect?.getComputedTiming().progress;
+    if (!ghost.isConnected || typeof progress !== 'number' || travel.playState !== 'running') {
+      board.scrollLeft = start + panBy;
+      return;
+    }
+    board.scrollLeft = start + panBy * progress;
+    requestAnimationFrame(step);
+  };
+  step();
 }
 
 /** The archive's acknowledgement that it caught something. Its count has
@@ -282,16 +326,22 @@ export function useCardFlight(
         if (prev.parent === snapshot.parent) continue;
         if (!onScreen(board, prev.rect)) continue;
 
+        const panBy = panFor(board, snapshot.rect);
         const target = snapshot.el;
         target.style.opacity = '0';
         launch({
           key,
           flights,
           layer: ensureLayer(layerRef),
+          board,
           source: prev.el,
           from: prev.rect,
-          to: snapshot.rect,
+          // Post-pan coordinates: scrolling right by D moves the content left
+          // by D, so the slot the card is flying to will be D further left by
+          // the time it gets there.
+          to: { ...snapshot.rect, left: snapshot.rect.left - panBy },
           archive: false,
+          panBy,
           reveal: () => {
             target.style.opacity = '';
           },
@@ -309,6 +359,7 @@ export function useCardFlight(
           key,
           flights,
           layer: ensureLayer(layerRef),
+          board,
           source: prev.el,
           from: prev.rect,
           // Centred on the pad, so the shrink converges on the button rather
@@ -320,6 +371,9 @@ export function useCardFlight(
             height: prev.rect.height,
           },
           archive: true,
+          // The archive toggle lives in the toolbar, which never scrolls with
+          // the board.
+          panBy: 0,
           reveal: () => {},
           onLand: () => pulse(pad),
         });

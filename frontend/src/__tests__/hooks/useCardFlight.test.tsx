@@ -373,3 +373,63 @@ describe('useCardFlight departures', () => {
     expect(ghosts()).toHaveLength(0);
   });
 });
+
+/** jsdom has no layout, so the scroller's own numbers have to be declared. */
+function makeScrollable(board: HTMLElement, scrollWidth: number) {
+  Object.defineProperty(board, 'scrollWidth', { value: scrollWidth, configurable: true });
+  Object.defineProperty(board, 'clientWidth', { value: 1200, configurable: true });
+  Object.defineProperty(board, 'scrollLeft', { value: 0, writable: true, configurable: true });
+}
+
+describe('useCardFlight pan', () => {
+  it('pans the board to reveal a destination past its right edge, on the flight’s own timeline', () => {
+    const { board, left, right } = buildBoard();
+    makeScrollable(board, 2400);
+    const card = buildCard('12', SLOT_A);
+    left.appendChild(card);
+    const { rerender } = renderHook(() => useCardFlight({ current: board }, options));
+
+    // Lands 100px past the board's right edge (1200), so the board must
+    // travel 100 + 16 of margin.
+    right.appendChild(card);
+    place(card, { left: 1020, top: 40, width: 280, height: 120 });
+    rerender();
+
+    expect(board.scrollLeft).toBe(116);
+    // The landing point is expressed in post-pan coordinates, so the ghost
+    // and the board settle on the same frame instead of the card overshooting
+    // by exactly the pan.
+    const travel = travelOf(ghosts()[0]);
+    expect(travel.keyframes[1].transform).toBe('translate(884px, 0px)');
+  });
+
+  it('does not pan for a destination already in view', () => {
+    const { board, left, right } = buildBoard();
+    makeScrollable(board, 2400);
+    const card = buildCard('12', SLOT_A);
+    left.appendChild(card);
+    const { rerender } = renderHook(() => useCardFlight({ current: board }, options));
+
+    right.appendChild(card);
+    place(card, SLOT_B);
+    rerender();
+
+    expect(board.scrollLeft).toBe(0);
+    expect(travelOf(ghosts()[0]).keyframes[1].transform).toBe('translate(320px, 0px)');
+  });
+
+  it('never pans past the end of the scroller', () => {
+    const { board, left, right } = buildBoard();
+    // Only 60px of scrollable range exists, so a 116px pan is clamped to it.
+    makeScrollable(board, 1260);
+    const card = buildCard('12', SLOT_A);
+    left.appendChild(card);
+    const { rerender } = renderHook(() => useCardFlight({ current: board }, options));
+
+    right.appendChild(card);
+    place(card, { left: 1020, top: 40, width: 280, height: 120 });
+    rerender();
+
+    expect(board.scrollLeft).toBe(60);
+  });
+});
