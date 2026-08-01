@@ -89,8 +89,17 @@ export function TaskRow({
       // one settling motion, wherever it shows up. The transition composes with
       // the mount `animate-rise` above: an animation and a transition on the
       // same element drive different properties here.
-      className={`animate-rise group rounded-lg border transition-colors duration-300 ease-[var(--ease-signature)] motion-reduce:transition-none ${
-        finished ? 'border-bambu-green/40 bg-bambu-green/5' : 'border-bambu-dark-tertiary'
+      //
+      // `card-shadow` unconditionally: this is the ONLY thing in the panel
+      // that casts one (see PanelCard's doc) — it is what ranks the task
+      // column as the front plane against the four bordered-only reference
+      // cards in the left column. The background itself stays one class per
+      // state rather than layering `bg-bambu-dark-secondary` underneath the
+      // finished tint: two `bg-*` utilities on one element race each other in
+      // Tailwind's generated stylesheet, so unfinished gets the plain surface
+      // tone and finished keeps its own green wash instead.
+      className={`animate-rise group rounded-lg border card-shadow transition-colors duration-300 ease-[var(--ease-signature)] motion-reduce:transition-none ${
+        finished ? 'border-bambu-green/40 bg-bambu-green/5' : 'border-bambu-dark-tertiary bg-bambu-dark-secondary'
       }`}
       onBlur={(e) => {
         // focusout bubbles in React, so one handler covers every input in the

@@ -1558,14 +1558,24 @@ describe('ProjectDetailPanel delete', () => {
 
   it('separates the left column from the tasks on wide screens', () => {
     const { container } = render(<ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} />);
-    // Asserted on the class rather than a rendered pixel: jsdom applies no
-    // stylesheet, so the border is only observable as the utility that draws it.
+    // Task 10: the hairline `lg:border-l` dividers are gone — the panel body
+    // became canvas (`bg-bambu-dark`) and every column now carries its own
+    // padding, so a column's card content reads as a distinct block against
+    // the canvas instead of needing a drawn line between columns.
     //
-    // COUNTED, not merely found. The activity rail already carried lg:border-l
-    // before this column did, so `querySelector(...) !== null` matched the rail
-    // and passed identically with the task column's rule removed — a test that
-    // could not fail. Both dividers must be present: tasks and activity.
-    expect(container.querySelectorAll('.lg\\:border-l')).toHaveLength(2);
+    // COUNTED, not merely found — same reasoning as the border version this
+    // replaced: asserting padding on only one column would pass identically
+    // if a second column were left flush against the canvas with none of its
+    // own, which is exactly the kind of one-column regression this guard
+    // exists to catch.
+    expect(container.querySelectorAll('.lg\\:border-l')).toHaveLength(0);
+    const grid = document.querySelector('[class*="lg:grid-cols-"]')!;
+    const columns = Array.from(grid.children) as HTMLElement[];
+    expect(columns).toHaveLength(3);
+    for (const column of columns) {
+      expect(column.className).toContain('px-5');
+      expect(column.className).toContain('py-4');
+    }
   });
 });
 
@@ -1643,5 +1653,22 @@ describe('ProjectDetailPanel scroll architecture', () => {
     const body = grid.parentElement!;
     expect(body.className).toContain('flex-1');
     expect(body.className).toContain('min-h-0');
+  });
+});
+
+describe('ProjectDetailPanel surfaces', () => {
+  it('ranks elevation: only the task cards cast a shadow', () => {
+    show();
+    expect(screen.getByTestId('panel-column-tasks')).toBeInTheDocument();
+    // Reference cards carry a border and no shadow.
+    const referenceCard = screen.getAllByTestId('panel-card-heading')[0].parentElement!;
+    expect(referenceCard.className).toContain('border-bambu-dark-tertiary');
+    expect(referenceCard.className).not.toContain('card-shadow');
+  });
+
+  it('puts the body on the canvas tier, not the panel tier', () => {
+    show();
+    expect(screen.getByRole('dialog').className).toContain('bg-bambu-dark');
+    expect(screen.getByRole('dialog').className).not.toContain('bg-bambu-dark-secondary');
   });
 });

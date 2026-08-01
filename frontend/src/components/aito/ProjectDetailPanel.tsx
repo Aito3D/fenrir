@@ -458,7 +458,16 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
         aria-label={project.client_name ?? t('aito.noClient')}
         tabIndex={-1}
         style={{ viewTransitionName: AITO_CARD_VT_NAME }}
-        className="bg-bambu-dark-secondary rounded-xl w-full max-w-[100rem] border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)] focus:outline-none"
+        // Canvas, not panel: the body behind the header/columns/footer is
+        // `bg-bambu-dark`, one tier darker than the `bg-bambu-dark-secondary`
+        // every card, the header and the footer sit on. That two-tier gap is
+        // the entire elevation effect — it needs no new colour, because
+        // `--bg-primary`/`--bg-secondary` already mean exactly this pairing in
+        // every palette (including light mode). No accent glow on this
+        // border either: tried behind the `black/70` backdrop, and invisible
+        // at every strength short of garish — the lift comes from the canvas
+        // contrast and the header's own cast shadow.
+        className="bg-bambu-dark rounded-xl w-full max-w-[100rem] border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)] focus:outline-none"
       >
         <PanelHeader
           project={project}
@@ -469,10 +478,17 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
           stepsTotal={stepsTotal}
         />
 
-        <div className="p-4 overflow-y-auto scrollbar-hide flex-1 min-h-0 lg:flex lg:flex-col lg:overflow-hidden">
+        <div className="overflow-y-auto scrollbar-hide flex-1 min-h-0 lg:flex lg:flex-col lg:overflow-hidden">
           {/* Three columns, three scrollers — but only from `lg` up, where the
               grid is actually side by side. Below that the columns stack and
               the body's own scroller is the right one.
+
+              The body itself carries no padding any more — each column below
+              does (`px-5 py-4`), so a column's card content covers its full
+              height against the canvas rather than floating inside a padded
+              frame. That is also why the `lg:border-l` seams between columns
+              are gone: the canvas/card contrast (plus the grid's own `gap`)
+              does the separating now, the same job a hairline used to do.
 
               The history rail is an infinite query with no height of its own,
               so with a single shared scroller every "load more" pushed the
@@ -497,7 +513,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               definite height above is still ignored. Same reason AitoPage's
               board row carries it. */}
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)_minmax(0,26rem)] gap-4 lg:gap-6 lg:flex-1 lg:min-h-0">
-            <div className="space-y-4 min-w-0 lg:min-h-0 lg:overflow-y-auto scrollbar-hide">
+            <div className="space-y-4 min-w-0 lg:min-h-0 lg:overflow-y-auto scrollbar-hide px-5 py-4">
               <PanelCard title={t('aito.productDescription')}>
                 <div className="flex items-start justify-between gap-2">
                   {editingDesc ? (
@@ -645,7 +661,10 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               <QuoteStatusActions project={project} />
             </div>
 
-            <div className="min-w-0 lg:min-h-0 lg:overflow-y-auto scrollbar-hide border-t border-bambu-dark-tertiary pt-4 lg:border-t-0 lg:pt-0 lg:border-l lg:border-bambu-dark-tertiary lg:pl-6">
+            <div
+              data-testid="panel-column-tasks"
+              className="min-w-0 lg:min-h-0 lg:overflow-y-auto scrollbar-hide px-5 py-4"
+            >
               <TaskEditor
                 value={tasks}
                 onChange={onTasksChange}
@@ -658,7 +677,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               />
             </div>
 
-            <div className="min-w-0 lg:min-h-0 lg:overflow-y-auto scrollbar-hide border-t border-bambu-dark-tertiary pt-4 lg:border-t-0 lg:pt-0 lg:border-l lg:pl-6">
+            <div className="min-w-0 lg:min-h-0 lg:overflow-y-auto scrollbar-hide px-5 py-4">
               <ActivityRail projectId={project.id} />
             </div>
           </div>
@@ -670,7 +689,11 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
           // what `DeleteHoldButton`'s group-hover reveal keys off — hovering
           // anywhere on the bar, not just the icon, surfaces it; keyboard
           // focus and an in-progress hold reveal it regardless.
-          className="group flex-shrink-0 flex items-center gap-2 px-4 py-2 border-t border-bambu-dark-tertiary bg-black/10"
+          //
+          // `bg-bambu-dark-secondary`, same as the header and every card: the
+          // footer sits on the canvas as a surface too, not a darker recess
+          // of it.
+          className="group flex-shrink-0 flex items-center gap-2 px-4 py-2 border-t border-bambu-dark-tertiary bg-bambu-dark-secondary"
         >
           {/* Destructive far left, safe actions far right — the two ends of the
               bar. This is what the header adjacency to Close cost us. */}
@@ -684,7 +707,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               href={project.quote_url}
               target="_blank"
               rel="noopener noreferrer"
-              className={`inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary px-2.5 py-1 text-sm text-bambu-gray-light hover:text-white hover:border-bambu-gray transition-colors ${focusRingCls}`}
+              className={`inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary px-2.5 py-1 text-sm text-bambu-gray-light hover:text-white hover:border-bambu-gray transition-colors motion-reduce:transition-none ${focusRingCls}`}
             >
               <ExternalLink className="w-3.5 h-3.5" />
               {t('aito.quoteOpenInZoho')}
