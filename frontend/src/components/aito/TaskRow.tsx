@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Check, Pencil } from 'lucide-react';
@@ -81,6 +82,21 @@ export function TaskRow({
   const finished = isTaskFinished(task);
   const steps = taskSteps(task);
 
+  const descRef = useRef<HTMLParagraphElement>(null);
+  const [descExpanded, setDescExpanded] = useState(false);
+  const [descClamped, setDescClamped] = useState(false);
+
+  // Measured every render, not once: the description is editable in the form
+  // above, so its length can change under us. The +1 absorbs the sub-pixel
+  // rounding a fractional line-height leaves behind — same tolerance
+  // CardView's hover-reveal uses. While expanded there is no overflow to
+  // measure, so the expanded state keeps the toggle alive by itself.
+  useLayoutEffect(() => {
+    const el = descRef.current;
+    const clamped = descExpanded || (el !== null && el.scrollHeight > el.clientHeight + 1);
+    if (clamped !== descClamped) setDescClamped(clamped);
+  });
+
   return (
     <div
       // Finishing the last step turns the whole row green. That is the largest
@@ -159,6 +175,37 @@ export function TaskRow({
           <DeleteHoldButton onDelete={onRemove} label={t('aito.removeTask')} hint={t('aito.holdToDelete')} />
         )}
       </div>
+
+      {/* The task's brief, readable without opening the pencil — the one
+          place the operator reads a task used to be the one place this was
+          hidden. Two lines, then "show more": enough context to recognise
+          the job, the full text one click away. Empty renders nothing — the
+          panel's omission rule. Edit mode hides it: the form above already
+          carries the same field, and two copies of one value invite edits
+          to the dead one. */}
+      {!editing && task.description.trim() !== '' && (
+        <div className="px-3 -mt-1 pb-1">
+          <p
+            ref={descRef}
+            data-testid={`task-desc-${index}`}
+            className={`text-[.82rem] text-bambu-gray-light whitespace-pre-wrap break-words ${
+              descExpanded ? '' : 'line-clamp-2'
+            }`}
+          >
+            {task.description}
+          </p>
+          {descClamped && (
+            <button
+              type="button"
+              aria-expanded={descExpanded}
+              onClick={() => setDescExpanded((v) => !v)}
+              className={`mt-0.5 text-xs text-bambu-green-light hover:text-bambu-green rounded-sm ${focusRingCls}`}
+            >
+              {t(descExpanded ? 'aito.showLess' : 'aito.showMore')}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* The task's own progress, under its header. `ProjectProgress` renders
           nothing at zero steps, so an unpriced row shows no empty track. */}

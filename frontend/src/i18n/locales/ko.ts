@@ -163,6 +163,8 @@ export default {
     quoteRejected: 'Books가 {{theirs}} 상태에서 {{ours}}(으)로 변경을 거부했습니다',
     retrySync: '다시 시도',
     showDone: '완료 항목 보기',
+    showMore: '더 보기',
+    showLess: '접기',
     backToBoard: '보드로 돌아가기',
     doneEmpty: '아직 완료된 프로젝트가 없습니다',
     markProjectDone: '프로젝트를 완료로 표시',

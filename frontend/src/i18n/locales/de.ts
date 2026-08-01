@@ -163,6 +163,8 @@ export default {
     quoteRejected: 'Books hat die Änderung auf {{ours}} abgelehnt, solange es {{theirs}} anzeigt',
     retrySync: 'Erneut versuchen',
     showDone: 'Erledigte anzeigen',
+    showMore: 'Mehr anzeigen',
+    showLess: 'Weniger anzeigen',
     backToBoard: 'Zurück zum Board',
     doneEmpty: 'Noch keine abgeschlossenen Projekte',
     markProjectDone: 'Projekt als erledigt markieren',

@@ -7,6 +7,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { render } from '../utils';
@@ -189,5 +190,82 @@ describe('TaskRow', () => {
     expect(removeButton.className).toContain('opacity-0');
     expect(removeButton.className).toContain('group-hover:opacity-100');
     expect(removeButton).not.toHaveTextContent('Remove task');
+  });
+});
+
+describe('task description', () => {
+  // No existing helper here fit: the file's `renderRow` takes a full task and
+  // a required `canTick`, but these tests only ever vary the description (and
+  // occasionally `editing`) and need a `rerender` bound to the same element to
+  // fake post-mount overflow. `rerenderRow` closes over the `rerender` that
+  // `renderRow`'s own `render()` call produced, so it can only be called after
+  // `renderRow` — same order every test below already uses.
+  let rerender: ReturnType<typeof render>['rerender'];
+
+  function renderRow(overrides: Partial<TaskDraft> = {}, { editing = false }: { editing?: boolean } = {}) {
+    const utils = render(
+      <TaskRow
+        task={makeTask(overrides)}
+        index={0}
+        onChange={vi.fn()}
+        onRemove={vi.fn()}
+        editing={editing}
+        onToggleEdit={vi.fn()}
+        canTick={true}
+      />,
+    );
+    rerender = utils.rerender;
+    return utils;
+  }
+
+  function rerenderRow(overrides: Partial<TaskDraft> = {}, { editing = false }: { editing?: boolean } = {}) {
+    rerender(
+      <TaskRow
+        task={makeTask(overrides)}
+        index={0}
+        onChange={vi.fn()}
+        onRemove={vi.fn()}
+        editing={editing}
+        onToggleEdit={vi.fn()}
+        canTick={true}
+      />,
+    );
+  }
+
+  it('shows the description clamped under the header in read mode', () => {
+    renderRow({ description: 'Bracket for a GoPro mast mount, PETG-CF.' });
+    const desc = screen.getByTestId('task-desc-0');
+    expect(desc).toHaveTextContent('Bracket for a GoPro mast mount');
+    expect(desc.className).toContain('line-clamp-2');
+  });
+
+  it('renders nothing at all for an empty description', () => {
+    renderRow({ description: '' });
+    expect(screen.queryByTestId('task-desc-0')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /show more/i })).not.toBeInTheDocument();
+  });
+
+  it('offers the toggle only when the text actually clamps, and it unfolds', async () => {
+    const user = userEvent.setup();
+    renderRow({ description: 'Long description that overflows two lines.' });
+    // jsdom has no layout: nothing measures as clamped, so no toggle yet.
+    expect(screen.queryByRole('button', { name: /show more/i })).not.toBeInTheDocument();
+
+    // Fake the overflow the way the component measures it, then re-render.
+    const desc = screen.getByTestId('task-desc-0');
+    Object.defineProperty(desc, 'scrollHeight', { value: 60, configurable: true });
+    Object.defineProperty(desc, 'clientHeight', { value: 30, configurable: true });
+    rerenderRow({ description: 'Long description that overflows two lines.' });
+
+    const more = screen.getByRole('button', { name: /show more/i });
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    await user.click(more);
+    expect(screen.getByTestId('task-desc-0').className).not.toContain('line-clamp-2');
+    expect(screen.getByRole('button', { name: /show less/i })).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('hides the description block in edit mode — the form already carries the field', () => {
+    renderRow({ description: 'Something.' }, { editing: true });
+    expect(screen.queryByTestId('task-desc-0')).not.toBeInTheDocument();
   });
 });

@@ -164,6 +164,8 @@ export default {
     quoteRejected: "Books відмовився змінити цю пропозицію на {{ours}}, поки вона має стан {{theirs}}",
     retrySync: "Повторити",
     showDone: 'Показати завершені',
+    showMore: 'Показати більше',
+    showLess: 'Згорнути',
     backToBoard: 'Повернутися до дошки',
     doneEmpty: 'Завершених проєктів поки немає',
     markProjectDone: 'Позначити проєкт як завершений',

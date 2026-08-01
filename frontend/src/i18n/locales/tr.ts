@@ -163,6 +163,8 @@ export default {
     quoteRejected: 'Books, {{theirs}} durumundayken {{ours}} değişikliğini reddetti',
     retrySync: 'Yeniden dene',
     showDone: 'Tamamlananları göster',
+    showMore: 'Daha fazla göster',
+    showLess: 'Daha az göster',
     backToBoard: 'Panoya dön',
     doneEmpty: 'Henüz tamamlanmış proje yok',
     markProjectDone: 'Projeyi tamamlandı olarak işaretle',

@@ -163,6 +163,8 @@ export default {
     quoteRejected: "Books a refusé le passage à {{ours}} tant qu'il affiche {{theirs}}",
     retrySync: 'Réessayer',
     showDone: 'Voir les terminés',
+    showMore: 'Voir plus',
+    showLess: 'Voir moins',
     backToBoard: 'Retour au tableau',
     doneEmpty: 'Aucun projet terminé pour le moment',
     markProjectDone: 'Marquer le projet comme terminé',

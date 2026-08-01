@@ -163,6 +163,8 @@ export default {
     quoteRejected: 'Books rechazó el cambio a {{ours}} mientras figura como {{theirs}}',
     retrySync: 'Reintentar',
     showDone: 'Ver terminados',
+    showMore: 'Ver más',
+    showLess: 'Ver menos',
     backToBoard: 'Volver al tablero',
     doneEmpty: 'Todavía no hay proyectos terminados',
     markProjectDone: 'Marcar el proyecto como terminado',

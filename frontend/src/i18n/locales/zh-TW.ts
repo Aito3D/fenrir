@@ -163,6 +163,8 @@ export default {
     quoteRejected: 'Books 在狀態為{{theirs}}時拒絕改為{{ours}}',
     retrySync: '重試',
     showDone: '檢視已完成',
+    showMore: '展開',
+    showLess: '收起',
     backToBoard: '返回看板',
     doneEmpty: '尚無已完成的專案',
     markProjectDone: '將專案標記為已完成',

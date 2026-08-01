@@ -163,6 +163,8 @@ export default {
     quoteRejected: 'Books は {{theirs}} の状態では {{ours}} への変更を拒否しました',
     retrySync: '再試行',
     showDone: '完了を表示',
+    showMore: 'もっと見る',
+    showLess: '閉じる',
     backToBoard: 'ボードに戻る',
     doneEmpty: '完了した案件はまだありません',
     markProjectDone: '案件を完了にする',

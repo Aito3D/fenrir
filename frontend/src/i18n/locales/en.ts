@@ -167,6 +167,8 @@ export default {
     quoteRejected: 'Books refused to change this quote to {{ours}} while it reads {{theirs}}',
     retrySync: 'Retry',
     showDone: 'Show done',
+    showMore: 'Show more',
+    showLess: 'Show less',
     backToBoard: 'Back to board',
     doneEmpty: 'No finished projects yet',
     markProjectDone: 'Mark project as done',

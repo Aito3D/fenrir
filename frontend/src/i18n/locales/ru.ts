@@ -163,6 +163,8 @@ export default {
     quoteRejected: 'Books отклонил переход в {{ours}}, пока там {{theirs}}',
     retrySync: 'Повторить',
     showDone: 'Показать завершённые',
+    showMore: 'Показать больше',
+    showLess: 'Свернуть',
     backToBoard: 'Вернуться к доске',
     doneEmpty: 'Завершённых проектов пока нет',
     markProjectDone: 'Отметить проект как завершённый',
