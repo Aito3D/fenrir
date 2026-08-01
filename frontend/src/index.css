@@ -647,6 +647,12 @@ body {
      the mark and still settles without a bounce. Used by the Aito card ->
      detail-panel morph. */
   --ease-morph: cubic-bezier(0.32, 0.72, 0, 1);
+  /* Travel, not entrance. --ease-signature opens at maximum velocity, which is
+     right for something arriving from off-screen and wrong for a board card
+     flying between columns: that starts at rest in one slot and ends at rest
+     in another, so it needs a departure as well as a settle. Read by
+     useCardFlight — keep the two in sync. */
+  --ease-flight: cubic-bezier(0.55, 0, 0.2, 1);
   /* .animate-sidebar-in's duration — read by Layout.tsx's dev-mode banner
      delay so the two can never desync. */
   --sidebar-in-duration: 400ms;
