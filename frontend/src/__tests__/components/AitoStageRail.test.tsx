@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { StageRail } from '../../components/aito/StageRail';
+import { formatMoney } from '../../utils/pricing';
 import type { TaskDraft } from '../../utils/taskDraft';
 
 function task(overrides: Partial<TaskDraft> = {}): TaskDraft {
@@ -59,6 +60,22 @@ describe('StageRail', () => {
 
     rerender(<StageRail tasks={tasks} column="done" moveLock="declined" currency="XPF" />);
     expect(screen.getByText('The quote was declined.')).toBeInTheDocument();
+  });
+
+  it('gives the progress bar the same formatted amount the visible caption shows', () => {
+    // Regression: the bar's aria-label used to interpolate the raw number
+    // (`amount: `${stage.value - stage.valueDone}`) while the <Money> caption
+    // right beside it used formatMoney — "10000 left" next to "10 000 FCFP".
+    // Screen-reader and sighted users must be told the same figure. Same fix
+    // as ValueRing's in ProjectDetailPanel.
+    render(<StageRail tasks={tasks} column="scan" moveLock="steps" currency="XPF" />);
+    const bar = screen.getByTestId('stage-bar-print');
+    const progressbar = bar.closest('[role="progressbar"]');
+    expect(progressbar).not.toBeNull();
+    expect(progressbar!.getAttribute('aria-label')).toContain(formatMoney(10000, 'XPF'));
+    // The old label had no thousands separator and no unit — this fails
+    // against the raw-number regression directly, not just by omission.
+    expect(progressbar!.getAttribute('aria-label')).not.toContain('10000');
   });
 
   it('says nothing when the card is free to move', () => {

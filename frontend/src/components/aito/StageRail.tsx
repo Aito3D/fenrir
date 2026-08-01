@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { ALL_COLUMNS } from './columns';
 import { stagesWithWork } from './services';
 import { Money } from '../calculator/shared';
+import { formatMoney } from '../../utils/pricing';
 import type { AitoColumnId, AitoProject } from '../../api/client';
 import type { TaskDraft } from '../../utils/taskDraft';
 
@@ -62,7 +63,7 @@ export function StageRail({ tasks, column, moveLock, currency }: StageRailProps)
                   nothing below it to connect to. */}
               <span
                 aria-hidden="true"
-                className={`absolute left-[0.28rem] top-4 bottom-0 w-0.5 last:hidden ${
+                className={`absolute left-[0.28rem] top-4 bottom-0 w-0.5 ${
                   state === 'past' ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
                 } ${index === ALL_COLUMNS.length - 1 ? 'hidden' : ''}`}
               />
@@ -87,8 +88,12 @@ export function StageRail({ tasks, column, moveLock, currency }: StageRailProps)
                       aria-valuenow={stage.stepsDone}
                       aria-valuemin={0}
                       aria-valuemax={stage.stepsTotal}
+                      // formatMoney, not the raw number: the <Money> caption right
+                      // beside this bar uses formatMoney too, and a screen reader
+                      // announcing "10000 left" next to a sighted "10 000 FCFP left"
+                      // would disagree about the figure. Same fix as ValueRing's.
                       aria-label={t('aito.workLeftAtStage', {
-                        amount: `${stage.value - stage.valueDone}`,
+                        amount: formatMoney(stage.value - stage.valueDone, currency),
                         stage: t(meta.labelKey),
                       })}
                       className="flex-1 h-0.5 rounded-full bg-bambu-dark-tertiary overflow-hidden"
