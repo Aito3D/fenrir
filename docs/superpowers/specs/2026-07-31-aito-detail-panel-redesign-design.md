@@ -386,7 +386,8 @@ Everything reuses tokens already in `index.css`:
 | `components/aito/StageRail.tsx` | New |
 | `components/aito/TaskStepList.tsx` | Row-wide toggle, checkbox, stage swatch |
 | `components/aito/TaskRow.tsx` | Per-task progress bar and count |
-| `components/aito/columns.ts` | Export a raw stage colour alongside `dot`, for the rail nodes and step swatches |
+| `components/aito/columns.ts` | Unchanged — `ColumnMeta.dot` is already a Tailwind background class and serves the rail knob, the rail bar and the step swatch as-is |
+| `hooks/useLatestProjectEvent.ts` | New — the one-row query behind the Record card's actor |
 | `components/aito/services.ts` | New `stageOf(service)` / per-stage aggregation helper |
 | `i18n/locales/*.ts` | New keys, 13 locales |
 
