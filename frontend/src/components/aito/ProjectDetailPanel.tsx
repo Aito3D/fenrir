@@ -404,10 +404,14 @@ function RecordCard({ project, latestEvent }: { project: AitoProject; latestEven
     ? (latestEvent.actor_name ?? t(ACTOR_FALLBACK_KEY[latestEvent.actor_class] ?? 'aito.actorUnknown'))
     : null;
 
-  // Short, not the bare toLocaleString the old rows used: "{when} · {who}" has
-  // to fit one line of a 17rem rail. The exact timestamps stay in the timeline.
-  const short = (d: Date | null) =>
-    d ? d.toLocaleString(i18n.language, { dateStyle: 'short', timeStyle: 'short' }) : '—';
+  // Date only, no time: "{when} · {who}" has to fit one line of the rail, and
+  // with the time in it ("7/29/26, 9:22 AM · admin") the author wrapped onto
+  // a ragged second line. The exact timestamps stay in the timeline one
+  // column over — this card answers "when, roughly, and by whom", so the
+  // full string is a hover away (`title` below), not a second line.
+  const short = (d: Date | null) => (d ? d.toLocaleDateString(i18n.language, { dateStyle: 'short' }) : '—');
+  const full = (d: Date | null) =>
+    d ? d.toLocaleString(i18n.language, { dateStyle: 'short', timeStyle: 'short' }) : undefined;
 
   return (
     <PanelCard title={t('aito.recordLabel')}>
@@ -424,11 +428,11 @@ function RecordCard({ project, latestEvent }: { project: AitoProject; latestEven
           </>
         )}
         <dt className="text-bambu-gray">{t('aito.createdLabel')}</dt>
-        <dd data-testid="record-created" className="text-right min-w-0 text-white">
+        <dd data-testid="record-created" title={full(created)} className="text-right min-w-0 truncate text-white">
           {short(created)} · {project.created_by ?? t('aito.actorUnknown')}
         </dd>
         <dt className="text-bambu-gray">{t('aito.lastActivity')}</dt>
-        <dd data-testid="record-activity" className="text-right min-w-0 text-white">
+        <dd data-testid="record-activity" title={full(activityAt)} className="text-right min-w-0 truncate text-white">
           {short(activityAt)}
           {actor && ` · ${actor}`}
         </dd>

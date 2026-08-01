@@ -1303,12 +1303,17 @@ describe('ProjectDetailPanel left column cards', () => {
       http.get('/api/v1/aito/12/events', () => HttpResponse.json({ events: [mockEvent], has_more: false })),
     );
     show();
-    const expectedWhen = parseUTCDate(mockEvent.occurred_at)!.toLocaleString(i18n.language, {
-      dateStyle: 'short',
-      timeStyle: 'short',
-    });
+    // Visible text carries the DATE only — the time made "{when} · {who}"
+    // wrap the author onto its own line — and the full timestamp moved to the
+    // row's tooltip. occurred_at (07-29) still differs from the fixture's
+    // updated_at (07-27) by date alone, so the wrong-pairing regression this
+    // test exists for is still caught by the visible half.
+    const occurred = parseUTCDate(mockEvent.occurred_at)!;
+    const expectedWhen = occurred.toLocaleDateString(i18n.language, { dateStyle: 'short' });
+    const expectedFull = occurred.toLocaleString(i18n.language, { dateStyle: 'short', timeStyle: 'short' });
     await waitFor(() => expect(screen.getByTestId('record-activity')).toHaveTextContent('· admin'));
     expect(screen.getByTestId('record-activity')).toHaveTextContent(expectedWhen);
+    expect(screen.getByTestId('record-activity')).toHaveAttribute('title', expectedFull);
   });
 
   it('falls back to updated_at with no actor when the project has no events', async () => {

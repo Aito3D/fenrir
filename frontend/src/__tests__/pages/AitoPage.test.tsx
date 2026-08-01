@@ -501,8 +501,12 @@ describe('AitoPage (backend board)', () => {
     // since refetchOnWindowFocus listens on 'visibilitychange') is a refetch
     // that lands genuinely fresh data, which is what forces AitoPage to
     // re-render with a fresh inline onClose passed down to the panel.
+    // Mid-month noon, not the fixture's next morning: the record row renders
+    // the DATE only now (the time lives in its tooltip), so the probe below
+    // must change the rendered day in EVERY timezone — 07-03T09:30Z is still
+    // 7/2 west of UTC-9, which made this exact assertion hang forever there.
     server.use(http.get('/api/v1/aito/', () =>
-      HttpResponse.json([{ ...project, updated_at: '2026-07-03T09:30:00Z' }])));
+      HttpResponse.json([{ ...project, updated_at: '2026-07-15T12:00:00Z' }])));
     act(() => {
       window.dispatchEvent(new Event('visibilitychange'));
     });
