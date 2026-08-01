@@ -173,6 +173,55 @@ async def test_a_rejected_config_never_logs_the_client_secret(db_session, monkey
     assert "S3CR3T" not in caplog.text  # not even a fragment of the value
 
 
+# --- an unrecognized boolean is rejected, not guessed --------------------------
+# `_env_bool` used to return the default for anything outside {true,1,yes}, so
+# BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED=on silently read as OFF and
+# BAMBUDDY_OIDC_ENABLED=on silently disabled the provider. Strict parsing
+# refuses the config instead -- through the same clean path a bad
+# DEFAULT_GROUP or a ValidationError already uses, so a typo never releases a
+# provider that was running fine.
+
+
+@pytest.mark.asyncio
+async def test_an_unrecognized_require_email_verified_leaves_a_running_provider_intact(db_session, monkeypatch, caplog):
+    _configure(monkeypatch)
+    await apply_env_oidc_provider(db_session)
+    original = await _env_provider(db_session)
+    original_id, original_enabled = original.id, original.is_enabled
+
+    monkeypatch.setenv("BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED", "on")
+    with caplog.at_level(logging.ERROR):
+        await apply_env_oidc_provider(db_session)
+
+    provider = await _env_provider(db_session)
+    assert provider is not None, "a typo must not release the provider"
+    assert provider.id == original_id
+    assert provider.is_enabled == original_enabled
+    assert provider.is_env_managed is True
+    assert "rejected" in caplog.text
+    assert "BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_an_unrecognized_enabled_leaves_a_running_provider_intact(db_session, monkeypatch, caplog):
+    _configure(monkeypatch)
+    await apply_env_oidc_provider(db_session)
+    original = await _env_provider(db_session)
+    original_id, original_enabled = original.id, original.is_enabled
+
+    monkeypatch.setenv("BAMBUDDY_OIDC_ENABLED", "on")
+    with caplog.at_level(logging.ERROR):
+        await apply_env_oidc_provider(db_session)
+
+    provider = await _env_provider(db_session)
+    assert provider is not None, "a typo must not release the provider"
+    assert provider.id == original_id
+    assert provider.is_enabled == original_enabled
+    assert provider.is_env_managed is True
+    assert "rejected" in caplog.text
+    assert "BAMBUDDY_OIDC_ENABLED" in caplog.text
+
+
 @pytest.mark.asyncio
 async def test_a_non_validation_error_is_survivable_and_leaks_nothing(db_session, monkeypatch, caplog):
     """The generic except branch handles anything that isn't a ValidationError

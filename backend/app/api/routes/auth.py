@@ -35,7 +35,7 @@ from backend.app.core.auth import (
     security,
 )
 from backend.app.core.database import async_session, get_db
-from backend.app.core.oidc_env import _env_bool
+from backend.app.core.oidc_env import env_bool
 from backend.app.core.permissions import ALL_PERMISSIONS
 from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent, EventType, TokenType
 from backend.app.models.group import Group
@@ -123,7 +123,7 @@ def _local_login_env_bypass() -> bool:
     an install whose SSO provider is unreachable. Accepted truthy values:
     ``true``, ``1``, ``yes`` (case-insensitive).
     """
-    return _env_bool("BAMBUDDY_LOCAL_LOGIN", False)
+    return env_bool("BAMBUDDY_LOCAL_LOGIN", False)
 
 
 def _get_client_ip(request: Request) -> str:

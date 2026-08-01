@@ -30,11 +30,25 @@ _REQUIRED = (
 )
 
 _TRUTHY = {"true", "1", "yes"}
+_FALSY = {"false", "0", "no"}
 
 
-def _env_bool(key: str, default: bool) -> bool:
+class EnvOIDCConfigError(Exception):
+    """A BAMBUDDY_OIDC_* value the reader cannot interpret. Only ever carries a
+    boolean variable's name and value -- booleans are not secret, so the message
+    is safe to log in full (unlike client_secret, which never reaches here)."""
+
+
+def env_bool(key: str, default: bool) -> bool:
     value = os.environ.get(key)
-    return default if value is None else value.strip().lower() in _TRUTHY
+    if value is None or value.strip() == "":
+        return default  # absent or blank == unset -> default, per the module's promise
+    norm = value.strip().lower()
+    if norm in _TRUTHY:
+        return True
+    if norm in _FALSY:
+        return False
+    raise EnvOIDCConfigError(f"{key}={value!r} is not a recognized boolean (use true/1/yes or false/0/no)")
 
 
 def read_env_oidc_config() -> dict | None:
@@ -52,13 +66,13 @@ def read_env_oidc_config() -> dict | None:
         "client_id": os.environ["BAMBUDDY_OIDC_CLIENT_ID"],
         "client_secret": os.environ["BAMBUDDY_OIDC_CLIENT_SECRET"],
         "scopes": (os.environ.get("BAMBUDDY_OIDC_SCOPES") or "").strip() or "openid email profile",
-        "is_enabled": _env_bool("BAMBUDDY_OIDC_ENABLED", True),
-        "auto_create_users": _env_bool("BAMBUDDY_OIDC_AUTO_CREATE_USERS", False),
-        "auto_link_existing_accounts": _env_bool("BAMBUDDY_OIDC_AUTO_LINK_EXISTING", False),
+        "is_enabled": env_bool("BAMBUDDY_OIDC_ENABLED", True),
+        "auto_create_users": env_bool("BAMBUDDY_OIDC_AUTO_CREATE_USERS", False),
+        "auto_link_existing_accounts": env_bool("BAMBUDDY_OIDC_AUTO_LINK_EXISTING", False),
         "email_claim": (os.environ.get("BAMBUDDY_OIDC_EMAIL_CLAIM") or "").strip() or "email",
-        "require_email_verified": _env_bool("BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED", True),
+        "require_email_verified": env_bool("BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED", True),
         "icon_url": (os.environ.get("BAMBUDDY_OIDC_ICON_URL") or "").strip() or None,
-        "is_autologin": _env_bool("BAMBUDDY_OIDC_AUTOLOGIN", False),
+        "is_autologin": env_bool("BAMBUDDY_OIDC_AUTOLOGIN", False),
         # A name, not an id: ids are assigned per install, so the same compose
         # file would point at a different group on every deployment. Resolved
         # against the database in apply_env_oidc_provider -- the reader has no
@@ -116,7 +130,14 @@ async def _apply_env_oidc_provider(db: AsyncSession) -> None:
     from backend.app.models.oidc_provider import OIDCProvider
     from backend.app.schemas.auth import OIDCProviderCreate
 
-    config = read_env_oidc_config()
+    try:
+        config = read_env_oidc_config()
+    except EnvOIDCConfigError as exc:
+        # Same disposition as a ValidationError or an unmatched DEFAULT_GROUP:
+        # log clearly and leave any running provider as it was. Safe to log the
+        # full message -- EnvOIDCConfigError only ever carries a boolean var.
+        logger.error("BAMBUDDY_OIDC_* config rejected, provider not applied: %s", exc)
+        return
 
     if config is None:
         # Nothing to look up by name any more, so the previously managed rows are

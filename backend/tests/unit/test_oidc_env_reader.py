@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from backend.app.core.oidc_env import read_env_oidc_config
+from backend.app.core.oidc_env import EnvOIDCConfigError, env_bool, read_env_oidc_config
 
 REQUIRED = {
     "BAMBUDDY_OIDC_NAME": "Keycloak",
@@ -93,19 +93,60 @@ def test_booleans_accept_the_project_truthy_spellings(monkeypatch, raw):
     assert read_env_oidc_config()["auto_create_users"] is True
 
 
-@pytest.mark.parametrize("raw", ["false", "0", "no", "", "off", "nonsense"])
-def test_anything_else_is_false(monkeypatch, raw):
-    """Only the three documented spellings enable a flag; an unrecognised value
-    must not silently turn on auto-create-users."""
+@pytest.mark.parametrize("raw", ["false", "FALSE", "False", "0", "no", "NO"])
+def test_falsy_values_are_false(monkeypatch, raw):
     _set_required(monkeypatch)
     monkeypatch.setenv("BAMBUDDY_OIDC_AUTO_CREATE_USERS", raw)
     assert read_env_oidc_config()["auto_create_users"] is False
+
+
+@pytest.mark.parametrize("raw", ["on", "enabled", "y", "nonsense"])
+def test_an_unrecognized_boolean_is_rejected(monkeypatch, raw):
+    """Only the documented spellings are accepted; an unrecognised value must
+    not silently turn a flag on or off -- it must refuse the whole config
+    instead of guessing (M-R4 strict boolean parsing)."""
+    _set_required(monkeypatch)
+    monkeypatch.setenv("BAMBUDDY_OIDC_AUTO_CREATE_USERS", raw)
+    with pytest.raises(EnvOIDCConfigError, match="BAMBUDDY_OIDC_AUTO_CREATE_USERS"):
+        read_env_oidc_config()
 
 
 def test_a_boolean_default_of_true_can_be_turned_off(monkeypatch):
     _set_required(monkeypatch)
     monkeypatch.setenv("BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED", "false")
     assert read_env_oidc_config()["require_email_verified"] is False
+
+
+# --- env_bool, tested directly ------------------------------------------------
+# The reader-level tests above pin the contract through read_env_oidc_config;
+# these exercise the helper itself so its default/blank/reject behavior is
+# proven independently of any particular BAMBUDDY_OIDC_* field.
+
+
+@pytest.mark.parametrize("raw", ["false", "FALSE", "0", "no", "NO"])
+def test_env_bool_falsy_values_are_false(monkeypatch, raw):
+    monkeypatch.setenv("SOME_FLAG", raw)
+    assert env_bool("SOME_FLAG", True) is False
+
+
+@pytest.mark.parametrize("default", [True, False])
+def test_env_bool_absent_is_the_given_default(monkeypatch, default):
+    monkeypatch.delenv("SOME_FLAG", raising=False)
+    assert env_bool("SOME_FLAG", default) is default
+
+
+@pytest.mark.parametrize("raw", ["", "   "])
+@pytest.mark.parametrize("default", [True, False])
+def test_env_bool_blank_is_the_given_default(monkeypatch, raw, default):
+    monkeypatch.setenv("SOME_FLAG", raw)
+    assert env_bool("SOME_FLAG", default) is default
+
+
+@pytest.mark.parametrize("raw", ["on", "enabled", "y", "nonsense"])
+def test_env_bool_rejects_an_unrecognized_value(monkeypatch, raw):
+    monkeypatch.setenv("SOME_FLAG", raw)
+    with pytest.raises(EnvOIDCConfigError, match="SOME_FLAG"):
+        env_bool("SOME_FLAG", True)
 
 
 def test_optional_strings_override_their_defaults(monkeypatch):
