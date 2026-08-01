@@ -39,7 +39,15 @@ class EnvOIDCConfigError(Exception):
     is safe to log in full (unlike client_secret, which never reaches here)."""
 
 
-def env_bool(key: str, default: bool) -> bool:
+def env_bool(key: str, default: bool, *, strict: bool = True) -> bool:
+    """Parse a boolean env var. Absent or blank -> default (empty == unset).
+
+    strict (the default): an unrecognized non-empty value raises
+    EnvOIDCConfigError, so a typo is refused loudly rather than silently read as
+    the wrong thing. strict=False: an unrecognized value falls back to the
+    default instead -- for a caller on a request path where a raise would be a
+    500, not a skipped startup config (see _local_login_env_bypass).
+    """
     value = os.environ.get(key)
     if value is None or value.strip() == "":
         return default  # absent or blank == unset -> default, per the module's promise
@@ -48,7 +56,9 @@ def env_bool(key: str, default: bool) -> bool:
         return True
     if norm in _FALSY:
         return False
-    raise EnvOIDCConfigError(f"{key}={value!r} is not a recognized boolean (use true/1/yes or false/0/no)")
+    if strict:
+        raise EnvOIDCConfigError(f"{key}={value!r} is not a recognized boolean (use true/1/yes or false/0/no)")
+    return default
 
 
 def read_env_oidc_config() -> dict | None:

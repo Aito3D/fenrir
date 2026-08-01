@@ -98,6 +98,26 @@ class TestLocalLoginGate:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_unrecognized_env_value_does_not_500_the_login_path(
+        self, async_client: AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ):
+        """The recovery bypass reads BAMBUDDY_LOCAL_LOGIN on the request path, so
+        an unrecognized value (BAMBUDDY_LOCAL_LOGIN=on) must fall back to "off",
+        never raise -- env_bool is strict for the startup OIDC reader but lenient
+        here. A raise would 500 the very endpoint the bypass exists to keep open."""
+        await _enable_auth(async_client, "gateonval")
+        await _set_setting(db_session, "local_login_enabled", "false")
+        monkeypatch.setenv("BAMBUDDY_LOCAL_LOGIN", "on")
+
+        response = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "gateonval", "password": "GatePass1!"},
+        )
+        # Bypass stays off (same 401 as no env var), and crucially not a 500.
+        assert response.status_code == 401, response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_forgot_password_rejected_when_local_disabled(
         self, async_client: AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
     ):

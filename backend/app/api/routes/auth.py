@@ -123,7 +123,11 @@ def _local_login_env_bypass() -> bool:
     an install whose SSO provider is unreachable. Accepted truthy values:
     ``true``, ``1``, ``yes`` (case-insensitive).
     """
-    return env_bool("BAMBUDDY_LOCAL_LOGIN", False)
+    # strict=False: this runs on the login/forgot-password request path, not at
+    # startup. An unrecognized value must fall back to "off" (the safe default),
+    # never raise -- a 500 on the recovery endpoint is the opposite of what this
+    # bypass is for.
+    return env_bool("BAMBUDDY_LOCAL_LOGIN", False, strict=False)
 
 
 def _get_client_ip(request: Request) -> str:

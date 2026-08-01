@@ -149,6 +149,16 @@ def test_env_bool_rejects_an_unrecognized_value(monkeypatch, raw):
         env_bool("SOME_FLAG", True)
 
 
+@pytest.mark.parametrize("raw", ["on", "enabled", "y", "nonsense"])
+@pytest.mark.parametrize("default", [True, False])
+def test_env_bool_lenient_falls_back_to_default_on_unrecognized(monkeypatch, raw, default):
+    """strict=False (the request-path callers like BAMBUDDY_LOCAL_LOGIN): an
+    unrecognized value must return the default, never raise -- a raise there
+    would 500 a live endpoint rather than skip a startup config."""
+    monkeypatch.setenv("SOME_FLAG", raw)
+    assert env_bool("SOME_FLAG", default, strict=False) is default
+
+
 def test_optional_strings_override_their_defaults(monkeypatch):
     _set_required(monkeypatch)
     monkeypatch.setenv("BAMBUDDY_OIDC_SCOPES", "openid profile groups")
