@@ -1706,6 +1706,19 @@ describe('ProjectDetailPanel surfaces', () => {
     expect(screen.getByRole('dialog').className).not.toContain('bg-bambu-dark-secondary');
   });
 
+  it('uses the reference geometry: 86rem wide, 17/1fr/22 columns, no gutter', () => {
+    show();
+    // Left unasserted through the whole redesign, and left at the
+    // pre-redesign 100rem / 20-1fr-26 / 1.5rem-gutter as a result — which is
+    // why the panel kept reading as stretched even after every type size and
+    // colour matched the reference. Geometry is as much the design as type.
+    expect(screen.getByRole('dialog').className).toContain('max-w-[86rem]');
+    const grid = screen.getByTestId('panel-column-tasks').parentElement!;
+    expect(grid.className).toContain('lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)_minmax(0,22rem)]');
+    // Each column carries its own px-5; a gutter on top double-spaces them.
+    expect(grid.className).toContain('lg:gap-0');
+  });
+
   it('clips its corners, so the header gradient and footer fill cannot square them off', () => {
     show();
     // The header is full-bleed with a gradient and the footer with a solid

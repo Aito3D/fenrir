@@ -543,7 +543,12 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
         // and both spanning the full width, so without it their corners paint
         // over this element's radius and the panel reads as a rectangle with
         // four notched corners.
-        className="bg-bambu-dark rounded-[.85rem] overflow-hidden w-full max-w-[100rem] border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)] focus:outline-none"
+        // 86rem, not the 100rem this carried before the redesign: at 1440px
+        // the header stretches the client name and the total to opposite ends
+        // of the screen with a void between them, and the reference is 1238px
+        // for exactly that reason. Narrowing the panel is what makes the
+        // header read as one band rather than two corners.
+        className="bg-bambu-dark rounded-[.85rem] overflow-hidden w-full max-w-[86rem] border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)] focus:outline-none"
       >
         <PanelHeader
           project={project}
@@ -588,7 +593,13 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               and refuses to shrink below its content, so without it the
               definite height above is still ignored. Same reason AitoPage's
               board row carries it. */}
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)_minmax(0,26rem)] gap-4 lg:gap-6 lg:flex-1 lg:min-h-0">
+          {/* 17/1fr/22, and no gap between columns — the reference's own
+              geometry. These were left at the pre-redesign 20/1fr/26 with a
+              1.5rem gutter, which is why the panel kept reading as stretched
+              even once every type size matched: each column carries its own
+              px-5 padding now, so a gutter on top of that double-spaces them
+              and the wider rails steal the width the task column needs. */}
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)_minmax(0,22rem)] gap-4 lg:gap-0 lg:flex-1 lg:min-h-0">
             <div className="space-y-4 min-w-0 lg:min-h-0 lg:overflow-y-auto scrollbar-hide px-5 py-4">
               <PanelCard title={t('aito.productDescription')}>
                 <div className="flex items-start justify-between gap-2">
