@@ -21,6 +21,7 @@ import type { ClientDraft } from '../utils/clientDraft';
 import { taskDraftToTaskCreate } from '../utils/taskDraft';
 import type { TaskDraft } from '../utils/taskDraft';
 import { matchesSearch } from '../utils/aitoSearch';
+import { useCardFlight } from '../hooks/useCardFlight';
 import { useCardMorph } from '../hooks/useCardMorph';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useBoardDrag } from '../hooks/useBoardDrag';
@@ -331,6 +332,20 @@ export function AitoPage() {
     return () => window.clearTimeout(timer);
   }, [dragging]);
 
+  const boardRef = useRef<HTMLDivElement | null>(null);
+  // A card that left the board went to the archive only if it is in `done`.
+  // Deleted and search-filtered cards leave exactly the same way, and neither
+  // belongs in that flight.
+  const doneIds = useMemo(() => new Set(board.done.map((project) => project.id)), [board.done]);
+  useCardFlight(boardRef, {
+    // dnd-kit owns a drag and its settle window — two systems animating one
+    // card fight visibly. The detail panel is a fullscreen modal, so a flight
+    // under it plays where nobody can see it; closing the panel morphs it back
+    // into the card at its NEW column, which is where that move reads.
+    suspended: dragging || dragSettling || expandedId !== null,
+    departureTarget: (key) => (doneIds.has(Number(key)) ? 'archive' : null),
+  });
+
   const createProject = (description: string, draft: ClientDraft, tasks: TaskDraft[]) => {
     // Closed here, not in onSuccess: the whole point is that the modal does
     // not sit open through a round trip. The placeholder is what tells the
@@ -412,6 +427,7 @@ export function AitoPage() {
           onToggle={() => setView((current) => (current === 'done' ? 'board' : 'done'))}
           icon={Archive}
           label={`${t('aito.showDone')} (${doneCount})`}
+          data-flight-target=""
         />
         <ViewToggleButton
           active={view === 'trash'}
@@ -480,7 +496,10 @@ export function AitoPage() {
           {/* min-h-0 is what lets this shrink inside the flex column: without it
               a tall column would push the board past the viewport instead of
               scrolling inside itself. */}
-          <div className="flex gap-4 items-stretch overflow-x-auto pb-4 stagger-parents flex-1 min-h-0 scrollbar-hide">
+          <div
+            ref={boardRef}
+            className="flex gap-4 items-stretch overflow-x-auto pb-4 stagger-parents flex-1 min-h-0 scrollbar-hide"
+          >
             {visibleColumns.map(({ column, projects }) => (
               <div key={column.id} className="animate-rise-lg flex flex-shrink-0">
                 <BoardColumn

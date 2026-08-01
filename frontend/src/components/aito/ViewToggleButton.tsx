@@ -13,6 +13,10 @@ interface ViewToggleButtonProps {
    *  "Back to board": there is one board, and every one of these views is a
    *  detour from it. */
   label: string;
+  /** Marks this button as a landing pad for `useCardFlight`: a card that
+   *  leaves the board for the archive flies into it. Passed straight through
+   *  to the <button>, which is what the hook measures. */
+  'data-flight-target'?: string;
 }
 
 /** The board's view switches — Done and Trash — as one button that does not
@@ -31,11 +35,11 @@ interface ViewToggleButtonProps {
  *  The hidden label is `aria-hidden` — it is a layout strut, and a screen
  *  reader that read both would announce the button as "Show done Back to
  *  board". */
-export function ViewToggleButton({ active, onToggle, icon: Icon, label }: ViewToggleButtonProps) {
+export function ViewToggleButton({ active, onToggle, icon: Icon, label, ...rest }: ViewToggleButtonProps) {
   const { t } = useTranslation();
 
   return (
-    <Button variant="secondary" onClick={onToggle} aria-pressed={active}>
+    <Button variant="secondary" onClick={onToggle} aria-pressed={active} {...rest}>
       <span className="grid">
         <span
           aria-hidden={active}

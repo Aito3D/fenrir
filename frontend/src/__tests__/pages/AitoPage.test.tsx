@@ -1278,6 +1278,15 @@ describe('AitoPage (backend board)', () => {
     expect(await screen.findByText('On the board')).toBeInTheDocument();
   });
 
+  it('marks the Show done toggle as the archive’s landing pad', async () => {
+    render(<AitoPage />);
+    const toggle = await screen.findByRole('button', { name: /show done/i });
+    // useCardFlight flies a card that left the board for Done into whatever
+    // carries this attribute. Renaming it silently would leave the archive
+    // flight aimed at nothing.
+    expect(toggle).toHaveAttribute('data-flight-target');
+  });
+
   it('does not render a Done column on the board', async () => {
     server.use(
       http.get('*/api/v1/aito/', () =>
