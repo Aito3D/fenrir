@@ -170,7 +170,12 @@ export function TaskEditor({
       <button
         type="button"
         onClick={() => onChange([...value, emptyTaskDraft()])}
-        className={`inline-flex items-center gap-1 text-sm text-bambu-green hover:text-bambu-green/80 transition-colors rounded-md ${focusRingCls}`}
+        // A full-width row that echoes the task cards above it rather than a
+        // small green text link off to one side: it is the slot the next card
+        // will occupy, so it reads as an empty one. Muted at rest and
+        // accent-lit on hover, so it invites without competing with the cards
+        // that carry real work.
+        className={`w-full inline-flex items-center justify-center gap-1.5 rounded-[.6rem] border border-bambu-dark-tertiary py-2 text-sm text-bambu-gray hover:text-bambu-green hover:border-bambu-green/40 hover:bg-bambu-green/[0.04] transition-colors motion-reduce:transition-none ${focusRingCls}`}
       >
         <Plus className="w-4 h-4" />
         {t('aito.addTask')}

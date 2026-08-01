@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, GripVertical, Lock } from 'lucide-react';
+import { AlertTriangle, Building2, GripVertical, Lock, User } from 'lucide-react';
 import { ProjectProgress } from './ProjectProgress';
 import { StepGrid } from './StepGrid';
 import type { AitoProject } from '../../api/client';
@@ -218,11 +218,32 @@ export function CardView({
         } ${placeholder ? 'opacity-60' : ''}`}
       >
         <div className="flex items-center gap-2 px-3 py-2 bg-bambu-dark-tertiary rounded-t-xl border-b border-bambu-dark-secondary">
+          {/* Same building/person distinction the expanded card's header
+              makes, at card scale. `aria-hidden` with the label carried in
+              text beside it, so the split is not sighted-users-only; null
+              reads as an individual, matching the panel. strokeWidth 2.5 to
+              match the medium weight of the name. */}
+          {project.client_is_company ? (
+            <Building2
+              className={`w-3.5 h-3.5 flex-shrink-0 ${project.client_name ? 'text-white' : 'text-bambu-gray'}`}
+              strokeWidth={2.5}
+              aria-hidden="true"
+            />
+          ) : (
+            <User
+              className={`w-3.5 h-3.5 flex-shrink-0 ${project.client_name ? 'text-white' : 'text-bambu-gray'}`}
+              strokeWidth={2.5}
+              aria-hidden="true"
+            />
+          )}
           <p
-            className={`flex-1 text-sm font-medium truncate ${
+            className={`flex-1 min-w-0 text-sm font-medium truncate ${
               project.client_name ? 'text-white' : 'text-bambu-gray'
             }`}
           >
+            <span className="sr-only">
+              {project.client_is_company ? t('aito.companyNameLabel') : t('aito.clientNameLabel')}{' '}
+            </span>
             {project.client_name ?? t('aito.noClient')}
           </p>
           {dragHandleProps && !placeholder ? (

@@ -43,7 +43,17 @@ import { type AitoProject } from '../../api/client';
  *  visible-but-disabled with a check mark, and kept mark-as-sent live on
  *  viewed/expired for re-sending: an action already taken is now simply not
  *  offered, and nothing in this block is ever disabled-by-status. */
-export function QuoteStatusActions({ project }: { project: AitoProject }) {
+export function QuoteStatusActions({
+  project,
+  /** `column` stacks the actions with a rule above them, for the left rail
+   *  they used to live in. `row` lays them out inline with no rule and no
+   *  stretching, for the panel footer — where they sit at the far right,
+   *  opposite the destructive action. */
+  layout = 'column',
+}: {
+  project: AitoProject;
+  layout?: 'column' | 'row';
+}) {
   const { t } = useTranslation();
   const mutation = useQuoteStatusMutation(project);
 
@@ -68,7 +78,7 @@ export function QuoteStatusActions({ project }: { project: AitoProject }) {
   const canDecline = project.quote_status !== 'declined';
 
   return (
-    <div className="flex flex-col gap-2 border-t border-bambu-dark-tertiary pt-4">
+    <div className={layout === 'row' ? 'flex items-center gap-2' : 'flex flex-col gap-2 border-t border-bambu-dark-tertiary pt-4'}>
       {canMarkSent && (
         <HoldButton
           onHold={() => mutation.mutate('sent')}
@@ -78,14 +88,14 @@ export function QuoteStatusActions({ project }: { project: AitoProject }) {
           hint={t('aito.holdToConfirm')}
           progress="bar"
           barClassName="bg-amber-400/25"
-          className="justify-center border p-1.5 border-amber-400/40 text-amber-400 hover:bg-amber-400/10"
+          className="justify-center border px-2.5 py-1 border-amber-400/40 text-amber-400 hover:bg-amber-400/10"
         >
           <Send className="w-3.5 h-3.5" />
           <span className="text-sm">{t('aito.markSent')}</span>
         </HoldButton>
       )}
       {canSettle && (
-        <div className="flex items-center gap-2">
+        <div className={layout === 'row' ? 'contents' : 'flex items-center gap-2'}>
           <HoldButton
             onHold={() => mutation.mutate('accepted')}
             durationMs={500}
@@ -94,7 +104,7 @@ export function QuoteStatusActions({ project }: { project: AitoProject }) {
             hint={t('aito.holdToConfirm')}
             progress="bar"
             barClassName="bg-bambu-green/25"
-            className="flex-1 justify-center border p-1.5 border-bambu-green/40 text-bambu-green hover:bg-bambu-green/10"
+            className="justify-center border px-2.5 py-1 border-bambu-green/40 text-bambu-green hover:bg-bambu-green/10"
           >
             <ThumbsUp className="w-3.5 h-3.5" />
             <span className="text-sm">{t('aito.acceptQuote')}</span>
@@ -108,7 +118,7 @@ export function QuoteStatusActions({ project }: { project: AitoProject }) {
               hint={t('aito.holdToConfirm')}
               progress="bar"
               barClassName="bg-status-error/25"
-              className="flex-1 justify-center border p-1.5 border-status-error/40 text-status-error hover:bg-status-error/10"
+              className="justify-center border px-2.5 py-1 border-status-error/40 text-status-error hover:bg-status-error/10"
             >
               <ThumbsDown className="w-3.5 h-3.5" />
               <span className="text-sm">{t('aito.declineQuote')}</span>

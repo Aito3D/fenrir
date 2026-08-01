@@ -84,11 +84,17 @@ describe('board card actions — mark as sent', () => {
     // own rounded-md so the trace turns the corners instead of cutting them.
     renderColumn(card({ column: 'devis' }));
     const button = screen.getByRole('button', { name: /mark as sent/i });
-    const trace = button.querySelector('[data-testid="hold-progress-perimeter"] rect');
+    const trace = button.querySelector('[data-testid="hold-progress-perimeter"] path');
 
     expect(trace).not.toBeNull();
     expect(trace).toHaveAttribute('pathLength', '1');
-    expect(trace).toHaveAttribute('rx', '5.4');
+    // Starts at top CENTRE (`M {w/2} 0`) and closes back there, rather than at
+    // the top-left corner where an SVG <rect>'s own path begins. jsdom has no
+    // layout so the measured width is 0 here; the assertion is on the path's
+    // shape — a horizontal run to the first corner arc — not on the numbers.
+    const d = trace!.getAttribute('d')!;
+    expect(d).toMatch(/^M \d+(\.\d+)? 0 H /);
+    expect(d.trimEnd()).toMatch(/H \d+(\.\d+)?$/);
     // Empty until held: a full outline at rest would read as a focus state.
     expect(trace).toHaveAttribute('stroke-dashoffset', '1');
     // And invisible until held. A fully-offset dash still paints a sub-pixel

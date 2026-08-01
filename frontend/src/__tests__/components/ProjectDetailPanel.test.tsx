@@ -1560,12 +1560,20 @@ describe('ProjectDetailPanel footer', () => {
     expect(within(footer).queryByRole('link', { name: /zoho/i })).not.toBeInTheDocument();
   });
 
-  it('puts the quote actions in the Quote card', async () => {
+  it('puts Print quote in the Quote card, with no duplicate Zoho control', async () => {
     show({ quote_id: 'e2', quote_number: 'DEV26-2462', quote_url: 'https://books.zoho.com/e2' });
     const quoteCard = (await screen.findAllByTestId('panel-card-heading'))
       .find((n) => /quote/i.test(n.textContent ?? ''))!.parentElement!;
+
     expect(within(quoteCard).getByRole('button', { name: /print quote/i })).toBeInTheDocument();
-    expect(within(quoteCard).getByRole('link', { name: /zoho/i })).toBeInTheDocument();
+    // The quote NUMBER is already a link to Zoho; a separate "Open in Zoho"
+    // button was a second affordance for one destination in a six-row card.
+    // The number keeps its link, so the destination is not lost.
+    expect(within(quoteCard).getByRole('link', { name: /DEV26-2462/ })).toHaveAttribute(
+      'href',
+      'https://books.zoho.com/e2',
+    );
+    expect(within(quoteCard).queryByRole('link', { name: /open in zoho/i })).not.toBeInTheDocument();
   });
 
   it('omits the trash control for a project already in the trash', () => {

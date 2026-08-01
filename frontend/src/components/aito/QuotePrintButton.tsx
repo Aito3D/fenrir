@@ -32,9 +32,13 @@ export function QuotePrintButton({
    *  than a default change: the icon-only rendering is kept for any other
    *  caller that wants the compact form. */
   withLabel = false,
+  /** Extra classes for the labelled form — the Quote card stretches it full
+   *  width, since it is the only action in that card. */
+  className = '',
 }: {
   project: AitoProject;
   withLabel?: boolean;
+  className?: string;
 }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -141,7 +145,7 @@ export function QuotePrintButton({
       title={t('aito.printQuote')}
       className={
         withLabel
-          ? `inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary px-2.5 py-1 text-sm text-bambu-gray-light hover:text-white hover:border-bambu-gray transition-colors motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40`
+          ? `inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary px-2.5 py-1 text-sm text-bambu-gray-light hover:text-white hover:border-bambu-gray hover:bg-bambu-dark-tertiary/40 transition-colors motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40 ${className}`
           : `inline-flex items-center p-1 -m-1 rounded-md text-bambu-gray hover:text-bambu-green hover:bg-bambu-green/10 transition-colors motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40`
       }
     >

@@ -27,7 +27,7 @@ import { copyTextToClipboard } from '../../utils/clipboard';
 import { parseUTCDate } from '../../utils/date';
 import { formatMoney } from '../../utils/pricing';
 import { applyDescription, applySyncState } from '../../utils/aitoOptimistic';
-import { focusRingCls, inputCls } from '../formStyles';
+import { inputCls } from '../formStyles';
 import { useToast } from '../../contexts/ToastContext';
 
 /** Explicit map rather than a template literal key: the i18n gate scans for
@@ -749,24 +749,14 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                     )}
                   </dl>
 
-                  {/* The two things you actually DO with a quote, beside the
-                      quote itself. `withLabel` so they read as buttons rather
-                      than bare glyphs — the icon-only default is still right
-                      at QuotePrintButton's other call sites. */}
-                  <div className="flex items-center gap-2 mt-3">
-                    <QuotePrintButton project={project} withLabel />
-                    {project.quote_url && (
-                      <a
-                        href={project.quote_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={`inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary px-2.5 py-1 text-xs text-bambu-gray-light hover:text-white hover:border-bambu-gray transition-colors motion-reduce:transition-none ${focusRingCls}`}
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        {t('aito.quoteOpenInZoho')}
-                      </a>
-                    )}
-                  </div>
+                  {/* Print is the only action here. "Open in Zoho" was a
+                      second control doing exactly what the quote number above
+                      already does when you click it — two affordances for one
+                      destination, in a card six rows tall.
+                      Full width because it is alone: a lone half-width button
+                      leaves a ragged gap, and at this size the label is the
+                      target rather than the icon beside it. */}
+                  <QuotePrintButton project={project} withLabel className="w-full justify-center mt-3" />
                   </>
                   )}
 
@@ -847,8 +837,6 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               )}
 
               <RecordCard project={project} latestEvent={latestEvent} />
-
-              <QuoteStatusActions project={project} />
             </div>
 
             <div
@@ -917,10 +905,14 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               alwaysVisible
             />
           )}
-          {/* Print quote and Open in Zoho moved up into the Quote card — they
-              act on the quote, so they belong beside its number and status
-              rather than in a bar that spans the whole panel. The footer is
-              now the destructive action alone. */}
+          {/* Mark sent / Accept / Decline / Done sit at the far right, with
+              the destructive action at the far left — the two ends of the bar.
+              These are the transitions that MOVE the card off this column, so
+              they belong with the panel's other commitments rather than buried
+              under the left rail's reference cards, where they sat below the
+              fold on a project with several tasks. */}
+          <span className="flex-1" />
+          <QuoteStatusActions project={project} layout="row" />
         </div>
       </div>
     </div>

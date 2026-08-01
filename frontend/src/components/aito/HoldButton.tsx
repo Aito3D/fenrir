@@ -1,5 +1,37 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+
+/** The perimeter trace's corner radius, matching the button's `rounded-md`
+ *  (.375rem at the app's 14.4px root). Clamped per-button to half the shorter
+ *  side, so a button smaller than 2×radius still describes a valid path. */
+const PERIMETER_RADIUS = 5.4;
+
+/** A rounded-rect outline that STARTS AT TOP CENTRE and runs clockwise back to
+ *  it, rather than at the top-left corner where an SVG `<rect>`'s own path
+ *  begins.
+ *
+ *  Hand-built because `<rect>` gives no control over where its path starts,
+ *  and the dash pattern cannot be phase-shifted to fake one: a single dash
+ *  cannot wrap past the path end, so offsetting the start just clips the tail.
+ *  That is also why this needs the button's measured size — SVG path data
+ *  takes no percentages, so the geometry cannot be expressed resolution-free
+ *  the way the `<rect>` version was. */
+function perimeterPath(w: number, h: number): string {
+  const r = Math.min(PERIMETER_RADIUS, w / 2, h / 2);
+  const mid = w / 2;
+  return [
+    `M ${mid} 0`,
+    `H ${w - r}`,
+    `A ${r} ${r} 0 0 1 ${w} ${r}`,
+    `V ${h - r}`,
+    `A ${r} ${r} 0 0 1 ${w - r} ${h}`,
+    `H ${r}`,
+    `A ${r} ${r} 0 0 1 0 ${h - r}`,
+    `V ${r}`,
+    `A ${r} ${r} 0 0 1 ${r} 0`,
+    `H ${mid}`,
+  ].join(' ');
+}
 
 // Hold-to-confirm progress ring geometry: a small circle traced around the
 // button's content, animated via stroke-dashoffset instead of
@@ -96,6 +128,11 @@ export function HoldButton({
 }) {
   const [holding, setHolding] = useState(false);
   const [showHint, setShowHint] = useState(false);
+  // Measured, not assumed: these buttons size to their icon and their padding,
+  // and the perimeter path needs real pixels (see `perimeterPath`). Observed
+  // rather than read once, so a font or zoom change re-fits the trace.
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [box, setBox] = useState<{ w: number; h: number } | null>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pressStartRef = useRef(0);
@@ -138,9 +175,21 @@ export function HoldButton({
     [],
   );
 
+  useLayoutEffect(() => {
+    if (progress !== 'perimeter') return;
+    const el = buttonRef.current;
+    if (!el) return;
+    const measure = () => setBox({ w: el.offsetWidth, h: el.offsetHeight });
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [progress]);
+
   return (
     <div className="relative">
       <button
+        ref={buttonRef}
         type="button"
         aria-label={label}
         title={hint}
@@ -199,29 +248,25 @@ export function HoldButton({
               holding ? `scale-x-100 ${BAR_DURATION_CLS[durationMs]}` : 'scale-x-0 transition-none'
             }`}
           />
-        ) : progress === 'perimeter' ? (
-          // The outline itself as the track. `pathLength={1}` normalises the
-          // perimeter to 1 regardless of the button's rendered size, so one
-          // dasharray/dashoffset pair works at any width without measuring —
-          // which matters because these buttons size to their icon and their
-          // padding, not to anything this component knows.
+        ) : progress === 'perimeter' && box ? (
+          // The outline itself as the track, starting at top centre and
+          // running clockwise — see `perimeterPath` for why this is a hand
+          // built path rather than a `<rect>`.
           //
-          // `overflow-visible`: the stroke is centred on the rect's edge, so
-          // half of it falls outside the 100%x100% box and would be clipped.
-          // rx matches the button's own `rounded-md` (.375rem = 5.4px) so the
-          // trace follows the corners rather than cutting across them.
+          // `pathLength={1}` still normalises the length, so the dash pair is
+          // size-independent even though the path data is not.
+          //
+          // `overflow-visible`: the stroke is centred on the path, so half of
+          // it falls outside the box and would otherwise be clipped.
           <svg
             className="pointer-events-none absolute inset-0 w-full h-full overflow-visible"
+            viewBox={`0 0 ${box.w} ${box.h}`}
             fill="none"
             aria-hidden="true"
             data-testid="hold-progress-perimeter"
           >
-            <rect
-              x="0"
-              y="0"
-              width="100%"
-              height="100%"
-              rx="5.4"
+            <path
+              d={perimeterPath(box.w, box.h)}
               stroke="currentColor"
               strokeWidth="1.5"
               pathLength={1}
