@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, ExternalLink, Loader2, X } from 'lucide-react';
+import { Check, Copy, ExternalLink, Loader2 } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ActivityRail } from './history/ActivityRail';
 import { QuotePrintButton } from './QuotePrintButton';
@@ -20,7 +20,7 @@ import { copyTextToClipboard } from '../../utils/clipboard';
 import { parseUTCDate } from '../../utils/date';
 import { formatMoney } from '../../utils/pricing';
 import { applyDescription, applySyncState } from '../../utils/aitoOptimistic';
-import { inputCls } from '../formStyles';
+import { focusRingCls, inputCls } from '../formStyles';
 import { useToast } from '../../contexts/ToastContext';
 
 /** Explicit map rather than a template literal key: the i18n gate scans for
@@ -325,7 +325,7 @@ function SaveIndicator({ state }: { state: SaveState }) {
  *  browser morphs one into the other (see useCardMorph). */
 export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetailPanelProps) {
   const { t } = useTranslation();
-  const closeRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   // A status rendered through the shared quote-status labels, so the two sides
   // of a block message are localised too rather than raw Zoho English. An
@@ -426,8 +426,14 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
+  // The close button used to take focus on mount. Without it, focus would stay
+  // on whatever was behind the dialog: Escape still works (the handler is on
+  // window) but Tab order would start outside the modal and a screen reader
+  // would announce nothing on open. The dialog takes it instead — it already
+  // carries role/aria-modal/aria-label, so focusing it announces the panel by
+  // its client name.
   useEffect(() => {
-    closeRef.current?.focus();
+    dialogRef.current?.focus();
   }, []);
 
   useEffect(() => {
@@ -446,32 +452,14 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
       }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={project.client_name ?? t('aito.noClient')}
+        tabIndex={-1}
         style={{ viewTransitionName: AITO_CARD_VT_NAME }}
-        className="bg-bambu-dark-secondary rounded-xl w-full max-w-[100rem] border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)]"
+        className="bg-bambu-dark-secondary rounded-xl w-full max-w-[100rem] border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)] focus:outline-none"
       >
-        {/* A slim strip above the header for the two controls the header
-            itself has no room for: the title band below is a client's name,
-            a ring and a total, not a place for a delete-hold gesture to
-            live. `group` here (not on the header) is what
-            `DeleteHoldButton`'s group-hover reveal keys off. */}
-        <div className="group flex-shrink-0 px-3 pt-2 flex items-center justify-end gap-3">
-          {onDelete && (
-            <DeleteHoldButton onDelete={onDelete} label={t('aito.deleteTitle')} hint={t('aito.holdToDelete')} />
-          )}
-          <button
-            type="button"
-            ref={closeRef}
-            aria-label={t('common.close')}
-            onClick={onClose}
-            className="p-1 -m-1 rounded-md text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
         <PanelHeader
           project={project}
           currency={currency}
@@ -580,10 +568,6 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                     ) : (
                       <span className="min-w-0 truncate text-white">{project.quote_number}</span>
                     )}
-                    {/* Replaces the quote's date and total, which said less
-                        than the one thing an operator actually does with a
-                        quote at this point in the job. */}
-                    <QuotePrintButton project={project} />
                   </div>
                 </PanelCard>
               )}
@@ -678,6 +662,34 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               <ActivityRail projectId={project.id} />
             </div>
           </div>
+        </div>
+
+        <div
+          data-testid="panel-footer"
+          // `group` here (there is no header strip to carry it any more) is
+          // what `DeleteHoldButton`'s group-hover reveal keys off — hovering
+          // anywhere on the bar, not just the icon, surfaces it; keyboard
+          // focus and an in-progress hold reveal it regardless.
+          className="group flex-shrink-0 flex items-center gap-2 px-4 py-2 border-t border-bambu-dark-tertiary bg-black/10"
+        >
+          {/* Destructive far left, safe actions far right — the two ends of the
+              bar. This is what the header adjacency to Close cost us. */}
+          {onDelete && (
+            <DeleteHoldButton onDelete={onDelete} label={t('aito.moveToTrash')} hint={t('aito.holdToDelete')} />
+          )}
+          <span className="flex-1" />
+          <QuotePrintButton project={project} />
+          {project.quote_url && (
+            <a
+              href={project.quote_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary px-2.5 py-1 text-sm text-bambu-gray-light hover:text-white hover:border-bambu-gray transition-colors ${focusRingCls}`}
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              {t('aito.quoteOpenInZoho')}
+            </a>
+          )}
         </div>
       </div>
     </div>

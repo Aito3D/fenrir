@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, fireEvent, act, waitFor, render as rtlRender } from '@testing-library/react';
+import { screen, fireEvent, act, waitFor, within, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
@@ -1504,6 +1504,37 @@ describe('ProjectDetailPanel activity rail', () => {
   });
 });
 
+describe('ProjectDetailPanel footer', () => {
+  it('has no close button — outside-click and Escape are the ways out', () => {
+    show();
+    expect(screen.queryByRole('button', { name: /close/i })).not.toBeInTheDocument();
+  });
+
+  it('focuses the dialog itself on open, so Escape and Tab start inside it', () => {
+    show();
+    expect(screen.getByRole('dialog')).toHaveFocus();
+  });
+
+  it('still closes on Escape', async () => {
+    const onClose = vi.fn();
+    render(<ProjectDetailPanel project={project} onClose={onClose} onDelete={vi.fn()} />);
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('puts the destructive action in the footer, opposite the safe ones', () => {
+    show({ quote_id: 'e2', quote_number: 'DEV26-2462' });
+    const footer = screen.getByTestId('panel-footer');
+    expect(within(footer).getByRole('button', { name: /move to trash|delete project/i })).toBeInTheDocument();
+    expect(within(footer).getByRole('button', { name: /print/i })).toBeInTheDocument();
+  });
+
+  it('omits the trash control for a project already in the trash', () => {
+    render(<ProjectDetailPanel project={project} onClose={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /move to trash|delete project/i })).not.toBeInTheDocument();
+  });
+});
+
 describe('ProjectDetailPanel delete', () => {
   it('offers delete in the expanded card, on a 1s hold', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -1512,7 +1543,8 @@ describe('ProjectDetailPanel delete', () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       render(<ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={onDelete} />);
 
-      const button = screen.getByRole('button', { name: /delete/i });
+      const footer = screen.getByTestId('panel-footer');
+      const button = within(footer).getByRole('button', { name: /move to trash|delete project/i });
       await user.pointer({ keys: '[MouseLeft>]', target: button });
       vi.advanceTimersByTime(600);
       expect(onDelete).not.toHaveBeenCalled(); // 500ms is not enough — this is the 1s gesture

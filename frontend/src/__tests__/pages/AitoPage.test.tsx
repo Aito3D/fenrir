@@ -197,7 +197,7 @@ describe('AitoPage (backend board)', () => {
       render(<AitoPage />);
       await openCard(user);
 
-      const deleteButton = await screen.findByLabelText('Delete Project');
+      const deleteButton = await screen.findByLabelText('Move to trash');
 
       await act(async () => {
         fireEvent.pointerDown(deleteButton);
@@ -206,7 +206,7 @@ describe('AitoPage (backend board)', () => {
 
       expect(deleteSpy).toHaveBeenCalledWith('12');
       // The old ConfirmModal rendered a "Delete" confirm button distinct
-      // from the hold-to-delete control's "Delete Project" aria-label.
+      // from the hold-to-delete control's "Move to trash" aria-label.
       expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
       // AitoPage.tsx closes the panel before the mutation lands (see the
       // comment on ProjectDetailPanel's onDelete there) so the card morph
@@ -229,7 +229,7 @@ describe('AitoPage (backend board)', () => {
       render(<AitoPage />);
       await openCard(user);
 
-      const deleteButton = await screen.findByLabelText('Delete Project');
+      const deleteButton = await screen.findByLabelText('Move to trash');
 
       await act(async () => {
         fireEvent.pointerDown(deleteButton);
@@ -312,7 +312,7 @@ describe('AitoPage (backend board)', () => {
       await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(2));
       boardFetches.mockClear();
 
-      const deleteButton = await screen.findByLabelText('Delete Project');
+      const deleteButton = await screen.findByLabelText('Move to trash');
       fireEvent.pointerDown(deleteButton);
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument(), { timeout: 2000 });
 
@@ -836,7 +836,7 @@ describe('AitoPage (backend board)', () => {
       await waitFor(() => expect(getAitoProjects).toHaveBeenCalledTimes(1));
 
       await user.click(await screen.findByRole('button', { name: /Delete me/ }));
-      const deleteButton = await screen.findByLabelText('Delete Project');
+      const deleteButton = await screen.findByLabelText('Move to trash');
       await act(async () => {
         fireEvent.pointerDown(deleteButton);
         await vi.advanceTimersByTimeAsync(1000);
@@ -889,7 +889,7 @@ describe('AitoPage (backend board)', () => {
       render(<AitoPage />);
 
       await user.click(await screen.findByRole('button', { name: /doomed/ }));
-      const deleteButton = await screen.findByLabelText('Delete Project');
+      const deleteButton = await screen.findByLabelText('Move to trash');
       await act(async () => {
         fireEvent.pointerDown(deleteButton);
         await vi.advanceTimersByTimeAsync(1000);
