@@ -126,9 +126,79 @@ Grouped cards instead of one flat `<dl>`:
    the job *is*: the rail tells you where the work has got to, but only after
    you know what the work is.
 2. **Stage & work left** — the rail above.
-3. **Fine print** — seller, created, created by, last activity, plus
-   `QuoteStatusActions`. Borderless, `text-bambu-gray`, smaller. These are the
-   rows that currently compete with the client name; they stop competing.
+3. **Fine print** — seller, created, last activity, plus `QuoteStatusActions`.
+   Borderless, `text-bambu-gray`, smaller. These are the rows that currently
+   compete with the client name; they stop competing.
+
+#### Who, after the when
+
+`Created by` stops being a row of its own and joins the timestamp it belongs to.
+Both timestamp rows read `{when} · {who}`:
+
+```
+Seller          Paul Theis
+Created         7/28/26, 2:00 AM · admin
+Last activity   7/30/26, 10:07 PM · admin
+```
+
+The fine print drops to a **short** date-time —
+`toLocaleString(i18n.language, { dateStyle: 'short', timeStyle: 'short' })`
+rather than the current bare `toLocaleString()`. `{when} · {who}` has to fit one
+line in a 16.5rem column and the full form does not; second-level precision in a
+greyed-out footnote is precision nobody reads, and the exact timestamps are
+still in the timeline a column away.
+
+**Created** takes its actor from `project.created_by`. When that is null — auth
+disabled, an API-key request, or a card predating the column — the row still
+says so rather than trailing off: `{when} · unknown`. The current design makes
+the same point with an em dash on its own row, and the information is worth
+keeping.
+
+**Last activity** has no `updated_by` to read: `AitoProject` carries
+`created_by` and nothing equivalent for writes, and adding one would mean
+touching every mutation path (description edits, task CRUD, the quote worker,
+the status reconciler) to write a column that would be null or "system" for most
+of them. The event log already models exactly this, properly, with `actor_class`
+distinguishing user from client from system.
+
+So the row is sourced from **the newest event**, fetched with the existing API:
+
+```ts
+api.getAitoEvents(projectId, { depth: 'everything', limit: 1 })
+```
+
+`depth: 'everything'` is required, not incidental. Reusing the events the
+`ActivityRail` has already loaded would be free, but that list is filtered by
+the rail's depth toggle — so the name in the fine print would silently change
+when the reader flipped Story/Detail/Everything. A separate one-row query is one
+request and always the same answer.
+
+**Both halves come from that event** — its `occurred_at` and its actor, not
+`updated_at` paired with someone else's name. These can genuinely disagree: a
+mirrored Zoho comment carries Books' timestamp rather than ours, which is the
+whole point of storing `occurred_at` separately from `created_at`. Pairing
+`updated_at` with the newest event's actor would produce a line where the time
+and the name describe two different things.
+
+Actor rendering follows the timeline's own rules, so the two surfaces never
+disagree about a name:
+
+| Case | Renders |
+| ---- | ------- |
+| `actor_name` set | the name (`admin`, `Zoho Books`, `Co-gérants`) |
+| null, `actor_class: 'user'` | unknown user |
+| null, `actor_class: 'client'` | the client |
+| null, `actor_class: 'system'` | automatic |
+
+When the project has **no events at all** — one created before the history
+feature landed — the row falls back to `updated_at` with no actor suffix. That
+is the one case where the timestamp does come from the project row, and it
+carries no name precisely because none is known.
+
+The query is `staleTime`-shared with nothing and invalidated by the same
+`['aito-events', projectId]` key the note mutation and the update mutation
+already invalidate, so adding a note or editing the description refreshes this
+row for free.
 
 Precisely where each surviving row goes:
 
@@ -138,7 +208,8 @@ Precisely where each surviving row goes:
 | Phone, Email | Header contacts |
 | Quote number + Zoho link | Header eyebrow; the print button moves to the footer |
 | Seller | Fine print |
-| Created, Created by, Last activity | Fine print |
+| Created + Created by | Fine print, folded into one `{when} · {who}` row |
+| Last activity | Fine print, gains its actor from the newest event |
 | Stage | Replaced by the rail |
 | Sync state / retry button | Full-width row above the fine print |
 | Status block, declined message | Full-width row above the fine print |
@@ -212,7 +283,9 @@ Everything reuses tokens already in `index.css`:
 ## Non-goals
 
 - No backend change. Every field needed — `column`, `move_lock`, `task_pending`,
-  `steps_total`, `steps_done`, `tasks_total` — is already on `AitoProject`.
+  `steps_total`, `steps_done`, `tasks_total` — is already on `AitoProject`, and
+  the last-activity actor comes from the existing events endpoint rather than a
+  new `updated_by` column.
 - No change to the board, the card, `NewProjectModal`, or `ImportQuoteModal`.
   `TaskEditor` is shared with the create modal, so its changes must stay
   behaviour-compatible there (`canTick={false}` already yields no toggles).
