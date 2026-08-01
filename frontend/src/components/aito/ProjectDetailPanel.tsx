@@ -224,16 +224,34 @@ function PanelHeader({
   const { t } = useTranslation();
   return (
     <div
-      className="flex-shrink-0 px-5 py-4 flex items-center gap-5 border-b"
+      // `relative z-[2]` so the cast shadow below paints ONTO the body rather
+      // than under it — without a stacking context the body's own background
+      // covers it and the lift disappears.
+      className="flex-shrink-0 relative z-[2] px-5 py-4 flex items-center gap-5 border-b"
       style={{
+        // The band is a RAISED masthead, not a tinted strip. Two things carry
+        // that and both were missing: the base is a step above the surface
+        // tier, and the band casts a shadow down onto the canvas. Painted flat
+        // on `--bg-secondary` with no shadow, it read as part of the body no
+        // matter how the type was tuned.
+        //
+        // `--bg-tertiary` mixed into `--bg-secondary`, not `#fff`: a fixed
+        // white percentage lifts in dark mode and does nothing in light mode,
+        // where white over white is white. The tertiary tier is lighter than
+        // secondary in dark palettes and darker in light ones, so this reads
+        // as a distinct band in both.
+        //
         // 135deg, not 180: on a ~1200x90 band a diagonal axis reads as a
         // near-horizontal fade, so the wash sits behind the client name and
         // clears before the total. The vertical version tints the top of
         // the band — where the small grey eyebrow lives — and casts over the
         // one number that must not compete with a colour.
         backgroundImage:
-          'linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, var(--bg-secondary)), var(--bg-secondary))',
+          'linear-gradient(135deg,' +
+          ' color-mix(in srgb, var(--accent) 12%, color-mix(in srgb, var(--bg-tertiary) 45%, var(--bg-secondary))),' +
+          ' color-mix(in srgb, var(--bg-tertiary) 45%, var(--bg-secondary)))',
         borderBottomColor: 'color-mix(in srgb, var(--accent) 40%, var(--border-color))',
+        boxShadow: '0 12px 26px -14px rgba(0, 0, 0, 0.8)',
       }}
     >
       <div className="flex-1 min-w-0">

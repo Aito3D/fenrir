@@ -1706,6 +1706,19 @@ describe('ProjectDetailPanel surfaces', () => {
     expect(screen.getByRole('dialog').className).not.toContain('bg-bambu-dark-secondary');
   });
 
+  it('raises the header off the body: lifted base plus a cast shadow', () => {
+    show();
+    // The reference band is a masthead sitting ABOVE the canvas, not a tinted
+    // strip level with it. Both halves shipped missing, which is why the
+    // header read as flat however the type was tuned. `--bg-tertiary` rather
+    // than a white percentage, so the lift survives light mode.
+    const header = screen.getByRole('heading', { level: 2 }).closest('div.border-b') as HTMLElement;
+    expect(header.style.backgroundImage).toContain('var(--bg-tertiary)');
+    expect(header.style.boxShadow).toBe('0 12px 26px -14px rgba(0, 0, 0, 0.8)');
+    // Needs its own stacking context or the body paints over the shadow.
+    expect(header.className).toContain('z-[2]');
+  });
+
   it('clips its corners, so the header gradient and footer fill cannot square them off', () => {
     show();
     // The header is full-bleed with a gradient and the footer with a solid
