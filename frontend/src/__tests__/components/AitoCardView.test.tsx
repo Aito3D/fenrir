@@ -454,6 +454,18 @@ describe('hybrid card anatomy', () => {
     renderCard({ created_at: old, column: 'done' });
     expect(screen.getAllByTestId('aito-card-elapsed')[1].className).not.toContain('text-amber-400');
   });
+
+  it('keeps the timestamp white on a fresh card within the aging threshold', () => {
+    const fresh = new Date(Date.now() - 5 * 86_400_000).toISOString();
+    renderCard({ created_at: fresh });
+    expect(screen.getByTestId('aito-card-elapsed').className).not.toContain('text-amber-400');
+  });
+
+  it('keeps the timestamp white on a deleted card, even if aged', () => {
+    const old = new Date(Date.now() - 10 * 86_400_000).toISOString();
+    renderCard({ created_at: old, status: 'deleted' });
+    expect(screen.getByTestId('aito-card-elapsed').className).not.toContain('text-amber-400');
+  });
 });
 
 describe('CardView — hover to read a clamped description', () => {
