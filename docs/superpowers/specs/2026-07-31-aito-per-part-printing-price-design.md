@@ -58,10 +58,6 @@ export function roundUpToStep(value: number, step = IMPRESSION_PRICE_STEP): numb
  *  Rounded to cents so an imported total that does not divide evenly
  *  (1240 over 3) renders as 413.33 rather than as float noise. */
 export function impressionUnitCost(task: TaskDraft): number | null;
-
-/** The inverse: stores a per-part price as the all-units total, multiplying
- *  by the task's OWN quantity. null clears the service; 0 stays 0 (free). */
-export function withImpressionUnitCost(task: TaskDraft, unit: number | null): TaskDraft;
 ```
 
 Both are pure and unit-tested. `IMPRESSION_PRICE_STEP` is a constant rather than
