@@ -2,23 +2,10 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Check } from 'lucide-react';
 import { api } from '../../api/client';
-import { AITO_SERVICE_LABEL_KEYS, taskSteps } from './services';
+import { AITO_SERVICE_LABEL_KEYS, serviceDotCls, taskSteps } from './services';
 import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
-import { STAGES } from '../../utils/aitoBoardRules';
-import { ALL_COLUMNS } from './columns';
-import type { ServiceId } from '../../utils/aitoBoardRules';
 import type { TaskDraft } from '../../utils/taskDraft';
-
-/** The board column that performs a service, and therefore the colour the step
- *  wears. Built from STAGES so it can never disagree with the rule engine about
- *  which column a service belongs to — impression and usinage both map to
- *  `print`, which is why they share an accent. */
-const STAGE_DOT: Record<string, string> = Object.fromEntries(
-  STAGES.flatMap(([column, services]) =>
-    services.map((service: ServiceId) => [service, ALL_COLUMNS.find((c) => c.id === column)?.dot ?? '']),
-  ),
-);
 
 export interface TaskStepListProps {
   task: TaskDraft;
@@ -83,7 +70,7 @@ export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
             <span
               data-testid={`step-swatch-${service}`}
               aria-hidden="true"
-              className={`w-0.5 h-4 flex-shrink-0 rounded-full ${STAGE_DOT[service]} transition-opacity duration-300 ease-[var(--ease-signature)] motion-reduce:transition-none ${
+              className={`w-0.5 h-4 flex-shrink-0 rounded-full ${serviceDotCls(service)} transition-opacity duration-300 ease-[var(--ease-signature)] motion-reduce:transition-none ${
                 done ? 'opacity-30' : ''
               }`}
             />

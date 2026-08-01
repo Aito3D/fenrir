@@ -2,6 +2,7 @@ import { SERVICES, STAGES, taskCost } from '../../utils/aitoBoardRules';
 import type { ServiceId } from '../../utils/aitoBoardRules';
 import type { AitoColumnId } from '../../api/client';
 import type { TaskDraft } from '../../utils/taskDraft';
+import { ALL_COLUMNS } from './columns';
 
 export type { ServiceId };
 
@@ -88,4 +89,16 @@ export function stagesWithWork(tasks: readonly TaskDraft[]): StageWork[] {
     }
     return entry.stepsTotal > 0 ? [entry] : [];
   });
+}
+
+/** Service -> the stage dot's Tailwind class, via the rule engine's own
+ *  STAGES mapping — shared by the panel's step list and the board card's
+ *  task rows so the two can never colour one service two ways. */
+const SERVICE_DOT: Record<string, string> = Object.fromEntries(
+  STAGES.flatMap(([column, services]) =>
+    services.map((service) => [service, ALL_COLUMNS.find((c) => c.id === column)?.dot ?? '']),
+  ),
+);
+export function serviceDotCls(service: string): string {
+  return SERVICE_DOT[service] ?? 'bg-bambu-gray';
 }
