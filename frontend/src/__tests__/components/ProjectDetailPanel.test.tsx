@@ -1690,10 +1690,10 @@ describe('ProjectDetailPanel surfaces', () => {
     expect(referenceCard.className).toContain('border-bambu-dark-tertiary');
     expect(referenceCard.className).not.toContain('card-shadow');
     // Task cards are the front plane: they DO cast a shadow. Selected via a
-    // class the fix doesn't touch (`rounded-lg border`), not `card-shadow`
-    // itself, so this half of the test can actually fail if the class is
-    // dropped from TaskRow.
-    const taskCard = (await screen.findByRole('heading', { name: /^Bracket mount/ })).closest('.rounded-lg.border')!;
+    // class the fix doesn't touch (`border`, TaskRow's own container), not
+    // `card-shadow` itself, so this half of the test can actually fail if the
+    // class is dropped from TaskRow.
+    const taskCard = (await screen.findByRole('heading', { name: /^Bracket mount/ })).closest('.border')!;
     expect(taskCard.className).toContain('card-shadow');
   });
 
@@ -1701,5 +1701,111 @@ describe('ProjectDetailPanel surfaces', () => {
     show();
     expect(screen.getByRole('dialog').className).toContain('bg-bambu-dark');
     expect(screen.getByRole('dialog').className).not.toContain('bg-bambu-dark-secondary');
+  });
+});
+
+// Visual-parity fixes against the approved design reference (t-mix2, "7 ·
+// Canvas, weighted") — seven divergences the side-by-side comparison found
+// between the shipped panel and the mock. Each test below pins one.
+describe('ProjectDetailPanel visual parity: header quote-status pill', () => {
+  it('shows the quote status as an accented pill in the eyebrow', () => {
+    show({ quote_number: 'DEV26-2462', quote_status: 'accepted' });
+    const pill = screen.getByTestId('panel-quote-status-pill');
+    expect(pill).toHaveTextContent('Accepted');
+    // Accent-themed, not a literal colour — see the panel's theming rule.
+    expect(pill.className).toContain('text-bambu-green');
+    expect(pill.className).toContain('border-bambu-green/40');
+    expect(pill.className).toContain('bg-bambu-green/10');
+  });
+
+  it('omits the pill entirely when the project has no quote status', () => {
+    show({ quote_number: 'DEV26-2462', quote_status: null });
+    expect(screen.queryByTestId('panel-quote-status-pill')).not.toBeInTheDocument();
+  });
+});
+
+describe('ProjectDetailPanel visual parity: header contact icons', () => {
+  it('gives the phone and email chips a leading icon, matching the reference', () => {
+    show();
+    const phoneButton = screen.getByRole('button', { name: /\+689-87123456/ });
+    expect(phoneButton.querySelector('svg.lucide-phone')).not.toBeNull();
+    const emailButton = screen.getByRole('button', { name: /hi@acme\.pf/ });
+    expect(emailButton.querySelector('svg.lucide-mail')).not.toBeNull();
+  });
+});
+
+describe('ProjectDetailPanel visual parity: tasks column header', () => {
+  it('replaces TaskEditor\'s own header with a Work eyebrow and an aggregate progress bar', async () => {
+    server.use(
+      http.get('/api/v1/aito/12/tasks', () =>
+        HttpResponse.json([
+          { ...mockTask, scan_cost: 3500, scan_done: true, modelisation_cost: 7000, modelisation_done: false },
+        ]),
+      ),
+    );
+    show();
+    const tasksColumn = screen.getByTestId('panel-column-tasks');
+    await waitFor(() => expect(within(tasksColumn).getByTestId('panel-work-progress')).toBeInTheDocument());
+    expect(within(tasksColumn).getByText('Work')).toBeInTheDocument();
+    // Same tally the panel header's own caption reads — see the doc on
+    // ProjectDetailPanel's stepsDone/stepsTotal for why this must be the
+    // exact same variables, not a second computation.
+    expect(screen.getByTestId('panel-work-steps-count')).toHaveTextContent('1/2 steps');
+    // The money now lives only in the panel header — TaskEditor's own
+    // "Project total" heading must not also render here.
+    expect(within(tasksColumn).queryByText('Project total')).not.toBeInTheDocument();
+  });
+});
+
+describe('ProjectDetailPanel visual parity: quote card rows', () => {
+  const quoteCard = () =>
+    screen.getAllByTestId('panel-card-heading').find((h) => h.textContent === 'Quote')!.parentElement!;
+
+  it('shows a Number row and, when the project has a status, a Status row', () => {
+    show({ quote_number: 'DEV26-2462', quote_status: 'accepted' });
+    const card = quoteCard();
+    expect(within(card).getByText('Number')).toBeInTheDocument();
+    expect(within(card).getByText('DEV26-2462')).toBeInTheDocument();
+    expect(within(card).getByText('Status')).toBeInTheDocument();
+    expect(within(card).getByText('Accepted')).toBeInTheDocument();
+  });
+
+  it('omits the Status row when the project has no quote status', () => {
+    show({ quote_number: 'DEV26-2462', quote_status: null });
+    const card = quoteCard();
+    expect(within(card).queryByText('Status')).not.toBeInTheDocument();
+  });
+});
+
+describe('ProjectDetailPanel visual parity: footer buttons', () => {
+  it('shows a visible "Print quote" label next to the icon, not just an aria-label', () => {
+    show({ quote_id: 'e2', quote_number: 'DEV26-2462' });
+    const footer = screen.getByTestId('panel-footer');
+    const button = within(footer).getByRole('button', { name: /print quote/i });
+    expect(button).toHaveTextContent('Print quote');
+  });
+
+  it('renders the trash control as a permanent bordered button, not hover-revealed', () => {
+    show();
+    const footer = screen.getByTestId('panel-footer');
+    const button = within(footer).getByRole('button', { name: /move to trash/i });
+    expect(button.className).not.toContain('opacity-0');
+    expect(button.className).toContain('border');
+    expect(button).toHaveTextContent('Move to trash');
+  });
+});
+
+describe('ProjectDetailPanel visual parity: corner radii', () => {
+  it('rounds the dialog to .85rem and the reference cards to .6rem', () => {
+    show();
+    expect(screen.getByRole('dialog').className).toContain('rounded-[.85rem]');
+    const referenceCard = screen.getAllByTestId('panel-card-heading')[0].parentElement!;
+    expect(referenceCard.className).toContain('rounded-[.6rem]');
+  });
+
+  it('rounds task cards to .6rem too', async () => {
+    show();
+    const taskCard = (await screen.findByRole('heading', { name: /^Bracket mount/ })).closest('.border')!;
+    expect(taskCard.className).toContain('rounded-[.6rem]');
   });
 });

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, ExternalLink, Loader2 } from 'lucide-react';
+import { Check, Copy, ExternalLink, Loader2, Mail, Phone } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ActivityRail } from './history/ActivityRail';
+import { ProjectProgress } from './ProjectProgress';
 import { QuotePrintButton } from './QuotePrintButton';
 import { QuoteStatusActions } from './QuoteStatusActions';
 import { quoteStatusLabelKey } from './quoteStatus';
@@ -44,6 +46,20 @@ const BLOCK_MESSAGE_KEY: Record<string, string> = {
   rejected: 'aito.quoteRejected',
 };
 
+/** Renders a Zoho estimate status through the shared quote-status labels, so
+ *  every surface that shows one — the header's eyebrow pill, the Quote card's
+ *  Status row, and the block-message interpolation below — agrees on the
+ *  same word. An untranslated status falls back to the raw string; a null
+ *  status (only reachable from the block-message call sites, which already
+ *  guard on `project.quote_status_block`) renders an em dash. Module-level,
+ *  not a closure over one component's `t`, because `PanelHeader` needs it too
+ *  and the two must never drift into two different fallback rules. */
+function quoteStatusText(t: (key: string) => string, status: string | null): string {
+  if (!status) return '—';
+  const key = quoteStatusLabelKey(status);
+  return key ? t(key) : status;
+}
+
 interface ProjectDetailPanelProps {
   project: AitoProject;
   onClose: () => void;
@@ -73,7 +89,18 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'error';
  *  behave alike. A copy that fails leaves the icon alone rather than raising a
  *  toast, which is what `PrinterInfoModal` does with the same helper: the check
  *  mark IS the claim that it worked, so withholding it is the honest report. */
-function CopyableValue({ value, label }: { value: string; label: string }) {
+function CopyableValue({
+  value,
+  label,
+  icon: Icon,
+}: {
+  value: string;
+  label: string;
+  /** A leading glyph — `Phone` / `Mail` in the header — purely decorative
+   *  (the accessible name is still the label+value pair below), so it needs
+   *  no `aria-hidden` of its own beyond what lucide's icons already carry. */
+  icon?: LucideIcon;
+}) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
@@ -93,8 +120,9 @@ function CopyableValue({ value, label }: { value: string; label: string }) {
       onClick={async () => {
         if (await copyTextToClipboard(value)) setCopied(true);
       }}
-      className="group inline-flex items-center gap-1.5 max-w-full min-w-0 rounded-md text-white hover:text-bambu-green transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
+      className="group inline-flex items-center gap-1.5 max-w-full min-w-0 rounded-md text-bambu-gray-light hover:text-bambu-green transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
     >
+      {Icon && <Icon className="w-3.5 h-3.5 flex-shrink-0" />}
       <span className="truncate">{value}</span>
       {copied ? (
         <Check className="w-3.5 h-3.5 flex-shrink-0 text-bambu-green animate-tick-in" />
@@ -218,11 +246,28 @@ function PanelHeader({
               )}
             </>
           )}
+          {/* The quote's own Zoho status, not the board column: the column
+              already implies roughly where the project sits (see
+              aito_board_rules.evaluate), but "the quote itself was accepted"
+              is a fact about Zoho, not about the board, and is otherwise only
+              readable by opening the Quote card lower in the left column. */}
+          {project.quote_status && (
+            <span
+              data-testid="panel-quote-status-pill"
+              className="text-xs uppercase tracking-wide text-bambu-green border border-bambu-green/40 bg-bambu-green/10 rounded-[.4rem] px-[.4rem] py-[.05rem]"
+            >
+              {quoteStatusText(t, project.quote_status)}
+            </span>
+          )}
         </div>
         <h2 className="text-xl font-semibold text-white truncate">{project.client_name ?? t('aito.noClient')}</h2>
-        <div className="flex items-center gap-4 mt-1 text-sm">
-          {project.client_phone && <CopyableValue value={project.client_phone} label={t('aito.phoneLabel')} />}
-          {project.client_email && <CopyableValue value={project.client_email} label={t('aito.emailLabel')} />}
+        <div className="flex items-center gap-4 mt-1 text-[.82rem]">
+          {project.client_phone && (
+            <CopyableValue value={project.client_phone} label={t('aito.phoneLabel')} icon={Phone} />
+          )}
+          {project.client_email && (
+            <CopyableValue value={project.client_email} label={t('aito.emailLabel')} icon={Mail} />
+          )}
         </div>
       </div>
 
@@ -249,7 +294,7 @@ function PanelHeader({
  *  the task list stop being the focus. */
 function PanelCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3">
+    <section className="rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3">
       <p data-testid="panel-card-heading" className="text-xs uppercase tracking-wide text-bambu-gray mb-2">
         {title}
       </p>
@@ -327,15 +372,10 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   const { t } = useTranslation();
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  // A status rendered through the shared quote-status labels, so the two sides
-  // of a block message are localised too rather than raw Zoho English. An
-  // untranslated status falls back to the raw string — Zoho can add statuses,
-  // and this is the only surface left that shows the exact one.
-  const statusLabel = (status: string | null): string => {
-    if (!status) return '—';
-    const key = quoteStatusLabelKey(status);
-    return key ? t(key) : status;
-  };
+  // A status rendered through the shared quote-status labels (see
+  // `quoteStatusText` above), so the two sides of a block message are
+  // localised too rather than raw Zoho English.
+  const statusLabel = (status: string | null): string => quoteStatusText(t, status);
   const blockKey = project.quote_status_block ? BLOCK_MESSAGE_KEY[project.quote_status_block] : null;
 
   const queryClient = useQueryClient();
@@ -467,7 +507,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
         // border either: tried behind the `black/70` backdrop, and invisible
         // at every strength short of garish — the lift comes from the canvas
         // contrast and the header's own cast shadow.
-        className="bg-bambu-dark rounded-xl w-full max-w-[100rem] border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)] focus:outline-none"
+        className="bg-bambu-dark rounded-[.85rem] w-full max-w-[100rem] border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)] focus:outline-none"
       >
         <PanelHeader
           project={project}
@@ -569,22 +609,38 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                   needs Zoho. */}
               {project.quote_number && (
                 <PanelCard title={t('aito.quoteSearchLabel')}>
-                  <div className="flex items-center gap-2 text-sm">
-                    {project.quote_url ? (
-                      <a
-                        href={project.quote_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title={t('aito.quoteOpenInZoho')}
-                        className="text-white hover:text-bambu-green inline-flex items-center gap-1 min-w-0 truncate"
-                      >
-                        {project.quote_number}
-                        <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
-                      </a>
-                    ) : (
-                      <span className="min-w-0 truncate text-white">{project.quote_number}</span>
+                  {/* A two-row definition list, not just the bare number: the
+                      Number row is what used to be here alone, and Status
+                      repeats the quote's Zoho status already shown as the
+                      header's eyebrow pill — this is the row someone scanning
+                      the left column (rather than the header) reaches for it
+                      from. Rendered only when there is a status to show, same
+                      omission rule the seller/email rows above follow. */}
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm items-baseline">
+                    <dt className="text-bambu-gray">{t('aito.quoteNumberLabel')}</dt>
+                    <dd className="text-right min-w-0">
+                      {project.quote_url ? (
+                        <a
+                          href={project.quote_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={t('aito.quoteOpenInZoho')}
+                          className="text-white hover:text-bambu-green inline-flex items-center gap-1 min-w-0 truncate"
+                        >
+                          {project.quote_number}
+                          <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
+                        </a>
+                      ) : (
+                        <span className="min-w-0 truncate text-white">{project.quote_number}</span>
+                      )}
+                    </dd>
+                    {project.quote_status && (
+                      <>
+                        <dt className="text-bambu-gray">{t('common.status')}</dt>
+                        <dd className="text-right text-bambu-green">{quoteStatusText(t, project.quote_status)}</dd>
+                      </>
                     )}
-                  </div>
+                  </dl>
                 </PanelCard>
               )}
 
@@ -665,6 +721,27 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               data-testid="panel-column-tasks"
               className="min-w-0 lg:min-h-0 lg:overflow-y-auto scrollbar-hide px-5 py-4"
             >
+              {/* Replaces TaskEditor's own "Tasks / Project total" heading
+                  (suppressed below via `showHeader={false}`) — the money now
+                  lives in the panel header, so repeating it here would be the
+                  same total shown twice. `stepsDone`/`stepsTotal` are the
+                  exact tally the panel header's own caption uses (see their
+                  doc above): reusing the variables, not recomputing them,
+                  is what keeps the two from ever disagreeing. */}
+              <div className="flex items-center justify-between gap-4 mb-3">
+                <p className="text-xs uppercase tracking-wide text-bambu-gray">{t('aito.workLabel')}</p>
+                <div className="flex items-center gap-2 flex-1 max-w-[16rem]">
+                  <div className="flex-1">
+                    <ProjectProgress done={stepsDone} total={stepsTotal} testId="panel-work-progress" />
+                  </div>
+                  <span
+                    data-testid="panel-work-steps-count"
+                    className="flex-shrink-0 text-xs text-bambu-gray tabular-nums"
+                  >
+                    {t('aito.stepsCount', { done: stepsDone, total: stepsTotal })}
+                  </span>
+                </div>
+              </div>
               <TaskEditor
                 value={tasks}
                 onChange={onTasksChange}
@@ -674,6 +751,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                 }}
                 canTick={project.quote_status === 'accepted'}
                 pendingUids={pendingTaskUids}
+                showHeader={false}
               />
             </div>
 
@@ -685,23 +763,28 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
 
         <div
           data-testid="panel-footer"
-          // `group` here (there is no header strip to carry it any more) is
-          // what `DeleteHoldButton`'s group-hover reveal keys off — hovering
-          // anywhere on the bar, not just the icon, surfaces it; keyboard
-          // focus and an in-progress hold reveal it regardless.
-          //
           // `bg-bambu-dark-secondary`, same as the header and every card: the
           // footer sits on the canvas as a surface too, not a darker recess
           // of it.
-          className="group flex-shrink-0 flex items-center gap-2 px-4 py-2 border-t border-bambu-dark-tertiary bg-bambu-dark-secondary"
+          className="flex-shrink-0 flex items-center gap-2 px-4 py-2 border-t border-bambu-dark-tertiary bg-bambu-dark-secondary"
         >
           {/* Destructive far left, safe actions far right — the two ends of the
-              bar. This is what the header adjacency to Close cost us. */}
+              bar. This is what the header adjacency to Close cost us.
+              `alwaysVisible`/`withLabel`: far from any dismiss control down
+              here, an icon that only reveals itself on hover (the header's
+              old behaviour, kept as the default for TaskRow's own delete
+              control) would be invisible at rest — all three footer actions
+              are permanent bordered buttons with a visible label. */}
           {onDelete && (
-            <DeleteHoldButton onDelete={onDelete} label={t('aito.moveToTrash')} hint={t('aito.holdToDelete')} />
+            <DeleteHoldButton
+              onDelete={onDelete}
+              label={t('aito.moveToTrash')}
+              hint={t('aito.holdToDelete')}
+              alwaysVisible
+            />
           )}
           <span className="flex-1" />
-          <QuotePrintButton project={project} />
+          <QuotePrintButton project={project} withLabel />
           {project.quote_url && (
             <a
               href={project.quote_url}
