@@ -898,7 +898,10 @@ Replace the `<ul>` body with:
                 type="button"
                 aria-pressed={done}
                 onClick={() => onChange({ ...task, done: { ...task.done, [service]: !done } })}
-                className={`group/step w-full flex items-center gap-3 rounded-md px-1.5 py-1 -mx-1.5 transition-colors hover:bg-white/[0.045] ${focusRingCls}`}
+                // hover uses bambu-dark-tertiary/40, NOT a white alpha: a white
+                // overlay on a white card is invisible in light mode. Same
+                // token the description's hover already uses in this panel.
+                className={`group/step w-full flex items-center gap-3 rounded-md px-1.5 py-1 -mx-1.5 transition-colors hover:bg-bambu-dark-tertiary/40 ${focusRingCls}`}
               >
                 {row}
               </button>
@@ -1196,24 +1199,22 @@ Replace lines 243-261 with:
             <div className="text-right">
               <Money currency={currency} value={valueTotal} className="block text-2xl font-semibold text-white" />
               <span className="block text-xs text-bambu-gray tabular-nums">
-                {t('aito.amountDone', { amount: '' })} {/* see below */}
+                {t('aito.amountDone', { amount: formatMoney(valueDone, currency) })}
+                {' · '}
+                {t('aito.stepsCount', { done: project.steps_done, total: project.steps_total })}
               </span>
             </div>
           </div>
         </div>
 ```
 
-For the sub-line, compose it from the two existing keys rather than inventing a third:
-
-```tsx
-              <span className="block text-xs text-bambu-gray tabular-nums">
-                {t('aito.amountDone', { amount: formatMoney(valueDone, currency) })}
-                {' · '}
-                {t('aito.stepsCount', { done: project.steps_done, total: project.steps_total })}
-              </span>
-```
-
-`Money` is a component, so the `amountDone` interpolation needs a plain string. Use the same formatter `Money` uses — read `components/calculator/shared.tsx` and export its internal formatter if it is not already exported, rather than writing a second one.
+`Money` is a component and `amountDone` interpolates a plain string, so this
+needs the formatter rather than the component. Read
+`components/calculator/shared.tsx` first: if it already exports a
+string-returning formatter, import that. If the formatting is inline in
+`Money`, extract it to an exported `formatMoney(value: number, currency: string): string`
+and have `Money` call it, so there is exactly one money format in the app.
+Do not write a second formatter.
 
 Derive the totals near the top of the component body, after `tasks` comes from `useProjectTasks`:
 
