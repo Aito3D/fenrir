@@ -120,22 +120,28 @@ export function ActivityRail({ projectId }: { projectId: number }) {
 
   return (
     <section aria-label={t('aito.history.title')} className="min-w-0">
-      <p className="text-xs uppercase tracking-wide text-bambu-gray mb-2">{t('aito.history.title')}</p>
+      {/* Title and depth control share one row rather than stacking. The
+          column is 22rem wide and the control is 166px, so stacking them spent
+          a whole line on 40% occupancy — and it put the heading and the thing
+          that changes what the heading lists two rows apart. */}
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <p className="text-xs uppercase tracking-wide text-bambu-gray">{t('aito.history.title')}</p>
 
-      <div className="inline-flex rounded-lg border border-bambu-dark-tertiary overflow-hidden mb-3">
-        {DEPTHS.map((option) => (
-          <button
-            key={option}
-            type="button"
-            aria-pressed={depth === option}
-            onClick={() => chooseDepth(option)}
-            className={`px-2.5 py-1 text-xs transition-colors ${
-              depth === option ? 'bg-bambu-green text-bambu-dark font-medium' : 'text-bambu-gray hover:text-white'
-            }`}
-          >
-            {t(DEPTH_LABEL_KEY[option])}
-          </button>
-        ))}
+        <div className="inline-flex rounded-lg border border-bambu-dark-tertiary overflow-hidden flex-shrink-0">
+          {DEPTHS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={depth === option}
+              onClick={() => chooseDepth(option)}
+              className={`px-2.5 py-1 text-xs transition-colors ${
+                depth === option ? 'bg-bambu-green text-bambu-dark font-medium' : 'text-bambu-gray hover:text-white'
+              }`}
+            >
+              {t(DEPTH_LABEL_KEY[option])}
+            </button>
+          ))}
+        </div>
       </div>
 
       <form

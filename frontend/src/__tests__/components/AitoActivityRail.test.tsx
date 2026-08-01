@@ -36,6 +36,22 @@ describe('ActivityRail', () => {
     expect(screen.getByText(/added a task/i)).toBeInTheDocument();
   });
 
+  it('sits the depth control on the title\'s row, not underneath it', async () => {
+    vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
+    render(<ActivityRail projectId={12} />);
+
+    // The heading and the control that decides what the heading lists share
+    // one flex row. Stacking them spent a whole line of a 22rem column on a
+    // 166px control, and put the two two rows apart.
+    const title = await screen.findByText(/^activity$/i);
+    const depthButton = screen.getByRole('button', { name: /story/i });
+    const row = title.parentElement!;
+
+    expect(row.className).toContain('flex');
+    expect(row.className).toContain('justify-between');
+    expect(row.contains(depthButton)).toBe(true);
+  });
+
   it('defaults to detail depth and refetches when the depth changes', async () => {
     const spy = vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
     const user = userEvent.setup();

@@ -1702,6 +1702,16 @@ describe('ProjectDetailPanel surfaces', () => {
     expect(screen.getByRole('dialog').className).toContain('bg-bambu-dark');
     expect(screen.getByRole('dialog').className).not.toContain('bg-bambu-dark-secondary');
   });
+
+  it('clips its corners, so the header gradient and footer fill cannot square them off', () => {
+    show();
+    // The header is full-bleed with a gradient and the footer with a solid
+    // fill; both are square-cornered and full-width. Without this the panel
+    // renders as a rectangle with four notched corners.
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.className).toContain('rounded-[.85rem]');
+    expect(dialog.className).toContain('overflow-hidden');
+  });
 });
 
 // Visual-parity fixes against the approved design reference (t-mix2, "7 ·

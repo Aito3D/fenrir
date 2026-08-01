@@ -512,7 +512,12 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
         // border either: tried behind the `black/70` backdrop, and invisible
         // at every strength short of garish — the lift comes from the canvas
         // contrast and the header's own cast shadow.
-        className="bg-bambu-dark rounded-[.85rem] w-full max-w-[100rem] border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)] focus:outline-none"
+        // `overflow-hidden` is load-bearing, not tidiness: the header carries a
+        // full-bleed gradient and the footer a solid fill, both square-cornered
+        // and both spanning the full width, so without it their corners paint
+        // over this element's radius and the panel reads as a rectangle with
+        // four notched corners.
+        className="bg-bambu-dark rounded-[.85rem] overflow-hidden w-full max-w-[100rem] border border-bambu-dark-tertiary flex flex-col max-h-[calc(100vh-2rem)] focus:outline-none"
       >
         <PanelHeader
           project={project}
