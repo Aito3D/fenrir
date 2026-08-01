@@ -165,12 +165,14 @@ interface LaunchSpec {
   /** How far the board must pan to reveal the landing column; 0 for targets
    *  — like the archive toggle — that never move with the board. */
   panBy: number;
+  /** Coordinates concurrent pans so only the newest one drives `scrollLeft`. */
+  panOwner: { current: PanRun | null };
   /** Fires when the ghost lands. */
   onLand?: () => void;
 }
 
 function launch(spec: LaunchSpec): void {
-  const { key, flights, layer, board, source, to, reveal, archive, panBy, onLand } = spec;
+  const { key, flights, layer, board, source, to, reveal, archive, panBy, panOwner, onLand } = spec;
 
   // Retarget: a card relocated twice in quick succession continues from where
   // its ghost visually IS, not from a layout position it no longer occupies.
@@ -233,7 +235,12 @@ function launch(spec: LaunchSpec): void {
     stop();
   }, stop);
 
-  if (panBy !== 0) pan(board, panBy, travel, ghost);
+  if (panBy !== 0) pan(board, panBy, travel, ghost, panOwner);
+}
+
+/** One pan in flight; a new one cancels it. */
+interface PanRun {
+  cancel: () => void;
 }
 
 /** Ride the flight's own clock rather than starting a second one.
@@ -243,17 +250,42 @@ function launch(spec: LaunchSpec): void {
  *  it lands the card somewhere the slot no longer is.
  *
  *  The first step runs synchronously so the pan is never a frame behind the
- *  ghost it is following. */
-function pan(board: HTMLElement, panBy: number, travel: Animation, ghost: HTMLElement): void {
-  const start = board.scrollLeft;
+ *  ghost it is following.
+ *
+ *  `owner` holds at most one running pan. Two cards relocating to off-screen
+ *  columns in the same render pass would otherwise spawn two loops writing an
+ *  ABSOLUTE `scrollLeft` every frame, fighting each other for as long as both
+ *  run. A new pan cancels whatever is running first, and a cancelled loop
+ *  writes nothing further — not even its final snap — so a callback that was
+ *  already queued when it got cancelled is a no-op if it still fires. */
+function pan(
+  board: HTMLElement,
+  panBy: number,
+  travel: Animation,
+  ghost: HTMLElement,
+  owner: { current: PanRun | null },
+): void {
+  owner.current?.cancel();
+  const start = board.scrollLeft; // where the board IS, not where a previous pan began
+  let cancelled = false;
+  let frame = 0;
+  const run: PanRun = {
+    cancel: () => {
+      cancelled = true;
+      if (frame) cancelAnimationFrame(frame);
+    },
+  };
+  owner.current = run;
   const step = () => {
+    if (cancelled) return;
     const progress = travel.effect?.getComputedTiming().progress;
     if (!ghost.isConnected || typeof progress !== 'number' || travel.playState !== 'running') {
+      if (owner.current === run) owner.current = null;
       board.scrollLeft = start + panBy;
       return;
     }
     board.scrollLeft = start + panBy * progress;
-    requestAnimationFrame(step);
+    frame = requestAnimationFrame(step);
   };
   step();
 }
@@ -293,6 +325,7 @@ export function useCardFlight(
   const snapshotsRef = useRef(new Map<string, Snapshot>());
   const flightsRef = useRef(new Map<string, Flight>());
   const layerRef = useRef<HTMLElement | null>(null);
+  const panOwnerRef = useRef<PanRun | null>(null);
 
   useLayoutEffect(() => {
     const board = boardRef.current;
@@ -305,6 +338,7 @@ export function useCardFlight(
     if (!board) {
       for (const flight of [...flights.values()]) flight.stop();
       snapshotsRef.current = new Map();
+      panOwnerRef.current?.cancel();
       return;
     }
 
@@ -342,6 +376,7 @@ export function useCardFlight(
           to: { ...snapshot.rect, left: snapshot.rect.left - panBy },
           archive: false,
           panBy,
+          panOwner: panOwnerRef,
           reveal: () => {
             target.style.opacity = '';
           },
@@ -374,6 +409,7 @@ export function useCardFlight(
           // The archive toggle lives in the toolbar, which never scrolls with
           // the board.
           panBy: 0,
+          panOwner: panOwnerRef,
           reveal: () => {},
           onLand: () => pulse(pad),
         });
@@ -384,12 +420,14 @@ export function useCardFlight(
   });
 
   // Nothing may outlive the board: a ghost left behind would sit over the next
-  // page, and a card left at opacity 0 would be invisible.
+  // page, a card left at opacity 0 would be invisible, and a pan loop left
+  // running would scroll a board this hook no longer owns.
   useEffect(
     () => () => {
       for (const flight of [...flightsRef.current.values()]) flight.stop();
       layerRef.current?.remove();
       layerRef.current = null;
+      panOwnerRef.current?.cancel();
     },
     [],
   );

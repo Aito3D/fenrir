@@ -381,6 +381,51 @@ function makeScrollable(board: HTMLElement, scrollWidth: number) {
   Object.defineProperty(board, 'scrollLeft', { value: 0, writable: true, configurable: true });
 }
 
+/** For the concurrency tests only: `stubAnimate`'s flights are 'finished' the
+ *  instant they're created, so `pan()`'s synchronous first step already sees
+ *  a settled animation and nothing is ever mid-air to race. This stub reports
+ *  'running' instead, with a shared, test-controlled `progress` so two flights
+ *  launched in the same pass can be driven independently of real time. */
+function stubRunningAnimate(progress: { value: number }) {
+  recorded = [];
+  Element.prototype.animate = function (this: Element, keyframes, animationOptions) {
+    recorded.push({
+      el: this,
+      keyframes: keyframes as Keyframe[],
+      options: (animationOptions ?? {}) as KeyframeAnimationOptions,
+    });
+    return {
+      finished: new Promise<void>(() => {}),
+      cancel: () => {},
+      playState: 'running',
+      effect: { getComputedTiming: () => ({ progress: progress.value }) },
+    } as unknown as Animation;
+  } as typeof Element.prototype.animate;
+}
+
+/** Collects `requestAnimationFrame` callbacks instead of running them, so a
+ *  test can fire a specific queued frame by hand — including one that was
+ *  cancelled, to prove firing it is a no-op rather than relying on the real
+ *  `cancelAnimationFrame` to have removed it from a browser's queue. */
+function stubRaf(): { callbacks: FrameRequestCallback[]; restore: () => void } {
+  const realRaf = window.requestAnimationFrame;
+  const realCaf = window.cancelAnimationFrame;
+  const callbacks: FrameRequestCallback[] = [];
+  let id = 0;
+  window.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+    callbacks.push(cb);
+    return ++id;
+  }) as typeof requestAnimationFrame;
+  window.cancelAnimationFrame = (() => {}) as typeof cancelAnimationFrame;
+  return {
+    callbacks,
+    restore: () => {
+      window.requestAnimationFrame = realRaf;
+      window.cancelAnimationFrame = realCaf;
+    },
+  };
+}
+
 describe('useCardFlight pan', () => {
   it('pans the board to reveal a destination past its right edge, on the flight’s own timeline', () => {
     const { board, left, right } = buildBoard();
@@ -431,5 +476,50 @@ describe('useCardFlight pan', () => {
     rerender();
 
     expect(board.scrollLeft).toBe(60);
+  });
+});
+
+describe('useCardFlight pan concurrency', () => {
+  it('lets the newest pan own scrollLeft; a cancelled pan writes nothing, not even a stale frame', () => {
+    const progress = { value: 0.5 };
+    stubRunningAnimate(progress);
+    const raf = stubRaf();
+    try {
+      const { board, left, right } = buildBoard();
+      makeScrollable(board, 3600);
+      const cardA = buildCard('12', SLOT_A);
+      const cardB = buildCard('13', { left: 20, top: 200, width: 280, height: 120 });
+      left.appendChild(cardA);
+      left.appendChild(cardB);
+      const { rerender } = renderHook(() => useCardFlight({ current: board }, options));
+
+      // Both cards relocate off-screen in the same render pass: panBy 116 for
+      // A, 596 for B. A's synchronous first step runs and writes scrollLeft
+      // BEFORE B's pan cancels it, so B must re-base on that value rather
+      // than snap the board back to where A started.
+      right.appendChild(cardA);
+      place(cardA, { left: 1020, top: 40, width: 280, height: 120 });
+      right.appendChild(cardB);
+      place(cardB, { left: 1500, top: 200, width: 280, height: 120 });
+      rerender();
+
+      expect(raf.callbacks).toHaveLength(2);
+      const [staleFrame, liveFrame] = raf.callbacks;
+      // 0 + 116*0.5 (A, before being cancelled) + 596*0.5 (B, re-based on that) = 356.
+      expect(board.scrollLeft).toBe(356);
+
+      progress.value = 1;
+      liveFrame();
+      // Only B's delta is added on top — A never runs again.
+      expect(board.scrollLeft).toBe(58 + 596);
+
+      // A's frame is still sitting in the (stubbed) queue — nothing removed
+      // it — but firing it is a no-op: A's own `cancelled` flag, not the
+      // queue, is what stops it from clobbering B's position.
+      staleFrame();
+      expect(board.scrollLeft).toBe(58 + 596);
+    } finally {
+      raf.restore();
+    }
   });
 });
