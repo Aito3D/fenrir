@@ -65,16 +65,24 @@ def read_env_oidc_config() -> dict | None:
     """The provider's fields from the environment, or None if it isn't configured.
 
     An empty required var counts as unset -- `BAMBUDDY_OIDC_CLIENT_SECRET=` in
-    a compose file is a forgotten value, not an intentional empty secret.
+    a compose file is a forgotten value, not an intentional empty secret. Blank
+    means blank *after* stripping, and the surviving value is stripped too: a
+    Kubernetes Secret written as a block scalar (``stringData: secret: |``) or
+    created from a file carries a trailing newline that nothing downstream
+    rejects -- max_length is the only bound the schema puts on these four. An
+    issuer_url with a trailing newline is stored and enabled, and then fails
+    with httpx.InvalidURL on the first click of the SSO button, which is the
+    authorize-time failure the all-or-nothing rule above exists to prevent.
     """
-    if not all(os.environ.get(key) for key in _REQUIRED):
+    required = {key: (os.environ.get(key) or "").strip() for key in _REQUIRED}
+    if not all(required.values()):
         return None
 
     return {
-        "name": os.environ["BAMBUDDY_OIDC_NAME"],
-        "issuer_url": os.environ["BAMBUDDY_OIDC_ISSUER_URL"],
-        "client_id": os.environ["BAMBUDDY_OIDC_CLIENT_ID"],
-        "client_secret": os.environ["BAMBUDDY_OIDC_CLIENT_SECRET"],
+        "name": required["BAMBUDDY_OIDC_NAME"],
+        "issuer_url": required["BAMBUDDY_OIDC_ISSUER_URL"],
+        "client_id": required["BAMBUDDY_OIDC_CLIENT_ID"],
+        "client_secret": required["BAMBUDDY_OIDC_CLIENT_SECRET"],
         "scopes": (os.environ.get("BAMBUDDY_OIDC_SCOPES") or "").strip() or "openid email profile",
         "is_enabled": env_bool("BAMBUDDY_OIDC_ENABLED", True),
         "auto_create_users": env_bool("BAMBUDDY_OIDC_AUTO_CREATE_USERS", False),

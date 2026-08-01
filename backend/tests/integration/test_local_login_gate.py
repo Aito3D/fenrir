@@ -116,6 +116,15 @@ class TestLocalLoginGate:
         # Bypass stays off (same 401 as no env var), and crucially not a 500.
         assert response.status_code == 401, response.text
 
+    def test_the_bypass_var_is_registered_in_the_typo_guard(self):
+        """config.py logs "possible typo" for any unregistered BAMBUDDY_* var.
+        Unregistered, this one tells an operator who is locked out and following
+        the documented recovery that the variable they just set is not real --
+        while the same line lists every BAMBUDDY_OIDC_* var as legitimate."""
+        from backend.app.core.config import _INTENTIONAL_UNSETTINGS
+
+        assert "BAMBUDDY_LOCAL_LOGIN" in _INTENTIONAL_UNSETTINGS
+
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_forgot_password_rejected_when_local_disabled(

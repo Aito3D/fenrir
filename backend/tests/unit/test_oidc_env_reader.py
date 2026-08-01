@@ -56,12 +56,35 @@ def test_returns_none_when_any_single_required_var_is_missing(monkeypatch, missi
     assert read_env_oidc_config() is None
 
 
-def test_an_empty_required_var_counts_as_unset(monkeypatch):
+@pytest.mark.parametrize("raw", ["", "   ", "\n", " \t\n "])
+@pytest.mark.parametrize("key", sorted(REQUIRED))
+def test_an_empty_required_var_counts_as_unset(monkeypatch, key, raw):
     """`BAMBUDDY_OIDC_CLIENT_SECRET=` in a compose file is a forgotten value,
-    not an intentional empty secret."""
+    not an intentional empty secret -- and neither is one holding only
+    whitespace, which the optional vars have always treated as unset."""
     _set_required(monkeypatch)
-    monkeypatch.setenv("BAMBUDDY_OIDC_CLIENT_SECRET", "")
+    monkeypatch.setenv(key, raw)
     assert read_env_oidc_config() is None
+
+
+@pytest.mark.parametrize("key", sorted(REQUIRED))
+def test_a_required_var_is_stripped(monkeypatch, key):
+    """A Kubernetes Secret written as a block scalar carries a trailing
+    newline, and the schema bounds these four by max_length only -- so an
+    unstripped issuer_url reaches the database, enables the SSO button and
+    then raises httpx.InvalidURL on the first click, long after startup could
+    have refused it."""
+    _set_required(monkeypatch)
+    monkeypatch.setenv(key, f"  {REQUIRED[key]}\n")
+
+    cfg = read_env_oidc_config()
+    field = {
+        "BAMBUDDY_OIDC_NAME": "name",
+        "BAMBUDDY_OIDC_ISSUER_URL": "issuer_url",
+        "BAMBUDDY_OIDC_CLIENT_ID": "client_id",
+        "BAMBUDDY_OIDC_CLIENT_SECRET": "client_secret",
+    }[key]
+    assert cfg[field] == REQUIRED[key]
 
 
 def test_reads_the_required_vars(monkeypatch):
