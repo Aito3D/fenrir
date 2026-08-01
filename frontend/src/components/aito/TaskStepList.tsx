@@ -114,7 +114,7 @@ export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
                 // hover uses bambu-dark-tertiary/40, NOT a white alpha: a white
                 // overlay on a white card is invisible in light mode. Same
                 // token the description's hover already uses in this panel.
-                className={`group/step w-full flex items-center gap-3 rounded-md px-1.5 py-1 -mx-1.5 transition-colors hover:bg-bambu-dark-tertiary/40 ${focusRingCls}`}
+                className={`group/step w-full flex items-center gap-3 rounded-md px-1.5 py-1 -mx-1.5 transition-colors motion-reduce:transition-none hover:bg-bambu-dark-tertiary/40 ${focusRingCls}`}
               >
                 {row}
               </button>

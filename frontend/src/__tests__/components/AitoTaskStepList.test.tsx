@@ -47,6 +47,7 @@ describe('TaskStepList', () => {
     const ticked = task({ done: { scan: true, modelisation: false, impression: false, usinage: false } });
     render(<TaskStepList task={ticked} onChange={onChange} canTick />);
 
+    expect(screen.getByRole('button', { name: /Scan/i })).toHaveAttribute('aria-pressed', 'true');
     await user.click(screen.getByRole('button', { name: /Scan/i }));
     expect(onChange.mock.calls[0][0].done.scan).toBe(false);
   });
@@ -66,7 +67,7 @@ describe('TaskStepList', () => {
     const ticked = task({ done: { scan: true, modelisation: false, impression: false, usinage: false } });
     render(<TaskStepList task={ticked} onChange={vi.fn()} canTick={false} />);
     expect(screen.getByText('Scan')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /mark not done/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
   it('makes the whole row the toggle, not just a pill at its end', async () => {
