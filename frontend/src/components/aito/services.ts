@@ -8,7 +8,7 @@ export type { ServiceId };
 
 /** The four Aito services, keyed by the ids the backend emits.
  *
- *  Shared by `StepGrid` (the board card's per-task pill row, which iterates
+ *  Shared by `TaskMiniRows` (the board card's per-task row, which iterates
  *  `SERVICES` directly rather than reading ids off the project response) and
  *  `ImportQuoteModal` (which derives them from the draft in hand) so the two
  *  can never disagree about a label. The insertion order here is the

@@ -3,8 +3,8 @@ import { AITO_SERVICE_LABEL_KEYS } from './services';
 
 /** Compact badge row naming a task's services.
  *
- *  The board card does not use this at all — it draws its own per-task pill
- *  grid via `StepGrid`. The sole remaining caller is `ImportQuoteModal`,
+ *  The board card does not use this at all — it draws its own per-task rows
+ *  via `TaskMiniRows`. The sole remaining caller is `ImportQuoteModal`,
  *  which never passes `done` and so always renders the plain, undimmed row.
  *  Every element is still a `<span>`, but that is no longer load-bearing: it
  *  used to be forced by a `<button>` ancestor (a `<button>` may not contain

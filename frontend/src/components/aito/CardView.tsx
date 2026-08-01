@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Building2, GripVertical, Lock, User } from 'lucide-react';
-import { ProjectProgress } from './ProjectProgress';
-import { StepGrid } from './StepGrid';
+import { TaskMiniRows } from './TaskMiniRows';
 import type { AitoProject } from '../../api/client';
 import { formatElapsedTime, parseUTCDate } from '../../utils/date';
 import { prefersReducedMotion } from '../../utils/motion';
@@ -23,7 +22,7 @@ export interface CardViewProps {
   dragHandleRef?: (element: HTMLElement | null) => void;
   /** dnd-kit's attributes + listeners, spread onto the grip. */
   dragHandleProps?: Record<string, unknown>;
-  /** An extra line of text for the footer, beside the elapsed time. Exists for
+  /** An extra bit of text in the footer, beside the steps count. Exists for
    *  the trash grid, where "created 3 weeks ago" is not the fact you are
    *  looking for — "deleted yesterday" is. Every other surface omits it. */
   footerNote?: ReactNode;
@@ -54,15 +53,18 @@ const HOVER_REVEAL_MS = 2000;
  *  because `useCardMorph` queries `[data-aito-card-id]` to assign the view
  *  transition name and must keep finding the styled element, not empty space.
  *
- *  Two zones: the header carries the client name and is the ONLY drag source
- *  (via the grip); everything below it — description, step pills, money,
- *  elapsed time, quote number, sync indicator, progress bar, and the padding
- *  between them — is a single click region that opens the detail panel. The
- *  click handler lives on that region's wrapper `<div>`, not on a `<button>`
- *  wrapping the content: the footer holds the parent-injected action buttons,
- *  and a `<button>` may not contain another. Every click inside the region —
- *  on text, on a step pill, or on bare padding — bubbles to the wrapper
- *  because the wrapper is a genuine DOM ancestor of all of it. A transparent
+ *  Two zones: the name row carries the client name, the aging timestamp and
+ *  is the ONLY drag source (via the grip) — it sits flat on the card surface,
+ *  no header band beneath it; everything below it — description, per-task
+ *  rows, money, quote number, sync indicator, the steps count, and the
+ *  padding between them — is a single click region that opens the detail
+ *  panel. There is no edge progress bar; the footer's steps count carries
+ *  that total instead. The click handler lives on that region's wrapper
+ *  `<div>`, not on a `<button>` wrapping the content: the footer holds the
+ *  parent-injected action buttons, and a `<button>` may not contain another.
+ *  Every click inside the region — on text, on a task row, or on bare
+ *  padding — bubbles to the wrapper because the wrapper is a genuine DOM
+ *  ancestor of all of it. A transparent
  *  `<button>` sits underneath purely as the pointerless affordance: it carries
  *  the accessible name and the focus ring, and the click its Enter/Space
  *  produces bubbles to the same wrapper handler, so keyboard and pointer
@@ -181,6 +183,16 @@ export function CardView({
     .filter(Boolean)
     .join(' · ');
 
+  // Amber past a week, live cards only: an archived or trashed job is not
+  // late, it is finished or discarded, and an aging tint there would nag
+  // about nothing anyone still owes.
+  const AGING_DAYS = 7;
+  const aging =
+    project.status === 'active' &&
+    project.column !== 'done' &&
+    created !== null &&
+    Date.now() - created.getTime() > AGING_DAYS * 86_400_000;
+
   return (
     <div
       data-testid="aito-card-shell"
@@ -205,8 +217,8 @@ export function CardView({
         ref={cardRef}
         data-aito-card
         data-aito-card-id={project.id}
-        // overflow-hidden clips the progress bar to the card's rounded corner.
-        // Safe here: the focus ring is `focus-visible:ring-inset` (drawn inside),
+        // overflow-hidden keeps every child square against the card's rounded
+        // corner. Safe here: the focus ring is `focus-visible:ring-inset` (drawn inside),
         // `card-shadow` is a box-shadow and is not clipped by `overflow`, and the
         // grip's `p-2 -m-2` pulls padding inward rather than pushing content out.
         className={`group rounded-xl border bg-bambu-dark-secondary select-none overflow-hidden ${
@@ -217,7 +229,7 @@ export function CardView({
             : 'border-bambu-dark-tertiary card-shadow transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-bambu-green/40 hover:shadow-lg motion-reduce:hover:translate-y-0'
         } ${placeholder ? 'opacity-60' : ''}`}
       >
-        <div className="flex items-center gap-2 px-3 py-2 bg-bambu-dark-tertiary rounded-t-xl border-b border-bambu-dark-secondary">
+        <div className="flex items-center gap-2 px-3 pt-2.5">
           {/* Same building/person distinction the expanded card's header
               makes, at card scale. `aria-hidden` with the label carried in
               text beside it, so the split is not sighted-users-only; null
@@ -246,6 +258,16 @@ export function CardView({
             </span>
             {project.client_name ?? t('aito.noClient')}
           </p>
+          {/* Moved up from the footer: the name row is where a person's eye
+              already lands, and an aging job is exactly the fact that belongs
+              beside the name, not buried under a description. */}
+          <span
+            data-testid="aito-card-elapsed"
+            title={dateTitle}
+            className={`text-xs flex-shrink-0 ${aging ? 'text-amber-400' : 'text-bambu-gray'}`}
+          >
+            {elapsed}
+          </span>
           {dragHandleProps && !placeholder ? (
             <button
               type="button"
@@ -263,7 +285,7 @@ export function CardView({
           )}
         </div>
 
-        {/* One click region: the body, the footer and the bar. The handler is on
+        {/* One click region: the body and the footer. The handler is on
             this wrapper rather than on a <button> wrapping everything, because
             the footer holds the parent's injected action buttons and a <button>
             may not contain another. Every click inside bubbles to here.
@@ -291,7 +313,7 @@ export function CardView({
                 ref={descriptionRef}
                 data-testid="aito-card-description"
                 className={`text-sm text-white whitespace-pre-wrap break-words ${
-                  expanded ? '' : 'line-clamp-3'
+                  expanded ? '' : 'line-clamp-2'
                 }`}
               >
                 {project.description}
@@ -299,17 +321,23 @@ export function CardView({
               {/* No money here. A price is read once, deliberately, on the
                   project you have opened; the collapsed card is for reading
                   progress at a glance down a whole column, and a column of
-                  totals competes with the pills for exactly the attention the
-                  pills are there to get. `TaskEditor` shows the project total
-                  in the detail panel. */}
-              <StepGrid tasks={taskSteps} />
+                  totals competes with the task rows for exactly the attention
+                  the rows are there to get. `TaskEditor` shows the project
+                  total in the detail panel. */}
+              <TaskMiniRows tasks={taskSteps} />
             </div>
 
             <div className="px-3 pb-2 flex items-center justify-between gap-2">
               <div className="flex items-baseline gap-2 min-w-0">
-                <span className="text-xs text-bambu-gray flex-shrink-0" title={dateTitle}>
-                  {elapsed}
-                </span>
+                {/* Replaces the edge progress bar: the same done/total fact,
+                    read as a number instead of a sliver of fill along the
+                    card's bottom border. Omitted at zero — a project with no
+                    steps yet has nothing to count. */}
+                {project.steps_total > 0 && (
+                  <span className="text-xs text-bambu-gray tabular-nums flex-shrink-0">
+                    {t('aito.stepsCount', { done: project.steps_done, total: project.steps_total })}
+                  </span>
+                )}
                 {footerNote && <span className="text-xs text-bambu-gray truncate">{footerNote}</span>}
                 {project.quote_number && (
                   <span className="text-xs text-bambu-gray truncate">{project.quote_number}</span>
@@ -345,8 +373,6 @@ export function CardView({
                 {!overlay && !placeholder && actions}
               </div>
             </div>
-
-            <ProjectProgress done={project.steps_done} total={project.steps_total} />
           </div>
         </div>
       </div>
