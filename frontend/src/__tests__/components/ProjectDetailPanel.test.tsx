@@ -1777,6 +1777,55 @@ describe('ProjectDetailPanel visual parity: quote card rows', () => {
   });
 });
 
+// The header pill and the Quote card's Status row both render the same
+// project.quote_status, a few hundred pixels apart in the same column. They
+// used to hardcode bambu-green independently of the actual status, so a
+// declined or expired quote still read as the green "success" accent — the
+// opposite of QuoteStatusActions.tsx, which paints a decline in status-error
+// a few inches below. These pin both surfaces to the shared quoteStatusTone
+// map so they cannot drift apart again.
+describe('ProjectDetailPanel visual parity: quote status tone matches its actual status', () => {
+  const quoteCard = () =>
+    screen.getAllByTestId('panel-card-heading').find((h) => h.textContent === 'Quote')!.parentElement!;
+
+  it('accepted renders the success accent (bambu-green) in both the pill and the Status row', () => {
+    show({ quote_number: 'DEV26-2462', quote_status: 'accepted' });
+    const pill = screen.getByTestId('panel-quote-status-pill');
+    expect(pill.className).toContain('text-bambu-green');
+    expect(within(quoteCard()).getByText('Accepted').className).toContain('text-bambu-green');
+  });
+
+  it('declined renders the error accent (status-error), matching QuoteStatusActions\' decline button', () => {
+    show({ quote_number: 'DEV26-2462', quote_status: 'declined' });
+    const pill = screen.getByTestId('panel-quote-status-pill');
+    expect(pill.className).toContain('text-status-error');
+    expect(pill.className).not.toContain('bambu-green');
+    const statusValue = within(quoteCard()).getByText('Declined');
+    expect(statusValue.className).toContain('text-status-error');
+    expect(statusValue.className).not.toContain('bambu-green');
+  });
+
+  it('expired renders the warning accent (status-warning), not the success green', () => {
+    show({ quote_number: 'DEV26-2462', quote_status: 'expired' });
+    const pill = screen.getByTestId('panel-quote-status-pill');
+    expect(pill.className).toContain('text-status-warning');
+    expect(pill.className).not.toContain('bambu-green');
+    const statusValue = within(quoteCard()).getByText('Expired');
+    expect(statusValue.className).toContain('text-status-warning');
+    expect(statusValue.className).not.toContain('bambu-green');
+  });
+
+  it('an unmapped status falls back to neutral, never green — Zoho can add statuses this panel has never seen', () => {
+    show({ quote_number: 'DEV26-2462', quote_status: 'on_hold' });
+    const pill = screen.getByTestId('panel-quote-status-pill');
+    expect(pill.className).toContain('text-bambu-gray-light');
+    expect(pill.className).not.toContain('bambu-green');
+    const statusValue = within(quoteCard()).getByText('on_hold');
+    expect(statusValue.className).toContain('text-bambu-gray-light');
+    expect(statusValue.className).not.toContain('bambu-green');
+  });
+});
+
 describe('ProjectDetailPanel visual parity: footer buttons', () => {
   it('shows a visible "Print quote" label next to the icon, not just an aria-label', () => {
     show({ quote_id: 'e2', quote_number: 'DEV26-2462' });

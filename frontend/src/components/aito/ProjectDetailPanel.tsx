@@ -8,7 +8,12 @@ import { ActivityRail } from './history/ActivityRail';
 import { ProjectProgress } from './ProjectProgress';
 import { QuotePrintButton } from './QuotePrintButton';
 import { QuoteStatusActions } from './QuoteStatusActions';
-import { quoteStatusLabelKey } from './quoteStatus';
+import {
+  quoteStatusLabelKey,
+  quoteStatusTone,
+  QUOTE_STATUS_PILL_TONE_CLASSES,
+  QUOTE_STATUS_TEXT_TONE_CLASSES,
+} from './quoteStatus';
 import { stagesWithWork } from './services';
 import { StageRail } from './StageRail';
 import { TaskEditor } from './TaskEditor';
@@ -254,7 +259,7 @@ function PanelHeader({
           {project.quote_status && (
             <span
               data-testid="panel-quote-status-pill"
-              className="text-xs uppercase tracking-wide text-bambu-green border border-bambu-green/40 bg-bambu-green/10 rounded-[.4rem] px-[.4rem] py-[.05rem]"
+              className={`text-xs uppercase tracking-wide border rounded-[.4rem] px-[.4rem] py-[.05rem] ${QUOTE_STATUS_PILL_TONE_CLASSES[quoteStatusTone(project.quote_status)]}`}
             >
               {quoteStatusText(t, project.quote_status)}
             </span>
@@ -637,7 +642,9 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                     {project.quote_status && (
                       <>
                         <dt className="text-bambu-gray">{t('common.status')}</dt>
-                        <dd className="text-right text-bambu-green">{quoteStatusText(t, project.quote_status)}</dd>
+                        <dd className={`text-right ${QUOTE_STATUS_TEXT_TONE_CLASSES[quoteStatusTone(project.quote_status)]}`}>
+                          {quoteStatusText(t, project.quote_status)}
+                        </dd>
                       </>
                     )}
                   </dl>
