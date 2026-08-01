@@ -1550,11 +1550,22 @@ describe('ProjectDetailPanel footer', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('puts the destructive action in the footer, opposite the safe ones', () => {
+  it('leaves the footer to the destructive action alone', () => {
     show({ quote_id: 'e2', quote_number: 'DEV26-2462' });
     const footer = screen.getByTestId('panel-footer');
     expect(within(footer).getByRole('button', { name: /move to trash|delete project/i })).toBeInTheDocument();
-    expect(within(footer).getByRole('button', { name: /print/i })).toBeInTheDocument();
+    // Print and Open in Zoho act on the quote, so they live in the Quote card
+    // beside its number and status — not in a bar spanning the whole panel.
+    expect(within(footer).queryByRole('button', { name: /print/i })).not.toBeInTheDocument();
+    expect(within(footer).queryByRole('link', { name: /zoho/i })).not.toBeInTheDocument();
+  });
+
+  it('puts the quote actions in the Quote card', async () => {
+    show({ quote_id: 'e2', quote_number: 'DEV26-2462', quote_url: 'https://books.zoho.com/e2' });
+    const quoteCard = (await screen.findAllByTestId('panel-card-heading'))
+      .find((n) => /quote/i.test(n.textContent ?? ''))!.parentElement!;
+    expect(within(quoteCard).getByRole('button', { name: /print quote/i })).toBeInTheDocument();
+    expect(within(quoteCard).getByRole('link', { name: /zoho/i })).toBeInTheDocument();
   });
 
   it('omits the trash control for a project already in the trash', () => {
@@ -1706,6 +1717,40 @@ describe('ProjectDetailPanel surfaces', () => {
     expect(screen.getByRole('dialog').className).not.toContain('bg-bambu-dark-secondary');
   });
 
+  // Three separate cases rather than one with cleanup() calls in the middle:
+  // a test that unmounts and remounts twice inside a single `it` shares a
+  // query client across the renders and is a poor neighbour under parallel
+  // load. The glyph is aria-hidden, so the company/individual split is
+  // asserted through the text that carries it for assistive tech.
+  it('marks a company client as a company', () => {
+    show({ client_is_company: true });
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/company name/i);
+  });
+
+  it('marks an individual client as an individual', () => {
+    show({ client_is_company: false });
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/client name/i);
+  });
+
+  it('reads a legacy card with a null flag as an individual', () => {
+    show({ client_is_company: null });
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/client name/i);
+  });
+
+  it('keeps the sync row inside the Quote card', async () => {
+    show({ quote_number: 'DEV26-2476', quote_sync_state: 'pending' });
+    const quoteCard = (await screen.findAllByTestId('panel-card-heading'))
+      .find((n) => /quote/i.test(n.textContent ?? ''))!.parentElement!;
+    expect(quoteCard.textContent).toMatch(/pending/i);
+  });
+
+  it('still shows a sync message when the project has no quote number', async () => {
+    // The card is gated on quote_number; a message must not be gated with it,
+    // or a conflict reaches nobody — exactly how a previous design lost these.
+    show({ quote_number: null, quote_sync_state: 'error', quote_sync_error: 'Zoho unreachable' });
+    expect(await screen.findByText(/zoho unreachable/i)).toBeInTheDocument();
+  });
+
   it('raises the header off the body: lifted base plus a cast shadow', () => {
     show();
     // The reference band is a masthead sitting ABOVE the canvas, not a tinted
@@ -1853,10 +1898,11 @@ describe('ProjectDetailPanel visual parity: quote status tone matches its actual
 });
 
 describe('ProjectDetailPanel visual parity: footer buttons', () => {
-  it('shows a visible "Print quote" label next to the icon, not just an aria-label', () => {
+  it('shows a visible "Print quote" label next to the icon, not just an aria-label', async () => {
     show({ quote_id: 'e2', quote_number: 'DEV26-2462' });
-    const footer = screen.getByTestId('panel-footer');
-    const button = within(footer).getByRole('button', { name: /print quote/i });
+    const quoteCard = (await screen.findAllByTestId('panel-card-heading'))
+      .find((n) => /quote/i.test(n.textContent ?? ''))!.parentElement!;
+    const button = within(quoteCard).getByRole('button', { name: /print quote/i });
     expect(button).toHaveTextContent('Print quote');
   });
 

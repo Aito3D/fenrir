@@ -114,7 +114,11 @@ export function EventItem({
     <li className={`relative pl-4 pb-3 ${animateIn ? 'animate-rise' : ''}`}>
       <span
         aria-hidden="true"
-        className={`absolute left-0 top-1.5 w-1.5 h-1.5 rounded-full ${dotClass(event.kind, event.actor_class)}`}
+        // `-translate-x-1/2` centres the dot ON the rail. With `left-0` alone
+        // the dot's left EDGE sat on the line, so every dot hung a full width
+        // to the right of it and the rail read as two parallel elements
+        // rather than one thread with beads on it.
+        className={`absolute left-0 top-1.5 -translate-x-1/2 w-1.5 h-1.5 rounded-full ${dotClass(event.kind, event.actor_class)}`}
       />
       <div className="text-sm text-white">
         {event.actor_name && <span className="font-medium">{event.actor_name} </span>}

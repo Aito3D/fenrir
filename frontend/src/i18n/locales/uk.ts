@@ -89,6 +89,8 @@ export default {
     lockDeclined: "Кошторис відхилено.",
     lockSteps: "Залишається на етапі {{stage}}, поки не позначено кожен крок {{stage}}.",
     sellerLabel: "Продавець",
+    clientNameLabel: "Ім’я клієнта",
+    companyNameLabel: "Назва компанії",
     phoneLabel: "Телефон",
     emailLabel: "Ел. пошта",
     projectRef: "Проєкт №{{id}}",

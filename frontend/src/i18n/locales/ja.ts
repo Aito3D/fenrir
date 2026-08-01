@@ -88,6 +88,8 @@ export default {
     lockDeclined: '見積書は却下されました。',
     lockSteps: '{{stage}} のすべてのステップが完了するまで {{stage}} に留まります。',
     sellerLabel: '担当者',
+    clientNameLabel: '顧客名',
+    companyNameLabel: '会社名',
     phoneLabel: '電話番号',
     emailLabel: 'メール',
     projectRef: 'プロジェクト #{{id}}',

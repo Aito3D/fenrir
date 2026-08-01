@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, ExternalLink, Loader2, Mail, Phone } from 'lucide-react';
+import { Building2, Check, Copy, ExternalLink, Loader2, Mail, Phone, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ActivityRail } from './history/ActivityRail';
@@ -227,7 +227,7 @@ function PanelHeader({
       // `relative z-[2]` so the cast shadow below paints ONTO the body rather
       // than under it — without a stacking context the body's own background
       // covers it and the lift disappears.
-      className="flex-shrink-0 relative z-[2] px-5 py-4 flex items-center gap-5 border-b"
+      className="flex-shrink-0 relative z-[2] px-5 py-3 flex items-center gap-5 border-b"
       style={{
         // The band is a RAISED masthead, not a tinted strip. Two things carry
         // that and both were missing: the base is a step above the surface
@@ -301,10 +301,39 @@ function PanelHeader({
         {/* 1.35rem at -.01em, not `text-xl`: the reference title is a step
             larger than Tailwind's 1.25rem, and the negative tracking is what
             keeps a long company name from reading as loose at that size. */}
-        <h2 className="text-[1.35rem] leading-tight font-semibold tracking-[-0.01em] text-white truncate">
-          {project.client_name ?? t('aito.noClient')}
+        {/* A building for a company, a person for an individual. `null` — a
+            legacy card predating the flag — reads as an individual, the same
+            fallback the old "Client name" label used.
+            The glyph is `aria-hidden` and the distinction is carried in text
+            for assistive tech instead: an icon alone would make the company/
+            person split visible to sighted users only, and the heading's
+            accessible name is what a screen reader announces on open. */}
+        <h2 className="text-[1.35rem] leading-tight font-semibold tracking-[-0.01em] text-white flex items-center gap-2 min-w-0">
+          {/* strokeWidth 2.5 rather than lucide's default 2, so the glyph's
+              stems match the semibold weight of the name beside it — at the
+              default the icon reads as a lighter, unrelated mark. */}
+          {project.client_is_company ? (
+            <Building2
+              className="w-[1.1rem] h-[1.1rem] flex-shrink-0 text-bambu-gray"
+              strokeWidth={2.5}
+              aria-hidden="true"
+            />
+          ) : (
+            <User
+              className="w-[1.1rem] h-[1.1rem] flex-shrink-0 text-bambu-gray"
+              strokeWidth={2.5}
+              aria-hidden="true"
+            />
+          )}
+          <span className="sr-only">
+            {project.client_is_company ? t('aito.companyNameLabel') : t('aito.clientNameLabel')}
+          </span>
+          <span className="truncate">{project.client_name ?? t('aito.noClient')}</span>
         </h2>
-        <div className="flex items-center gap-4 mt-1 text-[.82rem]">
+        {/* mt-2.5 and medium weight: at mt-1 the contacts crowded the title,
+            and at regular weight they receded into the band rather than
+            reading as the two things you copy out of this header. */}
+        <div className="flex items-center gap-4 mt-2.5 text-[.82rem] font-medium">
           {project.client_phone && (
             <CopyableValue value={project.client_phone} label={t('aito.phoneLabel')} icon={Phone} />
           )}
@@ -379,19 +408,24 @@ function RecordCard({ project, latestEvent }: { project: AitoProject; latestEven
 
   return (
     <PanelCard title={t('aito.recordLabel')}>
-      <dl className="grid gap-0.5">
+      {/* Same shape and type as the Quote card above — label left, value
+          right, one row each. These were stacked pairs while the left column
+          was 17rem and `{when} · {who}` could not fit a line; at the column's
+          current width it does, and two adjacent cards in one rail should not
+          read as two different kinds of list. */}
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm items-baseline">
         {project.quote_salesperson && (
           <>
-            <dt className="text-xs text-bambu-gray opacity-80">{t('aito.sellerLabel')}</dt>
-            <dd className="text-sm text-bambu-gray-light mb-2">{project.quote_salesperson}</dd>
+            <dt className="text-bambu-gray">{t('aito.sellerLabel')}</dt>
+            <dd className="text-right min-w-0 truncate text-white">{project.quote_salesperson}</dd>
           </>
         )}
-        <dt className="text-xs text-bambu-gray opacity-80">{t('aito.createdLabel')}</dt>
-        <dd data-testid="record-created" className="text-sm text-bambu-gray-light mb-2">
+        <dt className="text-bambu-gray">{t('aito.createdLabel')}</dt>
+        <dd data-testid="record-created" className="text-right min-w-0 text-white">
           {short(created)} · {project.created_by ?? t('aito.actorUnknown')}
         </dd>
-        <dt className="text-xs text-bambu-gray opacity-80">{t('aito.lastActivity')}</dt>
-        <dd data-testid="record-activity" className="text-sm text-bambu-gray-light">
+        <dt className="text-bambu-gray">{t('aito.lastActivity')}</dt>
+        <dd data-testid="record-activity" className="text-right min-w-0 text-white">
           {short(activityAt)}
           {actor && ` · ${actor}`}
         </dd>
@@ -426,6 +460,19 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   // localised too rather than raw Zoho English.
   const statusLabel = (status: string | null): string => quoteStatusText(t, status);
   const blockKey = project.quote_status_block ? BLOCK_MESSAGE_KEY[project.quote_status_block] : null;
+
+  /** Whether the Quote card has anything to say beyond the number itself.
+   *
+   *  The card is gated on `quote_number` so a hand-made project shows no
+   *  empty "Quote" heading — but these three messages must never be gated
+   *  with it. A sync error, a status block or a declined quote on a project
+   *  whose number is missing would vanish into a card that no longer renders,
+   *  and a conflict that reaches nobody is exactly how the previous design
+   *  lost them. So the card opens for either reason. */
+  const hasQuoteMessage =
+    Boolean(SYNC_LABEL_KEY[project.quote_sync_state]) ||
+    Boolean(blockKey) ||
+    project.quote_status === 'declined';
 
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -651,7 +698,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               </PanelCard>
 
               <PanelCard title={t('aito.stageAndWorkLeft')}>
-                <StageRail tasks={tasks} column={project.column} moveLock={project.move_lock} currency={currency} />
+                <StageRail tasks={tasks} column={project.column} currency={currency} />
               </PanelCard>
 
               {/* Imported projects only. The card itself is gated on
@@ -661,8 +708,10 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                   this panel are built to avoid. The quote is a snapshot, so
                   this still renders with Zoho unreachable; only the link
                   needs Zoho. */}
-              {project.quote_number && (
+              {(project.quote_number || hasQuoteMessage) && (
                 <PanelCard title={t('aito.quoteSearchLabel')}>
+                  {project.quote_number && (
+                  <>
                   {/* A two-row definition list, not just the bare number: the
                       Number row is what used to be here alone, and Status
                       repeats the quote's Zoho status already shown as the
@@ -697,16 +746,41 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                       </>
                     )}
                   </dl>
-                </PanelCard>
-              )}
 
-              {/* Full-width, between the Quote and Record cards — not a card of
-                  its own. <dt>/<dd> gives assistive technology the
-                  label-to-value association for free; the colon is markup, so
-                  no locale string carries punctuation. Rendered only when
-                  there is something to say: a row reading "up to date" on
-                  every idle card would be noise, not information. */}
-              <dl className="space-y-2 text-sm">
+                  {/* The two things you actually DO with a quote, beside the
+                      quote itself. `withLabel` so they read as buttons rather
+                      than bare glyphs — the icon-only default is still right
+                      at QuotePrintButton's other call sites. */}
+                  <div className="flex items-center gap-2 mt-3">
+                    <QuotePrintButton project={project} withLabel />
+                    {project.quote_url && (
+                      <a
+                        href={project.quote_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary px-2.5 py-1 text-xs text-bambu-gray-light hover:text-white hover:border-bambu-gray transition-colors motion-reduce:transition-none ${focusRingCls}`}
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        {t('aito.quoteOpenInZoho')}
+                      </a>
+                    )}
+                  </div>
+                  </>
+                  )}
+
+              {/* Inside the Quote card, under its Number/Status rows — these
+                  are all facts about the same quote, and as a loose block
+                  between two cards they read as belonging to neither.
+                  <dt>/<dd> gives assistive technology the label-to-value
+                  association for free; the colon is markup, so no locale
+                  string carries punctuation. Rendered only when there is
+                  something to say: a row reading "up to date" on every idle
+                  card would be noise, not information.
+                  The card's own gate widens to `quote_number || hasQuoteMessage`
+                  for these: a message with no quote number would otherwise be
+                  swallowed by the card that no longer renders, which is
+                  exactly how a previous redesign lost them. */}
+              <dl className={`space-y-2 text-sm ${project.quote_number ? 'mt-2 pt-2 border-t border-bambu-dark-tertiary' : ''}`}>
                 {/* Only when there is something to say. An idle project is the
                     normal case and a row reading "up to date" on every card
                     would be noise. */}
@@ -767,6 +841,8 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                   </div>
                 )}
               </dl>
+                </PanelCard>
+              )}
 
               <RecordCard project={project} latestEvent={latestEvent} />
 
@@ -839,19 +915,10 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               alwaysVisible
             />
           )}
-          <span className="flex-1" />
-          <QuotePrintButton project={project} withLabel />
-          {project.quote_url && (
-            <a
-              href={project.quote_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary px-2.5 py-1 text-sm text-bambu-gray-light hover:text-white hover:border-bambu-gray transition-colors motion-reduce:transition-none ${focusRingCls}`}
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              {t('aito.quoteOpenInZoho')}
-            </a>
-          )}
+          {/* Print quote and Open in Zoho moved up into the Quote card — they
+              act on the quote, so they belong beside its number and status
+              rather than in a bar that spans the whole panel. The footer is
+              now the destructive action alone. */}
         </div>
       </div>
     </div>

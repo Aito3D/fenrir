@@ -88,6 +88,8 @@ export default {
     lockDeclined: 'The quote was declined.',
     lockSteps: 'Parked in {{stage}} until every {{stage}} step is ticked.',
     sellerLabel: 'Seller',
+    clientNameLabel: 'Client name',
+    companyNameLabel: 'Company name',
     phoneLabel: 'Phone',
     emailLabel: 'Email',
     projectRef: 'Project #{{id}}',

@@ -189,7 +189,10 @@ export function ActivityRail({ projectId }: { projectId: number }) {
       ) : events.length === 0 ? (
         <p className="text-sm text-bambu-gray">{t('aito.history.empty')}</p>
       ) : (
-        <ol className="relative border-l border-bambu-dark-tertiary ml-0.5">
+        // ml-1, not ml-0.5: the dots now straddle the rail rather than sitting
+        // beside it, so they need half a dot's clearance to the left of the
+        // line or they clip the column's padding edge.
+        <ol className="relative border-l border-bambu-dark-tertiary ml-1">
           {events.map((event, index) => (
             <EventItem
               key={event.id}

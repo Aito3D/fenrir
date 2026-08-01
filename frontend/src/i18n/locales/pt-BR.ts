@@ -88,6 +88,8 @@ export default {
     lockDeclined: 'O orçamento foi recusado.',
     lockSteps: 'Fica em {{stage}} até que todas as etapas de {{stage}} sejam marcadas.',
     sellerLabel: 'Vendedor',
+    clientNameLabel: 'Nome do cliente',
+    companyNameLabel: 'Nome da empresa',
     phoneLabel: 'Telefone',
     emailLabel: 'E-mail',
     projectRef: 'Projeto nº {{id}}',

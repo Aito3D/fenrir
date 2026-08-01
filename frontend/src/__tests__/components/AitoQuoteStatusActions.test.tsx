@@ -125,6 +125,23 @@ describe('QuoteStatusActions', () => {
     await waitFor(() => expect(spy).toHaveBeenCalledWith(12, { status: 'accepted' }));
   });
 
+  it('shows hold progress as a bar, tinted to the action, not a ring', () => {
+    // These are wide labelled pills. The ring's viewBox scales to the shorter
+    // axis, so on a pill it lands as a small circle over the middle of the
+    // label rather than as progress. Accept fills green and Decline red —
+    // a red bar under "Accept quote" reads as the wrong outcome mid-gesture.
+    render(<QuoteStatusActions project={{ ...project, quote_status: 'sent' }} />);
+
+    const accept = screen.getByRole('button', { name: /accept quote/i });
+    const decline = screen.getByRole('button', { name: /decline quote/i });
+
+    // The ring is the only <circle> in the button — the ThumbsUp glyph shares
+    // lucide's 0 0 24 24 viewBox, so selecting on that matches the icon too.
+    expect(accept.querySelector('circle')).toBeNull();
+    expect(accept.querySelector('[data-testid="hold-progress-bar"]')?.className).toContain('bg-bambu-green/25');
+    expect(decline.querySelector('[data-testid="hold-progress-bar"]')?.className).toContain('bg-status-error/25');
+  });
+
   it('renders nothing at all once the quote is accepted', () => {
     render(<QuoteStatusActions project={{ ...project, quote_status: 'accepted' }} />);
     expect(screen.queryByRole('button', { name: /accept quote/i })).not.toBeInTheDocument();

@@ -88,6 +88,8 @@ export default {
     lockDeclined: '견적서가 거절되었습니다.',
     lockSteps: '{{stage}}의 모든 단계가 체크될 때까지 {{stage}}에 머무릅니다.',
     sellerLabel: '담당자',
+    clientNameLabel: '고객명',
+    companyNameLabel: '회사명',
     phoneLabel: '전화',
     emailLabel: '이메일',
     projectRef: '프로젝트 #{{id}}',

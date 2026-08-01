@@ -88,6 +88,8 @@ export default {
     lockDeclined: 'Il preventivo è stato rifiutato.',
     lockSteps: 'Resta in {{stage}} finché ogni passaggio {{stage}} non è spuntato.',
     sellerLabel: 'Venditore',
+    clientNameLabel: 'Nome del cliente',
+    companyNameLabel: 'Nome dell’azienda',
     phoneLabel: 'Telefono',
     emailLabel: 'E-mail',
     projectRef: 'Progetto n. {{id}}',

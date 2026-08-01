@@ -88,6 +88,8 @@ export default {
     lockDeclined: '报价单已被拒绝。',
     lockSteps: '在 {{stage}} 的所有步骤完成之前，将停留在 {{stage}}。',
     sellerLabel: '销售人员',
+    clientNameLabel: '客户姓名',
+    companyNameLabel: '公司名称',
     phoneLabel: '电话',
     emailLabel: '邮箱',
     projectRef: '项目 #{{id}}',

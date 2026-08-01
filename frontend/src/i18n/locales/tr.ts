@@ -88,6 +88,8 @@ export default {
     lockDeclined: 'Teklif reddedildi.',
     lockSteps: '{{stage}} aşamasındaki her adım işaretlenene kadar {{stage}} içinde kalır.',
     sellerLabel: 'Satıcı',
+    clientNameLabel: 'Müşteri adı',
+    companyNameLabel: 'Şirket adı',
     phoneLabel: 'Telefon',
     emailLabel: 'E-posta',
     projectRef: 'Proje #{{id}}',

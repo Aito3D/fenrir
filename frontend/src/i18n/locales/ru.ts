@@ -88,6 +88,8 @@ export default {
     lockDeclined: 'Смета была отклонена.',
     lockSteps: 'Остаётся на этапе {{stage}}, пока не отмечен каждый шаг {{stage}}.',
     sellerLabel: 'Продавец',
+    clientNameLabel: 'Имя клиента',
+    companyNameLabel: 'Название компании',
     phoneLabel: 'Телефон',
     emailLabel: 'Эл. почта',
     projectRef: 'Проект №{{id}}',

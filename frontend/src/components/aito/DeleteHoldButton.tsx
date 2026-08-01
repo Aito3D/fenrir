@@ -34,6 +34,10 @@ export function DeleteHoldButton({
       durationMs={1000}
       label={label}
       hint={hint}
+      // A bar only on the wide labelled pill. The ring is right when the
+      // button IS its icon, but scaled across a 130px-wide footer button it
+      // lands as a small circle floating over the middle of the label.
+      progress={alwaysVisible ? 'bar' : 'ring'}
       className={
         alwaysVisible
           ? 'rounded-md border border-bambu-dark-tertiary px-2.5 py-1 text-sm ' +

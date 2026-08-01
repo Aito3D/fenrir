@@ -88,6 +88,8 @@ export default {
     lockDeclined: 'Le devis a été refusé.',
     lockSteps: 'Reste en {{stage}} tant que chaque étape {{stage}} n’est pas cochée.',
     sellerLabel: 'Vendeur',
+    clientNameLabel: 'Nom du client',
+    companyNameLabel: 'Nom de la société',
     phoneLabel: 'Téléphone',
     emailLabel: 'E-mail',
     projectRef: 'Projet n°{{id}}',

@@ -88,6 +88,8 @@ export default {
     lockDeclined: '報價單已被拒絕。',
     lockSteps: '在 {{stage}} 的所有步驟完成之前，將停留在 {{stage}}。',
     sellerLabel: '銷售人員',
+    clientNameLabel: '客戶姓名',
+    companyNameLabel: '公司名稱',
     phoneLabel: '電話',
     emailLabel: '電子郵件',
     projectRef: '專案 #{{id}}',

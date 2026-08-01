@@ -18,6 +18,22 @@ const RING_DURATION_CLS: Record<HoldDurationMs, string> = {
   500: 'transition-[stroke-dashoffset] duration-[500ms] ease-linear motion-reduce:duration-200',
   1000: 'transition-[stroke-dashoffset] duration-[1000ms] ease-linear motion-reduce:duration-200',
 };
+// Same timeline for the bar variant, on transform instead of the ring's
+// stroke. Keyed on the same literal union and for the same reason: Tailwind
+// needs static class strings, so the duration cannot be interpolated.
+const BAR_DURATION_CLS: Record<HoldDurationMs, string> = {
+  500: 'transition-transform duration-[500ms] ease-linear motion-reduce:duration-200',
+  1000: 'transition-transform duration-[1000ms] ease-linear motion-reduce:duration-200',
+};
+
+/** How the hold's progress is drawn.
+ *
+ *  `ring` traces a circle around icon-sized buttons — right when the button
+ *  IS its icon. `bar` fills the button left to right like a loading bar, for
+ *  wide labelled pills: the ring's `viewBox="0 0 24 24"` scales to fit the
+ *  shorter axis, so on a 130×28 pill it lands as a small circle floating over
+ *  the middle of the label rather than as progress. */
+export type HoldProgress = 'ring' | 'bar';
 // A press released before this threshold counts as a "tap" and surfaces the
 // hold hint; anything longer (but still short of completing) is treated as
 // an intentional-but-abandoned hold and cancels silently.
@@ -48,6 +64,8 @@ export function HoldButton({
   hint,
   disabled = false,
   className = '',
+  progress = 'ring',
+  barClassName = 'bg-red-400/25',
   children,
 }: {
   onHold: () => void;
@@ -56,6 +74,15 @@ export function HoldButton({
   hint: string;
   disabled?: boolean;
   className?: string;
+  /** See `HoldProgress`. Defaults to `ring` so every existing caller — the
+   *  task-row delete, the quote status pills, the board and grid actions —
+   *  is unchanged. */
+  progress?: HoldProgress;
+  /** The bar's fill, `progress="bar"` only. A complete literal class string,
+   *  not an interpolated one — Tailwind cannot see a constructed class name.
+   *  Defaults to the destructive red; Accept passes green, because a bar that
+   *  fills red under "Accept quote" reads as the wrong outcome mid-gesture. */
+  barClassName?: string;
   children: ReactNode;
 }) {
   const [holding, setHolding] = useState(false);
@@ -145,21 +172,39 @@ export function HoldButton({
           e.stopPropagation();
           cancelHold();
         }}
-        className={`relative inline-flex items-center gap-1.5 rounded-md transition-[color,background-color,opacity,border-color] duration-100 focus-visible:outline-none focus-visible:ring-2 disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
+        className={`relative inline-flex items-center gap-1.5 rounded-md transition-[color,background-color,opacity,border-color] duration-100 focus-visible:outline-none focus-visible:ring-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+          // Clip the bar to the button's own radius; harmless for the ring,
+          // which is inside the box anyway.
+          progress === 'bar' ? 'overflow-hidden ' : ''
+        }${className}`}
       >
-        <svg className="absolute inset-0 -rotate-90 w-full h-full" viewBox="0 0 24 24" aria-hidden="true">
-          <circle
-            cx="12"
-            cy="12"
-            r={HOLD_RADIUS}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeDasharray={HOLD_CIRCUMFERENCE}
-            strokeDashoffset={holding ? 0 : HOLD_CIRCUMFERENCE}
-            className={holding ? RING_DURATION_CLS[durationMs] : 'transition-none'}
+        {progress === 'bar' ? (
+          // A loading bar filling left to right, in the same red the button
+          // takes while held. `currentColor` would work too, but the fill has
+          // to stay legible UNDER the label, so it is a fixed low-alpha red
+          // rather than whatever the text colour happens to be mid-transition.
+          <span
+            aria-hidden="true"
+            data-testid="hold-progress-bar"
+            className={`pointer-events-none absolute inset-0 origin-left ${barClassName} ${
+              holding ? `scale-x-100 ${BAR_DURATION_CLS[durationMs]}` : 'scale-x-0 transition-none'
+            }`}
           />
-        </svg>
+        ) : (
+          <svg className="absolute inset-0 -rotate-90 w-full h-full" viewBox="0 0 24 24" aria-hidden="true">
+            <circle
+              cx="12"
+              cy="12"
+              r={HOLD_RADIUS}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeDasharray={HOLD_CIRCUMFERENCE}
+              strokeDashoffset={holding ? 0 : HOLD_CIRCUMFERENCE}
+              className={holding ? RING_DURATION_CLS[durationMs] : 'transition-none'}
+            />
+          </svg>
+        )}
         {children}
       </button>
       {showHint && (

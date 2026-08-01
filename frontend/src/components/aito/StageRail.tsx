@@ -3,24 +3,13 @@ import { ALL_COLUMNS } from './columns';
 import { stagesWithWork } from './services';
 import { Money } from '../calculator/shared';
 import { formatMoney } from '../../utils/pricing';
-import type { AitoColumnId, AitoProject } from '../../api/client';
+import type { AitoColumnId } from '../../api/client';
 import type { TaskDraft } from '../../utils/taskDraft';
-
-/** Explicit map rather than a template literal key: the i18n gate scans for
- *  literal `t('...')` calls, and a dynamic key is invisible to it. Same reason
- *  SYNC_LABEL_KEY in ProjectDetailPanel is written out. */
-const LOCK_KEY: Record<string, string> = {
-  quote: 'aito.lockQuote',
-  waiting: 'aito.lockWaiting',
-  declined: 'aito.lockDeclined',
-  steps: 'aito.lockSteps',
-};
 
 export interface StageRailProps {
   tasks: readonly TaskDraft[];
   /** The project's CURRENT column, as derived by the rule engine. */
   column: AitoColumnId;
-  moveLock: AitoProject['move_lock'];
   currency: string;
 }
 
@@ -35,12 +24,10 @@ export interface StageRailProps {
  *  It replaces a 2px dot at the foot of a spec sheet, and it answers a question
  *  no surface answered before: not just where the card is, but what has to
  *  happen before it moves. */
-export function StageRail({ tasks, column, moveLock, currency }: StageRailProps) {
+export function StageRail({ tasks, column, currency }: StageRailProps) {
   const { t } = useTranslation();
   const work = stagesWithWork(tasks);
   const currentIndex = ALL_COLUMNS.findIndex((c) => c.id === column);
-  const lockKey = moveLock ? LOCK_KEY[moveLock] : null;
-  const currentLabel = currentIndex >= 0 ? t(ALL_COLUMNS[currentIndex].labelKey) : column;
 
   return (
     <div>
@@ -117,14 +104,6 @@ export function StageRail({ tasks, column, moveLock, currency }: StageRailProps)
         })}
       </ol>
 
-      {lockKey && (
-        <p
-          data-testid="stage-lock"
-          className="text-xs text-bambu-gray border-t border-bambu-dark-tertiary mt-1 pt-2"
-        >
-          {t(lockKey, { stage: currentLabel })}
-        </p>
-      )}
     </div>
   );
 }

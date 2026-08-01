@@ -76,6 +76,8 @@ export function QuoteStatusActions({ project }: { project: AitoProject }) {
           disabled={mutation.isPending}
           label={t('aito.markSent')}
           hint={t('aito.holdToConfirm')}
+          progress="bar"
+          barClassName="bg-amber-400/25"
           className="justify-center border p-1.5 border-amber-400/40 text-amber-400 hover:bg-amber-400/10"
         >
           <Send className="w-3.5 h-3.5" />
@@ -90,6 +92,8 @@ export function QuoteStatusActions({ project }: { project: AitoProject }) {
             disabled={mutation.isPending}
             label={t('aito.acceptQuote')}
             hint={t('aito.holdToConfirm')}
+            progress="bar"
+            barClassName="bg-bambu-green/25"
             className="flex-1 justify-center border p-1.5 border-bambu-green/40 text-bambu-green hover:bg-bambu-green/10"
           >
             <ThumbsUp className="w-3.5 h-3.5" />
@@ -102,6 +106,8 @@ export function QuoteStatusActions({ project }: { project: AitoProject }) {
               disabled={mutation.isPending}
               label={t('aito.declineQuote')}
               hint={t('aito.holdToConfirm')}
+              progress="bar"
+              barClassName="bg-status-error/25"
               className="flex-1 justify-center border p-1.5 border-status-error/40 text-status-error hover:bg-status-error/10"
             >
               <ThumbsDown className="w-3.5 h-3.5" />

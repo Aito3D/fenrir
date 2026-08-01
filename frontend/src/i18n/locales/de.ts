@@ -88,6 +88,8 @@ export default {
     lockDeclined: 'Das Angebot wurde abgelehnt.',
     lockSteps: 'Bleibt in {{stage}}, bis jeder Schritt in {{stage}} abgehakt ist.',
     sellerLabel: 'Verkäufer',
+    clientNameLabel: 'Kundenname',
+    companyNameLabel: 'Firmenname',
     phoneLabel: 'Telefon',
     emailLabel: 'E-Mail',
     projectRef: 'Projekt Nr. {{id}}',
