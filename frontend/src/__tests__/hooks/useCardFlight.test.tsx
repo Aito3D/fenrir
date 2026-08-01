@@ -75,6 +75,14 @@ function buildBoard() {
   return { board, left, right };
 }
 
+function buildArchivePad() {
+  const pad = document.createElement('button');
+  pad.setAttribute('data-flight-target', '');
+  place(pad, { left: 900, top: 0, width: 160, height: 40 });
+  document.body.appendChild(pad);
+  return pad;
+}
+
 const ghosts = () => Array.from(document.querySelectorAll('[data-aito-flight-layer] > *'));
 const travelOf = (ghost: Element) => recorded.find((entry) => entry.el === ghost)!;
 
@@ -83,7 +91,7 @@ const SLOT_B: Box = { left: 340, top: 40, width: 280, height: 120 };
 
 beforeEach(() => {
   stubAnimate();
-  options = { suspended: false };
+  options = { suspended: false, departureTarget: () => null };
 });
 
 afterEach(() => {
@@ -290,5 +298,78 @@ describe('flightDuration', () => {
   it('never dips below the floor or past the ceiling', () => {
     expect(flightDuration(0, 0)).toBe(280);
     expect(flightDuration(4000, 0)).toBe(560);
+  });
+});
+
+describe('useCardFlight departures', () => {
+  it('flies a card that went to Done into the archive toggle', async () => {
+    const { board, left } = buildBoard();
+    const pad = buildArchivePad();
+    const card = buildCard('12', SLOT_A);
+    left.appendChild(card);
+    options = { ...options, departureTarget: () => 'archive' };
+    const { rerender } = renderHook(() => useCardFlight({ current: board }, options));
+
+    card.remove();
+    rerender();
+
+    expect(ghosts()).toHaveLength(1);
+    const travel = travelOf(ghosts()[0]);
+    // Centre to centre: 900 + 80 - (20 + 140) = 820 across, 0 + 20 - (40 + 60)
+    // = -80 up. The shrink converges on the button, not on its corner.
+    expect(travel.keyframes[1].transform).toBe('translate(820px, -80px)');
+
+    // The receipt fires when the ghost LANDS, which is one microtask behind
+    // the stub's already-resolved `finished` — every other assertion in this
+    // file is synchronous precisely so it observes the flight mid-air.
+    await Promise.resolve();
+    expect(recorded.some((entry) => entry.el === pad)).toBe(true);
+  });
+
+  it('shrinks and fades the ghost out rather than landing it at full size', () => {
+    const { board, left } = buildBoard();
+    buildArchivePad();
+    const card = buildCard('12', SLOT_A);
+    left.appendChild(card);
+    options = { ...options, departureTarget: () => 'archive' };
+    const { rerender } = renderHook(() => useCardFlight({ current: board }, options));
+
+    card.remove();
+    rerender();
+
+    const face = ghosts()[0].querySelector('[data-aito-card]')!;
+    const lift = recorded.find((entry) => entry.el === face)!;
+    // Full opacity past the halfway mark, so you read WHAT went in rather than
+    // merely that something did.
+    expect(lift.keyframes[1]).toMatchObject({ offset: 0.55, opacity: 1 });
+    expect(lift.keyframes[2]).toMatchObject({ transform: 'scale(0.28)', opacity: 0 });
+  });
+
+  it('flies nothing for a card that left for anywhere else', () => {
+    const { board, left } = buildBoard();
+    buildArchivePad();
+    const card = buildCard('12', SLOT_A);
+    left.appendChild(card);
+    // Deleted, or filtered out by the search box: it did NOT go to the
+    // archive, and flying it into that button would say something false.
+    const { rerender } = renderHook(() => useCardFlight({ current: board }, options));
+
+    card.remove();
+    rerender();
+
+    expect(ghosts()).toHaveLength(0);
+  });
+
+  it('flies nothing when there is no archive toggle to fly into', () => {
+    const { board, left } = buildBoard();
+    const card = buildCard('12', SLOT_A);
+    left.appendChild(card);
+    options = { ...options, departureTarget: () => 'archive' };
+    const { rerender } = renderHook(() => useCardFlight({ current: board }, options));
+
+    card.remove();
+    rerender();
+
+    expect(ghosts()).toHaveLength(0);
   });
 });

@@ -1,11 +1,19 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { prefersReducedMotion } from '../utils/motion';
 
+/** Where a card that has left the board went. `null` — deleted, filtered out
+ *  by the search box, dropped by the server — animates nothing. */
+export type FlightDeparture = 'archive' | null;
+
 export interface CardFlightOptions {
   /** Suspends animation. Positions are still recorded while suspended, so
    *  resuming never replays a delta that accumulated behind a modal or under
    *  a drag — the same contract `useColumnReflow`'s nullable key has. */
   suspended: boolean;
+  /** Answers for a card that is no longer on the board. Three different
+   *  reasons look identical in the DOM — archived, trashed, filtered — and
+   *  only the first has somewhere to fly to. */
+  departureTarget: (key: string) => FlightDeparture;
 }
 
 interface Rect {
@@ -32,6 +40,10 @@ const MIN_DURATION_MS = 280;
 const MAX_DURATION_MS = 560;
 const MS_PER_PX = 0.22;
 const LIFT_SCALE = 1.02;
+/** The archive's landing pad — the "Show done" toggle carries it. */
+const ARCHIVE_SELECTOR = '[data-flight-target]';
+const ARCHIVE_END_SCALE = 0.28;
+const PULSE_MS = 180;
 
 /** A flight is timed by how far it travels. A constant is wrong at both ends:
  *  280ms is leisurely for a one-column hop and a blur across the whole board. */
@@ -131,10 +143,14 @@ interface LaunchSpec {
   to: Rect;
   /** Restores the real card the ghost stands in for. */
   reveal: () => void;
+  /** Shrink and fade into the target instead of landing at full size. */
+  archive: boolean;
+  /** Fires when the ghost lands. */
+  onLand?: () => void;
 }
 
 function launch(spec: LaunchSpec): void {
-  const { key, flights, layer, source, to, reveal } = spec;
+  const { key, flights, layer, source, to, reveal, archive, onLand } = spec;
 
   // Retarget: a card relocated twice in quick succession continues from where
   // its ghost visually IS, not from a layout position it no longer occupies.
@@ -168,8 +184,16 @@ function launch(spec: LaunchSpec): void {
   // rotation, deliberately — `CardView`'s drag overlay tilts because a hand is
   // holding it, and nothing is holding this one.
   face.animate(
-    [{ transform: 'scale(1)' }, { offset: 0.15, transform: `scale(${LIFT_SCALE})` }, { transform: 'scale(1)' }],
-    { duration: ms, easing: 'ease-in-out', fill: 'forwards' },
+    archive
+      ? [
+          { transform: 'scale(1)', opacity: 1 },
+          // Legibly a card past the halfway mark, so what goes into the
+          // archive is readable, not just that something did.
+          { offset: 0.55, opacity: 1 },
+          { transform: `scale(${ARCHIVE_END_SCALE})`, opacity: 0 },
+        ]
+      : [{ transform: 'scale(1)' }, { offset: 0.15, transform: `scale(${LIFT_SCALE})` }, { transform: 'scale(1)' }],
+    { duration: ms, easing: archive ? 'ease-in' : 'ease-in-out', fill: 'forwards' },
   );
 
   let stopped = false;
@@ -184,7 +208,20 @@ function launch(spec: LaunchSpec): void {
   flights.set(key, { ghost, stop });
   // Resolves on landing, rejects on cancel; `stop` is idempotent either way,
   // so no path can strand a real card at opacity 0.
-  travel.finished.then(stop, stop);
+  travel.finished.then(() => {
+    onLand?.();
+    stop();
+  }, stop);
+}
+
+/** The archive's acknowledgement that it caught something. Its count has
+ *  already ticked by the time this fires. */
+function pulse(pad: HTMLElement): void {
+  if (typeof pad.animate !== 'function') return;
+  pad.animate([{ transform: 'scale(1)' }, { offset: 0.5, transform: 'scale(1.06)' }, { transform: 'scale(1)' }], {
+    duration: PULSE_MS,
+    easing: 'ease-out',
+  });
 }
 
 /** Fly a card from the column it left to the column it landed in.
@@ -207,7 +244,7 @@ function launch(spec: LaunchSpec): void {
  *  the whole trip. */
 export function useCardFlight(
   boardRef: React.RefObject<HTMLElement | null>,
-  { suspended }: CardFlightOptions,
+  { suspended, departureTarget }: CardFlightOptions,
 ): void {
   const snapshotsRef = useRef(new Map<string, Snapshot>());
   const flightsRef = useRef(new Map<string, Flight>());
@@ -254,9 +291,37 @@ export function useCardFlight(
           source: prev.el,
           from: prev.rect,
           to: snapshot.rect,
+          archive: false,
           reveal: () => {
             target.style.opacity = '';
           },
+        });
+      }
+
+      for (const [key, prev] of previous) {
+        if (next.has(key)) continue;
+        if (departureTarget(key) !== 'archive') continue;
+        if (!onScreen(board, prev.rect)) continue;
+        const pad = document.querySelector<HTMLElement>(ARCHIVE_SELECTOR);
+        if (!pad) continue;
+        const padRect = pad.getBoundingClientRect();
+        launch({
+          key,
+          flights,
+          layer: ensureLayer(layerRef),
+          source: prev.el,
+          from: prev.rect,
+          // Centred on the pad, so the shrink converges on the button rather
+          // than on its top-left corner.
+          to: {
+            left: padRect.left + padRect.width / 2 - prev.rect.width / 2,
+            top: padRect.top + padRect.height / 2 - prev.rect.height / 2,
+            width: prev.rect.width,
+            height: prev.rect.height,
+          },
+          archive: true,
+          reveal: () => {},
+          onLand: () => pulse(pad),
         });
       }
     }
