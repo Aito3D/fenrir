@@ -556,10 +556,15 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                 <StageRail tasks={tasks} column={project.column} moveLock={project.move_lock} currency={currency} />
               </PanelCard>
 
-              <PanelCard title={t('aito.quoteSearchLabel')}>
-                {/* Imported projects only. The quote is a snapshot, so this row
-                    renders with Zoho unreachable; only the link needs Zoho. */}
-                {project.quote_number && (
+              {/* Imported projects only. The card itself is gated on
+                  quote_number, not just its content: a hand-made project has
+                  no quote at all, and a "Quote" heading over an empty body is
+                  exactly the noise the omitted Email/Seller rows elsewhere in
+                  this panel are built to avoid. The quote is a snapshot, so
+                  this still renders with Zoho unreachable; only the link
+                  needs Zoho. */}
+              {project.quote_number && (
+                <PanelCard title={t('aito.quoteSearchLabel')}>
                   <div className="flex items-center gap-2 text-sm">
                     {project.quote_url ? (
                       <a
@@ -580,8 +585,8 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                         quote at this point in the job. */}
                     <QuotePrintButton project={project} />
                   </div>
-                )}
-              </PanelCard>
+                </PanelCard>
+              )}
 
               {/* Full-width, between the Quote and Record cards — not a card of
                   its own. <dt>/<dd> gives assistive technology the

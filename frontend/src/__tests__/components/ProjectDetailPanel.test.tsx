@@ -13,6 +13,8 @@ import { api } from '../../api/client';
 import type { AitoEvent, AitoProject, AitoTask } from '../../api/client';
 import { emptyTaskDraft, taskDraftToTaskCreate } from '../../utils/taskDraft';
 import { formatMoney } from '../../utils/pricing';
+import { parseUTCDate } from '../../utils/date';
+import i18n from '../../i18n';
 
 const project: AitoProject = {
   id: 12,
@@ -1253,10 +1255,21 @@ describe('ProjectDetailPanel quote row', () => {
 });
 
 describe('ProjectDetailPanel left column cards', () => {
-  it('groups the left column into four cards, description first', () => {
-    show();
+  it('groups the left column into four cards, description first, for an imported project', () => {
+    // quote_number set (imported from Zoho) is what earns the Quote card —
+    // see the sibling test below for the hand-made project, which has none.
+    show({ quote_number: 'DEV26-2462' });
     const headings = screen.getAllByTestId('panel-card-heading').map((n) => n.textContent);
     expect(headings).toEqual(['Product description', 'Stage & work left', 'Quote', 'Record']);
+  });
+
+  it('omits the Quote card entirely for a hand-made project, rather than showing it empty', () => {
+    // The default fixture has quote_number: null. A "Quote" heading over an
+    // empty body would be exactly the noise the omitted Email/Seller rows
+    // elsewhere in this panel are built to avoid.
+    show();
+    const headings = screen.getAllByTestId('panel-card-heading').map((n) => n.textContent);
+    expect(headings).toEqual(['Product description', 'Stage & work left', 'Record']);
   });
 
   it('folds the creator into the created timestamp', async () => {
@@ -1273,12 +1286,22 @@ describe('ProjectDetailPanel left column cards', () => {
 
   it('takes both halves of last activity from the newest event', async () => {
     // occurred_at and the actor belong together; updated_at paired with the
-    // newest actor's name would describe two different moments.
+    // newest actor's name would describe two different moments. mockEvent's
+    // occurred_at (2026-07-29) deliberately differs from the fixture's own
+    // updated_at (2026-07-27) — asserting the actor alone would still pass if
+    // the timestamp half were wrongly paired with updated_at instead, which
+    // is exactly the regression this test (and the code's own comment) exist
+    // to catch.
     server.use(
       http.get('/api/v1/aito/12/events', () => HttpResponse.json({ events: [mockEvent], has_more: false })),
     );
     show();
+    const expectedWhen = parseUTCDate(mockEvent.occurred_at)!.toLocaleString(i18n.language, {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    });
     await waitFor(() => expect(screen.getByTestId('record-activity')).toHaveTextContent('· admin'));
+    expect(screen.getByTestId('record-activity')).toHaveTextContent(expectedWhen);
   });
 
   it('falls back to updated_at with no actor when the project has no events', async () => {

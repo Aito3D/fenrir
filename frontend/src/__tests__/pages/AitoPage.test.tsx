@@ -327,6 +327,9 @@ describe('AitoPage (backend board)', () => {
   });
 
   it('opens the detail panel with the full description, dates and stage', async () => {
+    // quote_number set: the Quote card is gated on it (a hand-made project
+    // shows no Quote card at all), and this test wants to see it.
+    server.use(http.get('/api/v1/aito/', () => HttpResponse.json([{ ...project, quote_number: 'DEV26-2462' }])));
     const user = userEvent.setup();
     render(<AitoPage />);
     await openCard(user);
@@ -337,7 +340,10 @@ describe('AitoPage (backend board)', () => {
     expect(within(panel).getByTestId('record-activity')).toBeInTheDocument();
     // project.column is 'devis' — StageRail marks that stage's node current.
     expect(within(panel).getByTestId('stage-node-devis')).toHaveAttribute('data-state', 'current');
-    expect(within(panel).getAllByText('Quote').length).toBeGreaterThan(0);
+    // The heading itself, not a text match: StageRail's own 'devis' node also
+    // reads "Quote" (aito.columns.devis), so an unscoped text query would
+    // still pass with the Quote card deleted entirely.
+    expect(within(panel).getAllByTestId('panel-card-heading').map((n) => n.textContent)).toContain('Quote');
   });
 
   it('opens the panel from the keyboard via the card body', async () => {
