@@ -48,6 +48,13 @@ export interface TaskEditorProps {
    *  defaulted: a default is exactly how a caller with no quote (the create
    *  modal) would silently inherit the wrong answer. */
   canTick: boolean;
+  /** Whether to render this component's own "Tasks / Project total" heading.
+   *  Defaults to true so `NewProjectModal` (which has no panel header of its
+   *  own to carry the total) is unaffected. The detail panel passes `false`:
+   *  it renders its own "Work" eyebrow plus an aggregate progress bar above
+   *  this component instead, and the project total already lives in the
+   *  panel header — repeating it here would be the same figure shown twice. */
+  showHeader?: boolean;
   /** Uids of rows whose create POST is still in flight — `useProjectTasks`'
    *  `pendingTaskUids`. Such a row renders inert (see `TaskRow`'s `pending`
    *  prop): its inputs disabled, its delete control absent — otherwise
@@ -76,6 +83,7 @@ export function TaskEditor({
   canTick,
   minRows = 0,
   onRowBlur,
+  showHeader = true,
   pendingUids,
 }: TaskEditorProps) {
   const { t } = useTranslation();
@@ -123,13 +131,15 @@ export function TaskEditor({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-medium text-white">{t('aito.tasks')}</h3>
-        <div className="flex items-baseline gap-2">
-          <span className="text-sm text-bambu-gray">{t('aito.projectTotal')}</span>
-          <Money currency={currency} value={projectTotal(value)} className="text-bambu-green font-medium" />
+      {showHeader && (
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-medium text-white">{t('aito.tasks')}</h3>
+          <div className="flex items-baseline gap-2">
+            <span className="text-sm text-bambu-gray">{t('aito.projectTotal')}</span>
+            <Money currency={currency} value={projectTotal(value)} className="text-bambu-green font-medium" />
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="space-y-3">
         {value.map((task, index) => {

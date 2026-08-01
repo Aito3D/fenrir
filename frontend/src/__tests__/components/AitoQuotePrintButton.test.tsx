@@ -65,6 +65,22 @@ describe('QuotePrintButton', () => {
     expect(screen.queryByRole('button', { name: /print quote/i })).not.toBeInTheDocument();
   });
 
+  it('is icon-only by default', () => {
+    render(<QuotePrintButton project={project} />);
+    const button = screen.getByRole('button', { name: /print quote/i });
+    // The accessible name still comes from aria-label; the visible label is
+    // what withLabel adds.
+    expect(button).not.toHaveTextContent('Print quote');
+  });
+
+  it('shows a visible "Print quote" label next to the icon when withLabel is set', () => {
+    // Visual-parity fix: the panel footer used to be icon-only while sitting
+    // beside "Open in Zoho", which has a visible label.
+    render(<QuotePrintButton project={project} withLabel />);
+    const button = screen.getByRole('button', { name: /print quote/i });
+    expect(button).toHaveTextContent('Print quote');
+  });
+
   it('does not fall back to a new tab once the component has unmounted', async () => {
     // The 3s fallback timer used to be a bare window.setTimeout with no
     // cleanup tied to the component's lifetime: closing the detail panel

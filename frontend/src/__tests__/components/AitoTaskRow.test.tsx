@@ -171,4 +171,23 @@ describe('TaskRow', () => {
     );
     expect(card.className).not.toContain('bg-bambu-green/5');
   });
+
+  it('rounds the card to .6rem, matching the panel\'s reference cards', () => {
+    // Visual-parity fix: the card used to be rounded-lg (.5rem / 7.2px at this
+    // app's 14.4px root); the approved reference measures .6rem (8.64px).
+    const { container } = renderRow(makeTask({ scanCost: 20 }), { canTick: true });
+    const card = container.firstElementChild as HTMLElement;
+    expect(card.className).toContain('rounded-[.6rem]');
+  });
+
+  it('keeps the remove control hover-revealed here — only the panel footer\'s copy of it goes permanent', () => {
+    // DeleteHoldButton grew an opt-in `alwaysVisible` prop for the panel
+    // footer (visual-parity fix); TaskRow must keep passing nothing, so its
+    // own remove control stays the group-hover reveal it always was.
+    renderRow(makeTask({ scanCost: 20 }), { canTick: true });
+    const removeButton = screen.getByRole('button', { name: /remove task/i });
+    expect(removeButton.className).toContain('opacity-0');
+    expect(removeButton.className).toContain('group-hover:opacity-100');
+    expect(removeButton).not.toHaveTextContent('Remove task');
+  });
 });

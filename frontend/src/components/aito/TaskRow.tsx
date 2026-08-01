@@ -110,7 +110,7 @@ export function TaskRow({
       // green tint over the same surface every other card sits on, in every
       // palette and in light mode, since it names the theme variable rather
       // than a literal colour.
-      className={`animate-rise group rounded-lg border card-shadow transition-colors duration-300 ease-[var(--ease-signature)] motion-reduce:transition-none ${
+      className={`animate-rise group rounded-[.6rem] border card-shadow transition-colors duration-300 ease-[var(--ease-signature)] motion-reduce:transition-none ${
         finished
           ? 'border-bambu-green/40 bg-[color-mix(in_srgb,var(--color-bambu-green)_5%,var(--color-bambu-dark-secondary))]'
           : 'border-bambu-dark-tertiary bg-bambu-dark-secondary'

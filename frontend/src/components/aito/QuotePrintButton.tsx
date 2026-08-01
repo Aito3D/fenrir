@@ -25,7 +25,17 @@ const REVOKE_DELAY_MS = 60_000;
  *  browsers — Safari has historically refused it outright. A button that
  *  silently does nothing is worse than one that opens a tab, so a throw or a
  *  load timeout escalates to window.open and says so. */
-export function QuotePrintButton({ project }: { project: AitoProject }) {
+export function QuotePrintButton({
+  project,
+  /** Renders "Print quote" beside the icon, styled as a bordered pill matching
+   *  the panel footer's "Open in Zoho" link. Opt-in (default false) rather
+   *  than a default change: the icon-only rendering is kept for any other
+   *  caller that wants the compact form. */
+  withLabel = false,
+}: {
+  project: AitoProject;
+  withLabel?: boolean;
+}) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
@@ -129,9 +139,14 @@ export function QuotePrintButton({ project }: { project: AitoProject }) {
       disabled={busy}
       aria-label={t('aito.printQuote')}
       title={t('aito.printQuote')}
-      className="inline-flex items-center p-1 -m-1 rounded-md text-bambu-gray hover:text-bambu-green hover:bg-bambu-green/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
+      className={
+        withLabel
+          ? `inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary px-2.5 py-1 text-sm text-bambu-gray-light hover:text-white hover:border-bambu-gray transition-colors motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40`
+          : `inline-flex items-center p-1 -m-1 rounded-md text-bambu-gray hover:text-bambu-green hover:bg-bambu-green/10 transition-colors motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40`
+      }
     >
       {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+      {withLabel && t('aito.printQuote')}
     </button>
   );
 }

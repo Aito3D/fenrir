@@ -303,6 +303,20 @@ describe('TaskEditor', () => {
     expect(onRemove).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
+
+  it('shows its own "Tasks / Project total" header by default, so NewProjectModal is unaffected', () => {
+    const task: TaskDraft = { ...emptyTaskDraft(), scanCost: 10 };
+    render(<TaskEditor value={[task]} onChange={vi.fn()} onRemove={vi.fn()} canTick />);
+    expect(screen.getByRole('heading', { name: 'Tasks' })).toBeInTheDocument();
+    expect(screen.getByText('Project total')).toBeInTheDocument();
+  });
+
+  it('hides its own header when showHeader is false — the detail panel renders its own "Work" header instead', () => {
+    const task: TaskDraft = { ...emptyTaskDraft(), scanCost: 10 };
+    render(<TaskEditor value={[task]} onChange={vi.fn()} onRemove={vi.fn()} canTick showHeader={false} />);
+    expect(screen.queryByRole('heading', { name: 'Tasks' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Project total')).not.toBeInTheDocument();
+  });
 });
 
 describe('TaskRow', () => {
