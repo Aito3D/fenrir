@@ -8939,6 +8939,7 @@
           "modelisation_done": false,
           "scan_cost": null,
           "scan_done": false,
+          "title": "",
           "usinage_cost": null,
           "usinage_done": false
         }
@@ -8973,6 +8974,7 @@
           "modelisation_done": false,
           "scan_cost": 0.0,
           "scan_done": false,
+          "title": "",
           "usinage_cost": null,
           "usinage_done": false
         }
@@ -9007,6 +9009,7 @@
           "modelisation_done": false,
           "scan_cost": null,
           "scan_done": false,
+          "title": "",
           "usinage_cost": null,
           "usinage_done": true
         }
@@ -9051,6 +9054,7 @@
           "modelisation_done": true,
           "scan_cost": 10.0,
           "scan_done": true,
+          "title": "Support principal",
           "usinage_cost": 40.0,
           "usinage_done": false
         }
@@ -9094,6 +9098,7 @@
           "modelisation_done": false,
           "scan_cost": 1.0,
           "scan_done": true,
+          "title": "Pi\u00e8ce A",
           "usinage_cost": null,
           "usinage_done": false
         },
@@ -9104,6 +9109,7 @@
           "modelisation_done": false,
           "scan_cost": 2.0,
           "scan_done": false,
+          "title": "",
           "usinage_cost": null,
           "usinage_done": false
         }
@@ -9141,6 +9147,7 @@
           "modelisation_done": false,
           "scan_cost": 0.1,
           "scan_done": false,
+          "title": "",
           "usinage_cost": null,
           "usinage_done": false
         }
@@ -9178,6 +9185,7 @@
           "modelisation_done": false,
           "scan_cost": 1.0,
           "scan_done": true,
+          "title": "",
           "usinage_cost": null,
           "usinage_done": false
         }
@@ -9244,6 +9252,7 @@
           "modelisation_done": true,
           "scan_cost": 1.0,
           "scan_done": true,
+          "title": "",
           "usinage_cost": null,
           "usinage_done": false
         },
@@ -9254,6 +9263,7 @@
           "modelisation_done": false,
           "scan_cost": 0.0,
           "scan_done": false,
+          "title": "",
           "usinage_cost": 5.0,
           "usinage_done": false
         },
@@ -9264,6 +9274,7 @@
           "modelisation_done": false,
           "scan_cost": 6.0,
           "scan_done": false,
+          "title": "",
           "usinage_cost": 9.0,
           "usinage_done": false
         }
