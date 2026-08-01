@@ -1,7 +1,7 @@
 # Aito Detail Panel Redesign — Design
 
 Date: 2026-07-31
-Status: approved (variant F, "Rail")
+Status: approved — layout "F · Rail", surfaces "7 · Canvas, weighted"
 
 ## Problem
 
@@ -126,9 +126,16 @@ Grouped cards instead of one flat `<dl>`:
    the job *is*: the rail tells you where the work has got to, but only after
    you know what the work is.
 2. **Stage & work left** — the rail above.
-3. **Fine print** — seller, created, last activity, plus `QuoteStatusActions`.
-   Borderless, `text-bambu-gray`, smaller. These are the rows that currently
-   compete with the client name; they stop competing.
+3. **Quote** — number, Zoho link, status.
+4. **Record** — seller, created, last activity. A card like the other three, so
+   the rail is four groups rather than three plus a loose tail. Its inner labels
+   are sentence case, not the uppercase the card headings use: four uppercase
+   labels in one box reads as four more headings.
+
+Each is `bg-bambu-dark-secondary` with a border, no shadow — see Surfaces. The
+whole rail is `text-bambu-gray` and a step smaller than the task column; these
+are the rows that currently compete with the client name, and they stop
+competing.
 
 #### Who, after the when
 
@@ -141,7 +148,7 @@ Created         7/28/26, 2:00 AM · admin
 Last activity   7/30/26, 10:07 PM · admin
 ```
 
-The fine print drops to a **short** date-time —
+The Record card drops to a **short** date-time —
 `toLocaleString(i18n.language, { dateStyle: 'short', timeStyle: 'short' })`
 rather than the current bare `toLocaleString()`. `{when} · {who}` has to fit one
 line in a 16.5rem column and the full form does not; second-level precision in a
@@ -169,7 +176,7 @@ api.getAitoEvents(projectId, { depth: 'everything', limit: 1 })
 
 `depth: 'everything'` is required, not incidental. Reusing the events the
 `ActivityRail` has already loaded would be free, but that list is filtered by
-the rail's depth toggle — so the name in the fine print would silently change
+the rail's depth toggle — so the name in the Record card would silently change
 when the reader flipped Story/Detail/Everything. A separate one-row query is one
 request and always the same answer.
 
@@ -206,13 +213,13 @@ Precisely where each surviving row goes:
 | --------- | ------------- |
 | Company / client name | Header title |
 | Phone, Email | Header contacts |
-| Quote number + Zoho link | Header eyebrow; the print button moves to the footer |
-| Seller | Fine print |
-| Created + Created by | Fine print, folded into one `{when} · {who}` row |
-| Last activity | Fine print, gains its actor from the newest event |
+| Quote number + Zoho link | Header eyebrow, and the Quote card; the print button moves to the footer |
+| Seller | Record card |
+| Created + Created by | Record card, folded into one `{when} · {who}` row |
+| Last activity | Record card, gains its actor from the newest event |
 | Stage | Replaced by the rail |
-| Sync state / retry button | Full-width row above the fine print |
-| Status block, declined message | Full-width row above the fine print |
+| Sync state / retry button | Full-width row between the Quote and Record cards |
+| Status block, declined message | Full-width row between the Quote and Record cards |
 
 The sync, status-block and declined messages keep their current logic and copy
 **verbatim**, including which `quote_sync_state` values each renders for and the
@@ -265,6 +272,74 @@ so focusing it announces the panel by its client name. The existing
 `editingRef` guard — Escape closes the panel unless a description edit is open —
 is unchanged.
 
+## Surfaces
+
+The panel stops being one flat sheet. Elevation is **ranked**, and the ranking
+encodes function: the column you act in is the front plane, the two you read
+from are not.
+
+```
+canvas          the body                       --bg-primary
+front plane     task cards                     --bg-secondary + --card-shadow
+reference       description / rail / quote /   --bg-secondary, border only,
+                record cards                   no shadow
+band            header                         --bg-secondary + accent wash
+chrome          footer                         --bg-secondary
+```
+
+Three rules, in the order that matters:
+
+1. **The body is canvas, not panel.** The panel's own background moves from
+   `bg-bambu-dark-secondary` to `bg-bambu-dark`, and the header, footer and every
+   card sit on it as `bg-bambu-dark-secondary`. This is the whole contrast
+   effect, and it needs no new colour: the app's two background tiers already
+   mean exactly this.
+2. **Only task cards cast a shadow.** They take `var(--card-shadow)` — the
+   existing token, available as the `.card-shadow` utility. The reference cards
+   keep a 1px border and no shadow. Ranking the elevation rather than applying
+   it uniformly is the entire point: giving every group a shadow makes the task
+   column stop being the focus, which is what the rejected treatment did.
+3. **The header carries a 135° accent wash.**
+   ```css
+   background: linear-gradient(135deg,
+     color-mix(in srgb, var(--accent) 12%, var(--bg-secondary)),
+     var(--bg-secondary));
+   border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border-color));
+   ```
+   135°, not 180°. The band is roughly 1200×90, so a diagonal axis reads as a
+   near-horizontal fade: the tint sits behind the project ref, the client name
+   and the contacts, and clears to neutral before the ring and the total. The
+   vertical version tints the top of the band — which is where the small grey
+   eyebrow lives — and leaves the client name on the neutral half, putting the
+   colour on the least important row and a cast over the one number that should
+   not compete with one.
+
+### Why this survives theming
+
+Bambuddy has six background palettes, six accents, four style effects and a
+light mode. Every value above is an existing CSS variable or a `color-mix` over
+one, so the treatment follows all of them for free:
+
+- `--bg-primary` / `--bg-secondary` are already a canvas/surface pair in every
+  palette, light mode included (`#f5f5f5` / `#ffffff`).
+- `--card-shadow` is already redefined per mode *and* per style — `style-glow`
+  gives it an accent halo, `style-elevated` a deeper drop. The task cards
+  inherit whichever the user picked rather than hard-coding one.
+- The wash is a mix over `--accent`, so it is teal, green, blue, orange, purple
+  or red to match.
+
+No literal hex, and no `color-mix` against `#000` or `#fff` — darkening by a
+fixed percentage is exactly what breaks in light mode, where "recessed" has to
+get *greyer*, not darker, and "lifted" is a shadow rather than a brightness.
+
+### Not carried over from the mockups
+
+The rejected treatments explored an accent glow around the panel border. It is
+not in this design: against the board behind a `black/70` scrim it was
+invisible at every strength short of garish, and all the perceived lift was
+coming from the canvas contrast and the header's cast shadow. `style-glow`
+users already get an accent halo through `--card-shadow`.
+
 ## Motion
 
 Everything reuses tokens already in `index.css`:
@@ -311,7 +386,7 @@ Everything reuses tokens already in `index.css`:
 | `components/aito/StageRail.tsx` | New |
 | `components/aito/TaskStepList.tsx` | Row-wide toggle, checkbox, stage swatch |
 | `components/aito/TaskRow.tsx` | Per-task progress bar and count |
-| `components/aito/columns.ts` | Export a raw stage colour alongside `dot` |
+| `components/aito/columns.ts` | Export a raw stage colour alongside `dot`, for the rail nodes and step swatches |
 | `components/aito/services.ts` | New `stageOf(service)` / per-stage aggregation helper |
 | `i18n/locales/*.ts` | New keys, 13 locales |
 
