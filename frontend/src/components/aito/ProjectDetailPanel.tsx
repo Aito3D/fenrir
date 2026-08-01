@@ -5,6 +5,7 @@ import { Building2, Check, Copy, ExternalLink, Loader2, Mail, Phone, User } from
 import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ActivityRail } from './history/ActivityRail';
+import { ProjectDoneAction } from './ProjectDoneAction';
 import { ProjectProgress } from './ProjectProgress';
 import { QuotePrintButton } from './QuotePrintButton';
 import { QuoteStatusActions } from './QuoteStatusActions';
@@ -910,9 +911,16 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               These are the transitions that MOVE the card off this column, so
               they belong with the panel's other commitments rather than buried
               under the left rail's reference cards, where they sat below the
-              fold on a project with several tasks. */}
+              fold on a project with several tasks.
+              Done is the last of them and comes last on the bar: it is the
+              transition the panel is open FOR at that point — you ticked the
+              final step here — and until now it existed only on the board card
+              behind you, so finishing a project meant closing the panel and
+              finding the card again. The two blocks are mutually exclusive by
+              construction (see ProjectDoneAction), so this never crowds. */}
           <span className="flex-1" />
           <QuoteStatusActions project={project} layout="row" />
+          <ProjectDoneAction project={project} />
         </div>
       </div>
     </div>

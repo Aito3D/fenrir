@@ -1582,6 +1582,79 @@ describe('ProjectDetailPanel footer', () => {
   });
 });
 
+describe('ProjectDetailPanel mark as done', () => {
+  const doneButton = () =>
+    within(screen.getByTestId('panel-footer')).queryByRole('button', { name: /mark project as done/i });
+
+  it('offers it in the footer for a released card in Finish', () => {
+    show({ column: 'finish', move_lock: null, quote_status: 'accepted' });
+    expect(doneButton()).toBeEnabled();
+  });
+
+  it('does not offer it in any other column', () => {
+    for (const column of ['devis', 'waiting', 'scan', 'model', 'print', 'done'] as const) {
+      const { unmount } = show({ column, move_lock: null, quote_status: 'accepted' });
+      expect(doneButton()).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('does not offer it while the rules still hold the card', () => {
+    // move_lock is the server's own derived value, and the move endpoint would
+    // 409 the attempt — same gate the board card uses.
+    show({ column: 'finish', move_lock: 'steps', quote_status: 'accepted' });
+    expect(doneButton()).not.toBeInTheDocument();
+  });
+
+  it('never shares the bar with the quote actions', () => {
+    // A card only reaches Finish on an accepted quote, and QuoteStatusActions
+    // renders nothing once accepted. Asserted rather than assumed: the two
+    // blocks are styled alike, so a regression that put both on the bar would
+    // read as one wide row of near-identical pills.
+    show({ column: 'finish', move_lock: null, quote_status: 'accepted' });
+    const footer = screen.getByTestId('panel-footer');
+    expect(within(footer).queryByRole('button', { name: /mark as sent|accept quote|decline quote/i }))
+      .not.toBeInTheDocument();
+  });
+
+  it('fires the move only once the 500ms hold completes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Held open by hand: MSW has no handler for this endpoint, and the unmocked
+    // call bypasses to the real network, which refuses fast enough to settle the
+    // mutation before the pending assertion below runs.
+    const move = vi.spyOn(api, 'moveAitoProject').mockImplementation(() => new Promise(() => {}));
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      show({ column: 'finish', move_lock: null, quote_status: 'accepted' });
+      const button = doneButton()!;
+
+      await user.pointer({ keys: '[MouseLeft>]', target: button });
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(button).toBeEnabled();
+
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(button).toBeDisabled();
+
+      // React Query's `onMutate` awaits `cancelQueries` before it ever reaches
+      // `mutationFn`, so the request is a microtask behind the `isPending` flip
+      // asserted above — flush before asking what was actually sent.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      // The destination, spelled out: swapping it for 'finish' would turn this
+      // into a silent no-op with every other assertion here still green.
+      expect(move).toHaveBeenCalledWith(12, { column: 'done', position: 0 });
+    } finally {
+      vi.useRealTimers();
+      move.mockRestore();
+    }
+  });
+});
+
 describe('ProjectDetailPanel delete', () => {
   it('offers delete in the expanded card, on a 1s hold', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
