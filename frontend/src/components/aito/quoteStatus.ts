@@ -58,14 +58,20 @@ export function quoteStatusTone(status: string): QuoteStatusTone {
  *  the header eyebrow pill (text + border + accent-alpha background) and the
  *  Quote card's plain-text Status row (text only). */
 export const QUOTE_STATUS_PILL_TONE_CLASSES: Record<QuoteStatusTone, string> = {
-  success: 'text-bambu-green border-bambu-green/40 bg-bambu-green/10',
+  // green-LIGHT for the text: the pill sits on the header's accent-washed
+  // band, where the base accent is too close to its own background to read.
+  // The border and fill stay on the base accent — they are behind the text,
+  // not competing with it.
+  success: 'text-bambu-green-light border-bambu-green/40 bg-bambu-green/10',
   error: 'text-status-error border-status-error/40 bg-status-error/10',
   warning: 'text-status-warning border-status-warning/40 bg-status-warning/10',
   neutral: 'text-bambu-gray-light border-bambu-gray/40 bg-bambu-gray/10',
 };
 
 export const QUOTE_STATUS_TEXT_TONE_CLASSES: Record<QuoteStatusTone, string> = {
-  success: 'text-bambu-green',
+  // Matches the pill above, so the header and the Quote card never show the
+  // same status in two different greens.
+  success: 'text-bambu-green-light',
   error: 'text-status-error',
   warning: 'text-status-warning',
   neutral: 'text-bambu-gray-light',

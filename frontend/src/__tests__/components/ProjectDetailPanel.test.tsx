@@ -1194,13 +1194,16 @@ describe('ProjectDetailPanel quote row', () => {
   it('right-aligns the project total', async () => {
     // mockTask's only priced step (scan, 500) is not done, so the header
     // total is the full 500 — waiting for it also waits out the tasks fetch.
-    // '$500.00' also appears in TaskEditor's own running total below, so the
-    // header's copy is picked out by its distinctive size/weight classes.
+    // Located via the caption's own testid rather than a font-size class:
+    // this test used to key on `text-2xl` and broke the moment the size was
+    // tuned to the design reference, which told us nothing about alignment.
     show();
-    const totals = await screen.findAllByText('$500.00');
-    const headerTotal = totals.find((el) => el.className.includes('text-2xl'));
-    expect(headerTotal).toBeDefined();
-    expect(headerTotal?.closest('div')?.className).toContain('text-right');
+    const caption = await screen.findByTestId('panel-header-caption');
+    const moneyBlock = caption.parentElement!;
+    // The caption mounts at 0/0 before the tasks fetch resolves, so wait for
+    // the real total rather than asserting on the empty first paint.
+    await waitFor(() => expect(moneyBlock.textContent).toContain('$500.00'));
+    expect(moneyBlock.className).toContain('text-right');
   });
 
   it('shows nothing about a quote on a manually created project', () => {

@@ -65,6 +65,15 @@ function quoteStatusText(t: (key: string) => string, status: string | null): str
   return key ? t(key) : status;
 }
 
+/** The header eyebrow's type: .72rem at .08em tracking, uppercase.
+ *
+ *  Written out rather than reached for as `text-xs tracking-wide`, because
+ *  Tailwind's nearest pair is .75rem / .025em — a third of this tracking. At
+ *  10px uppercase that is the difference between a label and a caption, and
+ *  the project ref, the quote link, the separator and the status pill all
+ *  share this so they can never drift into two different sizes on one row. */
+const eyebrowCls = 'text-[.72rem] uppercase tracking-[.08em]';
+
 interface ProjectDetailPanelProps {
   project: AitoProject;
   onClose: () => void;
@@ -228,26 +237,32 @@ function PanelHeader({
       }}
     >
       <div className="flex-1 min-w-0">
+        {/* `eyebrowCls`, not `text-xs tracking-wide`: the reference eyebrow is
+            .72rem at .08em, and Tailwind's nearest pair (.75rem / .025em) is
+            a third of that tracking — on four uppercase words set at 10px the
+            difference between .025em and .08em is the difference between a
+            label and a caption. Shared by all four items on this row so they
+            cannot drift apart. */}
         <div className="flex items-center gap-2 mb-0.5">
-          <span className="text-xs uppercase tracking-wide text-bambu-gray">
-            {t('aito.projectRef', { id: project.id })}
-          </span>
+          <span className={`${eyebrowCls} text-bambu-gray`}>{t('aito.projectRef', { id: project.id })}</span>
           {project.quote_number && (
             <>
-              <span className="text-xs text-bambu-gray opacity-50">·</span>
+              <span className={`${eyebrowCls} text-bambu-gray opacity-45`}>·</span>
               {project.quote_url ? (
                 <a
                   href={project.quote_url}
                   target="_blank"
                   rel="noopener noreferrer"
                   title={t('aito.quoteOpenInZoho')}
-                  className="text-xs uppercase tracking-wide text-bambu-green hover:text-bambu-green/80 inline-flex items-center gap-1"
+                  // green-LIGHT, not green: on the accent-washed band the base
+                  // accent sits too close to the wash to read as a link.
+                  className={`${eyebrowCls} text-bambu-green-light hover:text-bambu-green-light/80 inline-flex items-center gap-1`}
                 >
                   {project.quote_number}
                   <ExternalLink className="w-3 h-3" />
                 </a>
               ) : (
-                <span className="text-xs uppercase tracking-wide text-bambu-gray">{project.quote_number}</span>
+                <span className={`${eyebrowCls} text-bambu-gray`}>{project.quote_number}</span>
               )}
             </>
           )}
@@ -259,13 +274,18 @@ function PanelHeader({
           {project.quote_status && (
             <span
               data-testid="panel-quote-status-pill"
-              className={`text-xs uppercase tracking-wide border rounded-[.4rem] px-[.4rem] py-[.05rem] ${QUOTE_STATUS_PILL_TONE_CLASSES[quoteStatusTone(project.quote_status)]}`}
+              className={`${eyebrowCls} border rounded-[.4rem] px-[.4rem] py-[.05rem] ${QUOTE_STATUS_PILL_TONE_CLASSES[quoteStatusTone(project.quote_status)]}`}
             >
               {quoteStatusText(t, project.quote_status)}
             </span>
           )}
         </div>
-        <h2 className="text-xl font-semibold text-white truncate">{project.client_name ?? t('aito.noClient')}</h2>
+        {/* 1.35rem at -.01em, not `text-xl`: the reference title is a step
+            larger than Tailwind's 1.25rem, and the negative tracking is what
+            keeps a long company name from reading as loose at that size. */}
+        <h2 className="text-[1.35rem] leading-tight font-semibold tracking-[-0.01em] text-white truncate">
+          {project.client_name ?? t('aito.noClient')}
+        </h2>
         <div className="flex items-center gap-4 mt-1 text-[.82rem]">
           {project.client_phone && (
             <CopyableValue value={project.client_phone} label={t('aito.phoneLabel')} icon={Phone} />
@@ -281,7 +301,13 @@ function PanelHeader({
       <div className="flex items-center gap-3 flex-shrink-0">
         <ValueRing done={valueDone} total={valueTotal} currency={currency} />
         <div className="text-right">
-          <Money currency={currency} value={valueTotal} className="block text-2xl font-semibold text-white" />
+          {/* -.02em: the total is the largest run of digits in the panel, and
+              tabular figures at 1.5rem sit noticeably loose without it. */}
+          <Money
+            currency={currency}
+            value={valueTotal}
+            className="block text-[1.5rem] leading-tight font-semibold tracking-[-0.02em] text-white"
+          />
           <span data-testid="panel-header-caption" className="block text-xs text-bambu-gray tabular-nums">
             {t('aito.amountDone', { amount: formatMoney(valueDone, currency) })}
             {' · '}
