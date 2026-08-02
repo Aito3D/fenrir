@@ -127,17 +127,21 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
   justEnabledRef.current = null;
 
   const toggleService = (svc: (typeof SERVICE_DEFS)[number]) => {
-    setEnabled((current) => {
-      const next = new Set(current);
-      if (next.delete(svc.id)) {
-        // Chip off = the service stops existing: null, never 0.
-        onChange({ ...task, [svc.costKey]: null });
-      } else {
-        next.add(svc.id);
-        justEnabledRef.current = svc.id;
-      }
-      return next;
-    });
+    // Computed from the `enabled` state variable (not an updater callback):
+    // StrictMode double-invokes updaters during render, which would run
+    // `onChange` and the ref write twice — and discard the first render's
+    // effects, silently breaking chip auto-focus. Ordinary statements below
+    // run exactly once, after React has committed to this render.
+    const next = new Set(enabled);
+    if (next.delete(svc.id)) {
+      setEnabled(next);
+      // Chip off = the service stops existing: null, never 0.
+      onChange({ ...task, [svc.costKey]: null });
+    } else {
+      next.add(svc.id);
+      setEnabled(next);
+      justEnabledRef.current = svc.id;
+    }
   };
 
   return (

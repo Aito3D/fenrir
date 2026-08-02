@@ -39,24 +39,42 @@ function readDraft(): PersistedDraft | null {
 export function useNewProjectDraft() {
   const [initial] = useState<PersistedDraft | null>(readDraft);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The latest not-yet-written draft. Set by `save`, cleared once the debounced
+  // write actually lands (or by `clear`). Unmount checks this — not the timer —
+  // so a still-pending write is flushed synchronously instead of dropped.
+  const pendingRef = useRef<PersistedDraft | null>(null);
 
-  useEffect(() => () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (pendingRef.current) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(pendingRef.current));
+        } catch {
+          // Best-effort only.
+        }
+        pendingRef.current = null;
+      }
+    },
+    [],
+  );
 
   const save = (draft: PersistedDraft) => {
     if (timerRef.current) clearTimeout(timerRef.current);
+    pendingRef.current = draft;
     timerRef.current = setTimeout(() => {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
       } catch {
         // Best-effort only.
       }
+      pendingRef.current = null;
     }, SAVE_DEBOUNCE_MS);
   };
 
   const clear = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
+    pendingRef.current = null;
     clearNewProjectDraft();
   };
 

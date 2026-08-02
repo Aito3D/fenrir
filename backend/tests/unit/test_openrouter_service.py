@@ -42,6 +42,17 @@ def test_task_lines_names_enabled_services_only():
     assert "modélisation 3D" in lines[1]
 
 
+def test_task_lines_truncates_title_and_description_to_500_chars():
+    long_task = {"title": "T" * 900, "description": "D" * 900}
+    lines = _task_lines([long_task])
+    # Title is truncated to 500 chars before it's used as the line's prefix.
+    assert "T" * 500 in lines[0]
+    assert "T" * 501 not in lines[0]
+    # Description is truncated to 500 chars before being appended.
+    assert "D" * 500 in lines[0]
+    assert "D" * 501 not in lines[0]
+
+
 @pytest.mark.asyncio
 async def test_summarize_raises_when_unconfigured(db_session):
     with pytest.raises(OpenRouterNotConfiguredError):

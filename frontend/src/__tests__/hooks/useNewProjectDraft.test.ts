@@ -38,4 +38,37 @@ describe('useNewProjectDraft', () => {
     const { result } = renderHook(() => useNewProjectDraft());
     expect(result.current.initial).toBeNull();
   });
+
+  it('flushes a pending save synchronously on unmount, without advancing timers', () => {
+    vi.useFakeTimers();
+    const { result, unmount } = renderHook(() => useNewProjectDraft());
+    const draft = {
+      tasks: [{ ...emptyTaskDraft(), title: 'Capot' }],
+      client: null,
+      summaryText: 'Résumé.',
+      summaryEdited: true,
+      summarySignature: 'sig',
+    };
+    act(() => result.current.save(draft));
+    // No vi.advanceTimersByTime — the debounce has not fired yet.
+    unmount();
+    const stored = JSON.parse(localStorage.getItem('aito.newProjectDraft.v1') ?? 'null');
+    expect(stored?.tasks[0].title).toBe('Capot');
+  });
+
+  it('clear() then unmount does not resurrect a pending save', () => {
+    vi.useFakeTimers();
+    const { result, unmount } = renderHook(() => useNewProjectDraft());
+    const draft = {
+      tasks: [{ ...emptyTaskDraft(), title: 'Capot' }],
+      client: null,
+      summaryText: 'Résumé.',
+      summaryEdited: true,
+      summarySignature: 'sig',
+    };
+    act(() => result.current.save(draft));
+    act(() => result.current.clear());
+    unmount();
+    expect(localStorage.getItem('aito.newProjectDraft.v1')).toBeNull();
+  });
 });

@@ -42,7 +42,9 @@ def _task_lines(tasks: list[dict]) -> list[str]:
     """One human-readable line per task: title, enabled services, print params."""
     lines: list[str] = []
     for index, task in enumerate(tasks):
-        title = (task.get("title") or "").strip() or f"Tâche {index + 1}"
+        # Bounds what we ship to the paid API — a pathological draft must not
+        # blow up the prompt (and the bill).
+        title = ((task.get("title") or "").strip() or f"Tâche {index + 1}")[:500]
         services = [name for field, name in _SERVICE_FIELDS if task.get(field) is not None]
         parts = [f"{title}: {', '.join(services) if services else 'aucun service'}"]
         if task.get("impression_cost") is not None:
@@ -55,7 +57,8 @@ def _task_lines(tasks: list[dict]) -> list[str]:
                 details.append(f"x{task['impression_quantity']}")
             if details:
                 parts.append(f"({', '.join(details)})")
-        description = (task.get("description") or "").strip()
+        # Same bound as title — descriptions are free text with no schema cap.
+        description = (task.get("description") or "").strip()[:500]
         if description:
             parts.append(f"— {description}")
         lines.append(" ".join(parts))

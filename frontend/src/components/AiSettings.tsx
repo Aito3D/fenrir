@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Sparkles, Loader2 } from 'lucide-react';
@@ -29,8 +29,13 @@ export function AiSettings() {
     queryFn: api.getSettings,
   });
 
+  // Seed once, the first time settings arrive. A later refetch of the shared
+  // ['settings'] query (e.g. saving an unrelated card on the same tab) must
+  // not re-run this — it would blank whatever the user is mid-typing here.
+  const seededRef = useRef(false);
   useEffect(() => {
-    if (settings) {
+    if (settings && !seededRef.current) {
+      seededRef.current = true;
       setModel(settings.openrouter_model ?? '');
       // The API key is never returned by the API — always leave blank.
       setApiKey('');

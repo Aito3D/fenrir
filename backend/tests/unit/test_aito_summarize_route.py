@@ -51,3 +51,10 @@ async def test_summarize_upstream_502(async_client, monkeypatch):
 async def test_summarize_requires_a_task(async_client):
     r = await async_client.post("/api/v1/aito/summarize", json={"tasks": []})
     assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_summarize_rejects_more_than_fifty_tasks(async_client):
+    tasks = [{"title": f"Tâche {i}", "impression_cost": 1} for i in range(51)]
+    r = await async_client.post("/api/v1/aito/summarize", json={"tasks": tasks})
+    assert r.status_code == 422

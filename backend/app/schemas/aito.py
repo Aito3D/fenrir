@@ -249,7 +249,7 @@ class AitoSummarizeRequest(BaseModel):
     """Task drafts to summarize — the create-drawer sends its local drafts, so
     these are AitoTaskCreate shapes, not persisted rows."""
 
-    tasks: list[AitoTaskCreate] = Field(min_length=1)
+    tasks: list[AitoTaskCreate] = Field(min_length=1, max_length=50)
 
 
 class AitoSummarizeResponse(BaseModel):
