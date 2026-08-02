@@ -3104,6 +3104,12 @@ export default {
         },
       },
     },
+    // OpenRouter AI summary settings
+    openrouterTitle: 'YZ özeti (OpenRouter)',
+    openrouterApiKey: 'OpenRouter API anahtarı',
+    openrouterApiKeyHint: 'Salt yazılır — mevcut anahtarı korumak için boş bırakın',
+    openrouterModel: 'Model',
+    openrouterModelHint: 'Proje özetleri için OpenRouter model kimliği (Fransızca)',
   },
 
   // Bildirimler (push bildirimleri için)
@@ -7459,11 +7465,5 @@ export default {
     stuffMarkup: 'Malzeme kâr payı (%)',
     defaultsSaved: 'Varsayılanlar kaydedildi',
     saveDefaults: 'Kaydet',
-    // OpenRouter AI summary settings
-    openrouterTitle: 'YZ özeti (OpenRouter)',
-    openrouterApiKey: 'OpenRouter API anahtarı',
-    openrouterApiKeyHint: 'Salt yazılır — mevcut anahtarı korumak için boş bırakın',
-    openrouterModel: 'Model',
-    openrouterModelHint: 'Proje özetleri için OpenRouter model kimliği (Fransızca)',
   },
 };

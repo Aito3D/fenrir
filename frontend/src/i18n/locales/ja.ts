@@ -3100,6 +3100,12 @@ export default {
         },
       },
     },
+    // OpenRouter AI summary settings
+    openrouterTitle: 'AI要約（OpenRouter）',
+    openrouterApiKey: 'OpenRouter APIキー',
+    openrouterApiKeyHint: '書き込み専用 — 空欄で現在のキーを維持',
+    openrouterModel: 'モデル',
+    openrouterModelHint: 'プロジェクト要約に使うOpenRouterモデルID（フランス語）',
   },
 
   // Notifications (for push notifications)
@@ -7530,11 +7536,5 @@ export default {
     stuffMarkup: '雑材料上乗せ率 (%)',
     defaultsSaved: '既定値を保存しました',
     saveDefaults: '保存',
-    // OpenRouter AI summary settings
-    openrouterTitle: 'AI要約（OpenRouter）',
-    openrouterApiKey: 'OpenRouter APIキー',
-    openrouterApiKeyHint: '書き込み専用 — 空欄で現在のキーを維持',
-    openrouterModel: 'モデル',
-    openrouterModelHint: 'プロジェクト要約に使うOpenRouterモデルID（フランス語）',
   },
 };

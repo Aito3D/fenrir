@@ -3133,6 +3133,12 @@ export default {
         },
       },
     },
+    // OpenRouter AI summary settings
+    openrouterTitle: 'AI summary (OpenRouter)',
+    openrouterApiKey: 'OpenRouter API key',
+    openrouterApiKeyHint: 'Write-only — leave blank to keep the current key',
+    openrouterModel: 'Model',
+    openrouterModelHint: 'OpenRouter model id used for project summaries (French)',
   },
 
   // Notifications (for push notifications)
@@ -7578,11 +7584,5 @@ export default {
     stuffMarkup: 'Extras markup (%)',
     defaultsSaved: 'Defaults saved',
     saveDefaults: 'Save defaults',
-    // OpenRouter AI summary settings
-    openrouterTitle: 'AI summary (OpenRouter)',
-    openrouterApiKey: 'OpenRouter API key',
-    openrouterApiKeyHint: 'Write-only — leave blank to keep the current key',
-    openrouterModel: 'Model',
-    openrouterModelHint: 'OpenRouter model id used for project summaries (French)',
   },
 };

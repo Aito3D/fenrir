@@ -3100,6 +3100,12 @@ export default {
         },
       },
     },
+    // OpenRouter AI summary settings
+    openrouterTitle: 'KI-Zusammenfassung (OpenRouter)',
+    openrouterApiKey: 'OpenRouter-API-Schlüssel',
+    openrouterApiKeyHint: 'Nur Schreiben — leer lassen, um den aktuellen Schlüssel zu behalten',
+    openrouterModel: 'Modell',
+    openrouterModelHint: 'OpenRouter-Modell-ID für Projektzusammenfassungen (Französisch)',
   },
 
   // Notifications (for push notifications)
@@ -7531,11 +7537,5 @@ export default {
     stuffMarkup: 'Material-Aufschlag (%)',
     defaultsSaved: 'Standardwerte gespeichert',
     saveDefaults: 'Speichern',
-    // OpenRouter AI summary settings
-    openrouterTitle: 'KI-Zusammenfassung (OpenRouter)',
-    openrouterApiKey: 'OpenRouter-API-Schlüssel',
-    openrouterApiKeyHint: 'Nur Schreiben — leer lassen, um den aktuellen Schlüssel zu behalten',
-    openrouterModel: 'Modell',
-    openrouterModelHint: 'OpenRouter-Modell-ID für Projektzusammenfassungen (Französisch)',
   },
 };

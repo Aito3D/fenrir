@@ -2956,6 +2956,12 @@ export default {
         },
       },
     },
+    // OpenRouter AI summary settings
+    openrouterTitle: 'AI 요약(OpenRouter)',
+    openrouterApiKey: 'OpenRouter API 키',
+    openrouterApiKeyHint: '쓰기 전용 — 비워 두면 현재 키 유지',
+    openrouterModel: '모델',
+    openrouterModelHint: '프로젝트 요약에 사용할 OpenRouter 모델 ID(프랑스어)',
   },
   notification: {
     printStarted: {
@@ -7153,11 +7159,5 @@ export default {
     stuffMarkup: '소모품 가산율 (%)',
     defaultsSaved: '기본값이 저장되었습니다',
     saveDefaults: '저장',
-    // OpenRouter AI summary settings
-    openrouterTitle: 'AI 요약(OpenRouter)',
-    openrouterApiKey: 'OpenRouter API 키',
-    openrouterApiKeyHint: '쓰기 전용 — 비워 두면 현재 키 유지',
-    openrouterModel: '모델',
-    openrouterModelHint: '프로젝트 요약에 사용할 OpenRouter 모델 ID(프랑스어)',
   },
 };

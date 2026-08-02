@@ -3088,6 +3088,12 @@ export default {
         },
       },
     },
+    // OpenRouter AI summary settings
+    openrouterTitle: 'Riassunto IA (OpenRouter)',
+    openrouterApiKey: 'Chiave API OpenRouter',
+    openrouterApiKeyHint: 'Sola scrittura — lascia vuoto per mantenere la chiave attuale',
+    openrouterModel: 'Modello',
+    openrouterModelHint: 'ID modello OpenRouter per i riassunti di progetto (francese)',
   },
 
   // Notifications (for push notifications)
@@ -7518,11 +7524,5 @@ export default {
     stuffMarkup: 'Ricarico forniture (%)',
     defaultsSaved: 'Valori predefiniti salvati',
     saveDefaults: 'Salva',
-    // OpenRouter AI summary settings
-    openrouterTitle: 'Riassunto IA (OpenRouter)',
-    openrouterApiKey: 'Chiave API OpenRouter',
-    openrouterApiKeyHint: 'Sola scrittura — lascia vuoto per mantenere la chiave attuale',
-    openrouterModel: 'Modello',
-    openrouterModelHint: 'ID modello OpenRouter per i riassunti di progetto (francese)',
   },
 };

@@ -3088,6 +3088,12 @@ export default {
         },
       },
     },
+    // OpenRouter AI summary settings
+    openrouterTitle: 'AI 摘要（OpenRouter）',
+    openrouterApiKey: 'OpenRouter API 金鑰',
+    openrouterApiKeyHint: '唯寫 — 留空以保留目前金鑰',
+    openrouterModel: '模型',
+    openrouterModelHint: '用於專案摘要的 OpenRouter 模型 ID（法語）',
   },
 
   // Notifications (for push notifications)
@@ -7517,11 +7523,5 @@ export default {
     stuffMarkup: '雜項加價率 (%)',
     defaultsSaved: '預設參數已儲存',
     saveDefaults: '儲存',
-    // OpenRouter AI summary settings
-    openrouterTitle: 'AI 摘要（OpenRouter）',
-    openrouterApiKey: 'OpenRouter API 金鑰',
-    openrouterApiKeyHint: '唯寫 — 留空以保留目前金鑰',
-    openrouterModel: '模型',
-    openrouterModelHint: '用於專案摘要的 OpenRouter 模型 ID（法語）',
   },
 };

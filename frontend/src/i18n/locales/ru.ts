@@ -2949,6 +2949,12 @@ export default {
         },
       },
     },
+    // OpenRouter AI summary settings
+    openrouterTitle: 'ИИ-сводка (OpenRouter)',
+    openrouterApiKey: 'API-ключ OpenRouter',
+    openrouterApiKeyHint: 'Только запись — оставьте пустым, чтобы сохранить текущий ключ',
+    openrouterModel: 'Модель',
+    openrouterModelHint: 'ID модели OpenRouter для описаний проектов (французский)',
   },
   notification: {
     printStarted: {
@@ -7136,11 +7142,5 @@ export default {
     stuffMarkup: "Наценка на прочее (%)",
     defaultsSaved: "Значения по умолчанию сохранены",
     saveDefaults: "Сохранить значения по умолчанию",
-    // OpenRouter AI summary settings
-    openrouterTitle: 'ИИ-сводка (OpenRouter)',
-    openrouterApiKey: 'API-ключ OpenRouter',
-    openrouterApiKeyHint: 'Только запись — оставьте пустым, чтобы сохранить текущий ключ',
-    openrouterModel: 'Модель',
-    openrouterModelHint: 'ID модели OpenRouter для описаний проектов (французский)',
   },
 };

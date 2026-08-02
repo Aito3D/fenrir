@@ -2950,6 +2950,12 @@ export default {
         },
       },
     },
+    // OpenRouter AI summary settings
+    openrouterTitle: 'ШІ-зведення (OpenRouter)',
+    openrouterApiKey: 'API-ключ OpenRouter',
+    openrouterApiKeyHint: 'Лише запис — залиште порожнім, щоб зберегти поточний ключ',
+    openrouterModel: 'Модель',
+    openrouterModelHint: 'ID моделі OpenRouter для описів проєктів (французька)',
   },
   notification: {
     printStarted: {
@@ -7136,11 +7142,5 @@ export default {
     stuffMarkup: "Націнка на додатки (%)",
     defaultsSaved: "Типові значення збережено",
     saveDefaults: "Зберегти типові значення",
-    // OpenRouter AI summary settings
-    openrouterTitle: 'ШІ-зведення (OpenRouter)',
-    openrouterApiKey: 'API-ключ OpenRouter',
-    openrouterApiKeyHint: 'Лише запис — залиште порожнім, щоб зберегти поточний ключ',
-    openrouterModel: 'Модель',
-    openrouterModelHint: 'ID моделі OpenRouter для описів проєктів (французька)',
   },
 };
