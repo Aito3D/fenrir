@@ -87,6 +87,9 @@ async function openModal(user: ReturnType<typeof userEvent.setup>) {
   // its form; once priced it stays in edit mode (pricing its first service is
   // what puts an Edit toggle there at all), so a test that cares about a
   // specific cost (e.g. 0 vs disabled) can just overwrite this same field.
+  // Scan is still a chip on the fresh draft, so enable it first — enabling
+  // must not itself invent a price.
+  await user.click(screen.getByRole('button', { name: 'Add Scan' }));
   fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
 }
 

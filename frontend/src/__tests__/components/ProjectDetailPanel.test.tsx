@@ -617,7 +617,9 @@ describe('ProjectDetailPanel tasks', () => {
     // The task starts with every service null — stepless, so it is already
     // showing its form (no Edit press needed, and no pencil to press: see
     // TaskRow, which hides the toggle when there is no other mode to switch
-    // to).
+    // to). Every service is still a chip, though: enable Scan to reach its
+    // cost input — enabling must not itself invent a price.
+    await userEvent.click(await screen.findByRole('button', { name: 'Add Scan' }));
     const scanInput = await screen.findByLabelText('Scan Cost');
     expect(scanInput).toHaveValue(null);
 
@@ -877,8 +879,13 @@ describe('ProjectDetailPanel tasks', () => {
     });
 
     // Row A (task 101, index 0): edit a print input on the ImpressionFields
-    // instance mounted at index 0.
+    // instance mounted at index 0. Row A's own impressionCost is null (only
+    // its scanCost is priced), so Printing is still a chip there — row B
+    // (mockImpressionTask) already has a priced Printing service, so its
+    // chip is on and its button reads "Remove Printing" instead, leaving
+    // "Add Printing" unique to row A.
     await editAllTasks();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add Printing' }));
     const weightInputs = await screen.findAllByLabelText(/weight/i);
     expect(weightInputs).toHaveLength(2);
     fireEvent.change(weightInputs[0], { target: { value: '40' } });

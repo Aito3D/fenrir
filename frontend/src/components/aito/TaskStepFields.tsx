@@ -1,10 +1,11 @@
-import { useId } from 'react';
+import { useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
+import { Plus } from 'lucide-react';
 import { api } from '../../api/client';
 import { ImpressionFields } from './ImpressionFields';
 import { Money } from '../calculator/shared';
-import { inputCls } from '../formStyles';
+import { inputCls, focusRingCls } from '../formStyles';
 import { taskTotal } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
 
@@ -16,11 +17,13 @@ function CostInput({
   label,
   value,
   onChange,
+  autoFocus,
 }: {
   id: string;
   label: string;
   value: number | null;
   onChange: (next: number | null) => void;
+  autoFocus?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -34,33 +37,38 @@ function CostInput({
       value={value ?? ''}
       onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
       placeholder={t('aito.serviceCost')}
+      autoFocus={autoFocus}
       className={inputCls}
     />
   );
 }
 
-/** One step's block: its name, its cost, and whatever else that step needs.
- *  Dimmed while the step does not exist — typing a cost is what creates it. */
-function StepBlock({
-  title,
-  present,
-  children,
-}: {
-  title: string;
-  present: boolean;
-  children: React.ReactNode;
-}) {
+/** One enabled service's block: its name, its cost, and whatever else that
+ *  service needs. Only ever mounted for a service the chip row has switched
+ *  on — a rendered block is always "present", so there is nothing left to
+ *  dim here (compare the pre-chip version, which rendered all four blocks
+ *  always and dimmed the absent ones). */
+function StepBlock({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <fieldset
-      className={`rounded-lg border border-bambu-dark-tertiary p-3 transition-opacity ${
-        present ? '' : 'opacity-60'
-      }`}
-    >
+    <fieldset className="rounded-lg border border-bambu-dark-tertiary p-3">
       <legend className="px-1 text-sm text-bambu-gray">{title}</legend>
       {children}
     </fieldset>
   );
 }
+
+type ServiceId = 'scan' | 'modelisation' | 'impression' | 'usinage';
+
+const SERVICE_DEFS: {
+  id: ServiceId;
+  labelKey: string;
+  costKey: 'scanCost' | 'modelisationCost' | 'usinageCost' | 'impressionCost';
+}[] = [
+  { id: 'scan', labelKey: 'aito.serviceScan3D', costKey: 'scanCost' },
+  { id: 'modelisation', labelKey: 'aito.serviceModelisation3D', costKey: 'modelisationCost' },
+  { id: 'impression', labelKey: 'aito.serviceImpression3D', costKey: 'impressionCost' },
+  { id: 'usinage', labelKey: 'aito.serviceUsinage', costKey: 'usinageCost' },
+];
 
 export interface TaskStepFieldsProps {
   task: TaskDraft;
@@ -78,11 +86,23 @@ export interface TaskStepFieldsProps {
   disabled?: boolean;
 }
 
-/** Edit mode for one task: identity, then one block per step.
+/** Edit mode for one task: identity, then a chip per service, then one block
+ *  per ENABLED service.
  *
- *  All four blocks are always present here — this is the only surface where a
- *  step that does not exist is visible at all, and where one is created. Read
- *  mode (TaskStepList) shows only steps that exist. */
+ *  A chip is pure UI over the null-vs-0 rule the rest of the stack already
+ *  enforces (see TaskDraft's field docs): switching a chip on reveals an
+ *  empty cost input — it must never invent a price — and switching it off
+ *  reports that service's cost as `null` through `onChange`, the same value
+ *  that disables it everywhere else (the board rules, the quote, the task
+ *  total). A chip left on with an empty input is deliberately still
+ *  "unpriced": `hasPricedService` and the board's rule engine both key off
+ *  the cost being non-null, not off chip state.
+ *
+ *  Chips are seeded once, from the draft in hand, so a persisted or
+ *  already-priced service opens enabled without the user having to
+ *  rediscover it. They are NOT re-derived from `task` on every render —
+ *  once open, a chip stays open even if its input is cleared back to empty,
+ *  so the user isn't fighting the form to leave a service on but unpriced. */
 export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFieldsProps) {
   const { t } = useTranslation();
   const reactId = useId();
@@ -92,6 +112,33 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
     staleTime: 60_000,
   });
   const currency = settings?.currency || 'USD';
+
+  const [enabled, setEnabled] = useState<Set<ServiceId>>(
+    () => new Set(SERVICE_DEFS.filter((s) => task[s.costKey] !== null).map((s) => s.id)),
+  );
+
+  // Which service, if any, was just switched on by THIS render's click — so
+  // its freshly-revealed cost input can claim focus without a separate
+  // effect. Read and cleared once, synchronously, at the top of render
+  // (below), which is what "cleared after use" means for a ref rather than
+  // state: no extra render is spent clearing it.
+  const justEnabledRef = useRef<ServiceId | null>(null);
+  const autoFocusService = justEnabledRef.current;
+  justEnabledRef.current = null;
+
+  const toggleService = (svc: (typeof SERVICE_DEFS)[number]) => {
+    setEnabled((current) => {
+      const next = new Set(current);
+      if (next.delete(svc.id)) {
+        // Chip off = the service stops existing: null, never 0.
+        onChange({ ...task, [svc.costKey]: null });
+      } else {
+        next.add(svc.id);
+        justEnabledRef.current = svc.id;
+      }
+      return next;
+    });
+  };
 
   return (
     <fieldset disabled={disabled} className="space-y-3">
@@ -111,62 +158,96 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
         className={`${inputCls} resize-none`}
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <StepBlock title={t('aito.serviceScan3D')} present={task.scanCost !== null}>
+      <div className="flex flex-wrap gap-2">
+        {SERVICE_DEFS.map((svc) => {
+          const on = enabled.has(svc.id);
+          const label = t(svc.labelKey);
+          return (
+            <button
+              key={svc.id}
+              type="button"
+              aria-pressed={on}
+              aria-label={t(on ? 'aito.removeServiceChip' : 'aito.addService', { service: label })}
+              onClick={() => toggleService(svc)}
+              className={
+                on
+                  ? `inline-flex items-center gap-1.5 rounded-full border border-bambu-green/60 bg-bambu-green/10 px-3 py-1.5 text-xs font-semibold text-bambu-green-light transition-colors ${focusRingCls}`
+                  : `inline-flex items-center gap-1.5 rounded-full border border-dashed border-bambu-dark-tertiary px-3 py-1.5 text-xs font-semibold text-bambu-gray transition-colors hover:border-bambu-green/50 hover:text-bambu-green-light ${focusRingCls}`
+              }
+            >
+              {!on && <Plus className="w-3 h-3" />}
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {enabled.has('scan') && (
+        <StepBlock title={t('aito.serviceScan3D')}>
           <CostInput
             id={`${reactId}-scan`}
             label={t('aito.serviceScan3D')}
             value={task.scanCost}
             onChange={(next) => onChange({ ...task, scanCost: next })}
+            autoFocus={autoFocusService === 'scan'}
           />
         </StepBlock>
-        <StepBlock title={t('aito.serviceModelisation3D')} present={task.modelisationCost !== null}>
+      )}
+
+      {enabled.has('modelisation') && (
+        <StepBlock title={t('aito.serviceModelisation3D')}>
           <CostInput
             id={`${reactId}-modelisation`}
             label={t('aito.serviceModelisation3D')}
             value={task.modelisationCost}
             onChange={(next) => onChange({ ...task, modelisationCost: next })}
+            autoFocus={autoFocusService === 'modelisation'}
           />
         </StepBlock>
-      </div>
+      )}
 
-      {/* Printing gets a full-width block: it is the one step whose cost has
-          parameters under it. The cost input lives HERE rather than inside
-          ImpressionFields because ImpressionFields returns early when the
-          calculator has no printers or filaments configured — and an imported
-          cost still has to be readable and editable on such an installation. */}
-      <StepBlock title={t('aito.serviceImpression3D')} present={task.impressionCost !== null}>
-        <div className="space-y-3">
+      {/* The cost input lives HERE rather than inside ImpressionFields because
+          ImpressionFields returns early when the calculator has no printers
+          or filaments configured — and an imported cost still has to be
+          readable and editable on such an installation. */}
+      {enabled.has('impression') && (
+        <StepBlock title={t('aito.serviceImpression3D')}>
+          <div className="space-y-3">
+            <CostInput
+              id={`${reactId}-impression`}
+              label={t('aito.serviceImpression3D')}
+              value={task.impressionCost}
+              onChange={(next) => onChange({ ...task, impressionCost: next })}
+              autoFocus={autoFocusService === 'impression'}
+            />
+            <ImpressionFields
+              value={task.impression}
+              onChange={(next, computedCost) =>
+                onChange({
+                  ...task,
+                  impression: next,
+                  // Only when the calculator actually priced it — see
+                  // ImpressionFields' `onChange` doc. `undefined` means "leave
+                  // the stored cost alone", which is not the same as `null`.
+                  ...(computedCost !== undefined ? { impressionCost: computedCost } : {}),
+                })
+              }
+            />
+          </div>
+        </StepBlock>
+      )}
+
+      {enabled.has('usinage') && (
+        <StepBlock title={t('aito.serviceUsinage')}>
           <CostInput
-            id={`${reactId}-impression`}
-            label={t('aito.serviceImpression3D')}
-            value={task.impressionCost}
-            onChange={(next) => onChange({ ...task, impressionCost: next })}
+            id={`${reactId}-usinage`}
+            label={t('aito.serviceUsinage')}
+            value={task.usinageCost}
+            onChange={(next) => onChange({ ...task, usinageCost: next })}
+            autoFocus={autoFocusService === 'usinage'}
           />
-          <ImpressionFields
-            value={task.impression}
-            onChange={(next, computedCost) =>
-              onChange({
-                ...task,
-                impression: next,
-                // Only when the calculator actually priced it — see
-                // ImpressionFields' `onChange` doc. `undefined` means "leave
-                // the stored cost alone", which is not the same as `null`.
-                ...(computedCost !== undefined ? { impressionCost: computedCost } : {}),
-              })
-            }
-          />
-        </div>
-      </StepBlock>
-
-      <StepBlock title={t('aito.serviceUsinage')} present={task.usinageCost !== null}>
-        <CostInput
-          id={`${reactId}-usinage`}
-          label={t('aito.serviceUsinage')}
-          value={task.usinageCost}
-          onChange={(next) => onChange({ ...task, usinageCost: next })}
-        />
-      </StepBlock>
+        </StepBlock>
+      )}
 
       <div className="flex items-center justify-between border-t border-bambu-dark-tertiary pt-2">
         <span className="text-sm text-bambu-gray">{t('aito.taskTotal')}</span>

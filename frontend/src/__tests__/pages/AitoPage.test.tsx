@@ -143,7 +143,9 @@ async function createProject(description: string) {
   await waitFor(() =>
     expect(screen.getByRole('combobox', { name: /client/i })).toHaveValue('Client de passage'),
   );
-  // The seeded task has no steps yet, so it is already showing its form.
+  // The seeded task has no steps yet, so it is already showing its form, but
+  // Scan is still a chip: enable it first to reach its cost field.
+  await user.click(screen.getByRole('button', { name: 'Add Scan' }));
   fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
   await user.type(screen.getByLabelText(/product description/i), description);
   await user.click(screen.getByRole('button', { name: /create project/i }));

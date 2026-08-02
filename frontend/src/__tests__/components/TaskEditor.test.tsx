@@ -144,7 +144,50 @@ async function editTask(index = 0) {
   fireEvent.click(buttons[index]);
 }
 
+/** Mounts TaskEditor uncontrolled with the given draft tasks, all of which
+ *  start in edit mode (a stepless task IS the form — see TaskEditor's
+ *  `isEditing`). For tests that only need to observe DOM after a click, not
+ *  round-trip state through a controlled harness. */
+function renderEditor(tasks: TaskDraft[]) {
+  render(<TaskEditor value={tasks} onChange={vi.fn()} onRemove={vi.fn()} canTick />);
+}
+
+/** Same as `renderEditor`, but hands back the `onChange` spy so a test can
+ *  inspect the array TaskEditor reports upward. */
+function renderEditorAndCaptureOnChange(tasks: TaskDraft[]) {
+  const onChange = vi.fn();
+  render(<TaskEditor value={tasks} onChange={onChange} onRemove={vi.fn()} canTick />);
+  return onChange;
+}
+
+/** Pulls task index 0 out of the most recent `onChange` call TaskEditor made
+ *  — every test using this only ever mounts a single task row. */
+function lastChangedTask(onChange: ReturnType<typeof vi.fn>): TaskDraft {
+  const calls = onChange.mock.calls as TaskDraft[][][];
+  return calls[calls.length - 1][0][0];
+}
+
 describe('TaskEditor', () => {
+  it('starts with chips only and reveals a price input when a service chip is enabled', async () => {
+    renderEditor([emptyTaskDraft()]);
+    // No cost inputs while every service is disabled:
+    expect(screen.queryByLabelText(/Scan.*cost/i)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Add Scan' }));
+    const input = screen.getByLabelText(/Scan.*cost/i);
+    expect(input).toHaveValue(null); // enabling does NOT invent a price
+  });
+
+  it('disabling a chip clears the cost to null', async () => {
+    // scanCost is non-null, so this task already has a step — it starts
+    // read-only (TaskStepList), same as every other priced-row test in this
+    // file. Edit first to reach the chip.
+    const task = { ...emptyTaskDraft(), scanCost: 45 };
+    const onChange = renderEditorAndCaptureOnChange([task]);
+    await userEvent.click(screen.getByRole('button', { name: /edit task/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Scan' }));
+    expect(lastChangedTask(onChange).scanCost).toBeNull();
+  });
+
   it('"Add task" appends a draft with all four services empty', async () => {
     const onChange = vi.fn();
     const user = userEvent.setup();
@@ -166,7 +209,9 @@ describe('TaskEditor', () => {
     const value: TaskDraft[] = [emptyTaskDraft()];
     const onChange = vi.fn();
     render(<TaskEditor value={value} onChange={onChange} onRemove={vi.fn()} canTick />);
-    // A stepless task IS the form already — no expand/edit click needed.
+    // A stepless task IS the form already — no expand/edit click needed, but
+    // every service still starts as a chip: enable Scan to reach its cost.
+    fireEvent.click(screen.getByRole('button', { name: 'Add Scan' }));
 
     fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '7' } });
 
@@ -374,6 +419,8 @@ describe('TaskRow', () => {
     // one) are not interchangeable anywhere else in the stack.
     const onChangeSpy = vi.fn();
     render(<ControlledTaskRow initial={emptyTaskDraft()} onChangeSpy={onChangeSpy} />);
+    // Every service starts as a chip on an empty draft; enable Scan first.
+    fireEvent.click(screen.getByRole('button', { name: 'Add Scan' }));
     const scanInput = screen.getByLabelText('Scan Cost');
 
     fireEvent.change(scanInput, { target: { value: '15' } });
@@ -391,6 +438,8 @@ describe('TaskRow', () => {
     // services: empty means the service is disabled, 0 means it is free.
     const onChangeSpy = vi.fn();
     render(<ControlledTaskRow initial={emptyTaskDraft()} onChangeSpy={onChangeSpy} />);
+    // Every service starts as a chip on an empty draft; enable Printing first.
+    fireEvent.click(screen.getByRole('button', { name: 'Add Printing' }));
     const costInput = screen.getByLabelText('Printing Cost');
 
     fireEvent.change(costInput, { target: { value: '4200' } });
@@ -433,7 +482,10 @@ describe('TaskRow', () => {
     const onChangeSpy = vi.fn();
     const user = userEvent.setup();
     render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={onChangeSpy} />);
-    // A stepless task IS the form already — no expand/edit click needed.
+    // A stepless task IS the form already — no expand/edit click needed, but
+    // Printing is still a chip on an empty draft: enable it to reveal
+    // ImpressionFields.
+    await user.click(screen.getByRole('button', { name: 'Add Printing' }));
 
     await user.click(await screen.findByRole('combobox', { name: /printer/i }));
     await user.click(await screen.findByRole('option', { name: 'H2S' }));
@@ -470,7 +522,10 @@ describe('TaskRow', () => {
     const onChangeSpy = vi.fn();
     const user = userEvent.setup();
     render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={onChangeSpy} />);
-    // A stepless task IS the form already — no expand/edit click needed.
+    // A stepless task IS the form already — no expand/edit click needed, but
+    // Printing is still a chip on an empty draft: enable it to reveal
+    // ImpressionFields.
+    await user.click(screen.getByRole('button', { name: 'Add Printing' }));
 
     await user.click(await screen.findByRole('combobox', { name: /printer/i }));
     await user.click(await screen.findByRole('option', { name: 'H2S' }));
@@ -563,7 +618,10 @@ describe('TaskRow', () => {
     const onChangeSpy = vi.fn();
     const user = userEvent.setup();
     render(<ControlledTaskEditor initial={[emptyTaskDraft()]} onChangeSpy={onChangeSpy} />);
-    // A stepless task IS the form already — no expand/edit click needed.
+    // A stepless task IS the form already — no expand/edit click needed, but
+    // Printing is still a chip on an empty draft: enable it to reveal
+    // ImpressionFields.
+    await user.click(screen.getByRole('button', { name: 'Add Printing' }));
 
     await user.click(await screen.findByRole('combobox', { name: /printer/i }));
     await user.click(await screen.findByRole('option', { name: 'H2S' }));

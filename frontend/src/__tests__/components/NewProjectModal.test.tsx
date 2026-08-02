@@ -110,8 +110,10 @@ describe('NewProjectModal', () => {
     expect(screen.getByRole('button', { name: /create project/i })).toBeDisabled();
 
     // Pricing the seeded task's Scan service is what flips it on. The seeded
-    // task has no steps yet, so it is already showing its form — no click
-    // needed to reach its cost fields.
+    // task has no steps yet, so it is already showing its form — no Edit
+    // click needed — but Scan is still a chip, so enable it first to reach
+    // its cost field.
+    await user.click(screen.getByRole('button', { name: 'Add Scan' }));
     fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
     expect(screen.getByRole('button', { name: /create project/i })).not.toBeDisabled();
 
@@ -131,7 +133,8 @@ describe('NewProjectModal', () => {
 
     // The project must carry a task with a priced service before it can be
     // created — price the seeded row. It has no steps yet, so it is already
-    // showing its form.
+    // showing its form, but Scan is still a chip: enable it first.
+    await user.click(screen.getByRole('button', { name: 'Add Scan' }));
     fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
 
     await user.click(screen.getByRole('button', { name: /create project/i }));
@@ -153,7 +156,8 @@ describe('NewProjectModal', () => {
 
     // Price the seeded first task too — every task must have a priced
     // service, not just the one being added. It has no steps yet, so it is
-    // already showing its form.
+    // already showing its form, but Scan is still a chip: enable it first.
+    await user.click(screen.getByRole('button', { name: 'Add Scan' }));
     fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
     // Now that it has a step, switch it back to read-only — otherwise its
     // form and the new task's form below would both show a "Scan Cost" field,
@@ -162,8 +166,9 @@ describe('NewProjectModal', () => {
 
     // The new row DOES show as a form automatically (a freshly added task has
     // no steps yet, so read mode would show nothing to price) — no Edit click
-    // needed here.
+    // needed here, but Scan is a fresh chip on this new draft too.
     await user.click(screen.getByRole('button', { name: /add task/i }));
+    await user.click(screen.getByRole('button', { name: 'Add Scan' }));
     fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '42' } });
 
     await user.click(screen.getByRole('button', { name: /create project/i }));
@@ -185,7 +190,9 @@ describe('NewProjectModal', () => {
     await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
     // Price the seeded task first so this test isolates the email-validation
     // gate rather than tripping the (separate) priced-service gate. It has no
-    // steps yet, so it is already showing its form.
+    // steps yet, so it is already showing its form, but Scan is still a
+    // chip: enable it first.
+    await user.click(screen.getByRole('button', { name: 'Add Scan' }));
     fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
 
     await user.type(screen.getByLabelText(/^email/i), 'nope');
@@ -251,7 +258,9 @@ describe('NewProjectModal', () => {
     await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
     // Price the seeded task first so this test isolates the phone-validation
     // gate rather than tripping the (separate) priced-service gate. It has no
-    // steps yet, so it is already showing its form.
+    // steps yet, so it is already showing its form, but Scan is still a
+    // chip: enable it first.
+    await user.click(screen.getByRole('button', { name: 'Add Scan' }));
     fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
 
     const combobox = screen.getByRole('combobox', { name: /client/i });
