@@ -1351,6 +1351,9 @@ export interface AppSettings {
   zoho_accounts_url: string;
   zoho_default_contact_id: string;
   zoho_default_contact_name: string;
+  // OpenRouter AI integration
+  openrouter_api_key: string;
+  openrouter_model: string;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -3597,6 +3600,11 @@ export type AitoTaskCreate = Omit<
   usinage_done?: boolean;
 };
 export type AitoTaskUpdate = Partial<AitoTaskCreate>;
+
+export interface AitoSummarizeResponse {
+  summary: string;
+  model: string;
+}
 
 // Zoho Books integration
 export interface ZohoContact {
@@ -6456,6 +6464,11 @@ export const api = {
     request<AitoProject>('/aito/', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+  summarizeAitoProject: (tasks: AitoTaskCreate[]) =>
+    request<AitoSummarizeResponse>('/aito/summarize', {
+      method: 'POST',
+      body: JSON.stringify({ tasks }),
     }),
   importAitoProjects: (data: { projects: { description: string; column: AitoColumnId; position: number }[] }) =>
     request<AitoProject[]>('/aito/import', {
