@@ -1,6 +1,6 @@
 import type { TaskDraft } from './taskDraft';
 
-const SERVICE_IDS = ['scan', 'modelisation', 'impression', 'usinage'] as const;
+type ServiceId = 'scan' | 'modelisation' | 'impression' | 'usinage';
 
 function enabledServices(task: TaskDraft): string[] {
   return [
@@ -8,7 +8,7 @@ function enabledServices(task: TaskDraft): string[] {
     task.modelisationCost !== null ? 'modelisation' : null,
     task.impressionCost !== null ? 'impression' : null,
     task.usinageCost !== null ? 'usinage' : null,
-  ].filter((s): s is (typeof SERVICE_IDS)[number] => s !== null);
+  ].filter((s): s is ServiceId => s !== null);
 }
 
 /** Stable fingerprint of what the AI summary describes: titles, descriptions,

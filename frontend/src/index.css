@@ -957,6 +957,25 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
   animation: fade-in 0.15s ease-out;
 }
 
+/* Right-docked drawer entrance (the new-project workbench) — slides in from
+   the edge it is docked to rather than scaling from centre like a modal: the
+   drawer never leaves that edge, so the motion says where it came from. A
+   short travel, not the full panel width, so the board behind stays legible
+   through the whole transition. */
+@keyframes drawer-in {
+  from { opacity: 0; transform: translateX(2rem); }
+  to { opacity: 1; transform: none; }
+}
+.animate-drawer-in {
+  animation: drawer-in 0.25s var(--ease-signature);
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Fade only — no horizontal movement, same rule the toasts follow. */
+  .animate-drawer-in {
+    animation: fade-in 0.15s ease-out;
+  }
+}
+
 /* Toast enter/exit — a single transition-driven element with three states
    (pre-enter, open, leaving) instead of two @keyframes swapped by class, so a
    mid-entrance dismissal retargets smoothly from wherever the toast visually
