@@ -1062,7 +1062,7 @@ async def _backfill_aito_events(conn) -> None:
     )
 
 
-async def _backfill_aito_quote_accepted_at(conn):
+async def _backfill_aito_quote_accepted_at(conn) -> None:
     """One-shot seed for quote_accepted_at (2026-08-02 age-from-acceptance
     spec): currently-accepted projects take their LATEST quote.accepted event
     — panel acceptances and mirrored client acceptances both wrote one.

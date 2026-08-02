@@ -101,6 +101,15 @@ export function applyQuoteStatus(
     // is already resolved — with the NEW status interpolated into it.
     quote_status_block: null,
     quote_status_remote: null,
+    // Mirrors `adopt_quote_status` (backend/app/services/aito_quote_status.py):
+    // stamp only on a transition INTO 'accepted' from something else. Without
+    // this the card falls back to `created_at` for the optimistic window and
+    // only "cools" once the server responds. Re-applying 'accepted' to an
+    // already-accepted project must not move the stamp — the server's own
+    // value replaces this one on settle either way.
+    ...(status === 'accepted' && target.quote_status !== 'accepted'
+      ? { quote_accepted_at: new Date().toISOString() }
+      : {}),
   };
   // `task_pending`, never `task_services`: the rules take the set of services
   // with unticked work, and `task_services` is the set of ENABLED ones. On a

@@ -45,6 +45,7 @@ any other status** — and only at sites where the acceptance is *news*:
 | `set_quote_status` (routes/aito.py) — human clicks Accept in the panel | yes | The acceptance decision itself. |
 | `reconcile_quote_status` undecided-adopt (aito_quote_sync.py:493) | yes | The client accepted in Books; polling just noticed. |
 | `_update_quote` locked-quote adoptions (aito_quote_sync.py:563, 593) | yes | Same news, learned via an invoiced/tax-locked estimate. |
+| `_apply_estimate`'s push-path adoption (aito_quote_sync.py) | yes | A task-edit push can discover the client's acceptance before any reconcile runs — same news, learned on the push path. |
 | Restore-from-trash (`restore_target`, aito_quote_sync.py:551) | **no** | Returns the pre-trash state; the job was accepted long ago and the old stamp survives. |
 | Trash-decline (aito_quote_sync.py:542) | no | Not an acceptance. |
 | Import / create (routes/aito.py:410) | no | A quote imported already-accepted has no known acceptance moment; NULL falls back to `created_at` ≈ import time, which is the honest answer. |

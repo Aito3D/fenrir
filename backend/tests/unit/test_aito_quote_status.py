@@ -49,3 +49,10 @@ def test_non_accept_statuses_never_stamp():
     adopt_quote_status(project, "viewed")
     assert project.quote_status == "viewed"
     assert project.quote_accepted_at is None
+
+
+def test_none_to_accepted_stamps():
+    project = _project(quote_status=None)
+    adopt_quote_status(project, "accepted")
+    assert project.quote_status == "accepted"
+    assert isinstance(project.quote_accepted_at, datetime)

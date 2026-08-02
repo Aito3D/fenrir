@@ -3,8 +3,6 @@ acceptance moment: the quote.accepted event log has one for panel acceptances
 and client acceptances mirrored from Zoho comments. Runs exactly once, on the
 migration that adds the column — see _column_exists' docstring for why."""
 
-from datetime import datetime
-
 import pytest
 from sqlalchemy import text
 

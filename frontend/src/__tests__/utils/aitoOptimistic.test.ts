@@ -83,6 +83,31 @@ describe('applyQuoteStatus', () => {
     expect(find(applyQuoteStatus(projects, 1, 'accepted'), 1).column).toBe('print');
   });
 
+  it('stamps quote_accepted_at on a transition into accepted', () => {
+    // Mirrors adopt_quote_status (backend/app/services/aito_quote_status.py):
+    // without this, the card falls back to created_at for the optimistic
+    // window and only "cools" once the server responds.
+    const projects = [card({ id: 1, quote_status: 'sent', quote_accepted_at: null })];
+    const before = Date.now();
+    const after = applyQuoteStatus(projects, 1, 'accepted')!;
+    const stamp = find(after, 1).quote_accepted_at;
+    expect(stamp).not.toBeNull();
+    expect(new Date(stamp!).getTime()).toBeGreaterThanOrEqual(before);
+  });
+
+  it('does not restamp when re-applying accepted to an already-accepted project', () => {
+    const old = '2020-03-15T08:30:00.000Z';
+    const projects = [card({ id: 1, quote_status: 'accepted', quote_accepted_at: old })];
+    const after = applyQuoteStatus(projects, 1, 'accepted')!;
+    expect(find(after, 1).quote_accepted_at).toBe(old);
+  });
+
+  it('leaves quote_accepted_at untouched for a non-accept status', () => {
+    const projects = [card({ id: 1, quote_status: 'draft', quote_accepted_at: null })];
+    const after = applyQuoteStatus(projects, 1, 'sent')!;
+    expect(find(after, 1).quote_accepted_at).toBeNull();
+  });
+
   it('sends a declined card to done', () => {
     const after = applyQuoteStatus([card({ id: 1 })], 1, 'declined');
     expect(find(after, 1).column).toBe('done');
