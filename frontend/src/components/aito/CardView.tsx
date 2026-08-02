@@ -5,6 +5,7 @@ import { TaskMiniRows } from './TaskMiniRows';
 import type { AitoProject } from '../../api/client';
 import { formatElapsedTime, parseUTCDate } from '../../utils/date';
 import { prefersReducedMotion } from '../../utils/motion';
+import { agingTextCls } from '../../utils/aitoAging';
 
 export interface CardViewProps {
   project: AitoProject;
@@ -183,16 +184,6 @@ export function CardView({
     .filter(Boolean)
     .join(' · ');
 
-  // Amber past a week, live cards only: an archived or trashed job is not
-  // late, it is finished or discarded, and an aging tint there would nag
-  // about nothing anyone still owes.
-  const AGING_DAYS = 7;
-  const aging =
-    project.status === 'active' &&
-    project.column !== 'done' &&
-    created !== null &&
-    Date.now() - created.getTime() > AGING_DAYS * 86_400_000;
-
   return (
     <div
       data-testid="aito-card-shell"
@@ -264,11 +255,12 @@ export function CardView({
           </p>
           {/* Moved up from the footer: the name row is where a person's eye
               already lands, and an aging job is exactly the fact that belongs
-              beside the name, not buried under a description. */}
+              beside the name, not buried under a description. Heat ramp with
+              age — see utils/aitoAging. */}
           <span
             data-testid="aito-card-elapsed"
             title={dateTitle}
-            className={`text-xs flex-shrink-0 ${aging ? 'text-amber-400' : 'text-bambu-gray'}`}
+            className={`text-xs flex-shrink-0 ${agingTextCls(project, created)}`}
           >
             {elapsed}
           </span>

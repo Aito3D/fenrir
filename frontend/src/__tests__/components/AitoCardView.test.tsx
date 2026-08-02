@@ -446,25 +446,28 @@ describe('hybrid card anatomy', () => {
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
 
-  it('turns the timestamp amber only on an aging, live card', () => {
-    const old = new Date(Date.now() - 10 * 86_400_000).toISOString();
-    renderCard({ created_at: old });
-    expect(screen.getByTestId('aito-card-elapsed').className).toContain('text-amber-400');
+  it('walks the timestamp through the heat ramp with age', () => {
+    const at = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+    renderCard({ created_at: at(1) });
+    expect(screen.getAllByTestId('aito-card-elapsed')[0].className).toContain('text-bambu-gray');
+    renderCard({ created_at: at(4) });
+    expect(screen.getAllByTestId('aito-card-elapsed')[1].className).toContain('text-[#d9c26b]');
+    renderCard({ created_at: at(8) });
+    expect(screen.getAllByTestId('aito-card-elapsed')[2].className).toContain('text-amber-400');
+    renderCard({ created_at: at(12) });
+    expect(screen.getAllByTestId('aito-card-elapsed')[3].className).toContain('text-orange-400');
+    renderCard({ created_at: at(38) });
+    const oldest = screen.getAllByTestId('aito-card-elapsed')[4];
+    expect(oldest.className).toContain('text-red-500');
+    expect(oldest.className).toContain('font-medium');
+  });
 
+  it('keeps the timestamp gray on done and deleted cards, even if aged', () => {
+    const old = new Date(Date.now() - 38 * 86_400_000).toISOString();
     renderCard({ created_at: old, column: 'done' });
-    expect(screen.getAllByTestId('aito-card-elapsed')[1].className).not.toContain('text-amber-400');
-  });
-
-  it('keeps the timestamp white on a fresh card within the aging threshold', () => {
-    const fresh = new Date(Date.now() - 5 * 86_400_000).toISOString();
-    renderCard({ created_at: fresh });
-    expect(screen.getByTestId('aito-card-elapsed').className).not.toContain('text-amber-400');
-  });
-
-  it('keeps the timestamp white on a deleted card, even if aged', () => {
-    const old = new Date(Date.now() - 10 * 86_400_000).toISOString();
+    expect(screen.getAllByTestId('aito-card-elapsed')[0].className).toContain('text-bambu-gray');
     renderCard({ created_at: old, status: 'deleted' });
-    expect(screen.getByTestId('aito-card-elapsed').className).not.toContain('text-amber-400');
+    expect(screen.getAllByTestId('aito-card-elapsed')[1].className).toContain('text-bambu-gray');
   });
 });
 
