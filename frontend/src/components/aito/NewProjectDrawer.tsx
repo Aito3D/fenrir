@@ -234,8 +234,15 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
     setDraft(null); // re-seeded by the default-contact effect above
     setSummaryText('');
     setSummaryEdited(false);
+    // Cleared, so the next Client visit sees a stale signature and asks for a
+    // fresh summary. The NONCE is deliberately left where it is: it is a
+    // monotonic ticket, not a counter of this draft's generations.
+    // `AiSummaryPanel` outlives the reset (nothing here unmounts it) and
+    // dedupes on its own high-water mark, so rewinding the nonce to 0 would
+    // make the next bump land on a number the panel had already seen and it
+    // would silently ignore the request — the reset would quietly cost the
+    // user their AI summary for the rest of the session.
     summarySignatureRef.current = '';
-    setGenerateNonce(0);
     setRevealedTaskKeys(new Set());
     setClientRevealed(false);
     setCreatingClient(false);
@@ -280,6 +287,16 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
       revealEverything();
       return;
     }
+    // `canCreate` is computed from what is VISIBLE, and a contact can arrive
+    // from the directory already carrying a malformed phone or email that the
+    // user never blurred — no message on screen, nothing disabled. Asking to
+    // create is the moment those fields count as left, so reveal them and then
+    // re-check on the revealed draft, exactly as the old modal's `submit` did.
+    // Skipping this half is how a bad number reaches Zoho silently.
+    const revealed = { ...draft, blurred: { phone: true, email: true } };
+    setDraft(revealed);
+    const revealedErrors = visibleClientDraftErrors(revealed);
+    if (revealedErrors.phone !== null || revealedErrors.email !== null) return;
     // The description is never empty: an unreachable or unconfigured AI leaves
     // the panel showing a fallback enumeration, and even that is rebuilt here
     // rather than trusting the panel to have run at all.

@@ -252,6 +252,71 @@ describe('NewProjectDrawer', () => {
     expect(await screen.findByDisplayValue('Capot moteur')).toBeInTheDocument();
   });
 
+  it('hold-to-reset wipes the draft and leaves the summary generatable again', async () => {
+    const user = userEvent.setup();
+    await renderDrawer();
+
+    await user.click(screen.getByRole('button', { name: 'Add Scan' }));
+    fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
+    await user.click(clientHeader());
+    await waitFor(() => expect(api.summarizeAitoProject).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(localStorage.setItem).toHaveBeenCalledWith(
+        'aito.newProjectDraft.v1',
+        expect.stringContaining('"scanCost":10'),
+      ),
+    );
+
+    // Drive HoldButton through its own contract: pointerdown starts the 500ms
+    // timer that fires onHold. Real timers (MSW and React Query are live in
+    // this test), so the assertion waits the hold out.
+    fireEvent.pointerDown(screen.getByRole('button', { name: /reset draft/i }));
+    await waitFor(() => expect(screen.queryByLabelText('Scan Cost')).not.toBeInTheDocument(), { timeout: 2000 });
+    expect(localStorage.removeItem).toHaveBeenCalledWith('aito.newProjectDraft.v1');
+    expect(screen.getByLabelText('Project summary')).toHaveValue('');
+
+    // The reset must not cost the user the AI for the rest of the session:
+    // the panel never unmounted, so a rewound nonce would be swallowed by its
+    // own high-water mark and this second generation would never happen.
+    await user.click(screen.getByRole('button', { name: 'Add Scan' }));
+    fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '42' } });
+    await user.click(clientHeader());
+    await user.click(clientHeader());
+    await waitFor(() => expect(api.summarizeAitoProject).toHaveBeenCalledTimes(2));
+  });
+
+  it('a stored phone that was never blurred still blocks the create it would poison', async () => {
+    // Ported from NewProjectModal.test.tsx: real directory data carries
+    // "other"-shaped numbers. Such a contact must not disable Create the
+    // moment it is picked (no message, nothing to revert) — but neither may it
+    // submit silently. Asking to create is what makes the error visible.
+    const badContact = {
+      id: 'bad1', name: 'Bad Contact', company_name: '',
+      customer_sub_type: 'individual',
+      phone: '', mobile: '+689-876543210987654', email: 'ok@example.pf',
+    };
+    server.use(http.get('/api/v1/zoho/contacts', () => HttpResponse.json([badContact])));
+    const user = userEvent.setup();
+    const { onCreate } = await renderDrawer();
+
+    await user.click(screen.getByRole('button', { name: 'Add Scan' }));
+    fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
+    await user.click(clientHeader());
+    const combobox = await screen.findByRole('combobox', { name: /client/i });
+    await user.clear(combobox);
+    await user.type(combobox, 'Bad');
+    await user.click(await screen.findByText('Bad Contact'));
+
+    // Reachable and error-free as far as the user can see, so Create is live.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await waitFor(() => expect(createButton()).toHaveAttribute('aria-disabled', 'false'));
+
+    await user.click(createButton());
+
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent(/4 and 14 digits/i);
+  });
+
   it('opens the create-client form inline, and Escape steps back instead of closing', async () => {
     const user = userEvent.setup();
     const { onClose } = await renderDrawer();
