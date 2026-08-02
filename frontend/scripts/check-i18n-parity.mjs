@@ -525,10 +525,9 @@ export function compareLocales(locales) {
   return { failed: reports.length > 0, reports };
 }
 
-// en is the reference locale; every other locale in the parity gate
-// is checked identically and a drift in any of them fails CI.
+// en is the reference locale; every other locale discovered in the locales
+// directory is checked identically and a drift in any of them fails CI.
 // Skip file IO / process.exit when imported as a library (e.g. from tests).
-const GATE_LOCALES = ['en', 'de', 'fr', 'it', 'ja', 'pt-BR', 'zh-CN', 'zh-TW'];
 const isMainModule = import.meta.url === url.pathToFileURL(process.argv[1] ?? '').href;
 if (isMainModule) {
   const discovered = fs
@@ -540,7 +539,7 @@ if (isMainModule) {
     console.error(`No en.ts found in ${localesDir} — cannot run parity check without a reference locale.`);
     process.exit(1);
   }
-  const codes = GATE_LOCALES.filter((c) => discovered.includes(c));
+  const codes = ['en', ...discovered.filter((c) => c !== 'en')];
   const locales = Object.fromEntries(
     codes.map((c) => [c, loadLocale(path.join(localesDir, `${c}.ts`))]),
   );
