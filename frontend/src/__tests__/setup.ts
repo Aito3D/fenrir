@@ -22,6 +22,9 @@ beforeAll(() =>
 afterEach(() => {
   cleanup();
   server.resetHandlers();
+  vi.clearAllMocks();
+  // Reset localStorage data
+  Object.keys(localStorageData).forEach((key) => delete localStorageData[key]);
 });
 afterAll(() => server.close());
 
@@ -133,22 +136,20 @@ window.scrollTo = vi.fn();
   });
 }
 
-// Mock localStorage with actual storage capability
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: (key: string) => store[key] ?? null,
-    setItem: (key: string, value: string) => {
-      store[key] = value.toString();
-    },
-    removeItem: (key: string) => {
-      delete store[key];
-    },
-    clear: () => {
-      store = {};
-    },
-  };
-})();
+// Mock localStorage with both spy capability and state persistence
+const localStorageData: Record<string, string> = {};
+const localStorageMock = {
+  getItem: vi.fn((key: string) => localStorageData[key] ?? null),
+  setItem: vi.fn((key: string, value: string) => {
+    localStorageData[key] = value.toString();
+  }),
+  removeItem: vi.fn((key: string) => {
+    delete localStorageData[key];
+  }),
+  clear: vi.fn(() => {
+    Object.keys(localStorageData).forEach((key) => delete localStorageData[key]);
+  }),
+};
 Object.defineProperty(window, 'localStorage', { value: localStorageMock });
 
 // Suppress console output during tests (reduces noise)
