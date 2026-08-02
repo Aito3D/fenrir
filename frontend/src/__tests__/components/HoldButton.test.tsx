@@ -24,6 +24,9 @@ describe('HoldButton completion choreography', () => {
     const button = screen.getByRole('button', { name: 'reset' });
     fireEvent.pointerDown(button);
     expect(button.parentElement!.className).toContain('scale-[1.08]');
+    // The scale VALUE itself must be gated for reduced-motion users, not just
+    // its transition — an untransitioned snap-inflate is still an inflate.
+    expect(button.parentElement!.className).toContain('motion-reduce:scale-100');
     fireEvent.pointerUp(button);
     expect(button.parentElement!.className).not.toContain('scale-[1.08]');
     vi.useRealTimers();

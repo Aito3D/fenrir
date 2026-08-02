@@ -195,7 +195,7 @@ export function HoldButton({
   return (
     <div
       className={`relative motion-safe:transition-transform motion-safe:ease-linear ${
-        holding ? 'scale-[1.08]' : ''
+        holding ? 'scale-[1.08] motion-reduce:scale-100' : ''
       } ${completed ? 'animate-hold-bounce' : ''}`}
       style={{ transitionDuration: holding ? `${durationMs}ms` : '150ms' }}
     >
