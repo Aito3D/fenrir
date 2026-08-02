@@ -45,6 +45,14 @@ class AitoProject(Base):
     # trade for a board that renders with Zoho unreachable and costs no
     # request per card.
     quote_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # When the quote last transitioned INTO 'accepted' — the client's
+    # go-ahead. Stamped only by services/aito_quote_status.adopt_quote_status
+    # (the sites where an acceptance is news); restore-from-trash deliberately
+    # bypasses the helper so an old acceptance is never restamped. Survives a
+    # later decline (ignored while the status is not 'accepted'). NULL on
+    # cards imported already-accepted and on pre-migration rows without a
+    # quote.accepted event: the card's age then falls back to created_at.
+    quote_accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Username of the webapp user who created the card, snapshotted rather than
     # referenced so it survives that user being renamed or deleted. NULL when
     # auth is disabled, and for API-key requests, which carry no user identity.
