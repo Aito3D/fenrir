@@ -1,0 +1,205 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
+import { server } from '../mocks/server';
+import { render } from '../utils';
+import { ImportQuoteDrawer } from '../../components/aito/ImportQuoteDrawer';
+import type { ZohoQuotePreview } from '../../api/client';
+
+// Fixtures ported verbatim from ImportQuoteModal.test.tsx (the modal this
+// drawer replaces) — same quote, same tasks, same preview shape.
+const summary = {
+  id: 'e2',
+  number: 'DEV26-2462',
+  customer_name: 'Marie EXEMPLE',
+  date: '2026-07-27',
+  total: 5600,
+  currency_code: 'XPF',
+  status: 'draft',
+};
+
+const emptyTask = {
+  title: '',
+  description: '',
+  scan_cost: null,
+  modelisation_cost: null,
+  usinage_cost: null,
+  impression_printer_id: null,
+  impression_filament_id: null,
+  impression_weight_g: null,
+  impression_time_min: null,
+  impression_quantity: null,
+  impression_color: null,
+  impression_cost: null,
+};
+
+const preview: ZohoQuotePreview = {
+  quote: {
+    id: 'e2',
+    number: 'DEV26-2462',
+    date: '2026-07-27',
+    status: 'draft',
+    total: 5600,
+    currency_code: 'XPF',
+    url: 'https://books.zoho.eu/app/999#/estimates/e2',
+    salesperson: null,
+  },
+  client: { id: 'c2', name: 'Marie EXEMPLE', phone: '87123456', email: null, is_company: false },
+  suggested_description: 'Helice grise\nhelice',
+  tasks: [
+    { ...emptyTask, title: 'Helice grise', description: 'Matériau: PETG', modelisation_cost: 3000, impression_cost: 2400 },
+    { ...emptyTask, title: 'helice', impression_cost: 200 },
+  ],
+  skipped_lines: [],
+  existing_project_id: null,
+};
+
+const respondWith = (body: ZohoQuotePreview, board: unknown[] = []) => {
+  server.use(
+    http.get('/api/v1/zoho/estimates', () => HttpResponse.json([summary])),
+    http.get('/api/v1/zoho/estimates/:id/preview', () => HttpResponse.json(body)),
+    http.get('/api/v1/aito/', () => HttpResponse.json(board)),
+  );
+};
+
+const pickTheQuote = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(await screen.findByText('DEV26-2462'));
+};
+
+beforeEach(() => {
+  server.use(
+    http.get('/api/v1/zoho/status', () =>
+      HttpResponse.json({ configured: true, reachable: true, default_contact_id: 'c1', default_contact_name: 'Client de passage' }),
+    ),
+  );
+  respondWith(preview);
+});
+
+describe('ImportQuoteDrawer', () => {
+  it('shows the parsed tasks and pre-fills the description', async () => {
+    const user = userEvent.setup();
+    render(<ImportQuoteDrawer onClose={vi.fn()} onImport={vi.fn()} />);
+    await pickTheQuote(user);
+
+    expect(await screen.findByText('Helice grise')).toBeInTheDocument();
+    expect(screen.getByText('helice')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /description/i })).toHaveValue('Helice grise\nhelice');
+  });
+
+  it('submits the edited description together with the preview', async () => {
+    const onImport = vi.fn();
+    const user = userEvent.setup();
+    render(<ImportQuoteDrawer onClose={vi.fn()} onImport={onImport} />);
+    await pickTheQuote(user);
+
+    const description = await screen.findByRole('textbox', { name: /description/i });
+    await user.clear(description);
+    await user.type(description, 'Hélices de rechange');
+    await user.click(screen.getByRole('button', { name: /^import\b/i }));
+
+    expect(onImport).toHaveBeenCalledWith({
+      description: 'Hélices de rechange',
+      preview: expect.objectContaining({ quote: expect.objectContaining({ number: 'DEV26-2462' }) }),
+    });
+  });
+
+  it('blocks import when the quote has no service lines, and the click reveals why', async () => {
+    respondWith({ ...preview, tasks: [] });
+    const onImport = vi.fn();
+    const user = userEvent.setup();
+    render(<ImportQuoteDrawer onClose={vi.fn()} onImport={onImport} />);
+    await pickTheQuote(user);
+
+    const cta = await screen.findByRole('button', { name: /^import\b/i });
+    expect(cta).toHaveAttribute('aria-disabled', 'true');
+    await user.click(cta);
+    expect(onImport).not.toHaveBeenCalled();
+    expect(screen.getAllByText(/no aito 3d service lines/i).length).toBeGreaterThan(0);
+  });
+
+  it('an empty description blocks import and the click reveals the checklist miss', async () => {
+    const onImport = vi.fn();
+    const user = userEvent.setup();
+    render(<ImportQuoteDrawer onClose={vi.fn()} onImport={onImport} />);
+    await pickTheQuote(user);
+
+    const description = await screen.findByRole('textbox', { name: /description/i });
+    await user.clear(description);
+    const cta = screen.getByRole('button', { name: /^import\b/i });
+    expect(cta).toHaveAttribute('aria-disabled', 'true');
+    await user.click(cta);
+    expect(onImport).not.toHaveBeenCalled();
+    expect(screen.getByText(/description filled in/i).closest('[data-state]')).toHaveAttribute('data-state', 'miss');
+  });
+
+  it('warns about a quote that was already imported but still allows importing again', async () => {
+    respondWith({ ...preview, existing_project_id: 42 }, [{ id: 42, quote_id: 'e2', status: 'active' }]);
+    const onImport = vi.fn();
+    const user = userEvent.setup();
+    render(<ImportQuoteDrawer onClose={vi.fn()} onImport={onImport} />);
+
+    // The chip is on the row before anything is clicked.
+    expect(await screen.findByText(/imported → #42/i)).toBeInTheDocument();
+    await pickTheQuote(user);
+    const cta = await screen.findByRole('button', { name: /import again/i });
+    expect(cta).toHaveAttribute('aria-disabled', 'false');
+    await user.click(cta);
+    expect(onImport).toHaveBeenCalled();
+  });
+
+  it('lists skipped lines inside the receipt with the totals row', async () => {
+    respondWith({
+      ...preview,
+      skipped_lines: [{ sku: 'SHIP', name: 'Livraison', amount: 500 }],
+    });
+    const user = userEvent.setup();
+    render(<ImportQuoteDrawer onClose={vi.fn()} onImport={vi.fn()} />);
+    await pickTheQuote(user);
+
+    expect(await screen.findByText(/livraison/i)).toBeInTheDocument();
+    expect(screen.getByTestId('import-receipt-totals')).toBeInTheDocument();
+  });
+
+  it('reports a preview that could not be loaded', async () => {
+    server.use(http.get('/api/v1/zoho/estimates/:id/preview', () => HttpResponse.json({ detail: 'x' }, { status: 502 })));
+    const user = userEvent.setup();
+    render(<ImportQuoteDrawer onClose={vi.fn()} onImport={vi.fn()} />);
+    await pickTheQuote(user);
+    expect(await screen.findByText(/could not load this quote/i)).toBeInTheDocument();
+  });
+
+  it('Change returns to the list with the search text intact', async () => {
+    const user = userEvent.setup();
+    render(<ImportQuoteDrawer onClose={vi.fn()} onImport={vi.fn()} />);
+    await user.type(await screen.findByRole('searchbox'), '2462');
+    await pickTheQuote(user);
+    await screen.findByRole('textbox', { name: /description/i });
+
+    await user.click(screen.getByRole('button', { name: /change/i }));
+    expect(await screen.findByRole('searchbox')).toHaveValue('2462');
+  });
+
+  it('✕ plays the drawer exit, then calls onClose', async () => {
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<ImportQuoteDrawer onClose={onClose} onImport={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toHaveClass('animate-drawer-out');
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it('shows the not-configured state instead of the list when Zoho is not set up', async () => {
+    server.use(
+      http.get('/api/v1/zoho/status', () =>
+        HttpResponse.json({ configured: false, reachable: false, default_contact_id: '', default_contact_name: '' }),
+      ),
+    );
+    render(<ImportQuoteDrawer onClose={vi.fn()} onImport={vi.fn()} />);
+    expect(await screen.findByText(/isn’t connected yet/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /connect zoho books/i })).toBeInTheDocument();
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
+  });
+});
