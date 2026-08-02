@@ -813,6 +813,26 @@ html[data-vt='aito-card']::view-transition-new(page-title) {
   }
 }
 
+/* HoldButton completion: a damped spring — each swing loses roughly half its
+   amplitude, peaks softened by the ease-in-out between keyframes. */
+@keyframes hold-bounce {
+  0% { transform: scale(1.08); }
+  15% { transform: scale(0.94); }
+  32% { transform: scale(1.04); }
+  50% { transform: scale(0.985); }
+  68% { transform: scale(1.006); }
+  84% { transform: scale(0.998); }
+  100% { transform: scale(1); }
+}
+.animate-hold-bounce {
+  animation: hold-bounce 0.65s ease-in-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-hold-bounce {
+    animation: none;
+  }
+}
+
 /* Closing with nothing to morph INTO — its own scope, because CSS has no way
    to ask whether a transition name got a `new` snapshot, and the answer
    changes what these rules have to do.

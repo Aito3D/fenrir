@@ -127,6 +127,8 @@ export function HoldButton({
   children: ReactNode;
 }) {
   const [holding, setHolding] = useState(false);
+  const [completed, setCompleted] = useState(false);
+  const completeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showHint, setShowHint] = useState(false);
   // Measured, not assumed: these buttons size to their icon and their padding,
   // and the perimeter path needs real pixels (see `perimeterPath`). Observed
@@ -152,6 +154,9 @@ export function HoldButton({
     holdTimerRef.current = setTimeout(() => {
       holdTimerRef.current = null;
       setHolding(false);
+      setCompleted(true);
+      if (completeTimerRef.current) clearTimeout(completeTimerRef.current);
+      completeTimerRef.current = setTimeout(() => setCompleted(false), 700);
       onHold();
     }, durationMs);
   };
@@ -171,6 +176,7 @@ export function HoldButton({
     () => () => {
       clearHoldTimer();
       if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+      if (completeTimerRef.current) clearTimeout(completeTimerRef.current);
     },
     [],
   );
@@ -187,7 +193,12 @@ export function HoldButton({
   }, [progress]);
 
   return (
-    <div className="relative">
+    <div
+      className={`relative motion-safe:transition-transform motion-safe:ease-linear ${
+        holding ? 'scale-[1.08]' : ''
+      } ${completed ? 'animate-hold-bounce' : ''}`}
+      style={{ transitionDuration: holding ? `${durationMs}ms` : '150ms' }}
+    >
       <button
         ref={buttonRef}
         type="button"
@@ -244,8 +255,15 @@ export function HoldButton({
           <span
             aria-hidden="true"
             data-testid="hold-progress-bar"
+            style={holding || completed ? { filter: 'drop-shadow(0 0 3px currentColor)' } : undefined}
             className={`pointer-events-none absolute inset-0 origin-left ${barClassName} ${
-              holding ? `scale-x-100 ${BAR_DURATION_CLS[durationMs]}` : 'scale-x-0 transition-none'
+              holding || completed ? 'scale-x-100' : 'scale-x-0'
+            } ${
+              holding
+                ? BAR_DURATION_CLS[durationMs]
+                : completed
+                  ? 'opacity-0 transition-opacity duration-500 ease-out'
+                  : 'transition-none'
             }`}
           />
         ) : progress === 'perimeter' && box ? (
@@ -271,7 +289,7 @@ export function HoldButton({
               strokeWidth="1.5"
               pathLength={1}
               strokeDasharray={1}
-              strokeDashoffset={holding ? 0 : 1}
+              strokeDashoffset={holding || completed ? 0 : 1}
               // Hidden outright at rest rather than relying on the dash
               // pattern to draw nothing. A fully-offset dash still renders a
               // sub-pixel stub where the path starts, which showed as a dot on
@@ -279,7 +297,14 @@ export function HoldButton({
               // is instant and the trace begins at zero length, so there is
               // nothing to flash on press.
               strokeOpacity={holding ? 1 : 0}
-              className={holding ? PERIMETER_DURATION_CLS[durationMs] : 'transition-none'}
+              style={holding || completed ? { filter: 'drop-shadow(0 0 3px currentColor)' } : undefined}
+              className={
+                holding
+                  ? PERIMETER_DURATION_CLS[durationMs]
+                  : completed
+                    ? 'transition-[stroke-opacity] duration-500 ease-out'
+                    : 'transition-none'
+              }
             />
           </svg>
         ) : (
@@ -292,8 +317,16 @@ export function HoldButton({
               stroke="currentColor"
               strokeWidth="2"
               strokeDasharray={HOLD_CIRCUMFERENCE}
-              strokeDashoffset={holding ? 0 : HOLD_CIRCUMFERENCE}
-              className={holding ? RING_DURATION_CLS[durationMs] : 'transition-none'}
+              strokeDashoffset={holding || completed ? 0 : HOLD_CIRCUMFERENCE}
+              strokeOpacity={holding ? 1 : completed ? 0 : 1}
+              style={holding || completed ? { filter: 'drop-shadow(0 0 3px currentColor)' } : undefined}
+              className={
+                holding
+                  ? RING_DURATION_CLS[durationMs]
+                  : completed
+                    ? 'transition-[stroke-opacity] duration-500 ease-out'
+                    : 'transition-none'
+              }
             />
           </svg>
         )}
