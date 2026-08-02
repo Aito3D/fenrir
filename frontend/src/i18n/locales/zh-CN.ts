@@ -121,7 +121,6 @@ export default {
     quotePlaceholder: '按编号或客户搜索…',
     quoteRecent: '最近的报价',
     quoteNoResults: '未找到匹配的报价',
-    quotePickerImported: '已导入',
     quoteAlreadyHasProject: '该报价单已有项目',
     restoreBlockedByQuote: '该报价单已有活动项目',
     quoteLoadFailed: '无法加载此报价。',

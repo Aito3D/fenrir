@@ -121,7 +121,6 @@ export default {
     quotePlaceholder: 'Nach Nummer oder Kunde suchen …',
     quoteRecent: 'Letzte Angebote',
     quoteNoResults: 'Keine passenden Angebote gefunden',
-    quotePickerImported: 'Bereits importiert',
     quoteAlreadyHasProject: 'Zu diesem Angebot gibt es bereits ein Projekt',
     restoreBlockedByQuote: 'Zu diesem Angebot gibt es bereits ein aktives Projekt',
     quoteLoadFailed: 'Dieses Angebot konnte nicht geladen werden.',

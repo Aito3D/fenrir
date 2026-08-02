@@ -597,14 +597,13 @@ describe('AitoPage (backend board)', () => {
       render(<AitoPage />);
       await user.click(await screen.findByRole('button', { name: /^import$/i }));
 
-      const modal = (await screen.findByText('Import a quote')).closest('div.animate-modal-in') as HTMLElement;
-      await user.click(within(modal).getByRole('combobox'));
+      const drawer = (await screen.findByRole('dialog', { name: /import a quote/i })) as HTMLElement;
       await user.click(await screen.findByText('DEV26-2462'));
 
       // Waits for the preview to render (not just the description textarea,
       // which is seeded with the same text) before submitting.
-      await within(modal).findByText('Printing');
-      await user.click(within(modal).getByRole('button', { name: /^import$/i }));
+      await within(drawer).findByText('Printing');
+      await user.click(within(drawer).getByRole('button', { name: /^import$/i }));
 
       await waitFor(() => expect(captured).not.toBeNull());
       expect(captured).toMatchObject({
@@ -1196,13 +1195,12 @@ describe('AitoPage (backend board)', () => {
           http.get('/api/v1/zoho/estimates/:id/preview', () => HttpResponse.json(preview)),
         );
         await user.click(await screen.findByRole('button', { name: /^import$/i }));
-        const modal = (await screen.findByText('Import a quote')).closest('div.animate-modal-in') as HTMLElement;
-        await user.click(within(modal).getByRole('combobox'));
+        const drawer = (await screen.findByRole('dialog', { name: /import a quote/i })) as HTMLElement;
         await user.click(await screen.findByText('DEV26-9001'));
         // Waits for the preview to render before submitting — same signal the
         // pre-existing "POSTs the full quote snapshot" test above uses.
-        await within(modal).findByText('Printing');
-        await user.click(within(modal).getByRole('button', { name: /^import$/i }));
+        await within(drawer).findByText('Printing');
+        await user.click(within(drawer).getByRole('button', { name: /^import$/i }));
       }
 
       it('closes the modal and shows an inert placeholder card at once', async () => {
@@ -1263,11 +1261,10 @@ describe('AitoPage (backend board)', () => {
         renderPage([]);
         const user = userEvent.setup();
         await user.click(await screen.findByRole('button', { name: /^import$/i }));
-        const modal = (await screen.findByText('Import a quote')).closest('div.animate-modal-in') as HTMLElement;
-        await user.click(within(modal).getByRole('combobox'));
+        const drawer = (await screen.findByRole('dialog', { name: /import a quote/i })) as HTMLElement;
         await user.click(await screen.findByText('DEV26-9001'));
-        await within(modal).findByText('Printing');
-        await user.click(within(modal).getByRole('button', { name: /^import$/i }));
+        await within(drawer).findByText('Printing');
+        await user.click(within(drawer).getByRole('button', { name: /^import$/i }));
 
         const waitingColumn = screen.getByRole('heading', { name: 'Waiting' }).closest('.rounded-xl') as HTMLElement;
         expect(within(waitingColumn).getByText('Imported job')).toBeInTheDocument();

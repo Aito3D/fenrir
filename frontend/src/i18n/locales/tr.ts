@@ -121,7 +121,6 @@ export default {
     quotePlaceholder: 'Numaraya veya müşteriye göre ara…',
     quoteRecent: 'Son teklifler',
     quoteNoResults: 'Eşleşen teklif bulunamadı',
-    quotePickerImported: 'Zaten içe aktarıldı',
     quoteAlreadyHasProject: 'Bu teklifin zaten bir projesi var',
     restoreBlockedByQuote: 'Bu teklifin zaten etkin bir projesi var',
     quoteLoadFailed: 'Bu teklif yüklenemedi.',

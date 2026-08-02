@@ -121,7 +121,6 @@ export default {
     quotePlaceholder: 'Buscar por número ou cliente…',
     quoteRecent: 'Orçamentos recentes',
     quoteNoResults: 'Nenhum orçamento encontrado',
-    quotePickerImported: 'Já importado',
     quoteAlreadyHasProject: 'Este orçamento já tem um projeto',
     restoreBlockedByQuote: 'Esse orçamento já tem um projeto ativo',
     quoteLoadFailed: 'Não foi possível carregar este orçamento.',

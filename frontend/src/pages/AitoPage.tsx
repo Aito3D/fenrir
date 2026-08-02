@@ -9,7 +9,7 @@ import { BoardColumn } from '../components/aito/BoardColumn';
 import { BoardSearch } from '../components/aito/BoardSearch';
 import { ACTIVE_COLUMN_IDS, COLUMNS } from '../components/aito/columns';
 import { DoneGrid } from '../components/aito/DoneGrid';
-import { ImportQuoteModal } from '../components/aito/ImportQuoteModal';
+import { ImportQuoteDrawer } from '../components/aito/ImportQuoteDrawer';
 import { NewProjectDrawer } from '../components/aito/NewProjectDrawer';
 import { ProjectDetailPanel } from '../components/aito/ProjectDetailPanel';
 import { TrashGrid } from '../components/aito/TrashGrid';
@@ -564,7 +564,7 @@ export function AitoPage() {
       {showModal && <NewProjectDrawer onClose={() => setShowModal(false)} onCreate={createProject} />}
 
       {showImport && (
-        <ImportQuoteModal
+        <ImportQuoteDrawer
           onClose={() => setShowImport(false)}
           onImport={({ description, preview }) => {
             // Closed here, not in onSuccess — same reasoning as createProject.

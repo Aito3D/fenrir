@@ -122,7 +122,6 @@ export default {
     quotePlaceholder: "Пошук за номером або клієнтом…",
     quoteRecent: "Останні пропозиції",
     quoteNoResults: "Відповідних пропозицій не знайдено",
-    quotePickerImported: "Уже імпортовано",
     quoteAlreadyHasProject: "Ця пропозиція вже має проєкт",
     restoreBlockedByQuote: "Ця пропозиція вже має активний проєкт",
     quoteLoadFailed: "Не вдалося завантажити цю пропозицію.",

@@ -121,7 +121,6 @@ export default {
     quotePlaceholder: '번호 또는 고객으로 검색…',
     quoteRecent: '최근 견적',
     quoteNoResults: '일치하는 견적이 없습니다',
-    quotePickerImported: '이미 가져옴',
     quoteAlreadyHasProject: '이 견적서에는 이미 프로젝트가 있습니다',
     restoreBlockedByQuote: '이 견적서에는 이미 활성 프로젝트가 있습니다',
     quoteLoadFailed: '이 견적을 불러올 수 없습니다.',

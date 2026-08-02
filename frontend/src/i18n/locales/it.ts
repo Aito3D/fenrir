@@ -121,7 +121,6 @@ export default {
     quotePlaceholder: 'Cerca per numero o cliente…',
     quoteRecent: 'Preventivi recenti',
     quoteNoResults: 'Nessun preventivo corrispondente',
-    quotePickerImported: 'Già importato',
     quoteAlreadyHasProject: 'Questo preventivo ha già un progetto',
     restoreBlockedByQuote: 'Questo preventivo ha già un progetto attivo',
     quoteLoadFailed: 'Impossibile caricare questo preventivo.',

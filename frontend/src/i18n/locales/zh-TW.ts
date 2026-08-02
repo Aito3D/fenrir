@@ -121,7 +121,6 @@ export default {
     quotePlaceholder: '依編號或客戶搜尋…',
     quoteRecent: '最近的報價',
     quoteNoResults: '找不到符合的報價',
-    quotePickerImported: '已匯入',
     quoteAlreadyHasProject: '該報價單已有專案',
     restoreBlockedByQuote: '該報價單已有作用中的專案',
     quoteLoadFailed: '無法載入此報價。',
