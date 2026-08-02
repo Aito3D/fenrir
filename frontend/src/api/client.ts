@@ -3493,6 +3493,12 @@ export interface AitoProject {
   /** The quote's Zoho status as it stood at import — it can go stale, since
    *  the board never re-queries Zoho. */
   quote_status: string | null;
+  /** When the quote last transitioned into 'accepted' — the client's
+   *  go-ahead. Null when there is no known acceptance moment (hand-made
+   *  cards, quotes imported already-accepted). While the quote is accepted,
+   *  the card's elapsed label and aging ramp measure from this instead of
+   *  created_at; the value survives a later decline but is ignored then. */
+  quote_accepted_at: string | null;
   /** The worker's push state for this project's quote. Always present —
    *  never null — even on hand-made cards that have never had a quote
    *  ('idle'). 'pending' while the worker has not yet caught up with the

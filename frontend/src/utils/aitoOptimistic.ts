@@ -286,6 +286,7 @@ export function placeholderProject(fields: {
     quote_url: null,
     quote_salesperson: null,
     quote_status: quoteStatus,
+    quote_accepted_at: null,
     quote_sync_state: 'pending',
     quote_sync_error: null,
     quote_status_block: null,

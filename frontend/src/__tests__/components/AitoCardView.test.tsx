@@ -23,6 +23,7 @@ const project: AitoProject = {
   quote_url: null,
   quote_salesperson: null,
   quote_status: null,
+  quote_accepted_at: null,
   quote_sync_state: 'idle',
   quote_sync_error: null,
   quote_status_block: null,
@@ -473,6 +474,36 @@ describe('hybrid card anatomy', () => {
 
     expect(elapsedAt({ column: 'done' }).className).toContain('text-bambu-gray');
     expect(elapsedAt({ status: 'deleted' }).className).toContain('text-bambu-gray');
+  });
+
+  it('an accepted card ages from the acceptance, not the creation', () => {
+    const twentyDaysAgo = new Date(Date.now() - 20 * 86_400_000).toISOString();
+    const oneDayAgo = new Date(Date.now() - 1 * 86_400_000).toISOString();
+
+    const elapsedFor = (overrides: Partial<AitoProject>) => {
+      render(<CardView project={{ ...project, ...overrides }} onExpand={vi.fn()} />);
+      const nodes = screen.getAllByTestId('aito-card-elapsed');
+      return nodes[nodes.length - 1];
+    };
+
+    const fresh = elapsedFor({ created_at: oneDayAgo });
+    const accepted = elapsedFor({
+      created_at: twentyDaysAgo,
+      quote_status: 'accepted',
+      quote_accepted_at: oneDayAgo,
+    });
+    // The ramp cools to the go-ahead, and the label counts from it — both
+    // read exactly like a card created a day ago.
+    expect(accepted.className).toContain('text-bambu-gray');
+    expect(accepted.textContent).toBe(fresh.textContent);
+
+    // No known acceptance moment: falls back to created_at (20 d = orange-500).
+    const fallback = elapsedFor({ created_at: twentyDaysAgo, quote_status: 'accepted', quote_accepted_at: null });
+    expect(fallback.className).toContain('text-orange-500');
+
+    // A surviving stamp is ignored while the quote is not accepted.
+    const unaccepted = elapsedFor({ created_at: twentyDaysAgo, quote_status: 'sent', quote_accepted_at: oneDayAgo });
+    expect(unaccepted.className).toContain('text-orange-500');
   });
 });
 

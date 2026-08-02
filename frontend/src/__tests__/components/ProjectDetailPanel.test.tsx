@@ -34,6 +34,7 @@ const project: AitoProject = {
   quote_url: null,
   quote_salesperson: null,
   quote_status: null,
+  quote_accepted_at: null,
   quote_sync_state: 'idle',
   quote_sync_error: null,
   quote_status_block: null,
