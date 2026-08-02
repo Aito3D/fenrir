@@ -383,6 +383,11 @@ async def create_project(
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     await _reject_duplicate_quote(db, payload.quote_id)
+    if payload.quote_id is None and not ((payload.client_phone or "").strip() or (payload.client_email or "").strip()):
+        # Every hand-created project must be reachable — walk-in included, whose
+        # coordinates live on the project row rather than in Zoho. Imports are
+        # exempt: an existing Zoho quote's contact may carry neither channel.
+        raise HTTPException(status_code=400, detail="Client must have a phone or an email")
     # New cards land on top of the quote column: shift existing cards down.
     for row in await _active_in_column(db, "devis"):
         row.position += 1

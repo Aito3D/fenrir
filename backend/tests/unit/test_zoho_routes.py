@@ -228,6 +228,32 @@ async def test_create_contact_upstream_error_maps_to_502(async_client):
 
 
 @pytest.mark.asyncio
+async def test_contact_create_normalizes_names(async_client, monkeypatch):
+    captured = {}
+
+    async def fake_create_contact(db, *, company_name, first_name, last_name, email, phone):
+        captured.update(first_name=first_name, last_name=last_name)
+        return {
+            "id": "c1",
+            "name": f"{first_name} {last_name}",
+            "company_name": company_name,
+            "customer_sub_type": "individual",
+            "phone": phone,
+            "mobile": phone,
+            "email": email,
+        }
+
+    monkeypatch.setattr(zoho_service, "create_contact", fake_create_contact)
+    r = await async_client.post(
+        "/api/v1/zoho/contacts",
+        json={"first_name": "jean-pierre", "last_name": "dupont", "phone": "+689-87123456"},
+    )
+    assert r.status_code == 201
+    assert captured["first_name"] == "Jean-Pierre"
+    assert captured["last_name"] == "DUPONT"
+
+
+@pytest.mark.asyncio
 async def test_patch_contact_refuses_the_default_contact(async_client):
     await _configure(async_client)
     calls = {"n": 0}

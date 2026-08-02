@@ -116,6 +116,14 @@ def _check_phone(value: str) -> str:
     return value
 
 
+def _title_case_segments(value: str) -> str:
+    """'jean-pierre  le roux' -> 'Jean-Pierre Le Roux' — mirrors
+    frontend/src/utils/clientDraft.ts:titleCaseSegments (split on spaces and
+    hyphens, capitalize each segment, keep the separators)."""
+    parts = re.split(r"([ -]+)", value.strip())
+    return "".join(p if i % 2 else p[:1].upper() + p[1:].lower() for i, p in enumerate(parts))
+
+
 class ZohoContactCreate(BaseModel):
     """Either ``company_name`` or both name parts must be present — the display
     name is derived from them server-side, never taken from the client."""
@@ -135,6 +143,14 @@ class ZohoContactCreate(BaseModel):
     @classmethod
     def validate_phone(cls, value: str) -> str:
         return _check_phone(value)
+
+    @model_validator(mode="after")
+    def normalize_person_name(self):
+        """House convention 'Jean-Pierre DUPONT', enforced server-side so no
+        caller can bypass what the drawer's form promises."""
+        self.first_name = _title_case_segments(self.first_name)
+        self.last_name = self.last_name.strip().upper()
+        return self
 
     @model_validator(mode="after")
     def check_name(self):

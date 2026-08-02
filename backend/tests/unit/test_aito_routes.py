@@ -46,7 +46,13 @@ async def _seed_golden_board(client):
     None-vs-0 rule)."""
     await client.post(
         "/api/v1/aito/",
-        json={"description": "no tasks", "client_id": "C1", "client_name": "One", "tasks": []},
+        json={
+            "description": "no tasks",
+            "client_id": "C1",
+            "client_name": "One",
+            "client_phone": "+689 87 00 00 01",
+            "tasks": [],
+        },
     )
     await client.post(
         "/api/v1/aito/",
@@ -54,6 +60,7 @@ async def _seed_golden_board(client):
             "description": "zero cost",
             "client_id": "C2",
             "client_name": "Two",
+            "client_phone": "+689 87 00 00 02",
             "tasks": [{"title": "free scan", "scan_cost": 0}],
         },
     )
@@ -63,6 +70,7 @@ async def _seed_golden_board(client):
             "description": "mixed",
             "client_id": "C3",
             "client_name": "Three",
+            "client_phone": "+689 87 00 00 03",
             # Accepted because ticked steps now require it — a mixed-done-flags
             # card cannot exist in any other status.
             "quote_status": "accepted",
@@ -78,6 +86,7 @@ async def _seed_golden_board(client):
             "description": "accepted",
             "client_id": "C4",
             "client_name": "Four",
+            "client_phone": "+689 87 00 00 04",
             # Accepted for the same reason as "mixed": a pre-ticked step at
             # creation now requires it.
             "quote_status": "accepted",
@@ -91,6 +100,7 @@ async def _seed_golden_board(client):
             "description": "accepted zero pending",
             "client_id": "C5",
             "client_name": "Five",
+            "client_phone": "+689 87 00 00 05",
             "tasks": [{"title": "d", "scan_cost": 0}],
         },
     )
@@ -700,7 +710,12 @@ async def test_create_project_rejects_a_javascript_quote_url(async_client):
 async def test_create_project_without_quote_leaves_quote_fields_null(async_client):
     r = await async_client.post(
         "/api/v1/aito/",
-        json={"description": "Manual card", "client_id": "z1", "client_name": "ACME"},
+        json={
+            "description": "Manual card",
+            "client_id": "z1",
+            "client_name": "ACME",
+            "client_phone": "+689 87 00 00 06",
+        },
     )
     assert r.status_code == 201
     body = r.json()
@@ -1498,6 +1513,7 @@ async def test_board_ships_a_step_row_per_task(async_client, db_session):
             "description": "steps per task",
             "client_id": "S1",
             "client_name": "Steps",
+            "client_phone": "+689 87 00 00 07",
             "quote_status": "accepted",
             "tasks": [
                 {"title": "t1", "impression_cost": 2000, "scan_cost": 1000, "scan_done": True},
@@ -1526,6 +1542,7 @@ async def test_task_steps_carry_titles(async_client):
             "description": "titled steps",
             "client_id": "T1",
             "client_name": "Titles",
+            "client_phone": "+689 87 00 00 08",
             "tasks": [
                 {"title": "Support principal", "scan_cost": 10},
                 {"scan_cost": 20},
@@ -1538,3 +1555,26 @@ async def test_task_steps_carry_titles(async_client):
     steps = card["task_steps"]
     assert steps[0]["title"] == "Support principal"
     assert steps[1]["title"] == ""
+
+
+@pytest.mark.asyncio
+async def test_create_requires_phone_or_email(async_client):
+    r = await _create(async_client, client_phone=None, client_email=None)
+    assert r.status_code == 400
+    assert "phone or an email" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_create_email_only_is_reachable(async_client):
+    r = await _create(async_client, client_phone=None, client_email="a@b.pf")
+    assert r.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_import_shape_bypasses_reachability(async_client):
+    # A quote-import create carries quote_id; Zoho contacts may lack both
+    # channels and importing an existing quote must never be blocked.
+    r = await _create(
+        async_client, client_phone=None, client_email=None, quote_id="q-1", quote_number="EST-1", quote_status="draft"
+    )
+    assert r.status_code == 201

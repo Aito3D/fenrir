@@ -13,6 +13,7 @@ async def _create(client, **overrides):
         "description": "Trophy",
         "client_id": "z1",
         "client_name": "ACME",
+        "client_phone": "+689 87 00 00 10",
     }
     payload.update(overrides)
     return await client.post("/api/v1/aito/", json=payload)

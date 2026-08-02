@@ -20,7 +20,12 @@ async def _kinds(db_session, project_id: int) -> list[str]:
 
 
 def _project_payload(**overrides):
-    payload = {"description": "Trophy", "client_id": "z1", "client_name": "ACME"}
+    payload = {
+        "description": "Trophy",
+        "client_id": "z1",
+        "client_name": "ACME",
+        "client_phone": "+689 87 00 00 09",
+    }
     payload.update(overrides)
     return payload
 
