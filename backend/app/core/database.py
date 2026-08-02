@@ -1062,6 +1062,26 @@ async def _backfill_aito_events(conn) -> None:
     )
 
 
+async def _backfill_aito_quote_accepted_at(conn):
+    """One-shot seed for quote_accepted_at (2026-08-02 age-from-acceptance
+    spec): currently-accepted projects take their LATEST quote.accepted event
+    — panel acceptances and mirrored client acceptances both wrote one.
+    Projects with no event keep NULL and age from created_at. Gated on the
+    ALTER that adds the column: re-running would overwrite stamps the app has
+    since written itself."""
+    from sqlalchemy import text
+
+    await conn.execute(
+        text(
+            "UPDATE aito_projects SET quote_accepted_at = ("
+            " SELECT MAX(occurred_at) FROM aito_events"
+            " WHERE aito_events.project_id = aito_projects.id"
+            "   AND aito_events.kind = 'quote.accepted')"
+            " WHERE quote_status = 'accepted'"
+        )
+    )
+
+
 async def run_migrations(conn):
     """Run all schema migrations and data backfills on startup.
 
@@ -4086,10 +4106,13 @@ async def run_migrations(conn):
     # which is exactly right for every existing row.
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_status_block VARCHAR(20)")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_status_remote VARCHAR(30)")
-    # Migration: the quote's acceptance moment — see the column comment on
-    # AitoProject.quote_accepted_at. Its one-shot event backfill ships with
-    # the rest of the age-from-acceptance feature.
+    # Migration: the quote's acceptance moment, so an accepted card's age can
+    # be measured from the go-ahead rather than the quote draft. Backfilled
+    # once from the event log — see _backfill_aito_quote_accepted_at.
+    _quote_accepted_at_existed = await _column_exists(conn, "aito_projects", "quote_accepted_at")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_accepted_at DATETIME")
+    if not _quote_accepted_at_existed:
+        await _backfill_aito_quote_accepted_at(conn)
 
     # Migration: backfill the explicit 'unmanaged' ownership marker (Critical
     # fix, 2026-07-29). Before this, `_mark_pending_if_ours` (routes/aito.py)
