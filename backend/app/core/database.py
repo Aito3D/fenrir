@@ -4086,6 +4086,10 @@ async def run_migrations(conn):
     # which is exactly right for every existing row.
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_status_block VARCHAR(20)")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_status_remote VARCHAR(30)")
+    # Migration: the quote's acceptance moment — see the column comment on
+    # AitoProject.quote_accepted_at. Its one-shot event backfill ships with
+    # the rest of the age-from-acceptance feature.
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_accepted_at DATETIME")
 
     # Migration: backfill the explicit 'unmanaged' ownership marker (Critical
     # fix, 2026-07-29). Before this, `_mark_pending_if_ours` (routes/aito.py)
