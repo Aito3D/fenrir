@@ -5,6 +5,7 @@ const DAY = 86_400_000;
 
 describe('agingLevel', () => {
   it('maps the spec boundaries to their levels', () => {
+    expect(agingLevel(-DAY)).toBe(0);
     expect(agingLevel(0)).toBe(0);
     expect(agingLevel(2.9 * DAY)).toBe(0);
     expect(agingLevel(3 * DAY)).toBe(1);
@@ -30,8 +31,8 @@ describe('agingTextCls', () => {
     expect(agingTextCls(live, at(8), now)).toBe('text-amber-400');
     expect(agingTextCls(live, at(12), now)).toBe('text-orange-400');
     expect(agingTextCls(live, at(17), now)).toBe('text-orange-500');
-    expect(agingTextCls(live, at(24), now)).toBe('text-[#f75c4c]');
-    expect(agingTextCls(live, at(38), now)).toBe('text-red-500 font-medium');
+    expect(agingTextCls(live, at(24), now)).toBe('text-[#fb7a6a]');
+    expect(agingTextCls(live, at(38), now)).toBe('text-red-400 font-medium');
   });
 
   it('stays gray for done, deleted, and unparseable cards regardless of age', () => {

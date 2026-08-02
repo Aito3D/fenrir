@@ -11,6 +11,8 @@ The board card's elapsed-time label ("17 days ago") flips from gray to a flat am
 
 Replace the binary flip with a **7-level heat ramp on the timestamp text only** (no dot, no card border), using the app's existing warning language: gray = calm, amber = aging, red = act now.
 
+2026-08-02: levels 5–6 brightened for WCAG AA contrast on the default card background (user-approved).
+
 ### Levels
 
 Age is measured from `project.created_at` (same `parseUTCDate` value the card already computes). Thresholds are inclusive lower bounds, in days:
@@ -22,8 +24,8 @@ Age is measured from `project.created_at` (same `parseUTCDate` value the card al
 | 2 | ≥ 7 d | amber `#fbbf24` | `text-amber-400` |
 | 3 | ≥ 10 d | orange `#fb923c` | `text-orange-400` |
 | 4 | ≥ 15 d | deep orange `#f97316` | `text-orange-500` |
-| 5 | ≥ 21 d | soft red `#f75c4c` | `text-[#f75c4c]` |
-| 6 | ≥ 30 d | red + weight | `text-red-500 font-medium` |
+| 5 | ≥ 21 d | soft red `#fb7a6a` | `text-[#fb7a6a]` |
+| 6 | ≥ 30 d | red `#f87171` | `text-red-400 font-medium` |
 
 Level 6 adds `font-medium` — weight, not animation, carries the final alarm. The ramp raises lightness/saturation monotonically before shifting hue, so urgency remains readable under color-vision deficiency.
 

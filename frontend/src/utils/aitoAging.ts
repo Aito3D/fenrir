@@ -21,8 +21,8 @@ const LEVEL_CLS: Record<AgingLevel, string> = {
   2: 'text-amber-400',
   3: 'text-orange-400',
   4: 'text-orange-500',
-  5: 'text-[#f75c4c]',
-  6: 'text-red-500 font-medium',
+  5: 'text-[#fb7a6a]',
+  6: 'text-red-400 font-medium',
 };
 
 export function agingLevel(ageMs: number): AgingLevel {

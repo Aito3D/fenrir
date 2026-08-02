@@ -447,27 +447,32 @@ describe('hybrid card anatomy', () => {
   });
 
   it('walks the timestamp through the heat ramp with age', () => {
-    const at = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
-    renderCard({ created_at: at(1) });
-    expect(screen.getAllByTestId('aito-card-elapsed')[0].className).toContain('text-bambu-gray');
-    renderCard({ created_at: at(4) });
-    expect(screen.getAllByTestId('aito-card-elapsed')[1].className).toContain('text-[#d9c26b]');
-    renderCard({ created_at: at(8) });
-    expect(screen.getAllByTestId('aito-card-elapsed')[2].className).toContain('text-amber-400');
-    renderCard({ created_at: at(12) });
-    expect(screen.getAllByTestId('aito-card-elapsed')[3].className).toContain('text-orange-400');
-    renderCard({ created_at: at(38) });
-    const oldest = screen.getAllByTestId('aito-card-elapsed')[4];
-    expect(oldest.className).toContain('text-red-500');
+    const elapsedAt = (days: number) => {
+      render(<CardView project={{ ...project, created_at: new Date(Date.now() - days * 86_400_000).toISOString() }} onExpand={vi.fn()} />);
+      const nodes = screen.getAllByTestId('aito-card-elapsed');
+      return nodes[nodes.length - 1];
+    };
+
+    expect(elapsedAt(1).className).toContain('text-bambu-gray');
+    expect(elapsedAt(4).className).toContain('text-[#d9c26b]');
+    expect(elapsedAt(8).className).toContain('text-amber-400');
+    expect(elapsedAt(12).className).toContain('text-orange-400');
+    const oldest = elapsedAt(38);
+    expect(oldest.className).toContain('text-red-400');
     expect(oldest.className).toContain('font-medium');
   });
 
   it('keeps the timestamp gray on done and deleted cards, even if aged', () => {
     const old = new Date(Date.now() - 38 * 86_400_000).toISOString();
-    renderCard({ created_at: old, column: 'done' });
-    expect(screen.getAllByTestId('aito-card-elapsed')[0].className).toContain('text-bambu-gray');
-    renderCard({ created_at: old, status: 'deleted' });
-    expect(screen.getAllByTestId('aito-card-elapsed')[1].className).toContain('text-bambu-gray');
+
+    const elapsedAt = (overrides: Partial<AitoProject>) => {
+      render(<CardView project={{ ...project, created_at: old, ...overrides }} onExpand={vi.fn()} />);
+      const nodes = screen.getAllByTestId('aito-card-elapsed');
+      return nodes[nodes.length - 1];
+    };
+
+    expect(elapsedAt({ column: 'done' }).className).toContain('text-bambu-gray');
+    expect(elapsedAt({ status: 'deleted' }).className).toContain('text-bambu-gray');
   });
 });
 
