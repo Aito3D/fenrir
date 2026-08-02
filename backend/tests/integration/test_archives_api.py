@@ -76,6 +76,59 @@ class TestArchivesAPI:
         kwargs = archive_print_mock.await_args.kwargs
         assert kwargs.get("prefer_filename_for_name") is False
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("prefer_filename_for_name", [True, False])
+    async def test_upload_archives_bulk_forwards_prefer_filename_for_name(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session, prefer_filename_for_name
+    ):
+        """POST /archives/upload-bulk must forward prefer_filename_for_name to
+        ArchiveService.archive_print for every file in the batch, keeping this
+        route consistent with the single-file /archives/upload endpoint."""
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, print_name="Mocked Return Archive")
+        archive_print_mock = AsyncMock(return_value=archive)
+
+        files = [
+            ("files", ("first.gcode.3mf", b"PK\x03\x04fake3mf", "application/octet-stream")),
+            ("files", ("second.gcode.3mf", b"PK\x03\x04fake3mf", "application/octet-stream")),
+        ]
+        params = {"prefer_filename_for_name": prefer_filename_for_name}
+
+        with patch(
+            "backend.app.api.routes.archives.ArchiveService.archive_print",
+            archive_print_mock,
+        ):
+            response = await async_client.post("/api/v1/archives/upload-bulk", files=files, params=params)
+
+        assert response.status_code == 200
+        assert archive_print_mock.await_count == 2
+        for call in archive_print_mock.await_args_list:
+            assert call.kwargs.get("prefer_filename_for_name") is prefer_filename_for_name
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_archives_bulk_defaults_prefer_filename_for_name_false(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Omitting the query param on the bulk route must not change existing
+        behavior for callers that predate this flag."""
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, print_name="Mocked Return Archive")
+        archive_print_mock = AsyncMock(return_value=archive)
+
+        files = [("files", ("existing-caller.gcode.3mf", b"PK\x03\x04fake3mf", "application/octet-stream"))]
+
+        with patch(
+            "backend.app.api.routes.archives.ArchiveService.archive_print",
+            archive_print_mock,
+        ):
+            response = await async_client.post("/api/v1/archives/upload-bulk", files=files)
+
+        assert response.status_code == 200
+        kwargs = archive_print_mock.await_args.kwargs
+        assert kwargs.get("prefer_filename_for_name") is False
+
     # ========================================================================
     # List endpoints
     # ========================================================================

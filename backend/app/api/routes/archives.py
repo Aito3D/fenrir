@@ -3365,10 +3365,15 @@ async def upload_archive(
 async def upload_archives_bulk(
     files: list[UploadFile] = File(...),
     printer_id: int | None = None,
+    prefer_filename_for_name: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_CREATE),
 ):
-    """Bulk upload multiple 3MF files to archive."""
+    """Bulk upload multiple 3MF files to archive.
+
+    prefer_filename_for_name: applied to every file in the batch. See
+    upload_archive for details.
+    """
     from backend.app.api.routes.library import validate_print_file_upload
 
     results = []
@@ -3403,6 +3408,7 @@ async def upload_archives_bulk(
                 printer_id=printer_id,
                 source_file=temp_path,
                 created_by_id=current_user.id if current_user else None,
+                prefer_filename_for_name=prefer_filename_for_name,
             )
 
             if archive:
