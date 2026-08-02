@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '../utils';
-import { CreateChecklist } from '../../components/aito/CreateChecklist';
+import { CreateChecklist, Line } from '../../components/aito/CreateChecklist';
 import type { CreateChecklistProps } from '../../components/aito/CreateChecklist';
 
 const base: CreateChecklistProps = {
@@ -37,8 +37,21 @@ describe('CreateChecklist', () => {
     expect(screen.getByText('Client needs a phone or an email').closest('[data-state]')).toHaveAttribute('data-state', 'miss');
   });
 
+  it('a satisfied line grows its tick in and transitions its colours', () => {
+    renderChecklist({ ...base });
+    const line = screen.getByText('2 tasks — at least one required').closest('[data-state]') as HTMLElement;
+    expect(line.className).toContain('transition-colors');
+    expect(line.querySelector('svg')).toHaveClass('animate-tick-in');
+  });
+
   it('zero tasks is structural — miss without any reveal', () => {
     renderChecklist({ ...base, taskCount: 0 });
     expect(screen.getByText('A project needs at least one task — add one').closest('[data-state]')).toHaveAttribute('data-state', 'miss');
+  });
+
+  it('exports Line for reuse by other checklists', () => {
+    render(<Line state="ok" text="Reused line" />);
+    const line = screen.getByText('Reused line').closest('[data-state]');
+    expect(line).toHaveAttribute('data-state', 'ok');
   });
 });

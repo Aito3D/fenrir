@@ -18,16 +18,20 @@ export interface CreateChecklistProps {
   clientRevealed: boolean;
 }
 
-function Line({ state, text }: { state: ChecklistState; text: string }) {
+/** Shared checklist row (box, `animate-tick-in` tick, 300ms colour transition) consumed by `CreateChecklist` and `ImportQuoteDrawer`. */
+export function Line({ state, text }: { state: ChecklistState; text: string }) {
   return (
     <div
       data-state={state}
-      className={`flex items-center gap-2 text-xs ${
+      // duration-300, same as the drawer section badge's colour transition, so
+      // a requirement being satisfied reads as one settling gesture wherever
+      // it is acknowledged.
+      className={`flex items-center gap-2 text-xs transition-colors duration-300 motion-reduce:transition-none ${
         state === 'ok' ? 'text-bambu-gray opacity-70' : state === 'miss' ? 'text-amber-400' : 'text-bambu-gray'
       }`}
     >
       <span
-        className={`flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded border ${
+        className={`flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded border transition-colors duration-300 motion-reduce:transition-none ${
           state === 'ok'
             ? 'border-bambu-green bg-bambu-green text-white'
             : state === 'miss'
@@ -35,7 +39,7 @@ function Line({ state, text }: { state: ChecklistState; text: string }) {
               : 'border-bambu-dark-tertiary'
         }`}
       >
-        {state === 'ok' && <Check className="h-2.5 w-2.5" />}
+        {state === 'ok' && <Check className="h-2.5 w-2.5 animate-tick-in" />}
       </span>
       <span>{text}</span>
     </div>
