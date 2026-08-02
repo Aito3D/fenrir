@@ -2,6 +2,7 @@
 seam. No network, no real Books org."""
 
 import json
+from datetime import datetime
 
 import httpx
 import pytest
@@ -2797,3 +2798,137 @@ async def test_adopting_books_status_on_a_push_clears_a_recorded_block(db_sessio
     assert project.quote_status == "sent"
     assert project.quote_status_block is None
     assert project.quote_status_remote is None
+
+
+@pytest.mark.asyncio
+async def test_adopting_books_acceptance_stamps_quote_accepted_at(db_session):
+    """The reconciler noticing a client acceptance is the same news as the
+    panel's Accept button, so it stamps the same timestamp."""
+    project = await _project_with_quote(db_session, scan_cost=1)
+    await _configure_zoho(db_session)
+    project.quote_status = "sent"
+    await db_session.commit()
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "accepted",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "accepted", "total": 1}},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_status == "accepted"
+    assert project.quote_accepted_at is not None
+
+
+@pytest.mark.asyncio
+async def test_adopting_a_non_acceptance_does_not_stamp(db_session):
+    project = await _project_with_quote(db_session, scan_cost=1)
+    await _configure_zoho(db_session)
+    project.quote_status = "sent"
+    await db_session.commit()
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "viewed",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "viewed", "total": 1}},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_status == "viewed"
+    assert project.quote_accepted_at is None
+
+
+@pytest.mark.asyncio
+async def test_a_locked_quotes_adopted_acceptance_still_stamps(db_session):
+    """An invoiced estimate takes the locked branch, which adopts Books'
+    status without the reconciler — the acceptance is still news."""
+    project = await _project_with_quote(db_session, scan_cost=1)
+    await _configure_zoho(db_session)
+    project.quote_status = "sent"
+    await db_session.commit()
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "accepted",
+                        "is_transaction_created": True,
+                        "invoiced_amount": 1,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "locked"
+    assert project.quote_status == "accepted"
+    assert project.quote_accepted_at is not None
+
+
+@pytest.mark.asyncio
+async def test_restore_from_trash_does_not_restamp_the_acceptance(db_session):
+    """Mirror of test_restoring_reapplies_the_snapshotted_status: the restore
+    returns the pre-trash 'accepted', but the job was accepted long ago —
+    the old stamp must survive, not reset the card's clock to today."""
+    old = datetime(2020, 3, 15, 8, 30, 0)
+    project = await _project_with_quote(db_session, scan_cost=1)
+    await _configure_zoho(db_session)
+    project.quote_status = "declined"
+    project.quote_status_before_trash = "accepted"
+    project.quote_accepted_at = old
+    await db_session.commit()
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "declined",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("POST", "/status/accepted"): {"message": "ok"},
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "accepted", "total": 1}},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_status == "accepted"
+    assert project.quote_accepted_at == old

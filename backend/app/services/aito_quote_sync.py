@@ -25,6 +25,7 @@ from backend.app.models.aito_task import AitoTask
 from backend.app.models.filament import Filament
 from backend.app.services.aito_events import record
 from backend.app.services.aito_quote_export import ExportTask, build_line_items
+from backend.app.services.aito_quote_status import adopt_quote_status
 from backend.app.services.aito_zoho_comments import mirror_comments, should_pull_comments
 from backend.app.services.zoho import (
     ZohoAmbiguousReferenceError,
@@ -185,7 +186,7 @@ def _apply_estimate(project: AitoProject, estimate: dict) -> None:
         # holds no evidence about which is right, and the reconciler already
         # records that case as a conflict for a human. Keeping ours simply
         # leaves it for the next sweep to see.
-        project.quote_status = remote_status
+        adopt_quote_status(project, remote_status)
     _clear_block(project)
     if estimate.get("last_modified_time") is not None:
         project.quote_synced_at = estimate["last_modified_time"]
@@ -489,8 +490,10 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
         return
 
     # Undecided: adopt Books' status. A client opening or letting a quote
-    # expire is news to us, not something to overwrite.
-    project.quote_status = zoho_status
+    # expire is news to us, not something to overwrite — and an adopted
+    # ACCEPTANCE is the same news the panel's Accept button delivers, so it
+    # stamps quote_accepted_at through the shared helper.
+    adopt_quote_status(project, zoho_status)
     _clear_block(project)
 
 
@@ -539,6 +542,7 @@ async def _reconcile_status(db: AsyncSession, project: AitoProject, estimate: di
             # estimate cannot be declined directly either, so a project trashed
             # before its quote ever went out needs the same sent-first chain.
             await zoho_service.advance_estimate_status(db, project.quote_id, "declined", current=status)
+            # Direct assignment, not adopt_quote_status: a decline never stamps.
             project.quote_status = "declined"
             _clear_block(project)
         project.quote_sync_state = "idle"
@@ -548,6 +552,9 @@ async def _reconcile_status(db: AsyncSession, project: AitoProject, estimate: di
     restore_target = _RESTORE_TARGET.get(project.quote_status_before_trash or "")
     if status == "declined" and restore_target is not None:
         await zoho_service.advance_estimate_status(db, project.quote_id, restore_target, current=status)
+        # Direct assignment, NOT adopt_quote_status: the restore returns the
+        # pre-trash status. The job was accepted long ago; restamping here
+        # would reset the card's age to the day it came out of the trash.
         project.quote_status = restore_target
         project.quote_status_before_trash = None
         _clear_block(project)
@@ -560,7 +567,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         was_already_locked = project.quote_sync_state == "locked"
         project.quote_sync_state = "locked"
         if estimate.get("status") is not None:
-            project.quote_status = estimate["status"]
+            adopt_quote_status(project, estimate["status"])
         project.quote_sync_error = None
         # A locked project leaves the sweep for good, so a block recorded
         # before it was invoiced would render on the card forever with nothing
@@ -590,7 +597,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         # of anything safe.
         project.quote_sync_state = "locked"
         if estimate.get("status") is not None:
-            project.quote_status = estimate["status"]
+            adopt_quote_status(project, estimate["status"])
         project.quote_sync_error = (
             "This quote is tax-exclusive; Aito costs are tax-inclusive and cannot be pushed without inflating the total"
         )
