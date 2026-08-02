@@ -1223,6 +1223,7 @@ export default {
       description: '아카이브 페이지의 컨텍스트 메뉴에서 "예약" 옵션을 사용하거나 파일을 드래그 앤 드롭하여 시작하세요.'
     },
     time: {
+      etaIfStartedNow: '이 작업을 지금 시작할 경우의 완료 예정 시각',
       asap: '즉시',
       overdue: '기한 초과',
       now: '지금',
@@ -4778,7 +4779,15 @@ export default {
       kValueHelp: '일반 범위: PLA 0.01~0.06, PETG 0.02~0.10',
       filament: '필라멘트',
       selectFilament: '필라멘트 선택...',
-      noFilamentsHelp: '필라멘트를 찾을 수 없습니다. 먼저 Bambu Studio에서 K-프로필을 만드세요.',
+      source: {
+        local: '가져온 것',
+        orcaCloud: 'Orca Cloud',
+        bambuCloud: 'Bambu Cloud',
+        builtin: '기본 제공',
+      },
+      noFilamentsHelp: '사용할 수 있는 필라먼트가 없습니다. Bambu Cloud에 로그인하거나 프로파일 → 로컬 프로파일에서 프리셋을 가져오세요.',
+      searchFilaments: '필라먼트 검색...',
+      noFilamentMatches: '검색과 일치하는 필라먼트가 없습니다',
       flowType: '유량 유형',
       highFlow: '고유량',
       standard: '표준',
@@ -4808,6 +4817,8 @@ export default {
       profileSaved: 'K-프로필 저장됨',
       profilesSaved: '{{count}}개 압출기에 K-프로필 저장됨',
       selectAtLeastOneExtruder: '적어도 하나의 압출기를 선택해 주세요',
+      selectFilament: '먼저 필라먼트를 선택하세요',
+      filamentNotResolvable: '{{name}}에 해당하는 Bambu 필라먼트 ID가 없어 프린터가 프로파일을 저장할 수 없습니다',
       profileDeleted: 'K-프로필 삭제됨',
       profilesDeleted: '{{count}}개 프로필 삭제됨',
       exportedProfiles: '{{count}}개 프로필 내보냄',
