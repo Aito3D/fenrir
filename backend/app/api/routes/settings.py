@@ -34,6 +34,7 @@ _SENSITIVE_FIELDS_FOR_API_KEY = (
     "ldap_bind_password",
     "zoho_client_secret",
     "zoho_refresh_token",
+    "openrouter_api_key",
 )
 
 
@@ -174,6 +175,9 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
     # Zoho secrets are write-only — never returned to any caller.
     settings_dict["zoho_client_secret"] = ""
     settings_dict["zoho_refresh_token"] = ""
+
+    # OpenRouter API key is write-only — never returned to any caller.
+    settings_dict["openrouter_api_key"] = ""
 
     if is_api_key:
         for field in _SENSITIVE_FIELDS_FOR_API_KEY:

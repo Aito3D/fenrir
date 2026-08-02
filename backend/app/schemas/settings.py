@@ -473,6 +473,13 @@ class AppSettings(BaseModel):
         default="Client de passage", description="Display name of the default Aito client"
     )
 
+    # OpenRouter — Aito project-summary generation
+    openrouter_api_key: str = Field(default="", description="OpenRouter API key (write-only)")
+    openrouter_model: str = Field(
+        default="mistralai/mistral-small",
+        description="OpenRouter model id used to generate French project summaries",
+    )
+
     # Obico AI failure detection (#172)
     obico_enabled: bool = Field(default=False, description="Enable Obico AI print failure detection")
     obico_ml_url: str = Field(
@@ -639,6 +646,8 @@ class AppSettingsUpdate(BaseModel):
     zoho_accounts_url: str | None = None
     zoho_default_contact_id: str | None = None
     zoho_default_contact_name: str | None = None
+    openrouter_api_key: str | None = None
+    openrouter_model: str | None = None
     obico_enabled: bool | None = None
     obico_ml_url: str | None = None
     obico_sensitivity: str | None = None
