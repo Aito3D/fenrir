@@ -61,6 +61,9 @@ describe('QuoteResultList', () => {
   it('marks a quote the board already imported, but still allows selecting it', async () => {
     server.use(
       http.get('/api/v1/aito/', () =>
+        // `status: 'active'` here is documentation, not an exercised filter — the
+        // real endpoint never returns trashed rows, so the component doesn't
+        // filter by status itself.
         HttpResponse.json([{ id: 87, quote_id: 'e1', status: 'active' }]),
       ),
     );

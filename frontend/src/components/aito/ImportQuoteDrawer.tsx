@@ -73,6 +73,8 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
     queryKey: ['zoho-quote-preview', selected?.id],
     queryFn: () => api.getZohoQuotePreview(selected!.id),
     enabled: selected !== null,
+    // Matches the list's prefetch staleTime so a prefetched preview renders without a second GET.
+    staleTime: 30_000,
   });
   const preview = previewQuery.data ?? null;
 
@@ -109,7 +111,13 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
   useEffect(() => {
     // The panel takes focus on mount so Tab order starts inside the drawer and
     // a screen reader announces it — same reasoning as `NewProjectDrawer`.
-    panelRef.current?.focus();
+    // But `QuoteResultList`'s search input carries its own `autoFocus`, which
+    // React applies during commit, before this effect runs — so unconditional
+    // panel focus would steal it back and typing would go nowhere. Only take
+    // the panel focus when nothing inside it already has focus; that check
+    // still covers the Zoho-not-configured branch, which renders no input at
+    // all and so never satisfies `contains`.
+    if (!panelRef.current?.contains(document.activeElement)) panelRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setClosing(true);
     };

@@ -77,6 +77,11 @@ beforeEach(() => {
 });
 
 describe('ImportQuoteDrawer', () => {
+  it('focuses the search input on mount, not the panel', async () => {
+    render(<ImportQuoteDrawer onClose={vi.fn()} onImport={vi.fn()} />);
+    expect(await screen.findByRole('searchbox')).toHaveFocus();
+  });
+
   it('shows the parsed tasks and pre-fills the description', async () => {
     const user = userEvent.setup();
     render(<ImportQuoteDrawer onClose={vi.fn()} onImport={vi.fn()} />);

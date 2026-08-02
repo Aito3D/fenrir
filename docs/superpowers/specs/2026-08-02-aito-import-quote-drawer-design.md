@@ -143,8 +143,10 @@ untouched.
   case.
 - Search state is isolated in the list component so typing never re-renders
   the preview or rail.
-- Result rows are a memoized component; the receipt renders from `preview`
-  only.
+- Result rows render inline (not a memoized component — an accepted
+  simplification); the list is page-sized and re-renders only within
+  `QuoteResultList`, whose state isolation (see above) already covers it. The
+  receipt renders from `preview` only.
 
 ## Testing (Vitest — rewrite of ImportQuoteModal.test.tsx)
 

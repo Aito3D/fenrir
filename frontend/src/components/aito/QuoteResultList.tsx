@@ -141,21 +141,28 @@ export function QuoteResultList({ selected, onSelect, onClear }: QuoteResultList
         <p className="mt-3 text-xs uppercase tracking-wide text-bambu-gray">{t('aito.quoteRecent')}</p>
       )}
 
-      <div role="listbox" aria-label={t('aito.quoteSearchLabel')} className="mt-2 space-y-1.5">
-        {loading &&
-          [0, 1, 2].map((n) => (
-            <div key={n} role="status" aria-label={t('common.loading')} className="animate-pulse rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark p-3">
+      {/* The listbox role only wraps actual option rows — a screen reader's
+          listbox navigation should never land on a skeleton, an error line,
+          or "no results". Those states render as siblings instead, and the
+          skeleton trio collapses under one status wrapper rather than three,
+          so it announces once, not three times over. */}
+      {loading && (
+        <div role="status" aria-label={t('common.loading')} className="mt-2 space-y-1.5">
+          {[0, 1, 2].map((n) => (
+            <div key={n} className="animate-pulse rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark p-3">
               <div className="h-3.5 w-40 rounded bg-bambu-dark-tertiary" />
               <div className="mt-2 h-3 w-56 rounded bg-bambu-dark-tertiary/60" />
             </div>
           ))}
-        {!loading && quotesQuery.isError && <p className="p-3 text-sm text-status-error">{t('aito.zohoUnreachable')}</p>}
-        {!loading && !quotesQuery.isError && results.length === 0 && (
-          <p className="p-3 text-sm text-bambu-gray">{t('aito.quoteNoResults')}</p>
-        )}
-        {!loading &&
-          !quotesQuery.isError &&
-          results.map((quote, index) => {
+        </div>
+      )}
+      {!loading && quotesQuery.isError && <p className="mt-2 p-3 text-sm text-status-error">{t('aito.zohoUnreachable')}</p>}
+      {!loading && !quotesQuery.isError && results.length === 0 && (
+        <p className="mt-2 p-3 text-sm text-bambu-gray">{t('aito.quoteNoResults')}</p>
+      )}
+      {!loading && !quotesQuery.isError && results.length > 0 && (
+        <div role="listbox" aria-label={t('aito.quoteSearchLabel')} className="mt-2 space-y-1.5">
+          {results.map((quote, index) => {
             const importedId = importedBy.get(quote.id);
             return (
               <button
@@ -192,7 +199,8 @@ export function QuoteResultList({ selected, onSelect, onClear }: QuoteResultList
               </button>
             );
           })}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

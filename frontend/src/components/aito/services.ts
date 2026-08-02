@@ -10,7 +10,7 @@ export type { ServiceId };
  *
  *  Shared by `TaskMiniRows` (the board card's per-task row, which iterates
  *  `SERVICES` directly rather than reading ids off the project response) and
- *  `ImportQuoteModal` (which derives them from the draft in hand) so the two
+ *  `ImportQuoteDrawer` (which derives them from the draft in hand) so the two
  *  can never disagree about a label. The insertion order here is the
  *  canonical order `SERVICES` emits — see
  *  backend/app/services/aito_board_rules.py — so a derived badge row reads
