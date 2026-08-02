@@ -145,6 +145,10 @@ class AitoProjectResponse(BaseModel):
     quote_url: str | None
     quote_salesperson: str | None
     quote_status: str | None
+    # When the quote last transitioned into 'accepted' — see the column
+    # comment on AitoProject. NULL when there is no known acceptance moment;
+    # the card then ages from created_at.
+    quote_accepted_at: datetime | None
     created_by: str | None
     # 'idle' | 'pending' | 'error' | 'locked' | 'unmanaged' — see the column
     # comment on AitoProject.quote_sync_state for what each means.

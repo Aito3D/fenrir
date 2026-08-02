@@ -35,6 +35,7 @@ from backend.app.schemas.aito import (
 )
 from backend.app.services.aito_board_rules import SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.aito_events import diff_fields, kinds_for_depth, record
+from backend.app.services.aito_quote_status import adopt_quote_status
 from backend.app.services.openrouter import OpenRouterNotConfiguredError, OpenRouterUpstreamError, summarize_tasks
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
 from backend.app.utils.http import build_content_disposition
@@ -95,6 +96,7 @@ def _to_response(p: AitoProject, summary: TaskSummary) -> AitoProjectResponse:
         quote_url=p.quote_url,
         quote_salesperson=p.quote_salesperson,
         quote_status=p.quote_status,
+        quote_accepted_at=p.quote_accepted_at,
         created_by=p.created_by,
         quote_sync_state=p.quote_sync_state or "idle",
         quote_sync_error=p.quote_sync_error,
@@ -989,7 +991,7 @@ async def set_quote_status(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    project.quote_status = payload.status
+    adopt_quote_status(project, payload.status)
     # Our side just moved, so any recorded block describes an attempt that no
     # longer exists. This is what lets quote_status_remote alone identify a
     # blocked attempt — see the column comments on AitoProject.

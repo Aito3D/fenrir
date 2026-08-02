@@ -109,7 +109,9 @@ async def _seed_golden_board(client):
 
 def _stable(payload: list[dict]) -> list[dict]:
     """Drop the fields that legitimately differ between runs."""
-    return [{k: v for k, v in row.items() if k not in ("created_at", "updated_at")} for row in payload]
+    return [
+        {k: v for k, v in row.items() if k not in ("created_at", "updated_at", "quote_accepted_at")} for row in payload
+    ]
 
 
 @pytest.mark.asyncio
@@ -1578,3 +1580,30 @@ async def test_import_shape_bypasses_reachability(async_client):
         async_client, client_phone=None, client_email=None, quote_id="q-1", quote_number="EST-1", quote_status="draft"
     )
     assert r.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_accepting_stamps_quote_accepted_at(async_client):
+    created = await _create(async_client)
+    assert created.json()["quote_accepted_at"] is None
+
+    r = await async_client.post(f"/api/v1/aito/{created.json()['id']}/quote-status", json={"status": "accepted"})
+
+    stamped = r.json()["project"]["quote_accepted_at"]
+    assert stamped is not None
+    assert _seconds_since(stamped) < 60
+
+
+@pytest.mark.asyncio
+async def test_declining_preserves_the_acceptance_stamp(async_client):
+    created = await _create(async_client)
+    pid = created.json()["id"]
+    accepted = await async_client.post(f"/api/v1/aito/{pid}/quote-status", json={"status": "accepted"})
+    first = accepted.json()["project"]["quote_accepted_at"]
+
+    declined = (await async_client.post(f"/api/v1/aito/{pid}/quote-status", json={"status": "declined"})).json()[
+        "project"
+    ]
+
+    assert declined["quote_status"] == "declined"
+    assert declined["quote_accepted_at"] == first
