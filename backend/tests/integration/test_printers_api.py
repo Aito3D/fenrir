@@ -452,6 +452,114 @@ class TestPrintersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_cover_pick_view_serves_active_plate_object_mask(
+        self, async_client: AsyncClient, printer_factory, db_session, tmp_path
+    ):
+        """The skip-items UI needs the slicer's exact object-ID mask, not an
+        inferred bounding box, so a plate click resolves to the firmware ID."""
+        import zipfile
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_ftp import cache_3mf_download
+        from backend.app.services.bambu_mqtt import PrinterState
+
+        printer = await printer_factory()
+        threemf_path = tmp_path / "PickMask.3mf"
+        with zipfile.ZipFile(threemf_path, "w") as zf:
+            zf.writestr("Metadata/pick_1.png", b"PICK_ONE")
+            zf.writestr("Metadata/pick_3.png", b"PICK_THREE")
+            zf.writestr("Metadata/plate_3.gcode", "; active plate\n")
+
+        cache_3mf_download(printer.id, "PickMask.3mf", threemf_path)
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "RUNNING"
+        state.subtask_name = "PickMask"
+        state.gcode_file = "PickMask.3mf"
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/cover?view=pick")
+
+        assert response.status_code == 200
+        assert response.content == b"PICK_THREE"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_cover_pick_view_404s_rather_than_serving_a_render(
+        self, async_client: AsyncClient, printer_factory, db_session, tmp_path
+    ):
+        """A mask is coordinates, not decoration. Archives without pick_N.png
+        (Handy jobs, older slicers) must 404 so the UI drops to the checklist —
+        every other view's fallback to a rendered thumbnail would be decoded as
+        object IDs here, and a click would skip an arbitrary object."""
+        import zipfile
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_ftp import cache_3mf_download
+        from backend.app.services.bambu_mqtt import PrinterState
+
+        printer = await printer_factory()
+        threemf_path = tmp_path / "NoMask.3mf"
+        with zipfile.ZipFile(threemf_path, "w") as zf:
+            zf.writestr("Metadata/top_1.png", b"TOP_RENDER")
+            zf.writestr("Metadata/plate_1.png", b"PLATE_RENDER")
+            zf.writestr("Metadata/plate_1.gcode", "; active plate\n")
+
+        cache_3mf_download(printer.id, "NoMask.3mf", threemf_path)
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "RUNNING"
+        state.subtask_name = "NoMask"
+        state.gcode_file = "NoMask.3mf"
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/cover?view=pick")
+
+        assert response.status_code == 404
+        assert b"RENDER" not in response.content
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_cover_pick_view_does_not_borrow_another_plates_mask(
+        self, async_client: AsyncClient, printer_factory, db_session, tmp_path
+    ):
+        """Plate 1's mask over plate 3's layout resolves clicks to whatever
+        occupied that pixel on a different plate, so the active plate's mask is
+        the only acceptable answer."""
+        import zipfile
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_ftp import cache_3mf_download
+        from backend.app.services.bambu_mqtt import PrinterState
+
+        printer = await printer_factory()
+        threemf_path = tmp_path / "OtherPlate.3mf"
+        with zipfile.ZipFile(threemf_path, "w") as zf:
+            zf.writestr("Metadata/pick_1.png", b"PICK_ONE")
+            zf.writestr("Metadata/top_3.png", b"TOP_THREE")
+            zf.writestr("Metadata/plate_3.gcode", "; active plate\n")
+
+        cache_3mf_download(printer.id, "OtherPlate.3mf", threemf_path)
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "RUNNING"
+        state.subtask_name = "OtherPlate"
+        state.gcode_file = "OtherPlate.3mf"
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/cover?view=pick")
+
+        assert response.status_code == 404
+        assert response.content != b"PICK_ONE"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_cover_3mf_scan_fallback_for_per_plate_archive(
         self, async_client: AsyncClient, printer_factory, db_session, tmp_path
     ):
@@ -3747,8 +3855,10 @@ class TestSetChamberTemperatureAPI:
 class TestSetFanSpeedAPI:
     """Integration tests for POST /printers/{id}/fan-speed (#1661).
 
-    The fan-id mapping (part->1, aux->2, chamber->3) is the critical
-    correctness gate — wrong mapping would target the wrong physical fan.
+    The fan-id mapping (part->1, aux->2, chamber->3, aux2->10) is the
+    critical correctness gate — wrong mapping would target the wrong
+    physical fan. "aux2" (M106 P10) is the optional left auxiliary part
+    cooling fan on P2S/X2D.
     """
 
     @pytest.mark.asyncio
@@ -3771,19 +3881,56 @@ class TestSetFanSpeedAPI:
     @pytest.mark.integration
     @pytest.mark.parametrize(
         "fan_name,expected_fan_id",
-        [("part", 1), ("aux", 2), ("chamber", 3)],
+        [("part", 1), ("aux", 2), ("chamber", 3), ("aux2", 10)],
     )
     async def test_fan_id_mapping(self, async_client: AsyncClient, printer_factory, fan_name, expected_fan_id):
         """Verify each fan name maps to the correct hardware fan-id."""
         printer = await printer_factory(name="P", model="X1C")
         mock_client = MagicMock()
         mock_client.set_fan_speed.return_value = True
+        # aux2 is presence-gated on the printer reporting airduct part 10, so
+        # give the mock a reported speed. Set explicitly rather than leaning on
+        # MagicMock's auto-attribute, which would satisfy the gate by accident.
+        mock_client.state.left_aux_fan_speed = 0
         with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
             mock_pm.get_client.return_value = mock_client
             response = await async_client.post(f"/api/v1/printers/{printer.id}/fan-speed?fan={fan_name}&speed=100")
         assert response.status_code == 200
         called_fan_id, called_pwm = mock_client.set_fan_speed.call_args.args
         assert called_fan_id == expected_fan_id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_aux2_rejected_when_printer_has_no_left_aux_fan(self, async_client: AsyncClient, printer_factory):
+        """A printer that never reports airduct part 10 must not be sent M106 P10.
+
+        Without the gate the endpoint accepted aux2 for every model, so a POST
+        against an A1 would fire a command for hardware that does not exist.
+        """
+        printer = await printer_factory(name="P", model="A1")
+        mock_client = MagicMock()
+        mock_client.set_fan_speed.return_value = True
+        mock_client.state.left_aux_fan_speed = None
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/fan-speed?fan=aux2&speed=50")
+        assert response.status_code == 400
+        assert "left auxiliary fan" in response.json()["detail"]
+        mock_client.set_fan_speed.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_other_fans_unaffected_by_the_aux2_gate(self, async_client: AsyncClient, printer_factory):
+        """The gate is aux2-only — a base P2S can still drive its built-in fans."""
+        printer = await printer_factory(name="P", model="P2S")
+        mock_client = MagicMock()
+        mock_client.set_fan_speed.return_value = True
+        mock_client.state.left_aux_fan_speed = None
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            for fan_name in ("part", "aux", "chamber"):
+                response = await async_client.post(f"/api/v1/printers/{printer.id}/fan-speed?fan={fan_name}&speed=50")
+                assert response.status_code == 200, fan_name
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -3802,6 +3949,36 @@ class TestSetFanSpeedAPI:
         assert response.status_code == 200
         _called_fan_id, called_pwm = mock_client.set_fan_speed.call_args.args
         assert called_pwm == expected_pwm
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "model,expected_label",
+        [
+            ("P2S", "Exhaust fan"),
+            ("X2D", "Exhaust fan"),
+            ("X1C", "Chamber fan"),
+            ("P1S", "Chamber fan"),
+            ("H2D", "Chamber fan"),
+        ],
+    )
+    async def test_chamber_fan_message_matches_model_label(
+        self, async_client: AsyncClient, printer_factory, model, expected_label
+    ):
+        """The success toast must use the same name as the printer card badge.
+
+        On P2S/X2D the big_fan2 fan is labelled "Exhaust"; everywhere else it
+        stays "Chamber". A mismatch means the user clicks "Exhaust" and gets
+        told "Chamber fan set to N%".
+        """
+        printer = await printer_factory(name="P", model=model)
+        mock_client = MagicMock()
+        mock_client.set_fan_speed.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/fan-speed?fan=chamber&speed=50")
+        assert response.status_code == 200
+        assert response.json()["message"] == f"{expected_label} set to 50%"
 
     @pytest.mark.asyncio
     @pytest.mark.integration

@@ -32,6 +32,33 @@ def _token_digest(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def is_expiry_401(response: httpx.Response) -> bool:
+    """Whether a 401 is Bambu's genuine "token expired" signal.
+
+    Bambu answers an expired/revoked token with ``{"code":4,"error":"Please
+    login.","message":""}``. Not every 401 means that: individual endpoints
+    return 401 for resource-, region- or scope-specific reasons, and a working
+    token still draws the occasional transient 401 (Cloudflare edge, a brief
+    backend blip). Treating *any* 401 as a dead credential signs the user out on
+    a single stray rejection — the #2562 follow-up regression. We trust only the
+    documented expiry body, so a benign 401 no longer nukes the whole cloud
+    integration. An unparseable / unsigned 401 is deliberately NOT expiry.
+
+    Shared by the Bambu Cloud and MakerWorld services — both carry the same
+    token and see the same expiry body.
+    """
+    try:
+        body = response.json()
+    except Exception:
+        return False
+    if not isinstance(body, dict):
+        return False
+    if body.get("code") == 4:
+        return True
+    text = f"{body.get('error', '')} {body.get('message', '')}".lower()
+    return "please login" in text
+
+
 def invalidate_validation_cache(token: str | None = None) -> None:
     """Drop cached validation verdicts.
 
@@ -197,16 +224,25 @@ class BambuCloudService:
             return False
         return not (self.token_expiry and datetime.now(timezone.utc) > self.token_expiry)
 
-    async def _note_response(self, response: httpx.Response) -> None:
-        """Record a 401 from Bambu as "this stored credential is dead".
+    async def _note_response(self, response: httpx.Response) -> bool:
+        """Record Bambu's genuine token-expiry 401 as "this credential is dead".
 
-        Bambu answers an expired/revoked token with 401 and a body of
-        ``{"code":4,"error":"Please login.","message":""}``. Reported at most
-        once per service instance so a route that makes several calls doesn't
-        write the flag several times.
+        Returns ``True`` only for the real expiry signal (see
+        :meth:`_is_expiry_401`); a plain/transient 401 returns ``False`` and is
+        left alone so it can't durably sign the user out. The durable flag is
+        written at most once per service instance so a route making several
+        calls doesn't write it repeatedly.
         """
-        if response.status_code != 401 or self._on_auth_failure is None or self._auth_failure_reported:
-            return
+        if response.status_code != 401:
+            return False
+        if not is_expiry_401(response):
+            logger.info(
+                "Bambu Cloud returned 401 without the expiry signature — treating as transient, "
+                "not signing the stored token out"
+            )
+            return False
+        if self._on_auth_failure is None or self._auth_failure_reported:
+            return True
         self._auth_failure_reported = True
         if self.access_token:
             _validation_cache[_token_digest(self.access_token)] = (
@@ -219,6 +255,7 @@ class BambuCloudService:
             # Recording the failure is best-effort — the caller still needs the
             # real error (a 401) rather than a bookkeeping exception on top.
             logger.exception("Failed to record Bambu Cloud auth failure")
+        return True
 
     async def validate_token(self) -> bool | None:
         """Ask Bambu whether the loaded token is still accepted.
@@ -249,8 +286,11 @@ class BambuCloudService:
             return None
 
         if response.status_code == 401:
-            await self._note_response(response)
-            return False
+            # Only a 401 carrying Bambu's expiry signature is a real sign-out.
+            # A signature-less 401 here is transient/edge noise — report unknown
+            # (last-known state) rather than expiring a working session.
+            expired = await self._note_response(response)
+            return False if expired else None
         if response.status_code >= 500:
             logger.info(
                 "Bambu Cloud returned %s while validating the token — treating as unknown", response.status_code
@@ -376,6 +416,42 @@ class BambuCloudService:
             logger.error("Email verification failed: %s", e)
             raise BambuCloudAuthError(f"Verification failed: {e}")
 
+    async def _fetch_csrf_token(self, web_origin: str) -> str | None:
+        """Seed the ``bbl_csrf_token`` cookie and return its value (#2696).
+
+        Bambu added double-submit CSRF protection to the ``bambulab.com`` web
+        origin. A POST without the cookie is rejected ``403 {"error": "CSRF
+        error: missing_cookie"}`` before the request body is looked at; with the
+        cookie but no matching header it becomes ``missing_header``. Only
+        ``GET /api/csrf`` mints one — the sign-in *page* sets nothing but
+        Cloudflare's ``__cf_bm``, so landing there first does not help.
+
+        The token is re-fetched per verification rather than cached: the client
+        is process-wide and long-lived, so a stale cookie could otherwise
+        disagree with the header we send.
+        """
+        try:
+            response = await self._client.get(
+                f"{web_origin}/api/csrf",
+                headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
+            )
+        except Exception as e:
+            logger.warning("Failed to fetch Bambu Cloud CSRF token: %s", e)
+            return None
+        # httpx stores the Set-Cookie on the shared jar, which is also what makes
+        # the cookie ride along on the POST below — we only need the value here
+        # to echo it back in the header.
+        try:
+            token = self._client.cookies.get("bbl_csrf_token")
+        except Exception:  # multiple cookies of the same name across domains
+            token = None
+        if not token:
+            logger.warning(
+                "Bambu Cloud CSRF endpoint returned no bbl_csrf_token (status %s)",
+                response.status_code,
+            )
+        return token
+
     async def verify_totp(self, tfa_key: str, code: str) -> dict:
         """
         Complete login with TOTP code from authenticator app.
@@ -393,9 +469,24 @@ class BambuCloudService:
             # expected application-level "Login failed" JSON, no Cloudflare
             # interstitial). Browser-impersonation removed to stay clearly on
             # the right side of Bambu Lab's "no falsified client identity" line.
-            tfa_url = "https://bambulab.com/api/sign-in/tfa"
-            if "bambulab.cn" in self.base_url:
-                tfa_url = "https://bambulab.cn/api/sign-in/tfa"
+            web_origin = "https://bambulab.cn" if "bambulab.cn" in self.base_url else "https://bambulab.com"
+            tfa_url = f"{web_origin}/api/sign-in/tfa"
+
+            # #2696: the web origin is CSRF-protected (double submit). Without
+            # both halves the endpoint 403s before it ever evaluates the code,
+            # which surfaced to users as a permanent, misleading "Invalid code".
+            # api.bambulab.com — where every other call in this service goes,
+            # including the email-code 2FA path — is not gated, which is why
+            # only TOTP sign-ins broke.
+            csrf_token = await self._fetch_csrf_token(web_origin)
+            if not csrf_token:
+                return {
+                    "success": False,
+                    "message": (
+                        "Could not obtain a security token from Bambu Cloud. "
+                        "Check the server's internet access and try again."
+                    ),
+                }
 
             response = await self._client.post(
                 tfa_url,
@@ -403,6 +494,10 @@ class BambuCloudService:
                     "Content-Type": "application/json",
                     "User-Agent": _USER_AGENT,
                     "Accept": "application/json",
+                    # Echo of the bbl_csrf_token cookie httpx just stored. Both
+                    # halves are required; the cookie alone yields
+                    # "missing_header".
+                    "x-bbl-csrf-token": csrf_token,
                 },
                 json={
                     "tfaKey": tfa_key,
@@ -447,10 +542,26 @@ class BambuCloudService:
 
             # Provide helpful error message
             error_msg = data.get("message", "")
+
+            # A CSRF rejection means the code was never evaluated (#2696). It
+            # used to fall through to the generic path below and read as
+            # "Invalid code", which sent the reporter chasing clock drift and
+            # leading-zero parsing for a request Bambu had already refused.
+            csrf_error = data.get("error", "") if isinstance(data.get("error"), str) else ""
+            if "csrf" in csrf_error.lower() or data.get("reason") in ("missing_cookie", "missing_header"):
+                logger.error("Bambu Cloud rejected the TOTP request on CSRF grounds: %s", response.text[:200])
+                return {
+                    "success": False,
+                    "message": (
+                        "Bambu Cloud rejected the sign-in request before checking your code "
+                        "(security-token error). Your code is fine — please try again."
+                    ),
+                }
+
             if "expired" in error_msg.lower():
                 return {"success": False, "message": "TOTP session expired. Please try logging in again."}
             if not error_msg:
-                error_msg = f"TOTP verification failed (status {response.status_code})"
+                error_msg = data.get("error") or f"TOTP verification failed (status {response.status_code})"
 
             return {"success": False, "message": error_msg}
 

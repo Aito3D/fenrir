@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core import database
 from backend.app.core.auth import (
     RequireCameraStreamTokenIfAuthEnabled,
+    RequireOverlayTokenIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
     is_auth_enabled,
 )
@@ -63,6 +64,7 @@ from backend.app.services.printer_manager import (
 )
 from backend.app.utils.filament_ids import filament_id_to_setting_id
 from backend.app.utils.http import build_content_disposition
+from backend.app.utils.printer_models import uses_exhaust_fan_label
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["printers"])
@@ -797,6 +799,8 @@ async def get_printer_status(
         big_fan1_speed=state.big_fan1_speed,
         big_fan2_speed=state.big_fan2_speed,
         heatbreak_fan_speed=state.heatbreak_fan_speed,
+        left_aux_fan_speed=state.left_aux_fan_speed,
+        exhaust_fan_present=state.exhaust_fan_present,
         firmware_version=state.firmware_version,
         developer_mode=state.developer_mode if state else None,
         ams_filament_backup=state.ams_filament_backup if state else None,
@@ -819,6 +823,70 @@ async def get_printer_status(
             else None
         ),
     )
+
+
+@router.get("/{printer_id}/overlay-status")
+async def get_overlay_status(
+    printer_id: int,
+    _: None = RequireOverlayTokenIfAuthEnabled,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Everything the streaming overlay (#2613) draws for one printer.
+
+    A token-authenticated sibling of ``get_printer_status`` for embeds with no
+    login session — OBS loads ``/overlay/{id}?token=...`` and this feeds it.
+    Deliberately flat and minimal (name, camera rotation, live print state, and
+    the one setting the overlay reads) rather than the full ``PrinterStatus``:
+    a token holder gets exactly the fields the overlay renders, nothing more.
+
+    Unlike the Cam Wall feed this *includes the print filename* — the overlay
+    names the part on screen — which is why it sits behind its own ``overlay``
+    scope rather than ``camwall``.
+    """
+    from backend.app.api.routes.settings import get_setting
+
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    time_format = await get_setting(db, "time_format") or "system"
+    state = printer_manager.get_status(printer_id)
+
+    if not state:
+        # Never connected this run — mirror get_printer_status()'s disconnected
+        # shape so the overlay renders its offline state rather than erroring.
+        return {
+            "id": printer_id,
+            "name": printer.name,
+            "camera_rotation": printer.camera_rotation or 0,
+            "connected": False,
+            "state": None,
+            "current_print": None,
+            "gcode_file": None,
+            "progress": None,
+            "remaining_time": None,
+            "layer_num": None,
+            "total_layers": None,
+            "stg_cur_name": None,
+            "time_format": time_format,
+        }
+
+    return {
+        "id": printer_id,
+        "name": printer.name,
+        "camera_rotation": printer.camera_rotation or 0,
+        "connected": state.connected,
+        "state": state.state,
+        "current_print": state.current_print,
+        "gcode_file": state.gcode_file,
+        "progress": state.progress,
+        "remaining_time": state.remaining_time,
+        "layer_num": state.layer_num,
+        "total_layers": state.total_layers,
+        "stg_cur_name": get_derived_status_name(state, printer.model),
+        "time_format": time_format,
+    }
 
 
 @router.get("/{printer_id}/current-print-user")
@@ -989,7 +1057,8 @@ async def get_printer_cover(
     """Get the cover image for the current print job.
 
     Args:
-        view: Optional view type. Use "top" for top-down build plate view (useful for skip objects).
+        view: Optional view type. Use "top" for the top-down build plate view or
+              "pick" for the slicer's object-ID mask used by skip objects.
               Default returns angled 3D perspective view.
     """
     # Fetch the printer in a short-lived session and release the pooled DB
@@ -1232,7 +1301,14 @@ async def _produce_cover_image(
             # Try common thumbnail paths in 3MF files
             # Use plate_num to get the correct plate's thumbnail for multi-plate projects
             # Use top-down view if requested (better for skip objects modal)
-            if view == "top":
+            if view == "pick":
+                # Only the active plate's mask, with no fallback: every other view
+                # falls back to plate 1 because a slightly wrong picture is better
+                # than none, but a mask is coordinates, not decoration. Plate 1's
+                # mask over plate 3's layout would resolve clicks to whichever
+                # object happened to occupy that pixel on a different plate.
+                thumbnail_paths = [f"Metadata/pick_{plate_num}.png"]
+            elif view == "top":
                 thumbnail_paths = [
                     f"Metadata/top_{plate_num}.png",
                     # Fall back to plate 1 if specific plate not found
@@ -1263,14 +1339,21 @@ async def _produce_cover_image(
                 except KeyError:
                     continue
 
-            # If no specific thumbnail found, try any PNG in Metadata
-            for name in zf.namelist():
-                if name.startswith("Metadata/") and name.endswith(".png"):
-                    image_data = zf.read(name)
-                    if printer_id not in _cover_cache:
-                        _cover_cache[printer_id] = {}
-                    _cover_cache[printer_id][(subtask_name, view_key)] = image_data
-                    return image_data
+            # If no specific thumbnail found, try any PNG in Metadata. Never for
+            # "pick": handing back a rendered thumbnail in place of the object-ID
+            # mask is worse than nothing, because the caller can't tell the
+            # difference and decodes the render's pixel colours as object IDs —
+            # dark pixels yield small integers that collide with real IDs, so a
+            # click would select an arbitrary object and skip it irreversibly.
+            # A 404 is what tells the UI to fall back to the checklist.
+            if view != "pick":
+                for name in zf.namelist():
+                    if name.startswith("Metadata/") and name.endswith(".png"):
+                        image_data = zf.read(name)
+                        if printer_id not in _cover_cache:
+                            _cover_cache[printer_id] = {}
+                        _cover_cache[printer_id][(subtask_name, view_key)] = image_data
+                        return image_data
 
             _cover_404_cache.setdefault(printer_id, set()).add(cache_key)
             raise HTTPException(404, "No thumbnail found in 3MF file")
@@ -2655,6 +2738,17 @@ async def configure_ams_slot(
             except Exception:
                 pass
 
+    # Register a read-back verification (#2582) so the tray telemetry that the
+    # status push below returns can confirm the printer accepted this manual
+    # slot configuration. Mirrors the inventory/assignment path.
+    client.register_assignment_verification(
+        ams_id=ams_id,
+        tray_id=tray_id,
+        tray_info_idx=effective_tray_info_idx,
+        tray_color=tray_color,
+        cali_idx=cali_idx,
+    )
+
     # Request fresh status push from printer so frontend gets updated data via WebSocket
     logger.info("[configure_ams_slot] Requesting status update from printer")
     update_result = client.request_status_update()
@@ -3102,16 +3196,28 @@ async def set_chamber_temperature(
 @router.post("/{printer_id}/fan-speed")
 async def set_fan_speed(
     printer_id: int,
-    fan: str = Query(..., description="Fan to control: part, aux, or chamber"),
+    fan: str = Query(..., description="Fan to control: part, aux, aux2 (left aux), or chamber"),
     speed: int = Query(..., ge=0, le=100, description="Fan speed percentage"),
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
     db: AsyncSession = Depends(get_db),
 ):
-    """Set a fan speed by percentage."""
-    fan_ids = {"part": 1, "aux": 2, "chamber": 3}
+    """Set a fan speed by percentage.
+
+    Fan index 10 ("aux2") is the optional left auxiliary part cooling fan on
+    P2S/X2D — driven with "M106 P10" exactly like Bambu's official machine
+    profile gcode does. It only exists when the printer reports airduct part 10,
+    so the request is rejected rather than sending M106 P10 into the void on a
+    machine that has no such fan.
+
+    That gate also rejects for the short window between connecting and the
+    first airduct push, when nothing is known about the fan yet. The card hides
+    the badge over the same window, so there is no control to click; a direct
+    API caller gets a 400 and should retry once the status reports the fan.
+    """
+    fan_ids = {"part": 1, "aux": 2, "chamber": 3, "aux2": 10}
     fan_id = fan_ids.get(fan)
     if fan_id is None:
-        raise HTTPException(400, "fan must be 'part', 'aux', or 'chamber'")
+        raise HTTPException(400, "fan must be 'part', 'aux', 'aux2', or 'chamber'")
 
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
@@ -3122,12 +3228,31 @@ async def set_fan_speed(
     if not client:
         raise HTTPException(400, "Printer not connected")
 
+    # Presence gate for the accessory fan. Without this, aux2 is accepted for
+    # every model and an A1 would be sent M106 P10 for a fan it does not have.
+    # The UI already hides the badge; this closes the same hole on the API.
+    if fan == "aux2" and getattr(client.state, "left_aux_fan_speed", None) is None:
+        raise HTTPException(
+            400,
+            "This printer does not report a left auxiliary fan "
+            "(no airduct part 10). The fan is an accessory kit on the P2S "
+            "and factory-fitted on the X2D.",
+        )
+
     pwm_speed = round(speed * 255 / 100)
     success = client.set_fan_speed(fan_id, pwm_speed)
     if not success:
         raise HTTPException(500, "Failed to set fan speed")
 
-    fan_names = {"part": "Part cooling fan", "aux": "Auxiliary fan", "chamber": "Chamber fan"}
+    # The enclosure fan is called "Exhaust" on P2S/X2D and "Chamber" elsewhere;
+    # match whatever the printer card badge shows so the toast agrees with the
+    # control the user just clicked.
+    fan_names = {
+        "part": "Part cooling fan",
+        "aux": "Auxiliary fan",
+        "aux2": "Left auxiliary fan",
+        "chamber": "Exhaust fan" if uses_exhaust_fan_label(printer.model) else "Chamber fan",
+    }
     return {"success": True, "message": f"{fan_names[fan]} set to {speed}%"}
 
 
@@ -3849,8 +3974,12 @@ async def ams_load(
     - 254: external spool (single-external printers, or Ext-L on dual-nozzle H2D)
     - 255: Ext-R on dual-nozzle H2D
     """
-    if tray_id not in range(16) and tray_id not in (254, 255):
-        raise HTTPException(400, "tray_id must be 0..15 (AMS slot), 254 (external / Ext-L), or 255 (Ext-R)")
+    # 24-27 are the A2L AMS-Lite slots (normalised unit 6 = 6*4+slot); see
+    # a2l-am-unit-16. They are valid global tray ids alongside the regular 0-15.
+    if tray_id not in range(16) and tray_id not in range(24, 28) and tray_id not in (254, 255):
+        raise HTTPException(
+            400, "tray_id must be 0..15 (AMS slot), 24..27 (A2L AMS-Lite), 254 (external / Ext-L), or 255 (Ext-R)"
+        )
 
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()

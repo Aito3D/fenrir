@@ -250,6 +250,24 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
             response.nozzle_diameter = item.archive.nozzle_diameter
             response.sliced_for_model = item.archive.sliced_for_model
             response.bed_type = item.archive.bed_type
+            # Marks history/reprint rows whose archive carries the slicer's own
+            # live-resolved AMS-slot pick (extra_data.slicer_ams_mapping) — see
+            # `_extract_slicer_ams_mapping_json` in virtual_printer/manager.py.
+            #
+            # Only when the saved mapping was resolved against *this* row's
+            # printer: a global tray ID means nothing on another printer, so
+            # that's the exact condition under which the mapping is reused. A
+            # badge on a row where nothing gets reused would be a lie (#2700
+            # review). Model-based rows (printer_id None) never match, which is
+            # correct — the mapping is not reused there either.
+            extra = item.archive.extra_data if isinstance(item.archive.extra_data, dict) else {}
+            saved_mapping = extra.get("slicer_ams_mapping")
+            response.archive_has_slicer_ams_mapping = (
+                isinstance(saved_mapping, dict)
+                and isinstance(saved_mapping.get("mapping"), list)
+                and item.printer_id is not None
+                and saved_mapping.get("printer_id") == item.printer_id
+            )
             if item.plate_id:
                 archive_path = settings.base_dir / item.archive.file_path
                 if archive_path.exists():
@@ -643,6 +661,51 @@ async def add_to_queue(
             raise HTTPException(status_code=404, detail="Project not found")
 
     ams_mapping_json = json.dumps(data.ams_mapping) if data.ams_mapping else None
+    # Reprint fallback: the caller didn't specify an explicit ams_mapping (no
+    # per-slot filament-mapping edit was made), but the archive carries the
+    # slicer's own live-resolved AMS-slot pick from the original print (see
+    # `extra_data.slicer_ams_mapping`, written by the VP-queue path via
+    # `_extract_slicer_ams_mapping_json`). Reuse it so the reprint dispatches
+    # to the exact same physical spool instead of the scheduler re-deriving a
+    # (possibly ambiguous) mapping from just the file's static type/color.
+    #
+    # Global tray IDs only mean something relative to the specific printer
+    # they were resolved against, so this only fires when the reprint targets
+    # that exact printer (`extra_data.slicer_ams_mapping.printer_id`) — never
+    # for a model-based dispatch (data.printer_id is None) or a reprint aimed
+    # at a different printer, where the same tray number can hold a
+    # completely different spool (#2700 review).
+    #
+    # It also stands down when the request carries force-color-match overrides:
+    # those are the caller asking the scheduler to match strictly against the
+    # printer's live trays, and they are only ever applied inside
+    # `_compute_ams_mapping_for_printer` — the function a stored mapping makes
+    # the scheduler skip. Same precedence as the VP-side toggle pair (#2700
+    # review).
+    #
+    # Note this is otherwise unconditional — it applies regardless of whether
+    # the physical spool in that slot has changed since the original print.
+    # #1308 covers re-verifying a stored mapping against live AMS state at
+    # dispatch time; that check is a separate PR and, once merged, will also
+    # catch a stale slot inherited through this fallback.
+    wants_live_color_match = any(
+        isinstance(o, dict) and o.get("force_color_match") for o in (data.filament_overrides or [])
+    )
+    if (
+        ams_mapping_json is None
+        and not wants_live_color_match
+        and archive
+        and archive.extra_data
+        and data.printer_id is not None
+    ):
+        saved = archive.extra_data.get("slicer_ams_mapping")
+        if (
+            isinstance(saved, dict)
+            and saved.get("printer_id") == data.printer_id
+            and isinstance(saved.get("mapping"), list)
+            and saved["mapping"]
+        ):
+            ams_mapping_json = json.dumps(saved["mapping"])
     items = []
     for i in range(quantity):
         item = PrintQueueItem(
@@ -774,7 +837,10 @@ async def bulk_update_queue_items(
     skipped_count = 0
 
     for item in items:
-        if item.status != "pending":
+        # Skip non-pending rows and rows a dispatch worker has claimed (#2615) —
+        # editing a claimed row mid-upload would split it from the in-flight
+        # dispatch, so it's excluded from the bulk change (cancel to move it).
+        if item.status != "pending" or item.dispatching_at is not None:
             skipped_count += 1
             continue
 
@@ -1082,6 +1148,14 @@ async def update_queue_item(
     if item.status != "pending":
         raise HTTPException(400, "Can only update pending items")
 
+    # Dispatch claim (#2615): the row is pending but a scheduler worker has
+    # already claimed it and is uploading to its printer. Editing now (e.g.
+    # reassigning printer_id) would split the queue row from the in-flight
+    # archive/expected-print/physical command. Reject until dispatch finishes;
+    # to move it, cancel first (the coordinated escape) and re-queue.
+    if item.dispatching_at is not None:
+        raise HTTPException(409, "Item is being dispatched — cancel it first to make changes")
+
     update_data = data.model_dump(exclude_unset=True)
 
     # Normalize target_model if being updated
@@ -1152,6 +1226,16 @@ async def update_queue_item(
         update_data["nozzle_mapping"] = (
             json.dumps(update_data["nozzle_mapping"]) if update_data["nozzle_mapping"] else None
         )
+
+    # Re-check the dispatch claim right before mutating (#2615). Several awaited
+    # validations ran since the guard above, and a scheduler worker may have
+    # claimed the row in that gap. A fresh read (item isn't dirty yet, so no
+    # autoflush races the check) narrows the window to effectively nothing.
+    claimed = (
+        await db.execute(select(PrintQueueItem.dispatching_at).where(PrintQueueItem.id == item_id))
+    ).scalar_one_or_none()
+    if claimed is not None:
+        raise HTTPException(409, "Item is being dispatched — cancel it first to make changes")
 
     for field, value in update_data.items():
         setattr(item, field, value)

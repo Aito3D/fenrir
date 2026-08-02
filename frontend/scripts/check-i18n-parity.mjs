@@ -125,7 +125,7 @@ function isAlwaysAllowedIdentical(value) {
   if (/^https?:\/\//.test(value)) return true;          // URL
   if (/^ON,\s+true,\s+1$/.test(value)) return true;     // literal example "ON, true, 1"
   // Brand / technical names that ship verbatim everywhere.
-  if (/^(Bambuddy|BamBuddy|SpoolBuddy|Bambu Lab|Bambu Studio|Bambu Studio 2\.6\+|Bambu Studio sidecar URL|OrcaSlicer|OrcaSlicer sidecar URL|MakerWorld|Spoolman|\(Spoolman\)|Spoolman URL|Tailscale|GitHub|GitLab|Gitea|Forgejo|Discord|MQTT|FTP|HTTPS?|JSON|YAML|RTSP|TLS|SSL|CSRF|OIDC|SSO|SSO \/ OIDC|LDAP|TOTP|2FA|MFA|API|AMS|CRC|SHA256|SHA-256|kWh|MB|GB|KB|RGBA?|HSL|RGB|UTC|ISO|UI|HTTP|HTTP Method|H2D|H2D Pro|X1C|X1E|P1S|P1P|A1|A1 Mini|H2C|N3F|N3S|PETG|PLA|ABS|PA|TPU|PEI|PA-CF|PVA|HIPS|ASA|PC|PETG-HF|G\.code|G-code|gcode|cm³|°C|°F|GCODE|SOURCE|ntfy|Pushover|Telegram|Webhook|Webhook URL|Home Assistant|Home Assistant URL|CallMeBot\/WhatsApp|Bambuddy URL|Cool Plate|Cool Plate SuperTack|Engineering Plate|High Temp Plate|Smooth PEI Plate|Textured PEI Plate|Ext-L|Ext-R|ISO \(YYYY-MM-DD\))$/.test(value)) return true;
+  if (/^(Bambuddy|BamBuddy|SpoolBuddy|Bambu Lab|Bambu Studio|Bambu Studio 2\.6\+|Bambu Studio sidecar URL|OrcaSlicer|OrcaSlicer sidecar URL|MakerWorld|Spoolman|\(Spoolman\)|Spoolman URL|Tailscale|GitHub|GitLab|Gitea|Forgejo|Discord|MQTT|FTP|HTTPS?|JSON|YAML|RTSP|TLS|SSL|CSRF|OIDC|SSO|SSO \/ OIDC|LDAP|TOTP|2FA|MFA|API|AMS|CRC|SHA256|SHA-256|kWh|MB|GB|KB|RGBA?|HSL|RGB|UTC|ISO|UI|HTTP|HTTP Method|H2D|H2D Pro|X1C|X1E|P1S|P1P|A1|A1 Mini|H2C|N3F|N3S|PETG|PLA|ABS|PA|TPU|PEI|PA-CF|PVA|HIPS|ASA|PC|PETG-HF|G\.code|G-code|gcode|cm³|°C|°F|GCODE|SOURCE|ntfy|Pushover|Bark|Telegram|Webhook|Webhook URL|Home Assistant|Home Assistant URL|CallMeBot\/WhatsApp|Bambuddy URL|Cool Plate|Cool Plate SuperTack|Engineering Plate|High Temp Plate|Smooth PEI Plate|Textured PEI Plate|Ext-L|Ext-R|ISO \(YYYY-MM-DD\))$/.test(value)) return true;
   return false;
 }
 
@@ -142,6 +142,7 @@ function isAlwaysAllowedIdentical(value) {
 // UI labels are identical in DE. List below curates the legitimate ones.
 const DE_COGNATES = [
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the DE term too
+  'Auto',  // calibrationMode_auto — German UI uses the loanword (matches BambuStudio DE)
   'Name', 'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Modus',
   'Stop', 'Reset', 'Test', 'Code', 'Token', 'Server', 'Port', 'Bug', 'Job',
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
@@ -173,6 +174,7 @@ const DE_COGNATES = [
   'China', 'Proxy', 'Start',
   'Diagnose',  // DE: same spelling/meaning as EN — camera diagnostic button label
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
+  'Score',  // #1546 AI detection modal — established DE loanword (Duden)
 ];
 
 // French cognates — many UI labels overlap with English exactly.
@@ -187,6 +189,7 @@ const FR_COGNATES = [
   'Copies', '{{n}} copies', 'max {{n}}',  // #1425 PR C — French uses these forms verbatim
   'round robin',  // borrowed English term used as-is in French tech contexts
   'Action', 'Actions', 'Date', 'Type', 'Cache', 'Service', 'Configuration',
+  'Score',  // #1546 AI detection modal — "le score" is standard French
   'Archives', 'Maintenance', 'Notifications', 'Notification', 'Position',
   'Pause', 'Solution', 'Source', 'Version', 'Format', 'Documentation',
   'Mode', 'Format', 'Default', 'Auto', 'Image', 'Audio', 'Video', 'Hex',
@@ -382,6 +385,32 @@ const TR_COGNATES = [
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
 ];
 
+const RU_COGNATES = [
+  'MakerWorld: {{designer}}',
+  'email',
+  '{{printer}}: {{error}}',
+  'Bambu Cloud',
+  'Orca Cloud',
+  '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}',
+  'EC984C,#6CD4BC,A66EB9,D87694',
+  '({{count}}/8)',
+  '(25%, 50%, 75%)',
+];
+
+// Ukrainian keeps only Latin brand names and placeholder/punctuation-only
+// formats verbatim; every prose string in uk.ts is translated.
+const UK_COGNATES = [
+  'MakerWorld: {{designer}}',                         // brand + placeholder
+  '{{printer}}: {{error}}',                           // pure placeholders
+  'Bambu Cloud', 'Orca Cloud',                        // brand names — same in every locale
+  'Sport (124%)', 'Ludicrous (166%)',                 // official Bambu speed-mode names
+  'email',                                            // OIDC claim name placeholder
+  '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}',
+  'EC984C,#6CD4BC,A66EB9,D87694',
+  '({{count}}/8)',
+  '(25%, 50%, 75%)',
+];
+
 const IDENTICAL_TO_EN_ALLOWED = {
   de: new Set(DE_COGNATES),
   fr: new Set(FR_COGNATES),
@@ -393,6 +422,8 @@ const IDENTICAL_TO_EN_ALLOWED = {
   'zh-CN': new Set(ZH_CN_COGNATES),
   'zh-TW': new Set(ZH_TW_COGNATES),
   tr: new Set(TR_COGNATES),
+  ru: new Set(RU_COGNATES),
+  uk: new Set(UK_COGNATES),
 };
 
 // Pure comparison logic, exported so tests can verify each failure mode

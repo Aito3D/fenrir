@@ -294,7 +294,7 @@ export interface SystemHealthResult {
 // 'camera_stream' reaches the video endpoints only. 'camwall' additionally
 // reaches the read-only Cam Wall feed, which names the printers (#2531), so it
 // is a separate scope rather than a widening of tokens already in the wild.
-export type LongLivedTokenScope = 'camera_stream' | 'camwall';
+export type LongLivedTokenScope = 'camera_stream' | 'camwall' | 'overlay';
 
 export interface LongLivedCameraToken {
   id: number;
@@ -322,6 +322,26 @@ export interface CamWallPrinter {
   layer_num: number | null;
   total_layers: number | null;
   hms_errors: HMSError[];
+}
+
+// Streaming-overlay feed (#2613). The subset of print state the /overlay page
+// draws for one printer, served behind an `overlay`-scoped token so OBS embeds
+// with no login session can read it. Unlike CamWallPrinter this names the file
+// being printed (the overlay shows the part on screen).
+export interface OverlayStatus {
+  id: number;
+  name: string;
+  camera_rotation: number;
+  connected: boolean;
+  state: string | null;
+  current_print: string | null;
+  gcode_file: string | null;
+  progress: number | null;
+  remaining_time: number | null;
+  layer_num: number | null;
+  total_layers: number | null;
+  stg_cur_name: string | null;
+  time_format: 'system' | '12h' | '24h';
 }
 
 // Printer types
@@ -545,6 +565,11 @@ export interface PrinterStatus {
   big_fan1_speed: number | null;     // Auxiliary fan
   big_fan2_speed: number | null;     // Chamber/exhaust fan
   heatbreak_fan_speed: number | null; // Hotend heatbreak fan
+  // Left auxiliary part cooling fan (optional P2S/X2D accessory, M106 P10).
+  // null = not installed / not reported by this model.
+  left_aux_fan_speed: number | null;
+  // Chamber exhaust fan present (P2S/X2D External Exhaust Fan kit, airduct part 3).
+  exhaust_fan_present: boolean;
   firmware_version: string | null;   // Firmware version from MQTT
   // Developer LAN mode: true = enabled, false = disabled, null = unknown
   developer_mode: boolean | null;
@@ -707,6 +732,8 @@ export interface ArchiveSlim {
   started_at: string | null;
   completed_at: string | null;
   cost: number | null;
+  energy_kwh: number | null;
+  energy_cost: number | null;
   quantity: number;
   created_at: string;
 }
@@ -889,6 +916,7 @@ export interface Project {
   status: string;  // active, completed, archived
   target_count: number | null;  // Target number of plates/print jobs
   target_parts_count: number | null;  // Target number of parts/objects
+  target_sets: number | null;  // Copies-per-file target (#1897)
   notes: string | null;
   attachments: ProjectAttachment[] | null;
   tags: string | null;
@@ -914,6 +942,12 @@ export interface ProjectAttachment {
   uploaded_at: string;
 }
 
+// Completed-run count for one library file inside a project (#1897)
+export interface ProjectFileProgress {
+  file_id: number;
+  completed_count: number;
+}
+
 export interface ArchivePreview {
   id: number;
   print_name: string | null;
@@ -931,6 +965,7 @@ export interface ProjectListItem {
   status: string;
   target_count: number | null;  // Target number of plates/print jobs
   target_parts_count: number | null;  // Target number of parts/objects
+  target_sets: number | null;  // #1897 — the shared edit dialog seeds itself from this
   budget: number | null;
   tags: string | null;  // #2536 — the shared edit dialog seeds itself from this
   due_date: string | null;  // #2536
@@ -953,6 +988,7 @@ export interface ProjectCreate {
   color?: string;
   target_count?: number;
   target_parts_count?: number;
+  target_sets?: number;
   notes?: string;
   tags?: string;
   due_date?: string;
@@ -969,6 +1005,7 @@ export interface ProjectUpdate {
   status?: string;
   target_count?: number;
   target_parts_count?: number;
+  target_sets?: number | null;  // #1897 — explicit null clears the copies-per-file target
   notes?: string;
   tags?: string | null;  // #2536 — explicit null clears the tags
   due_date?: string | null;  // #2536 — explicit null clears the due date
@@ -1040,6 +1077,7 @@ export interface ProjectExport {
   status: string;
   target_count: number | null;
   target_parts_count: number | null;
+  target_sets: number | null;  // #1897
   notes: string | null;
   tags: string | null;
   due_date: string | null;
@@ -1056,6 +1094,7 @@ export interface ProjectImport {
   status?: string;
   target_count?: number;
   target_parts_count?: number;
+  target_sets?: number;  // #1897
   notes?: string;
   tags?: string;
   due_date?: string;
@@ -1134,11 +1173,19 @@ export interface APIKeyUpdate {
   expires_at?: string | null;
 }
 
+/**
+ * Tri-state calibration option (BambuStudio parity): "off" never runs it,
+ * "on" forces it every print, "auto" lets the printer skip it if it was done
+ * recently. Used by bed_levelling, flow_cali, and nozzle_offset_cali.
+ */
+export type CalibrationMode = 'off' | 'on' | 'auto';
+
 // Settings types
 export interface AppSettings {
   auto_archive: boolean;
   save_thumbnails: boolean;
   capture_finish_photo: boolean;
+  finish_photo_restore_plate: boolean;
   default_filament_cost: number;
   currency: string;
   energy_cost_per_kwh: number;
@@ -1231,6 +1278,10 @@ export interface AppSettings {
   // Per-install sidecar URLs. Empty string falls back to the env defaults.
   orcaslicer_api_url: string;
   bambu_studio_api_url: string;
+  // Minutes of silence from the sidecar before a slice is abandoned. Bounds
+  // stalls, not total slicing time — a model that keeps reporting progress
+  // runs to completion however long it takes.
+  slicer_stall_timeout_minutes: number;
   // Prometheus metrics
   prometheus_enabled: boolean;
   prometheus_token: string;
@@ -1243,12 +1294,12 @@ export interface AppSettings {
   // User email notifications toggle
   user_notifications_enabled: boolean;
   // Default print options
-  default_bed_levelling: boolean;
-  default_flow_cali: boolean;
+  default_bed_levelling: CalibrationMode;
+  default_flow_cali: CalibrationMode;
   default_vibration_cali: boolean;
   default_layer_inspect: boolean;
   default_timelapse: boolean;
-  default_nozzle_offset_cali: boolean;
+  default_nozzle_offset_cali: CalibrationMode;
   // Staggered batch start defaults
   stagger_group_size: number;
   stagger_interval_minutes: number;
@@ -1290,6 +1341,7 @@ export interface AppSettings {
   ldap_default_group: string;
   obico_enabled: boolean;
   obico_ml_url: string;
+  obico_ml_token: string;
   obico_sensitivity: 'low' | 'medium' | 'high';
   obico_action: 'notify' | 'pause' | 'pause_and_off';
   obico_poll_interval: number;
@@ -1543,6 +1595,11 @@ export interface SliceRequest {
   // "Textured PEI Plate", "Smooth PEI Plate", "Cool Plate (SuperTack)",
   // "Supertack Plate".
   bed_type?: string | null;
+  // "Slice as designed" (#2611). 3MF only: slice using the file's embedded
+  // project_settings.config (the designer's own wall count, infill, etc.)
+  // instead of the picked profile triplet. The preset refs above are still
+  // required by the backend validator but go unused on this path.
+  use_embedded_settings?: boolean;
 }
 
 // GET /api/v1/slicer/presets — unified listing across cloud / local / standard.
@@ -1896,6 +1953,9 @@ export interface SmartPlug {
   rest_energy_total_path: string | null;
   rest_energy_total_multiplier: number;
   printer_id: number | null;
+  // #2629: only a plug that really feeds the printer may mark it offline when
+  // switched off. Accessory plugs follow the print cycle without powering it.
+  controls_printer_power: boolean;
   enabled: boolean;
   auto_on: boolean;
   auto_off: boolean;
@@ -1972,6 +2032,8 @@ export interface SmartPlugCreate {
   rest_energy_total_path?: string | null;
   rest_energy_total_multiplier?: number;
   printer_id?: number | null;
+  // #2629
+  controls_printer_power?: boolean;
   enabled?: boolean;
   auto_on?: boolean;
   auto_off?: boolean;
@@ -2040,6 +2102,8 @@ export interface SmartPlugUpdate {
   rest_energy_total_path?: string | null;
   rest_energy_total_multiplier?: number;
   printer_id?: number | null;
+  // #2629
+  controls_printer_power?: boolean;
   enabled?: boolean;
   auto_on?: boolean;
   auto_off?: boolean;
@@ -2152,17 +2216,21 @@ export interface PrintQueueItem {
   // start route when skip_filament_check=true, or at queue creation if
   // PrintModal's deficit warning was acknowledged.
   skip_filament_check: boolean;
+  // True when the source archive carries the slicer's own live-resolved
+  // AMS-slot pick (extra_data.slicer_ams_mapping) — a reprint reuses that
+  // exact physical spool instead of re-deriving one from type/color.
+  archive_has_slicer_ams_mapping: boolean;
   ams_mapping: number[] | null;  // AMS slot mapping for multi-color prints
-  filament_overrides: Array<{ slot_id: number; type: string; color: string; color_name?: string; force_color_match?: boolean }> | null;  // Filament overrides for model-based assignment
+  filament_overrides: Array<{ slot_id: number; type: string; color: string; color_name?: string; tray_info_idx?: string; force_color_match?: boolean }> | null;  // Filament overrides for model-based assignment
   plate_id: number | null;  // Plate ID for multi-plate 3MF files
   // Print options
-  bed_levelling: boolean;
-  flow_cali: boolean;
+  bed_levelling: CalibrationMode;
+  flow_cali: CalibrationMode;
   vibration_cali: boolean;
   layer_inspect: boolean;
   timelapse: boolean;
   use_ams: boolean;
-  nozzle_offset_cali: boolean;
+  nozzle_offset_cali: CalibrationMode;
   preheat_override: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override: number | null;
   status: 'pending' | 'printing' | 'completed' | 'failed' | 'skipped' | 'cancelled';
@@ -2233,13 +2301,13 @@ export interface PrintQueueItemCreate {
   ams_mapping?: number[] | null;  // AMS slot mapping for multi-color prints
   plate_id?: number | null;  // Plate ID for multi-plate 3MF files
   // Print options
-  bed_levelling?: boolean;
-  flow_cali?: boolean;
+  bed_levelling?: CalibrationMode;
+  flow_cali?: CalibrationMode;
   vibration_cali?: boolean;
   layer_inspect?: boolean;
   timelapse?: boolean;
   use_ams?: boolean;
-  nozzle_offset_cali?: boolean;
+  nozzle_offset_cali?: CalibrationMode;
   preheat_override?: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
@@ -2277,13 +2345,13 @@ export interface PrintQueueItemUpdate {
   ams_mapping?: number[];
   plate_id?: number | null;  // Plate ID for multi-plate 3MF files
   // Print options
-  bed_levelling?: boolean;
-  flow_cali?: boolean;
+  bed_levelling?: CalibrationMode;
+  flow_cali?: CalibrationMode;
   vibration_cali?: boolean;
   layer_inspect?: boolean;
   timelapse?: boolean;
   use_ams?: boolean;
-  nozzle_offset_cali?: boolean;
+  nozzle_offset_cali?: CalibrationMode;
   preheat_override?: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
@@ -2298,13 +2366,13 @@ export interface PrintQueueBulkUpdate {
   auto_off_after?: boolean;
   manual_start?: boolean;
   // Print options
-  bed_levelling?: boolean;
-  flow_cali?: boolean;
+  bed_levelling?: CalibrationMode;
+  flow_cali?: CalibrationMode;
   vibration_cali?: boolean;
   layer_inspect?: boolean;
   timelapse?: boolean;
   use_ams?: boolean;
-  nozzle_offset_cali?: boolean;
+  nozzle_offset_cali?: CalibrationMode;
   preheat_override?: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
@@ -2411,7 +2479,7 @@ export interface Filament {
 }
 
 // Notification Provider types
-export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'email' | 'discord' | 'webhook' | 'homeassistant';
+export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'email' | 'discord' | 'webhook' | 'homeassistant' | 'bark';
 
 export interface NotificationProvider {
   id: number;
@@ -2440,6 +2508,7 @@ export interface NotificationProvider {
   on_ams_ht_temperature_high: boolean;
   // Build plate detection
   on_plate_not_empty: boolean;
+  on_plate_clear_required: boolean;
   // Bed cooled
   on_bed_cooled: boolean;
   // First layer complete
@@ -2499,6 +2568,7 @@ export interface NotificationProviderCreate {
   on_ams_ht_temperature_high?: boolean;
   // Build plate detection
   on_plate_not_empty?: boolean;
+  on_plate_clear_required?: boolean;
   // Bed cooled
   on_bed_cooled?: boolean;
   // First layer complete
@@ -2551,6 +2621,7 @@ export interface NotificationProviderUpdate {
   on_ams_ht_temperature_high?: boolean;
   // Build plate detection
   on_plate_not_empty?: boolean;
+  on_plate_clear_required?: boolean;
   // Bed cooled
   on_bed_cooled?: boolean;
   // First layer complete
@@ -2580,6 +2651,14 @@ export interface NotificationProviderUpdate {
 // GitHub Backup types
 export type ScheduleType = 'hourly' | 'daily' | 'weekly';
 export type GitProviderType = 'github' | 'gitea' | 'forgejo' | 'gitlab';
+
+/** How many cloud accounts a backup would collect presets from. Counts only —
+ *  with auth enabled the accounts belong to individual users, so the backup
+ *  administrator sees how many, never whose. */
+export interface CloudAccountCounts {
+  bambu: number;
+  orca: number;
+}
 
 export interface GitHubBackupConfig {
   id: number;
@@ -2703,11 +2782,24 @@ export interface ObicoStatus {
   external_url_configured: boolean;
 }
 
+// Lightweight subset served under printers:read for the printer-card badge (#1546)
+export interface ObicoPrinterStatus {
+  enabled: boolean;
+  // null = all printers are monitored
+  monitored_printers: number[] | null;
+  per_printer: Record<string, { class: string; frame_count: number; score: number }>;
+  // null = no error, or the viewer lacks settings:read (error strings can embed config URLs)
+  last_error: string | null;
+}
+
 export interface ObicoTestConnection {
   ok: boolean;
   status_code: number | null;
   body: string | null;
   error: string | null;
+  // Whether the ML API accepted the token. null = not determined (the health
+  // check failed first, or the token probe itself errored).
+  auth_ok: boolean | null;
 }
 
 export interface GitHubTestConnectionResponse {
@@ -3819,7 +3911,11 @@ export const api = {
       method: 'POST',
     }),
   testExternalCamera: (printerId: number, url: string, cameraType: string) =>
-    request<{ success: boolean; error?: string; resolution?: string }>(
+    // `coalesced` is true when the frame came from a capture that was already
+    // running (Obico polling, a snapshot) rather than a connection this test
+    // opened — a single-reader camera is shared rather than opened twice, so
+    // the result is real but says nothing about reaching the camera just now.
+    request<{ success: boolean; error?: string; resolution?: string; coalesced?: boolean }>(
       `/printers/${printerId}/camera/external/test?url=${encodeURIComponent(url)}&camera_type=${encodeURIComponent(cameraType)}`,
       { method: 'POST' }
     ),
@@ -3868,7 +3964,7 @@ export const api = {
       method: 'POST',
     }),
 
-  setFanSpeed: (printerId: number, fan: 'part' | 'aux' | 'chamber', speed: number) =>
+  setFanSpeed: (printerId: number, fan: 'part' | 'aux' | 'aux2' | 'chamber', speed: number) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/fan-speed?fan=${fan}&speed=${speed}`, {
       method: 'POST',
     }),
@@ -4622,10 +4718,17 @@ export const api = {
     archiveId: number,
     plateId?: number,
     requestId?: string,
+    /** Ask for one entry per project slot instead of only the slots this
+     * plate consumes. The slice modal needs it: its filament list is
+     * positional, so a source whose only used slot is 4 must still present
+     * four rows or the user's pick is bound to slot 1 (#2712). Print-time
+     * AMS matching must NOT set this — it wants the used-only list. */
+    fullSlots?: boolean,
   ) => {
     const qs = new URLSearchParams();
     if (plateId !== undefined) qs.set('plate_id', String(plateId));
     if (requestId) qs.set('request_id', requestId);
+    if (fullSlots) qs.set('full_slots', 'true');
     return request<{
       archive_id: number;
       filename: string;
@@ -5743,6 +5846,15 @@ export const api = {
     request<CamWallPrinter[]>(
       token ? `/camwall/printers?token=${encodeURIComponent(token)}` : '/camwall/printers',
     ),
+  // Token-authenticated streaming-overlay feed (#2613). OBS (or any embed with
+  // no login session) loads /overlay/{id}?token=... and this backs it. `token`
+  // is omitted only when auth is disabled, where the backend gate is a no-op.
+  getOverlayStatus: (printerId: number, token?: string) =>
+    request<OverlayStatus>(
+      token
+        ? `/printers/${printerId}/overlay-status?token=${encodeURIComponent(token)}`
+        : `/printers/${printerId}/overlay-status`,
+    ),
   getCameraStreamUrl: (printerId: number, fps = 10) =>
     withStreamToken(`${API_BASE}/printers/${printerId}/camera/stream?fps=${fps}`),
   getCameraSnapshotUrl: (printerId: number) =>
@@ -5887,6 +5999,9 @@ export const api = {
     request<{ message: string }>(`/projects/${id}`, { method: 'DELETE' }),
   getProjectArchives: (id: number, limit = 100, offset = 0) =>
     request<Archive[]>(`/projects/${id}/archives?limit=${limit}&offset=${offset}`),
+  // Completed-run counts per library file (#1897); files with 0 runs are omitted
+  getProjectFileProgress: (id: number) =>
+    request<ProjectFileProgress[]>(`/projects/${id}/file-progress`),
   addArchivesToProject: (projectId: number, archiveIds: number[]) =>
     request<{ message: string }>(`/projects/${projectId}/add-archives`, {
       method: 'POST',
@@ -6314,10 +6429,17 @@ export const api = {
     fileId: number,
     plateId?: number,
     requestId?: string,
+    /** Ask for one entry per project slot instead of only the slots this
+     * plate consumes. The slice modal needs it: its filament list is
+     * positional, so a source whose only used slot is 4 must still present
+     * four rows or the user's pick is bound to slot 1 (#2712). Print-time
+     * AMS matching must NOT set this — it wants the used-only list. */
+    fullSlots?: boolean,
   ) => {
     const qs = new URLSearchParams();
     if (plateId !== undefined) qs.set('plate_id', String(plateId));
     if (requestId) qs.set('request_id', requestId);
+    if (fullSlots) qs.set('full_slots', 'true');
     return request<{
       file_id: number;
       filename: string;
@@ -6349,6 +6471,9 @@ export const api = {
   // GitHub Backup
   getGitHubBackupConfig: () =>
     request<GitHubBackupConfig | null>('/github-backup/config'),
+
+  getGitHubBackupCloudAccounts: () =>
+    request<CloudAccountCounts>('/github-backup/cloud-accounts'),
 
   saveGitHubBackupConfig: (config: GitHubBackupConfigCreate) =>
     request<GitHubBackupConfig>('/github-backup/config', {
@@ -6418,10 +6543,15 @@ export const api = {
   getObicoStatus: () =>
     request<ObicoStatus>('/obico/status'),
 
-  testObicoConnection: (url: string) =>
+  getObicoPrinterStatus: () =>
+    request<ObicoPrinterStatus>('/obico/printer-status'),
+
+  // `token` is sent as-is, so an empty string tests with no token at all.
+  // Omitting the argument makes the backend fall back to the saved token.
+  testObicoConnection: (url: string, token?: string) =>
     request<ObicoTestConnection>('/obico/test-connection', {
       method: 'POST',
-      body: JSON.stringify({ url }),
+      body: JSON.stringify(token === undefined ? { url } : { url, token }),
     }),
 
   // Slicer API — slice in the background. Both endpoints return 202 + a
@@ -6837,6 +6967,9 @@ export interface LibraryFileListItem {
   created_by_id: number | null;
   created_by_username: string | null;
   created_at: string;
+  // Real on-disk modification time (#2680). Null for managed uploads; the date
+  // sort and "Modified" column use `fs_modified_at ?? created_at`.
+  fs_modified_at: string | null;
   print_name: string | null;
   print_time_seconds: number | null;
   filament_used_grams: number | null;
@@ -7165,6 +7298,7 @@ export interface VirtualPrinterConfig {
   target_printer_id: number | null;
   auto_dispatch: boolean;
   queue_force_color_match: boolean;
+  save_ams_mapping: boolean;
   gcode_injection: boolean;
   tailscale_disabled: boolean;
   bind_ip: string | null;
@@ -7192,6 +7326,7 @@ export const multiVirtualPrinterApi = {
     target_printer_id?: number;
     auto_dispatch?: boolean;
     queue_force_color_match?: boolean;
+    save_ams_mapping?: boolean;
     gcode_injection?: boolean;
     bind_ip?: string;
     remote_interface_ip?: string;
@@ -7210,6 +7345,7 @@ export const multiVirtualPrinterApi = {
     target_printer_id?: number;
     auto_dispatch?: boolean;
     queue_force_color_match?: boolean;
+    save_ams_mapping?: boolean;
     gcode_injection?: boolean;
     tailscale_disabled?: boolean;
     bind_ip?: string;
