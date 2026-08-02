@@ -10,7 +10,7 @@ import { BoardSearch } from '../components/aito/BoardSearch';
 import { ACTIVE_COLUMN_IDS, COLUMNS } from '../components/aito/columns';
 import { DoneGrid } from '../components/aito/DoneGrid';
 import { ImportQuoteModal } from '../components/aito/ImportQuoteModal';
-import { NewProjectModal } from '../components/aito/NewProjectModal';
+import { NewProjectDrawer } from '../components/aito/NewProjectDrawer';
 import { ProjectDetailPanel } from '../components/aito/ProjectDetailPanel';
 import { TrashGrid } from '../components/aito/TrashGrid';
 import { ViewToggleButton } from '../components/aito/ViewToggleButton';
@@ -26,6 +26,7 @@ import { useCardMorph } from '../hooks/useCardMorph';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useBoardDrag } from '../hooks/useBoardDrag';
 import { useBoardSync } from '../hooks/useBoardSync';
+import { clearNewProjectDraft } from '../hooks/useNewProjectDraft';
 import { useOptimisticBoardMutation } from '../hooks/useOptimisticBoardMutation';
 import { applyCreate, applyDelete, placeholderProject } from '../utils/aitoOptimistic';
 
@@ -193,6 +194,14 @@ export function AitoPage() {
    *  carries live transaction history. Fields the user never edited are skipped
    *  too, so creating a project never silently reformats a stored number. */
   const syncClientToZoho = async (draft: ClientDraft) => {
+    // `draft.isDefault` is `draft.id === defaultContactId` frozen at the
+    // moment the drawer built this draft (see `defaultClientDraft` /
+    // `draftFromContact` in clientDraft.ts) — the same default the drawer
+    // reads from the shared `zoho-status` query. Reading it off the draft
+    // here avoids a second copy of that query just to re-derive a value the
+    // draft already carries. The backend rejects a PATCH to this contact
+    // anyway (see routes/zoho.py's patch_contact, ~line 210), but a silent
+    // skip beats a warning toast on every counter sale.
     if (draft.isDefault) return;
     if (!draft.touched.phone && !draft.touched.email) return;
     try {
@@ -229,6 +238,10 @@ export function AitoPage() {
         prev?.map((p) => (p.id === placeholder.id ? created : p)) ?? prev,
       );
       void syncClientToZoho(draft);
+      // The card exists now — the drawer's persisted localStorage draft
+      // would otherwise reopen next time with a task list and client that
+      // were already turned into this project.
+      clearNewProjectDraft();
     },
     onError: (_error, { placeholder }) => {
       queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
@@ -548,7 +561,7 @@ export function AitoPage() {
         </DndContext>
       )}
 
-      {showModal && <NewProjectModal onClose={() => setShowModal(false)} onCreate={createProject} />}
+      {showModal && <NewProjectDrawer onClose={() => setShowModal(false)} onCreate={createProject} />}
 
       {showImport && (
         <ImportQuoteModal

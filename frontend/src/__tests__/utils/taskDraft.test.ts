@@ -4,6 +4,8 @@ import {
   splitMinutes,
   joinMinutes,
   computeImpressionCost,
+  hasPricedService,
+  projectHasPricedService,
   taskTotal,
   projectTotal,
   taskDraftFromAitoTask,
@@ -189,5 +191,24 @@ describe('taskDraftFromAitoTask / taskDraftToTaskCreate', () => {
 
     expect(taskDraftFromAitoTask(row).modelisationCost).toBeNull();
     expect(taskDraftToTaskCreate(taskDraftFromAitoTask(row)).modelisation_cost).toBeNull();
+  });
+});
+
+// Rehomed from NewProjectModal.test.tsx (task 13): these predicates gate
+// submit on both the modal's replacement (NewProjectDrawer) and the create
+// mutation's mapping — they were never modal-specific, and lived there only
+// because that was the first caller to need them.
+describe('taskDraft service predicates', () => {
+  it('treats a zero cost as priced and null as disabled', () => {
+    expect(hasPricedService(emptyTaskDraft())).toBe(false);
+    expect(hasPricedService({ ...emptyTaskDraft(), scanCost: 0 })).toBe(true);
+    expect(hasPricedService({ ...emptyTaskDraft(), impressionCost: 2400 })).toBe(true);
+  });
+
+  it('requires every task to be priced, not just one', () => {
+    const priced = { ...emptyTaskDraft(), scanCost: 10 };
+    expect(projectHasPricedService([priced, emptyTaskDraft()])).toBe(false);
+    expect(projectHasPricedService([priced])).toBe(true);
+    expect(projectHasPricedService([])).toBe(false);
   });
 });

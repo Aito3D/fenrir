@@ -132,22 +132,31 @@ function renderPage(initialProjects: AitoProject[]) {
   render(<AitoPage />);
 }
 
-/** Opens the new-project modal, prices the seeded task (a project needs at
- *  least one priced service to submit — see taskDraft.ts), fills the
- *  description and submits. Mirrors AitoPageClientSync.test.tsx's own
- *  `openModal` helper, collapsed into one call for tests that don't care
- *  about the client fields. */
+/** Opens the new-project drawer, prices the seeded task (a project needs at
+ *  least one priced service to submit — see taskDraft.ts), gives the
+ *  (still-default) walk-in contact a phone so it counts as reachable, and
+ *  submits. Mirrors AitoPageClientSync.test.tsx's own `openDrawer` helper,
+ *  collapsed into one call for tests that don't care about the client
+ *  fields.
+ *
+ *  The description is no longer typed into a textarea — the drawer builds it
+ *  from the AI summary (see AiSummaryPanel.tsx) — so `/aito/summarize` is
+ *  stubbed here to answer with `description` verbatim, the same way
+ *  AitoPageClientSync.test.tsx's fixed SUMMARY_TEXT does. */
 async function createProject(description: string) {
   const user = userEvent.setup();
-  await user.click(await screen.findByRole('button', { name: 'Project' }));
-  await waitFor(() =>
-    expect(screen.getByRole('combobox', { name: /client/i })).toHaveValue('Client de passage'),
+  server.use(
+    http.post('/api/v1/aito/summarize', () => HttpResponse.json({ summary: description, model: 'test' })),
   );
+  await user.click(await screen.findByRole('button', { name: 'Project' }));
+  await screen.findByText(/Client account — Client de passage/);
   // The seeded task has no steps yet, so it is already showing its form, but
   // Scan is still a chip: enable it first to reach its cost field.
   await user.click(screen.getByRole('button', { name: 'Add Scan' }));
   fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
-  await user.type(screen.getByLabelText(/product description/i), description);
+  await user.click(screen.getByTestId('drawer-section-client'));
+  await user.type(screen.getByLabelText(/^phone$/i), '87123456');
+  await waitFor(() => expect(screen.getByLabelText('Project summary')).toHaveValue(description));
   await user.click(screen.getByRole('button', { name: /create project/i }));
 }
 

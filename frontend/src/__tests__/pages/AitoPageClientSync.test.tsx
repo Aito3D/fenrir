@@ -1,9 +1,10 @@
 /**
  * Integration coverage for the wiring between AitoPage's create mutation and
- * the Zoho contact sync — the part of this feature that NewProjectModal.test.tsx
+ * the Zoho contact sync — the part of this feature that NewProjectDrawer.test.tsx
  * cannot see, since the safety properties (create-before-sync ordering, the
- * default-walk-in-client guard, the touched-only PATCH body) all live in
- * AitoPage.tsx, not in the modal component itself.
+ * default-walk-in-client guard, the touched-only PATCH body, clearing the
+ * persisted drawer draft) all live in AitoPage.tsx, not in the drawer
+ * component itself.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -15,6 +16,7 @@ import { render } from '../utils';
 import { AitoPage } from '../../pages/AitoPage';
 
 const DEFAULT_ID = '66407000001237340';
+const SUMMARY_TEXT = 'Support de caméra';
 const OTHER_CONTACT = {
   id: '66407000009999001',
   name: 'Jean DUPONT',
@@ -71,26 +73,38 @@ beforeEach(() => {
       }),
     ),
     http.get('/api/v1/zoho/contacts', () => HttpResponse.json([OTHER_CONTACT])),
+    // The drawer's description now comes from the AI summary (or its
+    // fallback), never a typed textarea — see AiSummaryPanel.tsx. Fixed here
+    // so every test in this file can assert on a known description string
+    // the same way the old modal's typed text let them.
+    http.post('/api/v1/aito/summarize', () => HttpResponse.json({ summary: SUMMARY_TEXT, model: 'test' })),
   );
 });
 
-async function openModal(user: ReturnType<typeof userEvent.setup>) {
+/** Opens the new-project drawer, prices the seeded task (a project needs at
+ *  least one priced service to submit — see taskDraft.ts), and opens the
+ *  Client section — which is what makes ClientSection's fields (phone,
+ *  email, the contact combobox) render at all, and is also what fires the
+ *  one summarize call every test below waits on. Mirrors
+ *  NewProjectDrawer.test.tsx's own `renderDrawer` + section-opening steps,
+ *  collapsed into one call for tests that always start from the same state. */
+async function openDrawer(user: ReturnType<typeof userEvent.setup>) {
   render(<AitoPage />);
   await user.click(await screen.findByRole('button', { name: 'Project' }));
-  await waitFor(() =>
-    expect(screen.getByRole('combobox', { name: /client/i })).toHaveValue('Client de passage'),
-  );
-  // A project needs a task with a priced service before it can be created
-  // (see NewProjectModal.test.tsx / taskDraft.ts), and every test in this
-  // file submits the form — so price the seeded task here once rather than
-  // in each test. The seeded task has no steps yet, so it is already showing
-  // its form; once priced it stays in edit mode (pricing its first service is
-  // what puts an Edit toggle there at all), so a test that cares about a
-  // specific cost (e.g. 0 vs disabled) can just overwrite this same field.
-  // Scan is still a chip on the fresh draft, so enable it first — enabling
-  // must not itself invent a price.
+  await screen.findByText(/Client account — Client de passage/);
+  // The seeded task has no steps yet, so it is already showing its form, but
+  // Scan is still a chip: enable it first to reach its cost field.
   await user.click(screen.getByRole('button', { name: 'Add Scan' }));
   fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
+  await user.click(screen.getByTestId('drawer-section-client'));
+}
+
+/** Every test submits once the summary has actually landed — clicking Create
+ *  before it resolves would still work (`create()` falls back to
+ *  `buildFallbackSummary` when `summaryText` is empty), but would make the
+ *  description assertions below racy against the mocked summarize response. */
+async function waitForSummary() {
+  await waitFor(() => expect(screen.getByLabelText('Project summary')).toHaveValue(SUMMARY_TEXT));
 }
 
 describe('AitoPage: create-project → Zoho sync wiring', () => {
@@ -119,13 +133,13 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
       }),
     );
 
-    await openModal(user);
-    await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
+    await openDrawer(user);
 
     const phoneInput = screen.getByLabelText(/^phone$/i);
     await user.clear(phoneInput);
     await user.type(phoneInput, '612345678');
     await user.tab();
+    await waitForSummary();
 
     await user.click(screen.getByRole('button', { name: /create project/i }));
 
@@ -134,13 +148,13 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
       expect(createSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           client_id: DEFAULT_ID,
-          description: 'Support de caméra',
+          description: SUMMARY_TEXT,
           client_phone: expect.stringContaining('612345678'),
           client_is_company: false,
         }),
       ),
     );
-    // The modal closes as soon as the card exists — no waiting on Zoho.
+    // The drawer closes as soon as the card exists — no waiting on Zoho.
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: /create project/i })).not.toBeInTheDocument(),
     );
@@ -148,6 +162,70 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
     // ...but Zoho never sees it.
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(patchSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not PATCH the walk-in default contact after create', async () => {
+    // Same guard as the test above, but through the EMAIL branch rather than
+    // phone — the two are independent `touched` flags on the draft, and the
+    // `isDefault` bail-out must hold for both, not just the one the test
+    // above happens to exercise. `draft.id === defaultContactId` here
+    // because this test never picks another contact.
+    const user = userEvent.setup();
+    const patchSpy = vi.fn();
+    server.use(
+      http.post('/api/v1/aito/', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(createdProject(body), { status: 201 });
+      }),
+      http.patch('/api/v1/zoho/contacts/:id', async ({ request }) => {
+        patchSpy(await request.json());
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    await openDrawer(user);
+    await user.type(screen.getByLabelText(/^email/i), 'client@example.pf');
+    await user.tab();
+    await waitForSummary();
+
+    await user.click(screen.getByRole('button', { name: /create project/i }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /create project/i })).not.toBeInTheDocument(),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(patchSpy).not.toHaveBeenCalled();
+    // Skipped silently — never the "created but Zoho failed" warning, which
+    // would be a lie: nothing was even attempted.
+    expect(
+      screen.queryByText('Project created — could not update the client in Zoho.'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('clears the persisted drawer draft on create success', async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post('/api/v1/aito/', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(createdProject(body), { status: 201 });
+      }),
+      http.patch('/api/v1/zoho/contacts/:id', async ({ request }) => {
+        await request.json();
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    await openDrawer(user);
+    await user.type(screen.getByLabelText(/^phone$/i), '87123456');
+    await waitForSummary();
+
+    await user.click(screen.getByRole('button', { name: /create project/i }));
+
+    // `clearNewProjectDraft` (../../hooks/useNewProjectDraft) wipes the
+    // localStorage key the drawer persists to — this file's beforeEach mocks
+    // every localStorage method as a spy (see setup.ts), so the removeItem
+    // CALL is the assertable signal, not a real read-back.
+    await waitFor(() => expect(localStorage.removeItem).toHaveBeenCalledWith('aito.newProjectDraft.v1'));
   });
 
   it('PATCHes only the touched phone field for a non-default client, and omits email entirely when untouched', async () => {
@@ -164,8 +242,7 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
       }),
     );
 
-    await openModal(user);
-    await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
+    await openDrawer(user);
 
     const combobox = screen.getByRole('combobox', { name: /client/i });
     await user.clear(combobox);
@@ -176,6 +253,7 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
     await user.clear(phoneInput);
     await user.type(phoneInput, '612345678');
     await user.tab();
+    await waitForSummary();
 
     await user.click(screen.getByRole('button', { name: /create project/i }));
 
@@ -210,13 +288,16 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
       }),
     );
 
-    await openModal(user);
-    await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
+    await openDrawer(user);
 
     const combobox = screen.getByRole('combobox', { name: /client/i });
     await user.clear(combobox);
     await user.type(combobox, 'ACME');
     await user.click(await screen.findByRole('option', { name: /ACME SARL/i }, { timeout: 3000 }));
+    // COMPANY_CONTACT already carries a phone/email from the directory, so
+    // the client is reachable as soon as it is selected — nothing left to
+    // touch before the summary is ready.
+    await waitForSummary();
 
     await user.click(screen.getByRole('button', { name: /create project/i }));
 
@@ -239,8 +320,7 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
       http.patch('/api/v1/zoho/contacts/:id', () => HttpResponse.json({ detail: 'boom' }, { status: 502 })),
     );
 
-    await openModal(user);
-    await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
+    await openDrawer(user);
 
     const combobox = screen.getByRole('combobox', { name: /client/i });
     await user.clear(combobox);
@@ -251,6 +331,7 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
     await user.clear(phoneInput);
     await user.type(phoneInput, '612345678');
     await user.tab();
+    await waitForSummary();
 
     await user.click(screen.getByRole('button', { name: /create project/i }));
 
@@ -270,7 +351,7 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
   });
 
   it('maps a task to the POST body through the real create flow, keeping a 0 cost distinct from a disabled service', async () => {
-    // NewProjectModal.test.tsx only pins the handoff at the modal boundary
+    // NewProjectDrawer.test.tsx only pins the handoff at the drawer boundary
     // (onCreate's TaskDraft argument) — it never sees the .trim() || null and
     // snake_case mapping that lives in AitoPage.tsx's mutationFn. This test
     // goes through the real AitoPage flow and inspects the captured POST
@@ -291,10 +372,12 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
       }),
     );
 
-    await openModal(user);
-    await user.type(screen.getByLabelText(/product description/i), 'Support de caméra');
-
-    // openModal already primed the seeded task's Scan field; overwrite it to
+    await openDrawer(user);
+    // The default walk-in client needs a phone or an email before Create
+    // will fire at all (the drawer's own reachability rule) — untouched
+    // otherwise, since this test only cares about the tasks mapping.
+    await user.type(screen.getByLabelText(/^phone$/i), '87123456');
+    // openDrawer already primed the seeded task's Scan field; overwrite it to
     // 0 (a free service) and leave the title and every other service
     // untouched (disabled) — the two states the mapping must never conflate.
     fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '0' } });
