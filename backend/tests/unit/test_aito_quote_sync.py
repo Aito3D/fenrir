@@ -2802,11 +2802,12 @@ async def test_adopting_books_status_on_a_push_clears_a_recorded_block(db_sessio
 
 @pytest.mark.asyncio
 async def test_adopting_books_acceptance_stamps_quote_accepted_at(db_session):
-    """The reconciler noticing a client acceptance is the same news as the
-    panel's Accept button, so it stamps the same timestamp."""
+    """The swept reconciler noticing a client acceptance stamps the same
+    timestamp as the panel's Accept button would."""
     project = await _project_with_quote(db_session, scan_cost=1)
     await _configure_zoho(db_session)
     project.quote_status = "sent"
+    project.quote_sync_state = "idle"
     await db_session.commit()
     zoho_service.transport = httpx.MockTransport(
         zoho_handler(
@@ -2835,9 +2836,12 @@ async def test_adopting_books_acceptance_stamps_quote_accepted_at(db_session):
 
 @pytest.mark.asyncio
 async def test_adopting_a_non_acceptance_does_not_stamp(db_session):
+    """Regression guard: swept reconciler adopting a non-decided status
+    never stamps quote_accepted_at."""
     project = await _project_with_quote(db_session, scan_cost=1)
     await _configure_zoho(db_session)
     project.quote_status = "sent"
+    project.quote_sync_state = "idle"
     await db_session.commit()
     zoho_service.transport = httpx.MockTransport(
         zoho_handler(
@@ -2932,3 +2936,37 @@ async def test_restore_from_trash_does_not_restamp_the_acceptance(db_session):
     await db_session.refresh(project)
     assert project.quote_status == "accepted"
     assert project.quote_accepted_at == old
+
+
+@pytest.mark.asyncio
+async def test_a_push_discovered_acceptance_stamps_quote_accepted_at(db_session):
+    """A task-edit push discovers that Books reports 'accepted' — the pending
+    path's _apply_estimate adoption (which reconcile_quote_status never sees)
+    must also stamp the timestamp."""
+    project = await _project_with_quote(db_session, scan_cost=1)
+    await _configure_zoho(db_session)
+    project.quote_status = "sent"
+    await db_session.commit()
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "accepted",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "accepted", "total": 1}},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_status == "accepted"
+    assert project.quote_accepted_at is not None
