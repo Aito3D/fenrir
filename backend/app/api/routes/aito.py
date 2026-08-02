@@ -26,6 +26,8 @@ from backend.app.schemas.aito import (
     AitoProjectUpdate,
     AitoQuoteStatusResponse,
     AitoQuoteStatusUpdate,
+    AitoSummarizeRequest,
+    AitoSummarizeResponse,
     AitoTaskCreate,
     AitoTaskResponse,
     AitoTaskStepsResponse,
@@ -33,6 +35,7 @@ from backend.app.schemas.aito import (
 )
 from backend.app.services.aito_board_rules import SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.aito_events import diff_fields, kinds_for_depth, record
+from backend.app.services.openrouter import OpenRouterNotConfiguredError, OpenRouterUpstreamError, summarize_tasks
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
 from backend.app.utils.http import build_content_disposition
 
@@ -450,6 +453,24 @@ async def create_project(
     await db.commit()
     await db.refresh(project)
     return _to_response(project, summary)
+
+
+@router.post("/summarize", response_model=AitoSummarizeResponse)
+async def summarize_project(
+    payload: AitoSummarizeRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
+):
+    """French project summary for the create drawer. Registered before the
+    /{project_id} routes on purpose — a literal segment after a parametric
+    route would 422 instead of matching."""
+    try:
+        summary, model = await summarize_tasks(db, [t.model_dump() for t in payload.tasks])
+    except OpenRouterNotConfiguredError:
+        raise HTTPException(status_code=409, detail="OpenRouter is not configured") from None
+    except OpenRouterUpstreamError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return AitoSummarizeResponse(summary=summary, model=model)
 
 
 @router.get("/{project_id}/tasks", response_model=list[AitoTaskResponse])

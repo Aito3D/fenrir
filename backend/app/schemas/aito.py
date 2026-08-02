@@ -243,3 +243,15 @@ class AitoNoteCreate(BaseModel):
         if not stripped:
             raise ValueError("note must not be blank")
         return stripped
+
+
+class AitoSummarizeRequest(BaseModel):
+    """Task drafts to summarize — the create-drawer sends its local drafts, so
+    these are AitoTaskCreate shapes, not persisted rows."""
+
+    tasks: list[AitoTaskCreate] = Field(min_length=1)
+
+
+class AitoSummarizeResponse(BaseModel):
+    summary: str
+    model: str
