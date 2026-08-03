@@ -49,6 +49,8 @@ async def get_energy_cost_per_kwh(db: AsyncSession) -> float:
     """Electricity tariff for energy cost calculations (default matches SettingsResponse)."""
     value = await get_setting(db, "energy_cost_per_kwh")
     return float(value) if value else 0.15
+
+
 # Accepted spellings for a boolean settings value. Settings live in a VARCHAR
 # column and every reader compares them as strings, so these are normalised to
 # "true"/"false" on the way in. The sets are deliberately generous: these
