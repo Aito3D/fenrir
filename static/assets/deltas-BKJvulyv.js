@@ -1,0 +1,1 @@
+function e(e,t,n){if(t==null||t===0)return null;let r=(e-t)/t*100;return Math.abs(r)<.5?{pct:0,direction:`flat`,tone:`neutral`}:{pct:r,direction:r>0?`up`:`down`,tone:n===`neutral`?`neutral`:n===`more-is-good`?r>0?`good`:`bad`:r>0?`bad`:`good`}}export{e as t};
