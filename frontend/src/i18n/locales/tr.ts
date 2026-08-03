@@ -33,6 +33,7 @@ export default {
 
   // Ortak
   common: {
+    plusNMore: '+{{count}} tane daha',
     save: 'Kaydet',
     saving: 'Kaydediliyor...',
     cancel: 'İptal',
@@ -4614,6 +4615,7 @@ export default {
   // Baskı modali
   printModal: {
     variants: {
+      editNote: 'Bu alternatifler iş kuyruğa alınırken belirlendi. Değiştirmek için iptal edip yeniden kuyruğa alın.',
       title: 'Yazıcı alternatifleri',
       help: 'Tek iş, tek kuyruk yeri. Uygun olan ilk boşalan yazıcı kendi dosyasını yazdırır.',
       unknownModel: 'Bilinmeyen model',

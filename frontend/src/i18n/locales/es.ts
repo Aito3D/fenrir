@@ -33,6 +33,7 @@ export default {
 
   // Common
   common: {
+    plusNMore: '+{{count}} más',
     save: 'Guardar',
     saving: 'Guardando...',
     cancel: 'Cancelar',
@@ -4644,6 +4645,7 @@ export default {
   // Print modal
   printModal: {
     variants: {
+      editNote: 'Estas alternativas se fijaron al poner el trabajo en cola. Cancela y vuelve a encolar para cambiarlas.',
       title: 'Alternativas de impresora',
       help: 'Un trabajo, un puesto en la cola. La primera impresora compatible que quede libre imprime su archivo.',
       unknownModel: 'Modelo desconocido',

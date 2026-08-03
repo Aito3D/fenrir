@@ -73,6 +73,21 @@ export function PrintModal({
   // Cross-model alternatives (#671). One candidate is not a choice, so a
   // single-entry list behaves exactly like an ordinary print.
   const isCrossModel = mode === 'create' && (variantFiles?.length ?? 0) > 1;
+  // Editing an already-queued cross-model item. The candidates are shown so the
+  // dialog doesn't misrepresent the job as a plain "Any H2D" — which is what it
+  // did before, offering a printer picker whose Save would have left a row with
+  // both variants and a printer_id. They are not editable here: changing the
+  // set after queueing needs a variant-level API that doesn't exist, and the
+  // backend refuses the printer/model change either way.
+  const editingVariants: VariantCandidate[] =
+    mode === 'edit-queue-item' && (queueItem?.variants?.length ?? 0) > 1
+      ? queueItem!.variants!.map((v) => ({
+          id: v.library_file_id,
+          filename: v.filename,
+          sliced_for_model: v.target_model,
+        }))
+      : [];
+  const hasEditingVariants = editingVariants.length > 0;
   const [candidates, setCandidates] = useState<VariantCandidate[]>(variantFiles ?? []);
   const [candidatePlates, setCandidatePlates] = useState<Record<number, number | null>>({});
 
@@ -397,6 +412,42 @@ export function PrintModal({
     queryFn: () => api.getAvailableFilaments(targetModel!, targetLocation ?? undefined),
     enabled: assignmentMode === 'model' && !!targetModel,
   });
+
+  // A cross-model job (#671) has no single target model, so the query above is
+  // disabled and the override UI would silently vanish — leaving less control
+  // than the ordinary "Any X1C" flow offers. Ask each candidate's model instead
+  // and offer the union: the job can land on any of them, so anything loaded on
+  // any of them is a legitimate choice. Picking one only some models have is
+  // allowed and meaningful — it narrows which candidates can match.
+  const candidateModels = useMemo(
+    () => Array.from(new Set(candidates.map((c) => c.sliced_for_model).filter((m): m is string => !!m))),
+    [candidates],
+  );
+  const candidateFilamentQueries = useQueries({
+    queries: isCrossModel
+      ? candidateModels.map((model) => ({
+          queryKey: ['available-filaments', model, targetLocation],
+          queryFn: () => api.getAvailableFilaments(model, targetLocation ?? undefined),
+        }))
+      : [],
+  });
+  const crossModelFilaments = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: NonNullable<typeof availableFilaments> = [];
+    for (const query of candidateFilamentQueries) {
+      for (const filament of query.data ?? []) {
+        // Same type+colour loaded on two models is one choice, not two.
+        const key = `${filament.type}|${filament.color}|${filament.tray_info_idx}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(filament);
+        }
+      }
+    }
+    return merged;
+  }, [candidateFilamentQueries]);
+
+  const effectiveAvailableFilaments = isCrossModel ? crossModelFilaments : availableFilaments;
 
   // Only fetch printer status when single printer selected (for filament mapping)
   const { data: printerStatus, isLoading: printerStatusLoading } = useQuery({
@@ -1261,8 +1312,13 @@ export function PrintModal({
   // is the filament each slot must be printed in, which the scheduler matches
   // against whatever printer of the model it picks. Needs the model's loaded
   // filaments to offer as alternatives.
+  // Cross-model items have no targetModel by design — their candidates each
+  // carry their own — so gate on having somewhere to source choices from.
   const showFilamentOverride =
-    assignmentMode === 'model' && !!targetModel && !!availableFilaments && availableFilaments.length > 0;
+    assignmentMode === 'model'
+    && (isCrossModel || !!targetModel)
+    && !!effectiveAvailableFilaments
+    && effectiveAvailableFilaments.length > 0;
 
   // Dual-nozzle gate for the Nozzle Offset Calibration toggle (#1682).
   // Mirrors backend `DUAL_NOZZLE_MODELS` so model-based assignment can show
@@ -1371,8 +1427,19 @@ export function PrintModal({
               />
             )}
 
+            {hasEditingVariants && (
+              <VariantCandidates
+                candidates={editingVariants}
+                readOnly
+                readOnlyNote={t('printModal.variants.editNote')}
+                onReorder={() => {}}
+                plateByFile={{}}
+                onPlateChange={() => {}}
+              />
+            )}
+
             {/* Printer selection with per-printer mapping — hidden when printer is pre-selected via props */}
-            {!isCrossModel && !initialSelectedPrinterIds?.length && (
+            {!isCrossModel && !hasEditingVariants && !initialSelectedPrinterIds?.length && (
               <PrinterSelector
                 printers={printers || []}
                 selectedPrinterIds={selectedPrinters}
@@ -1404,7 +1471,7 @@ export function PrintModal({
             {showFilamentOverride && !isMultiPlateSelection && effectiveFilamentReqs && (
               <FilamentOverride
                 filamentReqs={effectiveFilamentReqs}
-                availableFilaments={availableFilaments!}
+                availableFilaments={effectiveAvailableFilaments!}
                 overrides={filamentOverrides}
                 onChange={setFilamentOverrides}
                 forceColorMatch={forceColorMatch}
