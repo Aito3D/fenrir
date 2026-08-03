@@ -350,6 +350,10 @@ export interface Printer {
   model: string | null;
   location: string | null;  // Group/location name
   nozzle_count: number;  // 1 or 2, auto-detected from MQTT
+  // Model is sold with both Standard and High Flow nozzles, so a K-profile's
+  // flow type is a real choice. Derived from the model, not the nozzle count —
+  // only the A-series has a single variant.
+  supports_nozzle_flow_type: boolean;
   is_active: boolean;
   auto_archive: boolean;
   external_camera_url: string | null;
@@ -561,6 +565,11 @@ export interface PrinterStatus {
   big_fan1_speed: number | null;     // Auxiliary fan
   big_fan2_speed: number | null;     // Chamber/exhaust fan
   heatbreak_fan_speed: number | null; // Hotend heatbreak fan
+  // Left auxiliary part cooling fan (optional P2S/X2D accessory, M106 P10).
+  // null = not installed / not reported by this model.
+  left_aux_fan_speed: number | null;
+  // Chamber exhaust fan present (P2S/X2D External Exhaust Fan kit, airduct part 3).
+  exhaust_fan_present: boolean;
   firmware_version: string | null;   // Firmware version from MQTT
   // Developer LAN mode: true = enabled, false = disabled, null = unknown
   developer_mode: boolean | null;
@@ -1181,6 +1190,7 @@ export interface AppSettings {
   auto_archive: boolean;
   save_thumbnails: boolean;
   capture_finish_photo: boolean;
+  finish_photo_restore_plate: boolean;
   default_filament_cost: number;
   currency: string;
   energy_cost_per_kwh: number;
@@ -1277,6 +1287,10 @@ export interface AppSettings {
   // Per-install sidecar URLs. Empty string falls back to the env defaults.
   orcaslicer_api_url: string;
   bambu_studio_api_url: string;
+  // Minutes of silence from the sidecar before a slice is abandoned. Bounds
+  // stalls, not total slicing time — a model that keeps reporting progress
+  // runs to completion however long it takes.
+  slicer_stall_timeout_minutes: number;
   // Prometheus metrics
   prometheus_enabled: boolean;
   prometheus_token: string;
@@ -1336,6 +1350,7 @@ export interface AppSettings {
   ldap_default_group: string;
   obico_enabled: boolean;
   obico_ml_url: string;
+  obico_ml_token: string;
   obico_sensitivity: 'low' | 'medium' | 'high';
   obico_action: 'notify' | 'pause' | 'pause_and_off';
   obico_poll_interval: number;
@@ -2249,6 +2264,10 @@ export interface PrintQueueItem {
   // start route when skip_filament_check=true, or at queue creation if
   // PrintModal's deficit warning was acknowledged.
   skip_filament_check: boolean;
+  // True when the source archive carries the slicer's own live-resolved
+  // AMS-slot pick (extra_data.slicer_ams_mapping) — a reprint reuses that
+  // exact physical spool instead of re-deriving one from type/color.
+  archive_has_slicer_ams_mapping: boolean;
   ams_mapping: number[] | null;  // AMS slot mapping for multi-color prints
   filament_overrides: Array<{ slot_id: number; type: string; color: string; color_name?: string; tray_info_idx?: string; force_color_match?: boolean }> | null;  // Filament overrides for model-based assignment
   plate_id: number | null;  // Plate ID for multi-plate 3MF files
@@ -2681,6 +2700,14 @@ export interface NotificationProviderUpdate {
 export type ScheduleType = 'hourly' | 'daily' | 'weekly';
 export type GitProviderType = 'github' | 'gitea' | 'forgejo' | 'gitlab';
 
+/** How many cloud accounts a backup would collect presets from. Counts only —
+ *  with auth enabled the accounts belong to individual users, so the backup
+ *  administrator sees how many, never whose. */
+export interface CloudAccountCounts {
+  bambu: number;
+  orca: number;
+}
+
 export interface GitHubBackupConfig {
   id: number;
   repository_url: string;
@@ -2818,6 +2845,9 @@ export interface ObicoTestConnection {
   status_code: number | null;
   body: string | null;
   error: string | null;
+  // Whether the ML API accepted the token. null = not determined (the health
+  // check failed first, or the token probe itself errored).
+  auth_ok: boolean | null;
 }
 
 export interface GitHubTestConnectionResponse {
@@ -3948,6 +3978,11 @@ export interface OIDCProvider {
   // #1589: when true, the LoginPage redirects unauthenticated visitors
   // straight to this provider on mount. At most one provider may carry this.
   is_autologin: boolean;
+  // #2593: defined by BAMBUDDY_OIDC_* and rewritten from the environment on
+  // every boot. The API answers 409 to any write, so the settings UI must not
+  // offer edit/delete controls that cannot succeed. Optional so a response
+  // from an older backend still type-checks.
+  is_env_managed?: boolean;
 }
 
 export interface OIDCProviderCreate {
@@ -4315,7 +4350,13 @@ export const api = {
       method: 'POST',
     }),
   testExternalCamera: (printerId: number, url: string, cameraType: string) =>
-    request<{ success: boolean; error?: string; resolution?: string }>(
+    // `coalesced` is upstream's flag for "the frame came from a capture that
+    // was already running rather than a connection this test opened". This
+    // fork's backend keeps its JSON-body endpoint and never sets it, so it
+    // stays undefined here — the field exists only so the upstream
+    // SettingsPage toast code type-checks and falls through to the plain
+    // success message.
+    request<{ success: boolean; error?: string; resolution?: string; coalesced?: boolean }>(
       `/printers/${printerId}/camera/external/test`,
       { method: 'POST', body: JSON.stringify({ url, camera_type: cameraType }) }
     ),
@@ -4364,7 +4405,7 @@ export const api = {
       method: 'POST',
     }),
 
-  setFanSpeed: (printerId: number, fan: 'part' | 'aux' | 'chamber', speed: number) =>
+  setFanSpeed: (printerId: number, fan: 'part' | 'aux' | 'aux2' | 'chamber', speed: number) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/fan-speed?fan=${fan}&speed=${speed}`, {
       method: 'POST',
     }),
@@ -5126,10 +5167,17 @@ export const api = {
     archiveId: number,
     plateId?: number,
     requestId?: string,
+    /** Ask for one entry per project slot instead of only the slots this
+     * plate consumes. The slice modal needs it: its filament list is
+     * positional, so a source whose only used slot is 4 must still present
+     * four rows or the user's pick is bound to slot 1 (#2712). Print-time
+     * AMS matching must NOT set this — it wants the used-only list. */
+    fullSlots?: boolean,
   ) => {
     const qs = new URLSearchParams();
     if (plateId !== undefined) qs.set('plate_id', String(plateId));
     if (requestId) qs.set('request_id', requestId);
+    if (fullSlots) qs.set('full_slots', 'true');
     return request<{
       archive_id: number;
       filename: string;
@@ -7012,10 +7060,17 @@ export const api = {
     fileId: number,
     plateId?: number,
     requestId?: string,
+    /** Ask for one entry per project slot instead of only the slots this
+     * plate consumes. The slice modal needs it: its filament list is
+     * positional, so a source whose only used slot is 4 must still present
+     * four rows or the user's pick is bound to slot 1 (#2712). Print-time
+     * AMS matching must NOT set this — it wants the used-only list. */
+    fullSlots?: boolean,
   ) => {
     const qs = new URLSearchParams();
     if (plateId !== undefined) qs.set('plate_id', String(plateId));
     if (requestId) qs.set('request_id', requestId);
+    if (fullSlots) qs.set('full_slots', 'true');
     return request<{
       file_id: number;
       filename: string;
@@ -7047,6 +7102,9 @@ export const api = {
   // GitHub Backup
   getGitHubBackupConfig: () =>
     request<GitHubBackupConfig | null>('/github-backup/config'),
+
+  getGitHubBackupCloudAccounts: () =>
+    request<CloudAccountCounts>('/github-backup/cloud-accounts'),
 
   saveGitHubBackupConfig: (config: GitHubBackupConfigCreate) =>
     request<GitHubBackupConfig>('/github-backup/config', {
@@ -7119,10 +7177,12 @@ export const api = {
   getObicoPrinterStatus: () =>
     request<ObicoPrinterStatus>('/obico/printer-status'),
 
-  testObicoConnection: (url: string) =>
+  // `token` is sent as-is, so an empty string tests with no token at all.
+  // Omitting the argument makes the backend fall back to the saved token.
+  testObicoConnection: (url: string, token?: string) =>
     request<ObicoTestConnection>('/obico/test-connection', {
       method: 'POST',
-      body: JSON.stringify({ url }),
+      body: JSON.stringify(token === undefined ? { url } : { url, token }),
     }),
 
   // Slicer API — slice in the background. Both endpoints return 202 + a
@@ -7913,6 +7973,7 @@ export interface VirtualPrinterConfig {
   target_printer_id: number | null;
   auto_dispatch: boolean;
   queue_force_color_match: boolean;
+  save_ams_mapping: boolean;
   gcode_injection: boolean;
   tailscale_disabled: boolean;
   bind_ip: string | null;
@@ -7940,6 +8001,7 @@ export const multiVirtualPrinterApi = {
     target_printer_id?: number;
     auto_dispatch?: boolean;
     queue_force_color_match?: boolean;
+    save_ams_mapping?: boolean;
     gcode_injection?: boolean;
     bind_ip?: string;
     remote_interface_ip?: string;
@@ -7958,6 +8020,7 @@ export const multiVirtualPrinterApi = {
     target_printer_id?: number;
     auto_dispatch?: boolean;
     queue_force_color_match?: boolean;
+    save_ams_mapping?: boolean;
     gcode_injection?: boolean;
     tailscale_disabled?: boolean;
     bind_ip?: string;

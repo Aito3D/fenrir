@@ -393,6 +393,26 @@ def get_buffered_frame(printer_id: int) -> bytes | None:
     return _hub.get_last_frame(printer_id)
 
 
+def live_frame_for_capture(printer_id: int) -> tuple[bool, bytes | None]:
+    """Should a one-shot capture stand down for the live view, and to what frame?
+
+    Returns ``(defer, frame)``. ``defer`` True means DO NOT open a capture of
+    your own: use ``frame`` when it isn't None, and otherwise skip this attempt
+    rather than competing.
+
+    Ported from upstream (#2707) onto this fork's SharedStreamHub rather than
+    taken verbatim: upstream reads its per-printer frame dicts, this fork's
+    single reader is the hub, so the hub's last fan-out frame is the answer.
+    Skipping when the buffer is momentarily empty (stream starting, mid-
+    reconnect) rather than falling through to a capture is the #1348 rule:
+    opening a competing handle kicks the viewer off, which is a worse outcome
+    than missing one frame.
+    """
+    if not is_stream_active(printer_id):
+        return False, None
+    return True, _hub.get_last_frame(printer_id)
+
+
 def is_stream_active(printer_id: int) -> bool:
     """Return True iff a fan-out camera stream is currently registered for this printer.
 

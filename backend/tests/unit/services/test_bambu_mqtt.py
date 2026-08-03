@@ -4,9 +4,11 @@ Tests for the BambuMQTTClient service.
 These tests focus on timelapse tracking during prints.
 """
 
+import asyncio
 import json
 import logging
 import time
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -3547,6 +3549,108 @@ class TestDeveloperModeDetection:
         assert mqtt_client.state.developer_mode is False
 
 
+class TestMqttCommandVerificationFailed:
+    """HMS 0500_0500_0001_0007 is the printer refusing to verify our commands (#2732).
+
+    A P1S on firmware 01.10.00.00 answers queries normally while dropping every
+    control command, so nothing else in the connection looks wrong. This HMS is
+    the only direct evidence, which makes it authoritative over the probe.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="01S00A000000000",
+            access_code="12345678",
+        )
+
+    @staticmethod
+    def _hms_payload(*entries):
+        return {"print": {"gcode_state": "IDLE", "hms": list(entries)}}
+
+    # attr 0x05000500, code 0x00010007 — the values a real P1S sends.
+    VERIFY_FAILED = {"attr": 83887360, "code": 65543}
+    OTHER_FAULT = {"attr": 0x03000200, "code": 0x00018012}
+
+    def test_hms_forces_developer_mode_false(self, mqtt_client):
+        mqtt_client.state.developer_mode = True  # what the probe wrongly concluded
+        mqtt_client._process_message(self._hms_payload(self.VERIFY_FAILED))
+        assert mqtt_client.state.developer_mode is False
+
+    def test_hms_is_surfaced_with_its_full_code(self, mqtt_client):
+        """The short code collapses to a useless 0500_0007 — full_code must survive."""
+        from backend.app.services.bambu_mqtt import HMS_MQTT_VERIFY_FAILED
+
+        mqtt_client._process_message(self._hms_payload(self.VERIFY_FAILED))
+        assert [e.full_code for e in mqtt_client.state.hms_errors] == [HMS_MQTT_VERIFY_FAILED]
+
+    def test_unrelated_hms_does_not_touch_developer_mode(self, mqtt_client):
+        mqtt_client.state.developer_mode = True
+        mqtt_client._process_message(self._hms_payload(self.OTHER_FAULT))
+        assert mqtt_client.state.developer_mode is True
+
+    def test_clearing_the_hms_re_arms_the_probe(self, mqtt_client):
+        """Enabling Developer Mode and restarting must not leave a stuck False."""
+        mqtt_client._process_message(self._hms_payload(self.VERIFY_FAILED))
+        assert mqtt_client.state.developer_mode is False
+        mqtt_client._dev_mode_probed = True
+
+        mqtt_client._process_message(self._hms_payload())
+        assert mqtt_client.state.developer_mode is None
+        assert mqtt_client._dev_mode_probed is False
+
+    def test_empty_hms_leaves_a_probe_verdict_alone(self, mqtt_client):
+        """Only the HMS-derived latch self-clears; a probe's False is not ours to undo."""
+        mqtt_client.state.developer_mode = False  # from an explicit probe refusal
+        mqtt_client._process_message(self._hms_payload())
+        assert mqtt_client.state.developer_mode is False
+
+    def test_inconclusive_probe_does_not_overwrite_the_hms_verdict(self, mqtt_client):
+        mqtt_client._process_message(self._hms_payload(self.VERIFY_FAILED))
+        mqtt_client._handle_dev_mode_probe_response({"command": "ams_filament_setting", "sequence_id": "3"})
+        assert mqtt_client.state.developer_mode is False
+
+
+class TestDeveloperModeProbeInconclusive:
+    """An empty probe response proves nothing and must not read as ENABLED (#2732)."""
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+
+    def test_empty_result_stays_unknown(self, mqtt_client):
+        """P1S 01.10.00.00 echoes the command back with no `result` field at all."""
+        mqtt_client._handle_dev_mode_probe_response({"command": "ams_filament_setting", "sequence_id": "3"})
+        assert mqtt_client.state.developer_mode is None
+
+    def test_explicit_success_still_enables(self, mqtt_client):
+        mqtt_client._handle_dev_mode_probe_response({"sequence_id": "3", "result": "success"})
+        assert mqtt_client.state.developer_mode is True
+
+    def test_verify_failure_still_disables(self, mqtt_client):
+        mqtt_client._handle_dev_mode_probe_response(
+            {"sequence_id": "3", "result": "failed", "reason": "mqtt message verify failed"}
+        )
+        assert mqtt_client.state.developer_mode is False
+
+    def test_inconclusive_response_still_clears_probe_bookkeeping(self, mqtt_client):
+        """Whatever the verdict, the response ends the probe (no retry storm)."""
+        mqtt_client._dev_mode_probe_seq = "3"
+        mqtt_client._dev_mode_probe_failures = 1
+        mqtt_client._handle_dev_mode_probe_response({"sequence_id": "3", "result": ""})
+        assert mqtt_client._dev_mode_probe_seq is None
+        assert mqtt_client._dev_mode_probe_failures == 0
+
+
 class TestDeveloperModeProbeTimeout:
     """Tests for developer mode probe timeout, retry, and forced reconnect (#887).
 
@@ -4669,6 +4773,44 @@ class TestStaleReconnect:
         with caplog.at_level(logging.WARNING):
             mqtt_client.check_staleness()
         assert not any("zero status reports" in r.getMessage() for r in caplog.records)
+
+    def test_check_staleness_no_serial_hint_right_after_reconnect(self, mqtt_client, caplog):
+        """#2732 — _report_messages_since_connect is reset by _on_connect, so a
+        reconnect landing just before the staleness check leaves it at 0 for
+        reasons that have nothing to do with the serial. A healthy P1S was being
+        told to check its serial number 1 ms after reconnecting."""
+        import logging
+        import time
+
+        mqtt_client.state.connected = True
+        mqtt_client._last_message_time = time.time() - 120
+        mqtt_client._report_messages_since_connect = 0
+        mqtt_client._connect_time = time.monotonic()  # fresh session
+
+        with caplog.at_level(logging.WARNING):
+            mqtt_client.check_staleness()
+
+        assert mqtt_client._zero_report_hint_logged is False
+        assert not any("zero status reports" in r.getMessage() for r in caplog.records)
+        # The stale reconnect itself still happens — only the hint is suppressed.
+        assert mqtt_client._stale_reconnecting is True
+
+    def test_check_staleness_serial_hint_when_session_old_enough(self, mqtt_client, caplog):
+        """A session that has been up past the stale window and still received
+        nothing is the case the hint was written for."""
+        import logging
+        import time
+
+        mqtt_client.state.connected = True
+        mqtt_client._last_message_time = time.time() - 120
+        mqtt_client._report_messages_since_connect = 0
+        mqtt_client._connect_time = time.monotonic() - 120
+
+        with caplog.at_level(logging.WARNING):
+            mqtt_client.check_staleness()
+
+        assert mqtt_client._zero_report_hint_logged is True
+        assert any("zero status reports" in r.getMessage() for r in caplog.records)
 
     def test_check_staleness_no_serial_hint_when_reports_received(self, mqtt_client, caplog):
         """A stale connection that DID receive reports (a normal mid-session
@@ -6329,14 +6471,19 @@ class TestTrayNowH2SExternalSpoolOverride:
         assert mqtt_client.state.tray_now == 255
 
 
-class TestLastLayerFinishPhotoTrigger:
-    """Tests for #1867: layer_num→total_layer_num edge fires the finish-photo
-    moment before user End G-code (e.g. SwapMod) executes.
+class TestNoLastLayerFinishPhotoTrigger:
+    """#2547: the layer_num→total_layer_num edge must NOT trigger a photo.
 
-    A1 Mini firmware skips stg_cur=22 entirely, so the FINISH-state fallback
-    fires after end G-code has already moved the plate. The last-layer edge
-    is the earliest reliable "print finished" signal available across all
-    Bambu printer variants.
+    That edge is the moment the printer *starts* the final layer. On the H2C
+    capture that closed #2547 it arrived at 92% with `mc_remaining_time=2`,
+    three minutes and one filament change before the print actually ended, so
+    the photo showed the toolhead mid-print over the part. It also latched
+    `_finish_photo_captured`, which locked out the two triggers that fire at a
+    real end-of-print — so these tests pin both halves: the edge is silent, and
+    the later triggers still work after it has passed.
+
+    #1867 (End G-code ejecting the plate before FINISH) is handled in
+    `on_finish_photo_moment` via `print_dispatch_context`, not here.
     """
 
     @pytest.fixture
@@ -6353,79 +6500,31 @@ class TestLastLayerFinishPhotoTrigger:
         client.state.layer_num = 99
         return client
 
-    def test_fires_when_layer_reaches_total(self, mqtt_client):
+    def test_reaching_the_last_layer_fires_nothing(self, mqtt_client):
         events = []
         mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
 
         mqtt_client._process_message({"print": {"layer_num": 100}})
-
-        assert len(events) == 1
-        assert events[0]["trigger"] == "last_layer"
-        assert mqtt_client._finish_photo_captured is True
-
-    def test_does_not_fire_when_layer_still_below_total(self, mqtt_client):
-        events = []
-        mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
-
-        mqtt_client._process_message({"print": {"layer_num": 99}})
 
         assert events == []
         assert mqtt_client._finish_photo_captured is False
 
-    def test_edge_only_no_double_fire(self, mqtt_client):
-        """Once fired, subsequent messages at layer_num == total must not
-        re-fire (the guard flips _finish_photo_captured to True)."""
+    def test_stage_22_still_fires_after_the_last_layer_started(self, mqtt_client):
+        """The regression the removed trigger caused: stage 22 is the good
+        moment on firmware that emits it, and it arrives *after* the last-layer
+        edge. The old latch swallowed it."""
         events = []
         mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
 
         mqtt_client._process_message({"print": {"layer_num": 100}})
-        mqtt_client._process_message({"print": {"layer_num": 100}})
-        mqtt_client._process_message({"print": {"layer_num": 100}})
-
-        assert len(events) == 1
-
-    def test_does_not_fire_when_not_running(self, mqtt_client):
-        """If the print never went through RUNNING (Bambuddy restart mid-print,
-        firmware replay), _was_running is False and no photo trigger fires."""
-        mqtt_client._was_running = False
-        events = []
-        mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
-
-        mqtt_client._process_message({"print": {"layer_num": 100}})
-
-        assert events == []
-
-    def test_does_not_fire_when_total_layers_unknown(self, mqtt_client):
-        """total=0 (before slicer metadata arrives) must never satisfy the
-        `new_layer >= total` condition."""
-        mqtt_client.state.total_layers = 0
-        mqtt_client.state.layer_num = 0
-        events = []
-        mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
-
-        mqtt_client._process_message({"print": {"layer_num": 0}})
-
-        assert events == []
-
-    def test_stage_22_skipped_after_last_layer_already_fired(self, mqtt_client):
-        """Once the last-layer trigger has set _finish_photo_captured, the
-        stage-22 hook that runs later on AMS printers must be a no-op."""
-        events = []
-        mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
-
-        mqtt_client._process_message({"print": {"layer_num": 100}})
-        assert len(events) == 1
-
         mqtt_client.state.progress = 100
         mqtt_client._process_message({"print": {"stg_cur": 22}})
 
-        assert len(events) == 1
+        assert [e["trigger"] for e in events] == ["stage_22"]
 
-    def test_finish_state_fallback_skipped_after_last_layer_fired(self, mqtt_client):
-        """The gcode_state=FINISH fallback (which fires after end G-code on
-        every printer) must be suppressed once the last-layer edge fired.
-        This is the #1867 regression check — SwapMod plate must be captured
-        by last_layer, NOT by the post-End-G-code FINISH fallback."""
+    def test_finish_state_still_fires_after_the_last_layer_started(self, mqtt_client):
+        """H2C/A1 Mini never emit stage 22, so FINISH is their only moment —
+        and it is now reachable, where the latch used to block it."""
         events = []
         completion_events = []
         mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
@@ -6433,12 +6532,91 @@ class TestLastLayerFinishPhotoTrigger:
         mqtt_client._previous_gcode_state = "RUNNING"
 
         mqtt_client._process_message({"print": {"layer_num": 100}})
-        assert events[0]["trigger"] == "last_layer"
-
         mqtt_client._process_message({"print": {"gcode_state": "FINISH"}})
 
-        assert len(events) == 1
+        assert [e["trigger"] for e in events] == ["finish_state"]
         assert len(completion_events) == 1
+
+    def test_no_photo_trigger_fires_repeatedly_across_the_last_layer(self, mqtt_client):
+        """A three-minute last layer publishes many frames at layer_num ==
+        total. None of them may produce a moment."""
+        events = []
+        mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
+
+        for percent in (92, 93, 94, 95, 97, 98, 99):
+            mqtt_client._process_message({"print": {"layer_num": 100, "mc_percent": percent}})
+
+        assert events == []
+
+
+class TestPrintProgressCallback:
+    """#2547: `on_print_progress` keeps the finish-photo frame bank fresh.
+
+    Layer changes stop firing the instant the final layer begins, so the bank
+    would otherwise stay stale for the whole length of that layer. Progress is
+    the field that keeps advancing there — and it freezes before the End G-code
+    runs, which is what keeps a swapped plate out of the bank (#1867).
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        client._was_running = True
+        return client
+
+    def test_fires_on_each_advance(self, mqtt_client):
+        seen = []
+        mqtt_client.on_print_progress = seen.append
+
+        for percent in (92, 93, 94):
+            mqtt_client._process_message({"print": {"mc_percent": percent}})
+
+        assert seen == [92, 93, 94]
+
+    def test_does_not_fire_when_progress_is_unchanged(self, mqtt_client):
+        """Most frames repeat the same percent; each one would otherwise cost a
+        camera grab that contends with the live view."""
+        seen = []
+        mqtt_client.on_print_progress = seen.append
+
+        mqtt_client._process_message({"print": {"mc_percent": 92}})
+        mqtt_client._process_message({"print": {"mc_percent": 92}})
+        mqtt_client._process_message({"print": {"mc_percent": 92}})
+
+        assert seen == [92]
+
+    def test_does_not_fire_when_progress_goes_backwards(self, mqtt_client):
+        """Firmware resets progress to 0 on cancel — that is not the print
+        advancing, and banking a frame there would be banking a cancelled bed."""
+        seen = []
+        mqtt_client.on_print_progress = seen.append
+
+        mqtt_client._process_message({"print": {"mc_percent": 92}})
+        mqtt_client._process_message({"print": {"mc_percent": 0}})
+
+        assert seen == [92]
+
+    def test_does_not_fire_when_no_print_is_running(self, mqtt_client):
+        mqtt_client._was_running = False
+        seen = []
+        mqtt_client.on_print_progress = seen.append
+
+        mqtt_client._process_message({"print": {"mc_percent": 92}})
+
+        assert seen == []
+
+    def test_absent_callback_is_not_an_error(self, mqtt_client):
+        mqtt_client.on_print_progress = None
+
+        mqtt_client._process_message({"print": {"mc_percent": 92}})
+
+        assert mqtt_client.state.progress == 92
 
 
 class TestPresumedPowerOffRecovery:
@@ -6656,6 +6834,302 @@ class TestKProfileResponseDoesNotClobberNozzle:
         mqtt_client.state.nozzles[0].nozzle_diameter = "0.8"
         mqtt_client._process_message({"print": {"nozzle_diameter": "0.4"}})
         assert mqtt_client.state.nozzles[0].nozzle_diameter == "0.4"
+
+
+class TestKProfileNozzleDiameterFromEnvelope:
+    """#1748: every K-profile came back as 0.4mm on single-nozzle printers.
+
+    ``extrusion_cali_get`` carries ``nozzle_diameter`` only on the response
+    envelope — the per-filament entries hold just setting_id, filament_id,
+    name, k_value, n_coef and cali_idx. The parser read the field per entry
+    with a "0.4" default, so a 0.6/0.8 nozzle's profiles were all stamped 0.4.
+    Beyond the K-Profiles display that broke the cali_idx cascade in the
+    inventory and Spoolman assign paths, which match on nozzle_diameter.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="X1ETEST",
+            access_code="12345678",
+        )
+
+    @staticmethod
+    def _response(nozzle="0.8", entries=None, seq="48"):
+        """A verbatim-shaped extrusion_cali_get payload from the #1748 report."""
+        if entries is None:
+            entries = [
+                {
+                    "setting_id": "GFSNLS02_07",
+                    "filament_id": "GFSNL02",
+                    "name": "SUNLU PLA Matte WHITE 0.8",
+                    "k_value": "0.01750",
+                    "n_coef": "1.000",
+                    "cali_idx": 265,
+                    "is_history_setting": True,
+                }
+            ]
+        print_data = {"command": "extrusion_cali_get", "filament_id": "", "filaments": entries}
+        if nozzle is not None:
+            print_data["nozzle_diameter"] = nozzle
+        if seq is not None:
+            print_data["sequence_id"] = seq
+        return {"print": print_data}
+
+    def test_broadcast_uses_envelope_diameter(self, mqtt_client):
+        # No request in flight: the unsolicited broadcast still has to record
+        # the right diameter, because state.kprofiles is what the assign paths
+        # read when nobody has just fetched.
+        mqtt_client._process_message(self._response(nozzle="0.8"))
+        assert [p.nozzle_diameter for p in mqtt_client.state.kprofiles] == ["0.8"]
+
+    @pytest.mark.asyncio
+    async def test_awaited_response_uses_envelope_diameter(self, mqtt_client):
+        profiles = await self._fetch(mqtt_client, "0.6", self._response(nozzle="0.6", seq="7"))
+        assert [p.nozzle_diameter for p in profiles] == ["0.6"]
+
+    def test_entry_value_still_wins(self, mqtt_client):
+        # Dual-nozzle firmware does put the field on each entry; that stays
+        # authoritative, since a batch can legitimately span nozzles.
+        entries = [{"cali_idx": 1, "filament_id": "GFA00", "name": "PLA", "nozzle_diameter": "0.4"}]
+        mqtt_client._process_message(self._response(nozzle="0.8", entries=entries))
+        assert mqtt_client.state.kprofiles[0].nozzle_diameter == "0.4"
+
+    def test_empty_entry_value_falls_back_to_envelope(self, mqtt_client):
+        entries = [{"cali_idx": 1, "filament_id": "GFA00", "name": "PLA", "nozzle_diameter": ""}]
+        mqtt_client._process_message(self._response(nozzle="0.8", entries=entries))
+        assert mqtt_client.state.kprofiles[0].nozzle_diameter == "0.8"
+
+    def test_no_envelope_value_falls_back_to_default(self, mqtt_client):
+        # Neither source available: keep the old default rather than let
+        # str(None) write the literal string "None" into the profile.
+        mqtt_client._process_message(self._response(nozzle=None))
+        assert mqtt_client.state.kprofiles[0].nozzle_diameter == "0.4"
+
+    @staticmethod
+    async def _fetch(client, nozzle, response):
+        """Run get_kprofiles, feeding `response` in as the printer's answer."""
+        client.state.connected = True
+        client._client = MagicMock()
+        client._client.publish.side_effect = lambda *a, **kw: client._process_message(response)
+        return await client.get_kprofiles(nozzle_diameter=nozzle, timeout=2.0)
+
+
+class TestKProfileWriteAcks:
+    """#2718: K-profile writes were fire-and-forget.
+
+    ``set_kprofiles_batch`` published and returned True immediately, and the
+    printer's ``extrusion_cali_set`` answer was logged at DEBUG and dropped, so
+    a rejected write was reported to the user as saved. Two facts measured on
+    real hardware shape the fix: the printer echoes our ``sequence_id`` back
+    (so the ack can be correlated), and it answers ``result: "fail",
+    reason: "invalid tray_id"`` to ``tray_id: -1`` on single-nozzle firmware
+    while applying the write anyway — flipping that field to 0 is what makes
+    ``result`` trustworthy.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="X1CTEST",
+            access_code="12345678",
+        )
+        client.state.connected = True
+        client._client = MagicMock()
+        return client
+
+    @staticmethod
+    def _sent(client):
+        return json.loads(client._client.publish.call_args[0][1])["print"]
+
+    def test_set_sends_tray_id_zero(self, mqtt_client):
+        mqtt_client.set_kprofile(filament_id="GFL99", name="test", k_value="0.022000")
+        assert self._sent(mqtt_client)["filaments"][0]["tray_id"] == 0
+
+    def test_batch_sends_tray_id_zero(self, mqtt_client):
+        mqtt_client.set_kprofiles_batch([{"filament_id": "GFL99", "name": "t", "k_value": "0.020000"}])
+        assert self._sent(mqtt_client)["filaments"][0]["tray_id"] == 0
+
+    def test_writers_return_their_sequence_id(self, mqtt_client):
+        seq = mqtt_client.set_kprofile(filament_id="GFL99", name="test", k_value="0.022000")
+        assert seq == self._sent(mqtt_client)["sequence_id"]
+        assert seq in mqtt_client._pending_cali_acks
+
+    def test_writers_return_none_when_disconnected(self, mqtt_client):
+        mqtt_client.state.connected = False
+        assert mqtt_client.set_kprofile(filament_id="GFL99", name="t", k_value="0.02") is None
+        assert mqtt_client.set_kprofiles_batch([{"filament_id": "GFL99"}]) is None
+        assert mqtt_client.delete_kprofile(cali_idx=1, filament_id="GFL99", nozzle_id="HH00-0.4") is None
+
+    def test_per_tray_extrusion_cali_set_advances_the_sequence_id(self, mqtt_client):
+        # It used to reuse the previous command's id, which would silently
+        # defeat the correlation the write path now depends on.
+        before = mqtt_client._sequence_id
+        mqtt_client.extrusion_cali_set(tray_id=0, k_value=0.02)
+        assert mqtt_client._sequence_id > before
+        assert self._sent(mqtt_client)["sequence_id"] == str(mqtt_client._sequence_id)
+
+    @pytest.mark.asyncio
+    async def test_failure_ack_is_reported_as_failure(self, mqtt_client):
+        seq = mqtt_client.set_kprofile(filament_id="GFL99", name="test", k_value="0.022000")
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "command": "extrusion_cali_set",
+                    "result": "fail",
+                    "reason": "invalid tray_id",
+                    "sequence_id": seq,
+                }
+            }
+        )
+        ok, detail = await mqtt_client.await_cali_ack(seq, timeout=2.0)
+        assert ok is False
+        assert detail == "invalid tray_id"
+
+    @pytest.mark.asyncio
+    async def test_success_ack_passes(self, mqtt_client):
+        seq = mqtt_client.set_kprofile(filament_id="GFL99", name="test", k_value="0.022000")
+        mqtt_client._process_message(
+            {"print": {"command": "extrusion_cali_set", "result": "success", "reason": "", "sequence_id": seq}}
+        )
+        ok, _ = await mqtt_client.await_cali_ack(seq, timeout=2.0)
+        assert ok is True
+
+    @pytest.mark.asyncio
+    async def test_ack_for_another_write_does_not_resolve_this_one(self, mqtt_client):
+        seq = mqtt_client.set_kprofile(filament_id="GFL99", name="test", k_value="0.022000")
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "command": "extrusion_cali_set",
+                    "result": "fail",
+                    "reason": "invalid tray_id",
+                    "sequence_id": "999999",
+                }
+            }
+        )
+        # Unrelated sequence_id: this write is still unanswered, so it times
+        # out rather than inheriting someone else's failure.
+        ok, detail = await mqtt_client.await_cali_ack(seq, timeout=0.3)
+        assert ok is True
+        assert "no acknowledgement" in detail
+
+    @pytest.mark.asyncio
+    async def test_silence_is_not_treated_as_rejection(self, mqtt_client):
+        # Firmware that never answers must not turn every save into an error.
+        seq = mqtt_client.delete_kprofile(cali_idx=1, filament_id="GFL99", nozzle_id="HH00-0.4")
+        ok, detail = await mqtt_client.await_cali_ack(seq, timeout=0.3)
+        assert ok is True
+        assert "no acknowledgement" in detail
+
+    @pytest.mark.asyncio
+    async def test_pending_slot_is_released(self, mqtt_client):
+        seq = mqtt_client.set_kprofile(filament_id="GFL99", name="test", k_value="0.022000")
+        await mqtt_client.await_cali_ack(seq, timeout=0.3)
+        assert mqtt_client._pending_cali_acks == {}
+
+    def test_delete_ack_is_matched_too(self, mqtt_client):
+        seq = mqtt_client.delete_kprofile(cali_idx=1, filament_id="GFL99", nozzle_id="HH00-0.4")
+        mqtt_client._process_message(
+            {"print": {"command": "extrusion_cali_del", "result": "success", "sequence_id": seq}}
+        )
+        assert mqtt_client._pending_cali_acks[seq]["result"] == "success"
+
+
+class TestKProfileRequestCorrelation:
+    """#1748: K-profile requests timed out whenever two were in flight.
+
+    Responses were matched to requests by nozzle diameter alone, held in one
+    shared ``_expected_kprofile_nozzle`` slot. A second request overwrote the
+    first's expectation, so the first's valid answer was discarded as a
+    mismatch and that request timed out even though the printer had replied.
+    Correlation now runs off the sequence_id we send, with the nozzle match
+    kept as a fallback for firmware that doesn't echo it.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="X1ETEST",
+            access_code="12345678",
+        )
+        client.state.connected = True
+        client._client = MagicMock()
+        return client
+
+    @staticmethod
+    def _response(nozzle, seq, name):
+        return {
+            "print": {
+                "command": "extrusion_cali_get",
+                "nozzle_diameter": nozzle,
+                "sequence_id": seq,
+                "filaments": [{"cali_idx": 1, "filament_id": "GFA00", "name": name, "k_value": "0.020000"}],
+            }
+        }
+
+    @pytest.mark.asyncio
+    async def test_concurrent_requests_each_get_their_own_response(self, mqtt_client):
+        # The failing sequence from the report: 0.8 is requested, then 0.4,
+        # then the 0.8 answer lands. Under nozzle-only matching the expected
+        # slot already said 0.4, so the 0.8 answer was dropped on the floor.
+        seen: list[str] = []
+
+        def publish(_topic, payload, **_kw):
+            seen.append(json.loads(payload)["print"]["sequence_id"])
+
+        mqtt_client._client.publish.side_effect = publish
+
+        big = asyncio.create_task(mqtt_client.get_kprofiles(nozzle_diameter="0.8", timeout=5.0))
+        small = asyncio.create_task(mqtt_client.get_kprofiles(nozzle_diameter="0.4", timeout=5.0))
+        await asyncio.sleep(0)  # let both publish before either answer arrives
+        assert len(seen) == 2
+
+        mqtt_client._process_message(self._response("0.8", seen[0], "wide"))
+        mqtt_client._process_message(self._response("0.4", seen[1], "narrow"))
+
+        assert [p.name for p in await big] == ["wide"]
+        assert [p.name for p in await small] == ["narrow"]
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_nozzle_match_when_sequence_id_is_not_echoed(self, mqtt_client):
+        # Firmware that answers with its own sequence_id must keep working.
+        mqtt_client._client.publish.side_effect = lambda *a, **kw: mqtt_client._process_message(
+            self._response("0.6", "9999", "echoed-nothing")
+        )
+        profiles = await mqtt_client.get_kprofiles(nozzle_diameter="0.6", timeout=2.0)
+        assert [p.name for p in profiles] == ["echoed-nothing"]
+
+    @pytest.mark.asyncio
+    async def test_unrelated_broadcast_does_not_clobber_a_pending_fetch(self, mqtt_client):
+        # The printer broadcasts 0.4 profiles unsolicited. One arriving while a
+        # 0.8 fetch is open must neither satisfy nor overwrite it.
+        def publish(_topic, payload, **_kw):
+            seq = json.loads(payload)["print"]["sequence_id"]
+            mqtt_client._process_message(self._response("0.4", "9999", "broadcast"))
+            mqtt_client._process_message(self._response("0.8", seq, "wanted"))
+
+        mqtt_client._client.publish.side_effect = publish
+        profiles = await mqtt_client.get_kprofiles(nozzle_diameter="0.8", timeout=2.0)
+        assert [p.name for p in profiles] == ["wanted"]
+        assert [p.name for p in mqtt_client.state.kprofiles] == ["wanted"]
+
+    @pytest.mark.asyncio
+    async def test_pending_entry_is_released_on_timeout(self, mqtt_client):
+        # A timed-out attempt must not leave its entry behind, or a later
+        # broadcast would be matched to a request nobody is waiting on.
+        profiles = await mqtt_client.get_kprofiles(nozzle_diameter="0.8", timeout=0.01, max_retries=1)
+        assert profiles == []
+        assert mqtt_client._pending_kprofile_requests == {}
 
 
 class TestConnectRefusalReporting:
