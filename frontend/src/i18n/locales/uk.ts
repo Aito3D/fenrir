@@ -3591,6 +3591,13 @@ export default {
 
   // File manager
   fileManager: {
+    variants: {
+      badge: 'Версій: {{count}}',
+      groupAction: 'Згрупувати як версії',
+      groupTooltip: 'Позначити ці файли як одне завдання, нарізане для різних принтерів',
+      grouped: 'Файлів згруповано як версії: {{count}}',
+      printAlternatives: 'Друк (варіантів: {{count}})',
+    },
     title: "Менеджер файлів",
     subtitle: "Упорядковуйте файли друку та керуйте ними",
     uploadFiles: "Вивантажити файли",
@@ -4671,6 +4678,15 @@ export default {
 
   // Print modal
   printModal: {
+    variants: {
+      title: 'Варіанти принтера',
+      help: 'Одне завдання, одне місце в черзі. Перший відповідний принтер, що звільниться, надрукує свій файл.',
+      unknownModel: 'Невідома модель',
+      plateFor: 'Стіл для {{filename}}',
+      moveUp: 'Вгору',
+      moveDown: 'Вниз',
+      queued: 'У черзі, варіантів: {{count}}',
+    },
     selectPrinter: "Вибрати принтер",
     selectPlate: "Вибрати пластину",
     filamentMapping: "Зіставлення філаментів",

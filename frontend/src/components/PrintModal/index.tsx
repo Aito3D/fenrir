@@ -29,6 +29,7 @@ import { PlateSelector } from './PlateSelector';
 import { PrinterSelector } from './PrinterSelector';
 import { PrintOptionsPanel } from './PrintOptions';
 import { ScheduleOptionsPanel } from './ScheduleOptions';
+import { VariantCandidates, type VariantCandidate } from './VariantCandidates';
 import type {
   AssignmentMode,
   FilamentReqsData,
@@ -58,6 +59,7 @@ export function PrintModal({
   onSuccess,
   projectId,
   cleanupLibraryAfterDispatch,
+  variantFiles,
 }: PrintModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -67,6 +69,12 @@ export function PrintModal({
   // Determine if we're printing a library file
   const isLibraryFile = !!libraryFileId && !archiveId;
   const isEditing = mode === 'edit-queue-item';
+
+  // Cross-model alternatives (#671). One candidate is not a choice, so a
+  // single-entry list behaves exactly like an ordinary print.
+  const isCrossModel = mode === 'create' && (variantFiles?.length ?? 0) > 1;
+  const [candidates, setCandidates] = useState<VariantCandidate[]>(variantFiles ?? []);
+  const [candidatePlates, setCandidatePlates] = useState<Record<number, number | null>>({});
 
   type FilamentWarningItem = {
     printerName: string;
@@ -165,6 +173,11 @@ export function PrintModal({
 
   // Assignment mode: 'printer' (specific) or 'model' (any of model)
   const [assignmentMode, setAssignmentMode] = useState<AssignmentMode>(() => {
+    // Cross-model alternatives are model-based by definition — naming one
+    // printer would defeat the point of offering the other file.
+    if (isCrossModel) {
+      return 'model';
+    }
     // Initialize from queue item if editing with target_model
     if (mode === 'edit-queue-item' && queueItem?.target_model) {
       return 'model';
@@ -803,16 +816,20 @@ export function PrintModal({
       showToast('Please select at least one printer', 'error');
       return;
     }
-    if (assignmentMode === 'model' && !targetModel) {
+    // A cross-model job has no single target model — each candidate carries its
+    // own, and the backend gates each of them separately. Both checks below are
+    // about the one-model case only.
+    if (!isCrossModel && assignmentMode === 'model' && !targetModel) {
       showToast('Please select a target printer model', 'error');
       return;
     }
     // Cross-model safety gate (#2578) — mirrors the backend's 400 so the user
     // gets inline feedback instead of a failed request.
-    if (assignmentMode === 'model' && !isGcodeCompatible(slicedForModel, targetModel)) {
+    if (!isCrossModel && assignmentMode === 'model' && !isGcodeCompatible(slicedForModel, targetModel)) {
       showToast(`File was sliced for ${slicedForModel} and cannot be dispatched to ${targetModel} printers`, 'error');
       return;
     }
+
 
     setIsSubmitting(true);
     // Calculate total API calls: plates × printers (or 1 for model-based)
@@ -873,6 +890,48 @@ export function PrintModal({
       isMultiPlateSelection && plateId !== null
         ? buildFilamentOverridesArray(perPlateReqs.get(plateId))
         : filamentOverridesArray;
+
+    // Cross-model alternatives (#671): ONE item carrying a candidate per file,
+    // in the order the user arranged. This returns before the plate/printer
+    // fan-out below because it deliberately fans out to nothing — the whole
+    // point is that exactly one of these candidates ever runs.
+    //
+    // Filament overrides are shared rather than per-candidate, matching how
+    // single-model assignment already behaves: the printer is unknown at queue
+    // time, so what is expressed here is "this job needs PETG", which is true of
+    // every slice of the same job. The AMS mapping is likewise absent — the
+    // scheduler computes it against the printer it actually picks.
+    if (isCrossModel) {
+      try {
+        await api.addToQueue({
+          variants: candidates.map((c) => ({
+            library_file_id: c.id,
+            plate_id: candidatePlates[c.id] ?? null,
+            filament_overrides: filamentOverridesArray,
+          })),
+          target_location: targetLocation,
+          require_previous_success: scheduleOptions.requirePreviousSuccess,
+          auto_off_after: scheduleOptions.autoOffAfter,
+          gcode_injection: scheduleOptions.gcodeInjection,
+          manual_start: scheduleOptions.scheduleType === 'queue' && scheduleOptions.requireManualStart,
+          scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
+            ? new Date(scheduleOptions.scheduledTime).toISOString()
+            : undefined,
+          quantity,
+          ...printOptions,
+          project_id: projectId ?? undefined,
+        });
+        showToast(t('printModal.variants.queued', { count: candidates.length }), 'success');
+        queryClient.invalidateQueries({ queryKey: ['queue'] });
+        onSuccess?.();
+        onClose();
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : String(error), 'error');
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
 
     // Multi-plate auto-batch: when the user adds 2+ plates from one source in
     // a single create submission, pre-create a PrintBatch and pass its
@@ -1101,9 +1160,11 @@ export function PrintModal({
 
     // Need valid printer/model selection
     if (assignmentMode === 'printer' && selectedPrinters.length === 0) return false;
-    if (assignmentMode === 'model' && !targetModel) return false;
+    // Both are about the single-model case. A cross-model job has no one target
+    // model, and each candidate is gated against its own by the backend (#671).
+    if (!isCrossModel && assignmentMode === 'model' && !targetModel) return false;
     // Cross-model mismatch cannot be queued (#2578)
-    if (assignmentMode === 'model' && !isGcodeCompatible(slicedForModel, targetModel)) return false;
+    if (!isCrossModel && assignmentMode === 'model' && !isGcodeCompatible(slicedForModel, targetModel)) return false;
 
     // For multi-plate files, need at least one plate selected
     if (isMultiPlate && selectedPlates.size === 0) return false;
@@ -1132,6 +1193,7 @@ export function PrintModal({
     perPlateReqsPending,
     perPlateReqsFailed,
     printerStatusLoading,
+    isCrossModel,
   ]);
 
   // Quantity only applies for single-printer or model-based assignment (not multi-printer)
@@ -1295,8 +1357,22 @@ export function PrintModal({
               multiSelect={!isEditing}
             />
 
+            {/* Cross-model alternatives (#671) replace the printer picker entirely:
+                the user already answered "which printer" by choosing these files,
+                and the remaining question is only which they'd rather have. */}
+            {isCrossModel && (
+              <VariantCandidates
+                candidates={candidates}
+                onReorder={setCandidates}
+                plateByFile={candidatePlates}
+                onPlateChange={(fileId, plateId) =>
+                  setCandidatePlates((prev) => ({ ...prev, [fileId]: plateId }))
+                }
+              />
+            )}
+
             {/* Printer selection with per-printer mapping — hidden when printer is pre-selected via props */}
-            {!initialSelectedPrinterIds?.length && (
+            {!isCrossModel && !initialSelectedPrinterIds?.length && (
               <PrinterSelector
                 printers={printers || []}
                 selectedPrinterIds={selectedPrinters}

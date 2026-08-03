@@ -3366,6 +3366,13 @@ export default {
     bundleStepBuild: "Создание ZIP-пакета для поддержки",
   },
   fileManager: {
+    variants: {
+      badge: 'Версий: {{count}}',
+      groupAction: 'Сгруппировать как версии',
+      groupTooltip: 'Пометить эти файлы как одну задачу, нарезанную для разных принтеров',
+      grouped: 'Файлов сгруппировано как версии: {{count}}',
+      printAlternatives: 'Печать (вариантов: {{count}})',
+    },
     title: "Файловый менеджер",
     subtitle: "Организация и управление файлами для печати",
     uploadFiles: "Загрузить файлы",
@@ -4389,6 +4396,15 @@ export default {
     remainingUnit: "осталось",
   },
   printModal: {
+    variants: {
+      title: 'Варианты принтера',
+      help: 'Одна задача, одно место в очереди. Первый подходящий освободившийся принтер напечатает свой файл.',
+      unknownModel: 'Неизвестная модель',
+      plateFor: 'Стол для {{filename}}',
+      moveUp: 'Вверх',
+      moveDown: 'Вниз',
+      queued: 'В очереди, вариантов: {{count}}',
+    },
     selectPrinter: "Выберите принтер",
     selectPlate: "Выберите пластину",
     filamentMapping: "Сопоставление филаментов",

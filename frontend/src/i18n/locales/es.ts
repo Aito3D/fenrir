@@ -3565,6 +3565,13 @@ export default {
 
   // File manager
   fileManager: {
+    variants: {
+      badge: '{{count}} versiones',
+      groupAction: 'Agrupar como versiones',
+      groupTooltip: 'Marcar estos archivos como el mismo trabajo laminado para distintas impresoras',
+      grouped: '{{count}} archivos agrupados como versiones',
+      printAlternatives: 'Imprimir ({{count}} alternativas)',
+    },
     title: 'Gestor de archivos',
     subtitle: 'Organice y gestione sus archivos de impresión',
     uploadFiles: 'Subir archivos',
@@ -4636,6 +4643,15 @@ export default {
 
   // Print modal
   printModal: {
+    variants: {
+      title: 'Alternativas de impresora',
+      help: 'Un trabajo, un puesto en la cola. La primera impresora compatible que quede libre imprime su archivo.',
+      unknownModel: 'Modelo desconocido',
+      plateFor: 'Placa para {{filename}}',
+      moveUp: 'Subir',
+      moveDown: 'Bajar',
+      queued: 'En cola con {{count}} alternativas',
+    },
     selectPrinter: 'Seleccionar impresora',
     selectPlate: 'Seleccionar cama',
     filamentMapping: 'Mapeo de filamentos',
