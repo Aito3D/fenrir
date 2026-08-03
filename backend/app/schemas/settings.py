@@ -17,7 +17,18 @@ from backend.app.schemas.print_queue import TriState
 # tests/unit/test_outbound_url_ssrf_guards.py can import the real list and
 # cannot drift from it. Any new outbound-URL setting belongs here (or, if it
 # must be reachable on the public internet, on the stricter OIDC guard).
-LAN_SERVICE_URL_SETTINGS = ("ha_url", "obico_ml_url", "orcaslicer_api_url", "bambu_studio_api_url")
+LAN_SERVICE_URL_SETTINGS = (
+    "ha_url",
+    "obico_ml_url",
+    "orcaslicer_api_url",
+    "bambu_studio_api_url",
+    # Fork: the Zoho Books endpoints the Aito board fetches with stored OAuth
+    # credentials. Public-cloud https in every real configuration, but they are
+    # admin-editable fetch targets, so they take the same guard: it costs
+    # nothing for legitimate values and blocks metadata-endpoint redirection.
+    "zoho_base_url",
+    "zoho_accounts_url",
+)
 
 
 class AppSettings(BaseModel):

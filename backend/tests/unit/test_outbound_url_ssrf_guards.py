@@ -567,6 +567,10 @@ GUARDED_BODY_URLS = {
     ("AppSettingsUpdate", "obico_ml_url"),
     ("AppSettingsUpdate", "orcaslicer_api_url"),
     ("AppSettingsUpdate", "spoolman_url"),  # assert_safe_spoolman_url at each consumer
+    # Fork: Zoho Books endpoints fetched with stored OAuth credentials —
+    # guarded by the LAN-service validator via LAN_SERVICE_URL_SETTINGS.
+    ("AppSettingsUpdate", "zoho_base_url"),
+    ("AppSettingsUpdate", "zoho_accounts_url"),
     ("HATestConnectionRequest", "url"),  # homeassistant._validate_url
     ("RESTTestConnectionRequest", "url"),  # rest_smart_plug._validate_url
     ("TestConnectionRequest", "url"),  # obico_detection.test_connection
@@ -610,6 +614,9 @@ NOT_A_FETCH_TARGET = {
     ("MaintenanceTypeCreate", "wiki_url"),  # documentation link surfaced in the UI/notifications
     ("MaintenanceTypeUpdate", "wiki_url"),
     ("ArchiveUpdate", "external_url"),  # stored source link for the model, never fetched
+    # Fork: the Zoho quote's deep link, snapshotted at import and rendered
+    # as an <a href> in the Aito board — never requested server-side.
+    ("AitoProjectCreate", "quote_url"),
 }
 
 # Genuinely unguarded, and deliberately recorded rather than quietly exempted.
@@ -622,6 +629,10 @@ KNOWN_UNGUARDED_NEEDS_SCHEME_AWARE_GUARD = {
     ("PrinterCreate", "external_camera_snapshot_url"),
     ("PrinterUpdate", "external_camera_url"),
     ("PrinterUpdate", "external_camera_snapshot_url"),
+    # Fork: same data as the fields above, arriving through this fork's
+    # JSON-body test endpoint (upstream moved theirs to a query param) —
+    # it reaches external_camera.test_connection, which dials rtsp:// too.
+    ("ExternalCameraTestRequest", "url"),
 }
 
 
