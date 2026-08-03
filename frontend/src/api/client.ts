@@ -1604,6 +1604,12 @@ export interface SliceRequest {
   // instead of the picked profile triplet. The preset refs above are still
   // required by the backend validator but go unused on this path.
   use_embedded_settings?: boolean;
+  // Layout passes the slicer runs before slicing (#2548), both off by
+  // default because they move or rotate the objects the user laid out.
+  // Unlike the fields above these are CLI actions rather than profile
+  // values, so they apply on the embedded-settings path too.
+  auto_orient?: boolean;
+  auto_arrange?: boolean;
 }
 
 // GET /api/v1/slicer/presets — unified listing across cloud / local / standard.
