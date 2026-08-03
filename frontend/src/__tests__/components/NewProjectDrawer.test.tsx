@@ -378,6 +378,70 @@ describe('NewProjectDrawer', () => {
     await waitFor(() => expect(createButton()).toHaveAttribute('aria-disabled', 'false'));
   });
 
+  it('✕ plays the drawer exit, then calls onClose', async () => {
+    const user = userEvent.setup();
+    const { onClose } = await renderDrawer();
+
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+
+    // The exit animation owns the next beat; unmounting is deferred to its end.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toHaveClass('animate-drawer-out');
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it('Escape defers close through the same exit', async () => {
+    const user = userEvent.setup();
+    const { onClose } = await renderDrawer();
+
+    await user.keyboard('{Escape}');
+
+    expect(onClose).not.toHaveBeenCalled();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it('collapsed sections keep their fields mounted but inert', async () => {
+    const user = userEvent.setup();
+    await renderDrawer();
+
+    // The client section starts closed: its content stays in the DOM so the
+    // collapse can animate height, but it must be unreachable by focus.
+    expect(screen.getByLabelText(/^phone$/i)).toBeInTheDocument();
+    const body = clientHeader().nextElementSibling as HTMLElement;
+    expect(body).toHaveAttribute('inert');
+
+    await user.click(clientHeader());
+    await waitFor(() => expect(clientHeader().nextElementSibling).not.toHaveAttribute('inert'));
+  });
+
+  it('the create-client form rises in, and stepping back rises the client section', async () => {
+    const user = userEvent.setup();
+    await renderDrawer();
+
+    await user.click(clientHeader());
+    const combobox = await screen.findByRole('combobox', { name: /client/i });
+    await user.clear(combobox);
+    await user.type(combobox, 'zzz');
+    await user.click(await screen.findByRole('button', { name: /create new client/i }));
+
+    expect(screen.getByLabelText(/company name/i).closest('form')).toHaveClass('animate-rise');
+
+    await user.keyboard('{Escape}');
+    const restored = await screen.findByRole('combobox', { name: /client/i });
+    expect(restored.closest('.animate-rise')).not.toBeNull();
+  });
+
+  it('acknowledges a completed section with a tick-in on its badge', async () => {
+    const user = userEvent.setup();
+    await renderDrawer();
+    expect(workHeader().querySelector('.animate-tick-in')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Add Scan' }));
+    fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
+
+    await waitFor(() => expect(workHeader().querySelector('.animate-tick-in')).not.toBeNull());
+  });
+
   it('submits the summary text as the description', async () => {
     const user = userEvent.setup();
     const { onCreate } = await renderDrawer();

@@ -82,7 +82,7 @@ function Section({
             done ? 'border-bambu-green bg-bambu-green text-white' : 'border-bambu-dark-tertiary text-bambu-gray'
           }`}
         >
-          {done ? <Check className="h-3.5 w-3.5" /> : index}
+          {done ? <Check className="h-3.5 w-3.5 animate-tick-in" /> : index}
         </span>
         <span className="flex-shrink-0 whitespace-nowrap text-sm font-semibold text-white">{title}</span>
         <span
@@ -99,9 +99,22 @@ function Section({
           }`}
         />
       </button>
-      {open && (
-        <div className="animate-rise border-t border-bambu-dark-tertiary p-3.5">{children}</div>
-      )}
+      {/* Mounted whether open or not, so the collapse can animate height both
+          ways (a grid row interpolating 1fr↔0fr) instead of the body
+          teleporting away. `inert` is what keeps the closed state honest:
+          height 0 hides the fields but alone would leave them in Tab order. */}
+      <div
+        inert={!open}
+        className={`grid motion-reduce:transition-none ${
+          open
+            ? 'grid-rows-[1fr] opacity-100 transition-[grid-template-rows,opacity] duration-[250ms] ease-[var(--ease-signature)]'
+            : 'grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity] duration-200 ease-[var(--ease-exit)]'
+        }`}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="border-t border-bambu-dark-tertiary p-3.5">{children}</div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -140,6 +153,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   const [revealedTaskKeys, setRevealedTaskKeys] = useState<Set<string>>(() => new Set());
   const [clientRevealed, setClientRevealed] = useState(false);
   const [creatingClient, setCreatingClient] = useState(false);
+  const [closing, setClosing] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Same query key ImpressionFields, TaskRow and the calculator page use, so
@@ -178,8 +192,23 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   const dismissRef = useRef<() => void>(() => {});
   dismissRef.current = () => {
     if (creatingClient) setCreatingClient(false);
-    else onClose();
+    else setClosing(true);
   };
+
+  // The exit animation (.animate-drawer-out, 200ms) owns the close: `closing`
+  // swaps the entrance classes for the exit pair, and the actual unmount is
+  // deferred a beat past the animation. A timeout rather than `animationend`,
+  // because that event never fires when reduced motion (or jsdom) replaces the
+  // animation — and a drawer that can't close is worse than one that skips its
+  // exit. `onClose` rides in a ref for the same fresh-closure reason as
+  // `dismissRef` above.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    if (!closing) return;
+    const id = window.setTimeout(() => onCloseRef.current(), 220);
+    return () => window.clearTimeout(id);
+  }, [closing]);
 
   useEffect(() => {
     // The panel takes focus on mount so Tab order starts inside the drawer and
@@ -311,7 +340,11 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
 
   return (
     <div
-      className="animate-overlay-in fixed inset-0 z-50 bg-black/60"
+      // pointer-events-none while closing: the drawer is already spoken for,
+      // and a click landing under it mid-exit would hit the board.
+      className={`fixed inset-0 z-50 bg-black/60 ${
+        closing ? 'animate-overlay-out pointer-events-none' : 'animate-overlay-in'
+      }`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) dismissRef.current();
       }}
@@ -322,14 +355,16 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
         aria-modal="true"
         aria-label={t('aito.modalTitle')}
         tabIndex={-1}
-        className="animate-drawer-in fixed inset-y-0 right-0 z-50 flex w-full max-w-[1100px] flex-col border-l border-bambu-dark-tertiary bg-bambu-dark-secondary shadow-[-30px_0_60px_rgba(0,0,0,0.5)] focus:outline-none"
+        className={`${closing ? 'animate-drawer-out' : 'animate-drawer-in'} fixed inset-y-0 right-0 z-50 flex w-full max-w-[1100px] flex-col border-l border-bambu-dark-tertiary bg-bambu-dark-secondary shadow-[-30px_0_60px_rgba(0,0,0,0.5)] focus:outline-none`}
       >
         <div className="flex flex-shrink-0 items-center gap-3 border-b border-bambu-dark-tertiary px-4 py-3">
           <h2 className="text-base font-semibold text-white">{t('aito.modalTitle')}</h2>
           <button
             type="button"
             aria-label={t('common.close')}
-            onClick={onClose}
+            // Not dismissRef: ✕ closes the drawer even from the create-client
+            // sub-form, where Escape/backdrop only step back.
+            onClick={() => setClosing(true)}
             className={`-m-1 ml-auto rounded-md p-1 text-bambu-gray transition-colors hover:bg-bambu-dark-tertiary hover:text-white ${focusRingCls}`}
           >
             <X className="h-5 w-5" />
@@ -383,6 +418,10 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
                 <NewContactForm onCancel={() => setCreatingClient(false)} onCreated={onClientCreated} />
               ) : draft ? (
                 <div
+                  // Replays on the way back from the create-client form (the
+                  // ternary swaps element types, so this remounts): the
+                  // returning section rises in just as the form did.
+                  className="animate-rise"
                   onBlur={(e) => {
                     // focusout bubbles in React, so one handler covers every
                     // field; relatedTarget inside means the user is still in

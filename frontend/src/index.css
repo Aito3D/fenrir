@@ -976,6 +976,29 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
   }
 }
 
+/* Drawer exit — the mirror of drawer-in: the same short travel back toward
+   the docked edge, on the exit curve, while the overlay fades. The drawer
+   defers its unmount past this (NewProjectDrawer's `closing` state), timed by
+   a setTimeout rather than `animationend` — that event never fires once
+   reduced motion or a test environment replaces the animation. */
+@keyframes drawer-out {
+  to { opacity: 0; transform: translateX(2rem); }
+}
+.animate-drawer-out {
+  animation: drawer-out 0.2s var(--ease-exit) forwards;
+}
+.animate-overlay-out {
+  animation: fadeOut 0.2s linear forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Fade only, same rule as the entrance. Still an animation, not `none`:
+     the fill-forwards opacity is what keeps the drawer hidden through the
+     unmount delay. */
+  .animate-drawer-out {
+    animation: fadeOut 0.15s ease-out forwards;
+  }
+}
+
 /* Toast enter/exit — a single transition-driven element with three states
    (pre-enter, open, leaving) instead of two @keyframes swapped by class, so a
    mid-entrance dismissal retargets smoothly from wherever the toast visually

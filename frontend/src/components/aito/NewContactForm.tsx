@@ -87,7 +87,10 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
         setError(null);
         createMutation.mutate();
       }}
-      className="flex flex-col flex-1 min-h-0"
+      // animate-rise: this form swaps in where ClientSection stood (see the
+      // drawer's `creatingClient` ternary), and the rise is the bridge — its
+      // counterpart is on the wrapper ClientSection remounts into.
+      className="animate-rise flex flex-col flex-1 min-h-0"
     >
       <div className="p-4 overflow-y-auto flex-1 space-y-4 scrollbar-hide">
         <div>
