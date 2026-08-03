@@ -4692,6 +4692,9 @@ async def delete_file(
                 abs_thumb_path.unlink()
             except OSError as e:
                 logger.warning("Failed to delete thumbnail from disk: %s", e)
+        from backend.app.services.library_trash import delete_dependent_variants
+
+        await delete_dependent_variants(db, [file.id])
         await db.delete(file)
         await db.commit()
         return {"status": "success", "message": "File deleted", "trashed": False}
