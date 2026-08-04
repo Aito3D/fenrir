@@ -151,6 +151,10 @@ describe('taskDraftFromAitoTask / taskDraftToTaskCreate', () => {
     position: 0,
     title: 'Bracket',
     description: 'Custom bracket',
+    scan_description: 'Scanner la pièce',
+    modelisation_description: null,
+    impression_description: 'PETG noir',
+    usinage_description: null,
     scan_cost: 0,
     modelisation_cost: null,
     usinage_cost: 1500,
@@ -171,6 +175,10 @@ describe('taskDraftFromAitoTask / taskDraftToTaskCreate', () => {
     expect(wireBack).toEqual({
       title: row.title,
       description: row.description,
+      scan_description: row.scan_description,
+      modelisation_description: row.modelisation_description,
+      impression_description: row.impression_description,
+      usinage_description: row.usinage_description,
       scan_cost: row.scan_cost,
       modelisation_cost: row.modelisation_cost,
       usinage_cost: row.usinage_cost,
@@ -194,6 +202,30 @@ describe('taskDraftFromAitoTask / taskDraftToTaskCreate', () => {
 
     expect(taskDraftFromAitoTask(row).modelisationCost).toBeNull();
     expect(taskDraftToTaskCreate(taskDraftFromAitoTask(row)).modelisation_cost).toBeNull();
+  });
+
+  it('round-trips per-service descriptions between wire and draft shape', () => {
+    const draft = emptyTaskDraft();
+    draft.scanDescription = 'Scanner la pièce';
+    draft.impressionDescription = 'PETG noir';
+    const wire = taskDraftToTaskCreate(draft);
+    expect(wire.scan_description).toBe('Scanner la pièce');
+    expect(wire.impression_description).toBe('PETG noir');
+    // Blank collapses to null, never '' — same rule as title.
+    expect(wire.modelisation_description).toBeNull();
+    expect(wire.usinage_description).toBeNull();
+  });
+
+  it('reads per-service descriptions from a persisted task, defaulting to empty strings', () => {
+    const draft = taskDraftFromAitoTask({
+      ...row,
+      scan_description: 'note',
+      modelisation_description: null,
+      impression_description: null,
+      usinage_description: null,
+    });
+    expect(draft.scanDescription).toBe('note');
+    expect(draft.modelisationDescription).toBe('');
   });
 });
 

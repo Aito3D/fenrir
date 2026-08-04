@@ -3600,6 +3600,10 @@ export interface AitoTask {
   position: number;
   title: string | null;
   description: string | null;
+  scan_description: string | null;
+  modelisation_description: string | null;
+  impression_description: string | null;
+  usinage_description: string | null;
   scan_cost: number | null;
   modelisation_cost: number | null;
   usinage_cost: number | null;

@@ -390,6 +390,10 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
       {
         title: null,
         description: null,
+        scan_description: null,
+        modelisation_description: null,
+        impression_description: null,
+        usinage_description: null,
         scan_cost: 0,
         modelisation_cost: null,
         usinage_cost: null,

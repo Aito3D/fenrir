@@ -30,6 +30,11 @@ export interface TaskDraft {
   uid: string;
   title: string;
   description: string;
+  /** Optional free text per service — the quote line's Info: row. '' = none. */
+  scanDescription: string;
+  modelisationDescription: string;
+  impressionDescription: string;
+  usinageDescription: string;
   /** null = the service is disabled. 0 stays meaningful as "free". */
   scanCost: number | null;
   modelisationCost: number | null;
@@ -66,6 +71,10 @@ export function emptyTaskDraft(): TaskDraft {
     uid: makeDraftUid(),
     title: '',
     description: '',
+    scanDescription: '',
+    modelisationDescription: '',
+    impressionDescription: '',
+    usinageDescription: '',
     scanCost: null,
     modelisationCost: null,
     usinageCost: null,
@@ -146,6 +155,10 @@ export function taskDraftFromAitoTask(task: AitoTask): TaskDraft {
     uid: `server-${task.id}`,
     title: task.title ?? '',
     description: task.description ?? '',
+    scanDescription: task.scan_description ?? '',
+    modelisationDescription: task.modelisation_description ?? '',
+    impressionDescription: task.impression_description ?? '',
+    usinageDescription: task.usinage_description ?? '',
     scanCost: task.scan_cost,
     modelisationCost: task.modelisation_cost,
     usinageCost: task.usinage_cost,
@@ -179,6 +192,10 @@ export function taskDraftToTaskCreate(t: TaskDraft): AitoTaskCreate {
   return {
     title: t.title.trim() || null,
     description: t.description.trim() || null,
+    scan_description: t.scanDescription.trim() || null,
+    modelisation_description: t.modelisationDescription.trim() || null,
+    impression_description: t.impressionDescription.trim() || null,
+    usinage_description: t.usinageDescription.trim() || null,
     scan_cost: t.scanCost,
     modelisation_cost: t.modelisationCost,
     usinage_cost: t.usinageCost,
