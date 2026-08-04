@@ -2,7 +2,6 @@ export default {
   // Aito production board (quote -> model -> print -> finish)
   aito: {
     title: 'Aito',
-    subtitle: 'Follow each order from quote to finished part',
     newProject: 'Project',
     modalTitle: 'New Project',
     productDescription: 'Product description',

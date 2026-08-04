@@ -2,7 +2,6 @@ export default {
   // Aito production board (quote -> model -> print -> finish)
   aito: {
     title: 'Aito',
-    subtitle: 'Her siparişi tekliften bitmiş parçaya kadar takip edin',
     newProject: 'Proje',
     modalTitle: 'Yeni Proje',
     productDescription: 'Ürün açıklaması',

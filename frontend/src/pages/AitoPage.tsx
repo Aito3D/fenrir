@@ -417,33 +417,49 @@ export function AitoPage() {
     // bottom. Below `lg` it stays a min-height so a narrow screen scrolls
     // the page normally rather than squeezing six columns into a phone.
     <div className="p-4 md:p-8 md:pb-4 flex flex-col gap-6 min-h-[calc(100dvh-3.5rem)] lg:h-[calc(100dvh-3.5rem)] min-[1144px]:h-dvh">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-rise-lg vt-page-title">
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <Kanban className="w-7 h-7 text-bambu-green" />
-            {t('aito.title')}
-            {/* Keyed on the value so the tick animation replays when it
-                changes — the same trick the column count badges use.
+      {/* Header — one row at lg+ so the board gets every remaining pixel of
+          height: title, search (which flexes to fill the middle and gives up
+          width first when the window narrows), the two view switches, then
+          the actions that CREATE work. Below lg it stacks: title, search,
+          controls. The subtitle sentence is gone — the page title plus the
+          column names already say what this screen is. */}
+      <div className="flex flex-col lg:flex-row lg:items-center gap-4 animate-rise-lg vt-page-title">
+        <h1 className="text-2xl font-bold text-white flex items-center gap-3 flex-none">
+          <Kanban className="w-7 h-7 text-bambu-green" />
+          {t('aito.title')}
+          {/* Keyed on the value so the tick animation replays when it
+              changes — the same trick the column count badges use.
 
-                The number alone is meaningless read aloud ("Aito, four"), so
-                the digits are aria-hidden and the phrase sits beside them for
-                screen readers. `title` covers the mouse. */}
-            <span
-              key={inProduction}
-              title={t('aito.inProduction', { count: inProduction })}
-              className="px-2 py-0.5 text-sm font-medium text-bambu-gray-light bg-bambu-dark-tertiary rounded-full tabular-nums animate-value-tick"
-            >
-              <span aria-hidden="true">{inProduction}</span>
-              <span className="sr-only">{t('aito.inProduction', { count: inProduction })}</span>
-            </span>
-          </h1>
-          <p className="text-bambu-gray mt-1">{t('aito.subtitle')}</p>
-        </div>
-        {/* Actions that CREATE work. The two view switches (Done, Trash) live
-            in the toolbar below instead — they change what you are looking at,
-            which is a different kind of control. */}
-        <div className="flex gap-2 sm:w-auto w-full">
+              The number alone is meaningless read aloud ("Aito, four"), so
+              the digits are aria-hidden and the phrase sits beside them for
+              screen readers. `title` covers the mouse. */}
+          <span
+            key={inProduction}
+            title={t('aito.inProduction', { count: inProduction })}
+            className="px-2 py-0.5 text-sm font-medium text-bambu-gray-light bg-bambu-dark-tertiary rounded-full tabular-nums animate-value-tick"
+          >
+            <span aria-hidden="true">{inProduction}</span>
+            <span className="sr-only">{t('aito.inProduction', { count: inProduction })}</span>
+          </span>
+        </h1>
+        <BoardSearch value={search} onChange={setSearch} className="w-full lg:w-auto lg:flex-1 lg:min-w-0" />
+        <div className="flex flex-wrap items-center gap-2 flex-none">
+          {/* Each toggle returns to the board, so switching straight from one
+              archive to the other is not possible — and does not need to be.
+              They are both detours; the board is where the work is. */}
+          <ViewToggleButton
+            active={view === 'done'}
+            onToggle={() => setView((current) => (current === 'done' ? 'board' : 'done'))}
+            icon={Archive}
+            label={`${t('aito.showDone')} (${doneCount})`}
+            data-flight-target=""
+          />
+          <ViewToggleButton
+            active={view === 'trash'}
+            onToggle={() => setView((current) => (current === 'trash' ? 'board' : 'trash'))}
+            icon={Trash2}
+            label={t('aito.trash')}
+          />
           <Button variant="secondary" onClick={() => setShowImport(true)} className="flex-1 sm:flex-none">
             <FileInput className="w-4 h-4 mr-2" />
             {t('aito.importQuote')}
@@ -453,27 +469,6 @@ export function AitoPage() {
             {t('aito.newProject')}
           </Button>
         </div>
-      </div>
-
-      {/* Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2 animate-rise">
-        <BoardSearch value={search} onChange={setSearch} className="flex-1" />
-        {/* Each toggle returns to the board, so switching straight from one
-            archive to the other is not possible — and does not need to be.
-            They are both detours; the board is where the work is. */}
-        <ViewToggleButton
-          active={view === 'done'}
-          onToggle={() => setView((current) => (current === 'done' ? 'board' : 'done'))}
-          icon={Archive}
-          label={`${t('aito.showDone')} (${doneCount})`}
-          data-flight-target=""
-        />
-        <ViewToggleButton
-          active={view === 'trash'}
-          onToggle={() => setView((current) => (current === 'trash' ? 'board' : 'trash'))}
-          icon={Trash2}
-          label={t('aito.trash')}
-        />
       </div>
 
       {/* Error state */}

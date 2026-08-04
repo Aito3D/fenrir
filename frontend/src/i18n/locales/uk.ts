@@ -3,7 +3,6 @@
 export default {
   aito: {
     title: "Aito",
-    subtitle: "Супровід кожного замовлення від пропозиції до готової деталі",
     newProject: "Проєкт",
     modalTitle: "Новий проєкт",
     productDescription: "Опис виробу",
