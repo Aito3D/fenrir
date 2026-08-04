@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render } from '../utils';
 import { QuoteStatusActions } from '../../components/aito/QuoteStatusActions';
+import { ProjectDoneAction } from '../../components/aito/ProjectDoneAction';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { __resetBoardSync } from '../../hooks/useBoardSync';
 import { api } from '../../api/client';
@@ -272,5 +273,23 @@ describe('QuoteStatusActions', () => {
       expect(client.getQueryData<AitoProject[]>(['aito-projects'])![0].column).toBe('devis');
     });
     expect(flash).toHaveBeenCalledWith(1);
+  });
+});
+
+describe('ProjectDoneAction — glyph swap in the panel footer', () => {
+  it('shows a check on a Finish card with no shipping', () => {
+    render(<ProjectDoneAction project={makeProject({ column: 'finish', move_lock: null, shipping_island: null })} />);
+    const done = screen.getByRole('button', { name: /mark project as done/i });
+    expect(done.querySelector('.lucide-check')).toBeTruthy();
+    expect(done.querySelector('.lucide-plane')).toBeFalsy();
+  });
+
+  it('shows a plane on a Finish card that has shipping', () => {
+    render(
+      <ProjectDoneAction project={makeProject({ column: 'finish', move_lock: null, shipping_island: 'rangiroa' })} />,
+    );
+    const done = screen.getByRole('button', { name: /mark project as done/i });
+    expect(done.querySelector('.lucide-plane')).toBeTruthy();
+    expect(done.querySelector('.lucide-check')).toBeFalsy();
   });
 });

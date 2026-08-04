@@ -1,0 +1,229 @@
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Phone, Plane } from 'lucide-react';
+import { ShippingFields } from './ShippingFields';
+import { HoldButton } from './HoldButton';
+import { CopyableValue } from './ProjectDetailPanel';
+import { emptyShippingDraft, isShippingComplete, shippingPayload } from '../../utils/shippingDraft';
+import type { ShippingDraft } from '../../utils/shippingDraft';
+import { parsePhone } from '../../utils/clientDraft';
+import { applyShipping } from '../../utils/aitoOptimistic';
+import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
+import { useToast } from '../../contexts/ToastContext';
+import { api, type AitoProject, type AitoProjectUpdate } from '../../api/client';
+import { Money } from '../calculator/shared';
+import { focusRingCls } from '../formStyles';
+
+/** Every shipment field the project already carries, reshaped into the same
+ *  draft `ShippingFields` drives in the create drawer. `priceEdited: false`
+ *  is deliberate, not an oversight: the CONTRACT in shippingDraft.ts requires
+ *  that changing the island re-seed the price from the new service's rate
+ *  unless the operator has hand-edited it in THIS session, and a value merely
+ *  restored from the server is not that — starting `true` here would carry
+ *  the old island's price forward under a newly picked service. `blurred`
+ *  starts empty so re-opening an already-valid shipment shows no red on
+ *  first paint; only a fresh edit that fails validation should light one up. */
+function draftFromProject(project: AitoProject): ShippingDraft {
+  const { countryCode, nationalNumber } = parsePhone(project.shipping_phone ?? '');
+  return {
+    island: project.shipping_island ?? '',
+    service: project.shipping_service ?? '',
+    firstName: project.shipping_first_name ?? '',
+    lastName: project.shipping_last_name ?? '',
+    countryCode,
+    nationalNumber,
+    price: project.shipping_price,
+    priceEdited: false,
+    blurred: { island: false, firstName: false, lastName: false, phone: false },
+  };
+}
+
+/** Capitalises a raw island key ('rangiroa' -> 'Rangiroa') for the read view
+ *  when the Zoho-backed catalogue hasn't resolved a proper label yet — see
+ *  the `islandLabel` computation below for when that catalogue lookup wins
+ *  instead. Islands are proper nouns and are never run through i18n. */
+function capitalize(key: string): string {
+  return key.length ? key.charAt(0).toLocaleUpperCase('fr') + key.slice(1) : key;
+}
+
+/** Optional air freight, on the panel's left column.
+ *
+ *  `project.shipping_island !== null` IS "has a shipment" — the only test,
+ *  here and on the server. A project without one renders no card at all, only
+ *  a discreet add button: this panel omits every section with nothing to say
+ *  (see the Quote card's own gating), and an empty "Shipping" heading on the
+ *  95% of projects that never fly a parcel would be exactly that noise.
+ *
+ *  Add and Edit share one body: both swap in `ShippingFields`, the same
+ *  four-field-plus-service block the create drawer uses, driven controlled
+ *  from a local draft. Edit seeds that draft from the PROJECT's stored
+ *  columns (`draftFromProject`) rather than a blank one — the whole point of
+ *  editing is to change what is already there, not to retype it. */
+export function ShippingCard({ project, currency }: { project: AitoProject; currency: string }) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<ShippingDraft | null>(null);
+
+  // Same query key the create drawer and ClientSection use, so this shares
+  // their cache instead of re-fetching a table that rarely changes.
+  const servicesQuery = useQuery({
+    queryKey: ['aito-shipping-services'],
+    queryFn: api.getAitoShippingServices,
+    staleTime: 60 * 60_000,
+  });
+
+  // Copies ProjectDetailPanel's description-save shape exactly: one
+  // `useOptimisticBoardMutation`, an `applyShipping` transform mirroring the
+  // server's own write, and the PATCH response written back into the
+  // `['aito-projects']` cache in `onSuccess` — the pattern every board
+  // mutation in this panel already follows, not a new one for this card.
+  const shippingMutation = useOptimisticBoardMutation<AitoProject, AitoProjectUpdate>({
+    mutationFn: (patch) => api.updateAitoProject(project.id, patch),
+    transform: (previous, patch) => applyShipping(previous, project.id, patch),
+    flashId: () => project.id,
+    onSuccess: (updatedProject) => {
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
+        prev?.map((p) => (p.id === updatedProject.id ? updatedProject : p)) ?? prev,
+      );
+    },
+    onError: () => showToast(t('aito.saveFailed'), 'error'),
+  });
+
+  const openAdd = () => {
+    setDraft(emptyShippingDraft(null));
+    setEditing(true);
+  };
+  const openEdit = () => {
+    setDraft(draftFromProject(project));
+    setEditing(true);
+  };
+  const cancel = () => {
+    setEditing(false);
+    setDraft(null);
+  };
+  const save = () => {
+    if (!draft) return;
+    if (!isShippingComplete(draft)) {
+      // Same reveal-on-submit discipline as NewProjectDrawer's `create`: a
+      // field never left must still be checked, and asking to save is what
+      // makes it count as left.
+      setDraft({ ...draft, blurred: { island: true, firstName: true, lastName: true, phone: true } });
+      return;
+    }
+    shippingMutation.mutate(shippingPayload(draft), {
+      onSuccess: () => {
+        setEditing(false);
+        setDraft(null);
+      },
+    });
+  };
+  const remove = () => {
+    shippingMutation.mutate({ shipping_island: null });
+  };
+
+  if (project.shipping_island === null && !editing) {
+    return (
+      <button
+        type="button"
+        onClick={openAdd}
+        className={`inline-flex items-center gap-1.5 rounded-md px-1 py-1 text-xs font-medium text-sky-400/75 transition-colors hover:text-sky-400 ${focusRingCls}`}
+      >
+        <Plane className="h-3.5 w-3.5" />
+        {t('aito.shippingAdd')}
+      </button>
+    );
+  }
+
+  // Catalogue label when the table has resolved (correct spelling/accents),
+  // capitalized key otherwise — the same "never blank" degrade the drawer's
+  // own rail uses, just favouring a readable capital over the raw key since
+  // nothing here is mid-typing the way that rail can be.
+  const islandLabel = project.shipping_island
+    ? (servicesQuery.data?.services.flatMap((s) => s.islands).find((i) => i.key === project.shipping_island)?.label
+        ?? capitalize(project.shipping_island))
+    : null;
+  const recipient = [project.shipping_first_name, project.shipping_last_name].filter(Boolean).join(' ');
+  const serviceName = project.shipping_service_name ?? project.shipping_service;
+
+  return (
+    <div className="rounded-[.6rem] border border-sky-400/35 bg-sky-400/[0.04] p-3">
+      <div className="mb-2.5 flex items-center gap-2">
+        {/* Enlarged like the board glyph's own heading use, task-12-brief. */}
+        <Plane className="h-[1.15rem] w-[1.15rem] text-sky-400" aria-hidden="true" />
+        <span className="text-xs font-semibold uppercase tracking-wider text-sky-400">{t('aito.shippingTitle')}</span>
+        {!editing && (
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              type="button"
+              onClick={openEdit}
+              className={`rounded-md px-1.5 py-0.5 text-xs text-bambu-gray transition-colors hover:bg-bambu-dark-tertiary hover:text-white ${focusRingCls}`}
+            >
+              {t('aito.shippingEdit')}
+            </button>
+            <HoldButton
+              onHold={remove}
+              durationMs={500}
+              disabled={shippingMutation.isPending}
+              label={t('aito.shippingRemove')}
+              hint={t('aito.holdToConfirm')}
+              progress="bar"
+              barClassName="bg-red-400/25"
+              className="rounded-md px-1.5 py-0.5 text-xs text-bambu-gray hover:bg-red-400/10 hover:text-red-400 data-[holding=true]:text-red-400"
+            >
+              {t('aito.shippingRemove')}
+            </HoldButton>
+          </div>
+        )}
+      </div>
+
+      {editing && draft ? (
+        <>
+          <ShippingFields
+            value={draft}
+            onChange={setDraft}
+            services={servicesQuery.data?.services ?? []}
+            catalogueResolved={servicesQuery.data?.catalogue_resolved ?? false}
+            currency={currency}
+          />
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={cancel}
+              className={`rounded-md px-2.5 py-1 text-sm text-bambu-gray transition-colors hover:text-white ${focusRingCls}`}
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              type="button"
+              onClick={save}
+              disabled={shippingMutation.isPending}
+              className={`rounded-md border border-sky-400/40 px-2.5 py-1 text-sm text-sky-400 transition-colors hover:bg-sky-400/10 disabled:opacity-50 ${focusRingCls}`}
+            >
+              {t('common.save')}
+            </button>
+          </div>
+        </>
+      ) : (
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm items-baseline">
+          <dt className="text-bambu-gray">{t('aito.shippingIsland')}</dt>
+          <dd className="text-right min-w-0 truncate text-white">{islandLabel}</dd>
+          <dt className="text-bambu-gray">{t('aito.shippingRecipient')}</dt>
+          <dd className="text-right min-w-0 truncate text-white">{recipient}</dd>
+          <dt className="text-bambu-gray">{t('aito.shippingPhone')}</dt>
+          <dd className="flex justify-end min-w-0">
+            <CopyableValue value={project.shipping_phone ?? ''} label={t('aito.shippingPhone')} icon={Phone} />
+          </dd>
+          <dt className="text-bambu-gray">{t('aito.shippingService')}</dt>
+          <dd className="text-right min-w-0 truncate text-white">{serviceName}</dd>
+          <dt className="text-bambu-gray">{t('aito.shippingRate')}</dt>
+          <dd className="text-right min-w-0 text-white">
+            <Money currency={currency} value={project.shipping_price ?? 0} />
+          </dd>
+        </dl>
+      )}
+    </div>
+  );
+}

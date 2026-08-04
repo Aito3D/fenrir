@@ -298,4 +298,18 @@ describe('board card actions — mark as done', () => {
       vi.restoreAllMocks();
     }
   });
+
+  it('shows a check on a Finish card with no shipping', () => {
+    renderColumn(card({ column: 'finish', move_lock: null, shipping_island: null }));
+    const done = screen.getByRole('button', { name: /mark project as done/i });
+    expect(done.querySelector('.lucide-check')).toBeTruthy();
+    expect(done.querySelector('.lucide-plane')).toBeFalsy();
+  });
+
+  it('shows a plane on a Finish card that has shipping', () => {
+    renderColumn(card({ column: 'finish', move_lock: null, shipping_island: 'rangiroa' }));
+    const done = screen.getByRole('button', { name: /mark project as done/i });
+    expect(done.querySelector('.lucide-plane')).toBeTruthy();
+    expect(done.querySelector('.lucide-check')).toBeFalsy();
+  });
 });

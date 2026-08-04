@@ -26,7 +26,7 @@ import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useBoardDrag } from '../hooks/useBoardDrag';
 import { useBoardSync } from '../hooks/useBoardSync';
 import { useQuotePendingPoll } from '../hooks/useQuotePendingPoll';
-import { useAitoPageMutations } from '../hooks/useAitoPageMutations';
+import { importableShipping, useAitoPageMutations } from '../hooks/useAitoPageMutations';
 import { placeholderProject } from '../utils/aitoOptimistic';
 
 // Shared with SortableCard so the dropped card and the neighbours closing
@@ -218,6 +218,20 @@ export function AitoPage() {
         // a draft import has. `TaskDraft` already structurally matches
         // `TaskLike` (see aitoBoardRules.ts), so no conversion is needed.
         tasks,
+        // Cosmetically inert here — a manual create always lands in Devis
+        // (see placeholderProject's own doc) — but threaded through anyway so
+        // this stays in step with the import path below rather than being a
+        // silent exception to it.
+        shipping: shipping
+          ? {
+              island: shipping.island,
+              service: shipping.service,
+              first_name: shipping.firstName.trim(),
+              last_name: shipping.lastName.trim(),
+              phone: formatPhone({ countryCode: shipping.countryCode, nationalNumber: shipping.nationalNumber }),
+              price: shipping.price,
+            }
+          : null,
       }),
     });
   };
@@ -425,6 +439,26 @@ export function AitoPage() {
                   // nullable, so null collapses to undefined here.
                   title: task.title ?? undefined,
                 })),
+                // The case this actually matters for: a quote imported
+                // already `accepted` with every step already ticked in Zoho
+                // lands straight in Finish (see `evaluate`), and a shipment
+                // on it would otherwise pop the Done check into a plane one
+                // round trip later — see placeholderProject's own doc.
+                // `importableShipping` mirrors the same gate the mutationFn
+                // above applies before this ever reaches the request body,
+                // so the placeholder never shows a shipment the POST itself
+                // will silently drop.
+                shipping:
+                  preview.shipping && importableShipping(preview.shipping)
+                    ? {
+                        island: preview.shipping.island,
+                        service: preview.shipping.service,
+                        first_name: preview.shipping.first_name,
+                        last_name: preview.shipping.last_name,
+                        phone: preview.shipping.phone,
+                        price: preview.shipping.price,
+                      }
+                    : null,
               }),
             });
           }}

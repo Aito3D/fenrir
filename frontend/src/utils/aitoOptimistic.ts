@@ -1,6 +1,6 @@
 import { evaluate, summariseTasks } from './aitoBoardRules';
 import type { TaskLike, TaskSummary } from './aitoBoardRules';
-import type { AitoProject } from '../api/client';
+import type { AitoProject, AitoProjectUpdate } from '../api/client';
 
 /** Pure optimistic transforms over the `['aito-projects']` cache.
  *
@@ -175,6 +175,50 @@ export function applySyncState(
   return projects.map((p) => (p.id === id ? { ...p, quote_sync_state: state } : p));
 }
 
+/** Mirrors the server's shipment PATCH: `shipping_island: null` is the
+ *  documented way to detach a shipment and clears all SIX shipping_* columns
+ *  (the four posted fields plus the two the server derives), not just the
+ *  five the request body carries. Any other island value is `ShippingCard`
+ *  writing an add or an edit, and applies the five posted fields verbatim.
+ *
+ *  `shipping_service`/`shipping_service_name` are server-derived from the
+ *  island and are never part of the payload, so an edit leaves them exactly
+ *  as they were until the response replaces the row — one round trip behind,
+ *  the same way every other derived field in this module settles. */
+export function applyShipping(
+  projects: AitoProject[] | undefined,
+  id: number,
+  patch: Pick<
+    AitoProjectUpdate,
+    'shipping_island' | 'shipping_first_name' | 'shipping_last_name' | 'shipping_phone' | 'shipping_price'
+  >,
+): AitoProject[] | undefined {
+  if (!projects) return undefined;
+  return projects.map((project) => {
+    if (project.id !== id) return project;
+    if (patch.shipping_island === null) {
+      return {
+        ...project,
+        shipping_island: null,
+        shipping_service: null,
+        shipping_first_name: null,
+        shipping_last_name: null,
+        shipping_phone: null,
+        shipping_price: null,
+        shipping_service_name: null,
+      };
+    }
+    return {
+      ...project,
+      shipping_island: patch.shipping_island ?? project.shipping_island,
+      shipping_first_name: patch.shipping_first_name ?? project.shipping_first_name,
+      shipping_last_name: patch.shipping_last_name ?? project.shipping_last_name,
+      shipping_phone: patch.shipping_phone ?? project.shipping_phone,
+      shipping_price: patch.shipping_price ?? project.shipping_price,
+    };
+  });
+}
+
 /** Remove the project without renumbering survivors in its column. Mirrors the
  *  server's soft delete (backend/app/api/routes/aito.py:delete_project), which
  *  only sets `status = "deleted"` and never touches other rows' positions. The
@@ -268,7 +312,20 @@ export function applyCreate(
  *  self-consistent even before `applyCreate` runs its own `reevaluate` over
  *  it — nothing here guesses beyond what the rules already say from the
  *  fields the caller posts. The server's own row replaces this wholesale on
- *  success either way. */
+ *  success either way.
+ *
+ *  `shipping` is optional and, for most callers, invisible either way: a
+ *  manual create posts no `quote_status` and always lands in Devis (see
+ *  `evaluate`), and the plane only ever replaces the Done check in Finish —
+ *  so a placeholder five columns away from Finish showing no shipment costs
+ *  nothing to look at. It stops being invisible on an IMPORT of a quote that
+ *  is already `accepted` with every step already ticked in Zoho: `evaluate`
+ *  lands that placeholder in `finish` on the very first paint, and if it also
+ *  carries a shipment the Done button would show a check that pops to a
+ *  plane one round trip later — exactly the double-render this whole layer
+ *  exists to prevent. Both callers (`useAitoPageMutations`'s create and
+ *  import) pass their shipment through unconditionally; it is cosmetically
+ *  inert on every OTHER placeholder and load-bearing on this one. */
 export function placeholderProject(fields: {
   description: string;
   client_id: string | null;
@@ -280,6 +337,14 @@ export function placeholderProject(fields: {
   quote_total?: number | null;
   quote_status?: string | null;
   tasks?: readonly TaskLike[];
+  shipping?: {
+    island: string;
+    service: string;
+    first_name: string;
+    last_name: string;
+    phone: string;
+    price: number | null;
+  } | null;
 }): AitoProject {
   const quoteStatus = fields.quote_status ?? null;
   const summary = summariseTasks(fields.tasks ?? []);
@@ -319,17 +384,18 @@ export function placeholderProject(fields: {
     // Shallow copy — see applyTaskSummary's own comment on the identical line.
     task_steps: summary.stepsByTask.map((steps) => ({ ...steps })),
     move_lock: lock,
-    // A fresh placeholder never carries a shipment: the drawer's shipping
-    // draft is not threaded through `placeholderProject` (Task 11 wires
-    // shipping into the create request itself, not the optimistic card) — the
-    // server's own row, which replaces this wholesale on success, is what
-    // first shows a shipment on the card.
-    shipping_island: null,
-    shipping_service: null,
-    shipping_first_name: null,
-    shipping_last_name: null,
-    shipping_phone: null,
-    shipping_price: null,
+    // See the doc comment above: cosmetically inert on nearly every
+    // placeholder, load-bearing on the one that lands straight in Finish.
+    // `shipping_service_name` is never known here — it is the Books item's
+    // display name, which nothing on this side of the wire carries — so it
+    // stays null and `ShippingCard`'s own fallback (the service key) covers
+    // the gap until the server's row replaces this wholesale.
+    shipping_island: fields.shipping?.island ?? null,
+    shipping_service: fields.shipping?.service ?? null,
+    shipping_first_name: fields.shipping?.first_name ?? null,
+    shipping_last_name: fields.shipping?.last_name ?? null,
+    shipping_phone: fields.shipping?.phone ?? null,
+    shipping_price: fields.shipping?.price ?? null,
     shipping_service_name: null,
     created_at: now,
     updated_at: now,
