@@ -659,6 +659,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
                       onBlur={saveDescription}
+                      maxLength={10000}
                       onKeyDown={(e) => {
                         if (e.key === 'Escape') {
                           // Stop the panel's window-level Escape handler: the first

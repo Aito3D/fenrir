@@ -32,12 +32,24 @@ def _check_email(value: str) -> str:
     return value
 
 
+def is_plausible_phone(value: str) -> bool:
+    """The same shape check `_check_phone` enforces, exposed as a predicate
+    so callers that would rather degrade a value than reject a whole request
+    (see services/aito_quote_import.py's `_client_snapshot`) can reuse the
+    exact rule instead of re-deriving it. An empty/whitespace-only value is
+    considered plausible — the caller decides what to do with blanks."""
+    value = value.strip()
+    if not value:
+        return True
+    digit_count = sum(c.isdigit() for c in value)
+    return bool(_PHONE_CHARS_RE.match(value)) and digit_count >= _MIN_PHONE_DIGITS
+
+
 def _check_phone(value: str) -> str:
     value = value.strip()
     if not value:
         return value
-    digit_count = sum(c.isdigit() for c in value)
-    if not _PHONE_CHARS_RE.match(value) or digit_count < _MIN_PHONE_DIGITS:
+    if not is_plausible_phone(value):
         raise ValueError("Enter a valid phone number")
     return value
 

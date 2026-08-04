@@ -25,6 +25,8 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
+from backend.app.schemas.aito import is_plausible_phone
+
 # The four Aito services, in the canonical order the board renders badges in
 # (mirrors SERVICES in backend/app/services/aito_board_rules.py).
 SERVICE_RANK: dict[str, int] = {"scan": 0, "modelisation": 1, "impression": 2, "usinage": 3}
@@ -497,11 +499,20 @@ def _client_snapshot(estimate: dict, contact: dict | None) -> dict:
         }
     sub_type = contact.get("customer_sub_type") or ""
     is_company = True if sub_type == "business" else (False if sub_type == "individual" else None)
+    # Mobile first: it is where the board writes a phone number back.
+    phone = (contact.get("mobile") or contact.get("phone") or "").strip() or None
+    # Zoho happily stores things that aren't phone numbers at all — "N/A",
+    # "-", "poste 12". AitoProjectCreate.client_phone enforces the same shape
+    # the manual create form's canonical output satisfies, so passing one of
+    # those straight through would 422 the WHOLE import over a field nobody
+    # can fix from the import modal. Degrade to None instead: the import
+    # succeeds and the user can fill in a real number from the card later.
+    if phone is not None and not is_plausible_phone(phone):
+        phone = None
     return {
         "id": contact.get("id") or estimate.get("customer_id") or "",
         "name": contact.get("name") or estimate.get("customer_name") or "",
-        # Mobile first: it is where the board writes a phone number back.
-        "phone": (contact.get("mobile") or contact.get("phone") or "").strip() or None,
+        "phone": phone,
         "email": (contact.get("email") or "").strip() or None,
         "is_company": is_company,
     }

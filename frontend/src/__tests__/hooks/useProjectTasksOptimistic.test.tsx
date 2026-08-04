@@ -135,6 +135,11 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  // A throw inside `holdDelete`'s act block (fake timers are switched on for
+  // the hold-to-delete tests) would otherwise skip the matching
+  // `vi.useRealTimers()` further down and leak fake timers into every test
+  // that runs after it in this file.
+  vi.useRealTimers();
 });
 
 /** Renders `ProjectDetailPanel` against a real QueryClient seeded with one

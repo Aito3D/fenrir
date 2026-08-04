@@ -4,6 +4,7 @@ shape and formatting quirks with invented customers."""
 import json
 from pathlib import Path
 
+from backend.app.schemas.aito import AitoProjectCreate
 from backend.app.services.aito_quote_import import (
     build_preview,
     group_lines,
@@ -309,6 +310,33 @@ def test_build_preview_degrades_when_the_contact_is_missing():
         "email": None,
         "is_company": None,
     }
+
+
+def test_build_preview_drops_an_unparseable_contact_phone_to_none():
+    """A Zoho contact's mobile/phone field is free text to Zoho — "N/A", "-",
+    "poste 12" all validate fine there. AitoProjectCreate.client_phone does
+    not accept those shapes, so _client_snapshot must degrade to None rather
+    than let one bad field 422 the whole import (review finding)."""
+    contact = {**CONTACT, "mobile": "N/A", "phone": ""}
+    preview = build_preview(load_estimate("dev-2461-three-services"), contact, URL)
+    assert preview["client"]["phone"] is None
+    # Everything else about the contact still comes through untouched.
+    assert preview["client"]["name"] == "SARL Exemple Import"
+    assert preview["client"]["email"] == "contact@exemple.pf"
+
+    # And the degraded snapshot is actually importable: what the import modal
+    # sends to POST /api/v1/aito/ is this client dict plus the suggested
+    # description, so the schema that endpoint validates against must accept
+    # it without raising — proving the import itself would no longer 422.
+    project = AitoProjectCreate(
+        description=preview["suggested_description"],
+        client_id=preview["client"]["id"],
+        client_name=preview["client"]["name"],
+        client_phone=preview["client"]["phone"],
+        client_email=preview["client"]["email"],
+        client_is_company=preview["client"]["is_company"],
+    )
+    assert project.client_phone is None
 
 
 def test_build_preview_truncates_a_long_title_and_keeps_the_full_text():

@@ -313,6 +313,7 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
                 id="aito-import-description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
+                maxLength={10000}
                 rows={4}
                 disabled={!preview}
                 className={`${inputCls} resize-none disabled:opacity-40`}

@@ -574,6 +574,12 @@ async def test_create_project_accepts_zoho_sourced_phone_shapes(async_client):
 
 @pytest.mark.asyncio
 async def test_create_project_rejects_a_phone_with_too_few_digits(async_client):
+    r = await _create(async_client, client_phone="12345")
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_project_rejects_a_phone_with_disallowed_characters(async_client):
     r = await _create(async_client, client_phone="not a phone")
     assert r.status_code == 422
 

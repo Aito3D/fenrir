@@ -103,6 +103,7 @@ export function AiSummaryPanel({ tasks, value, edited, onChange, generateNonce }
             aria-label={t('aito.summaryTitle')}
             value={value}
             onChange={(e) => onChange(e.target.value, true)}
+            maxLength={10000}
             rows={3}
             className="w-full resize-none rounded-md bg-transparent p-1 text-sm text-bambu-gray-light outline-none focus:bg-white/[0.04] focus:text-white"
           />

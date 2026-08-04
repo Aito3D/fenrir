@@ -177,20 +177,21 @@ describe('AitoPage — drag failure paths (moveMutation.onError, onDragCancel)',
     act(() => {
       mockCapturedHandlers.onDragStart?.({ active: { id: 12 } });
     });
-    await act(async () => {
+    act(() => {
       // Drag the first card onto the last: reorders to [34, 56, 12] and
       // fires the PATCH this test makes fail.
       mockCapturedHandlers.onDragEnd?.({ active: { id: 12 }, over: { id: 56 } });
-      // Real time, not fake timers: gives the mocked PATCH's rejection and
-      // the resulting onError/onSettled chain room to actually run instead
-      // of racing a synchronous assertion.
-      await new Promise((resolve) => setTimeout(resolve, 20));
     });
+
+    // Wait on the failure toast, not a fixed sleep: useBoardDrag.ts's
+    // moveMutation.onError (:108-113) sets the cache rollback via
+    // queryClient.setQueryData BEFORE calling showToast, so by the time this
+    // toast is in the DOM the rollback has already run — proving it without
+    // racing a timer.
+    await waitFor(() => expect(screen.getByText('Could not move the project. Please try again.')).toBeInTheDocument());
 
     // Cache rollback restored the original order — not just "some" order.
     expect(cardOrder(column)).toEqual(['12', '34', '56']);
-    // And the user was told the move didn't stick.
-    await waitFor(() => expect(screen.getByText('Could not move the project. Please try again.')).toBeInTheDocument());
   });
 
   it('onDragCancel (Escape mid-drag) restores drag state and issues no PATCH', async () => {
@@ -226,15 +227,14 @@ describe('AitoPage — drag failure paths (moveMutation.onError, onDragCancel)',
     // test asserted a `DragOverlay` clone and never saw one appear).
     expect(waitingColumn.className).toContain('opacity-40');
 
-    await act(async () => {
+    act(() => {
       mockCapturedHandlers.onDragCancel?.();
-      // Real time: `resyncIfIdle` invalidates the query, and the sync effect
-      // that rebuilds `board` from the refetch needs a tick to run.
-      await new Promise((resolve) => setTimeout(resolve, 20));
     });
 
-    // The drag lock cleared — `allowedDropColumns` was reset to null.
-    expect(waitingColumn.className).not.toContain('opacity-40');
+    // Wait on the drag lock clearing, not a fixed sleep: `resyncIfIdle`
+    // invalidates the query, and the sync effect that rebuilds `board` from
+    // the refetch needs a tick to run.
+    await waitFor(() => expect(waitingColumn.className).not.toContain('opacity-40'));
     // The board is exactly where it started.
     expect(cardOrder(quoteColumn)).toEqual(['12', '34', '56']);
     // And no move was ever attempted.
