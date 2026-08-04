@@ -449,3 +449,89 @@ def test_round_trip_keeps_rising_rank_tasks_apart():
     original = [task(title="Une", scan_cost=1000), task(title="Deux", modelisation_cost=2000)]
     preview = build_preview(as_estimate(build_line_items(original, [], CATALOGUE)), None, "https://x")
     assert [t["title"] for t in preview["tasks"]] == ["Une", "Deux"]
+
+
+from backend.app.services.aito_quote_export import (  # noqa: E402
+    Catalogue,
+    ExportShipping,
+    build_line_items,
+    build_shipping_description,
+    is_foreign,
+)
+
+# A distinct name from the module-level CATALOGUE above: that fixture's ids
+# ("ITEM_SCAN", ...) are matched against _SKU_FOR_ITEM by the round-trip
+# tests below, and Catalogue(...)'s ids here ("S", "M", ...) exist purely to
+# make the shipping-id assertions easy to read. Reusing the name CATALOGUE
+# would rebind the same global and silently break every earlier test that
+# reads it.
+SHIPPING_CATALOGUE = Catalogue(
+    scan_item_id="S",
+    modelisation_item_id="M",
+    impression_item_id="I",
+    usinage_item_id="U",
+    tax_id="T",
+    shipping={"tuamotu": "SHIP-TU", "societe": "SHIP-SO"},
+)
+
+SHIPPING = ExportShipping(
+    service="tuamotu",
+    island_label="Rangiroa",
+    first_name="Jean-Pierre",
+    last_name="DUPONT",
+    phone="+689-89645864",
+    price=3200.0,
+)
+
+
+def test_shipping_description_uses_the_exporters_label_convention():
+    assert build_shipping_description(SHIPPING) == ("Nom: Jean-Pierre DUPONT\nTéléphone: +689-89645864\nÎle: Rangiroa")
+
+
+def test_shipping_ids_are_ours_not_foreign():
+    assert SHIPPING_CATALOGUE.item_ids() == frozenset({"S", "M", "I", "U", "SHIP-TU", "SHIP-SO"})
+    assert is_foreign({"item_id": "SHIP-TU", "sku": "LIV-TU"}, SHIPPING_CATALOGUE) is False
+
+
+def test_shipping_line_comes_after_the_tasks_and_carries_no_header():
+    lines = build_line_items([task(scan_cost=5000)], [], SHIPPING_CATALOGUE, shipping=SHIPPING)
+    assert [line["item_id"] for line in lines] == ["S", "SHIP-TU"]
+    ship = lines[-1]
+    assert "header_name" not in ship, "the shipping line belongs to no task"
+    assert ship["rate"] == 3200.0
+    assert ship["quantity"] == 1
+    assert ship["tax_id"] == "T"
+    assert ship["item_order"] == 2
+
+
+def test_shipping_line_precedes_preserved_foreign_lines():
+    existing = [{"line_item_id": "F1", "sku": "RETAIL", "item_order": 1}]
+    lines = build_line_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE, shipping=SHIPPING)
+    assert [line.get("item_id") or line["line_item_id"] for line in lines] == ["S", "SHIP-TU", "F1"]
+
+
+def test_no_shipping_emits_no_shipping_line():
+    lines = build_line_items([task(scan_cost=5000)], [], SHIPPING_CATALOGUE)
+    assert [line["item_id"] for line in lines] == ["S"]
+
+
+def test_an_unowned_shipping_line_is_echoed_rather_than_deleted():
+    # The project carries no shipping, but the quote already has a shipping
+    # line — imported, or typed by hand in Books. Omitting it would DELETE it.
+    existing = [{"line_item_id": "L9", "item_id": "SHIP-TU", "item_order": 5}]
+    lines = build_line_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE)
+    assert lines[-1] == {"line_item_id": "L9", "item_order": 2}
+
+
+def test_the_projects_own_shipping_replaces_any_existing_shipping_line():
+    # One project, one shipping line — never two.
+    existing = [{"line_item_id": "L9", "item_id": "SHIP-TU", "item_order": 5}]
+    lines = build_line_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE, shipping=SHIPPING)
+    assert [line.get("item_id") or line["line_item_id"] for line in lines] == ["S", "SHIP-TU"]
+
+
+def test_shipping_item_id_raises_for_an_unresolved_service():
+    import pytest
+
+    with pytest.raises(KeyError):
+        SHIPPING_CATALOGUE.shipping_item_id("marquises")

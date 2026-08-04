@@ -454,12 +454,14 @@ class ZohoService:
         async def value(key: str, fallback: str) -> str:
             return (await get_setting(db, key)) or fallback
 
+        shipping = await self.get_shipping_catalogue(db)
         return Catalogue(
             scan_item_id=await value("zoho_item_scan_id", "66407000006501192"),
             modelisation_item_id=await value("zoho_item_modelisation_id", "66407000006485001"),
             impression_item_id=await value("zoho_item_impression_id", "66407000006485012"),
             usinage_item_id=await value("zoho_item_usinage_id", "66407000006884825"),
             tax_id=await value("zoho_service_tax_id", "66407000009281008"),
+            shipping={service: item.item_id for service, item in shipping.items()},
         )
 
     async def list_items(self, db: AsyncSession, search_text: str) -> list[dict]:

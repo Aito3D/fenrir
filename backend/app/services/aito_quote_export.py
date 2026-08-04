@@ -11,7 +11,7 @@ and ``parse_time_min`` for exactly that reason, and the round-trip tests are
 the guard.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from backend.app.services.aito_quote_import import service_for_sku
 
@@ -59,6 +59,22 @@ class ExportTask:
     modelisation_description: str | None = None
     impression_description: str | None = None
     usinage_description: str | None = None
+
+
+@dataclass(frozen=True)
+class ExportShipping:
+    """One project's air freight, flattened for export.
+
+    ``island_label`` is the display label, not the key: it is what the quote
+    prints and what ``aito_quote_import.island_for_label`` reads back.
+    """
+
+    service: str
+    island_label: str
+    first_name: str
+    last_name: str
+    phone: str
+    price: float
 
 
 def cost_of(task: ExportTask, service: str) -> float | None:
@@ -168,6 +184,20 @@ def build_description(service: str, task: ExportTask) -> str:
     return "\n".join(lines)
 
 
+def build_shipping_description(shipping: ExportShipping) -> str:
+    """The shipping line's description, in the same ``Label: valeur`` row
+    convention every other line uses — so ``parse_description`` reads it back
+    with no new parser. Recipient first, because that is what the freight desk
+    asks for; the island last, because it is the row the importer keys on and
+    a first occurrence wins there."""
+    name = f"{shipping.first_name} {shipping.last_name}".strip()
+    return "\n".join(
+        f"{label}: {value}"
+        for label, value in (("Nom", name), ("Téléphone", shipping.phone), ("Île", shipping.island_label))
+        if value
+    )
+
+
 _TITLE_MAX = 200
 
 
@@ -184,6 +214,12 @@ class Catalogue:
     impression_item_id: str
     usinage_item_id: str
     tax_id: str
+    # Service key -> Books item id for the five "Livraison Avion" items,
+    # resolved from Books and cached (services/zoho.get_shipping_catalogue).
+    # A default of {} keeps every existing construction valid; an EMPTY map
+    # means the catalogue has never resolved, which callers must treat as
+    # "cannot push" rather than "no shipping".
+    shipping: dict[str, str] = field(default_factory=dict)
 
     def item_id(self, service: str) -> str:
         return {
@@ -193,10 +229,24 @@ class Catalogue:
             "usinage": self.usinage_item_id,
         }[service]
 
+    def shipping_item_id(self, service: str) -> str:
+        """The Books item for one shipping service. Raises KeyError when the
+        catalogue has not resolved it — the sync worker turns that into
+        "leave the project pending" rather than pushing a quote with its
+        shipping line missing."""
+        return self.shipping[service]
+
     def item_ids(self) -> frozenset[str]:
-        """The four catalogue ids, for ownership checks that must not rely on
-        SKU prefixes alone — see ``is_foreign``."""
-        return frozenset({self.scan_item_id, self.modelisation_item_id, self.impression_item_id, self.usinage_item_id})
+        """Every catalogue id, for ownership checks that must not rely on SKU
+        prefixes alone — see ``is_foreign``. The shipping ids are in here for
+        exactly the same reason the four service ids are: without them our own
+        shipping line reads as foreign, and a foreign line is BOTH preserved by
+        line_item_id AND re-emitted from the project, duplicating a little more
+        on every push."""
+        return frozenset(
+            {self.scan_item_id, self.modelisation_item_id, self.impression_item_id, self.usinage_item_id}
+            | set(self.shipping.values())
+        )
 
 
 def impression_rate_quantity(task: ExportTask) -> tuple[float, int]:
@@ -243,6 +293,7 @@ def build_line_items(
     tasks: list[ExportTask],
     existing_line_items: list[dict],
     catalogue: Catalogue,
+    shipping: ExportShipping | None = None,
 ) -> list[dict]:
     """The full ``line_items`` array for a create or update.
 
@@ -290,8 +341,34 @@ def build_line_items(
                     **({"discount": discount} if discount else {}),
                 }
             )
+    if shipping is not None:
+        lines.append(
+            {
+                "item_id": catalogue.shipping_item_id(shipping.service),
+                "tax_id": catalogue.tax_id,
+                "unit": "Projet",
+                "rate": shipping.price,
+                "quantity": 1,
+                "description": build_shipping_description(shipping),
+                # No header_name on purpose: the shipment belongs to no task,
+                # and a header would file it under whichever task title
+                # happened to precede it.
+            }
+        )
+    shipping_ids = frozenset(catalogue.shipping.values())
     for line in sorted(existing_line_items, key=lambda item: item.get("item_order") or 0):
-        if is_foreign(line, catalogue) and line.get("line_item_id"):
+        if not line.get("line_item_id"):
+            continue
+        # A shipping line the project does not describe — imported from a quote
+        # whose island we could not match, or typed by hand in Books. It is
+        # OURS by item id, so `is_foreign` says no, and omitting it here would
+        # DELETE it. Echo it instead. When the project does carry shipping the
+        # line above already expresses it, so this must not also fire or the
+        # quote would end up with two.
+        if shipping is None and line.get("item_id") in shipping_ids:
+            lines.append({"line_item_id": line["line_item_id"]})
+            continue
+        if is_foreign(line, catalogue):
             lines.append({"line_item_id": line["line_item_id"]})
     for position, line in enumerate(lines, start=1):
         line["item_order"] = position
