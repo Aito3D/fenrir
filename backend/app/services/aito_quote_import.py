@@ -52,12 +52,6 @@ LABEL_DISPLAY: dict[str, str] = {
     "temps": "Temps",
     "couleur": "Couleur",
     "dimensions": "Dimensions",
-    # Shipping rows. Only ever written on a shipping line, but the parser is
-    # shared, so an unrelated line carrying "Nom: ..." would also capture it —
-    # harmless, since only parse_shipping_line reads these back.
-    "nom": "Nom",
-    "telephone": "Téléphone",
-    "ile": "Île",
 }
 
 # Labels that can supply a task title, in the order they are tried. Only the
@@ -81,14 +75,24 @@ def _fold(value: str) -> str:
     return "".join(c for c in decomposed if not unicodedata.combining(c)).lower()
 
 
-def parse_description(text: str | None) -> tuple[dict[str, str], tuple[str, ...]]:
+def parse_description(
+    text: str | None, allowed: dict[str, str] | None = None
+) -> tuple[dict[str, str], tuple[str, ...]]:
     """Split a line item's description into labelled values and free text.
 
     A row is a labelled value only when its prefix is one of the catalogue
     templates' known labels; 'Couleur Noir de face.' has no colon and
     'Note: x' has an unknown label, so both stay free text. When a label
     repeats, the first value wins.
+
+    ``allowed`` overrides which prefixes count as labelled values. Defaults
+    to ``LABEL_DISPLAY``, the catalogue templates' own labels. The shipping
+    parser passes its OWN set instead, so shipping labels never become
+    labelled values on an ordinary service line — where they would be
+    captured but not re-emitted by ``LABEL_ORDER``, and so erased from the
+    quote on the next push.
     """
+    allowed = allowed if allowed is not None else LABEL_DISPLAY
     labels: dict[str, str] = {}
     free: list[str] = []
     for raw_row in (text or "").split("\n"):
@@ -96,7 +100,7 @@ def parse_description(text: str | None) -> tuple[dict[str, str], tuple[str, ...]
         if not row or _fold(row) == _BOILERPLATE:
             continue
         match = _LABEL_RE.match(row)
-        if match and _fold(match.group(1)) in LABEL_DISPLAY:
+        if match and _fold(match.group(1)) in allowed:
             key = _fold(match.group(1))
             if key in labels:
                 # First value already won the field; the losing row must
@@ -267,6 +271,17 @@ def _split_recipient(name: str) -> tuple[str, str]:
     return " ".join(parts[:-1]), parts[-1]
 
 
+# The shipping line's own labels, deliberately NOT folded into LABEL_DISPLAY.
+# LABEL_DISPLAY feeds parse_description for every line, service or shipping
+# alike, and LABEL_ORDER (which _build_task uses to re-emit a preserved
+# label) has no entries for these — so a "Nom:"/"Île:"/"Téléphone:" row on an
+# ordinary service line would be captured as a label by parse_description but
+# never written back out, silently erasing it from the quote on the next
+# push. Passed explicitly to parse_description below instead, so only a
+# shipping line's own description is ever read through this map.
+_SHIPPING_LABELS: dict[str, str] = {"nom": "Nom", "telephone": "Téléphone", "ile": "Île"}
+
+
 def parse_shipping_line(line: dict, shipping_ids: dict[str, str]) -> ParsedShipping | None:
     """A shipping line, read back into project fields, or None.
 
@@ -280,7 +295,7 @@ def parse_shipping_line(line: dict, shipping_ids: dict[str, str]) -> ParsedShipp
     service = by_id.get(line.get("item_id"))
     if service is None:
         return None
-    labels, _ = parse_description(line.get("description"))
+    labels, _ = parse_description(line.get("description"), _SHIPPING_LABELS)
     island = island_for_label(labels.get("ile"))
     if island is None:
         return None
@@ -310,6 +325,14 @@ def parse_lines(
     app's export used to emit — is still honoured as a boundary marker: it is
     dropped from the output and flagged onto the next recognised line rather
     than being reported to the user as an unimportable line.
+
+    When ``shipping_ids`` resolves to an empty map (a cold catalogue cache —
+    see ``zoho.get_catalogue``), a shipping line is not recognised as ours by
+    id and so falls through to the ordinary SKU check, which also does not
+    know it: it IS reported to the operator as a skipped row. That is a
+    deliberate consequence of never guessing a shipping line by name or SKU,
+    not an oversight — the line itself is unaffected, since the export step's
+    echo rule still preserves it by ``line_item_id`` on the next push.
     """
     inclusive = bool(estimate.get("is_inclusive_tax"))
     precision = int(estimate.get("price_precision") or 0)

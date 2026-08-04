@@ -763,3 +763,27 @@ def test_shipping_round_trips_export_to_import_to_export():
         price=parsed.price,
     )
     assert build_line_items([], [], catalogue, shipping=again) == first
+
+
+def test_a_nom_row_on_an_ordinary_service_line_is_not_silently_erased():
+    """Regression: shipping's "Nom:" label must not be shared with the
+    catalogue-template labels parse_description uses for every line. Sharing
+    it would let parse_description CAPTURE "Nom: Marie Curie" as a labelled
+    value on an ordinary P3DIMP line — but LABEL_ORDER (which _build_task
+    uses to re-emit a preserved label) has no entry for "nom", so the row
+    would be silently dropped from the task description and then permanently
+    erased from the quote on the next push. It must instead fall through as
+    free text and survive verbatim."""
+    estimate = _estimate(
+        [_line("P3DIMP", 2400, description="Projet: Support\nNom: Marie Curie", header_name="Support")]
+    )
+    task = build_preview(estimate, None, "https://x")["tasks"][0]
+    assert "Nom: Marie Curie" in task["impression_description"]
+
+
+def test_an_ile_row_on_an_ordinary_service_line_is_not_silently_erased():
+    """Same regression, covering the accent/case-folded variant of the
+    shipping label ("ÎLE:" folds to the same key as "Île:")."""
+    estimate = _estimate([_line("P3DIMP", 2400, description="Projet: Support\nÎLE: Rangiroa", header_name="Support")])
+    task = build_preview(estimate, None, "https://x")["tasks"][0]
+    assert "ÎLE: Rangiroa" in task["impression_description"]
