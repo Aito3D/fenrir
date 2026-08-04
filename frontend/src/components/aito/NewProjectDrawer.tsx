@@ -23,6 +23,10 @@ import {
   hasPricedService,
   projectHasPricedService,
   projectTotal,
+  // The identity a row's blur-reveal is recorded under, shared with TaskEditor —
+  // `onRowBlur` hands back the task, not the key, so both must agree on the same
+  // function or a revealed row would never be recognised as revealed.
+  rowKey,
   taskTotal,
 } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
@@ -33,14 +37,6 @@ export interface NewProjectDrawerProps {
 }
 
 type SectionId = 'work' | 'client';
-
-/** The identity a row's blur-reveal is recorded under. Mirrors `TaskEditor`'s
- *  own private `rowKey` byte for byte — same `persisted:`/`draft:` prefixes,
- *  same fields — because `onRowBlur` hands back the task, not the key, and the
- *  two must agree or a revealed row would never be recognised as revealed. */
-function rowKey(task: TaskDraft): string {
-  return task.id !== null ? `persisted:${task.id}` : `draft:${task.uid}`;
-}
 
 /** A numbered, collapsible step of the drawer's main column: number-or-✓,
  *  title, a one-line hint, and a chevron. The number is `aria-hidden` so the

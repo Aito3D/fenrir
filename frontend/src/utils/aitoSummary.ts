@@ -1,14 +1,9 @@
+import { SERVICES, taskCost } from './aitoBoardRules';
+import type { ServiceId } from './aitoBoardRules';
 import type { TaskDraft } from './taskDraft';
 
-type ServiceId = 'scan' | 'modelisation' | 'impression' | 'usinage';
-
-function enabledServices(task: TaskDraft): string[] {
-  return [
-    task.scanCost !== null ? 'scan' : null,
-    task.modelisationCost !== null ? 'modelisation' : null,
-    task.impressionCost !== null ? 'impression' : null,
-    task.usinageCost !== null ? 'usinage' : null,
-  ].filter((s): s is ServiceId => s !== null);
+function enabledServices(task: TaskDraft): ServiceId[] {
+  return SERVICES.filter((service) => taskCost(task, service) !== null);
 }
 
 /** Stable fingerprint of what the AI summary describes: titles, per-service
