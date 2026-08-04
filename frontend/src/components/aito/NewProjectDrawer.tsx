@@ -20,6 +20,8 @@ import { useNewProjectDraft } from '../../hooks/useNewProjectDraft';
 import { buildFallbackSummary, tasksSignature } from '../../utils/aitoSummary';
 import { defaultClientDraft, draftFromContact, formatPhone, visibleClientDraftErrors } from '../../utils/clientDraft';
 import type { ClientDraft } from '../../utils/clientDraft';
+import { visibleShippingDraftErrors } from '../../utils/shippingDraft';
+import type { ShippingDraft } from '../../utils/shippingDraft';
 import {
   emptyTaskDraft,
   hasPricedService,
@@ -35,7 +37,7 @@ import type { TaskDraft } from '../../utils/taskDraft';
 
 export interface NewProjectDrawerProps {
   onClose: () => void;
-  onCreate: (description: string, draft: ClientDraft, tasks: TaskDraft[]) => void;
+  onCreate: (description: string, draft: ClientDraft, tasks: TaskDraft[], shipping: ShippingDraft | null) => void;
 }
 
 type SectionId = 'work' | 'client';
@@ -147,6 +149,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   const [summaryEdited, setSummaryEdited] = useState(() => persistence.initial?.summaryEdited ?? false);
   const summarySignatureRef = useRef(persistence.initial?.summarySignature ?? '');
   const [generateNonce, setGenerateNonce] = useState(0);
+  const [shipping, setShipping] = useState<ShippingDraft | null>(() => persistence.initial?.shipping ?? null);
   const [openSections, setOpenSections] = useState<Set<SectionId>>(() => new Set<SectionId>(['work']));
   const [revealedTaskKeys, setRevealedTaskKeys] = useState<Set<string>>(() => new Set());
   const [clientRevealed, setClientRevealed] = useState(false);
@@ -159,6 +162,20 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
     queryFn: () => api.getZohoStatus(),
     staleTime: 60_000,
   });
+  // Same query ClientSection runs (identical key), so React Query dedupes
+  // this onto its one request — this is only here so the rail receipt, the
+  // client-section hint suffix and the checklist can show the island's LABEL
+  // without any of them fetching on their own.
+  const shippingServicesQuery = useQuery({
+    queryKey: ['aito-shipping-services'],
+    queryFn: api.getAitoShippingServices,
+    staleTime: 60 * 60_000,
+  });
+  const shippingIslandLabel = shipping
+    ? (shippingServicesQuery.data?.services
+        .flatMap((service) => service.islands)
+        .find((island) => island.key === shipping.island)?.label ?? '')
+    : '';
   const defaultId = statusQuery.data?.default_contact_id ?? '';
   const defaultName = statusQuery.data?.default_contact_name ?? '';
   // The status endpoint always returns a default contact — even a fallback one
@@ -199,9 +216,10 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
       summaryText,
       summaryEdited,
       summarySignature: summarySignatureRef.current,
+      shipping,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, draft, summaryText, summaryEdited]);
+  }, [tasks, draft, summaryText, summaryEdited, shipping]);
 
   const toggleSection = (id: SectionId) =>
     setOpenSections((current) => {
@@ -244,6 +262,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
     setRevealedTaskKeys(new Set());
     setClientRevealed(false);
     setCreatingClient(false);
+    setShipping(null);
   };
 
   const taskName = (task: TaskDraft, index: number) => task.title.trim() || t('aito.taskFallbackName', { n: index + 1 });
@@ -267,8 +286,19 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   // on screen explaining why. Clicking Create is what reveals it.
   const visibleErrors = draft ? visibleClientDraftErrors(draft) : { phone: null, email: null };
   const clientValid = draft === null || (visibleErrors.phone === null && visibleErrors.email === null);
+  // Visible, not raw: a shipment the user has started but not finished must
+  // not disable Create with nothing on screen saying why. Clicking Create is
+  // what blurs every field (revealEverything) and turns the checklist line
+  // amber, and only then does this go false.
+  const shippingValid =
+    shipping === null || Object.values(visibleShippingDraftErrors(shipping)).every((error) => error === null);
   const canCreate =
-    tasks.length > 0 && projectHasPricedService(tasks) && clientReachable && clientValid && configured;
+    tasks.length > 0
+    && projectHasPricedService(tasks)
+    && clientReachable
+    && clientValid
+    && configured
+    && shippingValid;
 
   const summaryState = summaryText.trim() !== '' ? 'ready' : generateNonce > 0 ? 'generating' : 'waiting';
 
@@ -278,6 +308,9 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
     // The same reveal the old modal's submit did: fields the user never left
     // start reporting their errors.
     if (draft) setDraft({ ...draft, blurred: { phone: true, email: true } });
+    if (shipping) {
+      setShipping({ ...shipping, blurred: { island: true, firstName: true, lastName: true, phone: true } });
+    }
   };
 
   const create = () => {
@@ -295,11 +328,24 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
     setDraft(revealed);
     const revealedErrors = visibleClientDraftErrors(revealed);
     if (revealedErrors.phone !== null || revealedErrors.email !== null) return;
+
+    // Same discipline for the shipment: a field never left (island picked via
+    // one atomic action, but the phone pre-filled from the client and never
+    // touched) must still be checked before the request goes out, or an
+    // incomplete shipment could reach the server unnoticed.
+    let revealedShipping = shipping;
+    if (shipping) {
+      revealedShipping = { ...shipping, blurred: { island: true, firstName: true, lastName: true, phone: true } };
+      setShipping(revealedShipping);
+      const shippingErrors = visibleShippingDraftErrors(revealedShipping);
+      if (Object.values(shippingErrors).some((error) => error !== null)) return;
+    }
+
     // The description is never empty: an unreachable or unconfigured AI leaves
     // the panel showing a fallback enumeration, and even that is rebuilt here
     // rather than trusting the panel to have run at all.
     const serviceLabel = (id: string) => t(AITO_SERVICE_LABEL_KEYS[id] ?? id);
-    onCreate(summaryText.trim() || buildFallbackSummary(tasks, serviceLabel), draft, tasks);
+    onCreate(summaryText.trim() || buildFallbackSummary(tasks, serviceLabel), draft, tasks, revealedShipping);
   };
 
   const onClientCreated = (contact: ZohoContact) => {
@@ -380,7 +426,13 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
               index={2}
               testId="drawer-section-client"
               title={t('aito.clientSectionTitle')}
-              hint={clientReachable ? `${draft?.name ?? ''} · ${phone || email}` : t('aito.ruleClientContact')}
+              hint={
+                clientReachable
+                  ? `${draft?.name ?? ''} · ${phone || email}${
+                      shipping && shippingIslandLabel ? ` · ✈ ${shippingIslandLabel}` : ''
+                    }`
+                  : t('aito.ruleClientContact')
+              }
               hintTone={clientReachable ? 'ok' : 'warn'}
               open={openSections.has('client')}
               done={clientReachable && clientValid}
@@ -408,6 +460,8 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
                     onCreateNew={() => setCreatingClient(true)}
                     defaultContactId={defaultId}
                     defaultContactName={defaultName}
+                    shipping={shipping}
+                    onShippingChange={setShipping}
                   />
                   {/* Soft, never blocking: one channel is enough to create the
                       project, but the missing one has a real consequence. */}
@@ -443,15 +497,24 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
                     )}
                   </div>
                 ))}
+                {shipping && shipping.price !== null && (
+                  <div data-testid="rail-shipping-row" className="flex justify-between gap-2 text-sky-400">
+                    <span className="truncate">✈ {shippingIslandLabel}</span>
+                    <Money currency={currency} value={shipping.price} className="flex-shrink-0" />
+                  </div>
+                )}
                 <div className="flex justify-between gap-2">
                   <span className="truncate text-bambu-gray-light">{t('aito.client')}</span>
                   <span className="truncate text-white">{draft?.name ?? t('aito.noClient')}</span>
                 </div>
-                <div className="mt-1 flex justify-between gap-2 border-t border-bambu-dark-tertiary pt-2">
+                <div
+                  data-testid="rail-project-total"
+                  className="mt-1 flex justify-between gap-2 border-t border-bambu-dark-tertiary pt-2"
+                >
                   <span className="font-semibold text-white">{t('aito.projectTotal')}</span>
                   <Money
                     currency={currency}
-                    value={projectTotal(tasks)}
+                    value={projectTotal(tasks) + (shipping?.price ?? 0)}
                     className="flex-shrink-0 font-bold text-bambu-green-light"
                   />
                 </div>
@@ -483,6 +546,8 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
                 clientReachable={clientReachable}
                 clientContact={phone || email}
                 clientRevealed={clientRevealed}
+                shipping={shipping}
+                shippingIslandLabel={shippingIslandLabel}
               />
             </div>
 

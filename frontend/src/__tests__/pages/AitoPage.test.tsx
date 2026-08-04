@@ -581,6 +581,7 @@ describe('AitoPage (backend board)', () => {
       suggested_description: 'Helice grise',
       tasks: [{ ...emptyTask, title: 'Helice grise', impression_cost: 2400 }],
       skipped_lines: [],
+      shipping: null,
       existing_project_id: null,
     };
 
@@ -1189,6 +1190,7 @@ describe('AitoPage (backend board)', () => {
           },
         ],
         skipped_lines: [],
+        shipping: null,
         existing_project_id: null,
       };
 
@@ -1217,6 +1219,73 @@ describe('AitoPage (backend board)', () => {
         await within(drawer).findByText('Printing');
         await user.click(within(drawer).getByRole('button', { name: /^import$/i }));
       }
+
+      it('maps the preview shipment onto the create payload — unprefixed to prefixed, without service', async () => {
+        // `ZohoQuoteShipping` (the preview's shape) and `AitoProjectCreate`'s
+        // shipping fields (the POST body's shape) deliberately disagree: the
+        // preview's keys are unprefixed and carry `service`, the request's
+        // are prefixed and never do — the server derives `shipping_service`
+        // from the island itself and silently ignores a client-supplied one.
+        const shippedPreview: ZohoQuotePreview = {
+          ...preview,
+          shipping: {
+            island: 'rangiroa',
+            service: 'tuamotu',
+            first_name: 'Jean-Pierre',
+            last_name: 'DUPONT',
+            phone: '+689-87123456',
+            price: 3200,
+          },
+        };
+        const createSpy = vi.spyOn(api, 'createAitoProject').mockResolvedValue(makeProject());
+        server.use(
+          http.get('/api/v1/zoho/estimates', () =>
+            HttpResponse.json([
+              {
+                id: 'e9', number: 'DEV26-9001', customer_name: 'Import Client',
+                date: '2026-07-29', total: 1200, currency_code: 'XPF', status: 'draft',
+              },
+            ]),
+          ),
+          http.get('/api/v1/zoho/estimates/:id/preview', () => HttpResponse.json(shippedPreview)),
+        );
+        renderPage([]);
+        const user = userEvent.setup();
+        await user.click(await screen.findByRole('button', { name: /^import$/i }));
+        const drawer = (await screen.findByRole('dialog', { name: /import a quote/i })) as HTMLElement;
+        await user.click(await screen.findByText('DEV26-9001'));
+        await within(drawer).findByText('Printing');
+        await user.click(within(drawer).getByRole('button', { name: /^import$/i }));
+
+        await waitFor(() => expect(createSpy).toHaveBeenCalled());
+        expect(createSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            shipping_island: 'rangiroa',
+            shipping_first_name: 'Jean-Pierre',
+            shipping_last_name: 'DUPONT',
+            shipping_phone: '+689-87123456',
+            shipping_price: 3200,
+          }),
+        );
+        const body = createSpy.mock.calls[0][0] as Record<string, unknown>;
+        expect(body).not.toHaveProperty('shipping_service');
+      });
+
+      it('sends none of the shipping fields when the preview carries no shipment', async () => {
+        const createSpy = vi.spyOn(api, 'createAitoProject').mockResolvedValue(makeProject());
+        renderPage([]);
+        const user = userEvent.setup();
+        await startImport(user);
+
+        await waitFor(() => expect(createSpy).toHaveBeenCalled());
+        const body = createSpy.mock.calls[0][0] as Record<string, unknown>;
+        expect(body).not.toHaveProperty('shipping_island');
+        expect(body).not.toHaveProperty('shipping_first_name');
+        expect(body).not.toHaveProperty('shipping_last_name');
+        expect(body).not.toHaveProperty('shipping_phone');
+        expect(body).not.toHaveProperty('shipping_price');
+        expect(body).not.toHaveProperty('shipping_service');
+      });
 
       it('closes the modal and shows an inert placeholder card at once', async () => {
         let release: (v: AitoProject) => void = () => {};

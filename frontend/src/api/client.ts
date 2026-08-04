@@ -3717,6 +3717,22 @@ export interface ZohoEstimateSummary {
   status: string;
 }
 
+/** The shipment read back off the estimate's shipping line, unprefixed and
+ *  carrying no `service` — the server always derives `shipping_service` from
+ *  the island and rejects a client-supplied one. A caller mapping this onto
+ *  `createAitoProject`'s body must rename each field to its `shipping_*`
+ *  counterpart AND drop `service` entirely: island -> shipping_island,
+ *  first_name -> shipping_first_name, last_name -> shipping_last_name,
+ *  phone -> shipping_phone, price -> shipping_price. */
+export interface ZohoQuoteShipping {
+  island: string;
+  service: string;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  price: number;
+}
+
 export interface ZohoQuotePreview {
   quote: {
     id: string;
@@ -3740,6 +3756,9 @@ export interface ZohoQuotePreview {
    *  is exactly what gets created. */
   tasks: AitoTaskCreate[];
   skipped_lines: { sku: string; name: string; amount: number }[];
+  /** null when the quote carries no shipping line, or when it carries one
+   *  whose island could not be resolved. */
+  shipping: ZohoQuoteShipping | null;
   /** The active project already imported from this quote, if any. */
   existing_project_id: number | null;
 }

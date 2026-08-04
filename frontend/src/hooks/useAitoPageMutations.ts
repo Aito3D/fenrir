@@ -6,6 +6,8 @@ import { formatPhone } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
 import { taskDraftToTaskCreate } from '../utils/taskDraft';
 import type { TaskDraft } from '../utils/taskDraft';
+import { shippingPayload } from '../utils/shippingDraft';
+import type { ShippingDraft } from '../utils/shippingDraft';
 import { clearNewProjectDraft } from './useNewProjectDraft';
 import { useOptimisticBoardMutation } from './useOptimisticBoardMutation';
 import { applyCreate, applyDelete } from '../utils/aitoOptimistic';
@@ -50,9 +52,9 @@ export function useAitoPageMutations() {
 
   const createMutation = useOptimisticBoardMutation<
     AitoProject,
-    { description: string; draft: ClientDraft; tasks: TaskDraft[]; placeholder: AitoProject }
+    { description: string; draft: ClientDraft; tasks: TaskDraft[]; shipping: ShippingDraft | null; placeholder: AitoProject }
   >({
-    mutationFn: ({ description, draft, tasks }) =>
+    mutationFn: ({ description, draft, tasks, shipping }) =>
       api.createAitoProject({
         description,
         client_id: draft.id,
@@ -61,6 +63,7 @@ export function useAitoPageMutations() {
         client_email: draft.email.trim() || null,
         client_is_company: draft.isCompany,
         tasks: tasks.map(taskDraftToTaskCreate),
+        ...(shipping ? shippingPayload(shipping) : {}),
       }),
     transform: (previous, { placeholder }) => applyCreate(previous, placeholder),
     // No flash: the placeholder is REMOVED on failure rather than reverted in
@@ -107,6 +110,19 @@ export function useAitoPageMutations() {
         quote_url: preview.quote.url,
         quote_salesperson: preview.quote.salesperson,
         quote_status: preview.quote.status,
+        // `preview.shipping` (ZohoQuoteShipping) is unprefixed and carries a
+        // `service` the request body must never see — the server derives
+        // `shipping_service` from the island alone. `service` is deliberately
+        // dropped, not renamed.
+        ...(preview.shipping
+          ? {
+              shipping_island: preview.shipping.island,
+              shipping_first_name: preview.shipping.first_name,
+              shipping_last_name: preview.shipping.last_name,
+              shipping_phone: preview.shipping.phone,
+              shipping_price: preview.shipping.price,
+            }
+          : {}),
       }),
     transform: (previous, { placeholder }) => applyCreate(previous, placeholder),
     onSuccess: (created, { placeholder }) => {

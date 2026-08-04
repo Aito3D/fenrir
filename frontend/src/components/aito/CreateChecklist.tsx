@@ -1,5 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Check } from 'lucide-react';
+import { visibleShippingDraftErrors, isShippingComplete } from '../../utils/shippingDraft';
+import type { ShippingDraft } from '../../utils/shippingDraft';
 
 export type ChecklistState = 'ok' | 'miss' | 'wait';
 
@@ -16,6 +18,11 @@ export interface CreateChecklistProps {
   clientContact: string;
   /** True once the client fields have been blurred (or a submit attempt happened). */
   clientRevealed: boolean;
+  /** null when no shipment exists — the line is absent entirely, not just empty. */
+  shipping: ShippingDraft | null;
+  /** The chosen island's display label, passed in from the drawer (which
+   *  already has the services list) — this component must never fetch. */
+  shippingIslandLabel: string;
 }
 
 /** Shared checklist row (box, `animate-tick-in` tick, 300ms colour transition) consumed by `CreateChecklist` and `ImportQuoteDrawer`. */
@@ -57,6 +64,8 @@ export function CreateChecklist(props: CreateChecklistProps) {
     clientReachable,
     clientContact,
     clientRevealed,
+    shipping,
+    shippingIslandLabel,
   } = props;
 
   const subTask: { state: ChecklistState; text: string } =
@@ -67,6 +76,27 @@ export function CreateChecklist(props: CreateChecklistProps) {
         : revealedUnpricedName !== null
           ? { state: 'miss', text: t('aito.ruleSubTaskMissing', { name: revealedUnpricedName }) }
           : { state: 'wait', text: t('aito.ruleSubTasksPending') };
+
+  // Rendered only when a shipment exists — a row on the 95% of projects that
+  // never ship anything would be noise, not information. The `miss` branch
+  // names the first offender, same discipline as the sub-task line above, and
+  // it only fires once the field has been LEFT (visibleShippingDraftErrors),
+  // so nothing goes amber under the user's cursor.
+  const shippingLine: { state: ChecklistState; text: string } = (() => {
+    if (!shipping) return { state: 'wait', text: '' };
+    const visible = visibleShippingDraftErrors(shipping);
+    if (isShippingComplete(shipping)) {
+      return {
+        state: 'ok',
+        text: t('aito.ruleShippingOk', {
+          island: shippingIslandLabel,
+          recipient: `${shipping.firstName} ${shipping.lastName}`.trim(),
+        }),
+      };
+    }
+    const firstError = visible.island ?? visible.firstName ?? visible.lastName ?? visible.phone;
+    return firstError ? { state: 'miss', text: t(firstError) } : { state: 'wait', text: t('aito.ruleShippingPending') };
+  })();
 
   return (
     <div className="space-y-1.5">
@@ -85,6 +115,7 @@ export function CreateChecklist(props: CreateChecklistProps) {
         state={clientReachable ? 'ok' : clientRevealed ? 'miss' : 'wait'}
         text={clientReachable ? t('aito.ruleClientReachable', { contact: clientContact }) : t('aito.ruleClientContact')}
       />
+      {shipping !== null && <Line state={shippingLine.state} text={shippingLine.text} />}
     </div>
   );
 }

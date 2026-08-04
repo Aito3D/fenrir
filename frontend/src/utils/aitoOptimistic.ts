@@ -319,6 +319,18 @@ export function placeholderProject(fields: {
     // Shallow copy — see applyTaskSummary's own comment on the identical line.
     task_steps: summary.stepsByTask.map((steps) => ({ ...steps })),
     move_lock: lock,
+    // A fresh placeholder never carries a shipment: the drawer's shipping
+    // draft is not threaded through `placeholderProject` (Task 11 wires
+    // shipping into the create request itself, not the optimistic card) — the
+    // server's own row, which replaces this wholesale on success, is what
+    // first shows a shipment on the card.
+    shipping_island: null,
+    shipping_service: null,
+    shipping_first_name: null,
+    shipping_last_name: null,
+    shipping_phone: null,
+    shipping_price: null,
+    shipping_service_name: null,
     created_at: now,
     updated_at: now,
   };
