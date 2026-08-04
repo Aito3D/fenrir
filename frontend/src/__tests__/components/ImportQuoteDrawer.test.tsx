@@ -138,19 +138,40 @@ describe('ImportQuoteDrawer', () => {
     expect(screen.getByText(/description filled in/i).closest('[data-state]')).toHaveAttribute('data-state', 'miss');
   });
 
-  it('warns about a quote that was already imported but still allows importing again', async () => {
+  it('a quote already on the board cannot even be selected — the row is blocked', async () => {
+    // The backend enforces this with a 409 (_reject_duplicate_quote); the
+    // picker blocks it up front so the user is not led through the whole
+    // preview flow toward a submit that can only fail.
     respondWith({ ...preview, existing_project_id: 42 }, [{ id: 42, quote_id: 'e2', status: 'active' }]);
+    const user = userEvent.setup();
+    render(<ImportQuoteDrawer onClose={vi.fn()} onImport={vi.fn()} />);
+
+    // The chip marks the row before anything is clicked...
+    expect(await screen.findByText(/imported → #42/i)).toBeInTheDocument();
+    const row = screen.getByRole('option', { name: /DEV26-2462/i });
+    expect(row).toHaveAttribute('aria-disabled', 'true');
+    // ...and clicking it selects nothing: the picker stays in list mode (no
+    // "Change" card) and no preview tasks ever load.
+    await user.click(row);
+    expect(screen.getByRole('searchbox')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /change/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Helice grise')).not.toBeInTheDocument();
+  });
+
+  it('blocks import when the preview reports the quote is already on the board', async () => {
+    // The board list can be stale (the row not yet marked), so the drawer's
+    // own gate must hold on the preview's existing_project_id alone.
+    respondWith({ ...preview, existing_project_id: 42 }, []);
     const onImport = vi.fn();
     const user = userEvent.setup();
     render(<ImportQuoteDrawer onClose={vi.fn()} onImport={onImport} />);
-
-    // The chip is on the row before anything is clicked.
-    expect(await screen.findByText(/imported → #42/i)).toBeInTheDocument();
     await pickTheQuote(user);
-    const cta = await screen.findByRole('button', { name: /import again/i });
-    expect(cta).toHaveAttribute('aria-disabled', 'false');
+
+    const cta = await screen.findByRole('button', { name: /^import\b/i });
+    expect(cta).toHaveAttribute('aria-disabled', 'true');
     await user.click(cta);
-    expect(onImport).toHaveBeenCalled();
+    expect(onImport).not.toHaveBeenCalled();
+    expect(screen.getAllByText(/already imported as project #42/i).length).toBeGreaterThan(0);
   });
 
   it('lists skipped lines inside the receipt with the totals row', async () => {

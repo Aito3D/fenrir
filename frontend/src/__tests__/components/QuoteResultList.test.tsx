@@ -58,12 +58,13 @@ describe('QuoteResultList', () => {
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'e2' }));
   });
 
-  it('marks a quote the board already imported, but still allows selecting it', async () => {
+  it('marks a quote the board already imported and BLOCKS selecting it, mouse and keyboard', async () => {
     server.use(
       http.get('/api/v1/aito/', () =>
         // `status: 'active'` here is documentation, not an exercised filter — the
         // real endpoint never returns trashed rows, so the component doesn't
-        // filter by status itself.
+        // filter by status itself. Trashed projects therefore never block:
+        // trashing frees the quote (the backend's _reject_duplicate_quote rule).
         HttpResponse.json([{ id: 87, quote_id: 'e1', status: 'active' }]),
       ),
     );
@@ -72,8 +73,22 @@ describe('QuoteResultList', () => {
     render(<QuoteResultList selected={null} onSelect={onSelect} onClear={vi.fn()} />);
 
     expect(await screen.findByText(/imported → #87/i)).toBeInTheDocument();
-    await user.click(screen.getByText('DEV26-2461'));
-    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'e1' }));
+
+    // Keyboard path first (a mouse click below would move the highlight):
+    // Enter on the highlighted blocked row is refused.
+    await user.click(screen.getByRole('searchbox'));
+    await user.keyboard('{ArrowDown}{Enter}');
+    expect(onSelect).not.toHaveBeenCalled();
+
+    // Mouse path: the row is marked disabled and the click is refused.
+    const row = screen.getByRole('option', { name: /DEV26-2461/i });
+    expect(row).toHaveAttribute('aria-disabled', 'true');
+    await user.click(row);
+    expect(onSelect).not.toHaveBeenCalled();
+
+    // The next, unimported quote still selects normally.
+    await user.click(screen.getByRole('option', { name: /DEV26-2462/i }));
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'e2' }));
   });
 
   it('collapses to the selected card and Change hands control back', async () => {

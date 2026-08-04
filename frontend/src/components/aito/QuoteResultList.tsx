@@ -23,9 +23,13 @@ const DEBOUNCE_MS = 250;
  *  collapses the list into a compact card with Change — the component stays
  *  mounted in both modes so the search text survives a round trip.
  *
- *  Already-imported quotes are marked, never blocked: re-import is a
- *  supported flow (the drawer's checklist warns and the CTA reads "Import
- *  again"), so the row chip is information, not a gate. */
+ *  Already-imported quotes are BLOCKED, not just marked: a quote may back at
+ *  most one active project (the backend 409s the create), so the row is
+ *  aria-disabled and unselectable — the chip says which project holds it.
+ *  Trashing a project frees its quote, and the board query below is
+ *  active-only, so a trashed project's quote stays importable. The drawer's
+ *  own checklist gate (`alreadyImported` in ImportQuoteDrawer) is the
+ *  backstop for a stale board cache. */
 export function QuoteResultList({ selected, onSelect, onClear }: QuoteResultListProps) {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
@@ -129,7 +133,9 @@ export function QuoteResultList({ selected, onSelect, onClear }: QuoteResultList
             } else if (e.key === 'Enter') {
               e.preventDefault();
               const quote = results[highlighted];
-              if (quote) onSelect(quote);
+              // Same gate as the row's onClick: an imported quote cannot be
+              // selected from the keyboard either.
+              if (quote && !importedBy.has(quote.id)) onSelect(quote);
             }
           }}
           placeholder={t('aito.quotePlaceholder')}
@@ -164,18 +170,27 @@ export function QuoteResultList({ selected, onSelect, onClear }: QuoteResultList
         <div role="listbox" aria-label={t('aito.quoteSearchLabel')} className="mt-2 space-y-1.5">
           {results.map((quote, index) => {
             const importedId = importedBy.get(quote.id);
+            const blocked = importedId !== undefined;
             return (
               <button
                 key={quote.id}
                 type="button"
                 role="option"
                 aria-selected={index === highlighted}
+                // aria-disabled rather than disabled: the row stays readable
+                // and focusable so the chip explains WHY it cannot be picked,
+                // instead of a dead row that swallows the click silently.
+                aria-disabled={blocked}
                 onMouseEnter={() => highlight(index)}
-                onClick={() => onSelect(quote)}
+                onClick={() => {
+                  if (!blocked) onSelect(quote);
+                }}
                 className={`w-full rounded-[.6rem] border p-3 text-left transition-colors motion-reduce:transition-none ${focusRingCls} ${
-                  index === highlighted
-                    ? 'border-bambu-green/50 bg-bambu-dark-tertiary/60'
-                    : 'border-bambu-dark-tertiary bg-bambu-dark hover:border-bambu-dark-tertiary hover:bg-bambu-dark-tertiary/40'
+                  blocked
+                    ? 'cursor-not-allowed border-bambu-dark-tertiary bg-bambu-dark opacity-60'
+                    : index === highlighted
+                      ? 'border-bambu-green/50 bg-bambu-dark-tertiary/60'
+                      : 'border-bambu-dark-tertiary bg-bambu-dark hover:border-bambu-dark-tertiary hover:bg-bambu-dark-tertiary/40'
                 }`}
               >
                 <span className="flex items-baseline justify-between gap-2">

@@ -129,20 +129,30 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
   const currencyMismatch = Boolean(preview && preview.quote.currency_code !== configuredCurrency);
   const projectTotal = (preview?.tasks ?? []).reduce((sum, task) => sum + taskTotal(task), 0);
   const hasTasks = (preview?.tasks.length ?? 0) > 0;
-  const canImport = Boolean(preview) && hasTasks && description.trim().length > 0 && !submitting;
-  const importAgain = preview !== null && preview.existing_project_id !== null;
+  // A quote already backing an ACTIVE project is a hard block, not a warn:
+  // the backend 409s the create anyway (_reject_duplicate_quote), so letting
+  // the user finish the flow only moves the refusal to the worst moment.
+  // The picker's rows are blocked too (QuoteResultList), but this gate is
+  // the one that holds when the board cache is stale. Trashed projects free
+  // their quote — the preview's existing_project_id counts active only.
+  const alreadyImported = preview !== null && preview.existing_project_id !== null;
+  const canImport = Boolean(preview) && hasTasks && !alreadyImported && description.trim().length > 0 && !submitting;
 
-  // The imported/currency-mismatch lines render amber 'miss' for visibility
-  // but are NOT part of `canImport` above — warns never block (spec rule);
-  // only missing service lines and an empty description do.
+  // The currency-mismatch line renders amber 'miss' for visibility but is
+  // NOT part of `canImport` above — that warn never blocks (spec rule);
+  // missing service lines, an already-imported quote and an empty
+  // description do.
   const checklist: { state: ChecklistState; text: string }[] = [
     {
       state: !preview ? 'wait' : hasTasks ? 'ok' : 'miss',
       text: hasTasks || !preview ? t('aito.ruleQuoteLines') : t('aito.quoteNoServiceLines'),
     },
     {
-      state: !preview ? 'wait' : importAgain ? 'miss' : 'ok',
-      text: importAgain && preview ? t('aito.quoteAlreadyImported', { id: preview.existing_project_id }) : t('aito.ruleQuoteFresh'),
+      state: !preview ? 'wait' : alreadyImported ? 'miss' : 'ok',
+      text:
+        alreadyImported && preview
+          ? t('aito.quoteAlreadyImported', { id: preview.existing_project_id })
+          : t('aito.ruleQuoteFresh'),
     },
     {
       state: !preview ? 'wait' : currencyMismatch ? 'miss' : 'ok',
@@ -255,7 +265,9 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
                 </div>
 
                 {preview.existing_project_id !== null && (
-                  <p className="flex items-center gap-2 text-sm text-status-warning">
+                  // Error tone, not warning: this line is a hard block now,
+                  // same as the no-service-lines one below it.
+                  <p className="flex items-center gap-2 text-sm text-status-error">
                     <AlertTriangle className="h-4 w-4 flex-shrink-0" />
                     {t('aito.quoteAlreadyImported', { id: preview.existing_project_id })}
                   </p>
@@ -363,7 +375,7 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
               }`}
             >
               <FileInput className="h-4 w-4" />
-              {importAgain ? t('aito.quoteImportAgain') : t('aito.quoteImport')}
+              {t('aito.quoteImport')}
             </button>
           </div>
         </div>
