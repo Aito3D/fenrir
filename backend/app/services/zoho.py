@@ -6,19 +6,29 @@ a 401 from the Books API invalidates the cache and retries exactly once.
 """
 
 import asyncio
+import json
+import logging
 import re
 import time
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.services.aito_quote_export import Catalogue
+from backend.app.services.aito_shipping import ShippingItem, merge_shipping_catalogue
+
+logger = logging.getLogger(__name__)
 
 _EXPIRY_MARGIN_SECONDS = 300
 _REQUIRED_KEYS = ("zoho_client_id", "zoho_client_secret", "zoho_refresh_token", "zoho_organization_id")
 DEFAULT_CONTACT_ID_FALLBACK = "66407000001237340"
 DEFAULT_CONTACT_NAME_FALLBACK = "Client de passage"
+
+# One refresh a day. The ids barely ever move and the rates move rarely; the
+# point of the cache is that opening the create drawer costs nothing.
+_SHIPPING_CACHE_TTL = timedelta(hours=24)
 
 # Statuses Books will only accept once the estimate has left draft. Its
 # lifecycle is draft -> sent -> accepted/declined and it enforces that: POSTing
@@ -451,6 +461,66 @@ class ZohoService:
             usinage_item_id=await value("zoho_item_usinage_id", "66407000006884825"),
             tax_id=await value("zoho_service_tax_id", "66407000009281008"),
         )
+
+    async def list_items(self, db: AsyncSession, search_text: str) -> list[dict]:
+        """Books items matching a free-text search. Used to resolve the
+        shipping catalogue by name; nothing else needs the item list."""
+        body = await self._request(db, "GET", "/items", params={"search_text": search_text})
+        return body.get("items") or []
+
+    async def get_shipping_catalogue(self, db: AsyncSession) -> dict[str, ShippingItem]:
+        """The 5 "Livraison Avion" items, resolved from Books and cached.
+
+        Refreshed only when the cache is missing or more than
+        ``_SHIPPING_CACHE_TTL`` old, so opening the create drawer never costs a
+        Zoho call and the whole feature costs at most one request a day.
+
+        A failed refresh is NOT an error: the previous cache is returned
+        unchanged. Ids are never forgotten — see
+        ``aito_shipping.merge_shipping_catalogue`` for why that rule is
+        load-bearing rather than merely tidy. An empty dict means Books has
+        never been reachable, which callers must treat as "cannot push", never
+        as "no shipping services exist".
+        """
+        from backend.app.api.routes.settings import get_setting, set_setting
+
+        raw = await get_setting(db, "zoho_shipping_catalogue")
+        try:
+            cached = json.loads(raw) if raw else {}
+        except ValueError:
+            cached = {}
+
+        checked_at = await get_setting(db, "zoho_shipping_catalogue_at")
+        fresh = False
+        if checked_at:
+            try:
+                age = datetime.now(timezone.utc).replace(tzinfo=None) - datetime.fromisoformat(checked_at)
+                fresh = age < _SHIPPING_CACHE_TTL
+            except ValueError:
+                fresh = False
+
+        if not fresh:
+            try:
+                items = await self.list_items(db, "Livraison Avion")
+            except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+                # Deliberately swallowed: a stale catalogue still bills
+                # correctly, and the drawer must open with Books unreachable.
+                logger.warning("Aito shipping catalogue refresh failed: %s", e)
+            else:
+                cached = merge_shipping_catalogue(cached, items)
+                await set_setting(db, "zoho_shipping_catalogue", json.dumps(cached))
+                await set_setting(
+                    db,
+                    "zoho_shipping_catalogue_at",
+                    datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+                )
+                await db.commit()
+
+        return {
+            service: ShippingItem(item_id=entry["item_id"], name=entry["name"], rate=entry.get("rate"))
+            for service, entry in cached.items()
+            if entry.get("item_id")
+        }
 
     async def get_contact(self, db: AsyncSession, contact_id: str) -> dict:
         return _map_contact((await self._request(db, "GET", f"/contacts/{contact_id}")).get("contact", {}))

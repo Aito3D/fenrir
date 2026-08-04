@@ -19,6 +19,7 @@ be respelled without orphaning a project.
 """
 
 import unicodedata
+from dataclasses import dataclass
 
 SERVICE_KEYS: tuple[str, ...] = ("societe", "tuamotu", "marquises", "australes", "gambier")
 
@@ -120,3 +121,55 @@ def grouped_islands() -> list[tuple[str, list[tuple[str, str]]]]:
     """Islands per service, in SERVICE_KEYS order — the shape the picker
     renders as option groups."""
     return [(service, [(key, label) for key, label, owner in ISLANDS if owner == service]) for service in SERVICE_KEYS]
+
+
+@dataclass(frozen=True)
+class ShippingItem:
+    """One resolved Books item. ``rate`` is None when Zoho gave no price —
+    the drawer then requires the operator to type one."""
+
+    item_id: str
+    name: str
+    rate: float | None
+
+
+_BY_SERVICE_LABEL: dict[str, str] = {_fold(label): key for key, label in SERVICE_LABELS.items()}
+
+
+def merge_shipping_catalogue(cached: dict[str, dict], items: list[dict]) -> dict[str, dict]:
+    """Fold a fresh ``/items`` response onto what is already cached.
+
+    Two rules, and the first is load-bearing:
+
+    - **An item id is never forgotten.** A service present in ``cached`` but
+      absent from ``items`` survives untouched. ``Catalogue.item_ids()`` is
+      what tells ``aito_quote_export.is_foreign`` that a line is ours, so a
+      forgotten id would make the shipping line we wrote last push classify as
+      FOREIGN — preserved by ``line_item_id`` *and* re-emitted fresh from the
+      project — duplicating itself a little more on every sync. This is the
+      exact failure the item-id check in ``is_foreign`` exists to prevent for
+      the four service items.
+    - **A rate is only overwritten by a real one.** An item echoed back
+      without a price keeps the price we already knew, rather than dropping to
+      None and forcing manual entry for no reason.
+
+    A name Zoho reports that matches no service is simply not a shipping item
+    and is ignored. Matching is case- and accent-insensitive because the search
+    is by name and Books normalises nothing.
+    """
+    merged = {key: dict(value) for key, value in (cached or {}).items()}
+    for item in items or []:
+        service = _BY_SERVICE_LABEL.get(_fold(str(item.get("name") or "")))
+        if service is None:
+            continue
+        item_id = str(item.get("item_id") or "").strip()
+        if not item_id:
+            continue
+        raw_rate = item.get("rate")
+        entry = merged.get(service, {})
+        merged[service] = {
+            "item_id": item_id,
+            "name": SERVICE_LABELS[service],
+            "rate": float(raw_rate) if raw_rate is not None else entry.get("rate"),
+        }
+    return merged

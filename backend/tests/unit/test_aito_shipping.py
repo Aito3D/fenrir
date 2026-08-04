@@ -6,10 +6,12 @@ from backend.app.services.aito_shipping import (
     ISLANDS,
     SERVICE_KEYS,
     SERVICE_LABELS,
+    ShippingItem,
     _fold,
     grouped_islands,
     island_for_label,
     island_label,
+    merge_shipping_catalogue,
     service_for_island,
 )
 
@@ -84,3 +86,63 @@ def test_grouped_islands_covers_every_service_in_canonical_order():
     assert sum(len(islands) for _, islands in grouped) == len(ISLANDS)
     tuamotu = dict(grouped)["tuamotu"]
     assert ("rangiroa", "Rangiroa") in tuamotu
+
+
+def test_merge_matches_items_by_name():
+    merged = merge_shipping_catalogue(
+        {},
+        [
+            {"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200},
+            {"item_id": "2", "name": "Livraison Avion Société", "rate": 1500},
+            {"item_id": "9", "name": "Impression 3D", "rate": 100},
+        ],
+    )
+    assert merged["tuamotu"] == {"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200.0}
+    assert merged["societe"]["item_id"] == "2"
+    assert "marquises" not in merged  # not offered by Zoho this time round
+
+
+def test_merge_matches_case_and_accent_insensitively():
+    merged = merge_shipping_catalogue({}, [{"item_id": "1", "name": "LIVRAISON AVION SOCIETE", "rate": 1500}])
+    assert merged["societe"]["item_id"] == "1"
+
+
+def test_merge_never_forgets_a_known_item_id():
+    # THE load-bearing rule. Catalogue.item_ids() is what tells is_foreign() a
+    # line is ours; forgetting an id would make our own shipping line classify
+    # as foreign — preserved by line_item_id AND re-emitted from the project —
+    # duplicating itself a little more on every single sync.
+    cached = {"tuamotu": {"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200.0}}
+    merged = merge_shipping_catalogue(cached, [])
+    assert merged["tuamotu"]["item_id"] == "1"
+
+
+def test_merge_updates_the_rate_of_a_known_item():
+    cached = {"tuamotu": {"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200.0}}
+    merged = merge_shipping_catalogue(cached, [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3500}])
+    assert merged["tuamotu"]["rate"] == 3500.0
+
+
+def test_merge_keeps_the_cached_rate_when_zoho_omits_it():
+    cached = {"tuamotu": {"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200.0}}
+    merged = merge_shipping_catalogue(cached, [{"item_id": "1", "name": "Livraison Avion Tuamotu"}])
+    assert merged["tuamotu"]["rate"] == 3200.0
+
+
+def test_merge_takes_a_new_item_id_for_a_replaced_catalogue_entry():
+    # A genuine catalogue swap in Books: same name, new item. The id moves.
+    cached = {"tuamotu": {"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200.0}}
+    merged = merge_shipping_catalogue(cached, [{"item_id": "7", "name": "Livraison Avion Tuamotu", "rate": 3300}])
+    assert merged["tuamotu"]["item_id"] == "7"
+
+
+def test_merge_ignores_an_item_whose_name_matches_no_service():
+    assert merge_shipping_catalogue({}, [{"item_id": "1", "name": "Livraison Bateau Tuamotu", "rate": 1}]) == {}
+
+
+def test_merge_ignores_an_item_with_no_id():
+    assert merge_shipping_catalogue({}, [{"name": "Livraison Avion Tuamotu", "rate": 3200}]) == {}
+
+
+def test_shipping_item_carries_an_absent_rate_as_none():
+    assert ShippingItem(item_id="1", name="Livraison Avion Tuamotu", rate=None).rate is None

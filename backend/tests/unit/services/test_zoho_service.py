@@ -6,6 +6,7 @@ import json
 import httpx
 import pytest
 
+from backend.app.api.routes.settings import set_setting
 from backend.app.services.zoho import (
     ZohoAmbiguousReferenceError,
     ZohoNotConfiguredError,
@@ -726,3 +727,46 @@ async def test_get_estimate_pdf_rejects_a_200_that_is_not_a_pdf(async_client, db
     zoho_service.transport = _transport(handler)
     with pytest.raises(ZohoUpstreamError):
         await zoho_service.get_estimate_pdf(db_session, "EST-1")
+
+
+@pytest.mark.asyncio
+async def test_get_shipping_catalogue_fetches_once_then_serves_the_cache(db_session, monkeypatch):
+    calls = []
+
+    async def fake_request(db, method, path, **kwargs):
+        calls.append(path)
+        return {"items": [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200}]}
+
+    monkeypatch.setattr(zoho_service, "_request", fake_request)
+    first = await zoho_service.get_shipping_catalogue(db_session)
+    second = await zoho_service.get_shipping_catalogue(db_session)
+    assert first["tuamotu"].item_id == "1"
+    assert first["tuamotu"].rate == 3200.0
+    assert second["tuamotu"].item_id == "1"
+    assert len(calls) == 1, "the 24h cache must not re-fetch"
+
+
+@pytest.mark.asyncio
+async def test_get_shipping_catalogue_survives_zoho_being_down(db_session, monkeypatch):
+    async def ok(db, method, path, **kwargs):
+        return {"items": [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200}]}
+
+    monkeypatch.setattr(zoho_service, "_request", ok)
+    await zoho_service.get_shipping_catalogue(db_session)
+    await set_setting(db_session, "zoho_shipping_catalogue_at", "2000-01-01T00:00:00")
+
+    async def boom(db, method, path, **kwargs):
+        raise ZohoUpstreamError("down")
+
+    monkeypatch.setattr(zoho_service, "_request", boom)
+    stale = await zoho_service.get_shipping_catalogue(db_session)
+    assert stale["tuamotu"].item_id == "1", "a failed refresh must not lose the ids"
+
+
+@pytest.mark.asyncio
+async def test_get_shipping_catalogue_is_empty_when_never_resolved(db_session, monkeypatch):
+    async def boom(db, method, path, **kwargs):
+        raise ZohoUpstreamError("down")
+
+    monkeypatch.setattr(zoho_service, "_request", boom)
+    assert await zoho_service.get_shipping_catalogue(db_session) == {}
