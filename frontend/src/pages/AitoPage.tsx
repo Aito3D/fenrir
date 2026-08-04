@@ -338,6 +338,11 @@ export function AitoPage() {
         <DndContext
           sensors={sensors}
           collisionDetection={closestCorners}
+          // `Always`, not the default drag-start-only measuring: a card can
+          // relocate across columns live mid-drag (see the rules engine), which
+          // changes droppable rects while the drag is still in progress —
+          // measuring only at drag-start would collision-detect against stale
+          // rects for the rest of the gesture.
           measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
           {...dndHandlers}
         >

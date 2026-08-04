@@ -8,6 +8,7 @@ import { SearchableSelect } from '../SearchableSelect';
 import { DurationInput } from './DurationInput';
 import { Money } from '../calculator/shared';
 import { focusRingCls, inputCls, labelCls } from '../formStyles';
+import { useCurrency } from '../../hooks/useCurrency';
 import { computeImpressionCost, roundUpTo50 } from '../../utils/taskDraft';
 import type { ImpressionDraft } from '../../utils/taskDraft';
 
@@ -79,14 +80,7 @@ export function ImpressionFields({ value, onChange, costField, discountField }: 
   const printers = printersQuery.data ?? [];
   const defaults = defaultsQuery.data;
   const referenceDataLoading = filamentsQuery.isLoading || printersQuery.isLoading || defaultsQuery.isLoading;
-  // Same cache key CalculatorPage uses for the app's configured currency, so
-  // this and the calculator page share one fetch instead of two.
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-    staleTime: 60_000,
-  });
-  const currency = settings?.currency || 'USD';
+  const currency = useCurrency();
 
   const filament = filaments.find((f) => f.id === value.filamentId) ?? null;
   const printer = printers.find((p) => p.id === value.printerId) ?? null;

@@ -1,7 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
 import { Check, ChevronDown, Pencil } from 'lucide-react';
-import { api } from '../../api/client';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ProjectProgress } from './ProjectProgress';
 import { TaskStepFields } from './TaskStepFields';
@@ -9,6 +7,7 @@ import { TaskStepList } from './TaskStepList';
 import { isTaskFinished, taskSteps } from './services';
 import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
+import { useCurrency } from '../../hooks/useCurrency';
 import { taskTotal } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
 
@@ -86,14 +85,7 @@ export function TaskRow({
   collapsed = false,
 }: TaskRowProps) {
   const { t } = useTranslation();
-  // Same query key ImpressionFields and the calculator page use for the
-  // configured currency, so this rides their cache instead of adding a fetch.
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-    staleTime: 60_000,
-  });
-  const currency = settings?.currency || 'USD';
+  const currency = useCurrency();
 
   const name = task.title.trim() || t('aito.taskFallbackName', { n: index + 1 });
   const finished = isTaskFinished(task);

@@ -1,10 +1,9 @@
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
 import { Check } from 'lucide-react';
-import { api } from '../../api/client';
 import { AITO_SERVICE_LABEL_KEYS, serviceDotCls, taskSteps } from './services';
 import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
+import { useCurrency } from '../../hooks/useCurrency';
 import type { TaskDraft } from '../../utils/taskDraft';
 
 const DESCRIPTION_FIELD = {
@@ -41,12 +40,7 @@ export interface TaskStepListProps {
  *  does not unsay work that was done. */
 export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
   const { t } = useTranslation();
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-    staleTime: 60_000,
-  });
-  const currency = settings?.currency || 'USD';
+  const currency = useCurrency();
   const steps = taskSteps(task);
 
   if (steps.length === 0) {

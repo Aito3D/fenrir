@@ -1,12 +1,11 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
-import { api } from '../../api/client';
 import { TaskRow } from './TaskRow';
 import { taskSteps } from './services';
 import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
+import { useCurrency } from '../../hooks/useCurrency';
 import { emptyTaskDraft, projectTotal, rowKey } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
 
@@ -74,12 +73,7 @@ export function TaskEditor({
   accordion = false,
 }: TaskEditorProps) {
   const { t } = useTranslation();
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-    staleTime: 60_000,
-  });
-  const currency = settings?.currency || 'USD';
+  const currency = useCurrency();
 
   // Which rows are open for editing (showing the form instead of the
   // read-only step list), keyed by `rowKey` — same key `isEditing` below

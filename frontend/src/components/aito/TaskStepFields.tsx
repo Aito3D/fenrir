@@ -1,11 +1,10 @@
 import { useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
-import { api } from '../../api/client';
 import { ImpressionFields } from './ImpressionFields';
 import { Money } from '../calculator/shared';
 import { inputCls, labelCls, focusRingCls } from '../formStyles';
+import { useCurrency } from '../../hooks/useCurrency';
 import { taskTotal } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
 
@@ -135,12 +134,7 @@ export interface TaskStepFieldsProps {
 export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFieldsProps) {
   const { t } = useTranslation();
   const reactId = useId();
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-    staleTime: 60_000,
-  });
-  const currency = settings?.currency || 'USD';
+  const currency = useCurrency();
 
   const [enabled, setEnabled] = useState<Set<ServiceId>>(
     () => new Set(SERVICE_DEFS.filter((s) => task[s.costKey] !== null).map((s) => s.id)),

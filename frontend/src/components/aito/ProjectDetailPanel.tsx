@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { Building2, Check, Copy, ExternalLink, Loader2, Mail, Phone, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
@@ -19,6 +19,8 @@ import { stagesWithWork } from './services';
 import { StageRail } from './StageRail';
 import { TaskEditor } from './TaskEditor';
 import { AITO_CARD_VT_NAME } from '../../hooks/useCardMorph';
+import { useCurrency } from '../../hooks/useCurrency';
+import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useLatestProjectEvent } from '../../hooks/useLatestProjectEvent';
 import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { useProjectTasks } from '../../hooks/useProjectTasks';
@@ -460,7 +462,6 @@ function SaveIndicator({ state }: { state: SaveState }) {
  *  browser morphs one into the other (see useCardMorph). */
 export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetailPanelProps) {
   const { t } = useTranslation();
-  const dialogRef = useRef<HTMLDivElement>(null);
 
   // A status rendered through the shared quote-status labels (see
   // `quoteStatusText` above), so the two sides of a block message are
@@ -509,9 +510,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   const { tasks, onTasksChange, onRemoveTask, onRowBlur, pendingTaskUids } = useProjectTasks(project.id);
   const { data: latestEvent } = useLatestProjectEvent(project.id);
 
-  // Value-weighted, not step-weighted — see ValueRing's doc. Rides the same
-  // ['settings'] cache TaskEditor's own currency lookup uses (staleTime
-  // 60s), so this adds no fetch of its own.
+  // Value-weighted, not step-weighted — see ValueRing's doc.
   const stageWork = stagesWithWork(tasks);
   const valueTotal = stageWork.reduce((sum, s) => sum + s.value, 0);
   const valueDone = stageWork.reduce((sum, s) => sum + s.valueDone, 0);
@@ -519,8 +518,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   // PanelHeader's doc on why those two used to visibly disagree.
   const stepsDone = stageWork.reduce((sum, s) => sum + s.stepsDone, 0);
   const stepsTotal = stageWork.reduce((sum, s) => sum + s.stepsTotal, 0);
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings, staleTime: 60_000 });
-  const currency = settings?.currency || 'USD';
+  const currency = useCurrency();
 
   const [editingDesc, setEditingDesc] = useState(false);
   const [draft, setDraft] = useState(project.description);
@@ -563,34 +561,25 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   const editingRef = useRef(false);
   editingRef.current = editingDesc;
 
-  // onClose is a fresh inline closure on every AitoPage render, so it cannot be
-  // an effect dependency: the effect would re-run on every re-render and steal
-  // focus back from whatever the user is editing.
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-
-  // The close button used to take focus on mount. Without it, focus would stay
-  // on whatever was behind the dialog: Escape still works (the handler is on
-  // window) but Tab order would start outside the modal and a screen reader
-  // would announce nothing on open. The dialog takes it instead — it already
-  // carries role/aria-modal/aria-label, so focusing it announces the panel by
-  // its client name.
-  useEffect(() => {
-    dialogRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !editingRef.current) onCloseRef.current();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  // The dialog takes focus on mount (it already carries
+  // role/aria-modal/aria-label, so focusing it announces the panel by its
+  // client name) and Escape closes it — both via the shared hook, see its
+  // doc. `!editingRef.current` guards the Escape path specifically: the
+  // description textarea's own `onKeyDown` (below) already stops propagation
+  // and aborts the edit instead, so in practice this only matters if focus is
+  // ever elsewhere while `editingDesc` is true. The backdrop's `onMouseDown`
+  // deliberately does NOT share this guard — see its own comment below.
+  const { dialogRef } = useDismissableDialog(() => {
+    if (!editingRef.current) onClose();
+  });
 
   return (
     <div
       className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 [view-transition-name:aito-backdrop]"
       onMouseDown={(e) => {
+        // Unguarded, unlike the hook's Escape path above: a backdrop click is
+        // an explicit, deliberate dismissal in a way a stray Escape key isn't,
+        // so it closes even mid-edit rather than silently doing nothing.
         if (e.target === e.currentTarget) onClose();
       }}
     >

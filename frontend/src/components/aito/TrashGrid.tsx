@@ -9,8 +9,8 @@ import { api, ApiError, type AitoProject } from '../../api/client';
 import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { useToast } from '../../contexts/ToastContext';
 import { applyRestore } from '../../utils/aitoOptimistic';
-import { matchesSearch } from '../../utils/aitoSearch';
-import { formatElapsedTime, parseUTCDate } from '../../utils/date';
+import { sortByRecencyDesc } from '../../utils/aitoSearch';
+import { formatElapsedTime } from '../../utils/date';
 
 /** One deleted project, with the only action it has left.
  *
@@ -105,17 +105,7 @@ export function TrashGrid({
 }) {
   const { t } = useTranslation();
 
-  const visible = useMemo(() => {
-    // `parseUTCDate`, not a string compare: the board's timestamps are
-    // inconsistently suffixed ('…:00Z' on some rows, '…:00' on others) and a
-    // lexical compare orders those two forms by their suffix, not their
-    // instant. Ties break on id descending so the order is stable.
-    const time = (project: AitoProject) => parseUTCDate(project.updated_at)?.getTime() ?? 0;
-    return projects
-      .filter((project) => matchesSearch(project, query))
-      .slice()
-      .sort((a, b) => time(b) - time(a) || b.id - a.id);
-  }, [projects, query]);
+  const visible = useMemo(() => sortByRecencyDesc(projects, query), [projects, query]);
 
   if (isError) {
     return (

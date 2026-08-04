@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -12,6 +12,8 @@ import { QuoteResultList } from './QuoteResultList';
 import { AITO_SERVICE_LABEL_KEYS } from './services';
 import { ServiceBadges } from './ServiceBadges';
 import { focusRingCls, inputCls, labelCls } from '../formStyles';
+import { useCurrency } from '../../hooks/useCurrency';
+import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import type { ZohoQuotePreview } from '../../api/client';
 
 export interface ImportQuoteDrawerProps {
@@ -60,8 +62,6 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
   // Clicking a disabled Import is what turns silent 'wait' checklist lines
   // into visible 'miss' — same reveal-not-swallow rule as NewProjectDrawer.
   const [revealed, setRevealed] = useState(false);
-  const [closing, setClosing] = useState(false);
-  const panelRef = useRef<HTMLDivElement>(null);
 
   const statusQuery = useQuery({
     queryKey: ['zoho-status', { probe: false }],
@@ -79,12 +79,7 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
   });
   const preview = previewQuery.data ?? null;
 
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-    staleTime: 60_000,
-  });
-  const configuredCurrency = settings?.currency || 'USD';
+  const configuredCurrency = useCurrency();
 
   // Seed the description once per quote.
   useEffect(() => {
@@ -94,37 +89,14 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
     }
   }, [preview, seededFor]);
 
-  // Deferred close — same idiom as NewProjectDrawer: the exit animation
-  // (.animate-drawer-out, 220ms here) owns the close, and the actual unmount
-  // is deferred a beat past it. A timeout rather than `animationend`, because
-  // that event never fires when reduced motion (or jsdom) replaces the
-  // animation — and a drawer that can't close is worse than one that skips
-  // its exit. `onClose` rides in a ref so the effect doesn't need to depend
-  // on a prop that is a fresh closure every parent render.
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-  useEffect(() => {
-    if (!closing) return;
-    const id = window.setTimeout(() => onCloseRef.current(), 220);
-    return () => window.clearTimeout(id);
-  }, [closing]);
-
-  useEffect(() => {
-    // The panel takes focus on mount so Tab order starts inside the drawer and
-    // a screen reader announces it — same reasoning as `NewProjectDrawer`.
-    // But `QuoteResultList`'s search input carries its own `autoFocus`, which
-    // React applies during commit, before this effect runs — so unconditional
-    // panel focus would steal it back and typing would go nowhere. Only take
-    // the panel focus when nothing inside it already has focus; that check
-    // still covers the Zoho-not-configured branch, which renders no input at
-    // all and so never satisfies `contains`.
-    if (!panelRef.current?.contains(document.activeElement)) panelRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setClosing(true);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  // Escape/focus/close-animation triad via the shared hook — see its doc.
+  // The guarded focus-on-mount is load-bearing here specifically:
+  // `QuoteResultList`'s search input carries its own `autoFocus`, which React
+  // applies during commit, before the hook's effect runs, so an unconditional
+  // panel focus would steal it back and typing would go nowhere. That guard
+  // still covers the Zoho-not-configured branch, which renders no input at
+  // all and so never satisfies `contains`.
+  const { closing, requestClose, dialogRef: panelRef } = useDismissableDialog(onClose, { animationMs: 220 });
 
   const currency = preview?.quote.currency_code || configuredCurrency;
   const currencyMismatch = Boolean(preview && preview.quote.currency_code !== configuredCurrency);
@@ -179,7 +151,7 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
       // and a click landing under it mid-exit would hit the board.
       className={`fixed inset-0 z-50 bg-black/60 ${closing ? 'animate-overlay-out pointer-events-none' : 'animate-overlay-in'}`}
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) setClosing(true);
+        if (e.target === e.currentTarget) requestClose();
       }}
     >
       <div
@@ -195,7 +167,7 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
           <button
             type="button"
             aria-label={t('common.close')}
-            onClick={() => setClosing(true)}
+            onClick={requestClose}
             className={`-m-1 ml-auto rounded-md p-1 text-bambu-gray transition-colors hover:bg-bambu-dark-tertiary hover:text-white ${focusRingCls}`}
           >
             <X className="h-5 w-5" />

@@ -1,3 +1,4 @@
+import { parseUTCDate } from './date';
 import type { AitoProject } from '../api/client';
 
 /** Lowercase and strip combining marks, so a typed `camera` finds `caméra`.
@@ -29,4 +30,21 @@ export function matchesSearch(project: AitoProject, query: string): boolean {
   if (terms.length === 0) return true;
   const text = haystack(project);
   return terms.every((term) => text.includes(term));
+}
+
+/** Search-filtered projects, most recently updated first — the shared body
+ *  behind both archive grids (Done, Trash). Neither is the board: both are
+ *  flat, ever-growing lists where the stored `position`/column order is
+ *  meaningless (drop-order history for Done, arbitrary for Trash), so both
+ *  reorder by `updated_at` instead. */
+export function sortByRecencyDesc(projects: AitoProject[], query: string): AitoProject[] {
+  // `parseUTCDate`, not a string compare: the board's timestamps are
+  // inconsistently suffixed ('…:00Z' on some rows, '…:00' on others) and a
+  // lexical compare orders those two forms by their suffix, not their
+  // instant. Ties break on id descending so the order is stable.
+  const time = (project: AitoProject) => parseUTCDate(project.updated_at)?.getTime() ?? 0;
+  return projects
+    .filter((project) => matchesSearch(project, query))
+    .slice()
+    .sort((a, b) => time(b) - time(a) || b.id - a.id);
 }

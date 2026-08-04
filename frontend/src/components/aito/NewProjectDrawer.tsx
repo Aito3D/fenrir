@@ -14,6 +14,8 @@ import { TaskEditor } from './TaskEditor';
 import { AITO_SERVICE_LABEL_KEYS } from './services';
 import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
+import { useCurrency } from '../../hooks/useCurrency';
+import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useNewProjectDraft } from '../../hooks/useNewProjectDraft';
 import { buildFallbackSummary, tasksSignature } from '../../utils/aitoSummary';
 import { defaultClientDraft, draftFromContact, formatPhone, visibleClientDraftErrors } from '../../utils/clientDraft';
@@ -149,13 +151,8 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   const [revealedTaskKeys, setRevealedTaskKeys] = useState<Set<string>>(() => new Set());
   const [clientRevealed, setClientRevealed] = useState(false);
   const [creatingClient, setCreatingClient] = useState(false);
-  const [closing, setClosing] = useState(false);
-  const panelRef = useRef<HTMLDivElement>(null);
 
-  // Same query key ImpressionFields, TaskRow and the calculator page use, so
-  // this rides their cache instead of adding a fetch.
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings, staleTime: 60_000 });
-  const currency = settings?.currency || 'USD';
+  const currency = useCurrency();
 
   const statusQuery = useQuery({
     queryKey: ['zoho-status', { probe: false }],
@@ -180,42 +177,18 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   // create-client sub-form is showing that means stepping back to the client
   // section (same as its Back button), never discarding whatever the user
   // typed into it. Only when no sub-form is showing do they close the drawer —
-  // which loses nothing, since the draft is persisted.
-  //
-  // Held in a ref rather than re-registered per state change (the pattern
-  // `ProjectDetailPanel` uses for `onClose`): `onClose` is a fresh closure on
-  // every parent render, so an effect depending on it would re-run constantly.
-  const dismissRef = useRef<() => void>(() => {});
-  dismissRef.current = () => {
+  // which loses nothing, since the draft is persisted. Passed to the hook as
+  // `onEscape`; reused verbatim for the backdrop's `onMouseDown` below.
+  const dismiss = (requestClose: () => void) => {
     if (creatingClient) setCreatingClient(false);
-    else setClosing(true);
+    else requestClose();
   };
 
-  // The exit animation (.animate-drawer-out, 200ms) owns the close: `closing`
-  // swaps the entrance classes for the exit pair, and the actual unmount is
-  // deferred a beat past the animation. A timeout rather than `animationend`,
-  // because that event never fires when reduced motion (or jsdom) replaces the
-  // animation — and a drawer that can't close is worse than one that skips its
-  // exit. `onClose` rides in a ref for the same fresh-closure reason as
-  // `dismissRef` above.
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-  useEffect(() => {
-    if (!closing) return;
-    const id = window.setTimeout(() => onCloseRef.current(), 220);
-    return () => window.clearTimeout(id);
-  }, [closing]);
-
-  useEffect(() => {
-    // The panel takes focus on mount so Tab order starts inside the drawer and
-    // a screen reader announces it — same reasoning as `ProjectDetailPanel`.
-    panelRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') dismissRef.current();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  const {
+    closing,
+    requestClose,
+    dialogRef: panelRef,
+  } = useDismissableDialog(onClose, { animationMs: 220, onEscape: dismiss });
 
   // Persist on every meaningful change. Section open-states and the reveal
   // sets are deliberately absent: they are about this visit, not the draft.
@@ -342,7 +315,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
         closing ? 'animate-overlay-out pointer-events-none' : 'animate-overlay-in'
       }`}
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) dismissRef.current();
+        if (e.target === e.currentTarget) dismiss(requestClose);
       }}
     >
       <div
@@ -358,9 +331,9 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
           <button
             type="button"
             aria-label={t('common.close')}
-            // Not dismissRef: ✕ closes the drawer even from the create-client
+            // Not `dismiss`: ✕ closes the drawer even from the create-client
             // sub-form, where Escape/backdrop only step back.
-            onClick={() => setClosing(true)}
+            onClick={requestClose}
             className={`-m-1 ml-auto rounded-md p-1 text-bambu-gray transition-colors hover:bg-bambu-dark-tertiary hover:text-white ${focusRingCls}`}
           >
             <X className="h-5 w-5" />

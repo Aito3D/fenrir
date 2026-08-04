@@ -40,6 +40,26 @@ export function isPlaceholder(project: AitoProject): boolean {
   return project.id < 0;
 }
 
+/** Rank of every OTHER project currently in `column`, keyed by id and ordered
+ *  `position, id` — exactly `_active_in_column`'s `ORDER BY position, id`,
+ *  NOT array traversal order: the two agree only while a column's array order
+ *  happens to match its position order, which nothing guarantees. `.filter`
+ *  here already copies, so sorting it in place does not mutate the `projects`
+ *  argument. Shared by `relocate` and `applyColumnMove`, which each renumber
+ *  this column's survivors after pulling `excludeId` out of it. */
+export function rankBySourceColumn(
+  projects: AitoProject[],
+  excludeId: number,
+  column: AitoProject['column'],
+): Map<number, number> {
+  const rank = new Map<number, number>();
+  projects
+    .filter((p) => p.column === column && p.id !== excludeId)
+    .sort((a, b) => a.position - b.position || a.id - b.id)
+    .forEach((project, index) => rank.set(project.id, index));
+  return rank;
+}
+
 /** `_apply_rules`, in TypeScript: relocate `moved` into `column` and renumber
  *  both affected columns. Returns the full list, order-insensitive — the board
  *  is grouped and sorted by `buildBoard` downstream. */
@@ -50,19 +70,12 @@ function relocate(projects: AitoProject[], moved: AitoProject, column: AitoProje
   const destinationCount = projects.filter((p) => p.column === column && p.id !== moved.id).length;
   const relocated = { ...moved, column, position: destinationCount };
 
-  // Rank the remainder by `position, id` — exactly `_active_in_column`'s
-  // `ORDER BY position, id` — NOT by array traversal order. The two agree
-  // only while a column's array order happens to match its position order,
-  // and `relocate` itself breaks that invariant: it gives the moved card the
+  // `relocate` itself breaks the position/array-order invariant
+  // `rankBySourceColumn` renumbers against: it gives the moved card the
   // highest position in its DESTINATION column while leaving it at its
-  // original array index, so the next card to leave that column would be
-  // renumbered wrongly by array order alone. `.filter` above already copies,
-  // so sorting it in place does not mutate the `projects` argument.
-  const sourceRank = new Map<number, number>();
-  projects
-    .filter((p) => p.column === source && p.id !== moved.id)
-    .sort((a, b) => a.position - b.position || a.id - b.id)
-    .forEach((project, index) => sourceRank.set(project.id, index));
+  // original array index, so the next card to leave the SOURCE column would
+  // be renumbered wrongly by array order alone.
+  const sourceRank = rankBySourceColumn(projects, moved.id, source);
 
   return projects.map((project) => {
     if (project.id === moved.id) return relocated;
@@ -185,10 +198,9 @@ export function applyDelete(projects: AitoProject[] | undefined, id: number): Ai
  *  user can see the thing they just un-archived. Predicting an append would
  *  park it at the far end of the column for one round trip.
  *
- *  The source column is renumbered contiguously, ranked by `position, id` to
- *  match `_active_in_column`'s `ORDER BY position, id`. Ranking by array order
- *  instead only agrees while a column's array order happens to match its
- *  position order, which nothing guarantees. */
+ *  The source column is renumbered contiguously via `rankBySourceColumn` —
+ *  see its doc for why array order cannot substitute for a `position, id`
+ *  rank. */
 export function applyColumnMove(
   projects: AitoProject[] | undefined,
   id: number,
@@ -202,11 +214,7 @@ export function applyColumnMove(
   if (!moved || moved.column === column) return projects;
 
   const source = moved.column;
-  const sourceRank = new Map<number, number>();
-  projects
-    .filter((p) => p.column === source && p.id !== id)
-    .sort((a, b) => a.position - b.position || a.id - b.id)
-    .forEach((project, index) => sourceRank.set(project.id, index));
+  const sourceRank = rankBySourceColumn(projects, id, source);
 
   return projects.map((project) => {
     if (project.id === id) return { ...project, column, position: 0 };

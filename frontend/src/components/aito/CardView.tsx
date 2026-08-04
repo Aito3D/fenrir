@@ -95,6 +95,9 @@ export function CardView({
   // half of that trade.
   const taskSteps = project.task_steps ?? [];
 
+  // Same building/person distinction the expanded card's header makes.
+  const ClientIcon = project.client_is_company ? Building2 : User;
+
   // Hover-intent reveal of a clamped description. The card floats over its
   // neighbours rather than growing in place: the shell holds the collapsed
   // height so the column never reflows, which is what stops the cards below
@@ -232,24 +235,15 @@ export function CardView({
         } ${placeholder ? 'opacity-60' : ''}`}
       >
         <div className="flex items-center gap-2 px-3 pt-2.5">
-          {/* Same building/person distinction the expanded card's header
-              makes, at card scale. `aria-hidden` with the label carried in
-              text beside it, so the split is not sighted-users-only; null
-              reads as an individual, matching the panel. strokeWidth 2.5 to
-              match the medium weight of the name. */}
-          {project.client_is_company ? (
-            <Building2
-              className={`w-3.5 h-3.5 flex-shrink-0 ${project.client_name ? 'text-white' : 'text-bambu-gray'}`}
-              strokeWidth={2.5}
-              aria-hidden="true"
-            />
-          ) : (
-            <User
-              className={`w-3.5 h-3.5 flex-shrink-0 ${project.client_name ? 'text-white' : 'text-bambu-gray'}`}
-              strokeWidth={2.5}
-              aria-hidden="true"
-            />
-          )}
+          {/* `aria-hidden` with the label carried in text beside it, so the
+              split is not sighted-users-only; null reads as an individual,
+              matching the panel. strokeWidth 2.5 to match the medium weight
+              of the name. */}
+          <ClientIcon
+            className={`w-3.5 h-3.5 flex-shrink-0 ${project.client_name ? 'text-white' : 'text-bambu-gray'}`}
+            strokeWidth={2.5}
+            aria-hidden="true"
+          />
           <p
             className={`flex-1 min-w-0 text-sm font-semibold tracking-[-0.01em] truncate ${
               project.client_name ? 'text-white' : 'text-bambu-gray'
