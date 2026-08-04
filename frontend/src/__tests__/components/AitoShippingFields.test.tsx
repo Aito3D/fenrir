@@ -8,12 +8,23 @@ import { emptyShippingDraft } from '../../utils/shippingDraft';
 import type { ShippingDraft } from '../../utils/shippingDraft';
 import type { AitoShippingService } from '../../api/client';
 
+// Two services, mirroring AitoIslandCombobox.test.tsx's fixture, are load-
+// bearing here: with only one service in the table, an island pick can never
+// cross a service boundary, so `selectIsland`'s price-reseed line — the one
+// thing standing between an island change and billing the wrong service's
+// rate under the new service's name — is never actually exercised.
 const SERVICES: AitoShippingService[] = [
   {
     key: 'tuamotu',
     name: 'Livraison Avion Tuamotu',
     rate: 3200,
     islands: [{ key: 'rangiroa', label: 'Rangiroa' }],
+  },
+  {
+    key: 'australes',
+    name: 'Livraison Avion Australes',
+    rate: 4100,
+    islands: [{ key: 'rurutu', label: 'Rurutu' }],
   },
 ];
 
@@ -77,6 +88,37 @@ describe('ShippingFields', () => {
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ island: 'rangiroa', service: 'tuamotu', price: 3200, priceEdited: false }),
     );
+  });
+
+  it('reseeds the price from the new service when the island crosses a service boundary', async () => {
+    // Starting priced at Tuamotu's rate, untouched by the operator — this is
+    // the case the backend depends on the client to handle: it re-derives
+    // `service` from `island` but KEEPS whatever price is sent, so a client
+    // that fails to reseed here would bill Australes at Tuamotu's rate.
+    const { onChange } = setup({ island: 'rangiroa', service: 'tuamotu', price: 3200, priceEdited: false });
+    await userEvent.click(screen.getByRole('combobox', { name: /destination island/i }));
+    await userEvent.click(screen.getByRole('option', { name: 'Rurutu' }));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ island: 'rurutu', service: 'australes', price: 4100, priceEdited: false }),
+    );
+    // Both halves matter: the reported service and the rendered price must
+    // agree, or the screen and the payload tell two different stories.
+    expect(screen.getByText('Livraison Avion Australes')).toBeInTheDocument();
+    expect(getRateInput()).toHaveValue(4100);
+  });
+
+  it('keeps a hand-typed price when the island crosses a service boundary, but still updates the matched service', async () => {
+    // The guard half of the same rule: a price the operator deliberately
+    // overrode must survive an island change untouched, even though the
+    // service it is now billed under has changed.
+    const { onChange } = setup({ island: 'rangiroa', service: 'tuamotu', price: 9999, priceEdited: true });
+    await userEvent.click(screen.getByRole('combobox', { name: /destination island/i }));
+    await userEvent.click(screen.getByRole('option', { name: 'Rurutu' }));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ island: 'rurutu', service: 'australes', price: 9999, priceEdited: true }),
+    );
+    expect(screen.getByText('Livraison Avion Australes')).toBeInTheDocument();
+    expect(getRateInput()).toHaveValue(9999);
   });
 
   it('shows the matched service and its rate', () => {
