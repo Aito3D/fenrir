@@ -9,6 +9,7 @@ import { Money } from '../calculator/shared';
 import { Line } from './CreateChecklist';
 import type { ChecklistState } from './CreateChecklist';
 import { QuoteResultList } from './QuoteResultList';
+import { AITO_SERVICE_LABEL_KEYS } from './services';
 import { ServiceBadges } from './ServiceBadges';
 import { focusRingCls, inputCls, labelCls } from '../formStyles';
 import type { ZohoQuotePreview } from '../../api/client';
@@ -297,9 +298,16 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
                         <Money currency={currency} value={taskTotal(task)} className="flex-shrink-0 text-xs font-medium text-bambu-green" />
                       </div>
                       <ServiceBadges services={servicesOf(task)} className="mt-1.5" />
-                      {task.description && (
-                        <p className="mt-1.5 whitespace-pre-wrap break-words text-xs text-bambu-gray">{task.description}</p>
-                      )}
+                      {(['scan', 'modelisation', 'impression', 'usinage'] as const).map((service) => {
+                        const description = task[`${service}_description`];
+                        if (!description) return null;
+                        return (
+                          <p key={service} className="mt-1.5 whitespace-pre-wrap break-words text-xs text-bambu-gray">
+                            <span className="text-bambu-gray-light">{t(AITO_SERVICE_LABEL_KEYS[service])} · </span>
+                            {description}
+                          </p>
+                        );
+                      })}
                     </div>
                   ))}
 

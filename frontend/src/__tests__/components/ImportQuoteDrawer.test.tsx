@@ -48,7 +48,7 @@ const preview: ZohoQuotePreview = {
   client: { id: 'c2', name: 'Marie EXEMPLE', phone: '87123456', email: null, is_company: false },
   suggested_description: 'Helice grise\nhelice',
   tasks: [
-    { ...emptyTask, title: 'Helice grise', description: 'Matériau: PETG', modelisation_cost: 3000, impression_cost: 2400 },
+    { ...emptyTask, title: 'Helice grise', impression_description: 'PETG noir', modelisation_cost: 3000, impression_cost: 2400 },
     { ...emptyTask, title: 'helice', impression_cost: 200 },
   ],
   skipped_lines: [],
@@ -90,6 +90,7 @@ describe('ImportQuoteDrawer', () => {
     expect(await screen.findByText('Helice grise')).toBeInTheDocument();
     expect(screen.getByText('helice')).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: /description/i })).toHaveValue('Helice grise\nhelice');
+    expect(screen.getByText(/PETG noir/)).toBeInTheDocument();
   });
 
   it('submits the edited description together with the preview', async () => {

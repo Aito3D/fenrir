@@ -7,6 +7,13 @@ import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
 import type { TaskDraft } from '../../utils/taskDraft';
 
+const DESCRIPTION_FIELD = {
+  scan: 'scanDescription',
+  modelisation: 'modelisationDescription',
+  impression: 'impressionDescription',
+  usinage: 'usinageDescription',
+} as const;
+
 export interface TaskStepListProps {
   task: TaskDraft;
   onChange: (next: TaskDraft) => void;
@@ -50,6 +57,7 @@ export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
     <ul className="space-y-0.5">
       {steps.map(({ service, cost, done }) => {
         const label = t(AITO_SERVICE_LABEL_KEYS[service]);
+        const description = task[DESCRIPTION_FIELD[service]].trim();
         const row = (
           <>
             {/* The checkbox IS the affordance now. The old design put a "Done"
@@ -110,6 +118,14 @@ export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
               // authorised work to tick, so an inert control would explain
               // nothing. The step and its price still render.
               <span className="w-full flex items-center gap-3 px-1.5 py-1 -mx-1.5">{row}</span>
+            )}
+            {description !== '' && (
+              <p
+                data-testid={`step-desc-${service}`}
+                className="pl-6 pr-1.5 pb-1 text-xs text-bambu-gray whitespace-pre-wrap break-words"
+              >
+                {description}
+              </p>
             )}
           </li>
         );
