@@ -25,7 +25,9 @@ class AitoTask(Base):
     project_id: Mapped[int] = mapped_column(Integer, index=True)
     position: Mapped[int] = mapped_column(Integer, default=0)
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The legacy task-level description column still exists in the DB; its data was
+    # copied onto the first enabled service by _migrate_aito_task_descriptions and it
+    # is no longer mapped.
     scan_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
     modelisation_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
     usinage_cost: Mapped[float | None] = mapped_column(Float, nullable=True)

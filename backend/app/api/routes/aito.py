@@ -125,7 +125,6 @@ def _task_to_response(t: AitoTask) -> AitoTaskResponse:
         project_id=t.project_id,
         position=t.position,
         title=t.title,
-        description=t.description,
         scan_description=t.scan_description,
         modelisation_description=t.modelisation_description,
         impression_description=t.impression_description,

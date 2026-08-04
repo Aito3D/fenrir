@@ -12,7 +12,6 @@ async def test_task_row_round_trips(db_session):
         project_id=1,
         position=0,
         title="Boîtier",
-        description="Deux pièces",
         scan_cost=4000.0,
         impression_printer_id=7,
         impression_filament_id=3,

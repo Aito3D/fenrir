@@ -12,7 +12,6 @@ class AitoTaskBase(BaseModel):
     """A NULL cost means the service is disabled; 0 stays meaningful as free."""
 
     title: str | None = Field(default=None, max_length=200)
-    description: str | None = None
     scan_description: str | None = None
     modelisation_description: str | None = None
     impression_description: str | None = None
