@@ -2391,6 +2391,11 @@ async def test_the_sweep_locks_a_quote_invoiced_since_the_last_sync(db_session):
     assert await run_sync_once(db_session) == 1
     await db_session.refresh(project)
     assert project.quote_sync_state == "locked"
+    # Task 10: this is the sweep's own lock branch (sync_project), not
+    # _update_quote's — the two are separate call sites and each must stamp
+    # the flag independently, or a future refactor could silently drop it
+    # from just this one.
+    assert project.quote_invoiced is True
     assert not any(entry[0] == "POST" for entry in seen)
     assert not any(entry[0] == "PUT" for entry in seen)
     # N3: the estimate's "draft" must NOT silently replace the board's own
