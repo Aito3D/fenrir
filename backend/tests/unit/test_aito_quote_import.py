@@ -421,6 +421,118 @@ def test_header_row_starts_a_new_group_even_when_rank_rises():
     assert [line.service for group in groups for line in group] == ["scan", "modelisation"]
 
 
+def _estimate_with_line_headers() -> dict:
+    """The format Books ACTUALLY stores (reference: quote DEV26-2506): there
+    is no header row — every grouped line carries ``header_name`` and a
+    Books-generated ``header_id``. Ranks rise across the boundary here, so
+    only header awareness keeps the two tasks apart."""
+    return {
+        "estimate_id": "e1",
+        "estimate_number": "DEV26-9001",
+        "is_inclusive_tax": True,
+        "price_precision": 0,
+        "line_items": [
+            {
+                "item_order": 1,
+                "sku": "P3DSCAN",
+                "description": "Info: Premiere piece",
+                "rate": 5000,
+                "quantity": 1,
+                "header_id": "H1",
+                "header_name": "Premiere piece",
+            },
+            {
+                "item_order": 2,
+                "sku": "P3DMOD",
+                "description": "Info: Deuxieme piece",
+                "rate": 3000,
+                "quantity": 1,
+                "header_id": "H2",
+                "header_name": "Deuxieme piece",
+            },
+        ],
+    }
+
+
+def test_header_name_change_starts_a_new_group_even_when_rank_rises():
+    lines, skipped = parse_lines(_estimate_with_line_headers())
+    assert skipped == []
+    assert [line.starts_group for line in lines] == [True, True]
+    groups = group_lines(lines)
+    assert len(groups) == 2
+    assert [line.service for group in groups for line in group] == ["scan", "modelisation"]
+
+
+def test_lines_sharing_a_header_stay_in_one_group():
+    estimate = _estimate_with_line_headers()
+    for line in estimate["line_items"]:
+        line["header_id"] = "H1"
+        line["header_name"] = "Premiere piece"
+    lines, _ = parse_lines(estimate)
+    assert [line.starts_group for line in lines] == [True, False]
+    assert len(group_lines(lines)) == 1
+
+
+def test_same_header_name_with_different_ids_still_splits():
+    """Two tasks can share a title. Books keeps their headers distinct via
+    header_id, and so must the boundary detection."""
+    estimate = _estimate_with_line_headers()
+    for line in estimate["line_items"]:
+        line["header_name"] = "Piece"
+    lines, _ = parse_lines(estimate)
+    assert [line.starts_group for line in lines] == [True, True]
+
+
+def test_line_discount_is_adopted_onto_the_impression_task():
+    """Books answers with `discount: "10.00%"` on a discounted line (org is
+    item-level, see DEV26-2469 where the user hand-set exactly this). The
+    import must adopt it — the next push rebuilds the whole line_items array,
+    so an unadopted discount would be silently wiped from a real quote."""
+    estimate = {
+        "estimate_id": "e1",
+        "estimate_number": "DEV26-9001",
+        "is_inclusive_tax": True,
+        "price_precision": 0,
+        "line_items": [
+            {
+                "item_order": 1,
+                "sku": "P3DIMP",
+                "description": "Projet: Punisher",
+                "rate": 1600,
+                "quantity": 1,
+                "discount": "10.00%",
+            },
+        ],
+    }
+    preview = build_preview(estimate, None, "https://x")
+    assert preview["tasks"][0]["impression_discount_pct"] == 10
+    # Pre-discount figure, matching what the exporter writes back.
+    assert preview["tasks"][0]["impression_cost"] == 1600
+
+
+def test_flat_amount_discount_is_not_adopted():
+    """A hand-typed flat discount ("150", no percent sign) has no field to
+    live in — leave it None rather than misread it as 150%."""
+    estimate = {
+        "estimate_id": "e1",
+        "estimate_number": "DEV26-9001",
+        "is_inclusive_tax": True,
+        "price_precision": 0,
+        "line_items": [
+            {
+                "item_order": 1,
+                "sku": "P3DIMP",
+                "description": "Projet: X",
+                "rate": 1600,
+                "quantity": 1,
+                "discount": 150,
+            },
+        ],
+    }
+    preview = build_preview(estimate, None, "https://x")
+    assert preview["tasks"][0]["impression_discount_pct"] is None
+
+
 def test_quote_without_headers_groups_exactly_as_before():
     # dev-2461 walks scan -> model -> impression: one job, one task. Unchanged.
     lines, _ = parse_lines(load_estimate("dev-2461-three-services"))

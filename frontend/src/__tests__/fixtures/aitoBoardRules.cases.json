@@ -8934,6 +8934,7 @@
       "tasks": [
         {
           "impression_cost": null,
+          "impression_discount_pct": null,
           "impression_done": false,
           "modelisation_cost": null,
           "modelisation_done": false,
@@ -8969,6 +8970,7 @@
       "tasks": [
         {
           "impression_cost": null,
+          "impression_discount_pct": null,
           "impression_done": false,
           "modelisation_cost": null,
           "modelisation_done": false,
@@ -9004,6 +9006,7 @@
       "tasks": [
         {
           "impression_cost": 5.0,
+          "impression_discount_pct": null,
           "impression_done": false,
           "modelisation_cost": null,
           "modelisation_done": false,
@@ -9049,6 +9052,7 @@
       "tasks": [
         {
           "impression_cost": 30.0,
+          "impression_discount_pct": null,
           "impression_done": false,
           "modelisation_cost": 20.0,
           "modelisation_done": true,
@@ -9093,6 +9097,7 @@
       "tasks": [
         {
           "impression_cost": null,
+          "impression_discount_pct": null,
           "impression_done": false,
           "modelisation_cost": null,
           "modelisation_done": false,
@@ -9104,6 +9109,7 @@
         },
         {
           "impression_cost": null,
+          "impression_discount_pct": null,
           "impression_done": false,
           "modelisation_cost": null,
           "modelisation_done": false,
@@ -9142,6 +9148,7 @@
       "tasks": [
         {
           "impression_cost": null,
+          "impression_discount_pct": null,
           "impression_done": false,
           "modelisation_cost": 0.2,
           "modelisation_done": false,
@@ -9180,6 +9187,7 @@
       "tasks": [
         {
           "impression_cost": 2.0,
+          "impression_discount_pct": null,
           "impression_done": true,
           "modelisation_cost": null,
           "modelisation_done": false,
@@ -9191,6 +9199,45 @@
         }
       ],
       "total": 3.0
+    },
+    {
+      "count": 1,
+      "name": "a discounted impression reduces the total, not the steps",
+      "pending": [
+        "scan",
+        "impression"
+      ],
+      "services": [
+        "scan",
+        "impression"
+      ],
+      "steps_by_task": [
+        {
+          "done": [],
+          "services": [
+            "scan",
+            "impression"
+          ],
+          "title": ""
+        }
+      ],
+      "steps_done": 0,
+      "steps_total": 2,
+      "tasks": [
+        {
+          "impression_cost": 1000.0,
+          "impression_discount_pct": 10.0,
+          "impression_done": false,
+          "modelisation_cost": null,
+          "modelisation_done": false,
+          "scan_cost": 500.0,
+          "scan_done": false,
+          "title": "",
+          "usinage_cost": null,
+          "usinage_done": false
+        }
+      ],
+      "total": 1400.0
     },
     {
       "count": 3,
@@ -9247,6 +9294,7 @@
       "tasks": [
         {
           "impression_cost": 3.0,
+          "impression_discount_pct": null,
           "impression_done": false,
           "modelisation_cost": 2.0,
           "modelisation_done": true,
@@ -9258,6 +9306,7 @@
         },
         {
           "impression_cost": 4.0,
+          "impression_discount_pct": null,
           "impression_done": true,
           "modelisation_cost": null,
           "modelisation_done": false,
@@ -9269,6 +9318,7 @@
         },
         {
           "impression_cost": 8.0,
+          "impression_discount_pct": null,
           "impression_done": false,
           "modelisation_cost": 7.0,
           "modelisation_done": false,

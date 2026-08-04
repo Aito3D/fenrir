@@ -167,6 +167,10 @@ class ParsedLine:
     # `group_lines`' rank heuristic guessing at one. Always False for quotes
     # that use no headers, so their grouping is untouched.
     starts_group: bool = False
+    # The line's percent discount (Books stores "10.00%" on item-level-
+    # discount orgs), or None — including for a flat-amount discount, which
+    # has no field to live in and must not be misread as a percent.
+    discount_pct: float | None = None
 
 
 def _line_amount(line: dict, *, inclusive: bool, precision: int) -> float:
@@ -188,18 +192,44 @@ def _line_amount(line: dict, *, inclusive: bool, precision: int) -> float:
     return round(max(0.0, amount), precision)
 
 
+def _discount_pct(line: dict) -> float | None:
+    """The line's percent discount, or None.
+
+    Books writes item-level percent discounts as strings ending in '%'
+    ("10.00%"). Anything else — a flat amount (number or bare numeric
+    string), an empty string, "0%" — is None: a flat discount has no percent
+    field to live in, and adopting 0 would put a literal "0%" back on the
+    quote's PDF on the next push.
+    """
+    raw = line.get("discount")
+    if not isinstance(raw, str) or not raw.strip().endswith("%"):
+        return None
+    try:
+        pct = float(raw.strip().rstrip("%"))
+    except ValueError:
+        return None
+    return pct if 0 < pct <= 100 else None
+
+
 def parse_lines(estimate: dict) -> tuple[list[ParsedLine], list[dict]]:
     """Split an estimate's line items into recognised services and skipped rows.
 
-    A `line_item_category == "header"` row is neither: it is a boundary marker,
-    so it is dropped from the output and flagged onto the next recognised line
-    rather than being reported to the user as an unimportable line.
+    Headers mark task boundaries two ways. The format Books actually stores
+    (quote DEV26-2506) has NO header row: each grouped line carries
+    ``header_name`` plus a Books-generated ``header_id``, so a line whose
+    header differs from the previous recognised line's opens a group —
+    ``header_id`` first, because two headers may share a name (two same-titled
+    tasks). A standalone `line_item_category == "header"` row — the shape this
+    app's export used to emit — is still honoured as a boundary marker: it is
+    dropped from the output and flagged onto the next recognised line rather
+    than being reported to the user as an unimportable line.
     """
     inclusive = bool(estimate.get("is_inclusive_tax"))
     precision = int(estimate.get("price_precision") or 0)
     recognised: list[ParsedLine] = []
     skipped: list[dict] = []
     pending_boundary = False
+    previous_header = None
     for line in sorted(estimate.get("line_items") or [], key=lambda item: item.get("item_order") or 0):
         if line.get("line_item_category") == "header":
             pending_boundary = True
@@ -209,6 +239,9 @@ def parse_lines(estimate: dict) -> tuple[list[ParsedLine], list[dict]]:
         if service is None:
             skipped.append({"sku": line.get("sku") or "", "name": line.get("name") or "", "amount": amount})
             continue
+        # `or None` collapses "" to None, so an unheadered line can never
+        # look like a header change from another unheadered line.
+        header = line.get("header_id") or line.get("header_name") or None
         labels, free_text = parse_description(line.get("description"))
         recognised.append(
             ParsedLine(
@@ -217,10 +250,12 @@ def parse_lines(estimate: dict) -> tuple[list[ParsedLine], list[dict]]:
                 free_text=free_text,
                 amount=amount,
                 quantity=float(line.get("quantity") or 0),
-                starts_group=pending_boundary,
+                starts_group=pending_boundary or (header is not None and header != previous_header),
+                discount_pct=_discount_pct(line),
             )
         )
         pending_boundary = False
+        previous_header = header
     return recognised, skipped
 
 
@@ -382,6 +417,12 @@ def _build_task(group: list[ParsedLine]) -> dict:
         "impression_quantity": max(1, round(impression.quantity)) if impression else None,
         "impression_color": color[:_COLOR_MAX] if color else None,
         "impression_cost": None,
+        # Adopted, not derived: the next push rebuilds the whole line_items
+        # array, so a discount left behind here would wipe the real quote's.
+        # `impression_cost` stays the PRE-discount rate x quantity
+        # (_line_amount's inclusive branch never subtracts the discount) —
+        # the two fields must not double-count.
+        "impression_discount_pct": impression.discount_pct if impression else None,
     }
     for line in ordered:
         task[_COST_FIELD[line.service]] = line.amount

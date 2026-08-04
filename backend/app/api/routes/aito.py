@@ -36,6 +36,7 @@ from backend.app.schemas.aito import (
 from backend.app.services.aito_board_rules import SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.aito_events import diff_fields, kinds_for_depth, record
 from backend.app.services.aito_quote_status import adopt_quote_status
+from backend.app.services.aito_quote_sync import request_immediate_sync
 from backend.app.services.openrouter import OpenRouterNotConfiguredError, OpenRouterUpstreamError, summarize_tasks
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
 from backend.app.utils.http import build_content_disposition
@@ -135,6 +136,7 @@ def _task_to_response(t: AitoTask) -> AitoTaskResponse:
         impression_quantity=t.impression_quantity,
         impression_color=t.impression_color,
         impression_cost=t.impression_cost,
+        impression_discount_pct=t.impression_discount_pct,
         scan_done=t.scan_done,
         modelisation_done=t.modelisation_done,
         impression_done=t.impression_done,
@@ -458,6 +460,11 @@ async def create_project(
     summary = summarise(new_tasks)
     await _apply_rules(db, project, summary, actor=_actor(current_user))
     await db.commit()
+    if payload.quote_id is None:
+        # After the commit, never before: the sync worker reads through its
+        # own session, and a wake racing an uncommitted row drains nothing.
+        # Only the own-quote branch — an import owes Books nothing yet.
+        request_immediate_sync()
     await db.refresh(project)
     return _to_response(project, summary)
 

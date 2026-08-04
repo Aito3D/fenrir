@@ -79,6 +79,11 @@ export interface TaskLike {
   /** Optional so every existing cost/done literal still compiles; absent
    *  reads as '' — the mirror's fallback name, same as a task with none. */
   title?: string;
+  /** Percent discount on the impression service. `impressionCost` is stored
+   *  PRE-discount, so the total applies this here — mirroring `summarise` in
+   *  backend/app/services/aito_board_rules.py. Optional: absent (or null)
+   *  means no discount. */
+  impressionDiscountPct?: number | null;
 }
 
 const COST_KEYS: Record<ServiceId, keyof TaskLike> = {
@@ -177,7 +182,13 @@ export function summariseTasks(tasks: readonly TaskLike[]): TaskSummary {
       if (cost === null) continue;
       enabled.add(service);
       taskServices.push(service);
-      total += cost;
+      if (service === 'impression') {
+        // Pre-discount cost, discounted here — the card's total must say
+        // what the quote will actually say. Mirrors the backend exactly.
+        total += cost * (1 - (task.impressionDiscountPct ?? 0) / 100);
+      } else {
+        total += cost;
+      }
       stepsTotal += 1;
       if (task.done[service]) {
         stepsDone += 1;

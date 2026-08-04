@@ -3610,6 +3610,7 @@ export interface AitoTask {
   impression_quantity: number | null;
   impression_color: string | null;
   impression_cost: number | null;
+  impression_discount_pct: number | null;
   scan_done: boolean;
   modelisation_done: boolean;
   impression_done: boolean;

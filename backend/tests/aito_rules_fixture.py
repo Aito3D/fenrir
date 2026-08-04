@@ -42,6 +42,7 @@ class _Task:
             setattr(self, f"{service}_cost", kwargs.get(f"{service}_cost"))
             setattr(self, f"{service}_done", kwargs.get(f"{service}_done", False))
         self.title = kwargs.get("title", "")
+        self.impression_discount_pct = kwargs.get("impression_discount_pct")
 
 
 def _powerset(items: tuple[str, ...]) -> list[list[str]]:
@@ -110,6 +111,13 @@ _SUMMARISE_SHAPES: tuple[tuple[str, list[dict[str, Any]]], ...] = (
         [{"scan_cost": 1.0, "scan_done": True, "impression_cost": 2.0, "impression_done": True}],
     ),
     (
+        # The impression cost is stored pre-discount; the total must say what
+        # the quote will actually say. 1000 at 10% + an undiscounted 500 scan
+        # is 1400 — and the discount must not touch the step count.
+        "a discounted impression reduces the total, not the steps",
+        [{"scan_cost": 500.0, "impression_cost": 1000.0, "impression_discount_pct": 10.0}],
+    ),
+    (
         # The design doc's headline example, pinned exactly: three tasks
         # carrying ten steps between them with three ticked is the 30% the
         # card's progress bar must show. The free scan on the second task is
@@ -139,6 +147,7 @@ def _task_payload(shape: dict[str, Any]) -> dict[str, Any]:
         payload[f"{service}_cost"] = shape.get(f"{service}_cost")
         payload[f"{service}_done"] = shape.get(f"{service}_done", False)
     payload["title"] = shape.get("title", "")
+    payload["impression_discount_pct"] = shape.get("impression_discount_pct")
     return payload
 
 

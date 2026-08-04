@@ -48,6 +48,11 @@ class ExportTask:
     impression_time_min: int | None
     impression_color: str | None
     material: str | None
+    # Percent, not amount — the shop's Books org discounts at item level and
+    # stores "10.00%" on the line. None means no discount, and 0 is treated
+    # the same: a literal "0%" would put a pointless discount column on the
+    # PDF. Impression only; the other services have no discount concept.
+    impression_discount_pct: float | None = None
 
 
 def cost_of(task: ExportTask, service: str) -> float | None:
@@ -212,23 +217,36 @@ def build_line_items(
 ) -> list[dict]:
     """The full ``line_items`` array for a create or update.
 
-    Tasks first, in board order, each preceded by a header naming it when more
-    than one task actually reaches the quote — a header over the only thing on
-    the quote is noise on the PDF. A task with no priced service emits no
-    line, so it never counts toward that total: only tasks that produce a
-    line item can make the header appear. Then every foreign line, echoed as
-    a bare ``line_item_id``, which Books expands back into the untouched
-    original. Omitting a line deletes it, so anything not returned here is
-    gone.
+    Tasks first, in board order, each grouped under a header naming it when
+    more than one task actually reaches the quote — a header over the only
+    thing on the quote is noise on the PDF. A task with no priced service
+    emits no line, so it never counts toward that total: only tasks that
+    produce a line item can make the header appear. Then every foreign line,
+    echoed as a bare ``line_item_id``, which Books expands back into the
+    untouched original. Omitting a line deletes it, so anything not returned
+    here is gone.
+
+    A header is ``header_name`` stamped on every one of the task's item lines
+    — that is how Books itself stores one (reference: quote DEV26-2506, where
+    each grouped line carries ``header_name`` plus a Books-generated
+    ``header_id``). It is NOT a standalone ``line_item_category: "header"``
+    row: Books accepts that shape but stores it as a broken, priceless ITEM
+    line on the PDF — the bug this replaced. Known limit: Books matches
+    headers by name, so two same-titled tasks render under one shared header.
     """
     lines: list[dict] = []
     emitted = [(t, s) for t, s in ((t, enabled_services(t)) for t in tasks) if s]
     for task_row, services in emitted:
-        if len(emitted) > 1 and task_row.title and task_row.title.strip():
-            lines.append({"line_item_category": "header", "name": task_row.title.strip()[:_TITLE_MAX]})
+        header = task_row.title.strip()[:_TITLE_MAX] if len(emitted) > 1 and (task_row.title or "").strip() else None
         for index, service in enumerate(services):
+            discount = None
             if service == "impression":
                 rate, quantity = impression_rate_quantity(task_row)
+                # "10%" not "10.00%": Books accepts either and echoes back the
+                # long form; `:g` drops a float's trailing zeros so a
+                # round-tripped 10.0 does not drift to "10.0%".
+                if task_row.impression_discount_pct:
+                    discount = f"{task_row.impression_discount_pct:g}%"
             else:
                 rate, quantity = cost_of(task_row, service), 1
             lines.append(
@@ -241,6 +259,8 @@ def build_line_items(
                     # The task's own free text belongs on the line a reader
                     # meets first, once — not repeated under all four services.
                     "description": build_description(service, task_row, include_free_text=index == 0),
+                    **({"header_name": header} if header else {}),
+                    **({"discount": discount} if discount else {}),
                 }
             )
     for line in sorted(existing_line_items, key=lambda item: item.get("item_order") or 0):

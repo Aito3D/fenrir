@@ -10,6 +10,7 @@ import {
   projectTotal,
   taskDraftFromAitoTask,
   taskDraftToTaskCreate,
+  roundUpTo50,
 } from '../../utils/taskDraft';
 import type { PricingDefaults, PricingFilament, PricingPrinter } from '../../utils/pricing';
 import type { AitoTask } from '../../api/client';
@@ -160,6 +161,7 @@ describe('taskDraftFromAitoTask / taskDraftToTaskCreate', () => {
     impression_quantity: 3,
     impression_color: 'Noir',
     impression_cost: 4200,
+    impression_discount_pct: 15,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
   };
@@ -179,6 +181,7 @@ describe('taskDraftFromAitoTask / taskDraftToTaskCreate', () => {
       impression_quantity: row.impression_quantity,
       impression_color: row.impression_color,
       impression_cost: row.impression_cost,
+      impression_discount_pct: row.impression_discount_pct,
     });
   });
 
@@ -210,5 +213,32 @@ describe('taskDraft service predicates', () => {
     expect(projectHasPricedService([priced, emptyTaskDraft()])).toBe(false);
     expect(projectHasPricedService([priced])).toBe(true);
     expect(projectHasPricedService([])).toBe(false);
+  });
+});
+
+describe('taskTotal with an impression discount', () => {
+  it('applies the discount to the impression cost only', () => {
+    const task = { ...emptyTaskDraft(), scanCost: 500, impressionCost: 1000, impressionDiscountPct: 10 };
+    expect(taskTotal(task)).toBeCloseTo(1400, 6);
+  });
+
+  it('no discount leaves the total untouched', () => {
+    const task = { ...emptyTaskDraft(), impressionCost: 1000 };
+    expect(taskTotal(task)).toBe(1000);
+  });
+});
+
+describe('roundUpTo50', () => {
+  it('rounds up to the next multiple of 50', () => {
+    expect(roundUpTo50(123)).toBe(150);
+    expect(roundUpTo50(201)).toBe(250);
+    expect(roundUpTo50(390)).toBe(400);
+    expect(roundUpTo50(1)).toBe(50);
+  });
+
+  it('leaves exact multiples alone and shrugs off float noise', () => {
+    expect(roundUpTo50(150)).toBe(150);
+    expect(roundUpTo50(150.0000000001)).toBe(150);
+    expect(roundUpTo50(0)).toBe(0);
   });
 });

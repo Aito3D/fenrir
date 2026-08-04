@@ -131,6 +131,49 @@ async def test_board_payload_matches_the_golden_fixture(async_client, db_session
 
 
 @pytest.mark.asyncio
+async def test_create_wakes_the_quote_sync_worker(async_client):
+    """A new own-quote project must not sit out the 300s poll before its
+    estimate exists: creation wakes the outbox worker. An import already has
+    its quote, so it must NOT wake — nothing is owed to Books yet, and the
+    worker's wake drain would find nothing."""
+    from backend.app.services import aito_quote_sync
+
+    aito_quote_sync._wake.clear()
+    assert (await _create(async_client)).status_code == 201
+    assert aito_quote_sync._wake.is_set()
+
+    aito_quote_sync._wake.clear()
+    r = await _create(async_client, quote_id="E77", quote_number="DEV26-1")
+    assert r.status_code == 201
+    assert not aito_quote_sync._wake.is_set()
+
+
+@pytest.mark.asyncio
+async def test_impression_discount_round_trips_through_task_responses(async_client):
+    """Regression: _task_to_response used to drop impression_discount_pct, so
+    every response reported null. The frontend keeps each mutation's response
+    as its diff baseline, so the stored 10% became invisible after any save —
+    and clearing it then diffed as "no change", leaving the discount live on
+    the customer's quote while the UI showed none."""
+    project_id = (await _create(async_client)).json()["id"]
+
+    created = await async_client.post(
+        f"/api/v1/aito/{project_id}/tasks",
+        json={"impression_cost": 1000, "impression_discount_pct": 10},
+    )
+    assert created.status_code == 201
+    assert created.json()["impression_discount_pct"] == 10
+    task_id = created.json()["id"]
+
+    listed = await async_client.get(f"/api/v1/aito/{project_id}/tasks")
+    assert [t["impression_discount_pct"] for t in listed.json() if t["id"] == task_id] == [10]
+
+    cleared = await async_client.patch(f"/api/v1/aito/tasks/{task_id}", json={"impression_discount_pct": None})
+    assert cleared.status_code == 200
+    assert cleared.json()["impression_discount_pct"] is None
+
+
+@pytest.mark.asyncio
 async def test_create_requires_client(async_client):
     r = await _create(async_client, client_id=None, client_name=None)
     assert r.status_code == 422

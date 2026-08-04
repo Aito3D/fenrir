@@ -33,6 +33,7 @@ function toTaskLike(row: Record<string, number | boolean | string | null>): Task
     modelisationCost: row.modelisation_cost as number | null,
     impressionCost: row.impression_cost as number | null,
     usinageCost: row.usinage_cost as number | null,
+    impressionDiscountPct: (row.impression_discount_pct as number | null | undefined) ?? null,
     done: {
       scan: row.scan_done === true,
       modelisation: row.modelisation_done === true,
@@ -51,7 +52,7 @@ describe('the board-rules contract', () => {
     // Guards against an empty or truncated fixture quietly passing the loop
     // below by iterating zero times.
     expect(evaluateCases).toHaveLength(8 * 7 * 16);
-    expect(summariseCases).toHaveLength(9);
+    expect(summariseCases).toHaveLength(10);
   });
 
   it('stages every service exactly once', () => {

@@ -122,7 +122,17 @@ def summarise(tasks: Iterable[Any]) -> TaskSummary:
                 continue
             enabled.add(service)
             task_services.append(service)
-            total += cost
+            if service == "impression":
+                # The impression cost is stored PRE-discount (see
+                # AitoTask.impression_discount_pct); the total a card shows
+                # must match what the quote will actually say, so the
+                # discount lands here. Other services have no discount.
+                # getattr default: fixture duck-types and older callers may
+                # not carry the attribute.
+                pct = getattr(task, "impression_discount_pct", None) or 0
+                total += cost * (1 - pct / 100)
+            else:
+                total += cost
             steps_total += 1
             if getattr(task, f"{service}_done"):
                 steps_done += 1

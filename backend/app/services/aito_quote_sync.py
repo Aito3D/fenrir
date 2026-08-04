@@ -6,6 +6,13 @@ request path ever waits on Books, so a Zoho outage degrades to a retry rather
 than a failed board edit, and a burst of task edits inside one tick collapses
 into a single quote rewrite.
 
+The one latency exception is project CREATION: a brand-new card owes Books an
+estimate immediately, not at the next poll, so ``create_project`` calls
+``request_immediate_sync`` after its commit and the loop runs a PENDING-ONLY
+drain right away. That drain spends only the Books calls the pending projects
+were going to spend anyway — it never reconciles quoted projects — so the wake
+does not touch the quota budget the 300s interval below exists to protect.
+
 Phase 1 is push-only. ``quote_synced_at`` is written here and read by the
 Phase 2 poller.
 """
@@ -116,6 +123,7 @@ async def load_export_tasks(db: AsyncSession, project_id: int) -> list[ExportTas
             impression_time_min=row.impression_time_min,
             impression_color=row.impression_color,
             material=materials.get(row.impression_filament_id),
+            impression_discount_pct=row.impression_discount_pct,
         )
         for row in rows
     ]
@@ -1047,9 +1055,13 @@ def _still_selected(project: AitoProject) -> bool:
     )
 
 
-async def run_sync_once(db: AsyncSession) -> int:
+async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
     """Drain every pending project, and reconcile the status of every other
     managed quote. Returns how many were actually attempted.
+
+    ``pending_only`` is the wake path (see ``request_immediate_sync``): it
+    skips the reconcile half entirely so a wake costs no Books calls beyond
+    the pushes that were already owed.
 
     Not the same as the number of ids selected up front: the skip guard below
     can pass over an id whose row vanished or whose state moved on before the
@@ -1059,29 +1071,22 @@ async def run_sync_once(db: AsyncSession) -> int:
     change. Serial by design — the board holds a handful of cards, and one
     request at a time keeps the failure accounting above trivial.
     """
-    project_ids = list(
-        (
-            await db.execute(
-                select(AitoProject.id)
-                .where(
-                    or_(
-                        AitoProject.quote_sync_state == "pending",
-                        and_(
-                            AitoProject.status == "active",
-                            AitoProject.quote_id.is_not(None),
-                            # 'unmanaged' is the one state meaning this feature
-                            # must never touch the quote. 'locked' is an
-                            # invoiced or tax-unsafe estimate, where a status
-                            # write is no safer than a line-item write.
-                            AitoProject.quote_sync_state.not_in(("pending", "unmanaged", "locked")),
-                        ),
-                    )
-                )
-                .order_by(AitoProject.id)
-            )
+    selected = AitoProject.quote_sync_state == "pending"
+    if not pending_only:
+        selected = or_(
+            selected,
+            and_(
+                AitoProject.status == "active",
+                AitoProject.quote_id.is_not(None),
+                # 'unmanaged' is the one state meaning this feature
+                # must never touch the quote. 'locked' is an
+                # invoiced or tax-unsafe estimate, where a status
+                # write is no safer than a line-item write.
+                AitoProject.quote_sync_state.not_in(("pending", "unmanaged", "locked")),
+            ),
         )
-        .scalars()
-        .all()
+    project_ids = list(
+        (await db.execute(select(AitoProject.id).where(selected).order_by(AitoProject.id))).scalars().all()
     )
     attempted = 0
     for project_id in project_ids:
@@ -1108,6 +1113,12 @@ async def run_sync_once(db: AsyncSession) -> int:
             # Gone, or already handled by something else since the id was
             # selected above — nothing left to sync. Not counted below: it was
             # never actually attempted.
+            continue
+        if pending_only and project.quote_sync_state != "pending":
+            # Selected as pending but the state moved on before the loop got
+            # here. _still_selected alone would wave a now-reconcilable row
+            # through to sync_project's reconcile branch — an extra GET the
+            # wake path promises never to spend.
             continue
         attempted += 1
         await sync_project(db, project)
@@ -1151,9 +1162,9 @@ async def run_sync_once(db: AsyncSession) -> int:
             # sitting in Printing but locked as "Waiting on the client").
             # Inside this try so a failure here is handled exactly like a
             # commit failure: roll back, log, leave the project pending, and
-            # retry next tick. Function-level import: no circular import
-            # today (routes/aito.py does not import this module), but this
-            # keeps it that way if that ever changes.
+            # retry next tick. Function-level import: routes/aito.py imports
+            # this module at module level (for request_immediate_sync), so a
+            # module-level import here WOULD be a cycle.
             from backend.app.api.routes.aito import _apply_rules, _summary_for
 
             await _apply_rules(db, project, await _summary_for(db, project.id))
@@ -1169,6 +1180,27 @@ async def run_sync_once(db: AsyncSession) -> int:
 # depending on plan. At 60s a single active quote cost 1,440 calls/day and
 # two of them exhausted a Standard plan. See test_aito_quote_sync_interval.
 _DEFAULT_INTERVAL_SECONDS = 300
+
+# Set by request_immediate_sync, consumed by run_sync_loop. A plain Event, not
+# a queue: N wakes before the loop gets there collapse into one drain, which
+# is exactly right — the drain re-reads every pending row anyway.
+_wake = asyncio.Event()
+
+
+def request_immediate_sync() -> None:
+    """Ask the loop to drain PENDING projects now instead of at the next tick.
+
+    Call this after the commit that made the project pending, never before:
+    the loop reads through its own session, and a wake that fires ahead of the
+    commit finds nothing, clears the event, and leaves the project waiting out
+    the full interval after all.
+
+    Deliberately NOT called from every _mark_pending site. Creation is the one
+    moment a user is watching for a quote to appear; edits keep the outbox's
+    burst-collapsing (docstring above) so ten task ticks inside one interval
+    still cost one PUT, not ten.
+    """
+    _wake.set()
 
 
 async def sync_interval_seconds(db: AsyncSession) -> int:
@@ -1208,7 +1240,29 @@ async def run_sync_loop() -> None:
             raise
         except Exception:
             logger.exception("Aito quote sync tick failed")
-        await asyncio.sleep(interval)
+        # Not a plain sleep: request_immediate_sync can cut the wait short for
+        # a pending-only drain. The full tick above keeps its own fixed
+        # cadence — wakes run against a DEADLINE, not a reset timer, so a
+        # steady stream of creations can never starve reconciliation.
+        deadline = asyncio.get_running_loop().time() + interval
+        while (remaining := deadline - asyncio.get_running_loop().time()) > 0:
+            try:
+                await asyncio.wait_for(_wake.wait(), timeout=remaining)
+            except asyncio.TimeoutError:
+                break
+            # Cleared BEFORE draining: a wake that lands mid-drain either made
+            # its row visible in time to be selected, or re-sets the event and
+            # the next lap of this inner loop picks it up. Cleared after, it
+            # could be lost.
+            _wake.clear()
+            try:
+                async with async_session() as db:
+                    if await sync_enabled(db) and await zoho_service.is_configured(db):
+                        await run_sync_once(db, pending_only=True)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Aito quote sync wake drain failed")
 
 
 def start_aito_quote_sync() -> None:

@@ -35,8 +35,15 @@ export interface TaskDraft {
   modelisationCost: number | null;
   usinageCost: number | null;
   impression: ImpressionDraft;
-  /** Frozen total for a saved task; recomputed while the task is being edited. */
+  /** Frozen total for a saved task; recomputed while the task is being edited.
+   *  Stored PRE-discount: `impressionDiscountPct` below is applied on top by
+   *  the totals (summariseTasks) and by the quote line itself, never baked
+   *  in here — the two must not double-count. */
   impressionCost: number | null;
+  /** Percent discount on the printing service (the quote line's "10%"), or
+   *  null for none. Top-level beside `impressionCost` — it modifies the cost,
+   *  not the print parameters. */
+  impressionDiscountPct: number | null;
   /** One flag per service, keyed by the same ids the backend and
    *  AITO_SERVICE_LABEL_KEYS use. A flag is only meaningful when its cost is
    *  not null — the backend clears it otherwise, and refuses to set it. */
@@ -64,6 +71,7 @@ export function emptyTaskDraft(): TaskDraft {
     usinageCost: null,
     impression: { printerId: null, filamentId: null, weightG: null, timeMin: null, quantity: 1, color: '' },
     impressionCost: null,
+    impressionDiscountPct: null,
     done: { scan: false, modelisation: false, impression: false, usinage: false },
   };
 }
@@ -150,6 +158,7 @@ export function taskDraftFromAitoTask(task: AitoTask): TaskDraft {
       color: task.impression_color ?? '',
     },
     impressionCost: task.impression_cost,
+    impressionDiscountPct: task.impression_discount_pct ?? null,
     done: {
       scan: task.scan_done,
       modelisation: task.modelisation_done,
@@ -180,6 +189,7 @@ export function taskDraftToTaskCreate(t: TaskDraft): AitoTaskCreate {
     impression_quantity: t.impression.quantity,
     impression_color: t.impression.color.trim() || null,
     impression_cost: t.impressionCost,
+    impression_discount_pct: t.impressionDiscountPct,
     scan_done: t.done.scan,
     modelisation_done: t.done.modelisation,
     impression_done: t.done.impression,
@@ -193,6 +203,15 @@ export function taskDraftToTaskCreate(t: TaskDraft): AitoTaskCreate {
  *  this figure has to agree with `TaskSummary.total` in
  *  backend/app/services/aito_board_rules.py, and going through the mirror is
  *  what puts it under the contract fixture instead of under a comment. */
+/** The commercial rounding for a printing unit price: UP to the next multiple
+ *  of 50 (123 -> 150, 201 -> 250, 390 -> 400; exact multiples stay put).
+ *  Applied to the CALCULATOR's per-piece figure only — a hand-typed cost is
+ *  taken verbatim. The 2-decimal pre-round keeps float noise from bumping an
+ *  exact multiple up a whole tier (150.0000000001 must stay 150, not 200). */
+export function roundUpTo50(value: number): number {
+  return Math.ceil(Math.round(value * 100) / 100 / 50) * 50;
+}
+
 export function taskTotal(task: TaskDraft): number {
   return summariseTasks([task]).total;
 }

@@ -136,6 +136,7 @@ CATALOGUE = Catalogue(
 def test_single_task_gets_no_header():
     lines = build_line_items([task(scan_cost=5000)], [], CATALOGUE)
     assert [line.get("line_item_category") for line in lines] == [None]
+    assert "header_name" not in lines[0]
     assert lines[0]["item_id"] == "ITEM_SCAN"
     assert lines[0]["rate"] == 5000
     assert lines[0]["quantity"] == 1
@@ -145,16 +146,18 @@ def test_single_task_gets_no_header():
 
 
 def test_multiple_tasks_get_headers_named_after_them():
+    """Books has no standalone header ROW: a header is ``header_name`` stamped
+    on the item lines it groups (reference: quote DEV26-2506). A separate
+    ``{"line_item_category": "header"}`` entry is stored by Books as a broken
+    item line instead — the bug this test pins down."""
     lines = build_line_items(
-        [task(title="Premiere", scan_cost=1000), task(title="Deuxieme", usinage_cost=2000)],
+        [task(title="Premiere", scan_cost=1000, impression_cost=500), task(title="Deuxieme", usinage_cost=2000)],
         [],
         CATALOGUE,
     )
-    assert [line.get("name") for line in lines if line.get("line_item_category") == "header"] == [
-        "Premiere",
-        "Deuxieme",
-    ]
-    assert [line["item_order"] for line in lines] == [1, 2, 3, 4]
+    assert all(line.get("line_item_category") != "header" for line in lines)
+    assert [line.get("header_name") for line in lines] == ["Premiere", "Premiere", "Deuxieme"]
+    assert [line["item_order"] for line in lines] == [1, 2, 3]
 
 
 def test_services_are_emitted_in_canonical_order():
@@ -204,7 +207,8 @@ def test_foreign_lines_are_preserved_by_id_after_the_aito_block():
 
 def test_a_task_with_no_service_produces_nothing_not_even_a_header():
     lines = build_line_items([task(title="Vide"), task(title="Reelle", scan_cost=1)], [], CATALOGUE)
-    assert [line.get("line_item_category") for line in lines] == [None]
+    assert len(lines) == 1
+    assert "header_name" not in lines[0]
     assert lines[0]["item_id"] == "ITEM_SCAN"
 
 
@@ -264,6 +268,37 @@ def as_estimate(lines: list[dict]) -> dict:
         "total": 0,
         "line_items": [{**line, "sku": _SKU_FOR_ITEM.get(line.get("item_id"), "")} for line in lines],
     }
+
+
+def test_impression_discount_is_written_as_a_percent_string():
+    """The shop's Books org discounts at item level (see quote DEV26-2469,
+    where 10% sits on each line as `discount: "10.00%"`), so the impression
+    line carries the task's discount in that same form. Only the impression
+    line: the discount is a printing-service concept."""
+    lines = build_line_items(
+        [task(scan_cost=500, impression_cost=1000, impression_discount_pct=10)],
+        [],
+        CATALOGUE,
+    )
+    scan_line, impression_line = lines
+    assert "discount" not in scan_line
+    assert impression_line["discount"] == "10%"
+
+
+def test_no_discount_emits_no_discount_key():
+    """An absent discount must not even write `discount: "0%"` — Books would
+    display a pointless 0% column on the PDF."""
+    lines = build_line_items([task(impression_cost=1000)], [], CATALOGUE)
+    assert "discount" not in lines[0]
+
+
+def test_round_trip_preserves_the_discount():
+    original = [task(impression_cost=2400, impression_quantity=2, impression_discount_pct=15)]
+    preview = build_preview(as_estimate(build_line_items(original, [], CATALOGUE)), None, "https://x")
+    assert preview["tasks"][0]["impression_discount_pct"] == 15
+    # The stored cost stays PRE-discount: rate x quantity, exactly what the
+    # exporter derived it from — the discount lives in its own field.
+    assert preview["tasks"][0]["impression_cost"] == 2400
 
 
 def test_round_trip_preserves_task_boundaries_and_fields():

@@ -23,6 +23,8 @@ class AitoTaskBase(BaseModel):
     impression_quantity: int | None = Field(default=None, ge=1)
     impression_color: str | None = Field(default=None, max_length=100)
     impression_cost: float | None = Field(default=None, ge=0)
+    # gt=0: a 0% discount is expressed as null, never stored — see the model.
+    impression_discount_pct: float | None = Field(default=None, gt=0, le=100)
     scan_done: bool = False
     modelisation_done: bool = False
     impression_done: bool = False

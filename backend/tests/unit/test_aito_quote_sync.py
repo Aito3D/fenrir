@@ -1072,6 +1072,130 @@ async def test_project_state_changed_away_from_pending_before_the_loop_reaches_i
     assert project.quote_sync_error is None
 
 
+# --- Instant quote creation: wake-driven pending-only drain ------------------
+
+
+def _estimate_body(estimate_id: str = "E1") -> dict:
+    return {
+        "estimate": {
+            "estimate_id": estimate_id,
+            "estimate_number": "DEV26-9001",
+            "date": "2026-07-29",
+            "status": "draft",
+            "total": 5000,
+            "last_modified_time": "2026-07-29T10:00:00-1000",
+            "is_inclusive_tax": True,
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_pending_only_drain_creates_the_quote_but_reconciles_nothing(db_session):
+    """The wake path must cost only the Books calls the pending project was
+    going to spend anyway. A quoted idle project — which a full tick WOULD
+    poll for status — is left untouched, so waking on every creation cannot
+    burn reconcile quota."""
+    pending = AitoProject(
+        description="Nouveau",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_sync_state="pending",
+    )
+    idle = AitoProject(
+        description="Ancien",
+        board_column="devis",
+        position=1,
+        client_id="C2",
+        client_name="Autre",
+        quote_id="E9",
+        quote_sync_state="idle",
+    )
+    db_session.add_all([pending, idle])
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=pending.id, position=0, title="Helice", scan_cost=5000))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {"estimates": []},
+                ("POST", "/estimates"): _estimate_body(),
+                # Present so that if the drain DOES wrongly reconcile the idle
+                # project, the call is recorded in `seen` rather than 404ing
+                # into an unrelated failure path.
+                ("GET", "/estimates/E9"): _estimate_body("E9"),
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session, pending_only=True) == 1
+    await db_session.refresh(pending)
+    assert pending.quote_id == "E1"
+    assert pending.quote_sync_state == "idle"
+    assert not any(path.endswith("/estimates/E9") for _, path, _ in seen)
+
+
+@pytest.mark.asyncio
+async def test_wake_drains_a_pending_project_without_waiting_for_the_interval(db_session, test_engine, monkeypatch):
+    """End to end through run_sync_loop: request_immediate_sync() must get a
+    fresh project its quote within moments, not at the next 300s tick."""
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    from backend.app.services import aito_quote_sync
+
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr(aito_quote_sync, "async_session", maker)
+
+    await _configure_zoho(db_session)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {"estimates": []},
+                ("POST", "/estimates"): _estimate_body(),
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
+    try:
+        # Let the startup full pass run; there is nothing for it to drain yet.
+        await asyncio.sleep(0.05)
+        project = AitoProject(
+            description="Nouveau",
+            board_column="devis",
+            position=0,
+            client_id="C1",
+            client_name="Client",
+            quote_sync_state="pending",
+        )
+        db_session.add(project)
+        await db_session.flush()
+        db_session.add(AitoTask(project_id=project.id, position=0, title="Helice", scan_cost=5000))
+        await db_session.commit()
+
+        aito_quote_sync.request_immediate_sync()
+
+        for _ in range(100):  # up to ~2s — far below the 300s tick
+            await asyncio.sleep(0.02)
+            await db_session.refresh(project)
+            if project.quote_id:
+                break
+        assert project.quote_id == "E1"
+        assert project.quote_sync_state == "idle"
+    finally:
+        loop_task.cancel()
+        await asyncio.gather(loop_task, return_exceptions=True)
+
+
 @pytest.mark.asyncio
 async def test_sync_interval_falls_back_to_three_hundred_seconds(db_session):
     from backend.app.services.aito_quote_sync import sync_interval_seconds

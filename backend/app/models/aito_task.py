@@ -36,6 +36,10 @@ class AitoTask(Base):
     impression_quantity: Mapped[int | None] = mapped_column(Integer, nullable=True)
     impression_color: Mapped[str | None] = mapped_column(String(100), nullable=True)
     impression_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Percent (Books item-level "10.00%" lines), NOT baked into
+    # impression_cost — that stays the pre-discount rate x quantity, so the
+    # two never double-count. None = no discount.
+    impression_discount_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     # One flag per service, mirroring the four cost columns above. A step
     # exists when its cost is not NULL; ticking it is what advances the
     # project's board column (see services/aito_board_rules.py). NOT NULL with

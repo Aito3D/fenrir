@@ -4312,6 +4312,12 @@ async def run_migrations(conn):
         # Gated on the columns not having existed: re-running this would undo
         # every tick the user has made since, and re-accept quotes they declined.
         await _migrate_aito_board_columns(conn)
+    # Migration: per-line percent discount on the Impression3D service
+    # (2026-08-03). Nullable, no backfill: existing tasks simply have no
+    # discount. The import adopts hand-set Books discounts into it so a push
+    # stops wiping them.
+    await _safe_execute(conn, "ALTER TABLE aito_tasks ADD COLUMN impression_discount_pct FLOAT")
+
     await _safe_execute(
         conn,
         "CREATE INDEX IF NOT EXISTS ix_aito_projects_quote_sync_state ON aito_projects (quote_sync_state)",
