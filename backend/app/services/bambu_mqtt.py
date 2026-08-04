@@ -40,6 +40,12 @@ _AMS_MODULE_PREFIXES = ("ams/", "n3f/", "n3s/")
 # printer_manager.ACTIVE_PRINT_STATES and print_scheduler._ACTIVE_PRINT_STATES.
 _ACTIVE_PRINT_STATES = frozenset({"PREPARE", "SLICING", "RUNNING", "PAUSE"})
 
+# AMS dry_status phases (info bits 4-7) in which a drying cycle is still live, so
+# a dry_time of 0 alongside one of them is a transient rather than a completion
+# (#2759). 0=Off, 4=Stopping and 5=Error all mean the cycle is over or ending and
+# are deliberately excluded — those SHOULD end it.
+_ACTIVE_DRY_STATUSES = frozenset({1, 2, 3})  # Checking, Drying, Cooling
+
 # CONNACK reason codes that mean the printer actively refused our credentials,
 # as opposed to being unreachable or busy. Bambu speaks MQTT 3.1.1, whose
 # single-byte CONNACK return codes paho maps onto the v5 reason-code space:
@@ -1642,6 +1648,44 @@ class BambuMQTTClient:
                         self._pending_cali_acks[ack_seq] = print_data
                 elif cmd in ("extrusion_cali_sel", "ams_filament_setting"):
                     logger.debug("[%s] %s response: %s", self.serial_number, cmd, print_data)
+                    # A refused ams_filament_setting is the printer's verdict on
+                    # a write the user just made, and at DEBUG it never reached
+                    # a support bundle: #2756 reported six manual Configure Slot
+                    # attempts on an X1C, each returning HTTP 200 with the
+                    # read-back still showing the previous profile, and no
+                    # record of what the printer said about any of them. Same
+                    # promotion as extrusion_cali_set (#2718) and
+                    # ams_filament_drying (#1447) — but only on a non-success,
+                    # because unlike those two this command is not rare: every
+                    # spool assignment and every K-profile re-apply sends one,
+                    # so promoting each ack would bury the interesting line.
+                    #
+                    # The developer-mode probe is excluded. It sends this exact
+                    # command to the external slot precisely to see it refused
+                    # on P1 firmware, so its failure is a normal reading rather
+                    # than a fault. Its response is still matched below (this
+                    # runs before _handle_dev_mode_probe_response clears the
+                    # seq), and user-initiated commands can't be mistaken for
+                    # it — they publish a hardcoded sequence_id of "0".
+                    result = print_data.get("result")
+                    is_dev_mode_probe = (
+                        self._dev_mode_probe_seq is not None
+                        and print_data.get("sequence_id") == self._dev_mode_probe_seq
+                    )
+                    if (
+                        cmd == "ams_filament_setting"
+                        and not is_dev_mode_probe
+                        and isinstance(result, str)
+                        and result.lower() != "success"
+                    ):
+                        logger.info(
+                            "[%s] ams_filament_setting refused: result=%s reason=%s ams_id=%s tray_id=%s",
+                            self.serial_number,
+                            result,
+                            print_data.get("reason", ""),
+                            print_data.get("ams_id"),
+                            print_data.get("tray_id"),
+                        )
                 # AMS drying responses are rare (user-initiated only) and the
                 # full payload — including `result` and any `reason` code —
                 # is the only way to diagnose silent rejections like #1447.
@@ -2750,6 +2794,27 @@ class BambuMQTTClient:
             try:
                 current = int(raw_dry_time)
             except (TypeError, ValueError):
+                continue
+            # A dry_time of 0 only means "finished" when the unit also reports
+            # an idle phase. Between the command ack and the countdown settling
+            # the firmware publishes a transient 0 while the AMS is still
+            # Checking — #2759 caught a 720 → 0 → 719 sequence one minute into a
+            # 12-hour cycle. Taking that at face value dropped the cached target
+            # (leaving the badge to guess the filament from tray 1, so a PLA
+            # cycle read "PETG @ 65°C") and fired on_drying_complete, which
+            # schedules smart-plug auto-off. dry_status comes from the same info
+            # hex parsed above; when it is absent we let the edge through, so a
+            # firmware that never reports one still ends its cycles.
+            if current == 0 and ams_unit.get("dry_status") in _ACTIVE_DRY_STATUSES:
+                # Leave the remembered value alone, exactly as the absent-
+                # dry_time skip above does: whichever push ends the cycle for
+                # real must still see a non-zero previous.
+                logger.debug(
+                    "[%s] AMS %d reported dry_time 0 in phase %s — cycle still live, ignoring",
+                    self.serial_number,
+                    ams_id,
+                    ams_unit.get("dry_status"),
+                )
                 continue
             previous = self._previous_dry_times.get(ams_id, 0)
             self._previous_dry_times[ams_id] = current

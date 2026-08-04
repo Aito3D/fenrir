@@ -52,6 +52,7 @@ from backend.app.services.bambu_ftp import (
 )
 from backend.app.services.printer_diagnostic import run_connection_diagnostic
 from backend.app.services.printer_manager import (
+    display_temperatures,
     drying_screen_only,
     get_derived_status_name,
     printer_manager,
@@ -61,6 +62,7 @@ from backend.app.services.printer_manager import (
     supports_chamber_temp,
     supports_drying,
     supports_drying_while_printing,
+    uniform_tray_drying_hint,
 )
 from backend.app.utils.filament_ids import filament_id_to_setting_id
 from backend.app.utils.http import build_content_disposition
@@ -576,20 +578,18 @@ async def get_printer_status(
                     dry_target_temp = None
             if target_fil_val:
                 dry_filament = str(target_fil_val)
-            # Fallback: derive from first loaded tray when no cached target
-            # (drying started in a previous backend session, or cache wasn't
-            # seeded). Mirrors the popover seed heuristic.
+            # Fallback: derive from the loaded trays when there is no cached
+            # target (drying started in a previous backend session, or the
+            # cache wasn't seeded), and only when they agree on a filament
+            # type. See uniform_tray_drying_hint.
             if dry_target_temp is None or not dry_filament:
-                for tray in trays:
-                    if tray.tray_type:
-                        if not dry_filament:
-                            dry_filament = str(tray.tray_type)
-                        if dry_target_temp is None and tray.drying_temp:
-                            try:
-                                dry_target_temp = int(tray.drying_temp)
-                            except (TypeError, ValueError):
-                                pass
-                        break
+                hint_filament, hint_temp = uniform_tray_drying_hint(
+                    [(tray.tray_type or "", tray.drying_temp) for tray in trays]
+                )
+                if not dry_filament:
+                    dry_filament = hint_filament
+                if dry_target_temp is None:
+                    dry_target_temp = hint_temp
 
             ams_units.append(
                 AMSUnit(
@@ -869,6 +869,7 @@ async def get_overlay_status(
             "layer_num": None,
             "total_layers": None,
             "stg_cur_name": None,
+            "temperatures": {},
             "time_format": time_format,
         }
 
@@ -885,6 +886,9 @@ async def get_overlay_status(
         "layer_num": state.layer_num,
         "total_layers": state.total_layers,
         "stg_cur_name": get_derived_status_name(state, printer.model),
+        # Nozzle / bed / chamber readings for the overlay's temperature fields
+        # (#1422). Filtered rather than passed through: see display_temperatures.
+        "temperatures": display_temperatures(state.temperatures, printer.model),
         "time_format": time_format,
     }
 
