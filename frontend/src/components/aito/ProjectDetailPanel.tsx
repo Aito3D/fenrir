@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQueryClient } from '@tanstack/react-query';
-import { Building2, Check, Copy, ExternalLink, Loader2, Mail, Phone, User } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Building2, Check, Copy, ExternalLink, Loader2, Mail, Phone, RefreshCw, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ActivityRail } from './history/ActivityRail';
@@ -30,7 +30,8 @@ import { copyTextToClipboard } from '../../utils/clipboard';
 import { parseUTCDate } from '../../utils/date';
 import { formatMoney } from '../../utils/pricing';
 import { applyDescription, applySyncState } from '../../utils/aitoOptimistic';
-import { inputCls } from '../formStyles';
+import { taskDraftToTaskCreate } from '../../utils/taskDraft';
+import { focusRingCls, inputCls } from '../formStyles';
 import { useToast } from '../../contexts/ToastContext';
 
 /** Explicit map rather than a template literal key: the i18n gate scans for
@@ -375,12 +376,15 @@ function PanelHeader({
  *  shadow: only the task cards cast one, so the column the operator works in
  *  stays the front plane. Spreading the shadow over every group is what makes
  *  the task list stop being the focus. */
-function PanelCard({ title, children }: { title: string; children: ReactNode }) {
+function PanelCard({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
     <section className="rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3">
-      <p data-testid="panel-card-heading" className="text-xs uppercase tracking-wide text-bambu-gray mb-2">
-        {title}
-      </p>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <p data-testid="panel-card-heading" className="text-xs uppercase tracking-wide text-bambu-gray">
+          {title}
+        </p>
+        {action}
+      </div>
       {children}
     </section>
   );
@@ -558,6 +562,35 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
     );
   };
 
+  // Regenerates the description from the live tasks through the same
+  // stateless /aito/summarize endpoint the creation drawer uses, then saves
+  // immediately through the manual-edit path so the descState indicator and
+  // the optimistic board update behave identically. A failed generation only
+  // toasts — unlike the drawer, this panel always has a real description, and
+  // buildFallbackSummary would replace it with a worse one.
+  const regenerateMutation = useMutation({
+    mutationFn: () => api.summarizeAitoProject(tasks.map(taskDraftToTaskCreate)),
+    onSuccess: ({ summary }) => {
+      const next = summary.trim();
+      if (!next || next === project.description) {
+        setDescState('saved');
+        return;
+      }
+      setDescState('saving');
+      updateMutation.mutate(
+        { description: next },
+        {
+          onSuccess: () => setDescState('saved'),
+          onError: () => {
+            setDescState('error');
+            setDraft(project.description);
+          },
+        },
+      );
+    },
+    onError: () => showToast(t('aito.summaryFallback'), 'error'),
+  });
+
   const editingRef = useRef(false);
   editingRef.current = editingDesc;
 
@@ -651,7 +684,28 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               board row carries it. */}
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)_minmax(0,26rem)] gap-4 lg:gap-6 lg:flex-1 lg:min-h-0">
             <div className="space-y-4 min-w-0 lg:min-h-0 lg:overflow-y-auto scrollbar-hide px-5 py-4">
-              <PanelCard title={t('aito.productDescription')}>
+              <PanelCard
+                title={t('aito.productDescription')}
+                action={
+                  // Violet marks AI actions across Aito (see AiSummaryPanel).
+                  // Icon-only, so title + aria-label carry the name.
+                  <button
+                    type="button"
+                    onClick={() => regenerateMutation.mutate()}
+                    disabled={
+                      regenerateMutation.isPending || descState === 'saving' || editingDesc || tasks.length === 0
+                    }
+                    title={t('aito.regenerate')}
+                    aria-label={t('aito.regenerate')}
+                    className={`-m-1 inline-flex items-center rounded-md p-1 text-violet-300 transition-colors hover:text-violet-200 disabled:opacity-40 ${focusRingCls}`}
+                  >
+                    <RefreshCw
+                      className={`h-3.5 w-3.5 ${regenerateMutation.isPending ? 'animate-spin' : ''}`}
+                      aria-hidden="true"
+                    />
+                  </button>
+                }
+              >
                 <div className="flex items-start justify-between gap-2">
                   {editingDesc ? (
                     <textarea

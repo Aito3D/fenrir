@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, act, waitFor, within, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -1534,6 +1534,11 @@ describe('diffTaskDraft', () => {
 });
 
 describe('ProjectDetailPanel activity rail', () => {
+  // setup.ts's afterEach does not restoreAllMocks (see the debounce test's
+  // try/finally above) — without this, the api.updateAitoProject spy below
+  // leaks into every later test and their PATCHes never reach msw.
+  afterEach(() => vi.restoreAllMocks());
+
   it('shows the activity rail alongside the tasks', async () => {
     vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
     render(<ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} />);
@@ -1593,7 +1598,7 @@ describe('ProjectDetailPanel footer', () => {
   it('puts Print quote in the Quote card, with no duplicate Zoho control', async () => {
     show({ quote_id: 'e2', quote_number: 'DEV26-2462', quote_url: 'https://books.zoho.com/e2' });
     const quoteCard = (await screen.findAllByTestId('panel-card-heading'))
-      .find((n) => /quote/i.test(n.textContent ?? ''))!.parentElement!;
+      .find((n) => /quote/i.test(n.textContent ?? ''))!.closest('section')!;
 
     expect(within(quoteCard).getByRole('button', { name: /print quote/i })).toBeInTheDocument();
     // The quote NUMBER is already a link to Zoho; a separate "Open in Zoho"
@@ -1811,7 +1816,9 @@ describe('ProjectDetailPanel surfaces', () => {
     show();
     expect(screen.getByTestId('panel-column-tasks')).toBeInTheDocument();
     // Reference cards carry a border and no shadow.
-    const referenceCard = screen.getAllByTestId('panel-card-heading')[0].parentElement!;
+    // closest('section'), not parentElement: the heading sits in a flex row
+    // (title + optional action slot) inside the card section.
+    const referenceCard = screen.getAllByTestId('panel-card-heading')[0].closest('section')!;
     expect(referenceCard.className).toContain('border-bambu-dark-tertiary');
     expect(referenceCard.className).not.toContain('card-shadow');
     // Task cards are the front plane: they DO cast a shadow. Selected via a
@@ -1851,7 +1858,7 @@ describe('ProjectDetailPanel surfaces', () => {
   it('keeps the sync row inside the Quote card', async () => {
     show({ quote_number: 'DEV26-2476', quote_sync_state: 'pending' });
     const quoteCard = (await screen.findAllByTestId('panel-card-heading'))
-      .find((n) => /quote/i.test(n.textContent ?? ''))!.parentElement!;
+      .find((n) => /quote/i.test(n.textContent ?? ''))!.closest('section')!;
     expect(quoteCard.textContent).toMatch(/pending/i);
   });
 
@@ -1945,7 +1952,7 @@ describe('ProjectDetailPanel visual parity: tasks column header', () => {
 
 describe('ProjectDetailPanel visual parity: quote card rows', () => {
   const quoteCard = () =>
-    screen.getAllByTestId('panel-card-heading').find((h) => h.textContent === 'Quote')!.parentElement!;
+    screen.getAllByTestId('panel-card-heading').find((h) => h.textContent === 'Quote')!.closest('section')!;
 
   it('shows a Number row and, when the project has a status, a Status row', () => {
     show({ quote_number: 'DEV26-2462', quote_status: 'accepted' });
@@ -1972,7 +1979,7 @@ describe('ProjectDetailPanel visual parity: quote card rows', () => {
 // map so they cannot drift apart again.
 describe('ProjectDetailPanel visual parity: quote status tone matches its actual status', () => {
   const quoteCard = () =>
-    screen.getAllByTestId('panel-card-heading').find((h) => h.textContent === 'Quote')!.parentElement!;
+    screen.getAllByTestId('panel-card-heading').find((h) => h.textContent === 'Quote')!.closest('section')!;
 
   it('accepted renders the success accent (bambu-green) in both the pill and the Status row', () => {
     show({ quote_number: 'DEV26-2462', quote_status: 'accepted' });
@@ -2016,7 +2023,7 @@ describe('ProjectDetailPanel visual parity: footer buttons', () => {
   it('shows a visible "Print quote" label next to the icon, not just an aria-label', async () => {
     show({ quote_id: 'e2', quote_number: 'DEV26-2462' });
     const quoteCard = (await screen.findAllByTestId('panel-card-heading'))
-      .find((n) => /quote/i.test(n.textContent ?? ''))!.parentElement!;
+      .find((n) => /quote/i.test(n.textContent ?? ''))!.closest('section')!;
     const button = within(quoteCard).getByRole('button', { name: /print quote/i });
     expect(button).toHaveTextContent('Print quote');
   });
@@ -2035,7 +2042,9 @@ describe('ProjectDetailPanel visual parity: corner radii', () => {
   it('rounds the dialog to .85rem and the reference cards to .6rem', () => {
     show();
     expect(screen.getByRole('dialog').className).toContain('rounded-[.85rem]');
-    const referenceCard = screen.getAllByTestId('panel-card-heading')[0].parentElement!;
+    // closest('section'), not parentElement: the heading sits in a flex row
+    // (title + optional action slot) inside the card section.
+    const referenceCard = screen.getAllByTestId('panel-card-heading')[0].closest('section')!;
     expect(referenceCard.className).toContain('rounded-[.6rem]');
   });
 
@@ -2043,5 +2052,61 @@ describe('ProjectDetailPanel visual parity: corner radii', () => {
     show();
     const taskCard = (await screen.findByRole('heading', { name: /^Bracket mount/ })).closest('.border')!;
     expect(taskCard.className).toContain('rounded-[.6rem]');
+  });
+});
+
+describe('ProjectDetailPanel description regeneration', () => {
+  it('regenerates from the live tasks and saves the summary immediately', async () => {
+    let summarizeBody: { tasks: { title: string }[] } | undefined;
+    let patchBody: unknown;
+    server.use(
+      http.post('/api/v1/aito/summarize', async ({ request }) => {
+        summarizeBody = (await request.json()) as typeof summarizeBody;
+        return HttpResponse.json({ summary: 'Résumé IA.', model: 'mistralai/mistral-small' });
+      }),
+      http.patch('/api/v1/aito/12', async ({ request }) => {
+        patchBody = await request.json();
+        return HttpResponse.json({ ...project, description: 'Résumé IA.' });
+      }),
+    );
+    show();
+    // Wait for the tasks fetch: before it lands the panel has zero tasks and
+    // the button is disabled (nothing to summarize).
+    const button = screen.getByRole('button', { name: 'Regenerate' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    await waitFor(() => expect(patchBody).toEqual({ description: 'Résumé IA.' }));
+    expect(summarizeBody!.tasks).toHaveLength(1);
+    expect(summarizeBody!.tasks[0].title).toBe(mockTask.title);
+    // The transient acknowledgement the manual-edit path shows.
+    expect(await screen.findByText(/saved/i)).toBeInTheDocument();
+  });
+
+  it('leaves the description untouched and toasts when generation fails', async () => {
+    const patched = vi.fn();
+    server.use(
+      http.post('/api/v1/aito/summarize', () => HttpResponse.json({ detail: 'no key' }, { status: 409 })),
+      http.patch('/api/v1/aito/12', () => {
+        patched();
+        return HttpResponse.json(project);
+      }),
+    );
+    show();
+    const button = screen.getByRole('button', { name: 'Regenerate' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    // The AI-unavailable message, not the crude buildFallbackSummary seed.
+    expect(await screen.findByText(/AI unavailable/i)).toBeInTheDocument();
+    expect(screen.getByText('Support de caméra')).toBeInTheDocument();
+    expect(patched).not.toHaveBeenCalled();
+  });
+
+  it('disables the button while the project has no tasks', async () => {
+    server.use(http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([])));
+    show();
+    // Wait for the (empty) tasks fetch to settle so this isn't asserting on
+    // the pre-fetch disabled state by accident.
+    await waitFor(() => expect(screen.getByTestId('panel-value-ring')).toHaveAttribute('aria-valuemax', '0'));
+    expect(screen.getByRole('button', { name: 'Regenerate' })).toBeDisabled();
   });
 });
