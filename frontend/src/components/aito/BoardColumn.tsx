@@ -124,9 +124,13 @@ function SortableCard({
                 hint={t('aito.holdToConfirm')}
                 progress="perimeter"
                 // invoiced = the job is billed; the glow is the board saying
-                // "archive me" without forcing the move.
-                className={`p-1 -m-1 text-bambu-green/70 hover:text-bambu-green hover:bg-bambu-green/10 focus-visible:ring-bambu-green/40 data-[holding=true]:text-bambu-green ${
-                  project.quote_invoiced ? 'animate-invoiced-glow text-bambu-green' : ''
+                // "archive me" without forcing the move. The color class is a
+                // swap, not an addition: `text-bambu-green` and
+                // `text-bambu-green/70` share specificity, so appending the
+                // full-color class alongside the /70 one would leave the
+                // opacity variant winning in the generated CSS.
+                className={`p-1 -m-1 hover:text-bambu-green hover:bg-bambu-green/10 focus-visible:ring-bambu-green/40 data-[holding=true]:text-bambu-green ${
+                  project.quote_invoiced ? 'animate-invoiced-glow text-bambu-green' : 'text-bambu-green/70'
                 }`}
               >
                 <Check className="relative w-3.5 h-3.5" />

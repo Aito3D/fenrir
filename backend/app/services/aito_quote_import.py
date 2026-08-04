@@ -10,6 +10,15 @@ not match. A task carries one description per service, and a line's text is
 preserved on the description of the service that line priced — so the words
 stay next to the work they describe, and re-exporting writes them back onto
 the same line they came from.
+
+Two known exceptions to that rule, both inherent to the legacy format rather
+than parsing gaps: (a) on a headerless quote, `_build_task`'s legacy fallback
+promotes a title label's value to the task TITLE, not a description — so an
+untitled task's service description round-trips into the title field instead
+of staying put; (b) under a header, a title label or `Info:` whose value is
+an EXACT match for the header is dropped as the app's own pre-rework export
+duplicating the title onto every line — so a description a user deliberately
+typed identical to the task's title is swallowed on import rather than kept.
 """
 
 import re

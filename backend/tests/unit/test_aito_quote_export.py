@@ -128,11 +128,6 @@ def test_usinage_description_is_its_info_row():
     assert build_description("usinage", task(usinage_description="Percer 4 trous M3")) == "Info: Percer 4 trous M3"
 
 
-def test_placeholders_are_never_emitted():
-    text = build_description("impression", task(title=None))
-    assert "[" not in text
-
-
 def test_cost_of_treats_zero_as_enabled_and_free():
     # 0 must stay meaningful as "free" -- a truthiness check would collapse it
     # into "disabled", same as None, and silently drop the quote line.

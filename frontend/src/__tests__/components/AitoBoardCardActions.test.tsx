@@ -216,12 +216,18 @@ describe('board card actions — mark as done', () => {
     renderColumn(card({ column: 'finish', move_lock: null, quote_invoiced: true }));
     const done = screen.getByRole('button', { name: /mark project as done/i });
     expect(done.className).toContain('animate-invoiced-glow');
+    // The swap must actually replace the base color: `text-bambu-green` and
+    // `text-bambu-green/70` share specificity in the generated CSS, so both
+    // present at once would leave the 70%-opacity variant winning and the
+    // glow's full color would never render.
+    expect(done.className).not.toContain('text-bambu-green/70');
   });
 
   it('does not glow when the quote is not invoiced', () => {
     renderColumn(card({ column: 'finish', move_lock: null, quote_invoiced: false }));
     const done = screen.getByRole('button', { name: /mark project as done/i });
     expect(done.className).not.toContain('animate-invoiced-glow');
+    expect(done.className).toContain('text-bambu-green/70');
   });
 
   it('does not offer mark-as-done in any other column', () => {

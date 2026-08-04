@@ -152,14 +152,15 @@ def _rows(service: str, task: ExportTask) -> list[tuple[str, str | None]]:
 
 
 def build_description(service: str, task: ExportTask) -> str:
-    """The catalogue template with its placeholders filled.
+    """The service line's description: its canonical rows plus an Info row.
 
     A row whose value is empty is dropped whole rather than emitted as a bare
-    ``Poids:`` — and the unfilled markers themselves ([TITLE], [MATERIAL], ...)
-    are never written, because the importer treats them as absent data. So an
-    empty field round-trips to an empty field either way; dropping the row is
-    simply what a human would have typed. A service with no description of its
-    own therefore carries no ``Info:`` row at all, only its boilerplate.
+    ``Poids:`` — simply what a human would have typed, and it round-trips
+    the same either way since the importer treats a missing label as absent
+    data. A service with no description of its own therefore carries no
+    ``Info:`` row at all. Scan and modelisation additionally always append
+    the ``*Fichier non cédé*`` boilerplate line, even when they have no other
+    rows.
     """
     lines = [f"{label}: {value.strip()}" for label, value in _rows(service, task) if value and str(value).strip()]
     if service in ("scan", "modelisation"):
