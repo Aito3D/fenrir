@@ -17,7 +17,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.services.aito_quote_export import Catalogue
-from backend.app.services.aito_shipping import ShippingItem, merge_shipping_catalogue
+from backend.app.services.aito_shipping import SERVICE_LABELS, ShippingItem, merge_shipping_catalogue
 
 logger = logging.getLogger(__name__)
 
@@ -478,9 +478,11 @@ class ZohoService:
         A failed refresh is NOT an error: the previous cache is returned
         unchanged. Ids are never forgotten — see
         ``aito_shipping.merge_shipping_catalogue`` for why that rule is
-        load-bearing rather than merely tidy. An empty dict means Books has
-        never been reachable, which callers must treat as "cannot push", never
-        as "no shipping services exist".
+        load-bearing rather than merely tidy. An empty dict means either Books
+        has never been reachable, or a refresh DID succeed but none of the
+        items it returned matched a known service name (e.g. the catalogue
+        was respelled) — callers must treat either case as "cannot push",
+        never as "no shipping services exist".
         """
         from backend.app.api.routes.settings import get_setting, set_setting
 
@@ -489,6 +491,10 @@ class ZohoService:
             cached = json.loads(raw) if raw else {}
         except ValueError:
             cached = {}
+        if not isinstance(cached, dict):
+            # Valid JSON but the wrong shape ("null", "[]", ...) — treat like
+            # no cache rather than raising on the .items() below.
+            cached = {}
 
         checked_at = await get_setting(db, "zoho_shipping_catalogue_at")
         fresh = False
@@ -496,7 +502,10 @@ class ZohoService:
             try:
                 age = datetime.now(timezone.utc).replace(tzinfo=None) - datetime.fromisoformat(checked_at)
                 fresh = age < _SHIPPING_CACHE_TTL
-            except ValueError:
+            except (TypeError, ValueError):
+                # TypeError: fromisoformat parsed a tz-aware datetime (an
+                # offset-bearing string) and subtracting it from the naive
+                # `now` above raises TypeError, not ValueError.
                 fresh = False
 
         if not fresh:
@@ -514,12 +523,25 @@ class ZohoService:
                     "zoho_shipping_catalogue_at",
                     datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
                 )
-                await db.commit()
+                # Deliberately no commit here: this getter is called from
+                # request handlers and the sync worker, neither of which is
+                # commit-neutral (create_project commits its whole unit of
+                # work exactly once; run_sync_once commits once per project).
+                # A commit hidden in here would persist a half-built caller
+                # transaction. The caller's own commit (or get_db's
+                # end-of-request commit) carries these two set_setting calls
+                # along with it; if the caller instead rolls back, the cache
+                # write is discarded and the next call just re-fetches from
+                # Zoho — benign, at worst one extra API call.
 
         return {
-            service: ShippingItem(item_id=entry["item_id"], name=entry["name"], rate=entry.get("rate"))
+            service: ShippingItem(
+                item_id=entry["item_id"],
+                name=entry.get("name") or SERVICE_LABELS.get(service, ""),
+                rate=entry.get("rate"),
+            )
             for service, entry in cached.items()
-            if entry.get("item_id")
+            if isinstance(entry, dict) and entry.get("item_id")
         }
 
     async def get_contact(self, db: AsyncSession, contact_id: str) -> dict:

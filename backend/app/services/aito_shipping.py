@@ -24,7 +24,7 @@ from dataclasses import dataclass
 SERVICE_KEYS: tuple[str, ...] = ("societe", "tuamotu", "marquises", "australes", "gambier")
 
 # The Books item names, spelled exactly as the catalogue does — these strings
-# are what `resolve_shipping_items` matches Zoho's `/items` response against.
+# are what `merge_shipping_catalogue` matches Zoho's `/items` response against.
 SERVICE_LABELS: dict[str, str] = {
     "societe": "Livraison Avion Société",
     "tuamotu": "Livraison Avion Tuamotu",
@@ -150,12 +150,18 @@ def merge_shipping_catalogue(cached: dict[str, dict], items: list[dict]) -> dict
       exact failure the item-id check in ``is_foreign`` exists to prevent for
       the four service items.
     - **A rate is only overwritten by a real one.** An item echoed back
-      without a price keeps the price we already knew, rather than dropping to
-      None and forcing manual entry for no reason.
+      without a price — or with one Books sent malformed (``""``, a
+      non-numeric string) — keeps the price we already knew, rather than
+      dropping to None and forcing manual entry, or raising and losing the
+      whole cache, for no reason.
 
     A name Zoho reports that matches no service is simply not a shipping item
     and is ignored. Matching is case- and accent-insensitive because the search
     is by name and Books normalises nothing.
+
+    The stored ``name`` is always our own ``SERVICE_LABELS`` spelling, never
+    whatever string Books echoed back — so "LIVRAISON AVION SOCIETE" is stored
+    (and later printed on the estimate) as "Livraison Avion Société".
     """
     merged = {key: dict(value) for key, value in (cached or {}).items()}
     for item in items or []:
@@ -167,9 +173,16 @@ def merge_shipping_catalogue(cached: dict[str, dict], items: list[dict]) -> dict
             continue
         raw_rate = item.get("rate")
         entry = merged.get(service, {})
+        try:
+            rate = float(raw_rate) if raw_rate is not None else entry.get("rate")
+        except (TypeError, ValueError):
+            # Books has been seen to send "" for an empty numeric field; a
+            # value that won't parse is no reason to forget a price we
+            # already knew.
+            rate = entry.get("rate")
         merged[service] = {
             "item_id": item_id,
             "name": SERVICE_LABELS[service],
-            "rate": float(raw_rate) if raw_rate is not None else entry.get("rate"),
+            "rate": rate,
         }
     return merged

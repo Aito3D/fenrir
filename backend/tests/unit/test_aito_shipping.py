@@ -136,6 +136,20 @@ def test_merge_takes_a_new_item_id_for_a_replaced_catalogue_entry():
     assert merged["tuamotu"]["item_id"] == "7"
 
 
+def test_merge_keeps_the_cached_rate_when_zoho_sends_an_empty_string():
+    # Books has been seen to send "" for an empty numeric field. Must not
+    # raise, and must not forget the price already known.
+    cached = {"tuamotu": {"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200.0}}
+    merged = merge_shipping_catalogue(cached, [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": ""}])
+    assert merged["tuamotu"]["rate"] == 3200.0
+
+
+def test_merge_keeps_the_cached_rate_when_zoho_sends_a_non_numeric_rate():
+    cached = {"tuamotu": {"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200.0}}
+    merged = merge_shipping_catalogue(cached, [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": "abc"}])
+    assert merged["tuamotu"]["rate"] == 3200.0
+
+
 def test_merge_ignores_an_item_whose_name_matches_no_service():
     assert merge_shipping_catalogue({}, [{"item_id": "1", "name": "Livraison Bateau Tuamotu", "rate": 1}]) == {}
 

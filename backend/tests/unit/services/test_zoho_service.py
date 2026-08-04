@@ -755,12 +755,23 @@ async def test_get_shipping_catalogue_survives_zoho_being_down(db_session, monke
     await zoho_service.get_shipping_catalogue(db_session)
     await set_setting(db_session, "zoho_shipping_catalogue_at", "2000-01-01T00:00:00")
 
+    boom_calls = {"n": 0}
+
     async def boom(db, method, path, **kwargs):
+        boom_calls["n"] += 1
         raise ZohoUpstreamError("down")
 
     monkeypatch.setattr(zoho_service, "_request", boom)
     stale = await zoho_service.get_shipping_catalogue(db_session)
     assert stale["tuamotu"].item_id == "1", "a failed refresh must not lose the ids"
+
+    # A failed refresh must not stamp zoho_shipping_catalogue_at, or every
+    # existing test would stay green even if that write were accidentally
+    # moved out of the success-only `else:` arm — which would silently
+    # suppress retries for 24h. A second failed attempt must retry the fetch.
+    again = await zoho_service.get_shipping_catalogue(db_session)
+    assert again["tuamotu"].item_id == "1"
+    assert boom_calls["n"] == 2, "the stale timestamp must not have been refreshed by the failed attempt"
 
 
 @pytest.mark.asyncio
