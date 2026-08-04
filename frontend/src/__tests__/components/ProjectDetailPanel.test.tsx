@@ -131,6 +131,7 @@ const mockTask: AitoTask = {
   position: 0,
   title: 'Bracket mount',
   description: 'Print in PA6-CF',
+  scan_description: 'Print in PA6-CF',
   scan_cost: 500,
   modelisation_cost: null,
   usinage_cost: null,
@@ -362,6 +363,8 @@ describe('ProjectDetailPanel tasks', () => {
     expect(await screen.findByRole('heading', { name: /^Bracket mount/ })).toBeInTheDocument();
     await editAllTasks();
     expect(screen.getByDisplayValue('Bracket mount')).toBeInTheDocument();
+    // Description is per-service now — mockTask's note lives on the scan
+    // block (scan is its only priced step), not a task-level field.
     expect(screen.getByDisplayValue('Print in PA6-CF')).toBeInTheDocument();
     expect(screen.getByLabelText('Scan Cost')).toHaveValue(500);
   });

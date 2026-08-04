@@ -43,6 +43,30 @@ function CostInput({
   );
 }
 
+/** Optional free text for one service — becomes the quote line's `Info:` row.
+ *  Reuses the old task-level description key: the label text is identical. */
+function StepDescriptionInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <textarea
+      aria-label={`${label} ${t('aito.taskDescriptionPlaceholder')}`}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={t('aito.taskDescriptionPlaceholder')}
+      rows={2}
+      className={`${inputCls} resize-none mt-3`}
+    />
+  );
+}
+
 /** One enabled service's block: its name, its cost, and whatever else that
  *  service needs. Only ever mounted for a service the chip row has switched
  *  on — a rendered block is always "present", so there is nothing left to
@@ -158,14 +182,6 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
         placeholder={t('aito.taskTitlePlaceholder')}
         className={inputCls}
       />
-      <textarea
-        aria-label={t('aito.taskDescriptionPlaceholder')}
-        value={task.description}
-        onChange={(e) => onChange({ ...task, description: e.target.value })}
-        placeholder={t('aito.taskDescriptionPlaceholder')}
-        rows={2}
-        className={`${inputCls} resize-none`}
-      />
 
       <div className="flex flex-wrap gap-2">
         {SERVICE_DEFS.map((svc) => {
@@ -200,6 +216,11 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
             onChange={(next) => onChange({ ...task, scanCost: next })}
             autoFocus={autoFocusService === 'scan'}
           />
+          <StepDescriptionInput
+            label={t('aito.serviceScan3D')}
+            value={task.scanDescription}
+            onChange={(next) => onChange({ ...task, scanDescription: next })}
+          />
         </StepBlock>
       )}
 
@@ -211,6 +232,11 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
             value={task.modelisationCost}
             onChange={(next) => onChange({ ...task, modelisationCost: next })}
             autoFocus={autoFocusService === 'modelisation'}
+          />
+          <StepDescriptionInput
+            label={t('aito.serviceModelisation3D')}
+            value={task.modelisationDescription}
+            onChange={(next) => onChange({ ...task, modelisationDescription: next })}
           />
         </StepBlock>
       )}
@@ -316,6 +342,11 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
               />
             </div>
           )}
+          <StepDescriptionInput
+            label={t('aito.serviceImpression3D')}
+            value={task.impressionDescription}
+            onChange={(next) => onChange({ ...task, impressionDescription: next })}
+          />
           </div>
         </StepBlock>
       )}
@@ -328,6 +359,11 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
             value={task.usinageCost}
             onChange={(next) => onChange({ ...task, usinageCost: next })}
             autoFocus={autoFocusService === 'usinage'}
+          />
+          <StepDescriptionInput
+            label={t('aito.serviceUsinage')}
+            value={task.usinageDescription}
+            onChange={(next) => onChange({ ...task, usinageDescription: next })}
           />
         </StepBlock>
       )}

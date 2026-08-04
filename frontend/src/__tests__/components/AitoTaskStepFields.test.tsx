@@ -1,10 +1,35 @@
+import { useState } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { TaskStepFields } from '../../components/aito/TaskStepFields';
 import { emptyTaskDraft } from '../../utils/taskDraft';
+import type { TaskDraft } from '../../utils/taskDraft';
 import { formatMoney } from '../../utils/pricing';
+
+/** Feeds `onChange` back into state so a multi-keystroke `user.type` on a
+ *  controlled input accumulates instead of each keystroke starting from the
+ *  same stale prop value (a bare `vi.fn()` would only ever see the LAST
+ *  character typed). */
+function ControlledTaskStepFields({
+  initial,
+  onChangeSpy,
+}: {
+  initial: TaskDraft;
+  onChangeSpy: (next: TaskDraft) => void;
+}) {
+  const [task, setTask] = useState(initial);
+  return (
+    <TaskStepFields
+      task={task}
+      onChange={(next) => {
+        onChangeSpy(next);
+        setTask(next);
+      }}
+    />
+  );
+}
 
 describe('TaskStepFields', () => {
   it('shows all four services as chips even when no step exists yet', () => {
@@ -128,5 +153,39 @@ describe('TaskStepFields', () => {
     await user.click(screen.getByRole('button', { name: 'Add Machining' }));
     await user.type(screen.getByLabelText(/machining cost/i), '0');
     expect(onChange.mock.calls.at(-1)?.[0].usinageCost).toBe(0);
+  });
+
+  it('edits a per-service description inside the service block', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    // A non-null cost seeds the scan chip open, so its block (and the
+    // description textarea inside it) is already on screen.
+    render(
+      <ControlledTaskStepFields
+        initial={{ ...emptyTaskDraft(), scanCost: 1200 }}
+        onChangeSpy={onChange}
+      />,
+    );
+
+    const textarea = screen.getByLabelText(/Scan.*[Dd]escription/);
+    await user.type(textarea, 'Scanner la pièce');
+    expect(onChange.mock.calls.at(-1)?.[0].scanDescription).toBe('Scanner la pièce');
+  });
+
+  it('renders exactly one description textarea per enabled service and none at task level', () => {
+    render(
+      <TaskStepFields
+        task={{ ...emptyTaskDraft(), scanCost: 1200, usinageCost: 50 }}
+        onChange={vi.fn()}
+      />,
+    );
+    // No task-level description textarea (the bare placeholder label alone).
+    expect(screen.queryByLabelText(/^Optional description$/)).toBeNull();
+    // Exactly one per enabled service (scan, usinage) — none for the
+    // disabled ones (modelisation, impression).
+    expect(screen.getByLabelText(/Scan.*[Dd]escription/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Machining.*[Dd]escription/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Modeling.*[Dd]escription/)).toBeNull();
+    expect(screen.queryByLabelText(/Printing.*[Dd]escription/)).toBeNull();
   });
 });
