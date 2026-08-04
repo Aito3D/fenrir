@@ -6,6 +6,7 @@ from backend.app.services.aito_shipping import (
     ISLANDS,
     SERVICE_KEYS,
     SERVICE_LABELS,
+    _fold,
     grouped_islands,
     island_for_label,
     island_label,
@@ -51,13 +52,25 @@ def test_lookups():
     assert island_label("atlantis") is None
 
 
-def test_reverse_lookup_folds_case_and_accents():
+def test_reverse_lookup_folds_case_and_whitespace():
     # The importer reads this back out of a quote description a human may have
-    # retyped, so "ILE: rangiroa" and "Île: Rangiroa" must both resolve.
+    # retyped, so case differences and whitespace must not prevent matching.
     assert island_for_label("Rangiroa") == "rangiroa"
     assert island_for_label("  rangiroa  ") == "rangiroa"
     assert island_for_label("RANGIROA") == "rangiroa"
     assert island_for_label("Tahaa") is None
+
+
+def test_fold_strips_accents():
+    """Guards the combining-mark stripping that `island_for_label` and — from
+    Task 3 — the Zoho item-name match both rest on. No island label carries a
+    diacritic today, so nothing else in this file would notice if `_fold` were
+    reduced to a bare `.lower()`; the service labels it will be asked to match
+    ("Livraison Avion Société") very much do."""
+    assert _fold("Société") == "societe"
+    assert _fold("SOCIÉTÉ") == "societe"
+    assert _fold("Île") == "ile"
+    assert _fold("  Île  ") == "ile"
 
 
 def test_tahiti_is_absent():
