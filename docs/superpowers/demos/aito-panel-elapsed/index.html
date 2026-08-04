@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aito — elapsed time in the expanded panel</title>
+<style>
+  :root{
+    --bg-primary:#1a1a1a; --bg-secondary:#2d2d2d; --bg-tertiary:#3d3d3d;
+    --text-primary:#ffffff; --text-secondary:#a0a0a0; --text-muted:#808080; --text-tertiary:#4a4a4a;
+    --accent:#00ae42; --accent-light:#00c64d;
+    /* Heat ramp — verbatim from utils/aitoAging.ts LEVEL_CLS */
+    --h0:#808080; --h1:#d9c26b; --h2:#fbbf24; --h3:#fb923c; --h4:#f97316; --h5:#fb7a6a; --h6:#f87171;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg-primary); color:var(--text-primary);
+    font:400 15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    padding:32px 28px 96px; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1220px;margin:0 auto}
+
+  h1{font-size:1.5rem;font-weight:600;letter-spacing:-.02em}
+  .sub{color:var(--text-muted);font-size:.9rem;margin-top:6px;max-width:70ch}
+
+  /* ---- sticky age control ---- */
+  .ctl{
+    position:sticky;top:0;z-index:20;margin:24px 0 8px;padding:14px 18px;
+    background:color-mix(in srgb,var(--bg-secondary) 92%,transparent);
+    backdrop-filter:blur(10px);
+    border:1px solid var(--bg-tertiary);border-radius:.7rem;
+    display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+    box-shadow:0 12px 26px -14px rgba(0,0,0,.8);
+  }
+  .ctl label{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted)}
+  .ctl input[type=range]{flex:1;min-width:240px;accent-color:var(--accent)}
+  .agebadge{font-variant-numeric:tabular-nums;font-weight:600;font-size:.95rem;min-width:9ch;text-align:right}
+  .lvl{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted)}
+  .seg{display:flex;gap:6px}
+  .seg button{
+    font:inherit;font-size:.78rem;padding:5px 11px;border-radius:.45rem;cursor:pointer;
+    background:var(--bg-tertiary);color:var(--text-secondary);border:1px solid transparent;
+  }
+  .seg button:hover{color:#fff}
+  .seg button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 22%,var(--bg-tertiary));color:#fff;border-color:color-mix(in srgb,var(--accent) 50%,transparent)}
+
+  /* ---- ramp legend ---- */
+  .ramp{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin:26px 0 8px}
+  .ramp div{
+    border:1px solid var(--bg-tertiary);border-radius:.5rem;padding:9px 10px;background:var(--bg-secondary);
+    font-size:.78rem;transition:box-shadow .2s,border-color .2s;
+  }
+  .ramp div.on{border-color:currentColor;box-shadow:0 0 0 1px currentColor inset}
+  .ramp b{display:block;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);margin-bottom:3px}
+
+  /* ---- variant scaffold ---- */
+  h2.vh{margin:44px 0 4px;font-size:1.05rem;font-weight:600;display:flex;align-items:center;gap:10px}
+  .tag{font-size:.62rem;letter-spacing:.09em;text-transform:uppercase;padding:3px 8px;border-radius:.4rem;border:1px solid}
+  .tag.rec{color:var(--accent-light);border-color:color-mix(in srgb,var(--accent) 55%,transparent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
+  .tag.alt{color:var(--text-muted);border-color:var(--bg-tertiary)}
+  .why{color:var(--text-muted);font-size:.86rem;margin:6px 0 14px;max-width:82ch}
+  .why em{color:var(--text-secondary);font-style:normal}
+
+  /* ---- the panel mock (mirrors ProjectDetailPanel) ---- */
+  .panel{
+    background:var(--bg-primary);border:1px solid var(--bg-tertiary);border-radius:.85rem;overflow:hidden;
+  }
+  .hdr{
+    position:relative;z-index:2;padding:12px 20px;display:flex;align-items:center;gap:20px;
+    background-image:linear-gradient(135deg,
+      color-mix(in srgb,var(--accent) 12%, color-mix(in srgb,var(--bg-tertiary) 45%,var(--bg-secondary))),
+      color-mix(in srgb,var(--bg-tertiary) 45%,var(--bg-secondary)));
+    box-shadow:0 12px 26px -14px rgba(0,0,0,.8);
+  }
+  .hdr .left{flex:1;min-width:0}
+  .eyebrow{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase}
+  .erow{display:flex;align-items:center;gap:8px;margin-bottom:2px;flex-wrap:wrap}
+  .erow .g{color:var(--text-muted)}
+  .erow .dot{color:var(--text-muted);opacity:.45}
+  .erow .qlink{color:var(--accent-light);display:inline-flex;align-items:center;gap:4px}
+  .pill{border:1px solid;border-radius:.4rem;padding:.05rem .4rem}
+  .pill.ok{color:#4ade80;border-color:color-mix(in srgb,#4ade80 40%,transparent);background:color-mix(in srgb,#4ade80 12%,transparent)}
+  h3.name{font-size:1.35rem;line-height:1.2;font-weight:600;letter-spacing:-.01em;display:flex;align-items:center;gap:8px;min-width:0}
+  .contacts{display:flex;align-items:center;gap:16px;margin-top:10px;font-size:.82rem;font-weight:500;color:var(--text-secondary)}
+  .contacts span{display:inline-flex;align-items:center;gap:6px}
+  .vdiv{width:1px;align-self:stretch;background:var(--bg-tertiary)}
+  .money{display:flex;align-items:center;gap:12px;flex-shrink:0}
+  .ring{width:44px;height:44px;flex-shrink:0}
+  .total{font-size:1.5rem;line-height:1.2;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .cap{display:block;font-size:.75rem;color:var(--text-muted);font-variant-numeric:tabular-nums}
+  .body{padding:14px 20px;display:grid;grid-template-columns:minmax(0,20rem) minmax(0,1fr);gap:20px}
+  .pcard{border:1px solid var(--bg-tertiary);background:var(--bg-secondary);border-radius:.6rem;padding:12px}
+  .pcard>p.h{font-size:.75rem;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px}
+  .dl{display:grid;grid-template-columns:auto 1fr;column-gap:12px;row-gap:4px;font-size:.875rem;align-items:baseline}
+  .dl dt{color:var(--text-muted)}
+  .dl dd{text-align:right;min-width:0}
+  .ghost{color:var(--text-tertiary);font-size:.8rem;font-style:italic}
+
+  /* ---- per-variant bits ---- */
+  .heat{color:var(--hc);transition:color .35s ease}
+  .heat.w6{font-weight:500}
+
+  /* A — eyebrow chip */
+  .chipA{
+    border:1px solid;border-radius:.4rem;padding:.05rem .4rem;
+    color:var(--hc);border-color:color-mix(in srgb,var(--hc) 40%,transparent);
+    background:color-mix(in srgb,var(--hc) 12%,transparent);
+    transition:color .35s,border-color .35s,background-color .35s;
+  }
+
+  /* C — contact-row companion */
+  .clockC{color:var(--hc);transition:color .35s}
+
+  /* D — age stat block */
+  .stat{text-align:right;flex-shrink:0}
+  .stat .k{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);display:block}
+  .stat .v{font-size:1.15rem;font-weight:600;letter-spacing:-.01em;color:var(--hc);font-variant-numeric:tabular-nums;transition:color .35s;display:flex;align-items:center;gap:6px;justify-content:flex-end}
+  .stat .s{font-size:.72rem;color:var(--text-muted);display:block;font-variant-numeric:tabular-nums}
+
+  /* F — heat hairline */
+  .hdr.railed::before{
+    content:'';position:absolute;left:0;top:0;bottom:0;width:3px;
+    background:var(--hc);transition:background-color .35s;
+  }
+
+  .note{margin-top:12px;padding:12px 14px;border-left:2px solid var(--bg-tertiary);color:var(--text-muted);font-size:.84rem}
+  .note b{color:var(--text-secondary);font-weight:600}
+  .verdict{margin-top:56px;padding:20px 22px;border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);background:color-mix(in srgb,var(--accent) 7%,transparent);border-radius:.7rem}
+  .verdict h2{font-size:1.05rem;margin-bottom:10px}
+  .verdict ol{margin:0 0 0 18px;color:var(--text-secondary);font-size:.9rem}
+  .verdict li{margin:6px 0}
+  .verdict code{background:var(--bg-secondary);padding:1px 5px;border-radius:4px;font-size:.85em;color:#fff}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Elapsed time inside the expanded panel</h1>
+  <p class="sub">
+    Same mechanism and colours as the board card: <code>formatElapsedTime()</code> anchored on
+    <code>quote_accepted_at</code> when the quote is accepted, else <code>created_at</code>, coloured by the
+    7-level ramp in <code>utils/aitoAging.ts</code>. What changes is <em>where</em> it lives and how much
+    room it gets — a 1200px panel is not a 260px card. Drag the slider; every mock below re-tints live.
+  </p>
+
+  <div class="ctl">
+    <label for="age">Project age</label>
+    <input id="age" type="range" min="0" max="45" value="12" step="1">
+    <span class="agebadge" id="ageBadge">12 d</span>
+    <span class="lvl" id="lvlBadge">level 3</span>
+    <div class="seg" id="seg">
+      <button data-d="1" type="button">calm</button>
+      <button data-d="8" type="button">aging</button>
+      <button data-d="17" type="button">hot</button>
+      <button data-d="40" type="button">alarm</button>
+    </div>
+  </div>
+
+  <div class="ramp" id="ramp"></div>
+
+  <!-- ===================== A ===================== -->
+  <h2 class="vh">A — Chip in the eyebrow row <span class="tag alt">alternative</span></h2>
+  <p class="why">Rides beside the quote-status pill, reusing the panel's existing pill vocabulary
+    (<code>QUOTE_STATUS_PILL_TONE_CLASSES</code>). <em>Cost:</em> the eyebrow is already four items wide, and a
+    bordered chip reads as a <em>status you can act on</em> — age isn't one. At small sizes the tinted background also
+    dulls the ramp's top end: red-on-red-wash is less alarming than red on the band.</p>
+  <div class="panel">
+    <div class="hdr">
+      <div class="left">
+        <div class="erow">
+          <span class="eyebrow g">PROJECT #142</span><span class="eyebrow dot">·</span>
+          <a class="eyebrow qlink" href="#">QT-0091 ↗</a>
+          <span class="eyebrow pill ok">Accepted</span>
+          <span class="eyebrow pill chipA" data-el>12 days ago</span>
+        </div>
+        <h3 class="name">🏢 <span>Ateliers Rouvière SAS</span></h3>
+        <div class="contacts"><span>☎ 06 12 34 56 78</span><span>✉ contact@rouviere.fr</span></div>
+      </div>
+      <div class="vdiv"></div>
+      <div class="money"><span class="ring">◔</span><div style="text-align:right">
+        <span class="total">1 250,00 €</span><span class="cap">640,00 € done · 3/8 steps</span></div></div>
+    </div>
+    <div class="body"><div class="pcard"><p class="h">Product description</p><span class="ghost">…panel body…</span></div>
+      <div class="pcard"><p class="h">Tasks</p><span class="ghost">…</span></div></div>
+  </div>
+
+  <!-- ===================== B ===================== -->
+  <h2 class="vh">B — Companion in the contact row <span class="tag alt">alternative</span></h2>
+  <p class="why">A clock joins phone and mail in the <code>mt-2.5</code> strip. Cheapest possible change, and the
+    icon gives age an identity the bare card label lacks. <em>Cost:</em> that row is specifically the
+    <em>copyable</em> values — <code>CopyableValue</code> with click-to-copy — so a third item that does nothing on
+    click breaks the row's one promise.</p>
+  <div class="panel">
+    <div class="hdr">
+      <div class="left">
+        <div class="erow"><span class="eyebrow g">PROJECT #142</span><span class="eyebrow dot">·</span>
+          <a class="eyebrow qlink" href="#">QT-0091 ↗</a><span class="eyebrow pill ok">Accepted</span></div>
+        <h3 class="name">🏢 <span>Ateliers Rouvière SAS</span></h3>
+        <div class="contacts"><span>☎ 06 12 34 56 78</span><span>✉ contact@rouviere.fr</span>
+          <span class="clockC" data-el>🕐 12 days ago</span></div>
+      </div>
+      <div class="vdiv"></div>
+      <div class="money"><span class="ring">◔</span><div style="text-align:right">
+        <span class="total">1 250,00 €</span><span class="cap">640,00 € done · 3/8 steps</span></div></div>
+    </div>
+    <div class="body"><div class="pcard"><p class="h">Product description</p><span class="ghost">…panel body…</span></div>
+      <div class="pcard"><p class="h">Tasks</p><span class="ghost">…</span></div></div>
+  </div>
+
+  <!-- ===================== C ===================== -->
+  <h2 class="vh">C — Age stat, paired with money <span class="tag rec">recommended</span></h2>
+  <p class="why">A second metric in the header's right cluster, behind its own divider: <em>money is how much,
+    age is how long</em>. Those are the two numbers that decide whether you open this project today, so they belong
+    side by side and at comparable weight. The panel has room the card doesn't, so the number gets a
+    <em>label</em> — "Accepted" vs "Created" — which finally disambiguates the anchor the card silently switches
+    between. Absolute date underneath means the Record card's tooltip is no longer the only way to get it.</p>
+  <div class="panel">
+    <div class="hdr">
+      <div class="left">
+        <div class="erow"><span class="eyebrow g">PROJECT #142</span><span class="eyebrow dot">·</span>
+          <a class="eyebrow qlink" href="#">QT-0091 ↗</a><span class="eyebrow pill ok">Accepted</span></div>
+        <h3 class="name">🏢 <span>Ateliers Rouvière SAS</span></h3>
+        <div class="contacts"><span>☎ 06 12 34 56 78</span><span>✉ contact@rouviere.fr</span></div>
+      </div>
+      <div class="vdiv"></div>
+      <div class="stat">
+        <span class="k">Accepted</span>
+        <span class="v" data-el>🕐 12 days ago</span>
+        <span class="s">23 Jul 2026</span>
+      </div>
+      <div class="vdiv"></div>
+      <div class="money"><span class="ring">◔</span><div style="text-align:right">
+        <span class="total">1 250,00 €</span><span class="cap">640,00 € done · 3/8 steps</span></div></div>
+    </div>
+    <div class="body">
+      <div class="pcard"><p class="h">Record</p>
+        <dl class="dl">
+          <dt>Created</dt><dd>23/07/26 · admin <span class="heat" data-el-paren style="font-size:.8rem">(12 d)</span></dd>
+          <dt>Last activity</dt><dd>02/08/26 · admin</dd>
+        </dl>
+        <p style="margin-top:8px;font-size:.78rem;color:var(--text-tertiary)">↑ the same ramp, echoed where the exact dates already live</p>
+      </div>
+      <div class="pcard"><p class="h">Tasks</p><span class="ghost">…</span></div>
+    </div>
+  </div>
+
+  <!-- ===================== D ===================== -->
+  <h2 class="vh">D — C, plus a heat hairline on the masthead <span class="tag alt">optional add-on</span></h2>
+  <p class="why">Everything in C, and the header's left edge carries the ramp as a 3px rule. Ambient: you register
+    "this one is hot" before reading a single word, at full-panel scale. <em>Cost:</em> a coloured edge on an
+    accent-washed band is a second signal doing the first one's job, and at level 0 it is a grey stripe that means
+    nothing. Show it only from level ≥ 2, or not at all.</p>
+  <div class="panel">
+    <div class="hdr railed">
+      <div class="left">
+        <div class="erow"><span class="eyebrow g">PROJECT #142</span><span class="eyebrow dot">·</span>
+          <a class="eyebrow qlink" href="#">QT-0091 ↗</a><span class="eyebrow pill ok">Accepted</span></div>
+        <h3 class="name">🏢 <span>Ateliers Rouvière SAS</span></h3>
+        <div class="contacts"><span>☎ 06 12 34 56 78</span><span>✉ contact@rouviere.fr</span></div>
+      </div>
+      <div class="vdiv"></div>
+      <div class="stat"><span class="k">Accepted</span><span class="v" data-el>🕐 12 days ago</span><span class="s">23 Jul 2026</span></div>
+      <div class="vdiv"></div>
+      <div class="money"><span class="ring">◔</span><div style="text-align:right">
+        <span class="total">1 250,00 €</span><span class="cap">640,00 € done · 3/8 steps</span></div></div>
+    </div>
+    <div class="body"><div class="pcard"><p class="h">Product description</p><span class="ghost">…panel body…</span></div>
+      <div class="pcard"><p class="h">Tasks</p><span class="ghost">…</span></div></div>
+  </div>
+
+  <!-- ===================== E ===================== -->
+  <h2 class="vh">E — Record card only, header untouched <span class="tag alt">minimal</span></h2>
+  <p class="why">Add the ramp to the left rail's Record card and change nothing else. Correct information
+    architecture — it is a fact about the record. <em>Cost:</em> it defeats the point. The ramp exists to be caught
+    peripherally; third card down in a scrolling column is exactly where you don't catch it. Worth doing
+    <em>as well as</em> C — never instead of.</p>
+  <div class="panel">
+    <div class="hdr">
+      <div class="left">
+        <div class="erow"><span class="eyebrow g">PROJECT #142</span><span class="eyebrow dot">·</span>
+          <a class="eyebrow qlink" href="#">QT-0091 ↗</a><span class="eyebrow pill ok">Accepted</span></div>
+        <h3 class="name">🏢 <span>Ateliers Rouvière SAS</span></h3>
+        <div class="contacts"><span>☎ 06 12 34 56 78</span><span>✉ contact@rouviere.fr</span></div>
+      </div>
+      <div class="vdiv"></div>
+      <div class="money"><span class="ring">◔</span><div style="text-align:right">
+        <span class="total">1 250,00 €</span><span class="cap">640,00 € done · 3/8 steps</span></div></div>
+    </div>
+    <div class="body">
+      <div class="pcard"><p class="h">Record</p>
+        <dl class="dl">
+          <dt>Accepted</dt><dd class="heat" data-el>12 days ago</dd>
+          <dt>Created</dt><dd>23/07/26 · admin</dd>
+          <dt>Last activity</dt><dd>02/08/26 · admin</dd>
+        </dl>
+      </div>
+      <div class="pcard"><p class="h">Tasks</p><span class="ghost">…</span></div>
+    </div>
+  </div>
+
+  <div class="verdict">
+    <h2>My recommendation: <strong>C</strong>, with E's echo included</h2>
+    <ol>
+      <li><b>Header age stat</b> behind its own <code>w-px</code> divider, mirroring the money cluster's structure —
+        eyebrow label, heat-coloured value, absolute date caption.</li>
+      <li><b>Label the anchor.</b> "Accepted" when <code>quote_status === 'accepted'</code> and
+        <code>quote_accepted_at</code> parses, "Created" otherwise. The card can't afford this word; the panel can, and
+        without it the number is quietly measuring two different things.</li>
+      <li><b>Echo in the Record card</b> — one heat-tinted parenthetical beside the existing created date. Costs a
+        span, keeps the rail honest.</li>
+      <li><b>Reuse <code>agingTextCls</code> unchanged.</b> Same exemptions (non-active, <code>done</code> column,
+        unparseable date → calm grey), same thresholds. No second source of truth, so the card and the panel it morphs
+        from can never disagree mid-transition.</li>
+      <li><b>Skip D's hairline</b> unless you want it — it's a nice-to-have that risks reading as a second status.</li>
+    </ol>
+  </div>
+
+</div>
+
+<script>
+const LEVELS=[0,3,7,10,15,21,30];
+const NAMES=['calm','settling','aging','slipping','late','urgent','alarm'];
+const el=id=>document.getElementById(id);
+const range=el('age'), badge=el('ageBadge'), lvlb=el('lvlBadge'), ramp=el('ramp');
+
+LEVELS.forEach((d,i)=>{
+  const box=document.createElement('div');
+  box.style.color=`var(--h${i})`;
+  box.innerHTML=`<b>level ${i}</b>${NAMES[i]}<br><span style="color:var(--text-muted)">${i===0?'0–2':(i===6?'30+':LEVELS[i]+'–'+(LEVELS[i+1]-1))} d</span>`;
+  ramp.appendChild(box);
+});
+
+function levelFor(d){let l=0;LEVELS.forEach((t,i)=>{if(i>0&&d>=t)l=i});return l}
+function label(d){
+  if(d===0)return "Today"; if(d===1)return "Yesterday";
+  if(d<60)return d+" days ago";
+  return Math.floor(d/30)+" months ago";
+}
+function render(){
+  const d=+range.value, l=levelFor(d), c=`var(--h${l})`;
+  document.documentElement.style.setProperty('--hc',c);
+  badge.textContent=d+' d'; badge.style.color=c;
+  lvlb.textContent='level '+l+' · '+NAMES[l];
+  [...ramp.children].forEach((b,i)=>b.classList.toggle('on',i===l));
+  document.querySelectorAll('[data-el]').forEach(n=>{
+    const icon=n.textContent.trim().startsWith('🕐')?'🕐 ':'';
+    n.textContent=icon+label(d);
+    n.classList.toggle('w6',l===6);
+    n.style.fontWeight = l===6 ? (n.classList.contains('v')?'700':'500') : '';
+  });
+  document.querySelectorAll('[data-el-paren]').forEach(n=>{n.textContent='('+d+' d)'});
+  document.querySelectorAll('.railed').forEach(h=>h.style.opacity=1);
+  [...el('seg').children].forEach(b=>b.setAttribute('aria-pressed', +b.dataset.d===d));
+}
+range.addEventListener('input',render);
+el('seg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;range.value=b.dataset.d;render()});
+render();
+</script>
+</body>
+</html>
