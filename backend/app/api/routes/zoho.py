@@ -311,7 +311,8 @@ async def preview_estimate(
         except ZohoUpstreamError as e:
             logger.warning("Quote preview: contact %s unavailable: %s", customer_id, e)
 
-    preview = build_preview(estimate, contact, quote_url)
+    catalogue = await zoho_service.get_catalogue(db)
+    preview = build_preview(estimate, contact, quote_url, shipping_ids=catalogue.shipping)
     # Soft-deleted cards do not count: re-importing a quote whose card was
     # thrown away is not a duplicate.
     existing = await db.scalar(

@@ -4,11 +4,13 @@ shape and formatting quirks with invented customers."""
 import json
 from pathlib import Path
 
+from backend.app.services.aito_quote_export import ExportShipping, build_shipping_description
 from backend.app.services.aito_quote_import import (
     build_preview,
     group_lines,
     parse_description,
     parse_lines,
+    parse_shipping_line,
     parse_time_min,
     parse_weight_g,
     service_for_sku,
@@ -106,7 +108,7 @@ def test_service_for_sku_matches_by_prefix():
 
 
 def test_parse_lines_amounts_are_ttc_when_the_quote_is_inclusive():
-    lines, skipped = parse_lines(load_estimate("dev-2462-two-tasks"))
+    lines, skipped, _shipping = parse_lines(load_estimate("dev-2462-two-tasks"))
     assert skipped == []
     assert [line.service for line in lines] == ["modelisation", "impression", "impression"]
     # rate x quantity: 800 x 3. item_total (2124) is the pre-tax figure.
@@ -116,13 +118,13 @@ def test_parse_lines_amounts_are_ttc_when_the_quote_is_inclusive():
 
 
 def test_parse_lines_amounts_add_tax_when_the_quote_is_exclusive():
-    lines, _skipped = parse_lines(load_estimate("dev-2448-vente"))
+    lines, _skipped, _shipping = parse_lines(load_estimate("dev-2448-vente"))
     # item_total 4000 + tax 520
     assert [line.amount for line in lines] == [4520, 4520]
 
 
 def test_parse_lines_reports_unrecognised_lines():
-    lines, skipped = parse_lines(load_estimate("dev-2463-retail"))
+    lines, skipped, _shipping = parse_lines(load_estimate("dev-2463-retail"))
     assert lines == []
     assert [s["sku"] for s in skipped] == ["PB05016", "L3DIMP"]
     assert skipped[0]["amount"] == 8000  # 4000 x 2, tax-inclusive quote
@@ -130,14 +132,14 @@ def test_parse_lines_reports_unrecognised_lines():
 
 
 def test_group_lines_merges_a_strictly_rising_run():
-    lines, _skipped = parse_lines(load_estimate("dev-2461-three-services"))
+    lines, _skipped, _shipping = parse_lines(load_estimate("dev-2461-three-services"))
     groups = group_lines(lines)
     assert len(groups) == 1
     assert [line.service for line in groups[0]] == ["scan", "modelisation", "impression"]
 
 
 def test_group_lines_starts_a_new_group_on_a_repeated_service():
-    lines, _skipped = parse_lines(load_estimate("dev-2462-two-tasks"))
+    lines, _skipped, _shipping = parse_lines(load_estimate("dev-2462-two-tasks"))
     groups = group_lines(lines)
     assert [[line.service for line in g] for g in groups] == [
         ["modelisation", "impression"],
@@ -146,14 +148,14 @@ def test_group_lines_starts_a_new_group_on_a_repeated_service():
 
 
 def test_group_lines_merges_all_four_services():
-    lines, _skipped = parse_lines(load_estimate("dev-2467-template"))
+    lines, _skipped, _shipping = parse_lines(load_estimate("dev-2467-template"))
     groups = group_lines(lines)
     assert len(groups) == 1
     assert [line.service for line in groups[0]] == ["scan", "modelisation", "impression", "usinage"]
 
 
 def test_group_lines_merges_a_gap_in_the_run():
-    lines, _skipped = parse_lines(load_estimate("dev-2448-vente"))
+    lines, _skipped, _shipping = parse_lines(load_estimate("dev-2448-vente"))
     # modelisation (rank 1) then usinage (rank 3) still rises, so one task.
     assert len(group_lines(lines)) == 1
 
@@ -418,12 +420,12 @@ def _estimate_with_headers() -> dict:
 
 
 def test_header_row_is_not_reported_as_skipped():
-    _, skipped = parse_lines(_estimate_with_headers())
+    _, skipped, _shipping = parse_lines(_estimate_with_headers())
     assert skipped == []
 
 
 def test_header_row_starts_a_new_group_even_when_rank_rises():
-    lines, _ = parse_lines(_estimate_with_headers())
+    lines, _, _shipping = parse_lines(_estimate_with_headers())
     assert [line.starts_group for line in lines] == [True, True]
     groups = group_lines(lines)
     assert len(groups) == 2
@@ -464,7 +466,7 @@ def _estimate_with_line_headers() -> dict:
 
 
 def test_header_name_change_starts_a_new_group_even_when_rank_rises():
-    lines, skipped = parse_lines(_estimate_with_line_headers())
+    lines, skipped, _shipping = parse_lines(_estimate_with_line_headers())
     assert skipped == []
     assert [line.starts_group for line in lines] == [True, True]
     groups = group_lines(lines)
@@ -477,7 +479,7 @@ def test_lines_sharing_a_header_stay_in_one_group():
     for line in estimate["line_items"]:
         line["header_id"] = "H1"
         line["header_name"] = "Premiere piece"
-    lines, _ = parse_lines(estimate)
+    lines, _, _shipping = parse_lines(estimate)
     assert [line.starts_group for line in lines] == [True, False]
     assert len(group_lines(lines)) == 1
 
@@ -488,7 +490,7 @@ def test_same_header_name_with_different_ids_still_splits():
     estimate = _estimate_with_line_headers()
     for line in estimate["line_items"]:
         line["header_name"] = "Piece"
-    lines, _ = parse_lines(estimate)
+    lines, _, _shipping = parse_lines(estimate)
     assert [line.starts_group for line in lines] == [True, True]
 
 
@@ -640,6 +642,124 @@ def test_a_title_label_that_is_not_the_header_still_survives():
 
 def test_quote_without_headers_groups_exactly_as_before():
     # dev-2461 walks scan -> model -> impression: one job, one task. Unchanged.
-    lines, _ = parse_lines(load_estimate("dev-2461-three-services"))
+    lines, _, _shipping = parse_lines(load_estimate("dev-2461-three-services"))
     assert all(not line.starts_group for line in lines)
     assert len(group_lines(lines)) == 1
+
+
+SHIPPING_IDS = {"tuamotu": "SHIP-TU", "societe": "SHIP-SO"}
+
+
+def test_parse_shipping_line_reads_back_what_the_exporter_wrote():
+    written = build_shipping_description(
+        ExportShipping(
+            service="tuamotu",
+            island_label="Rangiroa",
+            first_name="Jean-Pierre",
+            last_name="DUPONT",
+            phone="+689-89645864",
+            price=3200.0,
+        )
+    )
+    parsed = parse_shipping_line(
+        {"item_id": "SHIP-TU", "description": written, "rate": 3200, "quantity": 1}, SHIPPING_IDS
+    )
+    assert parsed.service == "tuamotu"
+    assert parsed.island == "rangiroa"
+    assert parsed.first_name == "Jean-Pierre"
+    assert parsed.last_name == "DUPONT"
+    assert parsed.phone == "+689-89645864"
+    assert parsed.price == 3200.0
+
+
+def test_parse_shipping_line_ignores_a_line_that_is_not_shipping():
+    assert parse_shipping_line({"item_id": "I", "description": "Poids: 210 gr"}, SHIPPING_IDS) is None
+
+
+def test_parse_shipping_line_gives_up_on_an_unknown_island():
+    # Leaves the project without shipping. The export step's echo rule is what
+    # then keeps the line alive on the quote — see build_line_items.
+    line = {"item_id": "SHIP-TU", "description": "Nom: X\nÎle: Atlantis", "rate": 1}
+    assert parse_shipping_line(line, SHIPPING_IDS) is None
+
+
+def test_parse_shipping_line_splits_a_single_token_name_as_a_last_name():
+    line = {"item_id": "SHIP-TU", "description": "Nom: DUPONT\nÎle: Rangiroa", "rate": 1}
+    parsed = parse_shipping_line(line, SHIPPING_IDS)
+    assert (parsed.first_name, parsed.last_name) == ("", "DUPONT")
+
+
+def test_a_shipping_line_is_not_reported_as_a_skipped_line():
+    estimate = {
+        "line_items": [
+            {
+                "item_id": "SHIP-TU",
+                "sku": "LIV-TU",
+                "name": "Livraison Avion Tuamotu",
+                "description": "Nom: Jean-Pierre DUPONT\nÎle: Rangiroa",
+                "rate": 3200,
+                "quantity": 1,
+                "item_order": 2,
+            },
+        ]
+    }
+    recognised, skipped, _shipping = parse_lines(estimate, shipping_ids=SHIPPING_IDS)
+    assert recognised == []
+    assert skipped == [], "a recognised shipping line is not an unimportable row"
+
+
+def test_build_preview_returns_the_shipment():
+    estimate = {
+        "estimate_id": "E1",
+        "estimate_number": "DEV-1",
+        "line_items": [
+            {
+                "item_id": "SHIP-TU",
+                "sku": "LIV-TU",
+                "name": "Livraison Avion Tuamotu",
+                "description": "Nom: Jean-Pierre DUPONT\nTéléphone: +689-89645864\nÎle: Rangiroa",
+                "rate": 3200,
+                "quantity": 1,
+                "item_order": 1,
+            },
+        ],
+    }
+    preview = build_preview(estimate, None, "https://books.example/q", shipping_ids=SHIPPING_IDS)
+    assert preview["shipping"] == {
+        "island": "rangiroa",
+        "service": "tuamotu",
+        "first_name": "Jean-Pierre",
+        "last_name": "DUPONT",
+        "phone": "+689-89645864",
+        "price": 3200.0,
+    }
+
+
+def test_build_preview_has_no_shipping_by_default():
+    preview = build_preview({"estimate_id": "E1", "line_items": []}, None, "https://x")
+    assert preview["shipping"] is None
+
+
+def test_shipping_round_trips_export_to_import_to_export():
+    from backend.app.services.aito_quote_export import Catalogue, build_line_items
+
+    catalogue = Catalogue("S", "M", "I", "U", "T", {"tuamotu": "SHIP-TU"})
+    original = ExportShipping(
+        service="tuamotu",
+        island_label="Rangiroa",
+        first_name="Jean-Pierre",
+        last_name="DUPONT",
+        phone="+689-89645864",
+        price=3200.0,
+    )
+    first = build_line_items([], [], catalogue, shipping=original)
+    parsed = parse_shipping_line(first[0], catalogue.shipping)
+    again = ExportShipping(
+        service=parsed.service,
+        island_label="Rangiroa",
+        first_name=parsed.first_name,
+        last_name=parsed.last_name,
+        phone=parsed.phone,
+        price=parsed.price,
+    )
+    assert build_line_items([], [], catalogue, shipping=again) == first

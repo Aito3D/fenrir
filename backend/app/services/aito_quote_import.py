@@ -25,6 +25,8 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
+from backend.app.services.aito_shipping import island_for_label
+
 # The four Aito services, in the canonical order the board renders badges in
 # (mirrors SERVICES in backend/app/services/aito_board_rules.py).
 SERVICE_RANK: dict[str, int] = {"scan": 0, "modelisation": 1, "impression": 2, "usinage": 3}
@@ -50,6 +52,12 @@ LABEL_DISPLAY: dict[str, str] = {
     "temps": "Temps",
     "couleur": "Couleur",
     "dimensions": "Dimensions",
+    # Shipping rows. Only ever written on a shipping line, but the parser is
+    # shared, so an unrelated line carrying "Nom: ..." would also capture it —
+    # harmless, since only parse_shipping_line reads these back.
+    "nom": "Nom",
+    "telephone": "Téléphone",
+    "ile": "Île",
 }
 
 # Labels that can supply a task title, in the order they are tried. Only the
@@ -231,8 +239,67 @@ def _discount_pct(line: dict) -> float | None:
     return pct if 0 < pct <= 100 else None
 
 
-def parse_lines(estimate: dict) -> tuple[list[ParsedLine], list[dict]]:
-    """Split an estimate's line items into recognised services and skipped rows.
+@dataclass(frozen=True)
+class ParsedShipping:
+    """One recognised shipping line, read back into project fields."""
+
+    service: str
+    island: str
+    first_name: str
+    last_name: str
+    phone: str
+    price: float
+
+
+def _split_recipient(name: str) -> tuple[str, str]:
+    """'Jean-Pierre DUPONT' -> ('Jean-Pierre', 'DUPONT').
+
+    The exporter writes the house convention (title-cased first, upper-cased
+    last), so the LAST whitespace-separated token is the family name. A single
+    token is a family name with no given name, not the reverse — that is how
+    the shop's directory spells a company recipient.
+    """
+    parts = (name or "").strip().split()
+    if not parts:
+        return "", ""
+    if len(parts) == 1:
+        return "", parts[0]
+    return " ".join(parts[:-1]), parts[-1]
+
+
+def parse_shipping_line(line: dict, shipping_ids: dict[str, str]) -> ParsedShipping | None:
+    """A shipping line, read back into project fields, or None.
+
+    None on any doubt — a line that is not one of ours, or whose island we
+    cannot resolve. The project then simply has no shipping, and
+    ``aito_quote_export.build_line_items`` echoes the untouched line back on
+    the next push rather than deleting it. Guessing here would put a wrong
+    island on a real quote; declining costs nothing.
+    """
+    by_id = {item_id: service for service, item_id in (shipping_ids or {}).items()}
+    service = by_id.get(line.get("item_id"))
+    if service is None:
+        return None
+    labels, _ = parse_description(line.get("description"))
+    island = island_for_label(labels.get("ile"))
+    if island is None:
+        return None
+    first_name, last_name = _split_recipient(labels.get("nom", ""))
+    return ParsedShipping(
+        service=service,
+        island=island,
+        first_name=first_name,
+        last_name=last_name,
+        phone=(labels.get("telephone") or "").strip(),
+        price=float(line.get("rate") or 0),
+    )
+
+
+def parse_lines(
+    estimate: dict, shipping_ids: dict[str, str] | None = None
+) -> tuple[list[ParsedLine], list[dict], ParsedShipping | None]:
+    """Split an estimate's line items into recognised services, skipped rows,
+    and (at most one) recognised shipment.
 
     Headers mark task boundaries two ways. The format Books actually stores
     (quote DEV26-2506) has NO header row: each grouped line carries
@@ -248,11 +315,21 @@ def parse_lines(estimate: dict) -> tuple[list[ParsedLine], list[dict]]:
     precision = int(estimate.get("price_precision") or 0)
     recognised: list[ParsedLine] = []
     skipped: list[dict] = []
+    shipping: ParsedShipping | None = None
     pending_boundary = False
     previous_header = None
     for line in sorted(estimate.get("line_items") or [], key=lambda item: item.get("item_order") or 0):
         if line.get("line_item_category") == "header":
             pending_boundary = True
+            continue
+        shipment = parse_shipping_line(line, shipping_ids or {})
+        if shipment is not None:
+            shipping = shipment
+            continue
+        if line.get("item_id") in set((shipping_ids or {}).values()):
+            # Ours, but unparseable (an island we do not know). Not a task and
+            # not something to report as unimportable — the export step echoes
+            # it back untouched.
             continue
         amount = _line_amount(line, inclusive=inclusive, precision=precision)
         service = service_for_sku(line.get("sku"))
@@ -277,7 +354,7 @@ def parse_lines(estimate: dict) -> tuple[list[ParsedLine], list[dict]]:
         )
         pending_boundary = False
         previous_header = header
-    return recognised, skipped
+    return recognised, skipped, shipping
 
 
 def group_lines(lines: list[ParsedLine]) -> list[list[ParsedLine]]:
@@ -507,9 +584,11 @@ def _client_snapshot(estimate: dict, contact: dict | None) -> dict:
     }
 
 
-def build_preview(estimate: dict, contact: dict | None, quote_url: str) -> dict:
+def build_preview(
+    estimate: dict, contact: dict | None, quote_url: str, shipping_ids: dict[str, str] | None = None
+) -> dict:
     """Everything the import modal needs, in the shape POST /aito/ accepts."""
-    lines, skipped = parse_lines(estimate)
+    lines, skipped, shipping = parse_lines(estimate, shipping_ids)
     tasks = [_build_task(group) for group in group_lines(lines)]
     titles = [task["title"] for task in tasks if task["title"]]
     number = estimate.get("estimate_number") or ""
@@ -528,4 +607,16 @@ def build_preview(estimate: dict, contact: dict | None, quote_url: str) -> dict:
         "suggested_description": "\n".join(titles) or number,
         "tasks": tasks,
         "skipped_lines": skipped,
+        "shipping": (
+            {
+                "island": shipping.island,
+                "service": shipping.service,
+                "first_name": shipping.first_name,
+                "last_name": shipping.last_name,
+                "phone": shipping.phone,
+                "price": shipping.price,
+            }
+            if shipping
+            else None
+        ),
     }
