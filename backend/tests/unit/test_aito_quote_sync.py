@@ -15,6 +15,7 @@ from backend.app.services.aito_quote_export import Catalogue
 from backend.app.services.aito_quote_sync import (
     SYNC_FAILURE_LIMIT,
     ShippingCatalogueUnavailable,
+    _deferred_reasons,
     load_export_shipping,
     run_sync_once,
     sync_project,
@@ -33,6 +34,16 @@ def reset_zoho_service():
     yield
     zoho_service.invalidate_token()
     zoho_service.transport = None
+
+
+@pytest.fixture(autouse=True)
+def reset_deferred_reasons():
+    """_deferred_reasons is process-local, module-level state (deliberately —
+    see its own comment), so it survives across tests in the same run just
+    like the module singleton above and needs the same reset."""
+    _deferred_reasons.clear()
+    yield
+    _deferred_reasons.clear()
 
 
 async def _configure_zoho(db) -> None:
@@ -3261,6 +3272,11 @@ async def test_a_project_with_an_unresolvable_service_stays_pending_and_pushes_n
     assert project.quote_sync_state == "pending"
     assert (project.quote_sync_failures or 0) == 0
     assert not any(method in ("POST", "PUT") for method, _, _ in seen), "no create/update call should have reached Zoho"
+    # A deferral leaves no trace on the row: quote_sync_error belongs to the
+    # line-item sync path (see AitoProject.quote_status_block's comment on
+    # why recording another subsystem's state there is a defect, not a
+    # convenience), so it must stay exactly as it was before this handler ran.
+    assert project.quote_sync_error is None
 
 
 @pytest.mark.asyncio
@@ -3293,6 +3309,76 @@ async def test_an_unresolvable_shipping_service_warms_the_catalogue_cache_for_th
 
     await run_sync_once(db_session)
     assert True in calls, "the deferral must warm the cache with refresh=True before giving up for this tick"
+
+
+@pytest.mark.asyncio
+async def test_a_deferral_logs_once_then_stays_silent_for_the_same_reason(db_session, monkeypatch):
+    """The suppression is process-local (see ``_deferred_reasons``' own
+    comment for why it is deliberately NOT a column on the project). Two
+    consecutive ticks that defer for the SAME reason must log exactly once."""
+    from backend.app.services import aito_quote_sync
+
+    project = await _project_with_shipping_and_a_priced_task(db_session)
+    await _configure_zoho(db_session)
+
+    calls: list = []
+    monkeypatch.setattr(aito_quote_sync.logger, "warning", lambda *args, **kwargs: calls.append(args))
+
+    zoho_service.transport = httpx.MockTransport(zoho_handler({("GET", "/items"): {"items": []}}))
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await run_sync_once(db_session)
+
+    deferred_calls = [c for c in calls if c and c[0] == "Aito project %s deferred: %s"]
+    assert len(deferred_calls) == 1, "the second tick's identical deferral must not log again"
+    assert project.id in aito_quote_sync._deferred_reasons
+
+
+@pytest.mark.asyncio
+async def test_a_deferred_reason_is_cleared_once_the_project_syncs_successfully(db_session):
+    """Once resolved, the process-local suppression entry must not linger: a
+    project that recovers and later defers again for some new reason (a
+    later catalogue change, say) must log afresh rather than staying
+    silently suppressed by a stale entry from before whatever changed."""
+    from backend.app.services import aito_quote_sync
+
+    project = await _project_with_shipping_and_a_priced_task(db_session)
+    await _configure_zoho(db_session)
+
+    # Tick 1: catalogue unresolved -> defers, records a suppression entry.
+    zoho_service.transport = httpx.MockTransport(zoho_handler({("GET", "/items"): {"items": []}}))
+    zoho_service.invalidate_token()
+    await run_sync_once(db_session)
+    assert project.id in aito_quote_sync._deferred_reasons
+
+    # Tick 2: catalogue is now warm (seeded directly -- no drawer endpoint
+    # exists yet), so the push succeeds this time.
+    await _seed_warm_shipping_catalogue(db_session)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {"estimates": []},
+                ("POST", "/estimates"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "date": "2026-07-29",
+                        "status": "draft",
+                        "total": 8200,
+                        "last_modified_time": "2026-07-29T10:00:00-1000",
+                        "is_inclusive_tax": True,
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "idle"
+    assert project.id not in aito_quote_sync._deferred_reasons
 
 
 async def _seed_warm_shipping_catalogue(db, service: str = "tuamotu", item_id: str = "SHIP-TUAMOTU") -> None:

@@ -72,6 +72,17 @@ SYNC_FAILURE_LIMIT = 5
 # full asymmetry) and by _apply_estimate (the copy-back's half of it).
 _DECIDED = frozenset({"accepted", "declined"})
 
+# Project id -> the deferral reason already logged for it in THIS process.
+# Log-spam suppression only, which is why it is process-local: a restart
+# costs exactly one extra WARNING and nothing else. Deliberately NOT
+# persisted on the project. quote_sync_error belongs to the line-item sync
+# path, and recording another subsystem's state in it is the mistake
+# documented on AitoProject.quote_status_block — five defects across four
+# review rounds. A deferral is not an error and must leave no trace on the
+# row: the project stays `pending` with a clean error field, exactly as it
+# was before this handler ran.
+_deferred_reasons: dict[int, str] = {}
+
 
 def _clear_block(project: AitoProject) -> None:
     """No reason to be blocked any more. Unconditional and always safe: these
@@ -968,6 +979,13 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
             await _create_quote(db, project)
         else:
             await _update_quote(db, project)
+        # Reached only when _create_quote/_update_quote returned WITHOUT
+        # raising ShippingCatalogueUnavailable — this tick's push (or one of
+        # their own terminal-error branches) completed normally. Drop any
+        # stale deferral memory for this project so a later recurrence of the
+        # same reason logs afresh rather than staying suppressed forever by a
+        # dict entry from before whatever changed.
+        _deferred_reasons.pop(project_id, None)
     except ZohoNotConfiguredError:
         # Not a failure: sync is simply off. Leave the project pending so it
         # syncs the moment credentials are entered.
@@ -990,17 +1008,18 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         # would ever fetch a resolution. Warm it here, once, so the NEXT tick
         # has a chance even if this one still has to defer.
         message = str(e)
-        # Logged only on the tick this exact deferral reason first appears —
-        # the same transition-only rule the sync.failed handlers below use
-        # (`previous_sync_error != ...`), applied here so a permanently
-        # unresolvable service (e.g. Books' catalogue item was renamed) does
-        # not log one WARNING per tick forever. quote_sync_error is written
-        # below specifically so the NEXT tick's snapshot (captured at the top
-        # of this function) can make that comparison — this does not touch
-        # quote_sync_state, so the retryable contract above is unaffected.
-        if previous_sync_error != message:
+        # Logged only on the tick this exact deferral reason first appears,
+        # via _deferred_reasons rather than any column on the project. This is
+        # log-spam suppression, not a fact about the row, so a permanently
+        # unresolvable service (e.g. Books' catalogue item was renamed) logs
+        # once per process instead of one WARNING per tick forever — and
+        # project.quote_sync_error is left untouched: a deferral is not an
+        # error and must leave no trace on the row (see _deferred_reasons'
+        # own comment for why this is deliberately NOT the same pattern as
+        # the sync.failed handlers below, which do own that column).
+        if _deferred_reasons.get(project_id) != message:
             logger.warning("Aito project %s deferred: %s", project_id, e)
-        project.quote_sync_error = message
+            _deferred_reasons[project_id] = message
         try:
             await zoho_service.get_shipping_catalogue(db, refresh=True)
         except Exception:
