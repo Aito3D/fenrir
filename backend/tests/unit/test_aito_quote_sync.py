@@ -619,6 +619,68 @@ async def test_invoiced_quote_is_locked_and_never_written(db_session):
 
 
 @pytest.mark.asyncio
+async def test_invoiced_lock_stamps_quote_invoiced(db_session):
+    """Task 10: 'locked' also covers tax-exclusive quotes (see
+    test_tax_exclusive_estimate_is_locked_and_never_written below), so the
+    board's "this job is billed" glow cannot key off quote_sync_state alone.
+    An estimate Books reports as invoiced (is_transaction_created) must stamp
+    the dedicated quote_invoiced flag alongside the existing lock."""
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    await _configure_zoho(db_session)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "accepted",
+                        "is_transaction_created": True,
+                        "invoiced_amount": 8500,
+                    }
+                }
+            },
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "locked"
+    assert project.quote_invoiced is True
+
+
+@pytest.mark.asyncio
+async def test_tax_exclusive_lock_does_not_stamp_quote_invoiced(db_session):
+    """Task 10: a tax-exclusive estimate locks for a reason that has nothing
+    to do with Books invoicing it — the glow must not claim it was invoiced
+    just because it shares the same quote_sync_state."""
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    await _configure_zoho(db_session)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "draft",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": False,
+                        "line_items": [],
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "locked"
+    assert project.quote_invoiced is False
+
+
+@pytest.mark.asyncio
 async def test_accepted_quote_still_pushes(db_session):
     project = await _project_with_quote(db_session, scan_cost=5000)
     await _configure_zoho(db_session)

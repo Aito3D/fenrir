@@ -39,6 +39,7 @@ const card = (over: Partial<AitoProject> = {}): AitoProject => ({
   quote_status: null,
   quote_accepted_at: null,
   quote_sync_state: 'idle',
+  quote_invoiced: false,
   quote_sync_error: null,
   quote_status_block: null,
   quote_status_remote: null,
@@ -209,6 +210,18 @@ describe('board card actions — mark as done', () => {
   it('offers mark-as-done on a released card in Finish', () => {
     renderColumn(card({ column: 'finish', move_lock: null }));
     expect(screen.getByRole('button', { name: /mark project as done/i })).toBeEnabled();
+  });
+
+  it('glows the Done action when the quote is invoiced', () => {
+    renderColumn(card({ column: 'finish', move_lock: null, quote_invoiced: true }));
+    const done = screen.getByRole('button', { name: /mark project as done/i });
+    expect(done.className).toContain('animate-invoiced-glow');
+  });
+
+  it('does not glow when the quote is not invoiced', () => {
+    renderColumn(card({ column: 'finish', move_lock: null, quote_invoiced: false }));
+    const done = screen.getByRole('button', { name: /mark project as done/i });
+    expect(done.className).not.toContain('animate-invoiced-glow');
   });
 
   it('does not offer mark-as-done in any other column', () => {

@@ -577,6 +577,9 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
     if _is_locked(estimate):
         was_already_locked = project.quote_sync_state == "locked"
         project.quote_sync_state = "locked"
+        # Sticky: Books does not practically un-invoice. Set only here, never
+        # in the tax-exclusive lock branch below, and never back to False.
+        project.quote_invoiced = True
         if estimate.get("status") is not None:
             adopt_quote_status(project, estimate["status"])
         project.quote_sync_error = None
@@ -769,6 +772,9 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
                 # status to keep in sync, and no error to clear away either.
                 was_already_locked = project.quote_sync_state == "locked"
                 project.quote_sync_state = "locked"
+                # Sticky, same as _update_quote's lock branch above: Books
+                # does not practically un-invoice.
+                project.quote_invoiced = True
                 # quote_status and quote_sync_error are deliberately left
                 # alone (above), but a recorded block is neither: 'locked'
                 # leaves the sweep for good, so a block kept here would render

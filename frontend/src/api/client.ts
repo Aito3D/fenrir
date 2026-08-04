@@ -3538,6 +3538,11 @@ export interface AitoProject {
    *  returns it and SYNC_LABEL_KEY deliberately has no entry, so the detail
    *  panel renders no sync row for one. */
   quote_sync_state: 'unmanaged' | 'idle' | 'pending' | 'error' | 'locked';
+  /** True once Books reports the estimate invoiced. Sticky — an invoice does
+   *  not un-happen. Separate from quote_sync_state === 'locked', which also
+   *  covers tax-exclusive quotes that were never billed; the board's "this
+   *  job is billed, archive it" glow keys off this flag, not the state. */
+  quote_invoiced: boolean;
   /** The last push failure, or null. Only meaningful when quote_sync_state
    *  is 'error'; stale/ignored otherwise. */
   quote_sync_error: string | null;

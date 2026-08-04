@@ -4354,6 +4354,13 @@ async def run_migrations(conn):
     if not _aito_desc_existed and await _column_exists(conn, "aito_tasks", "description"):
         await _migrate_aito_task_descriptions(conn)
 
+    # Migration: invoiced flag on Aito projects (2026-08-03).
+    _aito_invoiced_default = "0" if is_sqlite() else "false"
+    await _safe_execute(
+        conn,
+        f"ALTER TABLE aito_projects ADD COLUMN quote_invoiced BOOLEAN NOT NULL DEFAULT {_aito_invoiced_default}",
+    )
+
     await _safe_execute(
         conn,
         "CREATE INDEX IF NOT EXISTS ix_aito_projects_quote_sync_state ON aito_projects (quote_sync_state)",

@@ -100,6 +100,11 @@ def _to_response(p: AitoProject, summary: TaskSummary) -> AitoProjectResponse:
         quote_accepted_at=p.quote_accepted_at,
         created_by=p.created_by,
         quote_sync_state=p.quote_sync_state or "idle",
+        # Mirrors quote_sync_state's fallback above: the Python-side default
+        # on the model column only applies at flush, so an AitoProject built
+        # in memory and never flushed (see test_aito_board_summary.py) still
+        # reads quote_invoiced as None here.
+        quote_invoiced=bool(p.quote_invoiced),
         quote_sync_error=p.quote_sync_error,
         quote_status_block=p.quote_status_block,
         quote_status_remote=p.quote_status_remote,

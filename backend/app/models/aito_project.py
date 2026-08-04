@@ -66,6 +66,12 @@ class AitoProject(Base):
     # routes/aito.py:_mark_pending_if_ours, the ONLY state that guard treats
     # as "not ours"). 'pending' with a NULL quote_id means "create the quote".
     quote_sync_state: Mapped[str] = mapped_column(String(20), default="idle", server_default="idle", index=True)
+    # True once Books reports the estimate invoiced (is_transaction_created /
+    # invoiced_amount > 0). Sticky: an invoice is accounting and does not
+    # un-happen. Separate from quote_sync_state == 'locked', which also covers
+    # tax-exclusive quotes — the board's "this job is billed, archive it" glow
+    # must not fire for those.
+    quote_invoiced: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     quote_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     quote_sync_failures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # The estimate's last_modified_time as Zoho reported it on our last write.

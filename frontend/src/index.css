@@ -1178,6 +1178,28 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
   }
 }
 
+/* Aito: the finish-column Done action (and its panel-pill twin) glow once
+   Books reports the quote invoiced — the board saying "this job is billed,
+   archive it" without forcing the move. Uses bambu-green's own #00ae42 value
+   rather than the token so the box-shadow keeps its saturation independent of
+   theme (see --accent above). */
+@keyframes invoiced-glow {
+  0%, 100% { box-shadow: 0 0 3px 0 rgb(0 174 66 / 0.5); }
+  50% { box-shadow: 0 0 10px 2px rgb(0 174 66 / 0.9); }
+}
+.animate-invoiced-glow {
+  animation: invoiced-glow 2s ease-in-out infinite;
+}
+/* The pulse still reads — just as a static glow rather than a pulsing one, so
+   the "this is billed" signal survives for anyone who has asked for less
+   motion, the same way .animate-revert-flash keeps its ring above. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-invoiced-glow {
+    animation: none;
+    box-shadow: 0 0 3px 0 rgb(0 174 66 / 0.5);
+  }
+}
+
 /* Calculator tables: rows carry a SOLID background so the sticky first
    column can `bg-inherit` it — translucent hover tints on the row would let
    scrolled columns bleed through the sticky cell. */

@@ -297,6 +297,7 @@ export function placeholderProject(fields: {
     quote_status: quoteStatus,
     quote_accepted_at: null,
     quote_sync_state: 'pending',
+    quote_invoiced: false,
     quote_sync_error: null,
     quote_status_block: null,
     quote_status_remote: null,
