@@ -5,6 +5,8 @@ import { Building2, Check, Copy, ExternalLink, Loader2, Mail, Phone, RefreshCw, 
 import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ActivityRail } from './history/ActivityRail';
+import { PanelAgeStat } from './PanelAgeStat';
+import { eyebrowCls } from './panelTypography';
 import { ProjectDoneAction } from './ProjectDoneAction';
 import { ProjectProgress } from './ProjectProgress';
 import { QuotePrintButton } from './QuotePrintButton';
@@ -68,15 +70,6 @@ function quoteStatusText(t: (key: string) => string, status: string | null): str
   const key = quoteStatusLabelKey(status);
   return key ? t(key) : status;
 }
-
-/** The header eyebrow's type: .72rem at .08em tracking, uppercase.
- *
- *  Written out rather than reached for as `text-xs tracking-wide`, because
- *  Tailwind's nearest pair is .75rem / .025em — a third of this tracking. At
- *  10px uppercase that is the difference between a label and a caption, and
- *  the project ref, the quote link, the separator and the status pill all
- *  share this so they can never drift into two different sizes on one row. */
-const eyebrowCls = 'text-[.72rem] uppercase tracking-[.08em]';
 
 interface ProjectDetailPanelProps {
   project: AitoProject;
@@ -349,6 +342,13 @@ function PanelHeader({
         </div>
       </div>
 
+      {/* Hidden below md: the header is one flex row and the client name has
+          first claim on the width. The Record card's echo carries the age on
+          narrow screens, so nothing is lost, only relocated. */}
+      <div className="hidden md:block w-px self-stretch bg-bambu-dark-tertiary" />
+      <div className="hidden md:block">
+        <PanelAgeStat project={project} />
+      </div>
       <div className="w-px self-stretch bg-bambu-dark-tertiary" />
 
       <div className="flex items-center gap-3 flex-shrink-0">

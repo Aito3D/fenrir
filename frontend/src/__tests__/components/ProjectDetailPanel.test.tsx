@@ -2110,3 +2110,45 @@ describe('ProjectDetailPanel description regeneration', () => {
     expect(screen.getByRole('button', { name: 'Regenerate' })).toBeDisabled();
   });
 });
+
+/** A backend-shaped naive-UTC stamp N days before now. Used instead of fake
+ *  timers, which fight react-query's scheduler in this file. */
+const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 19);
+
+describe('ProjectDetailPanel age stat', () => {
+  it('measures an accepted project from the acceptance stamp, not from creation', () => {
+    show({ created_at: daysAgo(40), quote_status: 'accepted', quote_accepted_at: daysAgo(1) });
+    expect(screen.getByTestId('panel-age-anchor')).toHaveTextContent(/accepted|accepté/i);
+    expect(screen.getByTestId('panel-age-value')).toHaveTextContent(/yesterday|hier/i);
+  });
+
+  it('measures from creation while the quote is not accepted, whatever stamp it carries', () => {
+    show({ created_at: daysAgo(1), quote_status: 'sent', quote_accepted_at: daysAgo(40) });
+    expect(screen.getByTestId('panel-age-anchor')).toHaveTextContent(/created|créé/i);
+    expect(screen.getByTestId('panel-age-value')).toHaveTextContent(/yesterday|hier/i);
+  });
+
+  it('falls back to creation when an accepted quote carries no acceptance stamp', () => {
+    show({ created_at: daysAgo(1), quote_status: 'accepted', quote_accepted_at: null });
+    expect(screen.getByTestId('panel-age-anchor')).toHaveTextContent(/created|créé/i);
+    expect(screen.getByTestId('panel-age-value')).toHaveTextContent(/yesterday|hier/i);
+  });
+
+  it('heats the value with the board card\'s ramp', () => {
+    show({ created_at: daysAgo(12) });
+    expect(screen.getByTestId('panel-age-value')).toHaveClass('text-orange-400');
+  });
+
+  it('stays calm grey for a done project however old it is', () => {
+    show({ created_at: daysAgo(40), column: 'done' });
+    const value = screen.getByTestId('panel-age-value');
+    expect(value).toHaveClass('text-bambu-gray');
+    expect(value).not.toHaveClass('text-red-400');
+  });
+
+  it('omits the absolute date rather than printing an invalid one', () => {
+    show({ created_at: 'not-a-date' });
+    expect(screen.queryByTestId('panel-age-date')).not.toBeInTheDocument();
+    expect(screen.getByTestId('panel-age-value')).toBeInTheDocument();
+  });
+});
