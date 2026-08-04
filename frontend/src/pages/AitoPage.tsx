@@ -414,9 +414,9 @@ export function AitoPage() {
     // one scrolls its own cards. The offsets mirror the shell exactly
     // (Layout.tsx): a 56px compact top bar below 1144px, nothing above it —
     // the old hard-coded 64px matched neither and left a dead band at the
-    // bottom. Below `lg` it stays a min-height so a narrow screen scrolls
+    // bottom. Below 1024px it stays a min-height so a narrow screen scrolls
     // the page normally rather than squeezing six columns into a phone.
-    <div className="p-4 md:p-8 md:pb-4 flex flex-col gap-6 min-h-[calc(100dvh-3.5rem)] lg:h-[calc(100dvh-3.5rem)] min-[1144px]:h-dvh">
+    <div className="p-4 md:p-8 md:pb-4 flex flex-col gap-6 min-h-[calc(100dvh-3.5rem)] min-[1024px]:h-[calc(100dvh-3.5rem)] min-[1144px]:h-dvh">
       {/* Header — one row at lg+ so the board gets every remaining pixel of
           height: title, search (which flexes to fill the middle and gives up
           width first when the window narrows), the two view switches, then
