@@ -454,7 +454,13 @@ class ZohoService:
         async def value(key: str, fallback: str) -> str:
             return (await get_setting(db, key)) or fallback
 
-        shipping = await self.get_shipping_catalogue(db)
+        # get_catalogue sits on the sync worker's hot path, including
+        # _create_quote's fast path, which must make ZERO Zoho calls when a
+        # project has no priced service. Ownership (Catalogue.item_ids() ->
+        # is_foreign) only needs ids already learned, never a fresh rate, so
+        # a cold cache here is correct: a shipping-carrying project simply
+        # waits for a later tick to warm it rather than blocking the push.
+        shipping = await self.get_shipping_catalogue(db, refresh=False)
         return Catalogue(
             scan_item_id=await value("zoho_item_scan_id", "66407000006501192"),
             modelisation_item_id=await value("zoho_item_modelisation_id", "66407000006485001"),
@@ -470,12 +476,18 @@ class ZohoService:
         body = await self._request(db, "GET", "/items", params={"search_text": search_text})
         return body.get("items") or []
 
-    async def get_shipping_catalogue(self, db: AsyncSession) -> dict[str, ShippingItem]:
+    async def get_shipping_catalogue(self, db: AsyncSession, *, refresh: bool = True) -> dict[str, ShippingItem]:
         """The 5 "Livraison Avion" items, resolved from Books and cached.
 
         Refreshed only when the cache is missing or more than
         ``_SHIPPING_CACHE_TTL`` old, so opening the create drawer never costs a
         Zoho call and the whole feature costs at most one request a day.
+
+        ``refresh=False`` means "answer from cache only, never touch the
+        network" — for callers that need OWNERSHIP (an id already learned is
+        still owned, cold cache or not), not an up-to-date rate. The default
+        stays ``True`` so the drawer's own endpoint keeps refreshing without
+        passing anything.
 
         A failed refresh is NOT an error: the previous cache is returned
         unchanged. Ids are never forgotten — see
@@ -510,7 +522,7 @@ class ZohoService:
                 # `now` above raises TypeError, not ValueError.
                 fresh = False
 
-        if not fresh:
+        if refresh and not fresh:
             try:
                 items = await self.list_items(db, "Livraison Avion")
             except (ZohoNotConfiguredError, ZohoUpstreamError) as e:

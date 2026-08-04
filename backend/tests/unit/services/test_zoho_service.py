@@ -781,3 +781,60 @@ async def test_get_shipping_catalogue_is_empty_when_never_resolved(db_session, m
 
     monkeypatch.setattr(zoho_service, "_request", boom)
     assert await zoho_service.get_shipping_catalogue(db_session) == {}
+
+
+@pytest.mark.asyncio
+async def test_get_shipping_catalogue_refresh_false_never_touches_the_network(db_session, monkeypatch):
+    """refresh=False is for callers that only need OWNERSHIP of ids already
+    learned — never a fresh rate — so it must answer from cache alone, even
+    when the cache is missing or stale enough that refresh=True would
+    trigger a fetch."""
+    calls = []
+
+    async def fake_request(db, method, path, **kwargs):
+        calls.append(path)
+        return {"items": [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200}]}
+
+    monkeypatch.setattr(zoho_service, "_request", fake_request)
+    # No cache exists at all yet.
+    result = await zoho_service.get_shipping_catalogue(db_session, refresh=False)
+    assert result == {}
+    assert calls == [], "refresh=False must never call Books, cold cache or not"
+
+
+@pytest.mark.asyncio
+async def test_get_shipping_catalogue_refresh_false_still_serves_a_warm_cache(db_session, monkeypatch):
+    async def fake_request(db, method, path, **kwargs):
+        return {"items": [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200}]}
+
+    monkeypatch.setattr(zoho_service, "_request", fake_request)
+    await zoho_service.get_shipping_catalogue(db_session)  # warms the cache
+
+    calls = []
+
+    async def boom(db, method, path, **kwargs):
+        calls.append(path)
+        raise AssertionError("refresh=False must not call Books even with a warm cache")
+
+    monkeypatch.setattr(zoho_service, "_request", boom)
+    cached = await zoho_service.get_shipping_catalogue(db_session, refresh=False)
+    assert cached["tuamotu"].item_id == "1"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_get_catalogue_never_calls_items(db_session, monkeypatch):
+    """Pins the regression this fixed: get_catalogue sits on the sync
+    worker's hot path, including _create_quote's fast path, which must make
+    ZERO Zoho calls when a project has no priced service. Ownership only
+    needs ids already learned, so get_catalogue must never fetch."""
+    calls = []
+
+    async def fake_request(db, method, path, **kwargs):
+        calls.append(path)
+        return {"items": [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200}]}
+
+    monkeypatch.setattr(zoho_service, "_request", fake_request)
+    await zoho_service.get_catalogue(db_session)
+    assert "/items" not in calls
+    assert calls == []
