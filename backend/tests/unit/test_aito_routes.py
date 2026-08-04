@@ -20,7 +20,7 @@ async def _create(client, **overrides):
         "description": "Support GoPro",
         "client_id": "z1",
         "client_name": "ACME",
-        "client_phone": "+33-612345678",
+        "client_phone": "+33 6 12 34 56 78",
     }
     payload.update(overrides)
     return await client.post("/api/v1/aito/", json=payload)
@@ -50,7 +50,7 @@ async def _seed_golden_board(client):
             "description": "no tasks",
             "client_id": "C1",
             "client_name": "One",
-            "client_phone": "+689-87000001",
+            "client_phone": "+689 87 00 00 01",
             "tasks": [],
         },
     )
@@ -60,7 +60,7 @@ async def _seed_golden_board(client):
             "description": "zero cost",
             "client_id": "C2",
             "client_name": "Two",
-            "client_phone": "+689-87000002",
+            "client_phone": "+689 87 00 00 02",
             "tasks": [{"title": "free scan", "scan_cost": 0}],
         },
     )
@@ -70,7 +70,7 @@ async def _seed_golden_board(client):
             "description": "mixed",
             "client_id": "C3",
             "client_name": "Three",
-            "client_phone": "+689-87000003",
+            "client_phone": "+689 87 00 00 03",
             # Accepted because ticked steps now require it — a mixed-done-flags
             # card cannot exist in any other status.
             "quote_status": "accepted",
@@ -86,7 +86,7 @@ async def _seed_golden_board(client):
             "description": "accepted",
             "client_id": "C4",
             "client_name": "Four",
-            "client_phone": "+689-87000004",
+            "client_phone": "+689 87 00 00 04",
             # Accepted for the same reason as "mixed": a pre-ticked step at
             # creation now requires it.
             "quote_status": "accepted",
@@ -100,7 +100,7 @@ async def _seed_golden_board(client):
             "description": "accepted zero pending",
             "client_id": "C5",
             "client_name": "Five",
-            "client_phone": "+689-87000005",
+            "client_phone": "+689 87 00 00 05",
             "tasks": [{"title": "d", "scan_cost": 0}],
         },
     )
@@ -329,7 +329,7 @@ async def test_update_description_leaves_client_untouched(async_client):
     body = r.json()
     assert body["description"] == "Nouveau support"
     assert body["client_name"] == "ACME"
-    assert body["client_phone"] == "+33-612345678"
+    assert body["client_phone"] == "+33 6 12 34 56 78"
 
 
 @pytest.mark.asyncio
@@ -554,6 +554,27 @@ async def test_create_project_rejects_an_over_cap_description(async_client):
 @pytest.mark.asyncio
 async def test_create_project_rejects_a_malformed_client_email(async_client):
     r = await _create(async_client, client_email="not-an-email")
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_project_accepts_zoho_sourced_phone_shapes(async_client):
+    """The quote-import flow passes a Zoho contact's mobile/phone straight
+    through with no reformatting (services/aito_quote_import.py's
+    _client_snapshot) — unlike the manual create form, which always sends the
+    canonical +CC-NNNN... shape via clientDraft.ts's formatPhone. Both a
+    space-separated number and a bare local number are things Zoho itself was
+    happy to store, so both must still validate here."""
+    r = await _create(async_client, client_id="zc1", client_phone="+689 87 00 00 02")
+    assert r.status_code == 201
+
+    r = await _create(async_client, client_id="zc2", client_phone="0687654321")
+    assert r.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_create_project_rejects_a_phone_with_too_few_digits(async_client):
+    r = await _create(async_client, client_phone="not a phone")
     assert r.status_code == 422
 
 
@@ -792,7 +813,7 @@ async def test_create_project_without_quote_leaves_quote_fields_null(async_clien
             "description": "Manual card",
             "client_id": "z1",
             "client_name": "ACME",
-            "client_phone": "+689-87000006",
+            "client_phone": "+689 87 00 00 06",
         },
     )
     assert r.status_code == 201
@@ -1591,7 +1612,7 @@ async def test_board_ships_a_step_row_per_task(async_client, db_session):
             "description": "steps per task",
             "client_id": "S1",
             "client_name": "Steps",
-            "client_phone": "+689-87000007",
+            "client_phone": "+689 87 00 00 07",
             "quote_status": "accepted",
             "tasks": [
                 {"title": "t1", "impression_cost": 2000, "scan_cost": 1000, "scan_done": True},
@@ -1620,7 +1641,7 @@ async def test_task_steps_carry_titles(async_client):
             "description": "titled steps",
             "client_id": "T1",
             "client_name": "Titles",
-            "client_phone": "+689-87000008",
+            "client_phone": "+689 87 00 00 08",
             "tasks": [
                 {"title": "Support principal", "scan_cost": 10},
                 {"scan_cost": 20},

@@ -1805,7 +1805,7 @@ async def test_trashing_before_first_tick_then_restoring_and_editing_is_re_enque
         description="Helice",
         client_id="C1",
         client_name="Client",
-        client_phone="+689-87000013",
+        client_phone="+689 87 00 00 13",
         tasks=[AitoTaskCreate(title="Helice", scan_cost=5000)],
     )
     created = await create_project(payload=payload, db=db_session, current_user=None)

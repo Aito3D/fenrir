@@ -8,11 +8,21 @@ from pydantic import BaseModel, Field, field_validator
 
 AitoColumn = Literal["devis", "waiting", "scan", "model", "print", "finish", "done"]
 
-# Mirrors backend/app/api/routes/zoho.py's ZohoContactCreate/_check_email/_check_phone —
-# the same bar for a client's own contact fields, wherever they're captured. Both fields
-# are optional — only a non-empty malformed value is rejected.
+# Shape checks only, mirroring backend/app/api/routes/zoho.py's ZohoContactCreate's
+# email philosophy. Both fields are optional — only a non-empty malformed value is
+# rejected. Unlike Zoho's own _check_phone (which enforces the canonical `+CC-NNN...`
+# the manual create form always produces via clientDraft.ts's formatPhone), a client's
+# phone/email here can also arrive VERBATIM from a Zoho contact via the quote-import
+# flow (see services/aito_quote_import.py:_client_snapshot, which passes contact.get
+# ("mobile")/("phone") straight through with no reformatting) — so the phone check
+# must accept whatever human-typed shape Zoho itself was happy to store
+# ("+689 87 00 00 02", "0687654321", ...), not just the app's own canonical format.
 _EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$")
-_PHONE_RE = re.compile(r"^\+\d{1,4}-\d{4,14}$")
+# Digits, spaces and the handful of punctuation marks phone numbers are conventionally
+# written with. The real guard against garbage is the "at least 6 digits" check below,
+# not this character allowlist.
+_PHONE_CHARS_RE = re.compile(r"^[0-9+\-\s().\/]+$")
+_MIN_PHONE_DIGITS = 6
 
 
 def _check_email(value: str) -> str:
@@ -24,8 +34,11 @@ def _check_email(value: str) -> str:
 
 def _check_phone(value: str) -> str:
     value = value.strip()
-    if value and not _PHONE_RE.match(value):
-        raise ValueError("Phone must look like +689-87123456")
+    if not value:
+        return value
+    digit_count = sum(c.isdigit() for c in value)
+    if not _PHONE_CHARS_RE.match(value) or digit_count < _MIN_PHONE_DIGITS:
+        raise ValueError("Enter a valid phone number")
     return value
 
 
