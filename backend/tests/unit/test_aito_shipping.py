@@ -150,6 +150,27 @@ def test_merge_keeps_the_cached_rate_when_zoho_sends_a_non_numeric_rate():
     assert merged["tuamotu"]["rate"] == 3200.0
 
 
+def test_merge_keeps_the_cached_rate_when_zoho_sends_nan():
+    # ALSO FIX 9: float("nan") parses cleanly (no TypeError/ValueError) but
+    # is not a usable rate — worse, json.dumps would serialise it as the bare
+    # token `NaN`, which breaks JSON.parse for every reader of
+    # /aito/shipping/services. Must fall back to the cached rate like the
+    # non-numeric-string case above.
+    cached = {"tuamotu": {"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200.0}}
+    merged = merge_shipping_catalogue(
+        cached, [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": float("nan")}]
+    )
+    assert merged["tuamotu"]["rate"] == 3200.0
+
+
+def test_merge_keeps_the_cached_rate_when_zoho_sends_infinity():
+    cached = {"tuamotu": {"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200.0}}
+    merged = merge_shipping_catalogue(
+        cached, [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": float("inf")}]
+    )
+    assert merged["tuamotu"]["rate"] == 3200.0
+
+
 def test_merge_ignores_an_item_whose_name_matches_no_service():
     assert merge_shipping_catalogue({}, [{"item_id": "1", "name": "Livraison Bateau Tuamotu", "rate": 1}]) == {}
 

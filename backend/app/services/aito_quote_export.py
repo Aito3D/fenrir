@@ -13,7 +13,8 @@ the guard.
 
 from dataclasses import dataclass, field
 
-from backend.app.services.aito_quote_import import service_for_sku
+from backend.app.services.aito_quote_import import parse_description, service_for_sku
+from backend.app.services.aito_shipping import island_for_label
 
 # Canonical service order — the same order the board renders badges in and the
 # order lines are emitted within a task. Mirrors SERVICE_RANK in
@@ -276,6 +277,17 @@ def impression_rate_quantity(task: ExportTask) -> tuple[float, int]:
     return round((task.impression_cost or 0) / quantity), quantity
 
 
+def _existing_island(description: str | None) -> str | None:
+    """The island key an existing shipping line's `Île:` row reverse-lookups
+    to, or None when the row is absent or names an island we do not
+    recognise. Reuses the importer's own ``parse_description`` (no cycle:
+    ``aito_quote_import`` does not import this module) rather than a second
+    regex, so this reads a line exactly the way ``parse_shipping_line``
+    would — the two must never disagree about which lines are "ours"."""
+    labels, _ = parse_description(description, {"ile": "Île"})
+    return island_for_label(labels.get("ile"))
+
+
 def is_foreign(line: dict, catalogue: Catalogue) -> bool:
     """True for a line this app does not own: not a header, and not one of the
     items ``Catalogue.item_ids()`` claims — the four service items plus up to
@@ -326,12 +338,27 @@ def build_line_items(
     Then every foreign line, echoed as a bare ``line_item_id``, which Books
     expands back into the untouched original. Omitting a line deletes it, so
     anything not returned here is gone. This is also where an EXISTING
-    shipping line the project no longer (or does not yet) describe gets
-    handled: when ``shipping`` is None, a line whose ``item_id`` is one of
-    ``catalogue.shipping.values()`` is echoed by ``line_item_id`` rather than
-    dropped, because omitting it would DELETE it in Books, and ``is_foreign``
-    would not save it — the line is ours by id, so it reads as owned, not
-    foreign. When ``shipping`` is given, that echo is skipped, because the
+    shipping line the project no longer describes gets handled: when
+    ``shipping`` is None, a line whose ``item_id`` is one of
+    ``catalogue.shipping.values()`` is echoed by ``line_item_id`` ONLY when
+    its ``Île:`` row does NOT reverse-lookup to a known island via
+    ``island_for_label`` (``_existing_island`` returns None) — the same
+    "could not resolve this line" case that makes ``parse_shipping_line``
+    decline to parse it on import, whether because it came from a quote whose
+    island this app does not know or because a human typed it into Books by
+    hand. A line whose island IS one we recognise is one this app could only
+    have written itself — ``is_foreign`` would not otherwise save it, since
+    the line is ours by item id — so a detach (clearing ``shipping_island``
+    and pushing with ``shipping=None``) is now allowed to drop it, and
+    omitting it here is exactly what deletes it in Books.
+
+    Trade made explicitly, since the two properties cannot both hold: the
+    spec's original claim that "a shipping line typed by hand directly in
+    Books survives our pushes" no longer holds unconditionally — it now only
+    survives when its island does not match one of ours. A well-formed
+    hand-typed line naming a real island is indistinguishable from a line
+    this app wrote and then detached, so it is treated as the latter. When
+    ``shipping`` is given, this whole echo is skipped, because the
     freshly-built shipping line above already represents it and echoing the
     old one too would leave the quote with two.
 
@@ -388,14 +415,19 @@ def build_line_items(
     for line in sorted(existing_line_items, key=lambda item: item.get("item_order") or 0):
         if not line.get("line_item_id"):
             continue
-        # A shipping line the project does not describe — imported from a quote
-        # whose island we could not match, or typed by hand in Books. It is
-        # OURS by item id, so `is_foreign` says no, and omitting it here would
-        # DELETE it. Echo it instead. When the project does carry shipping the
-        # line above already expresses it, so this must not also fire or the
-        # quote would end up with two.
+        # A shipping line the project does not describe. It is OURS by item
+        # id, so `is_foreign` says no — but that alone does not mean it
+        # should survive. Echo it (rather than let it fall through and be
+        # deleted) only when its island is one `island_for_label` does NOT
+        # recognise: that is the "could not have authored this" case —
+        # imported from a quote naming an island we don't know, or typed by
+        # hand in Books. A recognised island means this app wrote the line,
+        # so a detach (the operator cleared the shipment and pushed with
+        # `shipping=None`) must be allowed to delete it, and simply not
+        # echoing it here is what does that.
         if shipping is None and line.get("item_id") in shipping_ids:
-            lines.append({"line_item_id": line["line_item_id"]})
+            if _existing_island(line.get("description")) is None:
+                lines.append({"line_item_id": line["line_item_id"]})
             continue
         if is_foreign(line, catalogue):
             lines.append({"line_item_id": line["line_item_id"]})

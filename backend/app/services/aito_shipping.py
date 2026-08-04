@@ -18,6 +18,7 @@ The island KEY is what the database stores; the label is presentation and may
 be respelled without orphaning a project.
 """
 
+import math
 import unicodedata
 from dataclasses import dataclass
 
@@ -151,9 +152,14 @@ def merge_shipping_catalogue(cached: dict[str, dict], items: list[dict]) -> dict
       the four service items.
     - **A rate is only overwritten by a real one.** An item echoed back
       without a price — or with one Books sent malformed (``""``, a
-      non-numeric string) — keeps the price we already knew, rather than
-      dropping to None and forcing manual entry, or raising and losing the
-      whole cache, for no reason.
+      non-numeric string, or a non-finite one: ``NaN``/``Infinity``) — keeps
+      the price we already knew, rather than dropping to None and forcing
+      manual entry, or raising and losing the whole cache, for no reason. A
+      NaN is not merely a bad rate: ``json.dumps`` serialises it as the bare
+      token ``NaN``, which is NOT valid JSON — ``JSON.parse`` on the frontend
+      rejects the whole ``/aito/shipping/services`` response for it, emptying
+      the island picker, and the bad value then sits in the settings row
+      until a refresh happens to overwrite it with a finite one.
 
     A name Zoho reports that matches no service is simply not a shipping item
     and is ignored. Matching is case- and accent-insensitive because the search
@@ -180,6 +186,13 @@ def merge_shipping_catalogue(cached: dict[str, dict], items: list[dict]) -> dict
             # value that won't parse is no reason to forget a price we
             # already knew.
             rate = entry.get("rate")
+        else:
+            if rate is not None and not math.isfinite(rate):
+                # float("nan") / float("inf") parse cleanly but are not a
+                # rate — and a NaN in particular breaks JSON for every caller
+                # (see the docstring above). Same fallback as the parse
+                # failure above: keep the cached price.
+                rate = entry.get("rate")
         merged[service] = {
             "item_id": item_id,
             "name": SERVICE_LABELS[service],

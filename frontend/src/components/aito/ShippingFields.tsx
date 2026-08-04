@@ -91,6 +91,9 @@ export function ShippingFields({ value, onChange, services, catalogueResolved, c
               }
               className={`${inputCls} w-28 text-right`}
             />
+            {value.priceEdited && (
+              <span className="text-[11px] italic text-bambu-gray">{t('aito.shippingRateEdited')}</span>
+            )}
             {value.priceEdited && zohoRate !== null && (
               <button
                 type="button"

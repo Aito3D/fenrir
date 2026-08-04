@@ -999,14 +999,16 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         # situation calls for.
         #
         # get_catalogue's own shipping read is always refresh=False (see the
-        # comment above that call), so it is never what warms the cache.
-        # Today this handler is the SOLE warmer: the drawer's services
-        # endpoint that will eventually warm it on the happy path does not
-        # exist yet. Until it does — and even after, for a project that
-        # gained shipping without going through it (an importer path, a
-        # wiped settings row, first boot with Books down) — nothing else
-        # would ever fetch a resolution. Warm it here, once, so the NEXT tick
-        # has a chance even if this one still has to defer.
+        # comment above that call), so it is never what warms the cache. The
+        # drawer's GET /aito/shipping/services endpoint (Task 7) warms it on
+        # the happy path — it is the only other refresh=True caller now that
+        # the board list's `_shipping_names` (aito.py) reads cache-only, since
+        # a display name never needs a fresh rate. But that endpoint only
+        # runs when someone has the drawer open. For a project that gained
+        # shipping without going through it (an importer path, a wiped
+        # settings row, first boot with Books down), nothing else would ever
+        # fetch a resolution. Warm it here too, once, so the NEXT tick has a
+        # chance even if this one still has to defer.
         message = str(e)
         # Logged only on the tick this exact deferral reason first appears,
         # via _deferred_reasons rather than any column on the project. This is

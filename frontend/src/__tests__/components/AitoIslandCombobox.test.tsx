@@ -53,6 +53,16 @@ describe('IslandCombobox', () => {
     expect(screen.getByRole('combobox')).toHaveValue('Rangiroa');
   });
 
+  // ALSO FIX 8: before the services query resolves, `value` may already be
+  // set (e.g. the panel's edit mode seeding from the project) while
+  // `services` is still `[]`. The old '' fallback rendered this required
+  // field blank with no error shown; it must instead show a readable
+  // degrade, same as every other surface `islandLabel` backs.
+  it('degrades to a readable label instead of blank while services has not resolved', () => {
+    render(<IslandCombobox value="bora-bora" services={[]} onSelect={vi.fn()} />);
+    expect(screen.getByRole('combobox')).toHaveValue('Bora Bora');
+  });
+
   it('says so when nothing matches', async () => {
     render(<IslandCombobox value="" services={SERVICES} onSelect={vi.fn()} />);
     await userEvent.click(screen.getByRole('combobox'));

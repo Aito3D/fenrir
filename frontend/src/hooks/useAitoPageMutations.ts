@@ -14,7 +14,11 @@ import { applyCreate, applyDelete } from '../utils/aitoOptimistic';
 
 // Mirrors `_SHIPPING_PHONE_RE` in backend/app/api/routes/aito.py — POST
 // /aito/ 422s the WHOLE create if `shipping_phone` doesn't match this shape.
-const SHIPPING_PHONE_RE = /^\+\d{1,4}-\d{4,14}$/;
+// Exported (not just kept local) so the parity test in
+// useAitoPageMutations.test.tsx can read this exact regex and diff its
+// `.source` against the backend's own pattern, rather than the two copies
+// being bound only by this comment.
+export const SHIPPING_PHONE_RE = /^\+\d{1,4}-\d{4,14}$/;
 
 /** True when a preview's shipment is actually acceptable to POST /aito/.
  *

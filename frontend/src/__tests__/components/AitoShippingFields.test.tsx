@@ -130,9 +130,15 @@ describe('ShippingFields', () => {
   it('offers a reset once the price is edited, and no reset before', async () => {
     const { onChange } = setup({ island: 'rangiroa', service: 'tuamotu', price: 3200 });
     expect(screen.queryByRole('button', { name: /back to the zoho rate/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('edited')).not.toBeInTheDocument();
     await userEvent.clear(getRateInput());
     await userEvent.type(getRateInput(), '5400');
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ priceEdited: true }));
+  });
+
+  it('shows the edited marker once the price is edited', () => {
+    setup({ island: 'rangiroa', service: 'tuamotu', price: 5400, priceEdited: true });
+    expect(screen.getByText('edited')).toBeInTheDocument();
   });
 
   it('restores the Zoho rate on reset', async () => {

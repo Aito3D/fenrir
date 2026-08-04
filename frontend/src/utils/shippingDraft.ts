@@ -148,7 +148,7 @@ export function shippingPayload(draft: ShippingDraft) {
  *  extracted: the pill fell back to the raw key while the card fell back to
  *  a naive capitalisation of it).
  *
- *  The degrade splits on the hyphen six of the fifty-two island keys carry
+ *  The degrade splits on the hyphen six of the forty-five island keys carry
  *  (`bora-bora`, `puka-puka`, `nuku-hiva`, `hiva-oa`, `ua-pou`, `ua-huka`)
  *  and re-joins with a SPACE rather than reusing the raw separator —
  *  `island_label` in aito_shipping.py spells every one of those "Bora Bora",

@@ -559,6 +559,42 @@ def test_an_unowned_shipping_line_is_echoed_rather_than_deleted():
     assert lines[-1] == {"line_item_id": "L9", "item_order": 2}
 
 
+def test_detaching_a_shipment_drops_a_recognised_island_line():
+    # CRITICAL 1: the operator pressed Retirer — shipping is None — but a
+    # shipping line naming a real island is still on the quote. That line is
+    # one this app demonstrably wrote (a human would not spell an island
+    # exactly as our catalogue does by accident), so it must NOT be echoed
+    # back: dropping it here is what deletes it from the customer's estimate.
+    existing = [
+        {
+            "line_item_id": "L9",
+            "item_id": "SHIP-TU",
+            "item_order": 5,
+            "description": "Nom: Jean-Pierre DUPONT\nTéléphone: +689-89645864\nÎle: Rangiroa",
+        }
+    ]
+    lines = build_line_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE)
+    assert [line["item_id"] for line in lines] == ["S"]
+    assert "L9" not in [line.get("line_item_id") for line in lines]
+
+
+def test_detaching_a_shipment_still_echoes_an_unrecognised_island_line():
+    # The rule's original purpose must not regress: a shipping-item line whose
+    # `Île:` row names something our catalogue does not recognise (imported
+    # from elsewhere, or a human's typo in Books) is not something this app
+    # could have authored, so it keeps being echoed rather than deleted.
+    existing = [
+        {
+            "line_item_id": "L9",
+            "item_id": "SHIP-TU",
+            "item_order": 5,
+            "description": "Nom: Jean DUPONT\nÎle: Atlantide",
+        }
+    ]
+    lines = build_line_items([task(scan_cost=5000)], existing, SHIPPING_CATALOGUE)
+    assert lines[-1] == {"line_item_id": "L9", "item_order": 2}
+
+
 def test_the_projects_own_shipping_replaces_any_existing_shipping_line():
     # One project, one shipping line — never two.
     existing = [{"line_item_id": "L9", "item_id": "SHIP-TU", "item_order": 5}]

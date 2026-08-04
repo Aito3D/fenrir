@@ -11,21 +11,30 @@ import { parsePhone } from '../../utils/clientDraft';
 import { applyShipping } from '../../utils/aitoOptimistic';
 import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { useToast } from '../../contexts/ToastContext';
-import { api, type AitoProject, type AitoProjectUpdate } from '../../api/client';
+import { api, type AitoProject, type AitoProjectUpdate, type AitoShippingService } from '../../api/client';
 import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
 
 /** Every shipment field the project already carries, reshaped into the same
- *  draft `ShippingFields` drives in the create drawer. `priceEdited: false`
- *  is deliberate, not an oversight: the CONTRACT in shippingDraft.ts requires
- *  that changing the island re-seed the price from the new service's rate
- *  unless the operator has hand-edited it in THIS session, and a value merely
- *  restored from the server is not that — starting `true` here would carry
- *  the old island's price forward under a newly picked service. `blurred`
+ *  draft `ShippingFields` drives in the create drawer.
+ *
+ *  `priceEdited` is NOT hardcoded false: it is seeded by comparing the
+ *  stored price against the stored service's catalogue rate. Air freight is
+ *  billed by weight, so a bespoke price is the EXPECTED case, not the
+ *  exception — if this always started false, re-opening Edit and correcting
+ *  the island WITHIN the same service (`ShippingFields.selectIsland` only
+ *  reseeds the price when `priceEdited` is false) would silently snap a
+ *  deliberate bespoke price back to the catalogue rate. When the catalogue
+ *  has not resolved, or no longer knows the stored service, there is nothing
+ *  to compare against, so this defaults to false rather than guessing. A
+ *  price that already matches the catalogue rate also starts false — no
+ *  operator override to protect, and the create-drawer contract (island
+ *  change re-seeds the price unless hand-edited) still applies. `blurred`
  *  starts empty so re-opening an already-valid shipment shows no red on
  *  first paint; only a fresh edit that fails validation should light one up. */
-function draftFromProject(project: AitoProject): ShippingDraft {
+function draftFromProject(project: AitoProject, services: AitoShippingService[]): ShippingDraft {
   const { countryCode, nationalNumber } = parsePhone(project.shipping_phone ?? '');
+  const catalogueRate = services.find((s) => s.key === project.shipping_service)?.rate ?? null;
   return {
     island: project.shipping_island ?? '',
     service: project.shipping_service ?? '',
@@ -34,7 +43,7 @@ function draftFromProject(project: AitoProject): ShippingDraft {
     countryCode,
     nationalNumber,
     price: project.shipping_price,
-    priceEdited: false,
+    priceEdited: catalogueRate !== null && project.shipping_price !== catalogueRate,
     blurred: { island: false, firstName: false, lastName: false, phone: false },
   };
 }
@@ -96,7 +105,7 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
     setEditing(true);
   };
   const openEdit = () => {
-    setDraft(draftFromProject(project));
+    setDraft(draftFromProject(project, servicesQuery.data?.services ?? []));
     setEditing(true);
   };
   const cancel = () => {

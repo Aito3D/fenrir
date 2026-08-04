@@ -3588,6 +3588,68 @@ async def test_update_pushes_the_shipping_line_too_not_only_on_create(db_session
 
 
 @pytest.mark.asyncio
+async def test_detaching_a_shipment_pushes_line_items_without_the_shipping_line(db_session):
+    """CRITICAL 1, at the sync level: a project that HAD a shipment, then has
+    ``shipping_island`` cleared (the operator pressed Retirer), must push a
+    quote with NO shipping line — not an echo of the old one at the old
+    price. Books already carries the line this project wrote on an earlier
+    push (a recognised island), so the fix under test is that
+    ``build_line_items`` drops it instead of echoing it back forever."""
+    project = AitoProject(
+        description="Helice grise",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_id="E1",
+        quote_number="DEV26-9001",
+        quote_sync_state="pending",
+        shipping_island=None,
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Helice grise", scan_cost=5000))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    await _seed_warm_shipping_catalogue(db_session, item_id="SHIP-TUAMOTU")
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [
+                            {
+                                "line_item_id": "L9",
+                                "item_id": "SHIP-TUAMOTU",
+                                "item_order": 2,
+                                "rate": 3200.0,
+                                "description": ("Nom: Jean-Pierre DUPONT\nTéléphone: +689-89645864\nÎle: Rangiroa"),
+                            }
+                        ],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "sent", "total": 5000}},
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    put = next(entry for entry in seen if entry[0] == "PUT")
+    shipping_lines = [line for line in put[2]["line_items"] if line.get("item_id") == "SHIP-TUAMOTU"]
+    assert shipping_lines == []
+    echoed = [line for line in put[2]["line_items"] if line.get("line_item_id") == "L9"]
+    assert echoed == [], "the old shipping line must be deleted, not echoed back"
+
+
+@pytest.mark.asyncio
 async def test_a_resolvable_shipping_service_reaches_books_with_the_right_item_and_description(db_session):
     """Important 3: nothing so far asserted that a RESOLVABLE shipping
     service actually reaches Books correctly — every other shipping

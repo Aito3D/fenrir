@@ -71,6 +71,20 @@ _SHIPPING_COLUMNS = (
 )
 
 
+def _mentions_shipping(fields: dict) -> bool:
+    """True when the payload touches at least one shipping column.
+
+    Guards the ``get_shipping_catalogue`` RATE lookup that feeds
+    ``_validated_shipping``: that call is a genuine Zoho fetch (unlike
+    ``_shipping_names``'s cache-only read), so an ordinary edit that never
+    mentions shipping — a description tweak, a client change — must not pay
+    for it. ``_validated_shipping`` itself would no-op on such a payload
+    (``supplied`` comes up empty), but only after the caller already paid for
+    the catalogue read.
+    """
+    return any(key in fields for key in _SHIPPING_COLUMNS)
+
+
 async def _tasks_by_project(db: AsyncSession, project_ids: list[int]) -> dict[int, list[AitoTask]]:
     """Every task row for the given projects, in ONE query, grouped by project.
 
@@ -182,8 +196,21 @@ def _validated_shipping(
 
 async def _shipping_names(db: AsyncSession) -> dict[str, str]:
     """Service key -> Books display name, resolved once per request and
-    shared by every card `_to_response` builds for it."""
-    return {service: item.name for service, item in (await zoho_service.get_shipping_catalogue(db)).items()}
+    shared by every card `_to_response` builds for it.
+
+    ``refresh=False``: this sits on the board's hot read path — polled every
+    10s while a quote is pending, plus on every WebSocket invalidation and
+    window focus (list_projects, list_trash, move_project, set_quote_status,
+    restore_project all await it) — and a DISPLAY NAME needs a fresh rate
+    even less than the ownership check in ``zoho.get_catalogue`` does: the
+    name comes from our own ``SERVICE_LABELS``, not from anything Books
+    returns, only the item id needs to have been learned at all. Mirrors the
+    reasoning documented there. The cache is warmed elsewhere — the drawer's
+    services endpoint and ``aito_quote_sync``'s deferral handler — so a stale
+    or cold cache here just means an empty name map, never a network call."""
+    return {
+        service: item.name for service, item in (await zoho_service.get_shipping_catalogue(db, refresh=False)).items()
+    }
 
 
 def _to_response(p: AitoProject, summary: TaskSummary, shipping_names: dict[str, str]) -> AitoProjectResponse:
@@ -533,8 +560,11 @@ async def create_project(
         # coordinates live on the project row rather than in Zoho. Imports are
         # exempt: an existing Zoho quote's contact may carry neither channel.
         raise HTTPException(status_code=400, detail="Client must have a phone or an email")
-    rates = {service: item.rate for service, item in (await zoho_service.get_shipping_catalogue(db)).items()}
-    shipping = _validated_shipping(payload.model_dump(exclude_unset=True), rates)
+    create_fields = payload.model_dump(exclude_unset=True)
+    rates = {}
+    if _mentions_shipping(create_fields):
+        rates = {service: item.rate for service, item in (await zoho_service.get_shipping_catalogue(db)).items()}
+    shipping = _validated_shipping(create_fields, rates)
     # New cards land on top of the quote column: shift existing cards down.
     for row in await _active_in_column(db, "devis"):
         row.position += 1
@@ -1121,7 +1151,12 @@ async def update_project(
     if merged_client_id is not None and not merged_client_name:
         raise HTTPException(status_code=422, detail="client_name is required when client_id is set")
 
-    rates = {service: item.rate for service, item in (await zoho_service.get_shipping_catalogue(db)).items()}
+    # Only fetched when the payload actually mentions a shipping column: an
+    # ordinary description or client edit must not pay for a Zoho catalogue
+    # read it will never use. See `_mentions_shipping`.
+    rates = {}
+    if _mentions_shipping(fields):
+        rates = {service: item.rate for service, item in (await zoho_service.get_shipping_catalogue(db)).items()}
     # `current=project` so correcting ONE field of an existing shipment works
     # without resending the other three — the merged row is what has to be
     # consistent, not the payload.

@@ -46,6 +46,61 @@ describe('ShippingCard', () => {
     expect(screen.getByLabelText(/recipient first name/i)).toHaveValue('Jean-Pierre');
   });
 
+  // ALSO FIX 5: a bespoke price (the expected case for air freight, billed
+  // by weight) must not be silently reset to the catalogue rate just because
+  // the operator reopened Edit and corrected the island within the same
+  // service. Seeding `priceEdited` from a price/rate mismatch is what
+  // protects it — this pins that the reset control (only shown once
+  // `priceEdited` is true) appears on open, not only after a fresh keystroke.
+  it('seeds priceEdited from a stored price that differs from the catalogue rate', async () => {
+    server.use(
+      http.get('/api/v1/aito/shipping/services', () =>
+        HttpResponse.json({
+          services: [
+            {
+              key: 'tuamotu',
+              name: 'Livraison Avion Tuamotu',
+              rate: 3200,
+              islands: [{ key: 'rangiroa', label: 'Rangiroa' }],
+            },
+          ],
+          catalogue_resolved: true,
+        }),
+      ),
+    );
+    const bespoke = { ...shipped, shipping_price: 5000 } as AitoProject;
+    render(<ShippingCard project={bespoke} currency="XPF" />);
+    await userEvent.click(screen.getByRole('button', { name: /edit shipping/i }));
+    await screen.findByText('Livraison Avion Tuamotu');
+    expect(screen.getByRole('spinbutton', { name: 'Rate' })).toHaveValue(5000);
+    expect(screen.getByRole('button', { name: /back to the zoho rate/i })).toBeInTheDocument();
+  });
+
+  // The guard half: a price that already matches the catalogue rate must NOT
+  // be treated as an override, or the create-drawer contract (island change
+  // reseeds the price) would silently break for the common case.
+  it('does not seed priceEdited when the stored price matches the catalogue rate', async () => {
+    server.use(
+      http.get('/api/v1/aito/shipping/services', () =>
+        HttpResponse.json({
+          services: [
+            {
+              key: 'tuamotu',
+              name: 'Livraison Avion Tuamotu',
+              rate: 3200,
+              islands: [{ key: 'rangiroa', label: 'Rangiroa' }],
+            },
+          ],
+          catalogue_resolved: true,
+        }),
+      ),
+    );
+    render(<ShippingCard project={shipped} currency="XPF" />);
+    await userEvent.click(screen.getByRole('button', { name: /edit shipping/i }));
+    await screen.findByText('Livraison Avion Tuamotu');
+    expect(screen.queryByRole('button', { name: /back to the zoho rate/i })).not.toBeInTheDocument();
+  });
+
   // The two tests above pass on the fallback alone (a plain capitalisation of
   // 'rangiroa' already reads 'Rangiroa'), so neither one actually proves the
   // catalogue lookup is wired up — deleting the `useQuery` call entirely

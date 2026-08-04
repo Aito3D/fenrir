@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AitoShippingService } from '../../api/client';
+import { islandLabel } from '../../utils/shippingDraft';
 import { inputCls, inputErrorCls, labelCls } from '../formStyles';
 
 export interface IslandComboboxProps {
@@ -29,10 +30,13 @@ export function IslandCombobox({ value, services, onSelect, invalid, onBlur, id 
 
   const fold = (text: string) => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-  const selectedLabel = useMemo(
-    () => services.flatMap((s) => s.islands).find((island) => island.key === value)?.label ?? '',
-    [services, value],
-  );
+  // Shared with the panel's read view, the header pill and the create
+  // drawer (see `islandLabel`'s doc): a services query that has not resolved
+  // yet must not blank a REQUIRED field while `value` is set — this surface
+  // used to fall back to '', which in the panel's edit mode rendered empty
+  // with no error shown even though an island IS chosen. `islandLabel`'s
+  // segment-capitalised degrade keeps something readable on screen instead.
+  const selectedLabel = useMemo(() => islandLabel(value, services), [services, value]);
 
   const groups = useMemo(() => {
     const needle = fold(query.trim());
