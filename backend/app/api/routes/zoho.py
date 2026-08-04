@@ -259,6 +259,21 @@ class ZohoSkippedLine(BaseModel):
     amount: float
 
 
+class ZohoQuoteShipping(BaseModel):
+    """The shipment read back off the estimate's shipping line, in the shape
+    POST /aito/ accepts. None when the quote carries no shipping line, or
+    when it carries one whose island we could not resolve — in that case the
+    project is created without a shipment and the line is preserved
+    untouched by build_line_items' echo rule."""
+
+    island: str
+    service: str
+    first_name: str
+    last_name: str
+    phone: str
+    price: float
+
+
 class ZohoQuotePreview(BaseModel):
     """Everything the Aito import modal renders, with `tasks` already in the
     shape POST /aito/ accepts — what the user sees is what gets created."""
@@ -268,6 +283,7 @@ class ZohoQuotePreview(BaseModel):
     suggested_description: str
     tasks: list[AitoTaskCreate]
     skipped_lines: list[ZohoSkippedLine]
+    shipping: ZohoQuoteShipping | None = None
     existing_project_id: int | None
 
 
