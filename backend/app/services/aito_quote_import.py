@@ -416,6 +416,17 @@ def _build_task(group: list[ParsedLine]) -> dict:
                 continue
             if line is title_line and label == title_key:
                 continue  # became the task title (legacy path)
+            if header_title is not None and label in TITLE_LABELS and value == header_title:
+                # Header path. The app's OWN pre-rework export wrote the title
+                # BOTH as `header_name` and as a title label on every one of
+                # the task's lines (`Info:`/`Projet:`/`Usinage: <title>`). The
+                # header already became the task title, so keeping these would
+                # repeat it in all four descriptions — and the next push would
+                # put `Info: Impression3D: Helice grise` on the customer's PDF,
+                # permanently. Only an EXACT match is dropped: any other
+                # Projet:/Usinage:/Info: text is that line's own wording and
+                # must still survive.
+                continue
             if label == "info":
                 # The service's own description, stored bare — the export
                 # writes the `Info:` prefix back on.

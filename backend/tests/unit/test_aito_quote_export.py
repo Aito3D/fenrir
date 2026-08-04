@@ -84,7 +84,12 @@ def test_title_never_appears_in_any_line_description():
         assert "Helice grise" not in build_description(service, t)
 
 
-def test_impression_description_leads_with_info_then_fields():
+def test_impression_description_closes_with_its_info_row():
+    # Info LAST on impression: only the first physical line of a description
+    # sits behind the `Info:` prefix, so a continuation line is re-read as a
+    # top-level row on import. First-occurrence-wins then hands the field to
+    # whichever row came first — so the canonical rows must come first, or a
+    # note reading "Poids: à définir" would overwrite the real weight.
     t = task(
         impression_description="Support moteur, tolérance serrée",
         material="PETG",
@@ -93,8 +98,23 @@ def test_impression_description_leads_with_info_then_fields():
         impression_color="Gris",
     )
     assert build_description("impression", t) == (
-        "Info: Support moteur, tolérance serrée\nMatériau: PETG\nPoids: 210 gr\nTemps: 13h\nCouleur: Gris"
+        "Matériau: PETG\nPoids: 210 gr\nTemps: 13h\nCouleur: Gris\nInfo: Support moteur, tolérance serrée"
     )
+
+
+def test_a_description_that_looks_like_labels_cannot_outrank_the_real_fields():
+    t = task(
+        impression_description="Poids: à définir\nTemps: à définir",
+        material="PETG",
+        impression_weight_g=210,
+        impression_time_min=780,
+        impression_color="NOIR",
+    )
+    text = build_description("impression", t)
+    # The canonical rows are ahead of every line of the note, so the importer's
+    # first-value-wins gives the fields the real values.
+    assert text.index("Poids: 210 gr") < text.index("Info:")
+    assert text.index("Temps: 13h") < text.index("Info:")
 
 
 def test_impression_description_drops_rows_with_no_value():
@@ -392,6 +412,33 @@ def test_round_trip_preserves_title_and_service_descriptions():
     assert second["usinage_description"] == "Taraudage M4"
     assert second["impression_weight_g"] == 210
     assert second["impression_color"] == "Gris"
+
+
+def test_round_trip_survives_a_description_whose_lines_look_like_labels():
+    """A description is free text: a user may well type "Poids: à définir" in
+    it. Only its first physical line hides behind the `Info:` prefix, so the
+    rest is re-read as top-level rows — and must not be able to overwrite the
+    weight, time or colour the task actually holds."""
+    original = [
+        task(
+            title="Helice grise",
+            impression_cost=1000,
+            impression_quantity=1,
+            impression_weight_g=210,
+            impression_time_min=780,
+            impression_color="NOIR",
+            material="PETG",
+            impression_description="Poids: à définir\nTemps: à définir\nCouleur: peu importe",
+        )
+    ]
+    preview = build_preview(as_estimate(build_line_items(original, [], CATALOGUE)), None, "https://x")
+    imported = preview["tasks"][0]
+    assert imported["impression_weight_g"] == 210
+    assert imported["impression_time_min"] == 780
+    assert imported["impression_color"] == "NOIR"
+    # And nothing the note said vanished.
+    for row in ("Poids: à définir", "Temps: à définir", "Couleur: peu importe"):
+        assert row in imported["impression_description"]
 
 
 def test_round_trip_single_task_keeps_its_title():

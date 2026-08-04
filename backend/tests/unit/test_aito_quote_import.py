@@ -600,6 +600,44 @@ def test_leftover_labels_and_free_text_land_on_their_line_s_service():
     assert "Couleur Noir de face." in desc
 
 
+def test_pre_rework_headed_quote_does_not_repeat_its_title_in_every_description():
+    """The app's OWN pre-rework export, for any project with two or more
+    tasks, wrote the title BOTH as `header_name` and as a title label on every
+    one of the task's lines. The header now supplies the title, so those
+    labels are duplicates: keeping them would put `Info: Impression3D: Helice
+    grise` on the customer's PDF at the very next push."""
+    estimate = _estimate(
+        [
+            _line("P3DSCAN", 5000, description="Info: Helice grise\n*Fichier non cédé*", header_name="Helice grise"),
+            _line("P3DIMP", 2400, description="Projet: Helice grise\nMatériau: PETG", header_name="Helice grise"),
+            _line("U3DIMP", 500, description="Usinage: Helice grise", header_name="Helice grise"),
+        ]
+    )
+    task = build_preview(estimate, None, "https://x")["tasks"][0]
+    assert task["title"] == "Helice grise"
+    assert task["scan_description"] is None
+    assert task["usinage_description"] is None
+    # Only the material — which has no Aito field — survives on impression.
+    assert task["impression_description"] == "Matériau: PETG"
+
+
+def test_a_title_label_that_is_not_the_header_still_survives():
+    """The de-duplication is an EXACT match against the header, so wording a
+    line happens to carry under a title label is preserved, not dropped."""
+    estimate = _estimate(
+        [
+            _line("P3DSCAN", 5000, description="Info: Scanner la pièce", header_name="Helice grise"),
+            _line("P3DIMP", 2400, description="Projet: Autre pièce", header_name="Helice grise"),
+            _line("U3DIMP", 500, description="Usinage: Bride alu", header_name="Helice grise"),
+        ]
+    )
+    task = build_preview(estimate, None, "https://x")["tasks"][0]
+    assert task["title"] == "Helice grise"
+    assert task["scan_description"] == "Scanner la pièce"
+    assert task["impression_description"] == "Impression3D: Autre pièce"
+    assert task["usinage_description"] == "Usinage: Bride alu"
+
+
 def test_quote_without_headers_groups_exactly_as_before():
     # dev-2461 walks scan -> model -> impression: one job, one task. Unchanged.
     lines, _ = parse_lines(load_estimate("dev-2461-three-services"))

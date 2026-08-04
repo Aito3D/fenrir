@@ -124,11 +124,22 @@ def format_time(minutes: int | None) -> str | None:
 
 
 def _rows(service: str, task: ExportTask) -> list[tuple[str, str | None]]:
-    """(label, value) pairs for a service line. Uniform across services: an
-    optional `Info:` row carrying the service's own description leads, and
-    impression keeps its print-parameter rows after it. The task title is
-    deliberately NOWHERE in here — it lives only in the header line."""
-    rows: list[tuple[str, str | None]] = [("Info", description_of(task, service))]
+    """(label, value) pairs for a service line: impression's print-parameter
+    rows, then the optional `Info:` row carrying the service's own
+    description. The other three services have nothing but that Info row. The
+    task title is deliberately NOWHERE in here — it lives only in the header.
+
+    Info comes LAST on impression on purpose, and that ordering is load-
+    bearing. A description is free text that may itself contain a row like
+    ``Poids: à définir``; only its first physical line sits behind the
+    ``Info:`` prefix, so every continuation line is re-read as a top-level row
+    on import. ``parse_description`` gives a label's FIRST occurrence the
+    field, so the canonical rows must precede the block — otherwise a note
+    would silently overwrite the real weight, time or colour, and the quote
+    would not read back unchanged. The pre-rework format put its free text
+    after the canonical rows for exactly this reason.
+    """
+    rows: list[tuple[str, str | None]] = []
     if service == "impression":
         rows += [
             ("Matériau", task.material),
@@ -136,6 +147,7 @@ def _rows(service: str, task: ExportTask) -> list[tuple[str, str | None]]:
             ("Temps", format_time(task.impression_time_min)),
             ("Couleur", task.impression_color),
         ]
+    rows.append(("Info", description_of(task, service)))
     return rows
 
 
