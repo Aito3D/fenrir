@@ -203,7 +203,9 @@ _TITLE_MAX = 200
 
 @dataclass(frozen=True)
 class Catalogue:
-    """The Books item ids the four services map onto, plus the services tax.
+    """The Books item ids the four services map onto, plus the services tax,
+    plus the Books item ids the up-to-five "Livraison Avion" shipping
+    services map onto.
 
     Loaded from the settings table rather than hardcoded so a catalogue change
     in Books does not need a redeploy.
@@ -231,9 +233,18 @@ class Catalogue:
 
     def shipping_item_id(self, service: str) -> str:
         """The Books item for one shipping service. Raises KeyError when the
-        catalogue has not resolved it — the sync worker turns that into
-        "leave the project pending" rather than pushing a quote with its
-        shipping line missing."""
+        catalogue has not resolved it.
+
+        This is a contract the SYNC TASK MUST IMPLEMENT, not existing
+        behaviour: today nothing calls this method and nothing catches the
+        KeyError, so it would propagate raw out of ``build_line_items``. The
+        sync task must catch it and turn it into a RETRYABLE pending state —
+        never the terminal ``quote_sync_state = "error"`` the no-priced-
+        service guards elsewhere in ``aito_quote_sync.py`` use. An unresolved
+        catalogue entry means "not warm yet," not "never will be"; a terminal
+        state here would strand the project permanently even after the cache
+        warms, which is the opposite of what the situation calls for.
+        """
         return self.shipping[service]
 
     def item_ids(self) -> frozenset[str]:
@@ -264,7 +275,8 @@ def impression_rate_quantity(task: ExportTask) -> tuple[float, int]:
 
 def is_foreign(line: dict, catalogue: Catalogue) -> bool:
     """True for a line this app does not own: not a header, and not one of the
-    four AITO service items. Retail items, laser cuts, delivery fees.
+    items ``Catalogue.item_ids()`` claims — the four service items plus up to
+    five shipping items. Retail items, laser cuts, delivery fees.
 
     Ownership is checked two ways, either of which is enough to claim the
     line: the catalogue's item id, or the SKU prefix. The item id check comes
@@ -301,10 +313,24 @@ def build_line_items(
     always, even when it is the only task on the quote. The header is the ONLY
     place the task title is written now, so dropping it for a lone task would
     leave that quote naming its job nowhere and re-import titleless. A task
-    with no priced service emits no line at all, header included. Then every
-    foreign line, echoed as a bare ``line_item_id``, which Books expands back
-    into the untouched original. Omitting a line deletes it, so anything not
-    returned here is gone.
+    with no priced service emits no line at all, header included.
+
+    Then, when ``shipping`` is given, the project's air-freight line: it comes
+    right after the tasks and before any preserved foreign lines, carries no
+    ``header_name`` (the shipment belongs to no task, so no header should
+    claim it), and its description is ``build_shipping_description(shipping)``.
+
+    Then every foreign line, echoed as a bare ``line_item_id``, which Books
+    expands back into the untouched original. Omitting a line deletes it, so
+    anything not returned here is gone. This is also where an EXISTING
+    shipping line the project no longer (or does not yet) describe gets
+    handled: when ``shipping`` is None, a line whose ``item_id`` is one of
+    ``catalogue.shipping.values()`` is echoed by ``line_item_id`` rather than
+    dropped, because omitting it would DELETE it in Books, and ``is_foreign``
+    would not save it — the line is ours by id, so it reads as owned, not
+    foreign. When ``shipping`` is given, that echo is skipped, because the
+    freshly-built shipping line above already represents it and echoing the
+    old one too would leave the quote with two.
 
     A header is ``header_name`` stamped on every one of the task's item lines
     — that is how Books itself stores one (reference: quote DEV26-2506, where

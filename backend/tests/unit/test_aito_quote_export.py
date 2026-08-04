@@ -488,6 +488,34 @@ def test_shipping_description_uses_the_exporters_label_convention():
     assert build_shipping_description(SHIPPING) == ("Nom: Jean-Pierre DUPONT\nTéléphone: +689-89645864\nÎle: Rangiroa")
 
 
+def test_shipping_description_drops_a_row_with_no_value():
+    # An empty phone must not emit a bare "Téléphone:" line — only rows that
+    # have a value are written, same as build_description's canonical rows.
+    no_phone = ExportShipping(
+        service="tuamotu",
+        island_label="Rangiroa",
+        first_name="Jean-Pierre",
+        last_name="DUPONT",
+        phone="",
+        price=3200.0,
+    )
+    assert build_shipping_description(no_phone) == "Nom: Jean-Pierre DUPONT\nÎle: Rangiroa"
+
+
+def test_shipping_description_strips_a_missing_first_name():
+    # The `.strip()` on the joined first/last name exists for exactly this
+    # case: no first name should not leave a stray leading space in "Nom:".
+    no_first_name = ExportShipping(
+        service="tuamotu",
+        island_label="Rangiroa",
+        first_name="",
+        last_name="DUPONT",
+        phone="+689-89645864",
+        price=3200.0,
+    )
+    assert build_shipping_description(no_first_name) == "Nom: DUPONT\nTéléphone: +689-89645864\nÎle: Rangiroa"
+
+
 def test_shipping_ids_are_ours_not_foreign():
     assert SHIPPING_CATALOGUE.item_ids() == frozenset({"S", "M", "I", "U", "SHIP-TU", "SHIP-SO"})
     assert is_foreign({"item_id": "SHIP-TU", "sku": "LIV-TU"}, SHIPPING_CATALOGUE) is False
@@ -502,6 +530,14 @@ def test_shipping_line_comes_after_the_tasks_and_carries_no_header():
     assert ship["quantity"] == 1
     assert ship["tax_id"] == "T"
     assert ship["item_order"] == 2
+
+
+def test_shipping_line_description_is_built_by_build_shipping_description():
+    # The builder and the emitted line are covered separately above but never
+    # joined, so a wiring mistake between them (e.g. hand-rolling the string
+    # instead of calling the builder) would otherwise pass unnoticed.
+    lines = build_line_items([task(scan_cost=5000)], [], SHIPPING_CATALOGUE, shipping=SHIPPING)
+    assert lines[-1]["description"] == build_shipping_description(SHIPPING)
 
 
 def test_shipping_line_precedes_preserved_foreign_lines():

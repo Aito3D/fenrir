@@ -804,17 +804,25 @@ async def test_get_shipping_catalogue_refresh_false_never_touches_the_network(db
 
 @pytest.mark.asyncio
 async def test_get_shipping_catalogue_refresh_false_still_serves_a_warm_cache(db_session, monkeypatch):
+    """Warms the cache, then makes it STALE, so `fresh` is False and the
+    `not fresh` arm is actually exercised. The earlier version of this test
+    warmed the cache and left it fresh, which passes verbatim whether or not
+    `refresh` is honoured — it never exercises the branch it claims to cover.
+    Staling it first the way `test_get_shipping_catalogue_survives_zoho_being_down`
+    does means this fails if refresh=False is ever ignored."""
+
     async def fake_request(db, method, path, **kwargs):
         return {"items": [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200}]}
 
     monkeypatch.setattr(zoho_service, "_request", fake_request)
     await zoho_service.get_shipping_catalogue(db_session)  # warms the cache
+    await set_setting(db_session, "zoho_shipping_catalogue_at", "2000-01-01T00:00:00")  # ...then stales it
 
     calls = []
 
     async def boom(db, method, path, **kwargs):
         calls.append(path)
-        raise AssertionError("refresh=False must not call Books even with a warm cache")
+        raise AssertionError("refresh=False must not call Books even with a stale-but-warm cache")
 
     monkeypatch.setattr(zoho_service, "_request", boom)
     cached = await zoho_service.get_shipping_catalogue(db_session, refresh=False)

@@ -458,8 +458,23 @@ class ZohoService:
         # _create_quote's fast path, which must make ZERO Zoho calls when a
         # project has no priced service. Ownership (Catalogue.item_ids() ->
         # is_foreign) only needs ids already learned, never a fresh rate, so
-        # a cold cache here is correct: a shipping-carrying project simply
-        # waits for a later tick to warm it rather than blocking the push.
+        # a cache read here is correct — refresh=False is deliberate, not a
+        # placeholder for a warm-up this call never performs.
+        #
+        # This is also the ONLY route the sync worker has to the shipping
+        # catalogue, and it never warms it: the cache is warmed exclusively
+        # by the drawer's GET /aito/shipping/services endpoint. In practice
+        # that is fine — a shipping-carrying project implies the drawer was
+        # used to attach it, so the cache is warm by construction, and it
+        # stays warm because the settings row is durable and
+        # merge_shipping_catalogue never forgets an id once learned.
+        #
+        # But a project that gains shipping WITHOUT going through the drawer
+        # (e.g. a direct DB write, or a future entry point) has no
+        # self-healing route back to a warm cache — nothing here will ever
+        # fetch it. The sync task must detect an unresolved service itself
+        # (Catalogue.shipping_item_id raising KeyError) and warm the cache
+        # then, rather than assume this call already did.
         shipping = await self.get_shipping_catalogue(db, refresh=False)
         return Catalogue(
             scan_item_id=await value("zoho_item_scan_id", "66407000006501192"),
