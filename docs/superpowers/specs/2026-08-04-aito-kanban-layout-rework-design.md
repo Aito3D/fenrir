@@ -34,7 +34,7 @@ Removals:
 - The subtitle line (`aito.subtitle`, "Follow each order from quote to finished part") is removed from the page (and its i18n keys deleted from both locales if nothing else uses them).
 - The separate toolbar row disappears; its contents merge into the header row.
 
-Below `lg`, keep the current stacked responsive behavior (title row, then actions, then search) — phones were never the problem.
+Below `lg`, the header stacks (title row, then search, then the controls wrapping in one group) and the page scrolls normally — phones were never the problem.
 
 Button labels: keep text labels at `lg`+ as long as they fit; if a squeeze breakpoint is needed, labels may hide leaving icons (existing icons, `title`/`aria-label` retained). Only introduce this if the one-line row actually overflows at 1024px — YAGNI otherwise.
 
