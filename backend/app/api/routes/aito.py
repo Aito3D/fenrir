@@ -167,20 +167,22 @@ async def _shipping_names(db: AsyncSession) -> dict[str, str]:
     return {service: item.name for service, item in (await zoho_service.get_shipping_catalogue(db)).items()}
 
 
-def _to_response(
-    p: AitoProject, summary: TaskSummary, shipping_names: dict[str, str] | None = None
-) -> AitoProjectResponse:
-    """`summary` is required, never defaulted. The detail panel writes PATCH
-    responses straight into the board cache with setQueryData, replacing the
-    row — so an endpoint that quietly returned zeros would blank a card's
-    badges and nothing would fail. Requiring it makes every call site state
-    its intent.
+def _to_response(p: AitoProject, summary: TaskSummary, shipping_names: dict[str, str]) -> AitoProjectResponse:
+    """`summary` and `shipping_names` are both required, never defaulted. The
+    detail panel writes PATCH (and move / quote-status / restore) responses
+    straight into the board cache with setQueryData, replacing the row — so
+    an endpoint that quietly returned zeros, or an empty shipping_names map,
+    would blank a card's badges — or its shipping service name, on a card
+    that HAS a shipment — and nothing would fail. Requiring both makes every
+    call site state its intent instead of forgetting one silently.
 
     `shipping_names` is resolved ONCE per request by the caller
     (`_shipping_names`), not per row: the catalogue is one cached read and
     every card on the board shares it. This function stays synchronous —
     it cannot await the catalogue itself, or the board list would force one
-    fetch per card."""
+    fetch per card. A caller with genuinely no shipment in play may pass an
+    explicitly-named empty dict, but should prefer resolving it — it costs
+    one cached settings read, and correctness beats the saving."""
     _, lock = evaluate(p.quote_status, p.board_column, summary.pending)
     return AitoProjectResponse(
         id=p.id,
@@ -228,7 +230,7 @@ def _to_response(
         shipping_last_name=p.shipping_last_name,
         shipping_phone=p.shipping_phone,
         shipping_price=p.shipping_price,
-        shipping_service_name=(shipping_names or {}).get(p.shipping_service or ""),
+        shipping_service_name=shipping_names.get(p.shipping_service or ""),
         created_at=p.created_at,
         updated_at=p.updated_at,
     )
@@ -1005,8 +1007,11 @@ async def import_legacy_projects(
     for p in created:
         await db.refresh(p)
     # Imported projects are task-free by construction: the legacy localStorage
-    # board had no concept of tasks.
-    return [_to_response(p, TaskSummary()) for p in created]
+    # board had no concept of tasks. Explicit empty map, not a resolved one:
+    # AitoProjectImportItem carries no shipping fields at all, so no imported
+    # project can have a shipment — an empty map is correct here, not merely
+    # a shortcut.
+    return [_to_response(p, TaskSummary(), {}) for p in created]
 
 
 @router.patch("/{project_id}/move", response_model=AitoProjectResponse)
@@ -1065,7 +1070,7 @@ async def move_project(
         )
     await db.commit()
     await db.refresh(project)
-    return _to_response(project, summary)
+    return _to_response(project, summary, await _shipping_names(db))
 
 
 @router.patch("/{project_id}", response_model=AitoProjectResponse)
@@ -1187,8 +1192,9 @@ async def set_quote_status(
     # _request (a token-refresh write, a settings read) can leave the session
     # needing a rollback — a following _to_response call would then raise
     # PendingRollbackError instead of the intended best-effort
-    # zoho_synced=False response.
-    project_response = _to_response(project, summary)
+    # zoho_synced=False response. Same reasoning covers _shipping_names: it
+    # is itself a DB read, so it has to happen up here too.
+    project_response = _to_response(project, summary, await _shipping_names(db))
 
     zoho_synced = False
     if project.quote_id:
@@ -1252,7 +1258,7 @@ async def restore_project(
     )
     await db.commit()
     await db.refresh(project)
-    return _to_response(project, summary)
+    return _to_response(project, summary, await _shipping_names(db))
 
 
 @router.delete("/{project_id}", status_code=204)

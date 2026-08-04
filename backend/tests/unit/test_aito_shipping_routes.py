@@ -141,3 +141,35 @@ async def test_patch_alone_cannot_leave_a_half_shipment(async_client, resolved_c
     project_id = (await _create(async_client, **SHIPPING)).json()["id"]
     response = await async_client.patch(f"/api/v1/aito/{project_id}", json={"shipping_first_name": ""})
     assert response.status_code == 422
+
+
+async def test_move_response_carries_the_shipping_service_name(async_client, resolved_catalogue):
+    """_to_response requires shipping_names precisely so this cannot regress:
+    the frontend writes the /move response straight into the board cache with
+    setQueryData, replacing the row — an omitted map would silently blank a
+    shipped card's service name on every drag."""
+    shipped = (await _create(async_client, **SHIPPING)).json()
+    other = (await _create(async_client)).json()  # devis order: other(0), shipped(1)
+    response = await async_client.patch(f"/api/v1/aito/{shipped['id']}/move", json={"column": "devis", "position": 0})
+    assert response.status_code == 200
+    assert response.json()["shipping_service_name"] == "Livraison Avion Tuamotu"
+    assert other["id"] != shipped["id"]  # sanity: two distinct projects were involved
+
+
+async def test_quote_status_response_carries_the_shipping_service_name(async_client, resolved_catalogue):
+    """Same regression as the /move test, for the quote-status transition —
+    the frontend writes this response's `project` straight into the board
+    cache too."""
+    project_id = (await _create(async_client, **SHIPPING)).json()["id"]
+    response = await async_client.post(f"/api/v1/aito/{project_id}/quote-status", json={"status": "sent"})
+    assert response.status_code == 200
+    assert response.json()["project"]["shipping_service_name"] == "Livraison Avion Tuamotu"
+
+
+async def test_restore_response_carries_the_shipping_service_name(async_client, resolved_catalogue):
+    """Same regression again, for the restore path."""
+    project_id = (await _create(async_client, **SHIPPING)).json()["id"]
+    await async_client.delete(f"/api/v1/aito/{project_id}")
+    response = await async_client.post(f"/api/v1/aito/{project_id}/restore")
+    assert response.status_code == 200
+    assert response.json()["shipping_service_name"] == "Livraison Avion Tuamotu"
