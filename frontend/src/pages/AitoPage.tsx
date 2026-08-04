@@ -411,11 +411,12 @@ export function AitoPage() {
 
   return (
     // Full-height page so the columns run the height of the screen and each
-    // one scrolls its own cards, instead of every column being as tall as
-    // whichever holds the most. Same shape FileManagerPage uses: a hard height
-    // from `lg` up, a min-height below it, so a narrow screen still scrolls the
-    // page normally rather than squeezing seven columns into a phone.
-    <div className="p-4 md:p-8 flex flex-col gap-6 min-h-[calc(100vh-64px)] lg:h-[calc(100vh-64px)]">
+    // one scrolls its own cards. The offsets mirror the shell exactly
+    // (Layout.tsx): a 56px compact top bar below 1144px, nothing above it —
+    // the old hard-coded 64px matched neither and left a dead band at the
+    // bottom. Below `lg` it stays a min-height so a narrow screen scrolls
+    // the page normally rather than squeezing six columns into a phone.
+    <div className="p-4 md:p-8 md:pb-4 flex flex-col gap-6 min-h-[calc(100dvh-3.5rem)] lg:h-[calc(100dvh-3.5rem)] min-[1144px]:h-dvh">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-rise-lg vt-page-title">
         <div>
@@ -536,7 +537,7 @@ export function AitoPage() {
               scrolling inside itself. */}
           <div
             ref={boardRef}
-            className="flex gap-4 items-stretch overflow-x-auto pb-4 stagger-parents flex-1 min-h-0 scrollbar-hide"
+            className="flex gap-4 items-stretch overflow-x-auto pb-2 stagger-parents flex-1 min-h-0 board-scroll"
           >
             {visibleColumns.map(({ column, projects }) => (
               <div key={column.id} className="animate-rise-lg flex flex-shrink-0">
