@@ -11,7 +11,7 @@ const ROW = {
   project_id: 1,
   position: 0,
   title: 'a',
-  description: null,
+  scan_description: null,
   scan_cost: null,
   modelisation_cost: null,
   usinage_cost: null,
@@ -166,14 +166,14 @@ describe('useProjectTasks', () => {
     }
 
     let serverTitle = ROW.title;
-    let serverDescription: string | null = ROW.description;
+    let serverDescription: string | null = ROW.scan_description;
     vi.mocked(api.getAitoTasks).mockImplementation(async () => [
-      { ...ROW, title: serverTitle, description: serverDescription },
+      { ...ROW, title: serverTitle, scan_description: serverDescription },
     ]);
     updateAitoTask.mockImplementation(async (_id, patch: Record<string, unknown>) => {
       if ('title' in patch) serverTitle = patch.title as string;
-      if ('description' in patch) serverDescription = patch.description as string | null;
-      return { ...ROW, title: serverTitle, description: serverDescription };
+      if ('scan_description' in patch) serverDescription = patch.scan_description as string | null;
+      return { ...ROW, title: serverTitle, scan_description: serverDescription };
     });
 
     const view = renderHook(() => useProjectTasks(1), { wrapper: isolatedWrapper });
@@ -212,7 +212,7 @@ describe('useProjectTasks', () => {
     await act(async () => {
       await capturedClient!.refetchQueries({ queryKey: ['aito-tasks', 1] });
     });
-    await waitFor(() => expect(view.result.current.tasks[0].description).toBe('synced'));
+    await waitFor(() => expect(view.result.current.tasks[0].scanDescription).toBe('synced'));
     expect(view.result.current.tasks[0].title).toBe('draft');
   });
 
@@ -253,7 +253,7 @@ describe('useProjectTasks', () => {
     let fetchCount = 0;
     vi.mocked(api.getAitoTasks).mockImplementation(async () => {
       fetchCount += 1;
-      return [{ ...ROW, description: `fetch-${fetchCount}` }];
+      return [{ ...ROW, scan_description: `fetch-${fetchCount}` }];
     });
 
     const view = renderHook(() => useProjectTasks(1), { wrapper: isolatedWrapper });

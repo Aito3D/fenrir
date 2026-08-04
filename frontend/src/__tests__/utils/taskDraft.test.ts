@@ -150,7 +150,6 @@ describe('taskDraftFromAitoTask / taskDraftToTaskCreate', () => {
     project_id: 3,
     position: 0,
     title: 'Bracket',
-    description: 'Custom bracket',
     scan_description: 'Scanner la pièce',
     modelisation_description: null,
     impression_description: 'PETG noir',
@@ -174,7 +173,6 @@ describe('taskDraftFromAitoTask / taskDraftToTaskCreate', () => {
     const wireBack = taskDraftToTaskCreate(taskDraftFromAitoTask(row));
     expect(wireBack).toEqual({
       title: row.title,
-      description: row.description,
       scan_description: row.scan_description,
       modelisation_description: row.modelisation_description,
       impression_description: row.impression_description,

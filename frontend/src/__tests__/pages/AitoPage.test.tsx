@@ -275,7 +275,6 @@ describe('AitoPage (backend board)', () => {
         project_id: 12,
         position: 0,
         title: null,
-        description: null,
         scan_cost: 500,
         modelisation_cost: null,
         usinage_cost: null,
@@ -1160,7 +1159,6 @@ describe('AitoPage (backend board)', () => {
         tasks: [
           {
             title: '',
-            description: '',
             scan_cost: null,
             modelisation_cost: null,
             usinage_cost: null,

@@ -29,7 +29,6 @@ export interface TaskDraft {
    *  stable, collision-free identity on its own. */
   uid: string;
   title: string;
-  description: string;
   /** Optional free text per service — the quote line's Info: row. '' = none. */
   scanDescription: string;
   modelisationDescription: string;
@@ -70,7 +69,6 @@ export function emptyTaskDraft(): TaskDraft {
     id: null,
     uid: makeDraftUid(),
     title: '',
-    description: '',
     scanDescription: '',
     modelisationDescription: '',
     impressionDescription: '',
@@ -154,7 +152,6 @@ export function taskDraftFromAitoTask(task: AitoTask): TaskDraft {
     // a draft.
     uid: `server-${task.id}`,
     title: task.title ?? '',
-    description: task.description ?? '',
     scanDescription: task.scan_description ?? '',
     modelisationDescription: task.modelisation_description ?? '',
     impressionDescription: task.impression_description ?? '',
@@ -182,16 +179,15 @@ export function taskDraftFromAitoTask(task: AitoTask): TaskDraft {
 }
 
 /** Client shape -> wire shape, matching the conventions the create modal
- *  established: `title`, `description` and `impression_color` collapse blank
- *  to `null` rather than `''`; every numeric field passes straight through so
- *  a `0` cost stays `0` (free) rather than becoming `null` (disabled). This is
+ *  established: `title` and `impression_color` collapse blank to `null`
+ *  rather than `''`; every numeric field passes straight through so a `0`
+ *  cost stays `0` (free) rather than becoming `null` (disabled). This is
  *  the one place both the create modal (POST) and the detail panel (diffed
  *  into a PATCH) build the wire shape, so the two flows cannot drift apart —
  *  see the design doc finding this fixes. */
 export function taskDraftToTaskCreate(t: TaskDraft): AitoTaskCreate {
   return {
     title: t.title.trim() || null,
-    description: t.description.trim() || null,
     scan_description: t.scanDescription.trim() || null,
     modelisation_description: t.modelisationDescription.trim() || null,
     impression_description: t.impressionDescription.trim() || null,

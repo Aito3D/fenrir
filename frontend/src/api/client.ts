@@ -3599,7 +3599,6 @@ export interface AitoTask {
   project_id: number;
   position: number;
   title: string | null;
-  description: string | null;
   scan_description: string | null;
   modelisation_description: string | null;
   impression_description: string | null;

@@ -130,7 +130,6 @@ const mockTask: AitoTask = {
   project_id: 12,
   position: 0,
   title: 'Bracket mount',
-  description: 'Print in PA6-CF',
   scan_description: 'Print in PA6-CF',
   scan_cost: 500,
   modelisation_cost: null,
@@ -719,7 +718,6 @@ describe('ProjectDetailPanel tasks', () => {
           ...mockTask,
           id: 202,
           title: null,
-          description: null,
           scan_cost: null,
         });
       }),
@@ -734,7 +732,6 @@ describe('ProjectDetailPanel tasks', () => {
     await waitFor(() => expect(posted).toBe(true));
     expect(capturedBody).toEqual({
       title: null,
-      description: null,
       scan_description: null,
       modelisation_description: null,
       impression_description: null,
@@ -1510,7 +1507,6 @@ describe('diffTaskDraft', () => {
     const after: typeof before = {
       ...before,
       title: 'T',
-      description: 'D',
       scanDescription: 'SD',
       modelisationDescription: 'MD',
       impressionDescription: 'ID',

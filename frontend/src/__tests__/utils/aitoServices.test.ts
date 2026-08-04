@@ -9,7 +9,6 @@ function task(overrides: Partial<TaskDraft> = {}): TaskDraft {
     id: null,
     uid: 'u1',
     title: '',
-    description: '',
     scanCost: null,
     modelisationCost: null,
     impressionCost: null,

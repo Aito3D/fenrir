@@ -389,7 +389,6 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
     expect(body.tasks).toEqual([
       {
         title: null,
-        description: null,
         scan_description: null,
         modelisation_description: null,
         impression_description: null,

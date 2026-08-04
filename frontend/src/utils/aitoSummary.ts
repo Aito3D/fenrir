@@ -11,15 +11,18 @@ function enabledServices(task: TaskDraft): string[] {
   ].filter((s): s is ServiceId => s !== null);
 }
 
-/** Stable fingerprint of what the AI summary describes: titles, descriptions,
- *  enabled services, and the visible impression parameters. Deliberately
- *  excludes uid/id (identity, not content) and prices (the summary never
- *  mentions money). */
+/** Stable fingerprint of what the AI summary describes: titles, per-service
+ *  descriptions, enabled services, and the visible impression parameters.
+ *  Deliberately excludes uid/id (identity, not content) and prices (the
+ *  summary never mentions money). */
 export function tasksSignature(tasks: TaskDraft[]): string {
   return JSON.stringify(
     tasks.map((t) => [
       t.title.trim(),
-      t.description.trim(),
+      t.scanDescription.trim(),
+      t.modelisationDescription.trim(),
+      t.impressionDescription.trim(),
+      t.usinageDescription.trim(),
       enabledServices(t),
       t.impressionCost !== null
         ? [t.impression.color, t.impression.weightG, t.impression.timeMin, t.impression.quantity]

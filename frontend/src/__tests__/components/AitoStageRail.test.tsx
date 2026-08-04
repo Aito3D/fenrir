@@ -6,7 +6,7 @@ import type { TaskDraft } from '../../utils/taskDraft';
 
 function task(overrides: Partial<TaskDraft> = {}): TaskDraft {
   return {
-    id: null, uid: 'u1', title: '', description: '',
+    id: null, uid: 'u1', title: '',
     scanCost: null, modelisationCost: null, impressionCost: null, usinageCost: null,
     done: { scan: false, modelisation: false, impression: false, usinage: false },
     ...overrides,

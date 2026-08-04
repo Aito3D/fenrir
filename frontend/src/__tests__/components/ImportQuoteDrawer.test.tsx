@@ -21,7 +21,6 @@ const summary = {
 
 const emptyTask = {
   title: '',
-  description: '',
   scan_cost: null,
   modelisation_cost: null,
   usinage_cost: null,

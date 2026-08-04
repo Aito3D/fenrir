@@ -73,7 +73,6 @@ function makeTask(overrides: Partial<AitoTask> = {}): AitoTask {
     project_id: 1,
     position: 0,
     title: null,
-    description: null,
     scan_cost: null,
     modelisation_cost: null,
     usinage_cost: null,
