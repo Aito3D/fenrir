@@ -12,20 +12,22 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "mistralai/mistral-small"
 TIMEOUT_S = 8.0
 
-# Wire-field -> French service name, in the board's canonical order. Keys match
-# AitoTaskCreate; a service is enabled when its cost is not None (0 = free but
-# real — same None-vs-0 rule as everywhere else on the board).
+# Wire-field -> description field -> French service name, in the board's
+# canonical order. Keys match AitoTaskCreate; a service is enabled when its
+# cost is not None (0 = free but real — same None-vs-0 rule as everywhere
+# else on the board).
 _SERVICE_FIELDS = (
-    ("scan_cost", "scan 3D"),
-    ("modelisation_cost", "modélisation 3D"),
-    ("impression_cost", "impression 3D"),
-    ("usinage_cost", "usinage"),
+    ("scan_cost", "scan_description", "scan 3D"),
+    ("modelisation_cost", "modelisation_description", "modélisation 3D"),
+    ("impression_cost", "impression_description", "impression 3D"),
+    ("usinage_cost", "usinage_description", "usinage"),
 )
 
 _SYSTEM_PROMPT = (
     "Tu rédiges des résumés de projets pour un atelier de fabrication 3D en français. "
     "À partir de la liste des tâches, écris 1 à 2 phrases courtes et factuelles décrivant "
-    "le travail à réaliser. Pas de prix, pas de formule de politesse, pas de liste à puces : "
+    "le travail à réaliser. Écris tous les nombres en chiffres (« 3 pièces », « 2 supports »), "
+    "jamais en toutes lettres. Pas de prix, pas de formule de politesse, pas de liste à puces : "
     "uniquement le résumé."
 )
 
@@ -45,7 +47,7 @@ def _task_lines(tasks: list[dict]) -> list[str]:
         # Bounds what we ship to the paid API — a pathological draft must not
         # blow up the prompt (and the bill).
         title = ((task.get("title") or "").strip() or f"Tâche {index + 1}")[:500]
-        services = [name for field, name in _SERVICE_FIELDS if task.get(field) is not None]
+        services = [name for cost_field, _, name in _SERVICE_FIELDS if task.get(cost_field) is not None]
         parts = [f"{title}: {', '.join(services) if services else 'aucun service'}"]
         if task.get("impression_cost") is not None:
             details = []
@@ -57,10 +59,14 @@ def _task_lines(tasks: list[dict]) -> list[str]:
                 details.append(f"x{task['impression_quantity']}")
             if details:
                 parts.append(f"({', '.join(details)})")
-        # Same bound as title — descriptions are free text with no schema cap.
-        description = (task.get("description") or "").strip()[:500]
-        if description:
-            parts.append(f"— {description}")
+        # Per-service free text, bounded like the title — these are the only
+        # prose fields left now the task-level description is gone.
+        for cost_field, description_field, _ in _SERVICE_FIELDS:
+            if task.get(cost_field) is None:
+                continue
+            description = (task.get(description_field) or "").strip()[:500]
+            if description:
+                parts.append(f"— {description}")
         lines.append(" ".join(parts))
     return lines
 
