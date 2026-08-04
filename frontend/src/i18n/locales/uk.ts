@@ -281,7 +281,7 @@ export default {
     shippingRateEdited: "змінено",
     shippingRateReset: "Повернутися до тарифу Zoho",
     shippingNoRate: "Немає тарифу від Zoho — введіть його",
-    shippingUnavailable: "Служби доставки недоступні, поки немає зв'язку з Zoho",
+    shippingUnavailable: "Служби доставки недоступні, поки немає зв’язку з Zoho",
     ruleShippingPending: "Доставка заповнюється",
     ruleShippingOk: "Доставка на {{island}} · {{recipient}}",
     ruleShippingMissingIsland: "Доставка: не вказано острів",
