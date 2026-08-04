@@ -28,8 +28,9 @@ import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutati
 import { useProjectTasks } from '../../hooks/useProjectTasks';
 import { api, type AitoEvent, type AitoProject, type AitoProjectUpdate } from '../../api/client';
 import { Money } from '../calculator/shared';
+import { ageAnchor, agingColorCls } from '../../utils/aitoAging';
 import { copyTextToClipboard } from '../../utils/clipboard';
-import { parseUTCDate } from '../../utils/date';
+import { elapsedDays, parseUTCDate } from '../../utils/date';
 import { formatMoney } from '../../utils/pricing';
 import { applyDescription, applySyncState } from '../../utils/aitoOptimistic';
 import { taskDraftToTaskCreate } from '../../utils/taskDraft';
@@ -419,6 +420,19 @@ function RecordCard({ project, latestEvent }: { project: AitoProject; latestEven
   const full = (d: Date | null) =>
     d ? d.toLocaleString(i18n.language, { dateStyle: 'short', timeStyle: 'short' }) : undefined;
 
+  // The echo attaches to whichever row owns the anchor, never to a date it is
+  // not measuring: a job accepted a fortnight after it was created must not
+  // show "(12 d)" beside its creation date.
+  const age = ageAnchor(project);
+  const days = elapsedDays(age.raw);
+  const echo =
+    days === null ? null : (
+      <span data-testid="record-age" className={agingColorCls(project, age.at)}>
+        {' '}
+        ({t('aito.ageDaysShort', { days })})
+      </span>
+    );
+
   return (
     <PanelCard title={t('aito.recordLabel')}>
       {/* Same shape and type as the Quote card above — label left, value
@@ -433,9 +447,23 @@ function RecordCard({ project, latestEvent }: { project: AitoProject; latestEven
             <dd className="text-right min-w-0 truncate text-white">{project.quote_salesperson}</dd>
           </>
         )}
+        {age.anchor === 'accepted' && (
+          <>
+            <dt className="text-bambu-gray">{t('aito.ageAnchorAccepted')}</dt>
+            <dd
+              data-testid="record-accepted"
+              title={full(age.at)}
+              className="text-right min-w-0 truncate text-white"
+            >
+              {short(age.at)}
+              {echo}
+            </dd>
+          </>
+        )}
         <dt className="text-bambu-gray">{t('aito.createdLabel')}</dt>
         <dd data-testid="record-created" title={full(created)} className="text-right min-w-0 truncate text-white">
           {short(created)} · {project.created_by ?? t('aito.actorUnknown')}
+          {age.anchor === 'created' && echo}
         </dd>
         <dt className="text-bambu-gray">{t('aito.lastActivity')}</dt>
         <dd data-testid="record-activity" title={full(activityAt)} className="text-right min-w-0 truncate text-white">

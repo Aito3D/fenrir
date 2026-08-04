@@ -426,20 +426,32 @@ export function formatRelativeTime(
 }
 
 /**
- * Day-granularity elapsed time: "Today", "Yesterday", "10 days ago",
- * scaling to months/years. Never falls back to an absolute date —
- * callers wanting exact timestamps should put them in a tooltip.
- * Calendar-day based (local midnights), so 23:59 yesterday is "Yesterday"
- * even 10 minutes later.
+ * Whole calendar days between a stamp and today, using local midnights, so
+ * 23:59 yesterday is 1 day even ten minutes later. Future stamps clamp to 0.
+ * Null for a missing or unparseable stamp — `parseUTCDate` hands back an
+ * Invalid Date for junk, which is truthy, so the NaN check is load-bearing.
+ *
+ * The number behind `formatElapsedTime`'s words, exported so a surface that
+ * needs the digits ("12 d") and a surface that needs the phrase ("12 days
+ * ago") can never disagree about the count.
  */
-export function formatElapsedTime(dateStr: string | null, t?: TranslateFunction): string {
+export function elapsedDays(dateStr: string | null): number | null {
   const date = parseUTCDate(dateStr);
-  if (!date) return t?.('time.unknown') ?? '-';
+  if (!date || Number.isNaN(date.getTime())) return null;
 
   const todayMidnight = parseLocalDateKey(localDateKey(new Date()));
   const dateMidnight = parseLocalDateKey(localDateKey(date));
-  // Future dates (negative diff) clamp to 0, i.e. "Today".
-  const days = Math.max(0, Math.round((todayMidnight.getTime() - dateMidnight.getTime()) / 86400000));
+  return Math.max(0, Math.round((todayMidnight.getTime() - dateMidnight.getTime()) / 86400000));
+}
+
+/**
+ * Day-granularity elapsed time: "Today", "Yesterday", "10 days ago",
+ * scaling to months/years. Never falls back to an absolute date —
+ * callers wanting exact timestamps should put them in a tooltip.
+ */
+export function formatElapsedTime(dateStr: string | null, t?: TranslateFunction): string {
+  const days = elapsedDays(dateStr);
+  if (days === null) return t?.('time.unknown') ?? '-';
 
   if (days === 0) return t?.('time.today') ?? 'Today';
   if (days === 1) return t?.('time.yesterday') ?? 'Yesterday';

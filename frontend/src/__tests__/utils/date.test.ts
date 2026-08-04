@@ -17,6 +17,7 @@ import {
   formatDuration,
   formatRelativeTime,
   formatElapsedTime,
+  elapsedDays,
   localDateKey,
 } from '../../utils/date';
 
@@ -563,5 +564,24 @@ describe('localDateKey (#1446 — Print Activity heatmap bucketing)', () => {
     // The exact local date depends on the CI runner's tz, but the result
     // must always be a well-formed YYYY-MM-DD (10 chars, two dashes).
     expect(key).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe('elapsedDays', () => {
+  const stamp = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 19);
+
+  it('counts whole calendar days back to the stamp', () => {
+    expect(elapsedDays(stamp(0))).toBe(0);
+    expect(elapsedDays(stamp(12))).toBeGreaterThanOrEqual(11);
+    expect(elapsedDays(stamp(12))).toBeLessThanOrEqual(13);
+  });
+
+  it('clamps a future stamp to zero rather than going negative', () => {
+    expect(elapsedDays(stamp(-5))).toBe(0);
+  });
+
+  it('returns null for a missing or unparseable stamp', () => {
+    expect(elapsedDays(null)).toBeNull();
+    expect(elapsedDays('not-a-date')).toBeNull();
   });
 });

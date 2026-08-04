@@ -2152,3 +2152,24 @@ describe('ProjectDetailPanel age stat', () => {
     expect(screen.getByTestId('panel-age-value')).toBeInTheDocument();
   });
 });
+
+describe('ProjectDetailPanel record card age echo', () => {
+  it('echoes the day count on the Created row for a created-anchor project', () => {
+    show({ created_at: daysAgo(12) });
+    const echo = within(screen.getByTestId('record-created')).getByTestId('record-age');
+    expect(echo).toHaveClass('text-orange-400');
+    expect(echo).toHaveTextContent(/\(\d+ ?[a-zA-Zд日天.]+\)/);
+    expect(screen.queryByTestId('record-accepted')).not.toBeInTheDocument();
+  });
+
+  it('gives an accepted project its own row and puts the echo there instead', () => {
+    show({ created_at: daysAgo(40), quote_status: 'accepted', quote_accepted_at: daysAgo(12) });
+    expect(within(screen.getByTestId('record-accepted')).getByTestId('record-age')).toHaveClass('text-orange-400');
+    expect(within(screen.getByTestId('record-created')).queryByTestId('record-age')).not.toBeInTheDocument();
+  });
+
+  it('omits the echo entirely when the anchor date is unparseable', () => {
+    show({ created_at: 'not-a-date' });
+    expect(screen.queryByTestId('record-age')).not.toBeInTheDocument();
+  });
+});
