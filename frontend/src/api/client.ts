@@ -3586,6 +3586,16 @@ export interface AitoProject {
    *  (Finish <-> Done only). Derived server-side by the board rule engine —
    *  the frontend never recomputes a column or a lock, it only renders these. */
   move_lock: 'quote' | 'waiting' | 'declined' | 'steps' | null;
+  /** Optional air freight. `shipping_island === null` IS "no shipping" — read
+   *  that field and nothing else. */
+  shipping_island: string | null;
+  shipping_service: string | null;
+  shipping_first_name: string | null;
+  shipping_last_name: string | null;
+  shipping_phone: string | null;
+  shipping_price: number | null;
+  /** The Books item's display name; null when the catalogue never resolved. */
+  shipping_service_name: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -3597,6 +3607,32 @@ export interface AitoProjectUpdate {
   client_phone?: string | null;
   client_email?: string | null;
   client_is_company?: boolean | null;
+  shipping_island?: string | null;
+  shipping_first_name?: string | null;
+  shipping_last_name?: string | null;
+  shipping_phone?: string | null;
+  shipping_price?: number | null;
+}
+
+export interface AitoShippingIsland {
+  key: string;
+  label: string;
+}
+
+export interface AitoShippingService {
+  key: string;
+  name: string;
+  /** null when this item was never matched in Books — the form then requires
+   *  a hand-typed price instead of pre-filling one. */
+  rate: number | null;
+  islands: AitoShippingIsland[];
+}
+
+export interface AitoShippingServices {
+  services: AitoShippingService[];
+  /** false when Books has never been reachable. The islands are served
+   *  regardless; only the rates need Zoho. */
+  catalogue_resolved: boolean;
 }
 
 export interface AitoTask {
@@ -6489,6 +6525,7 @@ export const api = {
 
   // Aito kanban board
   getAitoProjects: () => request<AitoProject[]>('/aito/'),
+  getAitoShippingServices: () => request<AitoShippingServices>('/aito/shipping/services'),
   getAitoEvents: (
     projectId: number,
     params: { depth: AitoHistoryDepth; cursor?: AitoEventCursor; limit?: number },
@@ -6523,6 +6560,11 @@ export const api = {
     quote_url?: string | null;
     quote_salesperson?: string | null;
     quote_status?: string | null;
+    shipping_island?: string | null;
+    shipping_first_name?: string | null;
+    shipping_last_name?: string | null;
+    shipping_phone?: string | null;
+    shipping_price?: number | null;
   }) =>
     request<AitoProject>('/aito/', {
       method: 'POST',
