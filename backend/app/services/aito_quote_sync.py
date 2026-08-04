@@ -113,7 +113,10 @@ async def load_export_tasks(db: AsyncSession, project_id: int) -> list[ExportTas
     return [
         ExportTask(
             title=row.title,
-            description=row.description,
+            scan_description=row.scan_description,
+            modelisation_description=row.modelisation_description,
+            impression_description=row.impression_description,
+            usinage_description=row.usinage_description,
             scan_cost=row.scan_cost,
             modelisation_cost=row.modelisation_cost,
             usinage_cost=row.usinage_cost,

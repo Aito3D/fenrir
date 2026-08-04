@@ -20,7 +20,6 @@ def task(**overrides) -> ExportTask:
     """An ExportTask with everything off, overridden per test."""
     base = {
         "title": "Helice grise",
-        "description": None,
         "scan_cost": None,
         "modelisation_cost": None,
         "usinage_cost": None,
@@ -63,39 +62,55 @@ def test_format_time_round_trips_through_the_importer():
 
 
 def test_scan_description_is_the_catalogue_template():
-    assert build_description("scan", task(), include_free_text=False) == "Info: Helice grise\n*Fichier non cédé*"
+    t = task(scan_description="Pièce fissurée à re-scanner")
+    assert build_description("scan", t) == "Info: Pièce fissurée à re-scanner\n*Fichier non cédé*"
+
+
+def test_no_description_emits_no_info_row():
+    # No description -> no bare "Info:" row; scan/model still carry the boilerplate.
+    assert build_description("scan", task()) == "*Fichier non cédé*"
+    assert build_description("usinage", task()) == ""
+
+
+def test_title_never_appears_in_any_line_description():
+    t = task(
+        title="Helice grise",
+        material="PETG",
+        impression_weight_g=210,
+        impression_time_min=780,
+        impression_color="Gris",
+    )
+    for service in SERVICES:
+        assert "Helice grise" not in build_description(service, t)
+
+
+def test_impression_description_leads_with_info_then_fields():
+    t = task(
+        impression_description="Support moteur, tolérance serrée",
+        material="PETG",
+        impression_weight_g=210,
+        impression_time_min=780,
+        impression_color="Gris",
+    )
+    assert build_description("impression", t) == (
+        "Info: Support moteur, tolérance serrée\nMatériau: PETG\nPoids: 210 gr\nTemps: 13h\nCouleur: Gris"
+    )
 
 
 def test_impression_description_drops_rows_with_no_value():
-    text = build_description(
-        "impression",
-        task(impression_weight_g=210, impression_time_min=780),
-        include_free_text=False,
-    )
-    assert text == "Projet: Helice grise\nPoids: 210 gr\nTemps: 13h"
+    text = build_description("impression", task(impression_weight_g=210, impression_time_min=780))
+    assert text == "Poids: 210 gr\nTemps: 13h"
+    assert "Info:" not in text
     assert "Matériau:" not in text
-    assert "Couleur:" not in text
 
 
-def test_impression_description_full():
-    text = build_description(
-        "impression",
-        task(material="PETG", impression_weight_g=210, impression_time_min=780, impression_color="Gris"),
-        include_free_text=False,
-    )
-    assert text == "Projet: Helice grise\nMatériau: PETG\nPoids: 210 gr\nTemps: 13h\nCouleur: Gris"
-
-
-def test_free_text_is_appended_only_when_asked():
-    t = task(description="Livrer avant vendredi")
-    assert build_description("usinage", t, include_free_text=False) == "Usinage: Helice grise"
-    assert build_description("usinage", t, include_free_text=True) == ("Usinage: Helice grise\nLivrer avant vendredi")
+def test_usinage_description_is_its_info_row():
+    assert build_description("usinage", task(usinage_description="Percer 4 trous M3")) == "Info: Percer 4 trous M3"
 
 
 def test_placeholders_are_never_emitted():
-    text = build_description("impression", task(title=None), include_free_text=False)
+    text = build_description("impression", task(title=None))
     assert "[" not in text
-    assert "Projet:" not in text
 
 
 def test_cost_of_treats_zero_as_enabled_and_free():
@@ -133,16 +148,28 @@ CATALOGUE = Catalogue(
 )
 
 
-def test_single_task_gets_no_header():
-    lines = build_line_items([task(scan_cost=5000)], [], CATALOGUE)
-    assert [line.get("line_item_category") for line in lines] == [None]
-    assert "header_name" not in lines[0]
+def test_single_task_gets_a_header_too():
+    # The title lives ONLY in the header now, so even the only task on the
+    # quote carries one — otherwise a single-task quote names its job nowhere.
+    lines = build_line_items([task(title="Helice grise", scan_cost=5000)], [], CATALOGUE)
+    assert len(lines) == 1
+    assert lines[0]["header_name"] == "Helice grise"
     assert lines[0]["item_id"] == "ITEM_SCAN"
     assert lines[0]["rate"] == 5000
+    assert lines[0]["item_order"] == 1
+
+
+def test_blank_title_emits_no_header():
+    lines = build_line_items([task(title="   ", scan_cost=5000)], [], CATALOGUE)
+    assert "header_name" not in lines[0]
+
+
+def test_a_line_carries_the_catalogue_defaults():
+    lines = build_line_items([task(scan_cost=5000)], [], CATALOGUE)
+    assert [line.get("line_item_category") for line in lines] == [None]
     assert lines[0]["quantity"] == 1
     assert lines[0]["tax_id"] == "TAX"
     assert lines[0]["unit"] == "Projet"
-    assert lines[0]["item_order"] == 1
 
 
 def test_multiple_tasks_get_headers_named_after_them():
@@ -175,14 +202,14 @@ def test_zero_cost_is_a_line_but_none_is_not():
     assert lines[0]["rate"] == 0
 
 
-def test_free_text_lands_on_the_first_service_line_only():
+def test_each_service_line_carries_only_its_own_description():
     lines = build_line_items(
-        [task(description="Note interne", scan_cost=1, impression_cost=2)],
+        [task(scan_description="A scanner", impression_description="A imprimer", scan_cost=1, impression_cost=2)],
         [],
         CATALOGUE,
     )
-    assert "Note interne" in lines[0]["description"]
-    assert "Note interne" not in lines[1]["description"]
+    assert lines[0]["description"] == "Info: A scanner\n*Fichier non cédé*"
+    assert lines[1]["description"] == "Info: A imprimer"
 
 
 def test_impression_rate_is_the_total_divided_by_quantity():
@@ -208,7 +235,8 @@ def test_foreign_lines_are_preserved_by_id_after_the_aito_block():
 def test_a_task_with_no_service_produces_nothing_not_even_a_header():
     lines = build_line_items([task(title="Vide"), task(title="Reelle", scan_cost=1)], [], CATALOGUE)
     assert len(lines) == 1
-    assert "header_name" not in lines[0]
+    # The serviceless task contributes nothing at all; the survivor keeps its own.
+    assert lines[0]["header_name"] == "Reelle"
     assert lines[0]["item_id"] == "ITEM_SCAN"
 
 
@@ -306,7 +334,7 @@ def test_round_trip_preserves_task_boundaries_and_fields():
         task(title="Helice grise", scan_cost=5000, modelisation_cost=3000),
         task(
             title="Support moteur",
-            description="Livrer avant vendredi",
+            impression_description="Livrer avant vendredi",
             impression_cost=2400,
             impression_quantity=2,
             impression_weight_g=210,
@@ -328,7 +356,49 @@ def test_round_trip_preserves_task_boundaries_and_fields():
     assert second["impression_weight_g"] == 210
     assert second["impression_time_min"] == 150
     assert second["impression_color"] == "Gris"
-    assert "Livrer avant vendredi" in (second["description"] or "")
+    # An Aito task has no material field (the importer cannot map a bare type
+    # back onto a brand-prefixed inventory row), so the Matériau row is
+    # preserved as text under the service that priced it — as it always was.
+    assert second["impression_description"] == "Livrer avant vendredi\nMatériau: PETG"
+
+
+def test_round_trip_preserves_title_and_service_descriptions():
+    original = [
+        task(title="Helice grise", scan_cost=5000, scan_description="Scanner l'ancienne pièce", modelisation_cost=3000),
+        task(
+            title="Support moteur",
+            impression_cost=2400,
+            impression_quantity=2,
+            impression_weight_g=210,
+            impression_time_min=150,
+            impression_color="Gris",
+            material="PETG",
+            impression_description="Livrer avant vendredi",
+            usinage_cost=500,
+            usinage_description="Taraudage M4",
+        ),
+    ]
+    preview = build_preview(as_estimate(build_line_items(original, [], CATALOGUE)), None, "https://x")
+
+    assert preview["skipped_lines"] == []
+    first, second = preview["tasks"]
+    assert first["title"] == "Helice grise"
+    assert first["scan_description"] == "Scanner l'ancienne pièce"
+    assert first["modelisation_description"] is None
+    assert second["title"] == "Support moteur"
+    # Matériau tags along: it has no field to be consumed into, so it is
+    # preserved on the description of the line that carried it.
+    assert second["impression_description"] == "Livrer avant vendredi\nMatériau: PETG"
+    assert second["usinage_description"] == "Taraudage M4"
+    assert second["impression_weight_g"] == 210
+    assert second["impression_color"] == "Gris"
+
+
+def test_round_trip_single_task_keeps_its_title():
+    # Only possible because the single task now exports a header.
+    original = [task(title="Helice grise", scan_cost=5000)]
+    preview = build_preview(as_estimate(build_line_items(original, [], CATALOGUE)), None, "https://x")
+    assert preview["tasks"][0]["title"] == "Helice grise"
 
 
 def test_round_trip_keeps_rising_rank_tasks_apart():

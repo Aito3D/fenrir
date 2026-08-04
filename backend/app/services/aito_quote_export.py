@@ -38,7 +38,6 @@ class ExportTask:
     """
 
     title: str | None
-    description: str | None
     scan_cost: float | None
     modelisation_cost: float | None
     usinage_cost: float | None
@@ -53,6 +52,13 @@ class ExportTask:
     # the same: a literal "0%" would put a pointless discount column on the
     # PDF. Impression only; the other services have no discount concept.
     impression_discount_pct: float | None = None
+    # Optional per-service free text, emitted as that line's leading `Info:`
+    # row. None = no Info row at all. Defaults keep older call sites and test
+    # helpers valid while the fields roll out.
+    scan_description: str | None = None
+    modelisation_description: str | None = None
+    impression_description: str | None = None
+    usinage_description: str | None = None
 
 
 def cost_of(task: ExportTask, service: str) -> float | None:
@@ -63,6 +69,16 @@ def cost_of(task: ExportTask, service: str) -> float | None:
         "modelisation": task.modelisation_cost,
         "impression": task.impression_cost,
         "usinage": task.usinage_cost,
+    }[service]
+
+
+def description_of(task: ExportTask, service: str) -> str | None:
+    """The task's free text for one service — the line's `Info:` row."""
+    return {
+        "scan": task.scan_description,
+        "modelisation": task.modelisation_description,
+        "impression": task.impression_description,
+        "usinage": task.usinage_description,
     }[service]
 
 
@@ -108,34 +124,34 @@ def format_time(minutes: int | None) -> str | None:
 
 
 def _rows(service: str, task: ExportTask) -> list[tuple[str, str | None]]:
-    """(label, value) pairs for a service line, in catalogue-template order."""
-    if service in ("scan", "modelisation"):
-        return [("Info", task.title)]
-    if service == "usinage":
-        return [("Usinage", task.title)]
-    return [
-        ("Projet", task.title),
-        ("Matériau", task.material),
-        ("Poids", format_weight(task.impression_weight_g)),
-        ("Temps", format_time(task.impression_time_min)),
-        ("Couleur", task.impression_color),
-    ]
+    """(label, value) pairs for a service line. Uniform across services: an
+    optional `Info:` row carrying the service's own description leads, and
+    impression keeps its print-parameter rows after it. The task title is
+    deliberately NOWHERE in here — it lives only in the header line."""
+    rows: list[tuple[str, str | None]] = [("Info", description_of(task, service))]
+    if service == "impression":
+        rows += [
+            ("Matériau", task.material),
+            ("Poids", format_weight(task.impression_weight_g)),
+            ("Temps", format_time(task.impression_time_min)),
+            ("Couleur", task.impression_color),
+        ]
+    return rows
 
 
-def build_description(service: str, task: ExportTask, *, include_free_text: bool) -> str:
+def build_description(service: str, task: ExportTask) -> str:
     """The catalogue template with its placeholders filled.
 
     A row whose value is empty is dropped whole rather than emitted as a bare
     ``Poids:`` — and the unfilled markers themselves ([TITLE], [MATERIAL], ...)
     are never written, because the importer treats them as absent data. So an
     empty field round-trips to an empty field either way; dropping the row is
-    simply what a human would have typed.
+    simply what a human would have typed. A service with no description of its
+    own therefore carries no ``Info:`` row at all, only its boilerplate.
     """
     lines = [f"{label}: {value.strip()}" for label, value in _rows(service, task) if value and str(value).strip()]
     if service in ("scan", "modelisation"):
         lines.append(_FICHIER_NON_CEDE)
-    if include_free_text and task.description and task.description.strip():
-        lines.append(task.description.strip())
     return "\n".join(lines)
 
 
@@ -217,14 +233,14 @@ def build_line_items(
 ) -> list[dict]:
     """The full ``line_items`` array for a create or update.
 
-    Tasks first, in board order, each grouped under a header naming it when
-    more than one task actually reaches the quote — a header over the only
-    thing on the quote is noise on the PDF. A task with no priced service
-    emits no line, so it never counts toward that total: only tasks that
-    produce a line item can make the header appear. Then every foreign line,
-    echoed as a bare ``line_item_id``, which Books expands back into the
-    untouched original. Omitting a line deletes it, so anything not returned
-    here is gone.
+    Tasks first, in board order, each grouped under a header naming it —
+    always, even when it is the only task on the quote. The header is the ONLY
+    place the task title is written now, so dropping it for a lone task would
+    leave that quote naming its job nowhere and re-import titleless. A task
+    with no priced service emits no line at all, header included. Then every
+    foreign line, echoed as a bare ``line_item_id``, which Books expands back
+    into the untouched original. Omitting a line deletes it, so anything not
+    returned here is gone.
 
     A header is ``header_name`` stamped on every one of the task's item lines
     — that is how Books itself stores one (reference: quote DEV26-2506, where
@@ -237,8 +253,8 @@ def build_line_items(
     lines: list[dict] = []
     emitted = [(t, s) for t, s in ((t, enabled_services(t)) for t in tasks) if s]
     for task_row, services in emitted:
-        header = task_row.title.strip()[:_TITLE_MAX] if len(emitted) > 1 and (task_row.title or "").strip() else None
-        for index, service in enumerate(services):
+        header = task_row.title.strip()[:_TITLE_MAX] if (task_row.title or "").strip() else None
+        for service in services:
             discount = None
             if service == "impression":
                 rate, quantity = impression_rate_quantity(task_row)
@@ -256,9 +272,7 @@ def build_line_items(
                     "unit": "Projet",
                     "rate": rate,
                     "quantity": quantity,
-                    # The task's own free text belongs on the line a reader
-                    # meets first, once — not repeated under all four services.
-                    "description": build_description(service, task_row, include_free_text=index == 0),
+                    "description": build_description(service, task_row),
                     **({"header_name": header} if header else {}),
                     **({"discount": discount} if discount else {}),
                 }

@@ -176,13 +176,15 @@ def test_build_preview_three_services_becomes_one_task():
     task = preview["tasks"][0]
     # The impression line's Projet: wins the title.
     assert task["title"] == "Tapis souple X4 bloc"
-    # The other services' titles and the material are folded into the body;
-    # weight, time and colour were consumed into their own fields.
-    assert task["description"] == (
-        "Scan3D: Prise de mesure d'une gouttière de pièce.\n"
-        "Modelisation3D: Dessin d'un tapis de gouttière en 4 zones\n"
-        "Matériau: TPU 95 A --- 1.5mm"
-    )
+    # Each line's own wording lands on the description of the service that
+    # priced it: the two Info: rows become those services' descriptions bare
+    # (the field already says which service it is), and the material — which
+    # has no Aito field — is preserved under impression. Weight, time and
+    # colour were consumed into their own fields.
+    assert task["scan_description"] == "Prise de mesure d'une gouttière de pièce."
+    assert task["modelisation_description"] == "Dessin d'un tapis de gouttière en 4 zones"
+    assert task["impression_description"] == "Matériau: TPU 95 A --- 1.5mm"
+    assert task["usinage_description"] is None
     assert task["scan_cost"] == 3500
     assert task["modelisation_cost"] == 4500
     assert task["impression_cost"] == 10000
@@ -203,11 +205,13 @@ def test_build_preview_splits_a_repeated_service_into_two_tasks():
     first, second = preview["tasks"]
     assert first["modelisation_cost"] == 3000
     assert first["impression_cost"] == 2400
-    assert first["description"] == "Matériau: PETG"
+    assert first["impression_description"] == "Matériau: PETG"
     assert second["modelisation_cost"] is None
     assert second["impression_cost"] == 200
     # Every label on the second line was blank, so nothing is preserved.
-    assert second["description"] == ""
+    assert all(
+        second[f"{service}_description"] is None for service in ("scan", "modelisation", "impression", "usinage")
+    )
     assert second["impression_weight_g"] is None
     assert second["impression_time_min"] is None
     assert second["impression_color"] is None
@@ -219,7 +223,7 @@ def test_build_preview_template_quote_yields_one_empty_task():
     assert len(preview["tasks"]) == 1
     task = preview["tasks"][0]
     assert task["title"] == ""
-    assert task["description"] == ""
+    assert all(task[f"{service}_description"] is None for service in ("scan", "modelisation", "impression", "usinage"))
     assert task["scan_cost"] == 0
     assert task["usinage_cost"] == 0
     # No title anywhere, so the description falls back to the quote number.
@@ -231,14 +235,16 @@ def test_build_preview_preserves_everything_from_a_messy_quote():
     task = preview["tasks"][0]
     # The impression line's Projet: is blank, so the first Info: wins.
     assert task["title"] == "Logo F170 à la place du F150"
-    body = task["description"]
-    assert 'Modelisation3D: Logo F170 à la place du F150  ---- "BY BLAST" à la place de XLP' in body
-    assert "Couleur Noir de face + fond avec écriture Bleu menthe." in body
-    assert "Faire plusieurs pièce" in body
-    assert "Prix d'impression défini après confection du logo final.------------------" in body
-    assert "Matériau: PETG" in body
+    modelisation, impression = task["modelisation_description"], task["impression_description"]
+    # The modelisation line's Info: is that service's description, stored bare
+    # — the field itself says which service it belongs to.
+    assert 'Logo F170 à la place du F150  ---- "BY BLAST" à la place de XLP' in modelisation
+    assert "Couleur Noir de face + fond avec écriture Bleu menthe." in modelisation
+    assert "Faire plusieurs pièce" in modelisation
+    assert "Prix d'impression défini après confection du logo final.------------------" in impression
+    assert "Matériau: PETG" in impression
     # The scan line supplied the title, so its Info: is not repeated.
-    assert "Scan3D:" not in body
+    assert task["scan_description"] is None
     assert task["impression_color"] == "bleu menthe + Noir"
     assert task["impression_weight_g"] is None
     assert task["impression_quantity"] == 2
@@ -251,11 +257,12 @@ def test_build_preview_preserves_unconsumed_labels_on_a_usinage_line():
     # No impression line, so the title falls back to the first line in
     # canonical service order that has one — modelisation, not usinage.
     assert task["title"] == "Bride de fixation"
-    body = task["description"]
+    body = task["usinage_description"]
     # Usinage has no weight/time/colour fields on an Aito task, so its
-    # template values must survive in the body rather than being dropped.
+    # template values must survive in the body rather than being dropped —
+    # under usinage, the service whose line carried them.
     assert "Usinage: Bride alu" in body
-    assert "Modelisation3D:" not in body  # it supplied the title
+    assert task["modelisation_description"] is None  # it supplied the title
     assert "Matériau: Aluminium 6060" in body
     assert "Poids: 1,2 kg" in body
     assert "Temps: 1j 4h" in body
@@ -311,7 +318,9 @@ def test_build_preview_truncates_a_long_title_and_keeps_the_full_text():
     preview = build_preview(estimate, None, URL)
     task = preview["tasks"][0]
     assert len(task["title"]) <= 200
-    assert long_title.strip() in task["description"]
+    # The tail lives on the group's first service, whichever line carried the
+    # title — otherwise the truncated half would simply be lost.
+    assert long_title.strip() in task["scan_description"]
 
 
 def test_build_preview_preserves_a_poids_or_temps_that_fails_to_parse():
@@ -325,8 +334,8 @@ def test_build_preview_preserves_a_poids_or_temps_that_fails_to_parse():
     # rows are preserved verbatim in the body rather than being dropped.
     assert task["impression_weight_g"] is None
     assert task["impression_time_min"] is None
-    assert "Poids: à définir" in task["description"]
-    assert "Temps: à définir" in task["description"]
+    assert "Poids: à définir" in task["impression_description"]
+    assert "Temps: à définir" in task["impression_description"]
 
 
 def test_build_preview_preserves_the_prose_around_a_partially_parsed_weight():
@@ -339,7 +348,7 @@ def test_build_preview_preserves_the_prose_around_a_partially_parsed_weight():
     # The number was found, so the field is populated — but the sentence
     # around it is not part of the number, so it must survive too.
     assert task["impression_weight_g"] == 210
-    assert "Poids: 210 gr par piece, 4 pieces" in task["description"]
+    assert "Poids: 210 gr par piece, 4 pieces" in task["impression_description"]
 
 
 def test_build_preview_preserves_the_second_token_of_a_multi_token_weight():
@@ -353,7 +362,7 @@ def test_build_preview_preserves_the_second_token_of_a_multi_token_weight():
     # second token ("50 gr") must not be silently swallowed by `sub`
     # stripping every match -- the whole row is preserved in the body too.
     assert task["impression_weight_g"] == 210
-    assert "Poids: 210 gr 50 gr" in task["description"]
+    assert "Poids: 210 gr 50 gr" in task["impression_description"]
 
 
 def test_build_preview_carries_the_quote_salesperson():
@@ -388,7 +397,7 @@ def test_build_preview_preserves_a_colour_longer_than_the_field_limit():
     # The field is truncated to fit, but the full value must still appear
     # in the body rather than losing its tail silently.
     assert task["impression_color"] == long_color[:100]
-    assert f"Couleur: {long_color}" in task["description"]
+    assert f"Couleur: {long_color}" in task["impression_description"]
 
 
 def _estimate_with_headers() -> dict:
@@ -531,6 +540,64 @@ def test_flat_amount_discount_is_not_adopted():
     }
     preview = build_preview(estimate, None, "https://x")
     assert preview["tasks"][0]["impression_discount_pct"] is None
+
+
+def _line(sku: str, rate: float, *, description: str = "", header_name: str | None = None, **extra) -> dict:
+    """One line item in the shape `parse_lines` reads."""
+    line = {"sku": sku, "rate": rate, "quantity": 1, "description": description, **extra}
+    if header_name is not None:
+        line["header_name"] = header_name
+    return line
+
+
+def _estimate(lines: list[dict]) -> dict:
+    return {
+        "estimate_id": "e1",
+        "estimate_number": "DEV26-9002",
+        "is_inclusive_tax": True,
+        "price_precision": 0,
+        "line_items": [{**line, "item_order": order} for order, line in enumerate(lines, start=1)],
+    }
+
+
+def test_header_name_wins_the_title_and_info_becomes_the_service_description():
+    estimate = _estimate(
+        [
+            _line(
+                "P3DSCAN", 5000, description="Info: Scanner la pièce\n*Fichier non cédé*", header_name="Helice grise"
+            ),
+        ]
+    )
+    tasks = build_preview(estimate, None, "https://x")["tasks"]
+    assert tasks[0]["title"] == "Helice grise"
+    assert tasks[0]["scan_description"] == "Scanner la pièce"
+
+
+def test_legacy_headerless_quote_still_titles_from_info():
+    # Old-format quote: no header, Info: carries the title (the pre-rework
+    # export wrote it that way). The fallback must keep these importable.
+    estimate = _estimate([_line("P3DSCAN", 5000, description="Info: Helice grise")])
+    tasks = build_preview(estimate, None, "https://x")["tasks"]
+    assert tasks[0]["title"] == "Helice grise"
+    assert tasks[0]["scan_description"] is None
+
+
+def test_leftover_labels_and_free_text_land_on_their_line_s_service():
+    estimate = _estimate(
+        [
+            _line(
+                "P3DIMP",
+                2400,
+                description="Info: Pièce détachée\nDimensions: 40x60\nCouleur Noir de face.",
+                header_name="Support",
+            ),
+        ]
+    )
+    tasks = build_preview(estimate, None, "https://x")["tasks"]
+    desc = tasks[0]["impression_description"]
+    assert "Pièce détachée" in desc
+    assert "Dimensions: 40x60" in desc
+    assert "Couleur Noir de face." in desc
 
 
 def test_quote_without_headers_groups_exactly_as_before():

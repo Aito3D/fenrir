@@ -5,8 +5,11 @@ contact arrive as plain dicts, so the whole parsing surface — which is the
 fiddliest part of the feature — is testable from captured fixtures.
 
 Governing rule: any labelled value that fails to parse is preserved verbatim
-in the task description. Nothing the quote said may vanish because a regex
-did not match.
+in a task description. Nothing the quote said may vanish because a regex did
+not match. A task carries one description per service, and a line's text is
+preserved on the description of the service that line priced — so the words
+stay next to the work they describe, and re-exporting writes them back onto
+the same line they came from.
 """
 
 import re
@@ -17,7 +20,7 @@ from dataclasses import dataclass
 # (mirrors SERVICES in backend/app/services/aito_board_rules.py).
 SERVICE_RANK: dict[str, int] = {"scan": 0, "modelisation": 1, "impression": 2, "usinage": 3}
 
-# The shop's own service names, written into an imported task's description as
+# The shop's own service names, written into an imported task's descriptions as
 # preserved quote wording. Deliberately NOT the translated UI labels (see
 # frontend/src/components/aito/services.ts): this text is a record of what the
 # quote said, and renaming it would make old and new imports read differently.
@@ -40,7 +43,10 @@ LABEL_DISPLAY: dict[str, str] = {
     "dimensions": "Dimensions",
 }
 
-# Labels that can supply a task title, in the order they are tried.
+# Labels that can supply a task title, in the order they are tried. Only the
+# legacy path uses them that way — a headed quote takes its title from the
+# header — but they still decide which prefix a preserved value is spelled
+# with, so the tuple stays authoritative for both.
 TITLE_LABELS: tuple[str, ...] = ("projet", "info", "usinage")
 
 # The order labels are emitted in when preserved.
@@ -167,6 +173,11 @@ class ParsedLine:
     # `group_lines`' rank heuristic guessing at one. Always False for quotes
     # that use no headers, so their grouping is untouched.
     starts_group: bool = False
+    # The line's ``header_name`` text, so the task builder can adopt it as the
+    # title — the header is where the exporter now writes it. None when the
+    # line carries no header, which is what sends the builder down the legacy
+    # "a label carries the title" path.
+    header_title: str | None = None
     # The line's percent discount (Books stores "10.00%" on item-level-
     # discount orgs), or None — including for a flat-amount discount, which
     # has no field to live in and must not be misread as a percent.
@@ -251,6 +262,7 @@ def parse_lines(estimate: dict) -> tuple[list[ParsedLine], list[dict]]:
                 amount=amount,
                 quantity=float(line.get("quantity") or 0),
                 starts_group=pending_boundary or (header is not None and header != previous_header),
+                header_title=(line.get("header_name") or "").strip() or None,
                 discount_pct=_discount_pct(line),
             )
         )
@@ -352,19 +364,28 @@ def _build_task(group: list[ParsedLine]) -> dict:
     ordered = sorted(group, key=lambda line: SERVICE_RANK[line.service])
     impression = next((line for line in ordered if line.service == "impression"), None)
 
-    # The impression line names the part being made, so its Projet: wins the
-    # title; otherwise the first line in canonical order that has one.
+    # New format: the header names the task, and every Info: row is that
+    # line's service description. Legacy fallback (headerless quotes, written
+    # by the pre-rework export or by hand): the impression line's Projet:
+    # wins the title, else the first line in canonical order with a title
+    # label — exactly the old behaviour, so old quotes import unchanged.
+    header_title = next((line.header_title for line in ordered if line.header_title), None)
     title_line: ParsedLine | None = None
     title_key: str | None = None
-    if impression and impression.labels.get("projet", "").strip():
-        title_line, title_key = impression, "projet"
-    else:
-        for line in ordered:
-            key = _title_label(line)
-            if key:
-                title_line, title_key = line, key
-                break
-    raw_title = title_line.labels[title_key].strip() if title_line and title_key else ""
+    if header_title is None:
+        if impression and impression.labels.get("projet", "").strip():
+            title_line, title_key = impression, "projet"
+        else:
+            for line in ordered:
+                key = _title_label(line)
+                if key:
+                    title_line, title_key = line, key
+                    break
+    raw_title = (
+        header_title
+        if header_title is not None
+        else (title_line.labels[title_key].strip() if title_line and title_key else "")
+    )
     title, truncated = _truncate_words(raw_title, _TITLE_MAX)
 
     poids_value = impression.labels.get("poids", "").strip() if impression else ""
@@ -379,17 +400,27 @@ def _build_task(group: list[ParsedLine]) -> dict:
     time_consumed = minutes is not None and _fully_consumed(temps_value, _TIME_TOKEN_RE, count=0)
     color_consumed = bool(color) and len(color) <= _COLOR_MAX
 
-    rows: list[str] = []
-    # A truncated title would otherwise lose its tail — keep the full line.
+    # Preservation, relocated: what used to accumulate into ONE task
+    # description now accumulates into the description of the SERVICE whose
+    # line said it. The rule is unchanged — nothing the quote said may vanish.
+    descriptions: dict[str, list[str]] = {service: [] for service in SERVICE_RANK}
+    # A truncated title would otherwise lose its tail — keep the full line on
+    # the group's first service.
     if truncated:
-        rows.append(raw_title)
+        descriptions[ordered[0].service].append(raw_title)
     for line in ordered:
+        rows = descriptions[line.service]
         for label in LABEL_ORDER:
             value = line.labels.get(label, "").strip()
             if not value:
                 continue
             if line is title_line and label == title_key:
-                continue  # became the task title
+                continue  # became the task title (legacy path)
+            if label == "info":
+                # The service's own description, stored bare — the export
+                # writes the `Info:` prefix back on.
+                rows.append(value)
+                continue
             if line is impression and label in _IMPRESSION_LABELS:
                 # Consumed into a field — unless the value was only partially
                 # parsed (or not at all), in which case it is preserved
@@ -406,7 +437,6 @@ def _build_task(group: list[ParsedLine]) -> dict:
 
     task: dict = {
         "title": title,
-        "description": "\n".join(_dedupe(rows)),
         "scan_cost": None,
         "modelisation_cost": None,
         "usinage_cost": None,
@@ -424,6 +454,8 @@ def _build_task(group: list[ParsedLine]) -> dict:
         # the two fields must not double-count.
         "impression_discount_pct": impression.discount_pct if impression else None,
     }
+    for service in SERVICE_RANK:
+        task[f"{service}_description"] = "\n".join(_dedupe(descriptions[service])) or None
     for line in ordered:
         task[_COST_FIELD[line.service]] = line.amount
     return task
