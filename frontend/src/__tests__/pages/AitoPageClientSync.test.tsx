@@ -159,8 +159,11 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
       expect(screen.queryByRole('button', { name: /create project/i })).not.toBeInTheDocument(),
     );
 
-    // ...but Zoho never sees it.
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // ...but Zoho never sees it. No extra wait needed: `syncClientToZoho`'s
+    // guards run synchronously (before its first `await`) as part of the same
+    // `onSuccess` that clears the placeholder and closes the drawer, so by
+    // the time the drawer-closed `waitFor` above has resolved, the guard has
+    // already either bailed out or dispatched the PATCH.
     expect(patchSpy).not.toHaveBeenCalled();
   });
 
@@ -193,7 +196,8 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: /create project/i })).not.toBeInTheDocument(),
     );
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // No extra wait needed here either — see the sibling phone-branch test
+    // above for why the drawer-closed signal already suffices.
     expect(patchSpy).not.toHaveBeenCalled();
     // Skipped silently — never the "created but Zoho failed" warning, which
     // would be a lie: nothing was even attempted.

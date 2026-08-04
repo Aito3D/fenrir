@@ -184,20 +184,6 @@ describe('QuoteStatusActions', () => {
     }
   });
 
-  it('offers only Mark as sent on a quote the client has not seen', () => {
-    // Superseded by the two "offers only Mark as sent" tests below, which
-    // cover null and draft individually with the current expectation
-    // (Accept/Decline hidden). Kept as a loop over both values for parity
-    // with the suite's other status-sweep tests.
-    for (const quote_status of [null, 'draft']) {
-      const { unmount } = render(<QuoteStatusActions project={{ ...project, quote_status }} />);
-      expect(screen.getByRole('button', { name: /mark as sent/i })).toBeEnabled();
-      expect(screen.queryByRole('button', { name: /accept quote/i })).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /decline quote/i })).not.toBeInTheDocument();
-      unmount();
-    }
-  });
-
   it('sends the sent transition when its hold completes', async () => {
     const spy = vi.spyOn(api, 'setAitoQuoteStatus').mockResolvedValue({ project, zoho_synced: true });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });

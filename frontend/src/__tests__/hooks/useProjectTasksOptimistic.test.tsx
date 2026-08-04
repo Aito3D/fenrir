@@ -200,26 +200,32 @@ async function tickStep(service: keyof typeof SERVICE_LABELS) {
 }
 
 /** Holds the row's delete button for its full 1s, the same gesture
- *  `DeleteHoldButton`/`HoldButton` require in production — see
+ *  `DeleteHoldButton`/`HoldButton` require in production — mirrors
  *  ProjectDetailPanel.test.tsx's own `fireEvent.pointerDown` +
- *  `vi.advanceTimersByTimeAsync(1000)` pattern, done here with real timers
- *  since nothing else in this file needs fake ones. */
+ *  `vi.advanceTimersByTimeAsync(1000)` pattern so the hold is fast-forwarded
+ *  under fake timers instead of costing a real second of wall-clock time per
+ *  call (the confirmed source of an intermittent CI timeout). */
 async function holdDelete(index: number) {
   const removeButtons = screen.getAllByLabelText('Remove task');
   const before = screen.getAllByRole('heading', { level: 4 }).length;
+  vi.useFakeTimers({ shouldAdvanceTime: true });
   // A raw `pointerdown`, not `userEvent.pointer`: jsdom has no layout engine,
   // so `userEvent.pointer`'s own enter/leave synthesis (which consults
   // `elementFromPoint`) reads the synthetic pointer as having immediately
   // left the button and cancels the hold before its timer ever starts.
   // Mirrors ProjectDetailPanel.test.tsx's own hold-to-delete tests.
-  fireEvent.pointerDown(removeButtons[index]);
-  // Real timers, not fake ones: waited out in wall-clock time via `waitFor`'s
-  // own polling rather than `vi.advanceTimersByTimeAsync`, since nothing else
-  // in this file needs fake timers. Asserted on the DOM itself, not on
-  // `api.deleteAitoTask` having been called — the mock can be observed as
-  // called a tick before React has committed the optimistic removal it's
-  // fired from, since both happen inside the same native timer callback
-  // rather than a wrapped React event.
+  await act(async () => {
+    fireEvent.pointerDown(removeButtons[index]);
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  // Back to real timers before polling: `waitFor`'s own interval needs wall
+  // clock to advance, and everything else in this file (including
+  // `renderTasks`'s settle-the-initial-fetch `act`) runs under real timers.
+  vi.useRealTimers();
+  // Asserted on the DOM itself, not on `api.deleteAitoTask` having been
+  // called — the mock can be observed as called a tick before React has
+  // committed the optimistic removal it's fired from, since both happen
+  // inside the same timer callback rather than a wrapped React event.
   await waitFor(() => expect(screen.getAllByRole('heading', { level: 4 })).toHaveLength(before - 1), {
     timeout: 2000,
   });
@@ -313,15 +319,15 @@ describe('useProjectTasks optimistic board projection', () => {
   });
 
   it('removes a deleted row at once and restores it when the DELETE fails', async () => {
-    // Held open, not `mockRejectedValue`: the hold gesture itself needs a
-    // real ~1s of wall-clock time (`holdDelete` waits it out with real
-    // timers), which is plenty of time for an immediately-rejecting promise's
-    // microtask chain to also run onError and restore the row before this
+    // Held open, not `mockRejectedValue`: an immediately-rejecting promise's
+    // microtask chain would also run onError and restore the row before this
     // test ever observes the removed state in between — the DELETE call and
-    // its own rejection would land in the same act() flush. Rejecting only
-    // after the removal has been asserted reproduces what a real network
-    // failure looks like: the optimistic removal renders first, the error
-    // (and restore) arrives some time later.
+    // its own rejection would land in the same act() flush regardless of
+    // whether `holdDelete`'s 1s hold is fast-forwarded under fake timers or
+    // waited out for real. Rejecting only after the removal has been
+    // asserted reproduces what a real network failure looks like: the
+    // optimistic removal renders first, the error (and restore) arrives some
+    // time later.
     let reject: (error: unknown) => void = () => {};
     vi.mocked(api.deleteAitoTask).mockImplementation(
       () => new Promise((_resolve, rej) => { reject = rej; }),
