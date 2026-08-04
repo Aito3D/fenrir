@@ -11,7 +11,14 @@ from sqlalchemy import select
 from backend.app.api.routes.settings import set_setting
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
-from backend.app.services.aito_quote_sync import SYNC_FAILURE_LIMIT, run_sync_once, sync_project
+from backend.app.services.aito_quote_export import Catalogue
+from backend.app.services.aito_quote_sync import (
+    SYNC_FAILURE_LIMIT,
+    ShippingCatalogueUnavailable,
+    load_export_shipping,
+    run_sync_once,
+    sync_project,
+)
 from backend.app.services.zoho import zoho_service
 
 
@@ -186,10 +193,10 @@ async def test_unexpected_bug_in_one_project_does_not_abort_the_next(db_session,
 
     original_build_line_items = aito_quote_sync.build_line_items
 
-    def flaky_build_line_items(tasks, existing_line_items, catalogue):
+    def flaky_build_line_items(tasks, existing_line_items, catalogue, shipping=None):
         if any(t.title == "Bad" for t in tasks):
             raise TypeError("simulated bug in export")
-        return original_build_line_items(tasks, existing_line_items, catalogue)
+        return original_build_line_items(tasks, existing_line_items, catalogue, shipping=shipping)
 
     monkeypatch.setattr(aito_quote_sync, "build_line_items", flaky_build_line_items)
 
@@ -3161,3 +3168,121 @@ async def test_a_push_discovered_acceptance_stamps_quote_accepted_at(db_session)
     await db_session.refresh(project)
     assert project.quote_status == "accepted"
     assert project.quote_accepted_at is not None
+
+
+# --- Task 5: push the shipping line ----------------------------------------
+
+
+def _shipped_project():
+    return AitoProject(
+        id=1,
+        description="ship it",
+        board_column="devis",
+        position=0,
+        shipping_island="rangiroa",
+        shipping_service="tuamotu",
+        shipping_first_name="Jean-Pierre",
+        shipping_last_name="DUPONT",
+        shipping_phone="+689-89645864",
+        shipping_price=3200.0,
+    )
+
+
+def test_load_export_shipping_returns_none_without_an_island():
+    project = AitoProject(id=1, description="x", board_column="devis", position=0)
+    assert load_export_shipping(project, Catalogue("S", "M", "I", "U", "T", {"tuamotu": "SHIP"})) is None
+
+
+def test_load_export_shipping_resolves_the_island_label():
+    shipping = load_export_shipping(_shipped_project(), Catalogue("S", "M", "I", "U", "T", {"tuamotu": "SHIP"}))
+    assert shipping.island_label == "Rangiroa"
+    assert shipping.service == "tuamotu"
+    assert shipping.price == 3200.0
+
+
+def test_load_export_shipping_refuses_an_unresolved_catalogue():
+    with pytest.raises(ShippingCatalogueUnavailable):
+        load_export_shipping(_shipped_project(), Catalogue("S", "M", "I", "U", "T", {}))
+
+
+def test_load_export_shipping_falls_back_to_the_raw_key_when_the_island_table_forgot_it():
+    """A table edit is not a reason to stop billing a job already in flight:
+    an island key no longer present in the lookup must still export, using
+    the stored key itself as the label."""
+    project = _shipped_project()
+    project.shipping_island = "no-longer-in-the-table"
+    shipping = load_export_shipping(project, Catalogue("S", "M", "I", "U", "T", {"tuamotu": "SHIP"}))
+    assert shipping.island_label == "no-longer-in-the-table"
+
+
+async def _project_with_shipping_and_a_priced_task(db_session) -> AitoProject:
+    project = AitoProject(
+        description="Hélice",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client de passage",
+        quote_sync_state="pending",
+        shipping_island="rangiroa",
+        shipping_service="tuamotu",
+        shipping_first_name="Jean-Pierre",
+        shipping_last_name="DUPONT",
+        shipping_phone="+689-89645864",
+        shipping_price=3200.0,
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Hélice grise", scan_cost=5000))
+    await db_session.commit()
+    return project
+
+
+@pytest.mark.asyncio
+async def test_a_project_with_an_unresolvable_service_stays_pending_and_pushes_nothing(db_session):
+    """Silence beats a wrong quote. A quote written without its shipping line
+    is one a client can be sent."""
+    project = await _project_with_shipping_and_a_priced_task(db_session)
+    await _configure_zoho(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/items"): {"items": []},
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "pending"
+    assert (project.quote_sync_failures or 0) == 0
+    assert not any(method in ("POST", "PUT") for method, _, _ in seen), "no create/update call should have reached Zoho"
+
+
+@pytest.mark.asyncio
+async def test_an_unresolvable_shipping_service_warms_the_catalogue_cache_for_the_next_tick(db_session, monkeypatch):
+    """Requirement A: ``get_catalogue`` always reads the shipping cache with
+    ``refresh=False``, so nothing else in this worker would ever warm it. The
+    deferral path must itself call ``get_shipping_catalogue(refresh=True)``, or
+    a project that gained shipping without going through the drawer (an
+    importer path, a wiped settings row, first boot with Books down) would
+    have no self-healing route back to a warm cache."""
+    await _project_with_shipping_and_a_priced_task(db_session)
+    await _configure_zoho(db_session)
+
+    calls: list = []
+    real_get_shipping_catalogue = zoho_service.get_shipping_catalogue
+
+    async def tracking_get_shipping_catalogue(db, *, refresh=True):
+        calls.append(refresh)
+        return await real_get_shipping_catalogue(db, refresh=refresh)
+
+    monkeypatch.setattr(zoho_service, "get_shipping_catalogue", tracking_get_shipping_catalogue)
+    zoho_service.transport = httpx.MockTransport(zoho_handler({("GET", "/items"): {"items": []}}))
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    assert True in calls, "the deferral must warm the cache with refresh=True before giving up for this tick"

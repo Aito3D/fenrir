@@ -31,8 +31,9 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.filament import Filament
 from backend.app.services.aito_events import record
-from backend.app.services.aito_quote_export import ExportTask, build_line_items
+from backend.app.services.aito_quote_export import Catalogue, ExportShipping, ExportTask, build_line_items
 from backend.app.services.aito_quote_status import adopt_quote_status
+from backend.app.services.aito_shipping import island_label
 from backend.app.services.aito_zoho_comments import mirror_comments, should_pull_comments
 from backend.app.services.zoho import (
     ZohoAmbiguousReferenceError,
@@ -86,6 +87,46 @@ def _clear_block(project: AitoProject) -> None:
     """
     project.quote_status_block = None
     project.quote_status_remote = None
+
+
+class ShippingCatalogueUnavailable(Exception):
+    """The project carries shipping but its Books item is unknown.
+
+    Raised rather than silently skipping the line: a quote written without the
+    shipping it was promised is a quote that can be sent to a client, and that
+    is not recoverable. The caller leaves the project `pending` so the next
+    tick — by which time the catalogue may have resolved — tries again. See
+    `sync_project`'s own `except ShippingCatalogueUnavailable` handler, which
+    must sit before the broad handler that increments `quote_sync_failures`:
+    nothing here is a failure of the project's own, so it must not spend any
+    of the retry budget SYNC_FAILURE_LIMIT protects, nor land in the terminal
+    'error' state the no-priced-service guards elsewhere in this module use.
+    """
+
+
+def load_export_shipping(project: AitoProject, catalogue: Catalogue) -> ExportShipping | None:
+    """The project's shipment, flattened for the I/O-free exporter.
+
+    `shipping_island IS NULL` is the definition of no shipping, so that field
+    alone decides — nothing else on the project is consulted to reach that
+    conclusion. An island whose key is no longer in the lookup table still
+    exports, using the stored key itself as the label: the quote must keep
+    saying what it said, and a table edit is not a reason to stop billing a
+    job already in flight.
+    """
+    if not project.shipping_island:
+        return None
+    service = project.shipping_service or ""
+    if service not in catalogue.shipping:
+        raise ShippingCatalogueUnavailable(f"No Books item for shipping service {service!r}")
+    return ExportShipping(
+        service=service,
+        island_label=island_label(project.shipping_island) or project.shipping_island,
+        first_name=project.shipping_first_name or "",
+        last_name=project.shipping_last_name or "",
+        phone=project.shipping_phone or "",
+        price=float(project.shipping_price or 0),
+    )
 
 
 async def load_export_tasks(db: AsyncSession, project_id: int) -> list[ExportTask]:
@@ -208,7 +249,12 @@ def _apply_estimate(project: AitoProject, estimate: dict) -> None:
 
 async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
     catalogue = await zoho_service.get_catalogue(db)
-    line_items = build_line_items(await load_export_tasks(db, project.id), [], catalogue)
+    line_items = build_line_items(
+        await load_export_tasks(db, project.id),
+        [],
+        catalogue,
+        shipping=load_export_shipping(project, catalogue),
+    )
     if not line_items:
         # Every project is meant to carry a priced service (the create modal
         # enforces it), but a project whose only task was emptied by hand would
@@ -626,6 +672,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         await load_export_tasks(db, project.id),
         estimate.get("line_items") or [],
         catalogue,
+        shipping=load_export_shipping(project, catalogue),
     )
     if not line_items:
         # Mirrors the create-path guard: a project whose only priced service
@@ -904,6 +951,27 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
     except ZohoNotConfiguredError:
         # Not a failure: sync is simply off. Leave the project pending so it
         # syncs the moment credentials are entered.
+        return
+    except ShippingCatalogueUnavailable as e:
+        # Not an error state: nothing is wrong with the project, the catalogue
+        # simply has not resolved yet. Stay `pending` and retry next tick
+        # rather than burning a failure and eventually going to 'error' — see
+        # the exception's own docstring, and Catalogue.shipping_item_id's, for
+        # why a terminal state here would be the opposite of what this
+        # situation calls for.
+        #
+        # get_catalogue's own shipping read is always refresh=False (see the
+        # comment above that call), so it is never what warms the cache — the
+        # drawer's services endpoint is the only other warmer, and a project
+        # that gained shipping without going through it (an importer path, a
+        # wiped settings row, first boot with Books down) would otherwise have
+        # no route back to a resolved catalogue at all. Warm it here, once,
+        # so the NEXT tick has a chance even if this one still has to defer.
+        # A failed refresh is swallowed by get_shipping_catalogue itself (see
+        # its own docstring), so this call cannot turn into a new failure mode
+        # of its own.
+        logger.warning("Aito project %s deferred: %s", project_id, e)
+        await zoho_service.get_shipping_catalogue(db, refresh=True)
         return
     except ZohoRequestRejected as e:
         # Books rejected the payload. Retrying an identical body cannot help.
