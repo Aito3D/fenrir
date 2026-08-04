@@ -267,7 +267,7 @@ export default {
     shippingTitle: '배송',
     shippingRemove: '배송 삭제',
     shippingEdit: '배송 수정',
-    shippingIsland: '도착 섬',
+    shippingIsland: '목적지 섬',
     shippingIslandPlaceholder: '섬 검색…',
     shippingNoIslands: '섬을 찾을 수 없습니다',
     shippingFirstName: '수령인 이름',

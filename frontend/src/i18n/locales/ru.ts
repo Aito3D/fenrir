@@ -280,7 +280,7 @@ export default {
     shippingRateEdited: 'изменён',
     shippingRateReset: 'Вернуться к тарифу Zoho',
     shippingNoRate: 'Нет тарифа от Zoho — введите его',
-    shippingUnavailable: 'Службы доставки недоступны, пока Zoho недоступен',
+    shippingUnavailable: 'Службы доставки недоступны, пока нет связи с Zoho',
     ruleShippingPending: 'Доставка заполняется',
     ruleShippingOk: 'Доставка на {{island}} · {{recipient}}',
     ruleShippingMissingIsland: 'Доставка: не указан остров',

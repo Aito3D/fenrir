@@ -281,7 +281,7 @@ export default {
     shippingRateReset: 'Volver a la tarifa de Zoho',
     shippingNoRate: 'Sin tarifa de Zoho — introduce una',
     shippingUnavailable: 'Los servicios de envío no están disponibles mientras Zoho sea inaccesible',
-    ruleShippingPending: 'Completando el envío',
+    ruleShippingPending: 'Rellenando los datos de envío',
     ruleShippingOk: 'Envío a {{island}} · {{recipient}}',
     ruleShippingMissingIsland: 'Envío: falta la isla',
     ruleShippingMissingRecipient: 'Envío: falta el nombre del destinatario',

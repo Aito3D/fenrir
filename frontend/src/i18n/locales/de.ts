@@ -277,7 +277,7 @@ export default {
     shippingService: 'Versanddienst',
     shippingRate: 'Tarif',
     shippingRateFromZoho: 'Zoho-Tarif: {{rate}}',
-    shippingRateEdited: 'bearbeitet',
+    shippingRateEdited: 'geändert',
     shippingRateReset: 'Zurück zum Zoho-Tarif',
     shippingNoRate: 'Kein Tarif von Zoho — einen eingeben',
     shippingUnavailable: 'Versanddienste sind nicht verfügbar, solange Zoho nicht erreichbar ist',

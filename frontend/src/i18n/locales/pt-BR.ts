@@ -280,7 +280,7 @@ export default {
     shippingRateEdited: 'editada',
     shippingRateReset: 'Voltar à tarifa do Zoho',
     shippingNoRate: 'Nenhuma tarifa do Zoho — informe uma',
-    shippingUnavailable: 'Os serviços de envio ficam indisponíveis enquanto o Zoho está inacessível',
+    shippingUnavailable: 'Os serviços de envio ficam indisponíveis enquanto o Zoho estiver inacessível',
     ruleShippingPending: 'Envio em preenchimento',
     ruleShippingOk: 'Envio para {{island}} · {{recipient}}',
     ruleShippingMissingIsland: 'Envio: falta a ilha',
