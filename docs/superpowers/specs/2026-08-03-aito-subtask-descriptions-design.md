@@ -61,9 +61,11 @@ Rework how an Aito task's identity and prose reach the Zoho Books quote:
   - scan / modelisation → `[("Info", <that service's description>)]`
   - usinage → `[("Info", usinage_description)]` (the `Usinage: {title}` row is
     gone)
-  - impression → `[("Info", impression_description), ("Matériau", …),
-    ("Poids", …), ("Temps", …), ("Couleur", …)]` (the `Projet: {title}` row is
-    gone; Info leads)
+  - impression → `[("Matériau", …), ("Poids", …), ("Temps", …),
+    ("Couleur", …), ("Info", impression_description)]` (the `Projet: {title}`
+    row is gone; Info CLOSES the line — user-approved change from the original
+    Info-first design: a multi-line description placed first would override
+    the canonical rows on re-import under first-value-wins parsing)
   - The existing empty-row rule already drops an absent `Info:` — a service
     with no description emits no `Info:` row.
 - scan/modelisation keep appending `*Fichier non cédé*`.
