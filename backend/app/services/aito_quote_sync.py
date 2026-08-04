@@ -29,7 +29,7 @@ from backend.app.core.tasks import spawn_background_task
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
-from backend.app.models.filament import Filament
+from backend.app.models.calculator import CalculatorFilament
 from backend.app.services.aito_events import record
 from backend.app.services.aito_quote_export import ExportTask, build_line_items
 from backend.app.services.aito_quote_status import adopt_quote_status
@@ -108,8 +108,16 @@ async def load_export_tasks(db: AsyncSession, project_id: int) -> list[ExportTas
     filament_ids = {row.impression_filament_id for row in rows if row.impression_filament_id is not None}
     materials: dict[int, str] = {}
     if filament_ids:
-        found = (await db.execute(select(Filament).where(Filament.id.in_(filament_ids)))).scalars().all()
-        materials = {f.id: f.type for f in found}
+        # CalculatorFilament, NOT the AMS inventory `filaments` table: the
+        # drawer's picker is api.getCalculatorFilaments, so the ids stored on
+        # tasks live in the calculator's id-space. `material` is the bare type
+        # ("PETG", "PA6-CF") — exactly what ExportTask.material documents.
+        found = (
+            (await db.execute(select(CalculatorFilament).where(CalculatorFilament.id.in_(filament_ids))))
+            .scalars()
+            .all()
+        )
+        materials = {f.id: f.material for f in found}
     return [
         ExportTask(
             title=row.title,

@@ -3161,3 +3161,35 @@ async def test_a_push_discovered_acceptance_stamps_quote_accepted_at(db_session)
     await db_session.refresh(project)
     assert project.quote_status == "accepted"
     assert project.quote_accepted_at is not None
+
+
+@pytest.mark.asyncio
+async def test_material_resolves_from_the_calculator_filament_the_drawer_picked(db_session):
+    """The drawer's filament picker stores CALCULATOR filament ids
+    (api.getCalculatorFilaments), so that is the table the exporter must
+    resolve `Matériau:` from. It used to query the AMS inventory `filaments`
+    table instead — a different id-space, empty on a workshop install — so
+    every quote silently lost its material row."""
+    from backend.app.models.calculator import CalculatorFilament
+    from backend.app.services.aito_quote_sync import load_export_tasks
+
+    filament = CalculatorFilament(
+        name="SUNLU PETG", brand="SUNLU", material="PETG", cost_per_kg=20, sale_price_per_kg=80
+    )
+    project = AitoProject(description="Helice", board_column="devis", position=0, client_id="C1")
+    db_session.add_all([filament, project])
+    await db_session.flush()
+    db_session.add(
+        AitoTask(
+            project_id=project.id,
+            position=0,
+            title="Helice grise",
+            impression_cost=5000,
+            impression_filament_id=filament.id,
+        )
+    )
+    await db_session.commit()
+
+    tasks = await load_export_tasks(db_session, project.id)
+
+    assert tasks[0].material == "PETG"
