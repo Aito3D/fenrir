@@ -54,9 +54,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/aito", tags=["aito"])
 
-# Same shape ClientDraft.formatPhone produces: +CC-XXXXXXXX. Kept here rather
-# than reusing a client-side rule because the API is the boundary that has to
-# hold, not the form.
+# Deliberately stricter than the client's own ClientDraft.formatPhone, which
+# will happily emit something as short as +689-123: this is the API boundary
+# that has to hold, not the form, so it requires 4+ national digits rather
+# than merely matching the country-code-dash shape formatPhone produces.
 _SHIPPING_PHONE_RE = re.compile(r"^\+\d{1,4}-\d{4,14}$")
 
 
@@ -112,8 +113,18 @@ def _validated_shipping(
     payload is a 422.
 
     An explicit `shipping_island: null` returns all six as None — the
-    documented way to detach a shipment. `shipping_service` is derived from
-    the island here and is never read from `fields`.
+    documented way to detach a shipment. A whitespace-only island (`"   "`),
+    by contrast, is NOT treated as a detach — it is a 422, the same as a
+    blank first name, last name or phone — so a client bug that trims an
+    island down to nothing does not silently drop a shipment. `shipping_service`
+    is derived from the island here and is never read from `fields`.
+
+    Changing the island ALONE re-derives `shipping_service` from it, but
+    KEEPS the stored `shipping_price` — the price is frozen at attach time,
+    not re-looked-up on every edit. A caller that changes a shipment's island
+    to a DIFFERENT service must resend `shipping_price` in the same request,
+    or the shipment keeps billing the previous service's rate under the new
+    service's name.
     """
     supplied = {key: fields[key] for key in fields if key in _SHIPPING_COLUMNS}
     if not supplied:
@@ -124,12 +135,20 @@ def _validated_shipping(
             return supplied[key]
         return getattr(current, key, None) if current is not None else None
 
-    island = (merged("shipping_island") or "").strip()
+    raw_island = merged("shipping_island")
+    if raw_island is not None and not raw_island.strip():
+        # Distinguished from the None case below: an explicit blank string is
+        # a client bug (or a UI regression) trying to clear the field, not
+        # the documented way to detach a shipment — that is a literal null.
+        raise HTTPException(status_code=422, detail="shipping_island must not be blank")
+    island = (raw_island or "").strip()
     if not island:
-        # Either an explicit detach, or a field sent for a project that has no
-        # shipment to correct. Both end with all six cleared, which is the
-        # right answer for the first and harmless for the second: there was
-        # nothing there to lose.
+        # Either an explicit detach (raw_island is None because the payload
+        # sent shipping_island: null), or a field sent for a project that has
+        # no shipment to correct (raw_island is None because neither the
+        # payload nor `current` ever set one). Both end with all six
+        # cleared, which is the right answer for the first and harmless for
+        # the second: there was nothing there to lose.
         return dict.fromkeys(_SHIPPING_COLUMNS)
 
     service = service_for_island(island)
@@ -1119,8 +1138,11 @@ async def update_project(
     # Captured before the mark: it is unconditional and idempotent, so
     # checking the post-mark state alone would fire sync.queued on every edit
     # to an already-pending project, not just the transition into it. The
-    # shipping fields above are applied BEFORE this so a shipping-only edit is
-    # picked up by the sync worker like any other change.
+    # shipping fields above are applied before this line runs, so a
+    # shipping-only PATCH on a project that had settled to idle/error/locked
+    # is marked pending by this same call, exactly like any other field edit
+    # — see test_patch_attaches_shipping_and_requeues_the_quote, which drives
+    # a project to idle first and asserts the transition back into pending.
     was_pending = project.quote_sync_state == "pending"
     _mark_pending_if_ours(project)
     await record(

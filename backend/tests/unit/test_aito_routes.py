@@ -931,6 +931,20 @@ def test_import_item_schema_has_no_tasks_field():
     assert "tasks" not in AitoProjectImportItem.model_fields
 
 
+def test_import_item_schema_has_no_shipping_fields():
+    """Same trip wire as above, for shipping: import_legacy_projects passes
+    _to_response(p, TaskSummary(), {}) — an explicit EMPTY map, not a resolved
+    catalogue read — resting entirely on the claim that AitoProjectImportItem
+    cannot carry a shipment. If someone adds a `shipping_island` (or any other
+    `shipping_*`) field to let legacy imports carry one, that explicit {} would
+    silently report shipping_service_name=None for a card that does have a
+    shipment, and since the frontend writes that straight into the board
+    cache, the name would blank without any error. This test is the trip
+    wire: it must fail the day such a field is added, pointing here so the
+    import loop gets updated to resolve a real shipping_names map."""
+    assert not any(name.startswith("shipping_") for name in AitoProjectImportItem.model_fields)
+
+
 @pytest.mark.asyncio
 async def test_create_records_the_authenticated_creator(async_client):
     # There is no authenticated-client fixture in this suite, so the route's

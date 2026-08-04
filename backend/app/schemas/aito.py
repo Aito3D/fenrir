@@ -244,8 +244,11 @@ class AitoProjectResponse(BaseModel):
     # The Books item's display name, resolved from the cached catalogue so the
     # board list does not force the frontend to join every card against the
     # services endpoint. None when the catalogue has never resolved; the panel
-    # falls back to the service key's own label.
-    shipping_service_name: str | None = None
+    # falls back to the service key's own label. No default: `_to_response`
+    # requires its `shipping_names` argument for exactly this reason — a
+    # future call site that forgot it should fail loudly, not validate a
+    # silently-blanked field.
+    shipping_service_name: str | None
     created_at: datetime
     updated_at: datetime
 
