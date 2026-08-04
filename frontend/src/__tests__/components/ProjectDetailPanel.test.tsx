@@ -1188,7 +1188,20 @@ describe('ProjectDetailPanel tasks', () => {
     rerender(<Host open />);
     await editAllTasks();
 
-    expect(await screen.findByLabelText('Scan Cost')).toHaveValue(700);
+    // `waitFor` on the VALUE, not `findByLabelText` on the element. React
+    // Query serves the reopened panel its cached (pre-PATCH) snapshot on the
+    // first paint and refetches underneath — so the input exists, holding
+    // 500, some ~20ms before the invalidation's GET lands with 700. A
+    // `findBy*` resolves the instant that element appears and then asserts
+    // once, sampling whichever of the two it happened to catch; measured, it
+    // caught 500 on roughly one full-suite run in six, and inserting a single
+    // `setTimeout(…, 0)` into the reopen GET made it 500 every time.
+    //
+    // This still fails the regression it guards. If `onSettled` invalidated
+    // only ['aito-projects'], the tasks entry would stay fresh for the whole
+    // 60s staleTime, no GET would ever be issued, and the value would sit at
+    // 500 until this times out.
+    await waitFor(() => expect(screen.getByLabelText('Scan Cost')).toHaveValue(700));
   });
 
   it('does NOT refresh the board on close when no task was edited', async () => {
