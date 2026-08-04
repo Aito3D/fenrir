@@ -1,11 +1,32 @@
 """Pydantic DTOs for the Aito production board."""
 
+import re
 from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 AitoColumn = Literal["devis", "waiting", "scan", "model", "print", "finish", "done"]
+
+# Mirrors backend/app/api/routes/zoho.py's ZohoContactCreate/_check_email/_check_phone —
+# the same bar for a client's own contact fields, wherever they're captured. Both fields
+# are optional — only a non-empty malformed value is rejected.
+_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$")
+_PHONE_RE = re.compile(r"^\+\d{1,4}-\d{4,14}$")
+
+
+def _check_email(value: str) -> str:
+    value = value.strip()
+    if value and not _EMAIL_RE.match(value):
+        raise ValueError("Enter a valid email address")
+    return value
+
+
+def _check_phone(value: str) -> str:
+    value = value.strip()
+    if value and not _PHONE_RE.match(value):
+        raise ValueError("Phone must look like +689-87123456")
+    return value
 
 
 class AitoTaskBase(BaseModel):
@@ -53,11 +74,15 @@ class AitoTaskResponse(AitoTaskBase):
 
 
 class AitoProjectCreate(BaseModel):
-    description: str = Field(min_length=1)
+    # 10_000 is generous headroom over anything a human types — it exists to keep a
+    # pathological payload from ballooning the row or the AI summarizer's prompt.
+    description: str = Field(min_length=1, max_length=10_000)
     client_id: str = Field(min_length=1)
-    client_name: str = Field(min_length=1)
-    client_phone: str | None = None
-    client_email: str | None = None
+    # Caps mirror ZohoContactCreate's company_name/email/phone — the same contact data,
+    # captured here instead of a Zoho round-trip.
+    client_name: str = Field(min_length=1, max_length=200)
+    client_phone: str | None = Field(default=None, max_length=50)
+    client_email: str | None = Field(default=None, max_length=200)
     client_is_company: bool | None = None
     quote_id: str | None = Field(default=None, max_length=50)
     quote_number: str | None = Field(default=None, max_length=50)
@@ -67,6 +92,16 @@ class AitoProjectCreate(BaseModel):
     quote_salesperson: str | None = Field(default=None, max_length=200)
     quote_status: str | None = Field(default=None, max_length=30)
     tasks: list[AitoTaskCreate] = Field(default_factory=list)
+
+    @field_validator("client_email")
+    @classmethod
+    def _validate_client_email(cls, value: str | None) -> str | None:
+        return value if value is None else _check_email(value)
+
+    @field_validator("client_phone")
+    @classmethod
+    def _validate_client_phone(cls, value: str | None) -> str | None:
+        return value if value is None else _check_phone(value)
 
     @field_validator("quote_url")
     @classmethod
@@ -102,11 +137,11 @@ class AitoProjectUpdate(BaseModel):
     """Content edits from the card detail panel. Ordering (column/position) is
     owned by the /move endpoint and deliberately not accepted here."""
 
-    description: str | None = Field(default=None, min_length=1)
+    description: str | None = Field(default=None, min_length=1, max_length=10_000)
     client_id: str | None = None
-    client_name: str | None = None
-    client_phone: str | None = None
-    client_email: str | None = None
+    client_name: str | None = Field(default=None, max_length=200)
+    client_phone: str | None = Field(default=None, max_length=50)
+    client_email: str | None = Field(default=None, max_length=200)
     client_is_company: bool | None = None
 
     @field_validator("description")
@@ -115,6 +150,16 @@ class AitoProjectUpdate(BaseModel):
         if value is not None and not value.strip():
             raise ValueError("description must not be blank")
         return value
+
+    @field_validator("client_email")
+    @classmethod
+    def _validate_client_email(cls, value: str | None) -> str | None:
+        return value if value is None else _check_email(value)
+
+    @field_validator("client_phone")
+    @classmethod
+    def _validate_client_phone(cls, value: str | None) -> str | None:
+        return value if value is None else _check_phone(value)
 
 
 class AitoTaskStepsResponse(BaseModel):

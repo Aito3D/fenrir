@@ -26,7 +26,7 @@ async def test_creating_a_project_without_a_quote_id_marks_it_pending(db_session
         description="Helice",
         client_id="C1",
         client_name="Client",
-        client_phone="+689 87 00 00 11",
+        client_phone="+689-87000011",
         tasks=[AitoTaskCreate(title="Helice", scan_cost=5000)],
     )
     response = await create_project(payload=payload, db=db_session, current_user=None)
@@ -200,7 +200,7 @@ async def test_trashing_before_first_quote_then_restoring_and_editing_is_re_enqu
         description="Helice",
         client_id="C1",
         client_name="Client",
-        client_phone="+689 87 00 00 12",
+        client_phone="+689-87000012",
         tasks=[AitoTaskCreate(title="Helice", scan_cost=5000)],
     )
     created = await create_project(payload=payload, db=db_session, current_user=None)

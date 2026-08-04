@@ -24,7 +24,7 @@ def _project_payload(**overrides):
         "description": "Trophy",
         "client_id": "z1",
         "client_name": "ACME",
-        "client_phone": "+689 87 00 00 09",
+        "client_phone": "+689-87000009",
     }
     payload.update(overrides)
     return payload
