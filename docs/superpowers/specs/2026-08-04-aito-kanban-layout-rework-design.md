@@ -72,3 +72,7 @@ Pure CSS/layout change — no new failure modes. Error/empty states render insid
 - Existing suites must stay green: `./test_frontend.sh` (tsc + ESLint + Vitest), plus `cd frontend && npm run build`.
 - Frontend tests that assert layout classes on the board/columns (e.g. `AitoPage.test.tsx`, `AitoBoardColumnDrag.test.tsx`) are updated where a class string they assert changed — behavior assertions must not change.
 - Manual check across widths: ≥1144px (no top bar), 1024–1143px (56px top bar), <1024px (stacked header, page scroll), plus browser zoom 110–150% to confirm the min-width floor + visible scrollbar.
+
+## Amendment (2026-08-04, post-merge)
+
+The 230px column floor was removed (`lg:min-w-0`): with the sidebar expanded it made horizontal scroll the default at common widths, clipping the Finish column. The user's call: at `lg`+ the six columns always fit the available width, shrinking as far as needed. The visible slim scrollbar now only serves the sub-`lg` fixed-width path.

@@ -538,7 +538,10 @@ export function AitoPage() {
             className="flex gap-4 items-stretch overflow-x-auto pb-2 stagger-parents flex-1 min-h-0 board-scroll"
           >
             {visibleColumns.map(({ column, projects }) => (
-              <div key={column.id} className="animate-rise-lg flex flex-shrink-0 lg:flex-1 lg:min-w-[230px]">
+              // lg:min-w-0, not a px floor: the six columns must always fit
+              // the width the sidebar leaves them — an expanded sidebar
+              // shrinks the columns, it never pushes the last one off-screen.
+              <div key={column.id} className="animate-rise-lg flex flex-shrink-0 lg:flex-1 lg:min-w-0">
                 <BoardColumn
                   column={column}
                   projects={projects}
