@@ -1,5 +1,6 @@
-import { DEFAULT_COUNTRY_CODE, formatPhone, validatePhone } from './clientDraft';
+import { DEFAULT_COUNTRY_CODE, formatPhone, titleCaseSegments, validatePhone } from './clientDraft';
 import type { ClientDraft } from './clientDraft';
+import type { AitoShippingService } from '../api/client';
 
 /** The shipping half of the Aito new-project form, as one value.
  *
@@ -134,4 +135,28 @@ export function shippingPayload(draft: ShippingDraft) {
     shipping_phone: formatPhone({ countryCode: draft.countryCode, nationalNumber: draft.nationalNumber }),
     shipping_price: draft.price,
   };
+}
+
+/** An island's display label: the Zoho-backed catalogue's own spelling when
+ *  `services` has resolved it, and a readable degrade when it hasn't (Zoho
+ *  unreachable, or the request simply hasn't landed yet).
+ *
+ *  The one place every surface that shows an island — the create drawer's
+ *  rail/checklist, the panel header's pill, `ShippingCard`'s read view —
+ *  computes that label, so the three can never show three different degrades
+ *  for the same key at once (which is exactly what happened before this was
+ *  extracted: the pill fell back to the raw key while the card fell back to
+ *  a naive capitalisation of it).
+ *
+ *  The degrade splits on the hyphen six of the fifty-two island keys carry
+ *  (`bora-bora`, `puka-puka`, `nuku-hiva`, `hiva-oa`, `ua-pou`, `ua-huka`)
+ *  and re-joins with a SPACE rather than reusing the raw separator —
+ *  `island_label` in aito_shipping.py spells every one of those "Bora Bora",
+ *  never "Bora-Bora". `titleCaseSegments` already does the per-segment
+ *  capitalisation `ShippingFields` uses for a hand-typed name; reused here
+ *  rather than a second capitaliser, on the space-joined key so its own
+ *  separator-preserving split has nothing but spaces left to preserve. */
+export function islandLabel(key: string, services: AitoShippingService[]): string {
+  const catalogued = services.flatMap((service) => service.islands).find((island) => island.key === key)?.label;
+  return catalogued ?? titleCaseSegments(key.replace(/-/g, ' '));
 }

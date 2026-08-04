@@ -28,7 +28,7 @@ const SHIPPING_PHONE_RE = /^\+\d{1,4}-\d{4,14}$/;
  *  quote that otherwise has nothing wrong with it — instead of the shipment
  *  being silently dropped, which is what happened before this feature
  *  existed and is what this restores when the shipment doesn't qualify. */
-export function importableShipping(shipping: ZohoQuoteShipping): boolean {
+function importableShipping(shipping: ZohoQuoteShipping): boolean {
   return (
     shipping.first_name.trim() !== ''
     && shipping.last_name.trim() !== ''

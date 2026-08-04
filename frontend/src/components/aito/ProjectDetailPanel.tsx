@@ -31,6 +31,7 @@ import { copyTextToClipboard } from '../../utils/clipboard';
 import { parseUTCDate } from '../../utils/date';
 import { formatMoney } from '../../utils/pricing';
 import { applyDescription, applySyncState } from '../../utils/aitoOptimistic';
+import { islandLabel } from '../../utils/shippingDraft';
 import { inputCls } from '../formStyles';
 import { useToast } from '../../contexts/ToastContext';
 
@@ -240,11 +241,13 @@ function PanelHeader({
     queryFn: api.getAitoShippingServices,
     staleTime: 60 * 60_000,
   });
-  const islandLabel = project.shipping_island
-    ? shippingServicesQuery.data?.services
-        .flatMap((service) => service.islands)
-        .find((island) => island.key === project.shipping_island)?.label
-    : null;
+  // Shared with ShippingCard and the create drawer's own rail/checklist — see
+  // `islandLabel`'s doc for why the degrade has to be one computation, not
+  // three: this pill and the card twelve lines below it used to fall back
+  // differently (raw key here, a naive capitalisation there) and could show
+  // two different spellings of the same island in one panel with Zoho down.
+  const shippingIslandLabel =
+    project.shipping_island !== null ? islandLabel(project.shipping_island, shippingServicesQuery.data?.services ?? []) : null;
   return (
     <div
       // `relative z-[2]` so the cast shadow below paints ONTO the body rather
@@ -326,13 +329,13 @@ function PanelHeader({
               destination is not work. Rendered in the header rather than only
               in the card below because this is the fact the person opening
               the panel most needs before scrolling anywhere. */}
-          {project.shipping_island && (
+          {project.shipping_island !== null && (
             <span
               data-testid="panel-shipping-pill"
               className="inline-flex items-center gap-1.5 rounded-full border border-sky-400/30 bg-sky-400/[0.14] px-2 py-0.5 text-[11px] font-semibold text-sky-400"
             >
               <Plane className="h-3.5 w-3.5" aria-hidden="true" />
-              {islandLabel ?? project.shipping_island}
+              {shippingIslandLabel}
             </span>
           )}
         </div>

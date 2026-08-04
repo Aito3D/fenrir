@@ -70,7 +70,7 @@ export function ProjectDoneAction({ project }: { project: AitoProject }) {
           disagree — see BoardColumn's SortableCard for the identical swap
           and its reasoning (enlarged so a plane at check size doesn't read
           as a smudge). */}
-      {project.shipping_island ? (
+      {project.shipping_island !== null ? (
         <Plane className="w-[1.15rem] h-[1.15rem]" />
       ) : (
         <Check className="w-3.5 h-3.5" />

@@ -5,7 +5,7 @@ import { Phone, Plane } from 'lucide-react';
 import { ShippingFields } from './ShippingFields';
 import { HoldButton } from './HoldButton';
 import { CopyableValue } from './ProjectDetailPanel';
-import { emptyShippingDraft, isShippingComplete, shippingPayload } from '../../utils/shippingDraft';
+import { emptyShippingDraft, islandLabel, isShippingComplete, shippingPayload } from '../../utils/shippingDraft';
 import type { ShippingDraft } from '../../utils/shippingDraft';
 import { parsePhone } from '../../utils/clientDraft';
 import { applyShipping } from '../../utils/aitoOptimistic';
@@ -39,14 +39,6 @@ function draftFromProject(project: AitoProject): ShippingDraft {
   };
 }
 
-/** Capitalises a raw island key ('rangiroa' -> 'Rangiroa') for the read view
- *  when the Zoho-backed catalogue hasn't resolved a proper label yet — see
- *  the `islandLabel` computation below for when that catalogue lookup wins
- *  instead. Islands are proper nouns and are never run through i18n. */
-function capitalize(key: string): string {
-  return key.length ? key.charAt(0).toLocaleUpperCase('fr') + key.slice(1) : key;
-}
-
 /** Optional air freight, on the panel's left column.
  *
  *  `project.shipping_island !== null` IS "has a shipment" — the only test,
@@ -75,11 +67,17 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
     staleTime: 60 * 60_000,
   });
 
-  // Copies ProjectDetailPanel's description-save shape exactly: one
-  // `useOptimisticBoardMutation`, an `applyShipping` transform mirroring the
-  // server's own write, and the PATCH response written back into the
-  // `['aito-projects']` cache in `onSuccess` — the pattern every board
-  // mutation in this panel already follows, not a new one for this card.
+  // Same SHAPE as `ProjectDetailPanel`'s description-save mutation — one
+  // `useOptimisticBoardMutation`, an optimistic transform mirroring the
+  // server's own write (`applyShipping` here, `applyDescription` there), and
+  // the PATCH response written back into the `['aito-projects']` cache in
+  // `onSuccess` — but not a byte-for-byte copy: a shipping PATCH also runs
+  // through `diff_fields` server-side and records a `project.updated` event
+  // (plus a possible `sync.queued`), same as every other board write, so
+  // this invalidates `['aito-events', project.id]` too. `RecordCard` and
+  // `ActivityRail` render immediately ABOVE this card in the same panel;
+  // skipping the invalidation would leave their timeline stale after every
+  // add/edit/remove until something else happened to refetch it.
   const shippingMutation = useOptimisticBoardMutation<AitoProject, AitoProjectUpdate>({
     mutationFn: (patch) => api.updateAitoProject(project.id, patch),
     transform: (previous, patch) => applyShipping(previous, project.id, patch),
@@ -88,6 +86,7 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
       queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
         prev?.map((p) => (p.id === updatedProject.id ? updatedProject : p)) ?? prev,
       );
+      queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
     },
     onError: () => showToast(t('aito.saveFailed'), 'error'),
   });
@@ -137,14 +136,11 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
     );
   }
 
-  // Catalogue label when the table has resolved (correct spelling/accents),
-  // capitalized key otherwise — the same "never blank" degrade the drawer's
-  // own rail uses, just favouring a readable capital over the raw key since
-  // nothing here is mid-typing the way that rail can be.
-  const islandLabel = project.shipping_island
-    ? (servicesQuery.data?.services.flatMap((s) => s.islands).find((i) => i.key === project.shipping_island)?.label
-        ?? capitalize(project.shipping_island))
-    : null;
+  // Shared with the panel header's pill and the create drawer's own
+  // rail/checklist — see `islandLabel`'s doc for why the degrade has to be
+  // one computation shared by all three rather than three separate ones.
+  const shippingIslandLabel =
+    project.shipping_island !== null ? islandLabel(project.shipping_island, servicesQuery.data?.services ?? []) : null;
   const recipient = [project.shipping_first_name, project.shipping_last_name].filter(Boolean).join(' ');
   const serviceName = project.shipping_service_name ?? project.shipping_service;
 
@@ -209,7 +205,7 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
       ) : (
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm items-baseline">
           <dt className="text-bambu-gray">{t('aito.shippingIsland')}</dt>
-          <dd className="text-right min-w-0 truncate text-white">{islandLabel}</dd>
+          <dd className="text-right min-w-0 truncate text-white">{shippingIslandLabel}</dd>
           <dt className="text-bambu-gray">{t('aito.shippingRecipient')}</dt>
           <dd className="text-right min-w-0 truncate text-white">{recipient}</dd>
           <dt className="text-bambu-gray">{t('aito.shippingPhone')}</dt>

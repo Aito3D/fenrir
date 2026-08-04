@@ -6,6 +6,7 @@ import {
   applyDescription,
   applyRestore,
   applyQuoteStatus,
+  applyShipping,
   applySyncState,
   applyTaskSummary,
   isPlaceholder,
@@ -352,6 +353,78 @@ describe('applySyncState', () => {
 
   it('leaves the cache untouched (undefined) on a cache miss, rather than fabricating a board', () => {
     expect(applySyncState(undefined, 1, 'error')).toBeUndefined();
+  });
+});
+
+describe('applyShipping', () => {
+  const shipped = () =>
+    card({
+      id: 1,
+      shipping_island: 'rangiroa',
+      shipping_service: 'tuamotu',
+      shipping_service_name: 'Livraison Avion Tuamotu',
+      shipping_first_name: 'Jean-Pierre',
+      shipping_last_name: 'DUPONT',
+      shipping_phone: '+689-89645864',
+      shipping_price: 3200,
+    });
+
+  it('shipping_island: null clears all seven shipping_* properties, including the two the request never posts', () => {
+    const after = applyShipping([shipped()], 1, { shipping_island: null });
+    const p = find(after, 1);
+    expect(p.shipping_island).toBeNull();
+    expect(p.shipping_service).toBeNull();
+    expect(p.shipping_first_name).toBeNull();
+    expect(p.shipping_last_name).toBeNull();
+    expect(p.shipping_phone).toBeNull();
+    expect(p.shipping_price).toBeNull();
+    expect(p.shipping_service_name).toBeNull();
+  });
+
+  it('an add/edit merges the five posted fields and leaves the two server-derived ones untouched', () => {
+    const after = applyShipping([card({ id: 1 })], 1, {
+      shipping_island: 'rangiroa',
+      shipping_first_name: 'Jean-Pierre',
+      shipping_last_name: 'DUPONT',
+      shipping_phone: '+689-89645864',
+      shipping_price: 3200,
+    });
+    const p = find(after, 1);
+    expect(p.shipping_island).toBe('rangiroa');
+    expect(p.shipping_first_name).toBe('Jean-Pierre');
+    expect(p.shipping_last_name).toBe('DUPONT');
+    expect(p.shipping_phone).toBe('+689-89645864');
+    expect(p.shipping_price).toBe(3200);
+    // Server-derived, never posted — an add/edit leaves them exactly as they
+    // were until the PATCH response replaces the row.
+    expect(p.shipping_service).toBeNull();
+    expect(p.shipping_service_name).toBeNull();
+  });
+
+  it('a price of 0 survives — a real free shipment, not a missing value the `??` fallback should paper over', () => {
+    const after = applyShipping([shipped()], 1, {
+      shipping_island: 'rangiroa',
+      shipping_first_name: 'Jean-Pierre',
+      shipping_last_name: 'DUPONT',
+      shipping_phone: '+689-89645864',
+      shipping_price: 0,
+    });
+    expect(find(after, 1).shipping_price).toBe(0);
+  });
+
+  it('leaves other projects untouched', () => {
+    const projects = [shipped(), card({ id: 2, shipping_island: null })];
+    const after = applyShipping(projects, 1, { shipping_island: null });
+    expect(find(after, 2)).toEqual(find(projects, 2));
+  });
+
+  it('is a no-op for an unknown id', () => {
+    const projects = [shipped()];
+    expect(applyShipping(projects, 99, { shipping_island: null })).toEqual(projects);
+  });
+
+  it('leaves the cache untouched (undefined) on a cache miss, rather than fabricating a board', () => {
+    expect(applyShipping(undefined, 1, { shipping_island: null })).toBeUndefined();
   });
 });
 

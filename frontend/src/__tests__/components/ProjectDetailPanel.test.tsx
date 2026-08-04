@@ -1917,6 +1917,24 @@ describe('ProjectDetailPanel visual parity: header quote-status pill', () => {
   });
 });
 
+describe('ProjectDetailPanel visual parity: header shipping pill', () => {
+  it('shows the destination island as a sky pill in the eyebrow', () => {
+    show({ shipping_island: 'rangiroa' });
+    const pill = screen.getByTestId('panel-shipping-pill');
+    // No catalogue mock in this file, so this is the segment-capitalized
+    // fallback (`islandLabel`'s degrade path) — 'rangiroa' has no hyphen to
+    // split, so it renders identically to what the real catalogue would say.
+    expect(pill).toHaveTextContent('Rangiroa');
+    expect(pill.querySelector('svg.lucide-plane')).not.toBeNull();
+    expect(pill.className).toContain('text-sky-400');
+  });
+
+  it('omits the pill entirely when the project has no shipment', () => {
+    show({ shipping_island: null });
+    expect(screen.queryByTestId('panel-shipping-pill')).not.toBeInTheDocument();
+  });
+});
+
 describe('ProjectDetailPanel visual parity: header contact icons', () => {
   it('gives the phone and email chips a leading icon, matching the reference', () => {
     show();

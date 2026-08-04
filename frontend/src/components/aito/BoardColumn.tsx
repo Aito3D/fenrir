@@ -137,7 +137,7 @@ function SortableCard({
                     and that is the one thing the person about to archive it
                     needs to know. Enlarged from the check's w-3.5: a plane at
                     check size reads as a smudge rather than an aircraft. */}
-                {project.shipping_island ? (
+                {project.shipping_island !== null ? (
                   <Plane className="relative w-[1.15rem] h-[1.15rem]" />
                 ) : (
                   <Check className="relative w-3.5 h-3.5" />

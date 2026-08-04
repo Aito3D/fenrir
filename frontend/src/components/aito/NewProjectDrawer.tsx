@@ -20,7 +20,7 @@ import { useNewProjectDraft } from '../../hooks/useNewProjectDraft';
 import { buildFallbackSummary, tasksSignature } from '../../utils/aitoSummary';
 import { defaultClientDraft, draftFromContact, formatPhone, visibleClientDraftErrors } from '../../utils/clientDraft';
 import type { ClientDraft } from '../../utils/clientDraft';
-import { visibleShippingDraftErrors } from '../../utils/shippingDraft';
+import { islandLabel, visibleShippingDraftErrors } from '../../utils/shippingDraft';
 import type { ShippingDraft } from '../../utils/shippingDraft';
 import {
   emptyTaskDraft,
@@ -171,15 +171,11 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
     queryFn: api.getAitoShippingServices,
     staleTime: 60 * 60_000,
   });
-  // Falls back to the raw island KEY, never '': while the catalogue hasn't
-  // resolved yet (or never does) an empty label would render the rail as
-  // "✈ " with a bare price and the checklist as "Shipping to  · <name>" — a
-  // gap where the surface should degrade to something readable instead.
-  const shippingIslandLabel = shipping
-    ? (shippingServicesQuery.data?.services
-        .flatMap((service) => service.islands)
-        .find((island) => island.key === shipping.island)?.label ?? shipping.island)
-    : '';
+  // Shared with the panel header's pill and ShippingCard's read view — see
+  // `islandLabel`'s own doc for why the degrade (catalogue unresolved) has
+  // to be the same computation on all three surfaces rather than each
+  // inventing its own.
+  const shippingIslandLabel = shipping ? islandLabel(shipping.island, shippingServicesQuery.data?.services ?? []) : '';
   const defaultId = statusQuery.data?.default_contact_id ?? '';
   const defaultName = statusQuery.data?.default_contact_name ?? '';
   // The status endpoint always returns a default contact — even a fallback one
