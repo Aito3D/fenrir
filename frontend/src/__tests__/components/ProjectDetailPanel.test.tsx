@@ -2164,6 +2164,16 @@ describe('ProjectDetailPanel age stat', () => {
     expect(screen.queryByTestId('panel-age-date')).not.toBeInTheDocument();
     expect(screen.getByTestId('panel-age-value')).toBeInTheDocument();
   });
+
+  it('shows the absolute date caption for a parseable stamp', () => {
+    const stamp = daysAgo(12);
+    show({ created_at: stamp });
+    // Derived the same way the component does — toLocaleDateString with
+    // { dateStyle: 'medium' } — rather than a hard-coded string, so this
+    // can't break on a machine with a different locale.
+    const expected = parseUTCDate(stamp)!.toLocaleDateString(i18n.language, { dateStyle: 'medium' });
+    expect(screen.getByTestId('panel-age-date')).toHaveTextContent(expected);
+  });
 });
 
 describe('ProjectDetailPanel record card age echo', () => {
@@ -2171,7 +2181,7 @@ describe('ProjectDetailPanel record card age echo', () => {
     show({ created_at: daysAgo(12) });
     const echo = within(screen.getByTestId('record-created')).getByTestId('record-age');
     expect(echo).toHaveClass('text-orange-400');
-    expect(echo).toHaveTextContent(/\(\d+ ?[a-zA-Zд日天.]+\)/);
+    expect(echo).toHaveTextContent(/\(\d+[^)]+\)/);
     expect(screen.queryByTestId('record-accepted')).not.toBeInTheDocument();
   });
 

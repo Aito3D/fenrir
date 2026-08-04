@@ -347,7 +347,7 @@ function PanelHeader({
           first claim on the width. The Record card's echo carries the age on
           narrow screens, so nothing is lost, only relocated. */}
       <div className="hidden md:block w-px self-stretch bg-bambu-dark-tertiary" />
-      <div className="hidden md:block">
+      <div className="hidden md:flex flex-shrink-0">
         <PanelAgeStat project={project} />
       </div>
       <div className="w-px self-stretch bg-bambu-dark-tertiary" />

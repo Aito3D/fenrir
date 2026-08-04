@@ -315,6 +315,7 @@ const PT_BR_COGNATES = [
   'Proxy', 'total: {{minutes}} min',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
   'Email',  // Task 6 Aito client email field — "Email" is used verbatim in PT-BR (see fromEmail, usernameOrEmail)
+  '{{days}} d',  // aito.ageDaysShort — "d" is also the abbreviation for "dia" in Portuguese (BR)
 ];
 
 // Chinese (Simplified): very few cognates beyond brand names.
@@ -382,6 +383,7 @@ const ES_COGNATES = [
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
+  '{{days}} d',  // aito.ageDaysShort — "d" is also the abbreviation for "día" in Spanish
 ];
 
 // Turkish cognates — technical UI labels that Turkish speakers use verbatim

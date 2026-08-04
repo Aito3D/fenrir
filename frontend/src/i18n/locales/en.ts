@@ -70,6 +70,9 @@ export default {
     phoneRequired: 'Phone number is required.',
     dragHandle: 'Drag to reorder',
     createdLabel: 'Created',
+    // Deliberately its own key rather than reusing quoteStatus.accepted below:
+    // this one labels a TIMESTAMP (when the age clock started), not a status,
+    // so it's free to diverge even though the word is identical today.
     ageAnchorAccepted: 'Accepted',
     ageDaysShort: '{{days}} d',
     lastActivity: 'Last activity',

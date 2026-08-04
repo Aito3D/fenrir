@@ -6,7 +6,7 @@
  *  and trashed cards are exempt: a finished or discarded job is not late.
  */
 
-import { parseUTCDate } from './date';
+import { parseUTCDateStrict } from './date';
 
 const DAY_MS = 86_400_000;
 
@@ -69,14 +69,6 @@ export function agingTextCls(
 
 export type AgeAnchor = 'accepted' | 'created';
 
-/** `parseUTCDate` appends a 'Z' and hands back whatever `new Date` makes of it
- *  — for junk that is an Invalid Date object, not null, which is truthy and
- *  would sail past every `=== null` guard downstream. Normalise here, once. */
-function parsedOrNull(raw: string | null): Date | null {
-  const date = parseUTCDate(raw);
-  return date && !Number.isNaN(date.getTime()) ? date : null;
-}
-
 /** Which timestamp a project's age is measured from, and what to call it.
  *
  *  An accepted job's clock starts at the client's go-ahead, not the quote
@@ -91,8 +83,8 @@ export function ageAnchor(project: {
   created_at: string;
 }): { anchor: AgeAnchor; raw: string | null; at: Date | null } {
   if (project.quote_status === 'accepted') {
-    const at = parsedOrNull(project.quote_accepted_at);
+    const at = parseUTCDateStrict(project.quote_accepted_at);
     if (at) return { anchor: 'accepted', raw: project.quote_accepted_at, at };
   }
-  return { anchor: 'created', raw: project.created_at, at: parsedOrNull(project.created_at) };
+  return { anchor: 'created', raw: project.created_at, at: parseUTCDateStrict(project.created_at) };
 }

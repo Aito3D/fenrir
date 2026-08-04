@@ -216,6 +216,20 @@ export function parseUTCDate(dateStr: string | null | undefined): Date | null {
 }
 
 /**
+ * Strict variant of `parseUTCDate`: never returns a truthy Invalid Date.
+ *
+ * `parseUTCDate` appends a 'Z' and hands back whatever `new Date` makes of
+ * it — for junk input that is an Invalid Date object, not null, and an
+ * Invalid Date is truthy, so it sails straight past every `=== null` /
+ * `!date` guard downstream. Use this wherever a caller needs to actually
+ * branch on "was this parseable" rather than just format-or-fall-back.
+ */
+export function parseUTCDateStrict(dateStr: string | null | undefined): Date | null {
+  const date = parseUTCDate(dateStr);
+  return date && !Number.isNaN(date.getTime()) ? date : null;
+}
+
+/**
  * Format a UTC date string to a localized date/time string.
  *
  * @param dateStr - Date string from backend
@@ -436,13 +450,13 @@ export function formatRelativeTime(
  * ago") can never disagree about the count.
  */
 export function elapsedDays(dateStr: string | null): number | null {
-  const date = parseUTCDate(dateStr);
-  // This guard is also what fixed formatElapsedTime for junk stamps: before
-  // it existed, a bare `if (!date)` never fired against an Invalid Date (it's
-  // truthy), so NaN flowed through every branch to the years fallback and the
-  // UI showed "NaN years ago". Deliberately replaced with the unknown-time
-  // fallback instead — see the pinned test in date.test.ts.
-  if (!date || Number.isNaN(date.getTime())) return null;
+  // parseUTCDateStrict is also what fixed formatElapsedTime for junk stamps:
+  // before it existed, a bare `if (!date)` never fired against an Invalid
+  // Date (it's truthy), so NaN flowed through every branch to the years
+  // fallback and the UI showed "NaN years ago". Deliberately replaced with
+  // the unknown-time fallback instead — see the pinned test in date.test.ts.
+  const date = parseUTCDateStrict(dateStr);
+  if (!date) return null;
 
   const todayMidnight = parseLocalDateKey(localDateKey(new Date()));
   const dateMidnight = parseLocalDateKey(localDateKey(date));
