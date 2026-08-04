@@ -1,0 +1,143 @@
+"""The shipping services endpoint, and shipping validation on create/patch."""
+
+import pytest
+
+from backend.app.services.zoho import zoho_service
+
+
+async def _create(async_client, **overrides):
+    payload = {
+        "description": "Support GoPro",
+        "client_id": "z1",
+        "client_name": "ACME",
+        "client_phone": "+689-87123456",
+    }
+    payload.update(overrides)
+    return await async_client.post("/api/v1/aito/", json=payload)
+
+
+SHIPPING = {
+    "shipping_island": "rangiroa",
+    "shipping_first_name": "Jean-Pierre",
+    "shipping_last_name": "DUPONT",
+    "shipping_phone": "+689-89645864",
+}
+
+
+@pytest.fixture
+def resolved_catalogue(monkeypatch):
+    from backend.app.services.aito_shipping import ShippingItem
+
+    async def fake(db, **kwargs):
+        return {"tuamotu": ShippingItem(item_id="SHIP-TU", name="Livraison Avion Tuamotu", rate=3200.0)}
+
+    # Patched on the INSTANCE, not the class: pytest's monkeypatch restores an
+    # attribute that only ever existed via the class (a bound method) by
+    # setting an instance-level shadow — see test_aito_quote_sync.py's own
+    # `get_shipping_catalogue` patch, which already leaves that shadow behind
+    # for the rest of the session. A class-level patch here would be silently
+    # masked by that shadow whenever this file runs after that one.
+    monkeypatch.setattr(zoho_service, "get_shipping_catalogue", fake)
+
+
+async def test_services_endpoint_lists_every_service_with_its_islands(async_client, resolved_catalogue):
+    response = await async_client.get("/api/v1/aito/shipping/services")
+    assert response.status_code == 200
+    body = response.json()
+    assert [s["key"] for s in body["services"]] == ["societe", "tuamotu", "marquises", "australes", "gambier"]
+    tuamotu = next(s for s in body["services"] if s["key"] == "tuamotu")
+    assert tuamotu["name"] == "Livraison Avion Tuamotu"
+    assert tuamotu["rate"] == 3200.0
+    assert {"key": "rangiroa", "label": "Rangiroa"} in tuamotu["islands"]
+    assert body["catalogue_resolved"] is True
+
+
+async def test_services_endpoint_serves_islands_with_zoho_unreachable(async_client, monkeypatch):
+    async def empty(db, **kwargs):
+        return {}
+
+    # Instance-level, not class-level — see resolved_catalogue's comment.
+    monkeypatch.setattr(zoho_service, "get_shipping_catalogue", empty)
+    body = (await async_client.get("/api/v1/aito/shipping/services")).json()
+    assert body["catalogue_resolved"] is False
+    assert all(service["rate"] is None for service in body["services"])
+    assert sum(len(service["islands"]) for service in body["services"]) == 45
+
+
+async def test_create_derives_the_service_and_defaults_the_price(async_client, resolved_catalogue):
+    body = (await _create(async_client, **SHIPPING)).json()
+    assert body["shipping_island"] == "rangiroa"
+    assert body["shipping_service"] == "tuamotu"
+    assert body["shipping_service_name"] == "Livraison Avion Tuamotu"
+    assert body["shipping_price"] == 3200.0
+
+
+async def test_create_ignores_a_client_supplied_service(async_client, resolved_catalogue):
+    # The service is derived, never trusted.
+    body = (await _create(async_client, **SHIPPING, shipping_service="gambier")).json()
+    assert body["shipping_service"] == "tuamotu"
+
+
+async def test_create_accepts_a_price_override(async_client, resolved_catalogue):
+    body = (await _create(async_client, **SHIPPING, shipping_price=5400)).json()
+    assert body["shipping_price"] == 5400.0
+
+
+async def test_create_rejects_an_unknown_island(async_client, resolved_catalogue):
+    response = await _create(async_client, **{**SHIPPING, "shipping_island": "atlantis"})
+    assert response.status_code == 422
+
+
+async def test_create_rejects_a_partial_shipment(async_client, resolved_catalogue):
+    response = await _create(async_client, shipping_island="rangiroa", shipping_first_name="Jean-Pierre")
+    assert response.status_code == 422
+    assert "shipping" in response.json()["detail"].lower()
+
+
+async def test_create_rejects_a_malformed_phone(async_client, resolved_catalogue):
+    response = await _create(async_client, **{**SHIPPING, "shipping_phone": "12"})
+    assert response.status_code == 422
+
+
+async def test_create_without_shipping_leaves_every_field_null(async_client, resolved_catalogue):
+    body = (await _create(async_client)).json()
+    assert body["shipping_island"] is None
+    assert body["shipping_service"] is None
+    assert body["shipping_service_name"] is None
+
+
+async def test_patch_attaches_shipping_and_requeues_the_quote(async_client, resolved_catalogue):
+    project_id = (await _create(async_client)).json()["id"]
+    body = (await async_client.patch(f"/api/v1/aito/{project_id}", json=SHIPPING)).json()
+    assert body["shipping_island"] == "rangiroa"
+    assert body["quote_sync_state"] == "pending"
+
+
+async def test_patch_clears_shipping_with_a_null_island(async_client, resolved_catalogue):
+    project_id = (await _create(async_client, **SHIPPING)).json()["id"]
+    body = (await async_client.patch(f"/api/v1/aito/{project_id}", json={"shipping_island": None})).json()
+    for field in (
+        "shipping_island",
+        "shipping_service",
+        "shipping_first_name",
+        "shipping_last_name",
+        "shipping_phone",
+        "shipping_price",
+    ):
+        assert body[field] is None
+
+
+async def test_patch_corrects_one_field_of_an_existing_shipment(async_client, resolved_catalogue):
+    # The merged row is what has to be consistent, not the payload — so a lone
+    # phone correction does not need the other three fields resent.
+    project_id = (await _create(async_client, **SHIPPING)).json()["id"]
+    body = (await async_client.patch(f"/api/v1/aito/{project_id}", json={"shipping_phone": "+689-40123456"})).json()
+    assert body["shipping_phone"] == "+689-40123456"
+    assert body["shipping_island"] == "rangiroa"
+    assert body["shipping_last_name"] == "DUPONT"
+
+
+async def test_patch_alone_cannot_leave_a_half_shipment(async_client, resolved_catalogue):
+    project_id = (await _create(async_client, **SHIPPING)).json()["id"]
+    response = await async_client.patch(f"/api/v1/aito/{project_id}", json={"shipping_first_name": ""})
+    assert response.status_code == 422
