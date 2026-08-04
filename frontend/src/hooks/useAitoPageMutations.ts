@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
-import { api, ApiError, type AitoProject, type ZohoQuotePreview } from '../api/client';
+import { api, ApiError, type AitoProject, type ZohoQuotePreview, type ZohoQuoteShipping } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { formatPhone } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
@@ -11,6 +11,30 @@ import type { ShippingDraft } from '../utils/shippingDraft';
 import { clearNewProjectDraft } from './useNewProjectDraft';
 import { useOptimisticBoardMutation } from './useOptimisticBoardMutation';
 import { applyCreate, applyDelete } from '../utils/aitoOptimistic';
+
+// Mirrors `_SHIPPING_PHONE_RE` in backend/app/api/routes/aito.py — POST
+// /aito/ 422s the WHOLE create if `shipping_phone` doesn't match this shape.
+const SHIPPING_PHONE_RE = /^\+\d{1,4}-\d{4,14}$/;
+
+/** True when a preview's shipment is actually acceptable to POST /aito/.
+ *
+ *  `parse_shipping_line` (aito_quote_import.py) fills `first_name`/`last_name`
+ *  from a "Nom:" row and `phone` from a "Téléphone:" row on the Books quote
+ *  line — free text that can be missing or hand-typed wrong (`87.12.34.56`
+ *  instead of `+689-87123456`) — and returns them regardless, on its own
+ *  "None on any doubt" discipline for the ISLAND alone. Names and phone are
+ *  never re-validated there. Forwarding an unusable shipment unconditionally
+ *  would turn one bad shipping line into a 422 for the WHOLE import — a
+ *  quote that otherwise has nothing wrong with it — instead of the shipment
+ *  being silently dropped, which is what happened before this feature
+ *  existed and is what this restores when the shipment doesn't qualify. */
+function importableShipping(shipping: ZohoQuoteShipping): boolean {
+  return (
+    shipping.first_name.trim() !== ''
+    && shipping.last_name.trim() !== ''
+    && SHIPPING_PHONE_RE.test(shipping.phone.trim())
+  );
+}
 
 /** The board's create/import/delete writes — everything `useOptimisticBoardMutation`
  *  wraps around a plain `mutationFn`, moved out of `AitoPage` so the page is
@@ -113,8 +137,11 @@ export function useAitoPageMutations() {
         // `preview.shipping` (ZohoQuoteShipping) is unprefixed and carries a
         // `service` the request body must never see — the server derives
         // `shipping_service` from the island alone. `service` is deliberately
-        // dropped, not renamed.
-        ...(preview.shipping
+        // dropped, not renamed. And it is only forwarded at all when
+        // `importableShipping` says the server will actually accept it —
+        // see that function's docstring for why an unconditional forward
+        // would be a regression, not an improvement.
+        ...(preview.shipping && importableShipping(preview.shipping)
           ? {
               shipping_island: preview.shipping.island,
               shipping_first_name: preview.shipping.first_name,

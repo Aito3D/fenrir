@@ -32,6 +32,12 @@ export interface ShippingDraftErrors {
   firstName: string | null;
   lastName: string | null;
   phone: string | null;
+  /** null price ("no rate known and none typed yet") is an error; 0 is a
+   *  real, free shipment and stays valid. Reuses `aito.shippingNoRate` — the
+   *  same key `ShippingFields` already shows as its amber "enter one" hint —
+   *  rather than a new key, so the field's own message and the checklist's
+   *  never say two different things about the same missing rate. */
+  price: string | null;
 }
 
 /** Split a client's display name into a recipient first/last pair.
@@ -71,7 +77,10 @@ export function emptyShippingDraft(client: ClientDraft | null): ShippingDraft {
 /** Pure validity, independent of what has been blurred. Every field is
  *  required once a shipment exists — the four of them are what the freight
  *  desk asks for, and a parcel missing any one of them cannot be handed over.
- *  Returns i18n keys so this stays testable without i18n. */
+ *  `price` joins them for the same reason: the server 422s a shipment with
+ *  no rate ("No rate is known for this service — supply shipping_price"), so
+ *  a null price is exactly as incomplete as a missing name. Returns i18n
+ *  keys so this stays testable without i18n. */
 export function shippingDraftErrors(draft: ShippingDraft): ShippingDraftErrors {
   const phone = { countryCode: draft.countryCode, nationalNumber: draft.nationalNumber };
   return {
@@ -81,11 +90,18 @@ export function shippingDraftErrors(draft: ShippingDraft): ShippingDraftErrors {
     // An empty number passes `validatePhone` (the client's phone is optional),
     // so emptiness is checked here — for a shipment it is not optional.
     phone: draft.nationalNumber.trim() && validatePhone(phone) === null ? null : 'aito.ruleShippingInvalidPhone',
+    // null = no rate known and none typed yet (an error); 0 is a real, free
+    // shipment and must stay valid — this is a null check, never falsiness.
+    price: draft.price !== null ? null : 'aito.shippingNoRate',
   };
 }
 
 /** What the form should currently show and gate Create on. Same masking rule
- *  as `visibleClientDraftErrors`. */
+ *  as `visibleClientDraftErrors`. `price` is gated on the ISLAND's blurred
+ *  flag rather than a flag of its own: the price only appears once an island
+ *  is picked, and picking one is a single atomic action that already reveals
+ *  (see `ShippingFields.selectIsland`) — a separate `blurred.price` would be
+ *  a flag that is always redundant with `blurred.island`. */
 export function visibleShippingDraftErrors(draft: ShippingDraft): ShippingDraftErrors {
   const errors = shippingDraftErrors(draft);
   return {
@@ -93,6 +109,7 @@ export function visibleShippingDraftErrors(draft: ShippingDraft): ShippingDraftE
     firstName: draft.blurred.firstName ? errors.firstName : null,
     lastName: draft.blurred.lastName ? errors.lastName : null,
     phone: draft.blurred.phone ? errors.phone : null,
+    price: draft.blurred.island ? errors.price : null,
   };
 }
 

@@ -3719,8 +3719,11 @@ export interface ZohoEstimateSummary {
 
 /** The shipment read back off the estimate's shipping line, unprefixed and
  *  carrying no `service` — the server always derives `shipping_service` from
- *  the island and rejects a client-supplied one. A caller mapping this onto
- *  `createAitoProject`'s body must rename each field to its `shipping_*`
+ *  the island and silently ignores a client-supplied one (`AitoShippingInput`
+ *  is `extra="ignore"`), which is exactly why dropping it here matters: a
+ *  stale or wrong `service` sent alongside would not even error, just vanish.
+ *  A caller mapping this onto `createAitoProject`'s body must rename each
+ *  field to its `shipping_*`
  *  counterpart AND drop `service` entirely: island -> shipping_island,
  *  first_name -> shipping_first_name, last_name -> shipping_last_name,
  *  phone -> shipping_phone, price -> shipping_price. */

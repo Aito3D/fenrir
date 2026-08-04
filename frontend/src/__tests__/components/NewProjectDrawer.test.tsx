@@ -565,7 +565,7 @@ describe('NewProjectDrawer', () => {
     await fillOneTask();
     await openClientSection();
     await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
-    await userEvent.click(screen.getByRole('button', { name: /create/i }));
+    await userEvent.click(createButton());
     expect(onCreate).not.toHaveBeenCalled();
     expect(within(screen.getByTestId('drawer-checklist')).getByText(/island missing/i)).toBeInTheDocument();
   });
@@ -587,7 +587,7 @@ describe('NewProjectDrawer', () => {
     await openClientSection();
     await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
     await pickIsland('Rangiroa');
-    await userEvent.click(screen.getByRole('button', { name: /create/i }));
+    await userEvent.click(createButton());
     expect(onCreate).toHaveBeenCalledWith(
       expect.any(String),
       expect.any(Object),
@@ -601,6 +601,62 @@ describe('NewProjectDrawer', () => {
     await openClientSection();
     await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
     await userEvent.click(screen.getByRole('button', { name: /remove shipping/i }));
+    expect(screen.getByRole('button', { name: /add shipping/i })).toBeInTheDocument();
+    expect(within(screen.getByTestId('drawer-checklist')).queryByText(/shipping/i)).not.toBeInTheDocument();
+  });
+
+  it('round-trips a shipment through localStorage across unmount/remount', async () => {
+    const { unmount } = await renderDrawer();
+    await openClientSection();
+    await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
+    await pickIsland('Rangiroa');
+    await waitFor(() =>
+      expect(localStorage.setItem).toHaveBeenCalledWith(
+        'aito.newProjectDraft.v1',
+        expect.stringContaining('"island":"rangiroa"'),
+      ),
+    );
+    unmount();
+
+    render(<NewProjectDrawer onClose={vi.fn()} onCreate={vi.fn()} />);
+    await userEvent.click(clientHeader());
+    expect(await screen.findByLabelText(/recipient first name/i)).toHaveValue('Jean-Pierre');
+    expect(screen.getByLabelText(/destination island/i)).toHaveValue('Rangiroa');
+  });
+
+  it('hold-to-reset also clears the shipment', async () => {
+    await renderDrawer();
+    await openClientSection();
+    await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
+    await pickIsland('Rangiroa');
+    await waitFor(() => expect(screen.getByLabelText(/destination island/i)).toHaveValue('Rangiroa'));
+
+    // Same real-timer HoldButton drive as the plain "hold-to-reset" test above.
+    fireEvent.pointerDown(screen.getByRole('button', { name: /reset draft/i }));
+    await waitFor(() => expect(screen.queryByLabelText(/destination island/i)).not.toBeInTheDocument(), {
+      timeout: 2000,
+    });
+    // `resetDraft` sets `draft` to null synchronously; the default-contact
+    // effect that reseeds it (and remounts `ClientSection`, which is what the
+    // Add-shipping button lives inside) runs a beat later.
+    await waitFor(() => expect(screen.getByRole('button', { name: /add shipping/i })).toBeInTheDocument());
+    expect(within(screen.getByTestId('drawer-checklist')).queryByText(/shipping/i)).not.toBeInTheDocument();
+  });
+
+  it('a legacy persisted draft with no shipping key reads as null, not a crash', async () => {
+    localStorage.setItem(
+      'aito.newProjectDraft.v1',
+      JSON.stringify({
+        tasks: [emptyTaskDraft()],
+        client: null,
+        summaryText: '',
+        summaryEdited: false,
+        summarySignature: '',
+        // No `shipping` key at all — the pre-feature shape.
+      }),
+    );
+    await renderDrawer();
+    await openClientSection();
     expect(screen.getByRole('button', { name: /add shipping/i })).toBeInTheDocument();
     expect(within(screen.getByTestId('drawer-checklist')).queryByText(/shipping/i)).not.toBeInTheDocument();
   });

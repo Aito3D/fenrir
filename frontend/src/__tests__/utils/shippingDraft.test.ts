@@ -69,13 +69,20 @@ describe('emptyShippingDraft', () => {
       firstName: null,
       lastName: null,
       phone: null,
+      price: null,
     });
   });
 });
 
 describe('validation', () => {
   it('accepts a complete shipment', () => {
-    expect(shippingDraftErrors(draft())).toEqual({ island: null, firstName: null, lastName: null, phone: null });
+    expect(shippingDraftErrors(draft())).toEqual({
+      island: null,
+      firstName: null,
+      lastName: null,
+      phone: null,
+      price: null,
+    });
     expect(isShippingComplete(draft())).toBe(true);
   });
 
@@ -109,6 +116,33 @@ describe('validation', () => {
     // field is genuinely invalid.
     expect(visible.firstName).toBeNull();
     expect(shippingDraftErrors(mixed).firstName).toBe('aito.ruleShippingMissingRecipient');
+  });
+
+  it('requires a price once an island exists, but treats 0 as a real free shipment', () => {
+    // null = no rate known and none typed yet — this is what ShippingFields
+    // shows as its amber "No rate from Zoho — enter one" hint, and what the
+    // server 422s on ("No rate is known for this service — supply
+    // shipping_price"). Reuses that same key rather than inventing one.
+    expect(shippingDraftErrors(draft({ price: null })).price).toBe('aito.shippingNoRate');
+    expect(isShippingComplete(draft({ price: null }))).toBe(false);
+    // A free shipment is a real, complete one — 0 is not "missing".
+    expect(shippingDraftErrors(draft({ price: 0 })).price).toBeNull();
+    expect(isShippingComplete(draft({ price: 0 }))).toBe(true);
+    // And the ordinary case: a real Zoho-resolved rate still passes.
+    expect(shippingDraftErrors(draft({ price: 3200 })).price).toBeNull();
+    expect(isShippingComplete(draft({ price: 3200 }))).toBe(true);
+  });
+
+  it('gates the missing-price error on the ISLAND having been left, not a flag of its own', () => {
+    const untouched = draft({
+      price: null,
+      blurred: { island: false, firstName: true, lastName: true, phone: true },
+    });
+    expect(visibleShippingDraftErrors(untouched).price).toBeNull();
+    expect(shippingDraftErrors(untouched).price).toBe('aito.shippingNoRate');
+
+    const revealed = { ...untouched, blurred: { ...untouched.blurred, island: true } };
+    expect(visibleShippingDraftErrors(revealed).price).toBe('aito.shippingNoRate');
   });
 });
 

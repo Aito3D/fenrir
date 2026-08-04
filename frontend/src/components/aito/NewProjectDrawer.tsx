@@ -171,10 +171,14 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
     queryFn: api.getAitoShippingServices,
     staleTime: 60 * 60_000,
   });
+  // Falls back to the raw island KEY, never '': while the catalogue hasn't
+  // resolved yet (or never does) an empty label would render the rail as
+  // "✈ " with a bare price and the checklist as "Shipping to  · <name>" — a
+  // gap where the surface should degrade to something readable instead.
   const shippingIslandLabel = shipping
     ? (shippingServicesQuery.data?.services
         .flatMap((service) => service.islands)
-        .find((island) => island.key === shipping.island)?.label ?? '')
+        .find((island) => island.key === shipping.island)?.label ?? shipping.island)
     : '';
   const defaultId = statusQuery.data?.default_contact_id ?? '';
   const defaultName = statusQuery.data?.default_contact_name ?? '';

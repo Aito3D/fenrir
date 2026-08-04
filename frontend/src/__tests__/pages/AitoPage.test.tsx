@@ -1287,6 +1287,99 @@ describe('AitoPage (backend board)', () => {
         expect(body).not.toHaveProperty('shipping_service');
       });
 
+      // `parse_shipping_line` (backend/app/services/aito_quote_import.py) fills
+      // first_name/last_name/phone from free-text "Nom:"/"Téléphone:" rows on
+      // the Books quote line, on its own "None on any doubt" discipline for
+      // the ISLAND ALONE — the names and phone are never re-validated there.
+      // A shipping line with a resolvable island but a deleted "Nom:" row or a
+      // hand-typed phone like "87.12.34.56" must therefore import the quote
+      // SUCCESSFULLY with no shipment, exactly as it did before this feature
+      // existed — not turn one bad shipping line into a 422 for the whole
+      // import (`POST /aito/` would otherwise reject empty names or a
+      // malformed shipping_phone and the entire create fails).
+      it('imports successfully with no shipping fields sent when the shipment has an empty last name', async () => {
+        const unnamedShipping: ZohoQuotePreview = {
+          ...preview,
+          shipping: {
+            island: 'rangiroa', service: 'tuamotu',
+            first_name: 'Jean-Pierre', last_name: '',
+            phone: '+689-87123456', price: 3200,
+          },
+        };
+        const createdProject = makeProject({ description: 'Imported job' });
+        const createSpy = vi.spyOn(api, 'createAitoProject').mockResolvedValue(createdProject);
+        renderPage([]);
+        // Registered AFTER renderPage([]): server.use() is LIFO, and
+        // renderPage's own '/api/v1/aito/' -> [] handler must not be the one
+        // still standing when the settle-invalidate refetches it post-mutate.
+        server.use(
+          http.get('/api/v1/zoho/estimates', () =>
+            HttpResponse.json([
+              {
+                id: 'e9', number: 'DEV26-9001', customer_name: 'Import Client',
+                date: '2026-07-29', total: 1200, currency_code: 'XPF', status: 'draft',
+              },
+            ]),
+          ),
+          http.get('/api/v1/zoho/estimates/:id/preview', () => HttpResponse.json(unnamedShipping)),
+          http.get('/api/v1/aito/', () => HttpResponse.json([createdProject])),
+        );
+        const user = userEvent.setup();
+        await user.click(await screen.findByRole('button', { name: /^import$/i }));
+        const drawer = (await screen.findByRole('dialog', { name: /import a quote/i })) as HTMLElement;
+        await user.click(await screen.findByText('DEV26-9001'));
+        await within(drawer).findByText('Printing');
+        await user.click(within(drawer).getByRole('button', { name: /^import$/i }));
+
+        await waitFor(() => expect(createSpy).toHaveBeenCalled());
+        const body = createSpy.mock.calls[0][0] as Record<string, unknown>;
+        expect(body).not.toHaveProperty('shipping_island');
+        expect(body).not.toHaveProperty('shipping_last_name');
+        expect(body).not.toHaveProperty('shipping_phone');
+        // The import itself must still succeed — the placeholder card lands,
+        // it is not yanked by a 422 that has nothing to do with the quote.
+        expect(screen.getByText('Imported job')).toBeInTheDocument();
+      });
+
+      it('imports successfully with no shipping fields sent when the shipment has a malformed phone', async () => {
+        const badPhoneShipping: ZohoQuotePreview = {
+          ...preview,
+          shipping: {
+            island: 'rangiroa', service: 'tuamotu',
+            first_name: 'Jean-Pierre', last_name: 'DUPONT',
+            // Hand-typed on the quote, not the house `+689-XXXXXXXX` shape.
+            phone: '87.12.34.56', price: 3200,
+          },
+        };
+        const createdProject = makeProject({ description: 'Imported job' });
+        const createSpy = vi.spyOn(api, 'createAitoProject').mockResolvedValue(createdProject);
+        renderPage([]);
+        server.use(
+          http.get('/api/v1/zoho/estimates', () =>
+            HttpResponse.json([
+              {
+                id: 'e9', number: 'DEV26-9001', customer_name: 'Import Client',
+                date: '2026-07-29', total: 1200, currency_code: 'XPF', status: 'draft',
+              },
+            ]),
+          ),
+          http.get('/api/v1/zoho/estimates/:id/preview', () => HttpResponse.json(badPhoneShipping)),
+          http.get('/api/v1/aito/', () => HttpResponse.json([createdProject])),
+        );
+        const user = userEvent.setup();
+        await user.click(await screen.findByRole('button', { name: /^import$/i }));
+        const drawer = (await screen.findByRole('dialog', { name: /import a quote/i })) as HTMLElement;
+        await user.click(await screen.findByText('DEV26-9001'));
+        await within(drawer).findByText('Printing');
+        await user.click(within(drawer).getByRole('button', { name: /^import$/i }));
+
+        await waitFor(() => expect(createSpy).toHaveBeenCalled());
+        const body = createSpy.mock.calls[0][0] as Record<string, unknown>;
+        expect(body).not.toHaveProperty('shipping_island');
+        expect(body).not.toHaveProperty('shipping_phone');
+        expect(screen.getByText('Imported job')).toBeInTheDocument();
+      });
+
       it('closes the modal and shows an inert placeholder card at once', async () => {
         let release: (v: AitoProject) => void = () => {};
         vi.spyOn(api, 'createAitoProject').mockImplementation(

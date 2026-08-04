@@ -94,7 +94,7 @@ export function CreateChecklist(props: CreateChecklistProps) {
         }),
       };
     }
-    const firstError = visible.island ?? visible.firstName ?? visible.lastName ?? visible.phone;
+    const firstError = visible.island ?? visible.firstName ?? visible.lastName ?? visible.phone ?? visible.price;
     return firstError ? { state: 'miss', text: t(firstError) } : { state: 'wait', text: t('aito.ruleShippingPending') };
   })();
 
