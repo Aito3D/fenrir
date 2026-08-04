@@ -1,9 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { TaskStepFields } from '../../components/aito/TaskStepFields';
 import { emptyTaskDraft } from '../../utils/taskDraft';
+import { formatMoney } from '../../utils/pricing';
 
 describe('TaskStepFields', () => {
   it('shows all four services as chips even when no step exists yet', () => {
@@ -26,6 +27,95 @@ describe('TaskStepFields', () => {
 
     await user.clear(screen.getByLabelText(/scan cost/i));
     expect(onChange.mock.calls.at(-1)?.[0].scanCost).toBeNull();
+  });
+
+  it('printing: cost and quantity stay editable side by side on an unconfigured install', () => {
+    // No calculator queries are mocked in this file, so ImpressionFields
+    // takes its "no printers configured" early return — the cost/quantity
+    // row must survive that branch (an imported cost has to stay editable).
+    render(<TaskStepFields task={{ ...emptyTaskDraft(), impressionCost: 500 }} onChange={vi.fn()} />);
+    const topRow = within(screen.getByTestId('impression-top-row'));
+    expect(topRow.getByLabelText(/printing cost/i)).toBeInTheDocument();
+    expect(topRow.getByLabelText('Quantity')).toBeInTheDocument();
+  });
+
+  it('printing: the cost input edits the UNIT price — stored cost stays unit × quantity', () => {
+    const onChange = vi.fn();
+    render(
+      <TaskStepFields
+        task={{
+          ...emptyTaskDraft(),
+          impressionCost: 1000,
+          impression: { ...emptyTaskDraft().impression, quantity: 2 },
+        }}
+        onChange={onChange}
+      />,
+    );
+    // Stored total 1000 across 2 units reads back as 500 apiece.
+    const cost = screen.getByLabelText(/printing cost/i);
+    expect(cost).toHaveValue(500);
+    // Typing a new unit price stores the multiplied total.
+    fireEvent.change(cost, { target: { value: '250' } });
+    expect(onChange.mock.calls.at(-1)?.[0].impressionCost).toBe(500);
+  });
+
+  it('printing: changing quantity rescales the total so the unit price holds', () => {
+    const onChange = vi.fn();
+    render(
+      <TaskStepFields
+        task={{ ...emptyTaskDraft(), impressionCost: 500 }}
+        onChange={onChange}
+      />,
+    );
+    // No calculator configured (nothing mocked here), so no repricing can
+    // interfere: 500 apiece × 3 must become a stored total of 1500.
+    fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '3' } });
+    const next = onChange.mock.calls.at(-1)?.[0];
+    expect(next.impression.quantity).toBe(3);
+    expect(next.impressionCost).toBe(1500);
+  });
+
+  it('printing: discount sits in the top row beside quantity; material and color under it', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<TaskStepFields task={{ ...emptyTaskDraft(), impressionCost: 500 }} onChange={onChange} />);
+
+    // All four are reachable without opening the calculator (nothing is
+    // mocked here, and the toggle stays closed).
+    const topRow = within(screen.getByTestId('impression-top-row'));
+    topRow.getByLabelText('Quantity');
+    const discount = topRow.getByLabelText('Discount');
+    // Material (the filament select, moved out of the calculator) and color
+    // are on screen too — before it, in DOM order.
+    const material = screen.getByRole('combobox', { name: /material/i });
+    const color = screen.getByLabelText('Colour');
+    expect(material.compareDocumentPosition(color) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await user.selectOptions(discount, '10');
+    expect(onChange.mock.calls.at(-1)?.[0].impressionDiscountPct).toBe(10);
+  });
+
+  it('printing: clearing the discount emits null, not 0', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <TaskStepFields
+        task={{ ...emptyTaskDraft(), impressionCost: 500, impressionDiscountPct: 10 }}
+        onChange={onChange}
+      />,
+    );
+    await user.selectOptions(screen.getByLabelText('Discount'), '');
+    expect(onChange.mock.calls.at(-1)?.[0].impressionDiscountPct).toBeNull();
+  });
+
+  it('printing: the block shows the line total — unit x quantity minus the discount', () => {
+    render(
+      <TaskStepFields
+        task={{ ...emptyTaskDraft(), impressionCost: 1000, impressionDiscountPct: 10 }}
+        onChange={vi.fn()}
+      />,
+    );
+    const totalRow = screen.getByText('Printing total').parentElement!;
+    expect(totalRow).toHaveTextContent(formatMoney(900, 'USD'));
   });
 
   it('typing 0 emits 0, which is a real free step', async () => {

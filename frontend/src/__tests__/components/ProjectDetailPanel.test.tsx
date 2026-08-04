@@ -742,6 +742,7 @@ describe('ProjectDetailPanel tasks', () => {
       impression_quantity: 1,
       impression_color: null,
       impression_cost: null,
+      impression_discount_pct: null,
       scan_done: false,
       modelisation_done: false,
       impression_done: false,
@@ -814,6 +815,9 @@ describe('ProjectDetailPanel tasks', () => {
     // Opening the row's edit form is the scenario under test: the user
     // presses Edit, sees the task's stored quote, and touches nothing.
     await editAllTasks();
+    // The calculator opens closed (its fields hide behind the toggle);
+    // opening it is a disclosure click, not an edit — still zero PATCHes.
+    fireEvent.click(await screen.findByRole('button', { name: 'Calculator' }));
 
     // Give every query (filaments, printers, defaults, settings, tasks)
     // every chance to resolve. Pricing only happens inside ImpressionFields'
@@ -840,6 +844,7 @@ describe('ProjectDetailPanel tasks', () => {
     show();
     // Opening the row's edit form is the scenario under test.
     await editAllTasks();
+    fireEvent.click(await screen.findByRole('button', { name: 'Calculator' }));
 
     await screen.findByRole('combobox', { name: /material/i });
     await act(async () => {
@@ -887,6 +892,9 @@ describe('ProjectDetailPanel tasks', () => {
     // "Add Printing" unique to row A.
     await editAllTasks();
     fireEvent.click(await screen.findByRole('button', { name: 'Add Printing' }));
+    // Both rows' calculators start closed; open them to reach the weight
+    // inputs the leak scenario types into.
+    for (const toggle of await screen.findAllByRole('button', { name: 'Calculator' })) fireEvent.click(toggle);
     const weightInputs = await screen.findAllByLabelText(/weight/i);
     expect(weightInputs).toHaveLength(2);
     fireEvent.change(weightInputs[0], { target: { value: '40' } });
@@ -1500,6 +1508,7 @@ describe('diffTaskDraft', () => {
       modelisationCost: 2,
       usinageCost: 3,
       impressionCost: 4,
+      impressionDiscountPct: 6,
       done: { scan: true, modelisation: true, impression: true, usinage: true },
       impression: {
         printerId: 1,

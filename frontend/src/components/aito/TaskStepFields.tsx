@@ -5,7 +5,7 @@ import { Plus } from 'lucide-react';
 import { api } from '../../api/client';
 import { ImpressionFields } from './ImpressionFields';
 import { Money } from '../calculator/shared';
-import { inputCls, focusRingCls } from '../formStyles';
+import { inputCls, labelCls, focusRingCls } from '../formStyles';
 import { taskTotal } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
 
@@ -56,6 +56,11 @@ function StepBlock({ title, children }: { title: string; children: React.ReactNo
     </fieldset>
   );
 }
+
+/** Two decimals, matching what money can express — without this, unit × qty
+ *  arithmetic leaks float noise (0.1 × 3 = 0.30000000000000004) into a value
+ *  that ends up on a quote. */
+const round2 = (v: number) => Math.round(v * 100) / 100;
 
 type ServiceId = 'scan' | 'modelisation' | 'impression' | 'usinage';
 
@@ -210,33 +215,107 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
         </StepBlock>
       )}
 
-      {/* The cost input lives HERE rather than inside ImpressionFields because
-          ImpressionFields returns early when the calculator has no printers
-          or filaments configured — and an imported cost still has to be
-          readable and editable on such an installation. */}
+      {/* The cost input is still OWNED here rather than by ImpressionFields —
+          the null-vs-0 rule (see CostInput) must not leak into a component
+          that also reports computed prices — but it is handed over as a slot
+          so ImpressionFields can seat quantity beside it, in every branch,
+          including the unconfigured-install early returns where an imported
+          cost still has to be readable and editable. */}
+      {/* The printing cost is edited as a UNIT price — what one part costs,
+          beside how many are made — while the STORED `impressionCost` stays
+          the multiplied total the rest of the stack already speaks (the task
+          total, the board rules, and the quote export, which divides by
+          quantity to recover this same unit rate). Only this block converts,
+          in both directions. */}
       {enabled.has('impression') && (
         <StepBlock title={t('aito.serviceImpression3D')}>
           <div className="space-y-3">
-            <CostInput
-              id={`${reactId}-impression`}
-              label={t('aito.serviceImpression3D')}
-              value={task.impressionCost}
-              onChange={(next) => onChange({ ...task, impressionCost: next })}
-              autoFocus={autoFocusService === 'impression'}
-            />
-            <ImpressionFields
-              value={task.impression}
-              onChange={(next, computedCost) =>
-                onChange({
-                  ...task,
-                  impression: next,
-                  // Only when the calculator actually priced it — see
-                  // ImpressionFields' `onChange` doc. `undefined` means "leave
-                  // the stored cost alone", which is not the same as `null`.
-                  ...(computedCost !== undefined ? { impressionCost: computedCost } : {}),
-                })
+          <ImpressionFields
+            value={task.impression}
+            onChange={(next, computedCost) => {
+              // Calculator repricing wins when it happened (`undefined` means
+              // "it didn't", which is not the same as `null`) — otherwise a
+              // quantity edit rescales the total so the unit price holds:
+              // 500 apiece × 3 is 1500, not 500 spread ever thinner.
+              let impressionCost = task.impressionCost;
+              if (computedCost !== undefined) {
+                impressionCost = computedCost;
+              } else if (impressionCost !== null && next.quantity !== task.impression.quantity) {
+                impressionCost = round2((impressionCost / Math.max(1, task.impression.quantity)) * next.quantity);
               }
-            />
+              onChange({ ...task, impression: next, impressionCost });
+            }}
+            costField={
+              // `min-w-0 flex-1`: this node is dropped straight into
+              // ImpressionFields' top flex row as the cost CELL — see its
+              // `costField` prop doc.
+              <div className="min-w-0 flex-1">
+                <label htmlFor={`${reactId}-impression`} className={labelCls}>
+                  {t('aito.serviceUnitCost')}
+                </label>
+                <CostInput
+                  id={`${reactId}-impression`}
+                  label={t('aito.serviceImpression3D')}
+                  value={
+                    task.impressionCost === null
+                      ? null
+                      : round2(task.impressionCost / Math.max(1, task.impression.quantity))
+                  }
+                  onChange={(unit) =>
+                    onChange({
+                      ...task,
+                      impressionCost: unit === null ? null : round2(unit * Math.max(1, task.impression.quantity)),
+                    })
+                  }
+                  autoFocus={autoFocusService === 'impression'}
+                />
+              </div>
+            }
+            discountField={
+              // Fixed-width like the quantity beside it — the slot contract
+              // (the node IS the row cell) still holds, it is just a narrow
+              // cell: two digits and a % sign.
+              <div className="w-24 flex-shrink-0">
+                <label htmlFor={`${reactId}-impression-discount`} className={labelCls}>
+                  {t('aito.discount')}
+                </label>
+                <select
+                  id={`${reactId}-impression-discount`}
+                  value={task.impressionDiscountPct ?? ''}
+                  onChange={(e) =>
+                    onChange({
+                      ...task,
+                      impressionDiscountPct: e.target.value === '' ? null : Number(e.target.value),
+                    })
+                  }
+                  className={inputCls}
+                >
+                  {/* An em dash, not "0%": no discount means no discount
+                      column on the quote's PDF at all. */}
+                  <option value="">—</option>
+                  {[5, 10, 15, 20, 25, 30].map((pct) => (
+                    <option key={pct} value={pct}>
+                      {pct}%
+                    </option>
+                  ))}
+                </select>
+              </div>
+            }
+          />
+          {task.impressionCost !== null && (
+            // What the quote's line will actually say: unit x quantity,
+            // minus the discount. The unit input above shows the per-piece
+            // figure, so without this line the multiplied reality lives
+            // nowhere on screen.
+            <div className="flex items-center justify-between border-t border-bambu-dark-tertiary pt-2">
+              <span className="text-sm text-bambu-gray">{t('aito.printingTotal')}</span>
+              <Money
+                currency={currency}
+                value={round2(task.impressionCost * (1 - (task.impressionDiscountPct ?? 0) / 100))}
+                className="text-white font-medium"
+              />
+            </div>
+          )}
           </div>
         </StepBlock>
       )}

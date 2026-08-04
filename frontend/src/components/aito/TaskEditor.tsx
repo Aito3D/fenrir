@@ -68,6 +68,13 @@ export interface TaskEditorProps {
    *  pending a network call, so it must stay fully editable. It simply
    *  passes nothing. */
   pendingUids?: Set<string>;
+  /** One task open at a time, the rest collapsed to their header line. Only
+   *  the create drawer passes this: a draft list can grow long and none of
+   *  it is tickable yet, so compactness wins there. The detail panel keeps
+   *  its always-open rows — collapsing would put a click between the user
+   *  and the step Done ticks (see TaskRow's component doc). Defaults to
+   *  false so every existing caller is unaffected. */
+  accordion?: boolean;
 }
 
 /** The task list for one Aito project: a heading, each task's `TaskRow`, "+
@@ -85,6 +92,7 @@ export function TaskEditor({
   onRowBlur,
   showHeader = true,
   pendingUids,
+  accordion = false,
 }: TaskEditorProps) {
   const { t } = useTranslation();
   const { data: settings } = useQuery({
@@ -104,6 +112,25 @@ export function TaskEditor({
       if (!next.delete(key)) next.add(key);
       return next;
     });
+
+  // Accordion mode's single open row, by the same key as everything else.
+  // Seeded to the first row so the drawer's initial task starts open. null
+  // is a legal state meaning "the user closed the open row on purpose" —
+  // distinct from a DANGLING key, resolved just below.
+  const [openKey, setOpenKey] = useState<string | null>(() =>
+    accordion && value.length > 0 ? rowKey(value[0]) : null,
+  );
+  // A non-null key matching no row is not a choice anyone made: the open row
+  // was removed, or the drawer's hold-to-reset swapped in fresh drafts whose
+  // uids can never equal the stored key. Falling back to the first row keeps
+  // a form reachable — without this, a wiped drawer shows one bare header
+  // line and every field is behind a click nothing invites. Derived rather
+  // than synced in an effect: there is no second render where the list and
+  // the key disagree.
+  const effectiveOpenKey =
+    accordion && openKey !== null && value.length > 0 && !value.some((task) => rowKey(task) === openKey)
+      ? rowKey(value[0])
+      : openKey;
 
   // A row with no steps IS the form — read mode would show nothing but "No
   // steps yet", so there is nothing to disclose. Deriving this replaces the
@@ -144,9 +171,17 @@ export function TaskEditor({
       <div className="space-y-3">
         {value.map((task, index) => {
           const pending = pendingUids?.has(task.uid) ?? false;
+          const key = rowKey(task);
+          // EVERY row folds, the unpriced ones included — a collapsed
+          // stepless row shows its bare header and expands back into its
+          // form (`isEditing` keeps auto-editing it). Exempting stepless
+          // rows was tried first and meant a drawer full of unpriced drafts
+          // stayed a wall of forms — the exact problem accordion mode
+          // exists to solve.
+          const collapsed = accordion && key !== effectiveOpenKey;
           return (
             <TaskRow
-              key={rowKey(task)}
+              key={key}
               task={task}
               index={index}
               onChange={(next) => {
@@ -158,10 +193,25 @@ export function TaskEditor({
               // is no id yet to send a DELETE for — see TaskRow's own prop doc.
               onRemove={value.length > minRows && !pending ? () => onRemove(index) : undefined}
               editing={isEditing(task)}
-              onToggleEdit={() => toggleEdit(rowKey(task))}
+              onToggleEdit={() => {
+                if (collapsed) {
+                  // Pencil on a collapsed row: open it AND force edit ON —
+                  // a plain toggle could flip an already-editing key OFF
+                  // while the form it would close isn't even on screen.
+                  setOpenKey(key);
+                  setEditingKeys((current) => new Set([...current, key]));
+                } else {
+                  toggleEdit(key);
+                }
+              }}
               onRowBlur={onRowBlur}
               canTick={canTick}
               pending={pending}
+              collapsed={collapsed}
+              // Compared against the EFFECTIVE key, not the stored one: when
+              // a dangling key has fallen back to opening this row, clicking
+              // its header must close it, not "open" it a second time.
+              onToggleCollapse={accordion ? () => setOpenKey(effectiveOpenKey === key ? null : key) : undefined}
             />
           );
         })}
@@ -169,7 +219,14 @@ export function TaskEditor({
 
       <button
         type="button"
-        onClick={() => onChange([...value, emptyTaskDraft()])}
+        onClick={() => {
+          const draft = emptyTaskDraft();
+          onChange([...value, draft]);
+          // The new task is the one being worked on: open it (collapsing the
+          // rest). Its key is computable before the parent commits the new
+          // array because a draft's identity is its own uid, not its index.
+          if (accordion) setOpenKey(rowKey(draft));
+        }}
         // A full-width row that echoes the task cards above it rather than a
         // small green text link off to one side: it is the slot the next card
         // will occupy, so it reads as an empty one. Muted at rest and

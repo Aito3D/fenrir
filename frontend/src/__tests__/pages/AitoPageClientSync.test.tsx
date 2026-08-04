@@ -400,6 +400,7 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
         impression_quantity: 1,
         impression_color: null,
         impression_cost: null,
+        impression_discount_pct: null,
         scan_done: false,
         modelisation_done: false,
         impression_done: false,

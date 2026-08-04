@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Check, Pencil } from 'lucide-react';
+import { Check, ChevronDown, Pencil } from 'lucide-react';
 import { api } from '../../api/client';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ProjectProgress } from './ProjectProgress';
@@ -41,6 +41,18 @@ export interface TaskRowProps {
    *  false, so every existing caller (and every persisted row) is
    *  unaffected. */
   pending?: boolean;
+  /** Present only under `TaskEditor`'s accordion mode (the create drawer).
+   *  When set, the header (chevron + name + count + total) becomes a
+   *  disclosure button toggling `collapsed`; absent, the header stays the
+   *  plain always-open heading the detail panel relies on. The accessible
+   *  name is the header's own text, so no extra label is needed. */
+  onToggleCollapse?: () => void;
+  /** Hides description, progress and the body (form/step list), leaving the
+   *  one-line header. Only meaningful with `onToggleCollapse`. The body is
+   *  conditionally RENDERED, not just hidden — a collapsed row in edit mode
+   *  must not mount `TaskStepFields` and run ImpressionFields' three
+   *  reference-data queries (see the component doc below). */
+  collapsed?: boolean;
 }
 
 /** One task of a project: title/description, the four services (each
@@ -50,13 +62,16 @@ export interface TaskRowProps {
  *  the same row serves a local draft array (create modal) or a row wired to
  *  a PATCH (detail panel) without knowing which.
  *
- *  Always open. The row was collapsible when it held a form, and the cost of
- *  that was a click between the user and the one control they reach for most —
- *  Done. Now that read mode is a short step list, the row is simply a card.
+ *  Always open in the DETAIL panel: the row was collapsible when it held a
+ *  form, and the cost of that was a click between the user and the one
+ *  control they reach for most — Done. Now that read mode is a short step
+ *  list, the row is simply a card there. The CREATE drawer opts back into
+ *  collapsing via `onToggleCollapse` (accordion, see TaskEditor): a draft
+ *  list can grow long and nothing in it is ever ticked, so compactness wins.
  *
- *  `TaskStepFields` (edit mode) still mounts only behind the pencil, so an
- *  open row in read mode still runs none of ImpressionFields' three
- *  reference-data queries. */
+ *  `TaskStepFields` (edit mode) still mounts only behind the pencil — and
+ *  never while collapsed — so an open row in read mode still runs none of
+ *  ImpressionFields' three reference-data queries. */
 export function TaskRow({
   task,
   index,
@@ -67,6 +82,8 @@ export function TaskRow({
   onRowBlur,
   canTick,
   pending = false,
+  onToggleCollapse,
+  collapsed = false,
 }: TaskRowProps) {
   const { t } = useTranslation();
   // Same query key ImpressionFields and the calculator page use for the
@@ -139,22 +156,53 @@ export function TaskRow({
       }}
     >
       <div className="flex items-center gap-2 p-3">
-        <h4 className="flex-1 min-w-0 flex items-center gap-2">
-          <span className="text-sm font-medium text-white truncate min-w-0">{name}</span>
-          {finished && (
-            <Check className="w-3.5 h-3.5 flex-shrink-0 text-bambu-green" aria-label={t('aito.taskFinished')} />
-          )}
-          {steps.length > 0 && (
-            <span className="text-xs text-bambu-gray flex-shrink-0 tabular-nums">
-              {t('aito.stepsCount', { done: steps.filter((s) => s.done).length, total: steps.length })}
-            </span>
-          )}
-          <Money
-            currency={currency}
-            value={taskTotal(task)}
-            className="ml-auto flex-shrink-0 text-sm text-white"
-          />
-        </h4>
+        {(() => {
+          // One definition of the header payload, whatever wraps it — the
+          // two branches below only differ in the wrapper, so a future badge
+          // or style tweak cannot silently land in one and not the other.
+          const headerContent = (
+            <>
+              <span className="text-sm font-medium text-white truncate min-w-0">{name}</span>
+              {finished && (
+                <Check className="w-3.5 h-3.5 flex-shrink-0 text-bambu-green" aria-label={t('aito.taskFinished')} />
+              )}
+              {steps.length > 0 && (
+                <span className="text-xs text-bambu-gray flex-shrink-0 tabular-nums">
+                  {t('aito.stepsCount', { done: steps.filter((s) => s.done).length, total: steps.length })}
+                </span>
+              )}
+              <Money
+                currency={currency}
+                value={taskTotal(task)}
+                className="ml-auto flex-shrink-0 text-sm text-white"
+              />
+            </>
+          );
+          return onToggleCollapse ? (
+            // The whole header line is the disclosure control — a chevron
+            // alone would be a sliver of a hit target on the one gesture
+            // accordion mode is built around. Same chevron idiom as the
+            // drawer's Section header (aria-hidden icon, rotate-180 open).
+            <h4 className="flex-1 min-w-0">
+              <button
+                type="button"
+                aria-expanded={!collapsed}
+                onClick={onToggleCollapse}
+                className={`flex w-full min-w-0 items-center gap-2 rounded-md text-left ${focusRingCls}`}
+              >
+                <ChevronDown
+                  aria-hidden="true"
+                  className={`h-3.5 w-3.5 flex-shrink-0 text-bambu-gray transition-transform duration-200 motion-reduce:transition-none ${
+                    collapsed ? '' : 'rotate-180'
+                  }`}
+                />
+                {headerContent}
+              </button>
+            </h4>
+          ) : (
+            <h4 className="flex-1 min-w-0 flex items-center gap-2">{headerContent}</h4>
+          );
+        })()}
         {/* Hidden on a stepless row: that row is already showing the form, so
             there is no other mode to switch to. */}
         {steps.length > 0 && (
@@ -183,7 +231,7 @@ export function TaskRow({
           panel's omission rule. Edit mode hides it: the form above already
           carries the same field, and two copies of one value invite edits
           to the dead one. */}
-      {!editing && task.description.trim() !== '' && (
+      {!collapsed && !editing && task.description.trim() !== '' && (
         <div className="px-3 -mt-1 pb-1">
           <p
             ref={descRef}
@@ -208,22 +256,27 @@ export function TaskRow({
       )}
 
       {/* The task's own progress, under its header. `ProjectProgress` renders
-          nothing at zero steps, so an unpriced row shows no empty track. */}
-      <div className="px-3 pb-2">
-        <ProjectProgress
-          done={steps.filter((s) => s.done).length}
-          total={steps.length}
-          testId={`task-progress-${index}`}
-        />
-      </div>
+          nothing at zero steps, so an unpriced row shows no empty track.
+          Collapsed hides it with the body: the header line IS the whole row. */}
+      {!collapsed && (
+        <>
+          <div className="px-3 pb-2">
+            <ProjectProgress
+              done={steps.filter((s) => s.done).length}
+              total={steps.length}
+              testId={`task-progress-${index}`}
+            />
+          </div>
 
-      <div className="px-3 pb-3 space-y-3">
-        {editing ? (
-          <TaskStepFields task={task} onChange={onChange} disabled={pending} />
-        ) : (
-          <TaskStepList task={task} onChange={onChange} canTick={canTick} />
-        )}
-      </div>
+          <div className="px-3 pb-3 space-y-3">
+            {editing ? (
+              <TaskStepFields task={task} onChange={onChange} disabled={pending} />
+            ) : (
+              <TaskStepList task={task} onChange={onChange} canTick={canTick} />
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

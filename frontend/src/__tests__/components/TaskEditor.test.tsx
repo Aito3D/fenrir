@@ -8,7 +8,7 @@
 
 import { useState } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { screen, fireEvent, act, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
@@ -115,9 +115,11 @@ function ControlledTaskRow({
 function ControlledTaskEditor({
   initial,
   onChangeSpy,
+  accordion = false,
 }: {
   initial: TaskDraft[];
   onChangeSpy: (next: TaskDraft[]) => void;
+  accordion?: boolean;
 }) {
   const [tasks, setTasks] = useState(initial);
   return (
@@ -129,6 +131,7 @@ function ControlledTaskEditor({
       }}
       onRemove={vi.fn()}
       canTick
+      accordion={accordion}
     />
   );
 }
@@ -142,6 +145,13 @@ function ControlledTaskEditor({
 async function editTask(index = 0) {
   const buttons = await screen.findAllByRole('button', { name: /edit task/i });
   fireEvent.click(buttons[index]);
+}
+
+/** Opens ImpressionFields' calculator, hidden by default behind its toggle so
+ *  the printing block opens compact — the six pricing fields and the cost
+ *  breakdown only render behind this click. */
+async function openCalculator() {
+  fireEvent.click(await screen.findByRole('button', { name: 'Calculator' }));
 }
 
 /** Mounts TaskEditor uncontrolled with the given draft tasks, all of which
@@ -466,6 +476,7 @@ describe('TaskRow', () => {
       impressionCost: 2400,
     };
     render(<ControlledTaskRow initial={imported} onChangeSpy={onChangeSpy} />);
+    await openCalculator();
 
     fireEvent.change(await screen.findByLabelText(/colou?r/i), { target: { value: 'Rouge' } });
 
@@ -486,6 +497,7 @@ describe('TaskRow', () => {
     // Printing is still a chip on an empty draft: enable it to reveal
     // ImpressionFields.
     await user.click(screen.getByRole('button', { name: 'Add Printing' }));
+    await openCalculator();
 
     await user.click(await screen.findByRole('combobox', { name: /printer/i }));
     await user.click(await screen.findByRole('option', { name: 'H2S' }));
@@ -526,6 +538,7 @@ describe('TaskRow', () => {
     // Printing is still a chip on an empty draft: enable it to reveal
     // ImpressionFields.
     await user.click(screen.getByRole('button', { name: 'Add Printing' }));
+    await openCalculator();
 
     await user.click(await screen.findByRole('combobox', { name: /printer/i }));
     await user.click(await screen.findByRole('option', { name: 'H2S' }));
@@ -572,6 +585,9 @@ describe('TaskRow', () => {
       impressionCost: 12345,
     };
     render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
+    // Opening the calculator is a disclosure click, not an edit — it must not
+    // produce an onChange either.
+    await openCalculator();
 
     // Give every query (filaments, printers, defaults, settings) every chance
     // to resolve. Pricing only happens inside ImpressionFields' change
@@ -599,6 +615,7 @@ describe('TaskRow', () => {
       impressionCost: 12345,
     };
     render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
+    await openCalculator();
 
     await screen.findByRole('combobox', { name: /material/i });
     await act(async () => {
@@ -622,6 +639,7 @@ describe('TaskRow', () => {
     // Printing is still a chip on an empty draft: enable it to reveal
     // ImpressionFields.
     await user.click(screen.getByRole('button', { name: 'Add Printing' }));
+    await openCalculator();
 
     await user.click(await screen.findByRole('combobox', { name: /printer/i }));
     await user.click(await screen.findByRole('option', { name: 'H2S' }));
@@ -645,5 +663,127 @@ describe('TaskRow', () => {
       expect(lastTasks?.[0].impressionCost).not.toBeNull();
       expect(lastTasks?.[0].impressionCost).toBeCloseTo(quantityOneCost * 2, 6);
     });
+  });
+
+  it('printing: quantity sits beside the cost; the calculator hides behind its toggle, divider included', async () => {
+    const task = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: 500,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
+
+    // Closed by default — even with every parameter filled: the block opens
+    // compact. Printer/weight/time stay behind the toggle (material moved to
+    // the always-visible detail row, so it is deliberately NOT checked here).
+    expect(screen.queryByRole('combobox', { name: /printer/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/weight/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('impression-divider')).not.toBeInTheDocument();
+    // Both fields are co-located in the top row — quantity is no longer
+    // buried in the calculator's parameter grid.
+    const topRow = within(screen.getByTestId('impression-top-row'));
+    topRow.getByLabelText(/printing cost/i);
+    topRow.getByLabelText('Quantity');
+
+    await openCalculator();
+    await screen.findByRole('combobox', { name: /printer/i });
+    expect(screen.getByTestId('impression-divider')).toBeInTheDocument();
+  });
+});
+
+describe('TaskEditor accordion (create drawer)', () => {
+  const priced = (title: string): TaskDraft => ({ ...emptyTaskDraft(), title, scanCost: 10 });
+
+  function renderAccordion(tasks: TaskDraft[]) {
+    render(<TaskEditor value={tasks} onChange={vi.fn()} onRemove={vi.fn()} canTick={false} accordion />);
+  }
+
+  it('opens the first task and collapses the rest', () => {
+    renderAccordion([priced('Alpha'), priced('Beta')]);
+    expect(screen.getByRole('button', { name: /Alpha/, expanded: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Beta/, expanded: false })).toBeInTheDocument();
+    // The collapsed row's body — its progress included — is not rendered.
+    expect(screen.getByTestId('task-progress-0')).toBeInTheDocument();
+    expect(screen.queryByTestId('task-progress-1')).not.toBeInTheDocument();
+  });
+
+  it('clicking a collapsed header opens it and collapses the previously open task', async () => {
+    renderAccordion([priced('Alpha'), priced('Beta')]);
+    await userEvent.click(screen.getByRole('button', { name: /Beta/, expanded: false }));
+    expect(screen.getByRole('button', { name: /Beta/, expanded: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Alpha/, expanded: false })).toBeInTheDocument();
+    expect(screen.queryByTestId('task-progress-0')).not.toBeInTheDocument();
+    expect(screen.getByTestId('task-progress-1')).toBeInTheDocument();
+  });
+
+  it('clicking the open header closes it — zero open is allowed', async () => {
+    renderAccordion([priced('Alpha'), priced('Beta')]);
+    await userEvent.click(screen.getByRole('button', { name: /Alpha/, expanded: true }));
+    expect(screen.getByRole('button', { name: /Alpha/, expanded: false })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Beta/, expanded: false })).toBeInTheDocument();
+  });
+
+  it('"Add task" opens the new task and collapses the rest', async () => {
+    render(<ControlledTaskEditor initial={[priced('Alpha')]} onChangeSpy={vi.fn()} accordion />);
+    await userEvent.click(screen.getByRole('button', { name: /add task/i }));
+    // The new stepless row is the form: its service chips are on screen.
+    expect(screen.getByRole('button', { name: 'Add Scan' })).toBeInTheDocument();
+    // Alpha (index 0) collapsed: its progress is gone.
+    expect(screen.getByRole('button', { name: /Alpha/, expanded: false })).toBeInTheDocument();
+    expect(screen.queryByTestId('task-progress-0')).not.toBeInTheDocument();
+  });
+
+  it('the pencil on a collapsed row expands it straight into edit mode', async () => {
+    render(<ControlledTaskEditor initial={[priced('Alpha'), priced('Beta')]} onChangeSpy={vi.fn()} accordion />);
+    const pencils = screen.getAllByRole('button', { name: /edit task/i });
+    await userEvent.click(pencils[1]);
+    expect(screen.getByRole('button', { name: /Beta/, expanded: true })).toBeInTheDocument();
+    // Edit mode, not the read-only step list: Beta's chip row is on screen.
+    expect(screen.getByRole('button', { name: 'Remove Scan' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Alpha/, expanded: false })).toBeInTheDocument();
+  });
+
+  it('a stepless task collapses like any other — only the open task shows its form', () => {
+    // Alpha is seeded open; the unpriced draft behind it must fold to its
+    // header line too, or a drawer full of unpriced drafts is a wall of forms
+    // — the exact problem accordion mode exists to solve.
+    renderAccordion([priced('Alpha'), { ...emptyTaskDraft(), title: 'Empty' }]);
+    expect(screen.queryByRole('button', { name: 'Add Scan' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Empty/, expanded: false })).toBeInTheDocument();
+  });
+
+  it('expanding a collapsed stepless task reveals its form', async () => {
+    renderAccordion([priced('Alpha'), { ...emptyTaskDraft(), title: 'Empty' }]);
+    await userEvent.click(screen.getByRole('button', { name: /Empty/, expanded: false }));
+    expect(screen.getByRole('button', { name: 'Add Scan' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Alpha/, expanded: false })).toBeInTheDocument();
+  });
+
+  it('when the open row vanishes (drawer reset swaps in fresh drafts), the first row opens', async () => {
+    // Mirrors NewProjectDrawer's hold-to-reset: setTasks replaces the array
+    // with drafts whose uids can never match the stored openKey. The dangling
+    // key must fall back to the first row, or the fresh draft's form would be
+    // unreachable behind a bare header.
+    function ResettableEditor() {
+      const [tasks, setTasks] = useState<TaskDraft[]>([priced('Alpha')]);
+      return (
+        <>
+          <button type="button" onClick={() => setTasks([emptyTaskDraft()])}>
+            wipe draft
+          </button>
+          <TaskEditor value={tasks} onChange={setTasks} onRemove={vi.fn()} canTick={false} accordion />
+        </>
+      );
+    }
+    render(<ResettableEditor />);
+    await userEvent.click(screen.getByRole('button', { name: 'wipe draft' }));
+    expect(screen.getByRole('button', { name: 'Add Scan' })).toBeInTheDocument();
+  });
+
+  it('without accordion, headers are not disclosure buttons — the detail panel is untouched', () => {
+    renderEditor([priced('Alpha'), priced('Beta')]);
+    expect(screen.queryByRole('button', { name: /Alpha/ })).not.toBeInTheDocument();
+    expect(screen.getByTestId('task-progress-0')).toBeInTheDocument();
+    expect(screen.getByTestId('task-progress-1')).toBeInTheDocument();
   });
 });

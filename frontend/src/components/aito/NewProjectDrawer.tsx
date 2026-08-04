@@ -400,6 +400,9 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
                 canTick={false}
                 // The rail's receipt already carries the project total.
                 showHeader={false}
+                // One task open at a time: a quote's worth of drafts should
+                // scan as a list of headers, not a wall of forms.
+                accordion
                 onRowBlur={(task) => setRevealedTaskKeys((prev) => new Set(prev).add(rowKey(task)))}
               />
             </Section>
