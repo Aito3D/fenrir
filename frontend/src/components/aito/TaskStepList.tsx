@@ -122,9 +122,18 @@ export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
             {description !== '' && (
               <p
                 data-testid={`step-desc-${service}`}
-                className="pl-6 pr-1.5 pb-1 text-xs text-bambu-gray whitespace-pre-wrap break-words"
+                className="flex items-start gap-3 pr-1.5 pb-1 text-xs text-bambu-gray"
               >
-                {description}
+                {/* Invisible spacers mirroring the row's own gutter — the
+                    checkbox (only when canTick) then the swatch dot, each
+                    separated by the same gap-3 the row itself uses — so the
+                    text lines up under the step label in BOTH canTick
+                    states. A single fixed pl-* can't do that: the checkbox
+                    is conditionally rendered, so the gutter width differs by
+                    state (42px vs 14px), not just a constant offset. */}
+                {canTick && <span aria-hidden="true" className="w-4 flex-shrink-0" />}
+                <span aria-hidden="true" className="w-0.5 flex-shrink-0" />
+                <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{description}</span>
               </p>
             )}
           </li>
