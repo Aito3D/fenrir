@@ -437,6 +437,11 @@ export function formatRelativeTime(
  */
 export function elapsedDays(dateStr: string | null): number | null {
   const date = parseUTCDate(dateStr);
+  // This guard is also what fixed formatElapsedTime for junk stamps: before
+  // it existed, a bare `if (!date)` never fired against an Invalid Date (it's
+  // truthy), so NaN flowed through every branch to the years fallback and the
+  // UI showed "NaN years ago". Deliberately replaced with the unknown-time
+  // fallback instead — see the pinned test in date.test.ts.
   if (!date || Number.isNaN(date.getTime())) return null;
 
   const todayMidnight = parseLocalDateKey(localDateKey(new Date()));

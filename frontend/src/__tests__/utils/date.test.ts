@@ -503,6 +503,16 @@ describe('formatElapsedTime', () => {
     expect(formatElapsedTime(null)).toBe('-');
   });
 
+  it('returns the unknown fallback for an unparseable stamp, not a NaN string', () => {
+    // Pinned deliberately: parseUTCDate hands back a truthy Invalid Date for
+    // junk, so a bare `if (!date)` used to let NaN flow through every branch
+    // down to the years fallback — "NaN years ago". elapsedDays' NaN guard
+    // now routes junk stamps to the same unknown-fallback path as null.
+    expect(formatElapsedTime('not-a-date')).toBe('-');
+    const t = vi.fn((key: string) => (key === 'time.unknown' ? 'unknown' : key));
+    expect(formatElapsedTime('not-a-date', t)).toBe('unknown');
+  });
+
   it('clamps future dates to "Today"', () => {
     const future = new Date(2025, 5, 20, 8, 0, 0).toISOString().slice(0, -1);
     expect(formatElapsedTime(future)).toBe('Today');

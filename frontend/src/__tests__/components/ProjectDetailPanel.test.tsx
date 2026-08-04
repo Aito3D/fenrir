@@ -2172,4 +2172,16 @@ describe('ProjectDetailPanel record card age echo', () => {
     show({ created_at: 'not-a-date' });
     expect(screen.queryByTestId('record-age')).not.toBeInTheDocument();
   });
+
+  // 12 days is ramp level 3, where agingColorCls and agingTextCls return the
+  // identical 'text-orange-400' — a regression to the wrong helper would
+  // still pass the tests above. The two only diverge at level 6, where
+  // agingTextCls appends 'font-medium'; a stamp old enough to reach it makes
+  // "must use agingColorCls, not agingTextCls" an observable assertion.
+  it('uses the colour-only ramp class, not the bold level-6 text class', () => {
+    show({ created_at: daysAgo(35) });
+    const echo = within(screen.getByTestId('record-created')).getByTestId('record-age');
+    expect(echo).toHaveClass('text-red-400');
+    expect(echo).not.toHaveClass('font-medium');
+  });
 });
