@@ -213,7 +213,7 @@ export function BoardColumn({
       // this card may land in: its own, and only its own, for every card.
       // Dragging is reordering now; the one manual cross-column transition
       // (Finish -> Done and back) is the hold buttons above, not a drop.
-      className={`w-72 sm:w-80 flex-shrink-0 flex flex-col rounded-xl bg-bambu-dark-secondary/40 border transition-[border-color,box-shadow,opacity] duration-150 ${
+      className={`w-72 sm:w-80 lg:w-full lg:min-w-0 flex-shrink-0 flex flex-col rounded-xl bg-bambu-dark-secondary/40 border transition-[border-color,box-shadow,opacity] duration-150 ${
         isDropTarget ? `border-transparent ring-2 ${column.ring}` : 'border-bambu-dark-tertiary'
       } ${dropDisabled ? 'opacity-40' : ''}`}
     >
