@@ -534,7 +534,6 @@ describe('AitoPage (backend board)', () => {
   describe('quote import', () => {
     const emptyTask = {
       title: '',
-      description: '',
       scan_cost: null,
       modelisation_cost: null,
       usinage_cost: null,
