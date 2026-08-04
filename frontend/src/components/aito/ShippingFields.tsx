@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RotateCcw } from 'lucide-react';
 import { IslandCombobox } from './IslandCombobox';
@@ -31,32 +30,12 @@ export interface ShippingFieldsProps {
  *  figure the operator typed on purpose. */
 export function ShippingFields({ value, onChange, services, catalogueResolved, currency }: ShippingFieldsProps) {
   const { t } = useTranslation();
-
-  // `value.blurred` is reported upward through onChange so a caller can
-  // persist it (localStorage draft, server diff) — but the field itself must
-  // reveal its own error the instant it is left, even for a render this same
-  // tick, before any parent has had a chance to feed the updated value back
-  // in. This local mirror is display-only and never diverges from the
-  // reported truth: it only ever turns a flag on, exactly when onChange does.
-  const [locallyBlurred, setLocallyBlurred] = useState({
-    island: false,
-    firstName: false,
-    lastName: false,
-    phone: false,
-  });
-  const blurred = {
-    island: value.blurred.island || locallyBlurred.island,
-    firstName: value.blurred.firstName || locallyBlurred.firstName,
-    lastName: value.blurred.lastName || locallyBlurred.lastName,
-    phone: value.blurred.phone || locallyBlurred.phone,
-  };
-  const errors = visibleShippingDraftErrors({ ...value, blurred });
+  const errors = visibleShippingDraftErrors(value);
   const service = services.find((s) => s.key === value.service);
   const zohoRate = service?.rate ?? null;
 
   const selectIsland = (islandKey: string) => {
     const owner = services.find((s) => s.islands.some((island) => island.key === islandKey));
-    setLocallyBlurred((prev) => ({ ...prev, island: true }));
     onChange({
       ...value,
       island: islandKey,
@@ -74,10 +53,7 @@ export function ShippingFields({ value, onChange, services, catalogueResolved, c
           services={services}
           onSelect={selectIsland}
           invalid={errors.island !== null}
-          onBlur={() => {
-            setLocallyBlurred((prev) => ({ ...prev, island: true }));
-            onChange({ ...value, blurred: { ...value.blurred, island: true } });
-          }}
+          onBlur={() => onChange({ ...value, blurred: { ...value.blurred, island: true } })}
         />
         <FieldError messageKey={errors.island} />
       </div>
@@ -140,8 +116,7 @@ export function ShippingFields({ value, onChange, services, catalogueResolved, c
             type="text"
             value={value.firstName}
             onChange={(e) => onChange({ ...value, firstName: e.target.value })}
-            onBlur={(e) => {
-              setLocallyBlurred((prev) => ({ ...prev, firstName: true }));
+            onBlur={(e) =>
               onChange({
                 ...value,
                 // Hand-typed names get the same casing convention contact-derived
@@ -150,8 +125,8 @@ export function ShippingFields({ value, onChange, services, catalogueResolved, c
                 // this to the field, matching NewContactForm's onBlur handler.
                 firstName: titleCaseSegments(e.target.value),
                 blurred: { ...value.blurred, firstName: true },
-              });
-            }}
+              })
+            }
             aria-invalid={errors.firstName !== null ? true : undefined}
             className={errors.firstName ? inputErrorCls : inputCls}
           />
@@ -166,14 +141,13 @@ export function ShippingFields({ value, onChange, services, catalogueResolved, c
             type="text"
             value={value.lastName}
             onChange={(e) => onChange({ ...value, lastName: e.target.value })}
-            onBlur={(e) => {
-              setLocallyBlurred((prev) => ({ ...prev, lastName: true }));
+            onBlur={(e) =>
               onChange({
                 ...value,
                 lastName: e.target.value.trim().toLocaleUpperCase('fr'),
                 blurred: { ...value.blurred, lastName: true },
-              });
-            }}
+              })
+            }
             aria-invalid={errors.lastName !== null ? true : undefined}
             className={errors.lastName ? inputErrorCls : inputCls}
           />
@@ -191,21 +165,17 @@ export function ShippingFields({ value, onChange, services, catalogueResolved, c
           nationalNumber={value.nationalNumber}
           required
           invalid={errors.phone !== null}
-          onChange={(next, changed) => {
-            // Picking a code is one atomic action, so it reveals at once;
-            // a keystroke in the number must not. Same split PhoneInput's
-            // other callers make.
-            if (changed === 'countryCode') setLocallyBlurred((prev) => ({ ...prev, phone: true }));
+          onChange={(next, changed) =>
             onChange({
               ...value,
               ...next,
+              // Picking a code is one atomic action, so it reveals at once;
+              // a keystroke in the number must not. Same split PhoneInput's
+              // other callers make.
               blurred: changed === 'countryCode' ? { ...value.blurred, phone: true } : value.blurred,
-            });
-          }}
-          onBlur={(next) => {
-            setLocallyBlurred((prev) => ({ ...prev, phone: true }));
-            onChange({ ...value, ...next, blurred: { ...value.blurred, phone: true } });
-          }}
+            })
+          }
+          onBlur={(next) => onChange({ ...value, ...next, blurred: { ...value.blurred, phone: true } })}
         />
         <FieldError messageKey={errors.phone} />
       </div>
