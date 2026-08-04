@@ -1037,6 +1037,31 @@ async def _migrate_widen_spoolman_slot_ams_id_range(conn) -> None:
         raise
 
 
+async def _migrate_aito_task_descriptions(conn):
+    """2026-08-03: the task-level description moves onto the FIRST enabled
+    service, in canonical order — the same slot the old export appended it to.
+    A task with no enabled service keeps its text in the legacy column only
+    (invisible from the app, but not destroyed). Raw SQL: the ORM no longer
+    maps the legacy column once Task 4 of this feature lands."""
+    from sqlalchemy import text
+
+    earlier: list[str] = []
+    for service in ("scan", "modelisation", "impression", "usinage"):
+        conditions = [
+            "description IS NOT NULL",
+            "TRIM(description) != ''",
+            f"{service}_cost IS NOT NULL",
+            *[f"{done}_cost IS NULL" for done in earlier],
+        ]
+        await conn.execute(
+            text(
+                f"UPDATE aito_tasks SET {service}_description = description "  # noqa: S608  # nosec B608
+                f"WHERE {' AND '.join(conditions)}"
+            )
+        )
+        earlier.append(service)
+
+
 async def _migrate_aito_board_columns(conn) -> None:
     """One-shot: reconstruct Aito step history, then re-derive every column.
 
@@ -4317,6 +4342,17 @@ async def run_migrations(conn):
     # discount. The import adopts hand-set Books discounts into it so a push
     # stops wiping them.
     await _safe_execute(conn, "ALTER TABLE aito_tasks ADD COLUMN impression_discount_pct FLOAT")
+
+    # Migration: per-service descriptions on Aito tasks (2026-08-03). The
+    # task's single description moves onto its first enabled service — gated
+    # on the new columns not having existed, and on the legacy column still
+    # being there (a fresh install created from the current model has neither
+    # legacy data nor the column to read it from).
+    _aito_desc_existed = await _column_exists(conn, "aito_tasks", "scan_description")
+    for _service in ("scan", "modelisation", "impression", "usinage"):
+        await _safe_execute(conn, f"ALTER TABLE aito_tasks ADD COLUMN {_service}_description TEXT")
+    if not _aito_desc_existed and await _column_exists(conn, "aito_tasks", "description"):
+        await _migrate_aito_task_descriptions(conn)
 
     await _safe_execute(
         conn,

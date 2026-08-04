@@ -40,6 +40,14 @@ class AitoTask(Base):
     # impression_cost — that stays the pre-discount rate x quantity, so the
     # two never double-count. None = no discount.
     impression_discount_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Optional free text per service ("subtask"), emitted on the quote as an
+    # `Info:` row on that service's line. Replaces the task-level description:
+    # the title lives only in the quote's header, prose lives on the service
+    # it describes. NULL (never "") means no Info row at all.
+    scan_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    modelisation_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    impression_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    usinage_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     # One flag per service, mirroring the four cost columns above. A step
     # exists when its cost is not NULL; ticking it is what advances the
     # project's board column (see services/aito_board_rules.py). NOT NULL with

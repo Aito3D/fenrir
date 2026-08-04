@@ -13,6 +13,10 @@ class AitoTaskBase(BaseModel):
 
     title: str | None = Field(default=None, max_length=200)
     description: str | None = None
+    scan_description: str | None = None
+    modelisation_description: str | None = None
+    impression_description: str | None = None
+    usinage_description: str | None = None
     scan_cost: float | None = Field(default=None, ge=0)
     modelisation_cost: float | None = Field(default=None, ge=0)
     usinage_cost: float | None = Field(default=None, ge=0)
