@@ -70,6 +70,8 @@ export default {
     phoneRequired: 'Номер телефона обязателен.',
     dragHandle: 'Перетащите для изменения порядка',
     createdLabel: 'Создано',
+    ageAnchorAccepted: "Принято",
+    ageDaysShort: "{{days}} дн.",
     lastActivity: 'Последняя активность',
     recordLabel: 'Запись',
     stageAndWorkLeft: 'Этап и оставшаяся работа',

@@ -70,6 +70,8 @@ export default {
     phoneRequired: 'Phone number is required.',
     dragHandle: 'Drag to reorder',
     createdLabel: 'Created',
+    ageAnchorAccepted: 'Accepted',
+    ageDaysShort: '{{days}} d',
     lastActivity: 'Last activity',
     recordLabel: 'Record',
     stageAndWorkLeft: 'Stage & work left',

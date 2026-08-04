@@ -70,6 +70,8 @@ export default {
     phoneRequired: '電話番号は必須です。',
     dragHandle: 'ドラッグして並べ替え',
     createdLabel: '作成日',
+    ageAnchorAccepted: '承認済み',
+    ageDaysShort: '{{days}}日',
     lastActivity: '最終更新',
     recordLabel: '記録',
     stageAndWorkLeft: '工程と残作業',

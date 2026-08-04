@@ -70,6 +70,8 @@ export default {
     phoneRequired: '전화번호는 필수입니다.',
     dragHandle: '드래그하여 순서 변경',
     createdLabel: '생성일',
+    ageAnchorAccepted: '수락됨',
+    ageDaysShort: '{{days}}일',
     lastActivity: '최근 활동',
     recordLabel: '기록',
     stageAndWorkLeft: '단계 및 남은 작업',

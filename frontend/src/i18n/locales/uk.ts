@@ -71,6 +71,8 @@ export default {
     phoneRequired: "Номер телефону обов’язковий.",
     dragHandle: "Перетягніть, щоб змінити порядок",
     createdLabel: "Створено",
+    ageAnchorAccepted: "Прийнято",
+    ageDaysShort: "{{days}} дн.",
     lastActivity: "Остання активність",
     recordLabel: "Запис",
     stageAndWorkLeft: "Етап і залишок роботи",

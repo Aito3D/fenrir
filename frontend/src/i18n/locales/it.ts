@@ -70,6 +70,8 @@ export default {
     phoneRequired: 'Il numero di telefono è obbligatorio.',
     dragHandle: 'Trascina per riordinare',
     createdLabel: 'Creato',
+    ageAnchorAccepted: 'Accettato',
+    ageDaysShort: '{{days}} g',
     lastActivity: 'Ultima attività',
     recordLabel: 'Scheda',
     stageAndWorkLeft: 'Fase e lavoro rimanente',

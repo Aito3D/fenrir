@@ -70,6 +70,8 @@ export default {
     phoneRequired: 'Telefon numarası zorunludur.',
     dragHandle: 'Yeniden sıralamak için sürükleyin',
     createdLabel: 'Oluşturuldu',
+    ageAnchorAccepted: 'Kabul edildi',
+    ageDaysShort: '{{days}} g',
     lastActivity: 'Son etkinlik',
     recordLabel: 'Kayıt',
     stageAndWorkLeft: 'Aşama ve kalan iş',

@@ -70,6 +70,8 @@ export default {
     phoneRequired: '电话号码为必填项。',
     dragHandle: '拖动以重新排序',
     createdLabel: '创建时间',
+    ageAnchorAccepted: '已接受',
+    ageDaysShort: '{{days}}天',
     lastActivity: '最近活动',
     recordLabel: '记录',
     stageAndWorkLeft: '阶段与剩余工作',
