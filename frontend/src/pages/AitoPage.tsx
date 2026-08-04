@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { DndContext, DragOverlay, MeasuringStrategy, closestCorners, type DropAnimation } from '@dnd-kit/core';
 import { AlertTriangle, Archive, FileInput, Kanban, Plus, Trash2 } from 'lucide-react';
 import { Button } from '../components/Button';
@@ -14,11 +14,9 @@ import { NewProjectDrawer } from '../components/aito/NewProjectDrawer';
 import { ProjectDetailPanel } from '../components/aito/ProjectDetailPanel';
 import { TrashGrid } from '../components/aito/TrashGrid';
 import { ViewToggleButton } from '../components/aito/ViewToggleButton';
-import { api, ApiError, type AitoProject, type ZohoQuotePreview } from '../api/client';
-import { useToast } from '../contexts/ToastContext';
+import { api, type AitoProject } from '../api/client';
 import { formatPhone } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
-import { taskDraftToTaskCreate } from '../utils/taskDraft';
 import type { TaskDraft } from '../utils/taskDraft';
 import { matchesSearch } from '../utils/aitoSearch';
 import { useCardFlight } from '../hooks/useCardFlight';
@@ -26,9 +24,9 @@ import { useCardMorph } from '../hooks/useCardMorph';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useBoardDrag } from '../hooks/useBoardDrag';
 import { useBoardSync } from '../hooks/useBoardSync';
-import { clearNewProjectDraft } from '../hooks/useNewProjectDraft';
-import { useOptimisticBoardMutation } from '../hooks/useOptimisticBoardMutation';
-import { applyCreate, applyDelete, placeholderProject } from '../utils/aitoOptimistic';
+import { useQuotePendingPoll } from '../hooks/useQuotePendingPoll';
+import { useAitoPageMutations } from '../hooks/useAitoPageMutations';
+import { placeholderProject } from '../utils/aitoOptimistic';
 
 // Shared with SortableCard so the dropped card and the neighbours closing
 // the gap around it settle on the same curve.
@@ -46,89 +44,17 @@ const DROP_ANIMATION: DropAnimation = {
   },
 };
 
-// The board poll exists for exactly one visible thing: CardView's
-// "Creating quote…" placeholder (aito.quotePending), which only renders when
-// `!quote_number && quote_sync_state === 'pending'` — see CardView.tsx. A
-// card that already has a quote number has nothing left for this poll to
-// reveal, even if an ordinary task edit re-marks it pending (see
-// `_mark_pending_if_ours` in aito.py); polling for it would just be up to
-// thirty extra full-board GETs (the ~5 minute bound below, at one fetch per
-// QUOTE_POLL_INTERVAL_MS) for a card whose screen never changes.
-const QUOTE_POLL_INTERVAL_MS = 10_000;
-// `pending` is cleared only by the Zoho sync worker, and the worker is
-// gated behind `aito_quote_sync_enabled` — a supported operator setting that
-// can be off, or Zoho credentials can be pulled entirely. In either case
-// nothing will ever clear `pending`, so "it will resolve eventually" is not
-// guaranteed and this poll must not run forever. Five minutes is comfortably
-// past the worker's own ~60s cadence when it IS running, so a healthy worker
-// is never cut off before it resolves.
-const QUOTE_POLL_MAX_MS = 5 * 60 * 1000;
-
 export function AitoPage() {
   const { t } = useTranslation();
-  const { showToast } = useToast();
-  const queryClient = useQueryClient();
-  // Wall-clock deadline for the current poll run, cleared the instant no
-  // card matches and (re)set whenever a card starts matching that was not
-  // matching on the previous evaluation — so a later card that starts a
-  // fresh import gets its own full run at the poll rather than being cut off
-  // by a budget an earlier, still-stuck card already spent (the deadline is
-  // shared, not per-card: a new match resets it for whatever else is still
-  // pending too, which is fine — it just means a genuinely new event gives
-  // the whole poll another chance). Deadline rather than a tick counter:
-  // React Query can re-evaluate `refetchInterval` more than once per actual
-  // fetch, which would burn a fixed tick budget faster than real time
-  // actually elapses.
-  const pollDeadlineRef = useRef<number | null>(null);
-  // The matching id set as of the previous `refetchInterval` evaluation —
-  // what "not matching on the previous evaluation" above is compared
-  // against. Keying off ids (not just a boolean) is what lets a new card
-  // reset the deadline even while an old one is still matching too; a plain
-  // boolean can only ever go true -> true across that transition and would
-  // never notice the new arrival.
-  const pollMatchingIdsRef = useRef<Set<number>>(new Set());
   // Shares the module-level counters every optimistic board mutation feeds —
   // see that hook's own doc for why there are two. Only `isIdle` (the
   // `pendingWrites` one) is used here.
   const boardSync = useBoardSync();
+  const refetchQuotePending = useQuotePendingPoll(boardSync);
   const aitoQuery = useQuery({
     queryKey: ['aito-projects'],
     queryFn: api.getAitoProjects,
-    refetchInterval: (query) => {
-      // A board write's `onMutate` writes its optimistic value into this
-      // same cache entry BEFORE this function is asked to run again (writing
-      // to the cache is itself what re-triggers this evaluation — see
-      // QueryObserver.onQueryUpdate). A poll tick landing inside that
-      // write's [onMutate, onSettled] window would issue a fresh GET that
-      // overwrites the optimistic entry with data that predates the write,
-      // with no ring and no toast — silent, not merely stale. Skipping here,
-      // rather than after computing `matchingIds`, is deliberate: it must
-      // leave `pollDeadlineRef`/`pollMatchingIdsRef` exactly as they were, so
-      // a skipped tick neither consumes the deadline's budget nor loses the
-      // "was this id already matching" state that `hasNewMatch` depends on.
-      // The write's own `settle()` invalidates once it finishes, which
-      // re-triggers this function and lets the poll resume exactly where it
-      // left off.
-      if (!boardSync.isIdle()) return false;
-      const matchingIds = new Set(
-        (query.state.data ?? [])
-          .filter((p) => !p.quote_number && p.quote_sync_state === 'pending')
-          .map((p) => p.id),
-      );
-      if (matchingIds.size === 0) {
-        pollDeadlineRef.current = null;
-        pollMatchingIdsRef.current = matchingIds;
-        return false;
-      }
-      const now = Date.now();
-      const hasNewMatch = [...matchingIds].some((id) => !pollMatchingIdsRef.current.has(id));
-      if (pollDeadlineRef.current === null || hasNewMatch) {
-        pollDeadlineRef.current = now + QUOTE_POLL_MAX_MS;
-      }
-      pollMatchingIdsRef.current = matchingIds;
-      if (now >= pollDeadlineRef.current) return false;
-      return QUOTE_POLL_INTERVAL_MS;
-    },
+    refetchInterval: refetchQuotePending,
   });
 
   const [showModal, setShowModal] = useState(false);
@@ -186,122 +112,7 @@ export function AitoPage() {
   const { board, activeProject, dropTarget, allowedDropColumns, shouldAnimateIn, sensors, dndHandlers } =
     useBoardDrag(aitoQuery.data);
 
-  /** Push edited contact details back to Zoho after the card exists.
-   *
-   *  Deliberately not awaited by the create mutation: the board is the job and
-   *  a Zoho outage must not cost the user their card. The default walk-in
-   *  contact is skipped entirely — it is shared by every passing customer and
-   *  carries live transaction history. Fields the user never edited are skipped
-   *  too, so creating a project never silently reformats a stored number. */
-  const syncClientToZoho = async (draft: ClientDraft) => {
-    // `draft.isDefault` is `draft.id === defaultContactId` frozen at the
-    // moment the drawer built this draft (see `defaultClientDraft` /
-    // `draftFromContact` in clientDraft.ts) — the same default the drawer
-    // reads from the shared `zoho-status` query. Reading it off the draft
-    // here avoids a second copy of that query just to re-derive a value the
-    // draft already carries. The backend rejects a PATCH to this contact
-    // anyway (see routes/zoho.py's patch_contact, ~line 210), but a silent
-    // skip beats a warning toast on every counter sale.
-    if (draft.isDefault) return;
-    if (!draft.touched.phone && !draft.touched.email) return;
-    try {
-      await api.updateZohoContact(draft.id, {
-        ...(draft.touched.phone
-          ? { phone: formatPhone(draft), phone_field: draft.original.phoneField }
-          : {}),
-        ...(draft.touched.email ? { email: draft.email.trim() } : {}),
-      });
-    } catch {
-      showToast(t('aito.clientSyncFailed'), 'warning');
-    }
-  };
-
-  const createMutation = useOptimisticBoardMutation<
-    AitoProject,
-    { description: string; draft: ClientDraft; tasks: TaskDraft[]; placeholder: AitoProject }
-  >({
-    mutationFn: ({ description, draft, tasks }) =>
-      api.createAitoProject({
-        description,
-        client_id: draft.id,
-        client_name: draft.name,
-        client_phone: formatPhone(draft) || null,
-        client_email: draft.email.trim() || null,
-        client_is_company: draft.isCompany,
-        tasks: tasks.map(taskDraftToTaskCreate),
-      }),
-    transform: (previous, { placeholder }) => applyCreate(previous, placeholder),
-    // No flash: the placeholder is REMOVED on failure rather than reverted in
-    // place, so there is no card left to ring.
-    onSuccess: (created, { placeholder, draft }) => {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.map((p) => (p.id === placeholder.id ? created : p)) ?? prev,
-      );
-      void syncClientToZoho(draft);
-      // The card exists now — the drawer's persisted localStorage draft
-      // would otherwise reopen next time with a task list and client that
-      // were already turned into this project.
-      clearNewProjectDraft();
-    },
-    onError: (_error, { placeholder }) => {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.filter((p) => p.id !== placeholder.id) ?? prev,
-      );
-      showToast(t('aito.createFailed'), 'error');
-    },
-  });
-
-  /** Import posts through the same create endpoint as a manual card, so the
-   *  board's ordering, defaults and landing column all behave identically —
-   *  the only difference is the quote snapshot riding along. Nothing is
-   *  written back to Zoho. */
-  const importMutation = useOptimisticBoardMutation<
-    AitoProject,
-    { description: string; preview: ZohoQuotePreview; placeholder: AitoProject }
-  >({
-    mutationFn: ({ description, preview }) =>
-      api.createAitoProject({
-        description,
-        client_id: preview.client.id,
-        client_name: preview.client.name,
-        client_phone: preview.client.phone,
-        client_email: preview.client.email,
-        client_is_company: preview.client.is_company,
-        tasks: preview.tasks,
-        quote_id: preview.quote.id,
-        quote_number: preview.quote.number,
-        quote_date: preview.quote.date,
-        quote_total: preview.quote.total,
-        quote_url: preview.quote.url,
-        quote_salesperson: preview.quote.salesperson,
-        quote_status: preview.quote.status,
-      }),
-    transform: (previous, { placeholder }) => applyCreate(previous, placeholder),
-    onSuccess: (created, { placeholder }) => {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.map((p) => (p.id === placeholder.id ? created : p)) ?? prev,
-      );
-    },
-    onError: (error, { placeholder }) => {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.filter((p) => p.id !== placeholder.id) ?? prev,
-      );
-      const conflict = error instanceof ApiError && error.status === 409;
-      showToast(t(conflict ? 'aito.quoteAlreadyHasProject' : 'aito.createFailed'), 'error');
-    },
-  });
-
-  const deleteMutation = useOptimisticBoardMutation<void, number>({
-    mutationFn: (id) => api.deleteAitoProject(id),
-    transform: (previous, id) => applyDelete(previous, id),
-    flashId: (id) => id,
-    onSuccess: () => {
-      // The board is handled by the wrapper's settle-invalidate; the trash is
-      // a separate query with a new row in it.
-      queryClient.invalidateQueries({ queryKey: ['aito-trash'] });
-    },
-    onError: () => showToast(t('aito.deleteFailed'), 'error'),
-  });
+  const { createMutation, importMutation, deleteMutation } = useAitoPageMutations();
 
   // Each rendered column's cards after the search filter. Computed once and
   // used both to render the columns and to decide whether the board has
