@@ -5,7 +5,7 @@ import { TaskMiniRows } from './TaskMiniRows';
 import type { AitoProject } from '../../api/client';
 import { formatElapsedTime, parseUTCDate } from '../../utils/date';
 import { prefersReducedMotion } from '../../utils/motion';
-import { agingTextCls } from '../../utils/aitoAging';
+import { ageAnchor, agingTextCls } from '../../utils/aitoAging';
 
 export interface CardViewProps {
   project: AitoProject;
@@ -179,14 +179,12 @@ export function CardView({
 
   const created = parseUTCDate(project.created_at);
   const updated = parseUTCDate(project.updated_at);
-  // An accepted job's clock starts at the client's go-ahead, not the quote
-  // draft (2026-08-02 age-from-acceptance spec). A null stamp — imported
-  // already-accepted, or pre-migration with no event — falls back to
-  // created_at, and the stamp is ignored entirely while the quote is not
-  // accepted. One reference feeds both the label and the ramp below, so the
-  // two can never disagree.
-  const acceptedAt = project.quote_status === 'accepted' ? parseUTCDate(project.quote_accepted_at) : null;
-  const elapsed = formatElapsedTime(acceptedAt ? project.quote_accepted_at : project.created_at, t);
+  // Which stamp the age runs from, and its label, now live in utils/aitoAging
+  // so this card and the panel it morphs into read the same rule. `created`
+  // above is still the raw creation date for the tooltip, which is a different
+  // question from "how old is this job".
+  const age = ageAnchor(project);
+  const elapsed = formatElapsedTime(age.raw, t);
   const dateTitle = [
     created && t('aito.created', { date: created.toLocaleString(i18n.language) }),
     updated && t('aito.updated', { date: updated.toLocaleString(i18n.language) }),
@@ -261,7 +259,7 @@ export function CardView({
           <span
             data-testid="aito-card-elapsed"
             title={dateTitle}
-            className={`text-xs flex-shrink-0 ${agingTextCls(project, acceptedAt ?? created)}`}
+            className={`text-xs flex-shrink-0 ${agingTextCls(project, age.at)}`}
           >
             {elapsed}
           </span>

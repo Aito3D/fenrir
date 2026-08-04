@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agingLevel, agingTextCls } from '../../utils/aitoAging';
+import { ageAnchor, agingColorCls, agingLevel, agingTextCls } from '../../utils/aitoAging';
 
 const DAY = 86_400_000;
 
@@ -39,5 +39,58 @@ describe('agingTextCls', () => {
     expect(agingTextCls({ status: 'active', column: 'done' }, at(38), now)).toBe('text-bambu-gray');
     expect(agingTextCls({ status: 'deleted', column: 'devis' }, at(38), now)).toBe('text-bambu-gray');
     expect(agingTextCls(live, null, now)).toBe('text-bambu-gray');
+  });
+});
+
+describe('agingColorCls', () => {
+  const now = Date.parse('2026-08-01T12:00:00Z');
+  const live = { status: 'active', column: 'devis' };
+  const at = (days: number) => new Date(now - days * DAY);
+
+  it('walks the same ramp as agingTextCls but never sets a font weight', () => {
+    expect(agingColorCls(live, at(1), now)).toBe('text-bambu-gray');
+    expect(agingColorCls(live, at(12), now)).toBe('text-orange-400');
+    expect(agingColorCls(live, at(38), now)).toBe('text-red-400');
+  });
+
+  it('keeps the same exemptions', () => {
+    expect(agingColorCls({ status: 'active', column: 'done' }, at(38), now)).toBe('text-bambu-gray');
+    expect(agingColorCls({ status: 'deleted', column: 'devis' }, at(38), now)).toBe('text-bambu-gray');
+    expect(agingColorCls(live, null, now)).toBe('text-bambu-gray');
+  });
+});
+
+describe('ageAnchor', () => {
+  const base = { quote_status: null, quote_accepted_at: null, created_at: '2026-07-01T00:00:00' };
+
+  it('measures an accepted quote from its acceptance stamp', () => {
+    const result = ageAnchor({ ...base, quote_status: 'accepted', quote_accepted_at: '2026-07-20T00:00:00' });
+    expect(result.anchor).toBe('accepted');
+    expect(result.raw).toBe('2026-07-20T00:00:00');
+    expect(result.at?.toISOString()).toBe('2026-07-20T00:00:00.000Z');
+  });
+
+  it('ignores the acceptance stamp while the quote is not accepted', () => {
+    const result = ageAnchor({ ...base, quote_status: 'sent', quote_accepted_at: '2026-07-20T00:00:00' });
+    expect(result.anchor).toBe('created');
+    expect(result.raw).toBe('2026-07-01T00:00:00');
+  });
+
+  it('falls back to creation when an accepted quote carries no stamp', () => {
+    const result = ageAnchor({ ...base, quote_status: 'accepted', quote_accepted_at: null });
+    expect(result.anchor).toBe('created');
+    expect(result.raw).toBe('2026-07-01T00:00:00');
+  });
+
+  it('falls back to creation when the acceptance stamp is unparseable', () => {
+    const result = ageAnchor({ ...base, quote_status: 'accepted', quote_accepted_at: 'not-a-date' });
+    expect(result.anchor).toBe('created');
+    expect(result.at?.toISOString()).toBe('2026-07-01T00:00:00.000Z');
+  });
+
+  it('reports a null date rather than an Invalid Date when creation is unparseable too', () => {
+    const result = ageAnchor({ ...base, created_at: 'not-a-date' });
+    expect(result.anchor).toBe('created');
+    expect(result.at).toBeNull();
   });
 });
