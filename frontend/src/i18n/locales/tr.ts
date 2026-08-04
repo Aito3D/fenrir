@@ -3816,6 +3816,7 @@ export default {
     scanFolder: 'Tara',
     toast: {
       folderCreated: 'Klasör oluşturuldu',
+      openInSlicerFailed: 'Dilimleyicide açılamadı',
       folderDeleted: 'Klasör silindi',
       fileDeleted: 'Dosya silindi',
       filesDeleted: '{{count}} dosya silindi',
@@ -5325,6 +5326,7 @@ export default {
     openInSlicer: 'Dilimleyicide Aç',
     openInSlicerWith: '{{slicer}} ile aç',
     moreSlicerOptions: 'Diğer dilimleyici seçenekleri',
+    openInSlicerFailed: 'Dilimleyicide açılamadı',
     tabs: {
       model: '3B Model',
       gcode: 'G-kod Önizleme',

@@ -3820,6 +3820,7 @@ export default {
     scanFolder: 'Scannen',
     toast: {
       folderCreated: 'Ordner erstellt',
+      openInSlicerFailed: 'Konnte nicht im Slicer öffnen',
       folderDeleted: 'Ordner gelöscht',
       fileDeleted: 'Datei gelöscht',
       filesDeleted: '{{count}} Dateien gelöscht',
@@ -5360,6 +5361,7 @@ export default {
     openInSlicer: 'Im Slicer öffnen',
     openInSlicerWith: 'In {{slicer}} öffnen',
     moreSlicerOptions: 'Weitere Slicer-Optionen',
+    openInSlicerFailed: 'Konnte nicht im Slicer öffnen',
     tabs: {
       model: '3D-Modell',
       gcode: 'G-Code Vorschau',

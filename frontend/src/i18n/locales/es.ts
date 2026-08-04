@@ -3823,6 +3823,7 @@ export default {
     scanFolder: 'Escanear',
     toast: {
       folderCreated: 'Carpeta creada',
+      openInSlicerFailed: 'No se pudo abrir en el laminador',
       folderDeleted: 'Carpeta eliminada',
       fileDeleted: 'Archivo eliminado',
       filesDeleted: 'Se eliminaron {{count}} archivos',
@@ -5369,6 +5370,7 @@ export default {
     openInSlicer: 'Abrir en el laminador',
     openInSlicerWith: 'Abrir en {{slicer}}',
     moreSlicerOptions: 'Más opciones de laminador',
+    openInSlicerFailed: 'No se pudo abrir en el laminador',
     tabs: {
       model: 'Modelo 3D',
       gcode: 'Vista previa de G-code',

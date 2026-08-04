@@ -3808,6 +3808,7 @@ export default {
     scanFolder: 'Escanear',
     toast: {
       folderCreated: 'Pasta criada',
+      openInSlicerFailed: 'Não foi possível abrir no fatiador',
       folderDeleted: 'Pasta excluída',
       fileDeleted: 'Arquivo excluído',
       filesDeleted: 'Excluídos {{count}} arquivos',
@@ -5349,6 +5350,7 @@ export default {
     openInSlicer: 'Abrir no Slicer',
     openInSlicerWith: 'Abrir em {{slicer}}',
     moreSlicerOptions: 'Mais opções de fatiador',
+    openInSlicerFailed: 'Não foi possível abrir no fatiador',
     tabs: {
       model: 'Modelo 3D',
       gcode: 'Pré-visualização G-code',

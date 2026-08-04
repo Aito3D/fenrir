@@ -3808,6 +3808,7 @@ export default {
     scanFolder: 'Scansiona',
     toast: {
       folderCreated: 'Cartella creata',
+      openInSlicerFailed: 'Impossibile aprire nello slicer',
       folderDeleted: 'Cartella eliminata',
       fileDeleted: 'File eliminato',
       filesDeleted: 'Eliminati {{count}} file',
@@ -5349,6 +5350,7 @@ export default {
     openInSlicer: 'Apri nello slicer',
     openInSlicerWith: 'Apri in {{slicer}}',
     moreSlicerOptions: 'Altre opzioni dello slicer',
+    openInSlicerFailed: 'Impossibile aprire nello slicer',
     tabs: {
       model: 'Modello 3D',
       gcode: 'Anteprima G-code',
