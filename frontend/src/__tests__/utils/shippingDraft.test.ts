@@ -95,6 +95,21 @@ describe('validation', () => {
     expect(visibleShippingDraftErrors(untouched).island).toBeNull();
     expect(shippingDraftErrors(untouched).island).not.toBeNull();
   });
+
+  it('masks per field, not all or nothing', () => {
+    const mixed = draft({
+      island: '',
+      firstName: '',
+      blurred: { island: true, firstName: false, lastName: true, phone: true },
+    });
+    const visible = visibleShippingDraftErrors(mixed);
+    // Left the island -> its error is on screen.
+    expect(visible.island).toBe('aito.ruleShippingMissingIsland');
+    // Never left the first name -> its error stays hidden, even though the
+    // field is genuinely invalid.
+    expect(visible.firstName).toBeNull();
+    expect(shippingDraftErrors(mixed).firstName).toBe('aito.ruleShippingMissingRecipient');
+  });
 });
 
 describe('shippingPayload', () => {
@@ -108,7 +123,11 @@ describe('shippingPayload', () => {
     });
   });
 
-  it('omits the price when it was never resolved or typed', () => {
+  it('carries a null price through as null', () => {
     expect(shippingPayload(draft({ price: null })).shipping_price).toBeNull();
+  });
+
+  it('carries a free (zero) shipment through as 0, not null', () => {
+    expect(shippingPayload(draft({ price: 0 })).shipping_price).toBe(0);
   });
 });
