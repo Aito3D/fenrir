@@ -235,15 +235,18 @@ class Catalogue:
         """The Books item for one shipping service. Raises KeyError when the
         catalogue has not resolved it.
 
-        This is a contract the SYNC TASK MUST IMPLEMENT, not existing
-        behaviour: today nothing calls this method and nothing catches the
-        KeyError, so it would propagate raw out of ``build_line_items``. The
-        sync task must catch it and turn it into a RETRYABLE pending state —
-        never the terminal ``quote_sync_state = "error"`` the no-priced-
-        service guards elsewhere in ``aito_quote_sync.py`` use. An unresolved
-        catalogue entry means "not warm yet," not "never will be"; a terminal
-        state here would strand the project permanently even after the cache
-        warms, which is the opposite of what the situation calls for.
+        ``aito_quote_sync.load_export_shipping`` pre-checks membership in
+        ``self.shipping`` before ever building an ``ExportShipping`` and
+        raises its own ``ShippingCatalogueUnavailable`` at that point instead
+        — so in practice this method's KeyError never actually fires;
+        ``build_line_items`` only calls it once ``load_export_shipping`` has
+        already proven the key exists. The pre-check, not a catch here, is
+        what turns an unresolved entry into a RETRYABLE pending state rather
+        than the terminal ``quote_sync_state = "error"`` the no-priced-service
+        guards elsewhere in ``aito_quote_sync.py`` use: an unresolved
+        catalogue entry means "not warm yet," not "never will be," and a
+        terminal state would strand the project permanently even after the
+        cache warms — the opposite of what the situation calls for.
         """
         return self.shipping[service]
 

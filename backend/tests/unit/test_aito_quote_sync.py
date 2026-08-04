@@ -19,6 +19,7 @@ from backend.app.services.aito_quote_sync import (
     run_sync_once,
     sync_project,
 )
+from backend.app.services.aito_shipping import SERVICE_LABELS
 from backend.app.services.zoho import zoho_service
 
 
@@ -3265,18 +3266,24 @@ async def test_a_project_with_an_unresolvable_service_stays_pending_and_pushes_n
 @pytest.mark.asyncio
 async def test_an_unresolvable_shipping_service_warms_the_catalogue_cache_for_the_next_tick(db_session, monkeypatch):
     """Requirement A: ``get_catalogue`` always reads the shipping cache with
-    ``refresh=False``, so nothing else in this worker would ever warm it. The
-    deferral path must itself call ``get_shipping_catalogue(refresh=True)``, or
-    a project that gained shipping without going through the drawer (an
-    importer path, a wiped settings row, first boot with Books down) would
-    have no self-healing route back to a warm cache."""
+    ``refresh=False``, so nothing else in this worker would ever warm it, and
+    the drawer endpoint that will eventually warm it on the happy path does
+    not exist yet — today this deferral handler is the SOLE warmer. The
+    deferral path must itself call ``get_shipping_catalogue(refresh=True)``,
+    or a project that gained shipping without going through that future
+    drawer flow (an importer path, a wiped settings row, first boot with
+    Books down) would have no self-healing route back to a warm cache."""
     await _project_with_shipping_and_a_priced_task(db_session)
     await _configure_zoho(db_session)
 
     calls: list = []
     real_get_shipping_catalogue = zoho_service.get_shipping_catalogue
 
-    async def tracking_get_shipping_catalogue(db, *, refresh=True):
+    async def tracking_get_shipping_catalogue(db, *, refresh):
+        # `refresh` has no default here on purpose: the point of this test is
+        # to pin the LITERAL argument the deferral path passes. A default of
+        # True would make the assertion below pass even if the
+        # implementation started calling this with no `refresh` kwarg at all.
         calls.append(refresh)
         return await real_get_shipping_catalogue(db, refresh=refresh)
 
@@ -3286,3 +3293,251 @@ async def test_an_unresolvable_shipping_service_warms_the_catalogue_cache_for_th
 
     await run_sync_once(db_session)
     assert True in calls, "the deferral must warm the cache with refresh=True before giving up for this tick"
+
+
+async def _seed_warm_shipping_catalogue(db, service: str = "tuamotu", item_id: str = "SHIP-TUAMOTU") -> None:
+    """Writes a resolved shipping catalogue directly into settings, the same
+    shape ``zoho.get_shipping_catalogue`` itself produces, so a test can
+    exercise a project whose shipping IS resolvable without spending a real
+    ``/items`` network call to get there."""
+    catalogue = {service: {"item_id": item_id, "name": SERVICE_LABELS[service], "rate": 3200.0}}
+    await set_setting(db, "zoho_shipping_catalogue", json.dumps(catalogue))
+    await set_setting(db, "zoho_shipping_catalogue_at", datetime.utcnow().isoformat())
+    await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_create_with_shipping_but_no_priced_task_still_becomes_a_terminal_error(db_session):
+    """CRITICAL: shipping alone must never make a project quotable.
+    ``build_line_items`` appends the shipping line unconditionally, so gating
+    the no-priced-service guard on the BUILT ``line_items`` array (rather
+    than on task content) would let a project with zero priced tasks but
+    shipping attached slip past it and POST a shipping-only estimate."""
+    project = AitoProject(
+        description="Rien a imprimer",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_sync_state="pending",
+        shipping_island="rangiroa",
+        shipping_service="tuamotu",
+        shipping_first_name="Jean-Pierre",
+        shipping_last_name="DUPONT",
+        shipping_phone="+689-89645864",
+        shipping_price=3200.0,
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Rien"))  # no cost fields set at all
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    await _seed_warm_shipping_catalogue(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(zoho_handler({}, seen))
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.quote_sync_error == "Project has no priced service yet"
+    assert not any(method == "POST" for method, _, _ in seen)
+
+
+@pytest.mark.asyncio
+async def test_update_with_shipping_but_no_priced_task_does_not_wipe_the_quotes_lines(db_session):
+    """CRITICAL, the destructive half: the same guard on the update path.
+    Without it, clearing a project's only priced task while shipping stays
+    attached would PUT a ``line_items`` array containing ONLY the shipping
+    line onto a LIVE quote, deleting every real task line Books had — exactly
+    what the pre-existing "no priced service" guard exists to prevent for the
+    no-shipping case. This is the one that must be pinned."""
+    project = AitoProject(
+        description="Rien a imprimer",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_id="E1",
+        quote_number="DEV26-9001",
+        quote_sync_state="pending",
+        shipping_island="rangiroa",
+        shipping_service="tuamotu",
+        shipping_first_name="Jean-Pierre",
+        shipping_last_name="DUPONT",
+        shipping_phone="+689-89645864",
+        shipping_price=3200.0,
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Rien"))  # no cost fields set at all
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    await _seed_warm_shipping_catalogue(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [
+                            {"line_item_id": "TASK1", "sku": "P3DSCAN", "item_order": 1},
+                        ],
+                    }
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.quote_sync_error == "Project has no priced service left; nothing was written to the quote"
+    assert not any(method == "PUT" for method, _, _ in seen)
+
+
+@pytest.mark.asyncio
+async def test_create_with_a_priced_task_and_shipping_still_pushes_normally(db_session):
+    """The guard must not over-fire: a project that genuinely has a priced
+    service must still create its quote even though shipping is attached."""
+    project = await _project_with_shipping_and_a_priced_task(db_session)
+    await _configure_zoho(db_session)
+    await _seed_warm_shipping_catalogue(db_session)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {"estimates": []},
+                ("POST", "/estimates"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "date": "2026-07-29",
+                        "status": "draft",
+                        "total": 8200,
+                        "last_modified_time": "2026-07-29T10:00:00-1000",
+                        "is_inclusive_tax": True,
+                    }
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "idle"
+    assert project.quote_id == "E1"
+
+    post = next(entry for entry in seen if entry[0] == "POST" and entry[1].endswith("/estimates"))
+    assert len(post[2]["line_items"]) == 2  # one task line, plus the shipping line
+
+
+@pytest.mark.asyncio
+async def test_update_pushes_the_shipping_line_too_not_only_on_create(db_session):
+    """Important 2: shipping must not silently vanish on every push after the
+    first. ``_update_quote`` has its own ``build_line_items`` call site and
+    needs its own ``shipping=`` argument threaded through, independently of
+    ``_create_quote``'s — deleting it there breaks nothing any OTHER test
+    catches, because every other shipping integration test here exercises a
+    project with no ``quote_id`` (the create path only)."""
+    project = AitoProject(
+        description="Helice grise",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_id="E1",
+        quote_number="DEV26-9001",
+        quote_sync_state="pending",
+        shipping_island="rangiroa",
+        shipping_service="tuamotu",
+        shipping_first_name="Jean-Pierre",
+        shipping_last_name="DUPONT",
+        shipping_phone="+689-89645864",
+        shipping_price=3200.0,
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Helice grise", scan_cost=5000))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    await _seed_warm_shipping_catalogue(db_session, item_id="SHIP-TUAMOTU")
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "sent", "total": 8200}},
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    put = next(entry for entry in seen if entry[0] == "PUT")
+    shipping_lines = [line for line in put[2]["line_items"] if line.get("item_id") == "SHIP-TUAMOTU"]
+    assert len(shipping_lines) == 1
+    assert shipping_lines[0]["rate"] == 3200.0
+
+
+@pytest.mark.asyncio
+async def test_a_resolvable_shipping_service_reaches_books_with_the_right_item_and_description(db_session):
+    """Important 3: nothing so far asserted that a RESOLVABLE shipping
+    service actually reaches Books correctly — every other shipping
+    integration test in this file is about the deferral. Pin the pushed
+    line's content."""
+    await _project_with_shipping_and_a_priced_task(db_session)
+    await _configure_zoho(db_session)
+    await _seed_warm_shipping_catalogue(db_session, item_id="SHIP-TUAMOTU")
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {"estimates": []},
+                ("POST", "/estimates"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "date": "2026-07-29",
+                        "status": "draft",
+                        "total": 8200,
+                        "last_modified_time": "2026-07-29T10:00:00-1000",
+                        "is_inclusive_tax": True,
+                    }
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    post = next(entry for entry in seen if entry[0] == "POST" and entry[1].endswith("/estimates"))
+    shipping_line = next(line for line in post[2]["line_items"] if line.get("item_id") == "SHIP-TUAMOTU")
+    assert shipping_line["rate"] == 3200.0
+    assert shipping_line["quantity"] == 1
+    assert "Jean-Pierre DUPONT" in shipping_line["description"]
+    assert "Rangiroa" in shipping_line["description"]
+    assert "header_name" not in shipping_line
