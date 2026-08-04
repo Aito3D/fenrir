@@ -419,31 +419,6 @@ body {
   display: none;
 }
 
-/* Aito board horizontal scrollbar — visible but slim, only shows when the
-   6 columns hit their minimum width and overflow the viewport. */
-.board-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--text-muted) 60%, transparent) transparent;
-}
-
-.board-scroll::-webkit-scrollbar {
-  height: 8px;
-}
-
-.board-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.board-scroll::-webkit-scrollbar-thumb {
-  background-color: color-mix(in srgb, var(--text-muted) 60%, transparent);
-  border-radius: 999px;
-  border: 2px solid color-mix(in srgb, var(--bg-secondary) 70%, transparent);
-}
-
-.board-scroll::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in srgb, var(--text-muted) 80%, transparent);
-}
-
 /* Mobile drawer animation */
 @keyframes slide-in-left {
   from {
@@ -1400,8 +1375,9 @@ tbody .calc-table-row:hover {
   max-height: none;
 }
 
-/* Calendar selected-day list scrollbar theming */
-.calendar-scroll {
+/* Scrollbar theming for selected-day list (calendar) and board row (Aito) */
+.calendar-scroll,
+.board-scroll {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--text-muted) 60%, transparent) transparent;
 }
@@ -1410,17 +1386,24 @@ tbody .calc-table-row:hover {
   width: 8px;
 }
 
-.calendar-scroll::-webkit-scrollbar-track {
+.board-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.calendar-scroll::-webkit-scrollbar-track,
+.board-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.calendar-scroll::-webkit-scrollbar-thumb {
+.calendar-scroll::-webkit-scrollbar-thumb,
+.board-scroll::-webkit-scrollbar-thumb {
   background-color: color-mix(in srgb, var(--text-muted) 60%, transparent);
   border-radius: 999px;
   border: 2px solid color-mix(in srgb, var(--bg-secondary) 70%, transparent);
 }
 
-.calendar-scroll::-webkit-scrollbar-thumb:hover {
+.calendar-scroll::-webkit-scrollbar-thumb:hover,
+.board-scroll::-webkit-scrollbar-thumb:hover {
   background-color: color-mix(in srgb, var(--text-muted) 80%, transparent);
 }
 
