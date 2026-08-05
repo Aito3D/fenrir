@@ -281,6 +281,7 @@ const JA_COGNATES = [
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'EC984C,#6CD4BC,A66EB9,D87694',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
+  'username',  // aito.socialHandlePlaceholder — Latin username token, not translated
 ];
 
 // Portuguese (BR) cognates.
@@ -328,6 +329,7 @@ const ZH_CN_COGNATES = [
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'EC984C,#6CD4BC,A66EB9,D87694',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
+  'username',  // aito.socialHandlePlaceholder — Latin username token, not translated
 ];
 
 const ZH_TW_COGNATES = [
@@ -339,6 +341,7 @@ const ZH_TW_COGNATES = [
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'EC984C,#6CD4BC,A66EB9,D87694',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
+  'username',  // aito.socialHandlePlaceholder — Latin username token, not translated
 ];
 
 // Korean: script difference means almost nothing is identical.
@@ -359,6 +362,7 @@ const KO_COGNATES = [
   '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}', // pure placeholders
   'Obico ML API URL',                                 // product name (Obico)
   '{{filament}} @ {{temp}}°C',                        // drying badge format
+  'username',                                         // aito.socialHandlePlaceholder — Latin username token, not translated
 ];
 
 // Spanish cognates — words/phrases that are genuinely identical in Spanish.
@@ -415,6 +419,7 @@ const RU_COGNATES = [
   '({{count}}/8)',
   '(25%, 50%, 75%)',
   'Email',  // Task 6 Aito client email field — "email"/"Email" is used as a loanword in RU (see usernameOrEmail)
+  'username',  // aito.socialHandlePlaceholder — Latin username token, not translated
 ];
 
 // Ukrainian keeps only Latin brand names and placeholder/punctuation-only
@@ -429,6 +434,7 @@ const UK_COGNATES = [
   'EC984C,#6CD4BC,A66EB9,D87694',
   '({{count}}/8)',
   '(25%, 50%, 75%)',
+  'username',                                         // aito.socialHandlePlaceholder — Latin username token, not translated
 ];
 
 const IDENTICAL_TO_EN_ALLOWED = {
