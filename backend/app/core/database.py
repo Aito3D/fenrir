@@ -4448,6 +4448,12 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN shipping_phone VARCHAR(50)")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN shipping_price FLOAT")
 
+    # Migration: an optional social-network handle on an Aito card, standing in
+    # for a phone or an email. Two nullable columns written as a pair; every
+    # existing row correctly reads as "no social channel" with no backfill.
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN client_social_network VARCHAR(20)")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN client_social_handle VARCHAR(100)")
+
     await _backfill_aito_events(conn)
 
     # Migration: per-file print progress inside a project (#1897).
