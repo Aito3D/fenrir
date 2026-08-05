@@ -2,7 +2,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
-import { SendQuoteModal, htmlToText } from '../../components/aito/SendQuoteModal';
+import { SendQuoteModal } from '../../components/aito/SendQuoteModal';
+import { htmlToText } from '../../components/aito/htmlToText';
 import { api } from '../../api/client';
 import type { AitoProject } from '../../api/client';
 
