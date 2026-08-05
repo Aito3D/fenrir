@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Check, Copy, ExternalLink, Loader2, Mail, Pencil, Phone, Plane, RefreshCw, User } from 'lucide-react';
+import { Building2, Check, Copy, ExternalLink, Loader2, Mail, Pencil, Phone, Plane, Plus, RefreshCw, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ActivityRail } from './history/ActivityRail';
@@ -276,6 +276,10 @@ function PanelHeader({
   // two different spellings of the same island in one panel with Zoho down.
   const shippingIslandLabel =
     project.shipping_island !== null ? islandLabel(project.shipping_island, shippingServicesQuery.data?.services ?? []) : null;
+  // Narrowed once here rather than re-checked inline everywhere below, so the
+  // display gate and the affordance's icon swap can't drift on what counts as
+  // "has a handle".
+  const socialNetwork = isSocialNetwork(project.client_social_network) ? project.client_social_network : null;
   return (
     <div
       // `relative z-[2]` so the cast shadow below paints ONTO the body rather
@@ -428,19 +432,29 @@ function PanelHeader({
               go nowhere. The network is the label, so the value stands alone.
               Hidden while `editingSocial` — the editor below already carries
               the same information, and showing both at once reads as a
-              lingering stale copy of what the form is about to replace. */}
-          {!editingSocial && project.client_social_handle && isSocialNetwork(project.client_social_network) && (
+              lingering stale copy of what the form is about to replace.
+              The affordance button itself is NOT gated on having a handle —
+              unlike phone/email (read-only, no affordance at all), the social
+              handle is card-only, so clearing it here has nothing else in the
+              product to restore it from. Gating the button the way the value
+              is gated would turn "save blank" into a one-way door: the row
+              would vanish with no way back in. Pencil vs Plus is the only
+              thing that changes between "correct a typo" and "set one for the
+              first time" — both open the same editor. */}
+          {!editingSocial && (
             <span className="inline-flex items-center gap-1">
-              <CopyableValue
-                value={project.client_social_handle}
-                label={t(SOCIAL_LABEL_KEYS[project.client_social_network])}
-                icon={SOCIAL_ICONS[project.client_social_network]}
-              />
+              {socialNetwork !== null && project.client_social_handle && (
+                <CopyableValue
+                  value={project.client_social_handle}
+                  label={t(SOCIAL_LABEL_KEYS[socialNetwork])}
+                  icon={SOCIAL_ICONS[socialNetwork]}
+                />
+              )}
               {/* `client_phone`/`client_email` are read-only in this panel —
-                  see their own doc — so this pencil is the one edit affordance
-                  in the whole contact row, and it exists only because a typo
-                  in the ONE channel this panel lets you correct would
-                  otherwise be permanent. */}
+                  see their own doc — so this is the one edit affordance in the
+                  whole contact row, and it exists only because a typo (or a
+                  client who only had a phone or email when the card was made)
+                  would otherwise be permanent. */}
               <button
                 type="button"
                 onClick={onOpenSocialEdit}
@@ -448,7 +462,11 @@ function PanelHeader({
                 title={t('aito.socialEdit')}
                 className={`rounded-md p-1 text-bambu-gray transition-colors hover:bg-bambu-dark-tertiary hover:text-white ${focusRingCls}`}
               >
-                <Pencil className="h-3 w-3" aria-hidden="true" />
+                {socialNetwork !== null && project.client_social_handle ? (
+                  <Pencil className="h-3 w-3" aria-hidden="true" />
+                ) : (
+                  <Plus className="h-3 w-3" aria-hidden="true" />
+                )}
               </button>
             </span>
           )}
@@ -711,13 +729,21 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
 
   const saveSocial = () => {
     const handle = socialDraft.handle.trim();
-    setEditingSocial(false);
-    socialMutation.mutate({
-      // Blank handle clears the pair, matching the server's own rule — a
-      // network pointing at nothing is not a state either side keeps.
-      client_social_network: handle ? socialDraft.network : null,
-      client_social_handle: handle || null,
-    });
+    // Closed in `onSuccess`, not here — same discipline as ShippingCard's own
+    // `save`. Closing before the mutation settles would unmount the editor
+    // (and its `socialDraft`) in the same render as the click, so a failed
+    // save had nothing left on screen to show the retry toast against, and
+    // whatever the user typed was gone rather than sitting in the field for
+    // a second attempt.
+    socialMutation.mutate(
+      {
+        // Blank handle clears the pair, matching the server's own rule — a
+        // network pointing at nothing is not a state either side keeps.
+        client_social_network: handle ? socialDraft.network : null,
+        client_social_handle: handle || null,
+      },
+      { onSuccess: () => setEditingSocial(false) },
+    );
   };
 
   const { tasks, onTasksChange, onRemoveTask, onRowBlur, pendingTaskUids } = useProjectTasks(project.id);

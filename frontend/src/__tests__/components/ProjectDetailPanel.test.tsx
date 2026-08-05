@@ -409,9 +409,36 @@ describe('ProjectDetailPanel social handle', () => {
     expect(screen.getByText('moana.3d')).toBeInTheDocument();
   });
 
-  it('shows nothing when there is no social handle', () => {
+  it('shows no value but still offers an affordance to set one when there is no social handle', () => {
+    // The handle is card-only (never written to Zoho), so once it is cleared
+    // nothing else in the product can restore it — this affordance is the
+    // only way back in. Gating it the same way the displayed value is gated
+    // would make "save blank" a one-way door.
     show({ client_social_network: null, client_social_handle: null });
-    expect(screen.queryByRole('button', { name: /social/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/moana/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /edit the social network/i })).toBeInTheDocument();
+  });
+
+  it('sets a handle for the first time from the empty-state affordance', async () => {
+    const user = userEvent.setup();
+    const spy = vi.spyOn(api, 'updateAitoProject').mockResolvedValue({
+      ...project,
+      client_social_network: 'instagram',
+      client_social_handle: 'moana.3d',
+    });
+    show({ client_social_network: null, client_social_handle: null });
+
+    await user.click(screen.getByRole('button', { name: /edit the social network/i }));
+    await user.click(screen.getByRole('radio', { name: 'Instagram' }));
+    await user.type(screen.getByLabelText(/username/i), 'moana.3d');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith(project.id, {
+        client_social_network: 'instagram',
+        client_social_handle: 'moana.3d',
+      }),
+    );
   });
 
   it('patches both keys when the handle is edited', async () => {
@@ -457,6 +484,26 @@ describe('ProjectDetailPanel social handle', () => {
         client_social_handle: null,
       }),
     );
+  });
+
+  it('keeps the editor open with the typed input on a failed save', async () => {
+    // Pins the fix to `saveSocial`: it used to close the editor before the
+    // mutation settled, so a failed PATCH discarded whatever the user had
+    // just typed with no way to retry it. Closing in `onSuccess` instead
+    // (ShippingCard's own pattern) means a rejection leaves the editor — and
+    // the draft — right where the user left it.
+    const user = userEvent.setup();
+    vi.spyOn(api, 'updateAitoProject').mockRejectedValue(new Error('network error'));
+    show({ client_social_network: 'instagram', client_social_handle: 'moana.3d' });
+
+    await user.click(screen.getByRole('button', { name: /edit the social network/i }));
+    const input = screen.getByLabelText(/username/i);
+    await user.clear(input);
+    await user.type(input, 'moana.tt');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).not.toBeDisabled());
+    expect(screen.getByLabelText(/username/i)).toHaveValue('moana.tt');
   });
 });
 
