@@ -29,7 +29,7 @@ const card = (id: number, column: AitoProject['column'], position: number): Aito
   quote_status: null,
   quote_accepted_at: null,
   quote_sync_state: 'idle',
-  quote_invoiced: false,
+  quote_invoiced: false, urgent: false,
   quote_sync_error: null,
   quote_status_block: null,
   quote_status_remote: null,
@@ -65,6 +65,20 @@ describe('buildBoard', () => {
     const rogue = { ...card(5, 'devis', 0), column: 'archive' as AitoProject['column'] };
     const board = buildBoard([rogue, card(1, 'devis', 0)]);
     expect(board.devis.map((p) => p.id)).toEqual([1]);
+  });
+
+  it('sorts urgent cards to the top of their column, keeping position order inside each group', () => {
+    const project = (id: number, position: number, urgent: boolean) =>
+      ({ id, column: 'devis', position, urgent }) as unknown as AitoProject;
+
+    const board = buildBoard([
+      project(1, 0, false),
+      project(2, 1, true),
+      project(3, 2, false),
+      project(4, 3, true),
+    ]);
+
+    expect(board.devis.map((p) => p.id)).toEqual([2, 4, 1, 3]);
   });
 });
 

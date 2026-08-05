@@ -28,7 +28,14 @@ export function buildBoard(projects: AitoProject[]): Board {
   for (const project of projects) {
     if (COLUMN_IDS.includes(project.column)) board[project.column].push(project);
   }
-  for (const col of COLUMN_IDS) board[col].sort((a, b) => a.position - b.position);
+  // Urgent first, then stored position. The server orders the same way
+  // (routes/aito.py:list_projects), but this local sort is load-bearing, not
+  // belt-and-braces: every optimistic write rebuilds the board from the
+  // React Query cache without a refetch, so a flag would not move its card
+  // until the next server round-trip if this only trusted `position`.
+  for (const col of COLUMN_IDS) {
+    board[col].sort((a, b) => Number(b.urgent) - Number(a.urgent) || a.position - b.position);
+  }
   return board;
 }
 

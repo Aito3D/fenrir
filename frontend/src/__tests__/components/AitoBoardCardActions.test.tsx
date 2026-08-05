@@ -39,7 +39,7 @@ const card = (over: Partial<AitoProject> = {}): AitoProject => ({
   quote_status: null,
   quote_accepted_at: null,
   quote_sync_state: 'idle',
-  quote_invoiced: false,
+  quote_invoiced: false, urgent: false,
   quote_sync_error: null,
   quote_status_block: null,
   quote_status_remote: null,
@@ -220,7 +220,7 @@ describe('board card actions — mark as done', () => {
   });
 
   it('glows the Done action when the quote is invoiced', () => {
-    renderColumn(card({ column: 'finish', move_lock: null, quote_invoiced: true }));
+    renderColumn(card({ column: 'finish', move_lock: null, quote_invoiced: true, urgent: false }));
     const done = screen.getByRole('button', { name: /mark project as done/i });
     expect(done.className).toContain('animate-invoiced-glow');
     // The swap must actually replace the base color: `text-bambu-green` and
@@ -231,7 +231,7 @@ describe('board card actions — mark as done', () => {
   });
 
   it('does not glow when the quote is not invoiced', () => {
-    renderColumn(card({ column: 'finish', move_lock: null, quote_invoiced: false }));
+    renderColumn(card({ column: 'finish', move_lock: null, quote_invoiced: false, urgent: false }));
     const done = screen.getByRole('button', { name: /mark project as done/i });
     expect(done.className).not.toContain('animate-invoiced-glow');
     expect(done.className).toContain('text-bambu-green/70');

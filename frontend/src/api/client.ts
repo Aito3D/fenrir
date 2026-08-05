@@ -3543,6 +3543,12 @@ export interface AitoProject {
    *  covers tax-exclusive quotes that were never billed; the board's "this
    *  job is billed, archive it" glow keys off this flag, not the state. */
   quote_invoiced: boolean;
+  /** A local board signal — "this job is late / promised / on fire". Never
+   *  synced to Zoho. Set by holding the Urgent button in the detail panel for
+   *  0.5s; cleared the same way. Drives the card's halo and chip, and sorts
+   *  the card to the top of its column (display only — stored `position` is
+   *  never rewritten). */
+  urgent: boolean;
   /** The last push failure, or null. Only meaningful when quote_sync_state
    *  is 'error'; stale/ignored otherwise. */
   quote_sync_error: string | null;
@@ -6640,6 +6646,14 @@ export const api = {
     request<AitoProject>(`/aito/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
+    }),
+  /** Its own endpoint, not a field on `updateAitoProject`: the generic PATCH
+   *  queues a Zoho quote push for every edit, and urgency is a workshop fact
+   *  Zoho has no field for. See routes/aito.py:set_project_urgent. */
+  setAitoProjectUrgent: (id: number, urgent: boolean) =>
+    request<AitoProject>(`/aito/${id}/urgent`, {
+      method: 'PATCH',
+      body: JSON.stringify({ urgent }),
     }),
   deleteAitoProject: (id: number) =>
     request<void>(`/aito/${id}`, { method: 'DELETE' }),
