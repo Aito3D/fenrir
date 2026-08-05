@@ -1178,24 +1178,42 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
   }
 }
 
-/* Aito: the finish-column Done action (and its panel-pill twin) glow once
+/* Aito: the finish-column Done action (and its panel-pill twin) pulse once
    Books reports the quote invoiced — the board saying "this job is billed,
-   archive it" without forcing the move. Uses bambu-green's own #00ae42 value
-   rather than the token so the box-shadow keeps its saturation independent of
+   archive it" without forcing the move. An echo ring: a copy of the button's
+   outline detaches, expands and fades, then rests half the cycle so the beat
+   stays occasional rather than insistent. Ring only, on ::after — the button
+   itself never moves, and only transform/opacity animate (the box-shadow this
+   replaced repainted every frame). `inherit` keeps the ring the shape of
+   whichever surface carries it: near-circular on the card's icon button,
+   pill-shaped on the panel's labelled action. Uses bambu-green's own #00ae42
+   value rather than the token so the ring keeps its saturation independent of
    theme (see --accent above). */
-@keyframes invoiced-glow {
-  0%, 100% { box-shadow: 0 0 3px 0 rgb(0 174 66 / 0.5); }
-  50% { box-shadow: 0 0 10px 2px rgb(0 174 66 / 0.9); }
+@keyframes invoiced-pulse {
+  0% { transform: scale(1); opacity: 0.8; }
+  55%, 100% { transform: scale(1.5); opacity: 0; }
 }
-.animate-invoiced-glow {
-  animation: invoiced-glow 2s ease-in-out infinite;
+.animate-invoiced-pulse {
+  /* HoldButton's base is `relative`, which the ring positions against. */
+  position: relative;
 }
-/* The pulse still reads — just as a static glow rather than a pulsing one, so
-   the "this is billed" signal survives for anyone who has asked for less
-   motion, the same way .animate-revert-flash keeps its ring above. */
+.animate-invoiced-pulse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid rgb(0 174 66 / 0.7);
+  animation: invoiced-pulse 2.6s ease-out infinite;
+  pointer-events: none;
+}
+/* The signal still reads — as the static glow the animated ring replaced, so
+   "this is billed" survives for anyone who has asked for less motion, the
+   same way .animate-revert-flash keeps its ring above. */
 @media (prefers-reduced-motion: reduce) {
-  .animate-invoiced-glow {
-    animation: none;
+  .animate-invoiced-pulse::after {
+    display: none;
+  }
+  .animate-invoiced-pulse {
     box-shadow: 0 0 3px 0 rgb(0 174 66 / 0.5);
   }
 }
@@ -1235,7 +1253,7 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
   animation: urgent-halo 2.2s ease-out infinite;
 }
 /* The signal survives for anyone who has asked for less motion — as a static
-   glow rather than a pulsing one, exactly like .animate-invoiced-glow above.
+   glow rather than a pulsing one, exactly like .animate-invoiced-pulse above.
    The class is repeated to outweigh the later `.card-shadow` (see above); the
    rule stays here, beside the animation it replaces, rather than being exiled
    below `.card-shadow` where nobody would find it. */

@@ -59,11 +59,11 @@ export function ProjectDoneAction({ project }: { project: AitoProject }) {
       // base deliberately sets none of them (see its doc). Matched to the
       // quote actions' pills so the footer's safe end is one row of buttons,
       // not two shapes.
-      // Same glow as the board card's icon (BoardColumn) when the quote has
+      // Same pulse as the board card's icon (BoardColumn) when the quote has
       // been invoiced in Books: the job is billed, and this pill is the
       // panel's own "archive me" signal.
       className={`justify-center border px-2.5 py-1 border-bambu-green/40 text-bambu-green hover:bg-bambu-green/10 ${
-        project.quote_invoiced ? 'animate-invoiced-glow' : ''
+        project.quote_invoiced ? 'animate-invoiced-pulse' : ''
       }`}
     >
       {/* Both surfaces offer the one Finish -> Done transition and must never
