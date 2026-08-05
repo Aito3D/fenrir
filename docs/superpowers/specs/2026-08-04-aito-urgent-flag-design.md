@@ -70,7 +70,7 @@ So `urgent` is **not** added to `AitoProjectUpdate`. It gets its own route.
 ### The route
 
 ```
-PATCH /api/v1/aito/projects/{project_id}/urgent
+PATCH /api/v1/aito/{project_id}/urgent
 body:     {"urgent": true}
 response: AitoProjectResponse
 ```
