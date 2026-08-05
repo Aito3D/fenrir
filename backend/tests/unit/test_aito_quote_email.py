@@ -240,3 +240,48 @@ async def test_send_404s_without_a_quote(async_client, books_email):
     project = await _create(async_client, quote_id=None, quote_number=None)
     response = await async_client.post(f"/api/v1/aito/{project['id']}/quote-email", json={"to": "contact@example.pf"})
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "to,expect_sent_to",
+    [
+        # Blank/whitespace-only: nothing in the allowlist matches "", and
+        # nothing should ever reach Zoho on the way to that rejection.
+        ("", None),
+        ("   ", None),
+        # Same recipient Books offers, just noisy: only .strip() is applied
+        # before matching and sending — case is compared case-insensitively
+        # but NOT normalized, so what reaches Zoho keeps the caller's case,
+        # with only the surrounding whitespace trimmed.
+        ("  CONTACT@Example.PF  ", "CONTACT@Example.PF"),
+    ],
+)
+async def test_allowlist_trims_and_case_folds_without_widening(async_client, books_email, to, expect_sent_to):
+    project = await _create(async_client)
+
+    response = await async_client.post(f"/api/v1/aito/{project['id']}/quote-email", json={"to": to})
+
+    if expect_sent_to is None:
+        assert response.status_code == 422
+        assert books_email == []  # Zoho was never asked to send anything
+    else:
+        assert response.status_code == 200
+        assert books_email == [("EST-9", [expect_sent_to])]
+
+
+@pytest.mark.asyncio
+async def test_no_recipients_and_no_client_email_refuses_any_address(async_client, books_email, monkeypatch):
+    # Books offers nobody, and the card carries no client_email to fall back
+    # on (see _quote_email_content) — the allowlist is empty, so every
+    # address is out of it, and none of them may reach Zoho.
+    async def empty(db, estimate_id):
+        return {"subject": "Devis QT-00412", "body": "<p>Bonjour</p>", "recipients": []}
+
+    monkeypatch.setattr(zoho_service, "get_estimate_email_content", empty)
+    project = await _create(async_client, client_email=None)
+
+    response = await async_client.post(f"/api/v1/aito/{project['id']}/quote-email", json={"to": "anyone@example.pf"})
+
+    assert response.status_code == 422
+    assert books_email == []

@@ -971,6 +971,16 @@ async def send_quote_email(
     # is not an allowlist: without this the endpoint is an open relay, and any
     # authenticated user could send arbitrary addresses mail from the
     # company's Zoho account, on the company's own template and branding.
+    #
+    # Residual: this is not "addresses Books offers" — _quote_email_content
+    # widens it with the project's own client_email, and client_email is
+    # editable by anyone holding AITO_UPDATE, the same permission this route
+    # requires. So a holder of that permission can widen the allowlist
+    # themselves by editing the card's client_email first, then sending. This
+    # is accepted, not closed: the widening is what lets a hand-attached
+    # address stay sendable (see _quote_email_content), and it is already
+    # audited — as a `project.updated` event when the edit happens, not as
+    # part of `quote.emailed` here.
     recipient = payload.to.strip()
     if recipient.lower() not in {r["email"].lower() for r in content["recipients"]}:
         raise HTTPException(status_code=422, detail="That address is not a recipient of this quote")
@@ -979,10 +989,13 @@ async def send_quote_email(
         await zoho_service.email_estimate(db, project.quote_id, to_mail_ids=[recipient])
     except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
         logger.warning("Aito quote email failed for project %s: %s", project_id, e)
-        # A DB-layer failure inside the Zoho call (a token-refresh write, a
-        # settings read) can leave this session needing a rollback; without
-        # it, get_db's implicit commit would raise PendingRollbackError and
-        # turn the mapped error below into a 500.
+        # Belt-and-braces, not load-bearing: unlike set_quote_status, this
+        # handler re-raises rather than swallowing the error, so get_db's own
+        # except-BaseException clause already rolls the session back before
+        # propagating it — there is no implicit commit() on this path for a
+        # PendingRollbackError to break. Rolling back here just leaves the
+        # session clean immediately, in case any code is ever added between
+        # this line and the raise that reads it.
         await db.rollback()
         raise _quote_email_http_error(e) from e
 
