@@ -28,6 +28,15 @@ class AitoProject(Base):
     client_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     client_email: Mapped[str | None] = mapped_column(String(200), nullable=True)
     client_is_company: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # An optional third contact channel, standing in for a phone or an email:
+    # some clients are only reachable on Messenger or Instagram. Card-only, and
+    # that is the difference from the two fields above — Zoho Books has no field
+    # for it, so this is never pushed back to the contact and never prefills
+    # when the same contact is picked again.
+    # The pair is atomic: both set or both NULL. Enforced in schemas/aito.py
+    # rather than by a DB constraint, so a legacy row cannot fail to load.
+    client_social_network: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    client_social_handle: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Snapshot of the Zoho quote this project was imported from; NULL on cards
     # created by hand. quote_total is the quote's own total, not the project's.
     quote_id: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)

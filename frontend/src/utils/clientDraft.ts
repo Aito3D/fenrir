@@ -6,6 +6,17 @@ export interface ParsedPhone {
   nationalNumber: string;
 }
 
+/** The networks the picker offers. Must stay in step with SOCIAL_NETWORKS in
+ *  backend/app/schemas/aito.py — the backend rejects any other id, and the UI
+ *  has one icon and one label per entry. */
+export const SOCIAL_NETWORKS = ['messenger', 'instagram', 'whatsapp', 'tiktok'] as const;
+
+export type SocialNetwork = (typeof SOCIAL_NETWORKS)[number];
+
+export function isSocialNetwork(value: unknown): value is SocialNetwork {
+  return typeof value === 'string' && (SOCIAL_NETWORKS as readonly string[]).includes(value);
+}
+
 /** The client half of the Aito new-project form, as one value.
  *
  *  `touched` tracks user intent, not a value diff: a contact stored as a bare
@@ -23,6 +34,13 @@ export interface ClientDraft {
   countryCode: string;
   nationalNumber: string;
   email: string;
+  /** An optional third contact channel, standing in for phone or email. Unlike
+   *  those two it is never written to Zoho, so it carries no `original`,
+   *  `touched` or `blurred` entry: those exist only to keep an untouched
+   *  contact from being rewritten on save, and there is nothing here to write.
+   *  Null network means no channel; the two always move together. */
+  socialNetwork: SocialNetwork | null;
+  socialHandle: string;
   touched: { phone: boolean; email: boolean };
   /** Has the field been left once? Gates error *visibility* only — reusing
    *  `touched` would flash the error from the first keystroke. */
@@ -169,6 +187,10 @@ export function draftFromContact(contact: ZohoContact, defaultContactId: string)
     countryCode: parsed.countryCode,
     nationalNumber: parsed.nationalNumber,
     email: contact.email ?? '',
+    // Always empty: the handle lives on the project, not on the Zoho contact,
+    // so there is nothing to seed from a contact the user just picked.
+    socialNetwork: null,
+    socialHandle: '',
     touched: { phone: false, email: false },
     blurred: { phone: false, email: false },
     original: { phone: raw, email: contact.email ?? '', phoneField },
@@ -188,9 +210,30 @@ export function defaultClientDraft(id: string, name: string): ClientDraft {
     countryCode: DEFAULT_COUNTRY_CODE,
     nationalNumber: '',
     email: '',
+    // No stored social channel to seed — see draftFromContact.
+    socialNetwork: null,
+    socialHandle: '',
     touched: { phone: false, email: false },
     blurred: { phone: false, email: false },
     original: { phone: '', email: '', phoneField: 'mobile' },
+  };
+}
+
+/** Repair a `ClientDraft` restored from localStorage by a build that predates
+ *  a field. `useNewProjectDraft` drops a client half that is missing any key it
+ *  reads unguarded, and dropping a whole contact over two fields the user
+ *  probably never used would be a worse trade than filling them. An
+ *  unrecognised network is dropped rather than kept: the UI has no icon for
+ *  it. The handle is dropped along with it — the pairing invariant is atomic
+ *  everywhere else (the backend, `SocialInput`, every reachability gate), and
+ *  a network-less handle surviving here would enable Create only for the
+ *  server to 422 it, with the orphaned handle invisible until a pill click. */
+export function normaliseClientDraft(draft: ClientDraft): ClientDraft {
+  const socialNetwork = isSocialNetwork(draft.socialNetwork) ? draft.socialNetwork : null;
+  return {
+    ...draft,
+    socialNetwork,
+    socialHandle: socialNetwork && typeof draft.socialHandle === 'string' ? draft.socialHandle : '',
   };
 }
 

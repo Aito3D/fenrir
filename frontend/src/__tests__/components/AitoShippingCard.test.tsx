@@ -49,6 +49,8 @@ describe('ShippingCard', () => {
       client_name: 'Jean-Pierre DUPONT',
       client_phone: '+689-89645864',
       client_is_company: false,
+      client_social_network: null,
+      client_social_handle: null,
     } as unknown as AitoProject;
     render(<ShippingCard project={withClient} currency="XPF" />);
     await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
@@ -66,6 +68,8 @@ describe('ShippingCard', () => {
       client_name: 'AITO 3D SARL',
       client_phone: '+689-40123456',
       client_is_company: true,
+      client_social_network: null,
+      client_social_handle: null,
     } as unknown as AitoProject;
     render(<ShippingCard project={company} currency="XPF" />);
     await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));

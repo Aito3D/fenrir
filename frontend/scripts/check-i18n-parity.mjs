@@ -126,7 +126,7 @@ function isAlwaysAllowedIdentical(value) {
   if (/^\d{4,}$/.test(value)) return true;              // digit-only example token, e.g. phone placeholder
   if (/^ON,\s+true,\s+1$/.test(value)) return true;     // literal example "ON, true, 1"
   // Brand / technical names that ship verbatim everywhere.
-  if (/^(Bambuddy|BamBuddy|Aito|Zoho|Zoho Books|SpoolBuddy|Bambu Lab|Bambu Studio|Bambu Studio 2\.6\+|Bambu Studio sidecar URL|OrcaSlicer|OrcaSlicer sidecar URL|MakerWorld|Spoolman|\(Spoolman\)|Spoolman URL|Tailscale|GitHub|GitLab|Gitea|Forgejo|Discord|MQTT|FTP|HTTPS?|JSON|YAML|RTSP|TLS|SSL|CSRF|OIDC|SSO|SSO \/ OIDC|LDAP|TOTP|2FA|MFA|API|AMS|CRC|SHA256|SHA-256|kWh|MB|GB|KB|RGBA?|HSL|RGB|UTC|ISO|UI|HTTP|HTTP Method|H2D|H2D Pro|X1C|X1E|P1S|P1P|A1|A1 Mini|H2C|N3F|N3S|PETG|PLA|ABS|PA|TPU|PEI|PA-CF|PVA|HIPS|ASA|PC|PETG-HF|G\.code|G-code|gcode|cm³|°C|°F|GCODE|SOURCE|ntfy|Pushover|Bark|Telegram|Webhook|Webhook URL|Home Assistant|Home Assistant URL|CallMeBot\/WhatsApp|Bambuddy URL|Cool Plate|FFmpeg \(MJPEG\)|go2rtc \(WebRTC\)|Cool Plate SuperTack|Engineering Plate|High Temp Plate|Smooth PEI Plate|Textured PEI Plate|Ext-L|Ext-R|ISO \(YYYY-MM-DD\))$/.test(value)) return true;
+  if (/^(Bambuddy|BamBuddy|Aito|Zoho|Zoho Books|SpoolBuddy|Bambu Lab|Bambu Studio|Bambu Studio 2\.6\+|Bambu Studio sidecar URL|OrcaSlicer|OrcaSlicer sidecar URL|MakerWorld|Spoolman|\(Spoolman\)|Spoolman URL|Tailscale|GitHub|GitLab|Gitea|Forgejo|Discord|MQTT|FTP|HTTPS?|JSON|YAML|RTSP|TLS|SSL|CSRF|OIDC|SSO|SSO \/ OIDC|LDAP|TOTP|2FA|MFA|API|AMS|CRC|SHA256|SHA-256|kWh|MB|GB|KB|RGBA?|HSL|RGB|UTC|ISO|UI|HTTP|HTTP Method|H2D|H2D Pro|X1C|X1E|P1S|P1P|A1|A1 Mini|H2C|N3F|N3S|PETG|PLA|ABS|PA|TPU|PEI|PA-CF|PVA|HIPS|ASA|PC|PETG-HF|G\.code|G-code|gcode|cm³|°C|°F|GCODE|SOURCE|ntfy|Pushover|Bark|Telegram|Webhook|Webhook URL|Home Assistant|Home Assistant URL|CallMeBot\/WhatsApp|Bambuddy URL|Cool Plate|FFmpeg \(MJPEG\)|go2rtc \(WebRTC\)|Cool Plate SuperTack|Engineering Plate|High Temp Plate|Smooth PEI Plate|Textured PEI Plate|Ext-L|Ext-R|ISO \(YYYY-MM-DD\)|Messenger|Instagram|WhatsApp|TikTok)$/.test(value)) return true;
   return false;
 }
 
@@ -282,6 +282,7 @@ const JA_COGNATES = [
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'EC984C,#6CD4BC,A66EB9,D87694',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
+  'username',  // aito.socialHandlePlaceholder — Latin username token, not translated
 ];
 
 // Portuguese (BR) cognates.
@@ -329,6 +330,7 @@ const ZH_CN_COGNATES = [
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'EC984C,#6CD4BC,A66EB9,D87694',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
+  'username',  // aito.socialHandlePlaceholder — Latin username token, not translated
 ];
 
 const ZH_TW_COGNATES = [
@@ -340,6 +342,7 @@ const ZH_TW_COGNATES = [
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'EC984C,#6CD4BC,A66EB9,D87694',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
+  'username',  // aito.socialHandlePlaceholder — Latin username token, not translated
 ];
 
 // Korean: script difference means almost nothing is identical.
@@ -360,6 +363,7 @@ const KO_COGNATES = [
   '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}', // pure placeholders
   'Obico ML API URL',                                 // product name (Obico)
   '{{filament}} @ {{temp}}°C',                        // drying badge format
+  'username',                                         // aito.socialHandlePlaceholder — Latin username token, not translated
 ];
 
 // Spanish cognates — words/phrases that are genuinely identical in Spanish.
@@ -416,6 +420,7 @@ const RU_COGNATES = [
   '({{count}}/8)',
   '(25%, 50%, 75%)',
   'Email',  // Task 6 Aito client email field — "email"/"Email" is used as a loanword in RU (see usernameOrEmail)
+  'username',  // aito.socialHandlePlaceholder — Latin username token, not translated
 ];
 
 // Ukrainian keeps only Latin brand names and placeholder/punctuation-only
@@ -430,6 +435,7 @@ const UK_COGNATES = [
   'EC984C,#6CD4BC,A66EB9,D87694',
   '({{count}}/8)',
   '(25%, 50%, 75%)',
+  'username',                                         // aito.socialHandlePlaceholder — Latin username token, not translated
 ];
 
 const IDENTICAL_TO_EN_ALLOWED = {

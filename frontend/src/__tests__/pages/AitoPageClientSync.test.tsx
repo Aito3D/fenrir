@@ -174,6 +174,38 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
     expect(patchSpy).not.toHaveBeenCalled();
   });
 
+  it('sends the social network and handle in the create payload', async () => {
+    // The last unpinned hop of the value's journey: `client_social_network`/
+    // `client_social_handle` are optional in `api.createAitoProject`'s
+    // parameter type, so a call site that forgot to pass them through would
+    // still compile — nothing but a test catches that silent drop.
+    const user = userEvent.setup();
+    const createSpy = vi.fn();
+    server.use(
+      http.post('/api/v1/aito/', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        createSpy(body);
+        return HttpResponse.json(createdProject(body), { status: 201 });
+      }),
+    );
+
+    await openDrawer(user);
+    await user.click(screen.getByRole('radio', { name: 'Instagram' }));
+    await user.type(screen.getByLabelText(/username/i), 'moana.raiatea');
+    await waitForSummary();
+
+    await user.click(screen.getByRole('button', { name: /create project/i }));
+
+    await waitFor(() =>
+      expect(createSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          client_social_network: 'instagram',
+          client_social_handle: 'moana.raiatea',
+        }),
+      ),
+    );
+  });
+
   it('does not PATCH the walk-in default contact after create', async () => {
     // Same guard as the test above, but through the EMAIL branch rather than
     // phone — the two are independent `touched` flags on the draft, and the

@@ -19,7 +19,7 @@ import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useNewProjectDraft } from '../../hooks/useNewProjectDraft';
 import { buildFallbackSummary, tasksSignature } from '../../utils/aitoSummary';
 import { defaultClientDraft, draftFromContact, formatPhone, visibleClientDraftErrors } from '../../utils/clientDraft';
-import type { ClientDraft } from '../../utils/clientDraft';
+import type { ClientDraft, SocialNetwork } from '../../utils/clientDraft';
 import { islandLabel, visibleShippingDraftErrors } from '../../utils/shippingDraft';
 import type { ShippingDraft } from '../../utils/shippingDraft';
 import {
@@ -278,7 +278,11 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
 
   const phone = draft ? formatPhone({ countryCode: draft.countryCode, nationalNumber: draft.nationalNumber }) : '';
   const email = draft?.email.trim() ?? '';
-  const clientReachable = phone !== '' || email !== '';
+  const socialHandle = draft?.socialHandle.trim() ?? '';
+  // Any one of the three. Mirrors NewContactForm.reachable and the create
+  // route's own check — all three must move together or the button and the
+  // server disagree about what a reachable client is.
+  const clientReachable = phone !== '' || email !== '' || socialHandle !== '';
   // `visibleClientDraftErrors` only reports blurred fields, so this is what the
   // user can currently see — and gating on exactly that (not on raw validity)
   // matters: a contact whose *stored* phone or email is already malformed must
@@ -348,8 +352,12 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
     onCreate(summaryText.trim() || buildFallbackSummary(tasks, serviceLabel), draft, tasks, revealedShipping);
   };
 
-  const onClientCreated = (contact: ZohoContact) => {
-    setDraft(draftFromContact(contact, defaultId));
+  const onClientCreated = (contact: ZohoContact, social: { network: SocialNetwork | null; handle: string }) => {
+    // Seeded from the form rather than from `contact`: Zoho does not store the
+    // handle, so the created contact comes back without it and the draft would
+    // otherwise start empty — on the one path where the handle is most likely
+    // to be the client's ONLY contact detail.
+    setDraft({ ...draftFromContact(contact, defaultId), socialNetwork: social.network, socialHandle: social.handle });
     setCreatingClient(false);
   };
 
@@ -428,7 +436,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
               title={t('aito.clientSectionTitle')}
               hint={
                 clientReachable
-                  ? `${draft?.name ?? ''} · ${phone || email}${
+                  ? `${draft?.name ?? ''} · ${phone || email || socialHandle}${
                       shipping && shippingIslandLabel ? ` · ✈ ${shippingIslandLabel}` : ''
                     }`
                   : t('aito.ruleClientContact')
@@ -533,9 +541,9 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
             />
 
             {/* Wrapped for scoping, not styling: the client section's header
-                hint says the same "needs a phone or an email" this checklist
-                does, so a test (or a screen reader user scanning the rail)
-                needs the two to be distinguishable. */}
+                hint says the same "needs a phone, an email or a social
+                network" this checklist does, so a test (or a screen reader
+                user scanning the rail) needs the two to be distinguishable. */}
             <div data-testid="drawer-checklist">
               <CreateChecklist
                 taskCount={tasks.length}
@@ -544,7 +552,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
                 summaryState={summaryState}
                 clientAccountName={draft?.name ?? t('aito.noClient')}
                 clientReachable={clientReachable}
-                clientContact={phone || email}
+                clientContact={phone || email || socialHandle}
                 clientRevealed={clientRevealed}
                 shipping={shipping}
                 shippingIslandLabel={shippingIslandLabel}

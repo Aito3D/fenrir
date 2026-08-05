@@ -3509,6 +3509,11 @@ export interface AitoProject {
   client_phone: string | null;
   client_email: string | null;
   client_is_company: boolean | null;
+  /** An optional third contact channel, in place of phone or email. Card-only —
+   *  never synced to the Zoho contact, so it does not reappear when the same
+   *  client is picked for another project. Both fields are null or both set. */
+  client_social_network: string | null;
+  client_social_handle: string | null;
   /** Snapshot of the Zoho quote this project was imported from; null on cards
    *  created by hand. `quote_total` is the QUOTE's total, which can exceed the
    *  project total when non-AITO lines were skipped. */
@@ -3613,6 +3618,10 @@ export interface AitoProjectUpdate {
   client_phone?: string | null;
   client_email?: string | null;
   client_is_company?: boolean | null;
+  /** Atomic pair: send both keys or neither. A body carrying only the network
+   *  is a 422 — there is no "swap the network, keep the handle" partial edit. */
+  client_social_network?: string | null;
+  client_social_handle?: string | null;
   shipping_island?: string | null;
   shipping_first_name?: string | null;
   shipping_last_name?: string | null;
@@ -6597,6 +6606,8 @@ export const api = {
     client_phone?: string | null;
     client_email?: string | null;
     client_is_company?: boolean | null;
+    client_social_network?: string | null;
+    client_social_handle?: string | null;
     tasks?: AitoTaskCreate[];
     quote_id?: string | null;
     quote_number?: string | null;

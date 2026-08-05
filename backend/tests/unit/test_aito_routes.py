@@ -160,9 +160,7 @@ async def test_every_edit_that_touches_the_quote_wakes_the_worker(async_client):
     from backend.app.services import aito_quote_sync
 
     project_id = (await _create(async_client)).json()["id"]
-    task_id = (
-        await async_client.post(f"/api/v1/aito/{project_id}/tasks", json={"scan_cost": 1000})
-    ).json()["id"]
+    task_id = (await async_client.post(f"/api/v1/aito/{project_id}/tasks", json={"scan_cost": 1000})).json()["id"]
 
     async def wakes(call):
         aito_quote_sync._wake.clear()
@@ -1807,7 +1805,7 @@ async def test_task_steps_carry_titles(async_client):
 async def test_create_requires_phone_or_email(async_client):
     r = await _create(async_client, client_phone=None, client_email=None)
     assert r.status_code == 400
-    assert "phone or an email" in r.json()["detail"]
+    assert "phone, an email or a social handle" in r.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -1913,3 +1911,183 @@ async def test_urgent_404s_on_a_trashed_project(async_client):
 
     r = await async_client.patch(f"/api/v1/aito/{project_id}/urgent", json={"urgent": True})
     assert r.status_code == 404
+
+
+def test_social_pair_rejects_a_handle_without_a_network():
+    from pydantic import ValidationError
+
+    from backend.app.schemas.aito import AitoProjectCreate
+
+    with pytest.raises(ValidationError, match="client_social_network is required"):
+        AitoProjectCreate(
+            description="a job",
+            client_id="c1",
+            client_name="Client",
+            client_social_handle="aito.3d",
+        )
+
+
+def test_social_pair_rejects_an_unknown_network():
+    from pydantic import ValidationError
+
+    from backend.app.schemas.aito import AitoProjectCreate
+
+    with pytest.raises(ValidationError, match="client_social_network must be one of"):
+        AitoProjectCreate(
+            description="a job",
+            client_id="c1",
+            client_name="Client",
+            client_social_network="myspace",
+            client_social_handle="aito.3d",
+        )
+
+
+def test_social_blank_handle_clears_the_network():
+    from backend.app.schemas.aito import AitoProjectCreate
+
+    payload = AitoProjectCreate(
+        description="a job",
+        client_id="c1",
+        client_name="Client",
+        client_social_network="instagram",
+        client_social_handle="   ",
+    )
+    assert payload.client_social_network is None
+    assert payload.client_social_handle is None
+
+
+def test_social_handle_is_trimmed():
+    from backend.app.schemas.aito import AitoProjectCreate
+
+    payload = AitoProjectCreate(
+        description="a job",
+        client_id="c1",
+        client_name="Client",
+        client_social_network="messenger",
+        client_social_handle="  aito.3d  ",
+    )
+    assert payload.client_social_handle == "aito.3d"
+
+
+def test_update_without_social_keys_leaves_them_unset():
+    """The pairing validator must not mark the fields as set, or an ordinary
+    description edit would clear a stored handle through the route's
+    `model_dump(exclude_unset=True)`."""
+    from backend.app.schemas.aito import AitoProjectUpdate
+
+    payload = AitoProjectUpdate(description="just the text")
+    dumped = payload.model_dump(exclude_unset=True)
+    assert "client_social_network" not in dumped
+    assert "client_social_handle" not in dumped
+
+
+def test_update_clearing_the_handle_sets_both_keys():
+    """Clearing IS a mention, so both keys must be written as NULL."""
+    from backend.app.schemas.aito import AitoProjectUpdate
+
+    payload = AitoProjectUpdate(client_social_handle="")
+    dumped = payload.model_dump(exclude_unset=True)
+    assert dumped["client_social_network"] is None
+    assert dumped["client_social_handle"] is None
+
+
+def test_update_network_alone_is_rejected():
+    """A body carrying only `client_social_network` is a network-without-handle
+    per the design doc's pairing invariant — without this check,
+    `update_project`'s `model_dump(exclude_unset=True)` would write the new
+    network and NULL any stored handle to match, since the handle key was
+    never mentioned."""
+    from pydantic import ValidationError
+
+    from backend.app.schemas.aito import AitoProjectUpdate
+
+    with pytest.raises(ValidationError, match="client_social_handle is required"):
+        AitoProjectUpdate(client_social_network="tiktok")
+
+
+def test_update_network_explicitly_cleared_alone_is_fine():
+    """Unlike a non-null network, `{"client_social_network": null}` alone
+    asserts nothing that needs a handle to go with it."""
+    from backend.app.schemas.aito import AitoProjectUpdate
+
+    payload = AitoProjectUpdate(client_social_network=None)
+    dumped = payload.model_dump(exclude_unset=True)
+    assert dumped["client_social_network"] is None
+    assert "client_social_handle" not in dumped
+
+
+@pytest.mark.asyncio
+async def test_create_accepts_a_social_handle_as_the_only_channel(async_client):
+    r = await _create(
+        async_client,
+        client_phone=None,
+        client_social_network="instagram",
+        client_social_handle="moana.raiatea",
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["client_social_network"] == "instagram"
+    assert body["client_social_handle"] == "moana.raiatea"
+    assert body["client_phone"] is None
+    assert body["client_email"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_still_rejects_a_client_with_no_channel_at_all(async_client):
+    r = await _create(async_client, client_phone=None, client_email=None)
+    assert r.status_code == 400
+    assert "social" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_a_handle_without_a_network(async_client):
+    r = await _create(async_client, client_social_handle="moana.raiatea")
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_patch_round_trips_and_clears_the_social_pair(async_client):
+    created = await _create(async_client)
+    project_id = created.json()["id"]
+
+    set_response = await async_client.patch(
+        f"/api/v1/aito/{project_id}", json={"client_social_network": "tiktok", "client_social_handle": "moana.3d"}
+    )
+    assert set_response.status_code == 200, set_response.text
+    assert set_response.json()["client_social_handle"] == "moana.3d"
+    assert set_response.json()["client_social_network"] == "tiktok"
+
+    cleared = await async_client.patch(
+        f"/api/v1/aito/{project_id}", json={"client_social_network": None, "client_social_handle": ""}
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["client_social_network"] is None
+    assert cleared.json()["client_social_handle"] is None
+
+
+@pytest.mark.asyncio
+async def test_patch_without_social_keys_leaves_the_handle_alone(async_client):
+    """The regression the pairing validator's early return exists to prevent."""
+    created = await _create(async_client, client_social_network="messenger", client_social_handle="moana.fb")
+    project_id = created.json()["id"]
+
+    patched = await async_client.patch(f"/api/v1/aito/{project_id}", json={"description": "edited"})
+    assert patched.status_code == 200
+    assert patched.json()["client_social_handle"] == "moana.fb"
+    assert patched.json()["client_social_network"] == "messenger"
+
+
+@pytest.mark.asyncio
+async def test_patch_network_alone_422s_instead_of_nulling_the_stored_handle(async_client):
+    """A PATCH body carrying only `client_social_network` must not silently
+    clear a stored handle it never mentioned."""
+    created = await _create(async_client, client_social_network="messenger", client_social_handle="moana.fb")
+    project_id = created.json()["id"]
+
+    r = await async_client.patch(f"/api/v1/aito/{project_id}", json={"client_social_network": "tiktok"})
+    assert r.status_code == 422
+
+    board = (await async_client.get("/api/v1/aito/")).json()
+    unchanged = next(p for p in board if p["id"] == project_id)
+    assert unchanged["client_social_handle"] == "moana.fb"
+    assert unchanged["client_social_network"] == "messenger"

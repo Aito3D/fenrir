@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Check, Copy, ExternalLink, Loader2, Mail, Phone, Plane, RefreshCw, User } from 'lucide-react';
+import { Building2, Check, Copy, ExternalLink, Loader2, Mail, Pencil, Phone, Plane, Plus, RefreshCw, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ActivityRail } from './history/ActivityRail';
@@ -12,6 +12,7 @@ import { ProjectProgress } from './ProjectProgress';
 import { QuotePrintButton } from './QuotePrintButton';
 import { QuoteStatusActions } from './QuoteStatusActions';
 import { SendQuoteButton } from './SendQuoteButton';
+import { SOCIAL_ICONS, SOCIAL_LABEL_KEYS, SocialInput } from './SocialInput';
 import {
   quoteStatusLabelKey,
   quoteStatusTone,
@@ -35,7 +36,9 @@ import { ageAnchor, agingColorCls } from '../../utils/aitoAging';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import { elapsedDays, parseUTCDate } from '../../utils/date';
 import { formatMoney } from '../../utils/pricing';
-import { applyDescription, applySyncState } from '../../utils/aitoOptimistic';
+import { applyClientSocial, applyDescription, applySyncState } from '../../utils/aitoOptimistic';
+import { isSocialNetwork } from '../../utils/clientDraft';
+import type { SocialNetwork } from '../../utils/clientDraft';
 import { islandLabel } from '../../utils/shippingDraft';
 import { taskDraftToTaskCreate } from '../../utils/taskDraft';
 import { focusRingCls, inputCls } from '../formStyles';
@@ -216,6 +219,13 @@ function PanelHeader({
   quotedTotal,
   stepsDone,
   stepsTotal,
+  editingSocial,
+  socialDraft,
+  onSocialDraftChange,
+  onOpenSocialEdit,
+  onSaveSocial,
+  onCancelSocial,
+  socialSaving,
 }: {
   project: AitoProject;
   currency: string;
@@ -238,6 +248,17 @@ function PanelHeader({
    *  visibly disagree with itself until the next board refresh. */
   stepsDone: number;
   stepsTotal: number;
+  /** The social-edit state lives in the panel body (beside `updateMutation`,
+   *  its sibling mutation), not here — `PanelHeader` only renders the affordance
+   *  the contact row needs, the same split every other panel-body mutation
+   *  already keeps from its display components. */
+  editingSocial: boolean;
+  socialDraft: { network: SocialNetwork | null; handle: string };
+  onSocialDraftChange: (next: { network: SocialNetwork | null; handle: string }) => void;
+  onOpenSocialEdit: () => void;
+  onSaveSocial: () => void;
+  onCancelSocial: () => void;
+  socialSaving: boolean;
 }) {
   const { t } = useTranslation();
   // Same query key ShippingCard and the create drawer use, so this shares
@@ -256,6 +277,10 @@ function PanelHeader({
   // two different spellings of the same island in one panel with Zoho down.
   const shippingIslandLabel =
     project.shipping_island !== null ? islandLabel(project.shipping_island, shippingServicesQuery.data?.services ?? []) : null;
+  // Narrowed once here rather than re-checked inline everywhere below, so the
+  // display gate and the affordance's icon swap can't drift on what counts as
+  // "has a handle".
+  const socialNetwork = isSocialNetwork(project.client_social_network) ? project.client_social_network : null;
   return (
     <div
       // `relative z-[2]` so the cast shadow below paints ONTO the body rather
@@ -402,7 +427,76 @@ function PanelHeader({
           {project.client_email && (
             <CopyableValue value={project.client_email} label={t('aito.emailLabel')} icon={Mail} />
           )}
+          {/* Plain copyable text, never a link: the handle is validated as
+              "non-empty" and nothing more, so a pasted URL or a name with
+              spaces is a legal value and a generated profile link would often
+              go nowhere. The network is the label, so the value stands alone.
+              Hidden while `editingSocial` — the editor below already carries
+              the same information, and showing both at once reads as a
+              lingering stale copy of what the form is about to replace.
+              The affordance button itself is NOT gated on having a handle —
+              unlike phone/email (read-only, no affordance at all), the social
+              handle is card-only, so clearing it here has nothing else in the
+              product to restore it from. Gating the button the way the value
+              is gated would turn "save blank" into a one-way door: the row
+              would vanish with no way back in. Pencil vs Plus is the only
+              thing that changes between "correct a typo" and "set one for the
+              first time" — both open the same editor. */}
+          {!editingSocial && (
+            <span className="inline-flex items-center gap-1">
+              {socialNetwork !== null && project.client_social_handle && (
+                <CopyableValue
+                  value={project.client_social_handle}
+                  label={t(SOCIAL_LABEL_KEYS[socialNetwork])}
+                  icon={SOCIAL_ICONS[socialNetwork]}
+                />
+              )}
+              {/* `client_phone`/`client_email` are read-only in this panel —
+                  see their own doc — so this is the one edit affordance in the
+                  whole contact row, and it exists only because a typo (or a
+                  client who only had a phone or email when the card was made)
+                  would otherwise be permanent. */}
+              <button
+                type="button"
+                onClick={onOpenSocialEdit}
+                aria-label={t('aito.socialEdit')}
+                title={t('aito.socialEdit')}
+                className={`rounded-md p-1 text-bambu-gray transition-colors hover:bg-bambu-dark-tertiary hover:text-white ${focusRingCls}`}
+              >
+                {socialNetwork !== null && project.client_social_handle ? (
+                  <Pencil className="h-3 w-3" aria-hidden="true" />
+                ) : (
+                  <Plus className="h-3 w-3" aria-hidden="true" />
+                )}
+              </button>
+            </span>
+          )}
         </div>
+        {/* animate-rise: same arrival treatment `SocialInput` gives its own
+            handle field and `ShippingCard` gives its edit form — the editor
+            appears in response to the pencil click just above it. */}
+        {editingSocial && (
+          <div className="animate-rise mt-3 max-w-sm rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3">
+            <SocialInput idPrefix="panel-header" network={socialDraft.network} handle={socialDraft.handle} onChange={onSocialDraftChange} />
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={onCancelSocial}
+                className={`rounded-md px-2.5 py-1 text-sm text-bambu-gray transition-colors hover:text-white ${focusRingCls}`}
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={onSaveSocial}
+                disabled={socialSaving}
+                className={`rounded-md border border-bambu-green/40 px-2.5 py-1 text-sm text-bambu-green transition-colors hover:bg-bambu-green/10 disabled:opacity-50 ${focusRingCls}`}
+              >
+                {t('common.save')}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Hidden below md: the header is one flex row and the client name has
@@ -602,6 +696,57 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
     onError: () => showToast(t('aito.saveFailed'), 'error'),
   });
 
+  // Its own mutation rather than a third branch of `updateMutation.transform`:
+  // that transform switches on "is this a description edit or a sync retry",
+  // and a social edit is neither. Same shape as ShippingCard's — optimistic
+  // transform, PATCH response into the cache, events invalidated because the
+  // server records a project.updated for this write like any other.
+  const socialMutation = useOptimisticBoardMutation<AitoProject, AitoProjectUpdate>({
+    mutationFn: (patch) => api.updateAitoProject(project.id, patch),
+    transform: (previous, patch) => applyClientSocial(previous, project.id, patch),
+    flashId: () => project.id,
+    onSuccess: (updatedProject) => {
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
+        prev?.map((p) => (p.id === updatedProject.id ? updatedProject : p)) ?? prev,
+      );
+      queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
+    },
+    onError: () => showToast(t('aito.saveFailed'), 'error'),
+  });
+
+  const [editingSocial, setEditingSocial] = useState(false);
+  const [socialDraft, setSocialDraft] = useState<{ network: SocialNetwork | null; handle: string }>({
+    network: null,
+    handle: '',
+  });
+
+  const openSocialEdit = () => {
+    setSocialDraft({
+      network: isSocialNetwork(project.client_social_network) ? project.client_social_network : null,
+      handle: project.client_social_handle ?? '',
+    });
+    setEditingSocial(true);
+  };
+
+  const saveSocial = () => {
+    const handle = socialDraft.handle.trim();
+    // Closed in `onSuccess`, not here — same discipline as ShippingCard's own
+    // `save`. Closing before the mutation settles would unmount the editor
+    // (and its `socialDraft`) in the same render as the click, so a failed
+    // save had nothing left on screen to show the retry toast against, and
+    // whatever the user typed was gone rather than sitting in the field for
+    // a second attempt.
+    socialMutation.mutate(
+      {
+        // Blank handle clears the pair, matching the server's own rule — a
+        // network pointing at nothing is not a state either side keeps.
+        client_social_network: handle ? socialDraft.network : null,
+        client_social_handle: handle || null,
+      },
+      { onSuccess: () => setEditingSocial(false) },
+    );
+  };
+
   const { tasks, onTasksChange, onRemoveTask, onRowBlur, pendingTaskUids } = useProjectTasks(project.id);
   const { data: latestEvent } = useLatestProjectEvent(project.id);
 
@@ -741,6 +886,13 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
           quotedTotal={quotedTotal}
           stepsDone={stepsDone}
           stepsTotal={stepsTotal}
+          editingSocial={editingSocial}
+          socialDraft={socialDraft}
+          onSocialDraftChange={setSocialDraft}
+          onOpenSocialEdit={openSocialEdit}
+          onSaveSocial={saveSocial}
+          onCancelSocial={() => setEditingSocial(false)}
+          socialSaving={socialMutation.isPending}
         />
 
         <div className="overflow-y-auto scrollbar-hide flex-1 min-h-0 lg:flex lg:flex-col lg:overflow-hidden">

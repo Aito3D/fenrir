@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { normaliseTaskDraft } from '../utils/taskDraft';
+import { normaliseClientDraft } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
 import type { TaskDraft } from '../utils/taskDraft';
 import type { ShippingDraft } from '../utils/shippingDraft';
@@ -62,7 +63,13 @@ function readDraft(): PersistedDraft | null {
     return {
       ...parsed,
       tasks: parsed.tasks.map(normaliseTaskDraft),
-      client: complete<ClientDraft>(parsed.client, CLIENT_KEYS),
+      // Normalised, not key-checked: the two social fields arrived after this
+      // blob format did, and `complete()` would drop the whole contact over
+      // them. CLIENT_KEYS above deliberately does NOT list them.
+      client: (() => {
+        const client = complete<ClientDraft>(parsed.client, CLIENT_KEYS);
+        return client && normaliseClientDraft(client);
+      })(),
       shipping: complete<ShippingDraft>(parsed.shipping, SHIPPING_KEYS),
     };
   } catch {

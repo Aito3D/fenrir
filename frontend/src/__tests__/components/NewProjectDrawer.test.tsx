@@ -293,13 +293,13 @@ describe('NewProjectDrawer', () => {
     const { onCreate } = await renderDrawer();
 
     expect(checklistLine('Each task needs at least one priced sub-task')).toHaveAttribute('data-state', 'wait');
-    expect(checklistLine('Client needs a phone or an email')).toHaveAttribute('data-state', 'wait');
+    expect(checklistLine('Client needs a phone, an email or a social network')).toHaveAttribute('data-state', 'wait');
 
     await user.click(createButton());
 
     expect(onCreate).not.toHaveBeenCalled();
     expect(checklistLine('"Task 1" needs at least one priced sub-task')).toHaveAttribute('data-state', 'miss');
-    expect(checklistLine('Client needs a phone or an email')).toHaveAttribute('data-state', 'miss');
+    expect(checklistLine('Client needs a phone, an email or a social network')).toHaveAttribute('data-state', 'miss');
   });
 
   it('draft round-trips through localStorage across unmount/remount', async () => {
@@ -659,5 +659,95 @@ describe('NewProjectDrawer', () => {
     await openClientSection();
     expect(screen.getByRole('button', { name: /add shipping/i })).toBeInTheDocument();
     expect(within(screen.getByTestId('drawer-checklist')).queryByText(/shipping/i)).not.toBeInTheDocument();
+  });
+
+  it('enables Create for a client reachable only on a social network', async () => {
+    const user = userEvent.setup();
+    await renderDrawer();
+    await fillOneTask();
+    // The default walk-in client has no phone or email — clicking straight
+    // into the section (not `openClientSection`, which swaps in Jean-Pierre's
+    // already-reachable directory number) is what leaves the social pill as
+    // the only way left to satisfy reachability.
+    await user.click(clientHeader());
+
+    expect(createButton()).toHaveAttribute('aria-disabled', 'true');
+
+    await user.click(screen.getByRole('radio', { name: 'Instagram' }));
+    await user.type(screen.getByLabelText(/username/i), 'moana.3d');
+
+    await waitFor(() => expect(createButton()).toHaveAttribute('aria-disabled', 'false'));
+  });
+
+  it('shows the handle, not a blank contact, on the checklist for a social-only client', async () => {
+    // Regression for the checklist reading "Client reachable — " with nothing
+    // after the dash: `clientContact` must fall through to the social handle
+    // exactly like the section header's own hint does, for the one client
+    // this feature exists to serve — reachable on Instagram alone.
+    const user = userEvent.setup();
+    await renderDrawer();
+    await fillOneTask();
+    await user.click(clientHeader());
+    await user.click(screen.getByRole('radio', { name: 'Instagram' }));
+    await user.type(screen.getByLabelText(/username/i), 'moana.3d');
+
+    await waitFor(() =>
+      expect(within(screen.getByTestId('drawer-checklist')).getByText('Client reachable — moana.3d')).toBeInTheDocument(),
+    );
+  });
+
+  it('sends the social pair on create', async () => {
+    const user = userEvent.setup();
+    const { onCreate } = await renderDrawer();
+    await fillOneTask();
+    await user.click(clientHeader());
+    await user.click(screen.getByRole('radio', { name: 'Instagram' }));
+    await user.type(screen.getByLabelText(/username/i), 'moana.3d');
+    await waitFor(() => expect(createButton()).toHaveAttribute('aria-disabled', 'false'));
+
+    await user.click(createButton());
+
+    // The drawer hands the whole ClientDraft to its caller; the two fields
+    // are what useAitoPageMutations turns into client_social_* on the wire.
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ socialNetwork: 'instagram', socialHandle: 'moana.3d' }),
+      expect.any(Array),
+      null,
+    );
+  });
+
+  it('carries a handle typed into the create-client sub-form back into the draft', async () => {
+    // Regression for a silent-failure trap: TypeScript's parameter variance
+    // lets a one-argument `onClientCreated` satisfy the two-argument
+    // `onCreated` prop `NewContactForm` now offers, so nothing fails to
+    // compile if the seeding is missed — the handle just vanishes at runtime,
+    // on exactly the path where it is most likely the client's only contact
+    // detail (a brand-new walk-in client with no phone and no email).
+    const createdContact = {
+      id: 'newSocial1', name: 'Moana TAHITI', company_name: '',
+      customer_sub_type: 'individual',
+      phone: '', mobile: '', email: '',
+    };
+    server.use(http.post('/api/v1/zoho/contacts', () => HttpResponse.json(createdContact, { status: 201 })));
+    const user = userEvent.setup();
+    await renderDrawer();
+
+    await user.click(clientHeader());
+    const combobox = await screen.findByRole('combobox', { name: /client/i });
+    await user.clear(combobox);
+    await user.type(combobox, 'zzz');
+    await user.click(await screen.findByRole('button', { name: /create new client/i }));
+
+    await user.type(screen.getByLabelText(/company name/i), 'Moana Tahiti');
+    await user.click(screen.getByRole('radio', { name: 'Instagram' }));
+    await user.type(screen.getByLabelText(/username/i), 'moana.3d');
+    await user.click(screen.getByRole('button', { name: /create client/i }));
+
+    // Back on the client section (the sub-form closed): the header hint is
+    // built from the live draft, so seeing the handle there — with Zoho
+    // never having stored it — proves the drawer seeded it from the form's
+    // own callback argument, not from `contact`.
+    await waitFor(() => expect(clientHeader()).toHaveTextContent('moana.3d'));
   });
 });

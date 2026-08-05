@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  applyClientSocial,
   applyColumnMove,
   applyCreate,
   applyDelete,
@@ -29,6 +30,8 @@ const card = (over: Partial<AitoProject> = {}): AitoProject => ({
   client_phone: null,
   client_email: null,
   client_is_company: null,
+  client_social_network: null,
+  client_social_handle: null,
   quote_id: null,
   quote_number: null,
   quote_date: null,
@@ -426,6 +429,33 @@ describe('applyShipping', () => {
 
   it('leaves the cache untouched (undefined) on a cache miss, rather than fabricating a board', () => {
     expect(applyShipping(undefined, 1, { shipping_island: null })).toBeUndefined();
+  });
+});
+
+describe('applyClientSocial', () => {
+  it('writes both fields on the matching project only', () => {
+    const projects = [card({ id: 1 }), card({ id: 2 })];
+    const next = applyClientSocial(projects, 1, {
+      client_social_network: 'instagram',
+      client_social_handle: 'moana.3d',
+    });
+    expect(find(next!, 1).client_social_network).toBe('instagram');
+    expect(find(next!, 1).client_social_handle).toBe('moana.3d');
+    expect(find(next!, 2).client_social_handle).toBeNull();
+  });
+
+  it('clears both fields together', () => {
+    const projects = [card({ id: 1, client_social_network: 'instagram', client_social_handle: 'moana.3d' })];
+    const next = applyClientSocial(projects, 1, {
+      client_social_network: null,
+      client_social_handle: null,
+    });
+    expect(find(next!, 1).client_social_network).toBeNull();
+    expect(find(next!, 1).client_social_handle).toBeNull();
+  });
+
+  it('returns undefined for an unseeded cache', () => {
+    expect(applyClientSocial(undefined, 1, { client_social_network: null, client_social_handle: null })).toBeUndefined();
   });
 });
 

@@ -258,6 +258,18 @@ describe('ClientSection', () => {
     expect(screen.getByRole('button', { name: /add shipping/i })).toBeInTheDocument();
   });
 
+  it('reports a picked network and typed handle on the draft', async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    renderSection(defaultClientDraft(DEFAULT_ID, DEFAULT_NAME), onChange);
+
+    await user.click(screen.getByRole('radio', { name: 'Instagram' }));
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ socialNetwork: 'instagram', socialHandle: '' }),
+    );
+  });
+
   it('replaces the whole block with a settings link when Zoho is not configured', async () => {
     server.use(
       http.get('/api/v1/zoho/status', () =>

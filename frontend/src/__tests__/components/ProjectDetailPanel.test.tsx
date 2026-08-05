@@ -27,6 +27,8 @@ const project: AitoProject = {
   client_phone: '+689-87123456',
   client_email: 'hi@acme.pf',
   client_is_company: true,
+  client_social_network: null,
+  client_social_handle: null,
   quote_id: null,
   quote_number: null,
   quote_date: null,
@@ -393,6 +395,115 @@ describe('ProjectDetailPanel client fields', () => {
     // accessible name (which embeds the address) instead.
     show({ client_email: null });
     expect(screen.queryByRole('button', { name: /hi@acme\.pf/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('ProjectDetailPanel social handle', () => {
+  // Same reason the activity-rail describe block restores mocks: without it,
+  // an api.updateAitoProject spy from one of these tests leaks into whatever
+  // runs after it and its PATCHes never reach msw.
+  afterEach(() => vi.restoreAllMocks());
+
+  it('shows a stored social handle in the header', () => {
+    show({ client_social_network: 'instagram', client_social_handle: 'moana.3d' });
+    expect(screen.getByText('moana.3d')).toBeInTheDocument();
+  });
+
+  it('shows no value but still offers an affordance to set one when there is no social handle', () => {
+    // The handle is card-only (never written to Zoho), so once it is cleared
+    // nothing else in the product can restore it — this affordance is the
+    // only way back in. Gating it the same way the displayed value is gated
+    // would make "save blank" a one-way door.
+    show({ client_social_network: null, client_social_handle: null });
+    expect(screen.queryByText(/moana/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /edit the social network/i })).toBeInTheDocument();
+  });
+
+  it('sets a handle for the first time from the empty-state affordance', async () => {
+    const user = userEvent.setup();
+    const spy = vi.spyOn(api, 'updateAitoProject').mockResolvedValue({
+      ...project,
+      client_social_network: 'instagram',
+      client_social_handle: 'moana.3d',
+    });
+    show({ client_social_network: null, client_social_handle: null });
+
+    await user.click(screen.getByRole('button', { name: /edit the social network/i }));
+    await user.click(screen.getByRole('radio', { name: 'Instagram' }));
+    await user.type(screen.getByLabelText(/username/i), 'moana.3d');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith(project.id, {
+        client_social_network: 'instagram',
+        client_social_handle: 'moana.3d',
+      }),
+    );
+  });
+
+  it('patches both keys when the handle is edited', async () => {
+    const user = userEvent.setup();
+    const spy = vi.spyOn(api, 'updateAitoProject').mockResolvedValue({
+      ...project,
+      client_social_network: 'tiktok',
+      client_social_handle: 'moana.tt',
+    });
+    show({ client_social_network: 'instagram', client_social_handle: 'moana.3d' });
+
+    await user.click(screen.getByRole('button', { name: /edit the social network/i }));
+    await user.click(screen.getByRole('radio', { name: 'TikTok' }));
+    const input = screen.getByLabelText(/username/i);
+    await user.clear(input);
+    await user.type(input, 'moana.tt');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith(project.id, {
+        client_social_network: 'tiktok',
+        client_social_handle: 'moana.tt',
+      }),
+    );
+  });
+
+  it('clears both keys when the handle is emptied', async () => {
+    const user = userEvent.setup();
+    const spy = vi.spyOn(api, 'updateAitoProject').mockResolvedValue({
+      ...project,
+      client_social_network: null,
+      client_social_handle: null,
+    });
+    show({ client_social_network: 'instagram', client_social_handle: 'moana.3d' });
+
+    await user.click(screen.getByRole('button', { name: /edit the social network/i }));
+    await user.clear(screen.getByLabelText(/username/i));
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith(project.id, {
+        client_social_network: null,
+        client_social_handle: null,
+      }),
+    );
+  });
+
+  it('keeps the editor open with the typed input on a failed save', async () => {
+    // Pins the fix to `saveSocial`: it used to close the editor before the
+    // mutation settled, so a failed PATCH discarded whatever the user had
+    // just typed with no way to retry it. Closing in `onSuccess` instead
+    // (ShippingCard's own pattern) means a rejection leaves the editor — and
+    // the draft — right where the user left it.
+    const user = userEvent.setup();
+    vi.spyOn(api, 'updateAitoProject').mockRejectedValue(new Error('network error'));
+    show({ client_social_network: 'instagram', client_social_handle: 'moana.3d' });
+
+    await user.click(screen.getByRole('button', { name: /edit the social network/i }));
+    const input = screen.getByLabelText(/username/i);
+    await user.clear(input);
+    await user.type(input, 'moana.tt');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).not.toBeDisabled());
+    expect(screen.getByLabelText(/username/i)).toHaveValue('moana.tt');
   });
 });
 

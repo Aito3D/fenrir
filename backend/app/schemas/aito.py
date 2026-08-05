@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 AitoColumn = Literal["devis", "waiting", "scan", "model", "print", "finish", "done"]
 
@@ -52,6 +52,74 @@ def _check_phone(value: str) -> str:
     if not is_plausible_phone(value):
         raise ValueError("Enter a valid phone number")
     return value
+
+
+# The four networks the picker offers. A fixed tuple, not free text: the
+# frontend renders one icon and one label per id (SOCIAL_NETWORKS in
+# frontend/src/utils/clientDraft.ts must stay in step), and an id we cannot
+# render is worse on the card than no channel at all.
+SOCIAL_NETWORKS = ("messenger", "instagram", "whatsapp", "tiktok")
+
+
+class AitoClientSocialInput(BaseModel):
+    """The optional social channel, shared by create and update.
+
+    Handle validation is deliberately just "non-empty after trimming": a
+    WhatsApp handle is a phone number and an Instagram one is not, and four
+    patterns for platforms we do not control would drift. Nothing downstream
+    turns the value into a link, so a value we cannot parse costs nothing.
+    """
+
+    client_social_network: str | None = Field(default=None, max_length=20)
+    client_social_handle: str | None = Field(default=None, max_length=100)
+
+    @field_validator("client_social_network")
+    @classmethod
+    def _known_network(cls, value: str | None) -> str | None:
+        if value is not None and value not in SOCIAL_NETWORKS:
+            raise ValueError(f"client_social_network must be one of {', '.join(SOCIAL_NETWORKS)}")
+        return value
+
+    @model_validator(mode="after")
+    def _pair_social(self):
+        """Both fields are written together or not at all.
+
+        The early return is load-bearing, not a fast path: pydantic v2's
+        __setattr__ adds the name to `model_fields_set`, so assigning here
+        unconditionally would make every AitoProjectUpdate look like it
+        mentioned both keys — and update_project's
+        `model_dump(exclude_unset=True)` would then NULL a stored handle on an
+        unrelated description edit.
+        """
+        if not ({"client_social_network", "client_social_handle"} & self.model_fields_set):
+            return self
+        if "client_social_handle" not in self.model_fields_set:
+            # The network was mentioned but the handle was not. A body like
+            # `{"client_social_network": "tiktok"}` alone would otherwise fall
+            # through to `update_project`'s `model_dump(exclude_unset=True)`,
+            # which only NULLs the fields it sees — so the network would
+            # change while the handle stayed unmentioned (untouched), leaving
+            # the merged row an orphaned network with the OLD handle still
+            # attached to it. Rejecting here is what makes "change the
+            # network, keep the handle" not a thing a partial update can do —
+            # the design's own words. A network explicitly cleared to null
+            # needs no handle to go with it.
+            if self.client_social_network is not None:
+                raise ValueError("client_social_handle is required when client_social_network is set")
+            return self
+        handle = (self.client_social_handle or "").strip()
+        if not handle:
+            # A blank handle is not a channel. Dropping the network with it is
+            # what stops a cleared field leaving "instagram" behind, pointing at
+            # nothing. Both assignments are intended to mark the fields as set:
+            # the caller DID mention this pair, and meant to clear it.
+            self.client_social_handle = None
+            self.client_social_network = None
+            return self
+        if self.client_social_network is None:
+            raise ValueError("client_social_network is required when client_social_handle is set")
+        self.client_social_handle = handle
+        return self
 
 
 class AitoShippingIsland(BaseModel):
@@ -135,7 +203,7 @@ class AitoTaskResponse(AitoTaskBase):
     updated_at: datetime
 
 
-class AitoProjectCreate(AitoShippingInput):
+class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     # 10_000 is generous headroom over anything a human types — it exists to keep a
     # pathological payload from ballooning the row or the AI summarizer's prompt.
     description: str = Field(min_length=1, max_length=10_000)
@@ -195,7 +263,7 @@ class AitoProjectMove(BaseModel):
     position: int = Field(ge=0)
 
 
-class AitoProjectUpdate(AitoShippingInput):
+class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput):
     """Content edits from the card detail panel. Ordering (column/position) is
     owned by the /move endpoint and deliberately not accepted here."""
 
@@ -258,6 +326,8 @@ class AitoProjectResponse(BaseModel):
     client_phone: str | None
     client_email: str | None
     client_is_company: bool | None
+    client_social_network: str | None
+    client_social_handle: str | None
     quote_id: str | None
     quote_number: str | None
     quote_date: str | None

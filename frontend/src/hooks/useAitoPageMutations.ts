@@ -90,6 +90,10 @@ export function useAitoPageMutations() {
         client_phone: formatPhone(draft) || null,
         client_email: draft.email.trim() || null,
         client_is_company: draft.isCompany,
+        // Both keys or neither: the server refuses a handle with no network,
+        // and a network with no handle clears the pair.
+        client_social_network: draft.socialHandle.trim() ? draft.socialNetwork : null,
+        client_social_handle: draft.socialHandle.trim() || null,
         tasks: tasks.map(taskDraftToTaskCreate),
         ...(shipping ? shippingPayload(shipping) : {}),
       }),

@@ -252,6 +252,8 @@ def _to_response(p: AitoProject, summary: TaskSummary, shipping_names: dict[str,
         client_phone=p.client_phone,
         client_email=p.client_email,
         client_is_company=p.client_is_company,
+        client_social_network=p.client_social_network,
+        client_social_handle=p.client_social_handle,
         quote_id=p.quote_id,
         quote_number=p.quote_number,
         quote_date=p.quote_date,
@@ -592,11 +594,18 @@ async def create_project(
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     await _reject_duplicate_quote(db, payload.quote_id)
-    if payload.quote_id is None and not ((payload.client_phone or "").strip() or (payload.client_email or "").strip()):
-        # Every hand-created project must be reachable — walk-in included, whose
-        # coordinates live on the project row rather than in Zoho. Imports are
-        # exempt: an existing Zoho quote's contact may carry neither channel.
-        raise HTTPException(status_code=400, detail="Client must have a phone or an email")
+    if payload.quote_id is None and not (
+        (payload.client_phone or "").strip()
+        or (payload.client_email or "").strip()
+        or (payload.client_social_handle or "").strip()
+    ):
+        # Every hand-created project must be reachable on SOME channel — walk-in
+        # included, whose coordinates live on the project row rather than in
+        # Zoho. A social handle counts: some clients are only ever reached on
+        # Messenger or Instagram, and the pairing validator has already
+        # guaranteed a non-blank handle carries a network. Imports are exempt:
+        # an existing Zoho quote's contact may carry none of the three.
+        raise HTTPException(status_code=400, detail="Client must have a phone, an email or a social handle")
     create_fields = payload.model_dump(exclude_unset=True)
     rates = {}
     if _mentions_shipping(create_fields):
@@ -615,6 +624,8 @@ async def create_project(
         client_phone=payload.client_phone,
         client_email=payload.client_email,
         client_is_company=payload.client_is_company,
+        client_social_network=payload.client_social_network,
+        client_social_handle=payload.client_social_handle,
         quote_id=payload.quote_id,
         quote_number=payload.quote_number,
         quote_date=payload.quote_date,
@@ -1392,7 +1403,15 @@ async def update_project(
 
     if "description" in fields:
         project.description = fields["description"].strip()
-    for key in ("client_id", "client_name", "client_phone", "client_email", "client_is_company"):
+    for key in (
+        "client_id",
+        "client_name",
+        "client_phone",
+        "client_email",
+        "client_is_company",
+        "client_social_network",
+        "client_social_handle",
+    ):
         if key in fields:
             setattr(project, key, fields[key])
     # Captured before the mark: it is unconditional and idempotent, so
