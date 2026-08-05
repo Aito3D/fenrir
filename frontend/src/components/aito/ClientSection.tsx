@@ -6,6 +6,7 @@ import { api } from '../../api/client';
 import type { ZohoContact } from '../../api/client';
 import { ClientCombobox } from './ClientCombobox';
 import { PhoneInput } from './PhoneInput';
+import { SocialInput } from './SocialInput';
 import { FieldError } from './FieldError';
 import { ShippingFields } from './ShippingFields';
 import { visibleClientDraftErrors, defaultClientDraft, draftFromContact, parsePhone } from '../../utils/clientDraft';
@@ -188,6 +189,17 @@ export function ClientSection({
         </div>
         <FieldError messageKey={errors.email} />
       </div>
+
+      {/* No revert button beside this one, unlike phone and email: those two
+          are written back to Zoho and their reset returns them to the STORED
+          value. This field has no stored value to return to — picking the
+          selected network again clears it, which is the whole undo it needs. */}
+      <SocialInput
+        idPrefix="aito-client"
+        network={value.socialNetwork}
+        handle={value.socialHandle}
+        onChange={(next) => onChange({ ...value, socialNetwork: next.network, socialHandle: next.handle })}
+      />
 
       <div className="border-t border-bambu-dark-tertiary pt-3 mt-3">
         {shipping === null ? (

@@ -6,6 +6,7 @@ import { api } from '../../api/client';
 import type { ZohoContact } from '../../api/client';
 import { Button } from '../Button';
 import { PhoneInput } from './PhoneInput';
+import { SocialInput } from './SocialInput';
 import { FieldError } from './FieldError';
 import { inputCls, inputErrorCls, labelCls } from '../formStyles';
 import {
@@ -17,10 +18,16 @@ import {
   validateEmail,
   validatePhone,
 } from '../../utils/clientDraft';
+import type { SocialNetwork } from '../../utils/clientDraft';
 
 export interface NewContactFormProps {
   onCancel: () => void;
-  onCreated: (contact: ZohoContact) => void;
+  /** The social channel rides back separately because it is NOT part of the
+   *  Zoho contact this form just created — Zoho has no field for it. Without
+   *  this second argument the handle would vanish the instant the contact was
+   *  created, on precisely the path where it is most often the ONLY way to
+   *  reach the client. */
+  onCreated: (contact: ZohoContact, social: { network: SocialNetwork | null; handle: string }) => void;
 }
 
 /** Create-contact sub-step of the Aito new-project modal.
@@ -39,6 +46,8 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
   const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY_CODE);
   const [nationalNumber, setNationalNumber] = useState('');
   const [email, setEmail] = useState('');
+  const [socialNetwork, setSocialNetwork] = useState<SocialNetwork | null>(null);
+  const [socialHandle, setSocialHandle] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [blurred, setBlurred] = useState({ phone: false, email: false });
 
@@ -49,11 +58,11 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
 
   const phoneError = validatePhone({ countryCode, nationalNumber });
   const emailError = validateEmail(email);
-  // Neither field is required on its own, but the drawer (and the backend's
-  // project-create route) refuse a client with no way to reach them — so the
-  // same phone-OR-email rule applies here, surfaced as an always-visible hint
-  // rather than a per-field error.
-  const reachable = nationalNumber.replace(/\D/g, '') !== '' || email.trim() !== '';
+  // Any ONE of the three channels is enough. The social handle counts even
+  // though it never reaches Zoho: the project row is what has to be reachable,
+  // and the create route agrees (routes/aito.py, create_project).
+  const reachable =
+    nationalNumber.replace(/\D/g, '') !== '' || email.trim() !== '' || socialHandle.trim() !== '';
   const visibleErrors = maskVisibleErrors({ phone: phoneError, email: emailError }, blurred);
   // The button gates on what the user can SEE, the submit handler on what is
   // actually true — so a disabled button always has a message beside it
@@ -69,7 +78,7 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
         email: email.trim(),
         phone: formatPhone({ countryCode, nationalNumber }),
       }),
-    onSuccess: (data) => onCreated(data),
+    onSuccess: (data) => onCreated(data, { network: socialNetwork, handle: socialHandle.trim() }),
     onError: (e: Error) => setError(e.message || t('aito.clientCreateFailed')),
   });
 
@@ -180,6 +189,16 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
           />
           <FieldError messageKey={visibleErrors.email} />
         </div>
+
+        <SocialInput
+          idPrefix="aito-new"
+          network={socialNetwork}
+          handle={socialHandle}
+          onChange={(next) => {
+            setSocialNetwork(next.network);
+            setSocialHandle(next.handle);
+          }}
+        />
 
         {!reachable && <p className="text-xs text-bambu-gray">{t('aito.ruleClientContact')}</p>}
 

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { render } from '../utils';
+import { api } from '../../api/client';
 import { NewContactForm } from '../../components/aito/NewContactForm';
 
 const created = {
@@ -58,7 +59,8 @@ describe('NewContactForm', () => {
     await user.type(screen.getByLabelText(/last name/i), 'dupont');
     await user.type(screen.getByLabelText(/^phone/i), '87123456');
     await user.click(screen.getByRole('button', { name: /create client/i }));
-    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(created));
+    // No social network picked here, so the second argument carries the null/empty pair.
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(created, { network: null, handle: '' }));
     expect(body).toMatchObject({
       first_name: 'Jean-Pierre',
       last_name: 'DUPONT',
@@ -130,7 +132,7 @@ describe('NewContactForm', () => {
 
     // The phone alone is not required, but some way to reach the client is —
     // the same rule the drawer and the backend enforce.
-    expect(screen.getByText(/needs a phone or an email/i)).toBeInTheDocument();
+    expect(screen.getByText(/needs a phone, an email or a social network/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /create client/i })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: /create client/i }));
     expect(called).toBe(false);
@@ -145,6 +147,45 @@ describe('NewContactForm', () => {
     expect(screen.queryByText(/needs a phone or an email/i)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /create client/i }));
     await waitFor(() => expect(onCreated).toHaveBeenCalled());
+  });
+
+  it('enables submit for a client reachable only on a social network', async () => {
+    const user = userEvent.setup();
+    render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
+    await user.type(screen.getByLabelText(/company name/i), 'Aito 3D');
+    expect(screen.getByRole('button', { name: /create client/i })).toBeDisabled();
+
+    await user.click(screen.getByRole('radio', { name: 'Instagram' }));
+    await user.type(screen.getByLabelText(/username/i), 'aito.3d');
+
+    expect(screen.getByRole('button', { name: /create client/i })).toBeEnabled();
+  });
+
+  it('hands the typed handle back alongside the created contact', async () => {
+    const onCreated = vi.fn();
+    const user = userEvent.setup();
+    render(<NewContactForm onCancel={vi.fn()} onCreated={onCreated} />);
+    await user.type(screen.getByLabelText(/company name/i), 'Aito 3D');
+    await user.click(screen.getByRole('radio', { name: 'Instagram' }));
+    await user.type(screen.getByLabelText(/username/i), 'aito.3d');
+    await user.click(screen.getByRole('button', { name: /create client/i }));
+
+    await waitFor(() =>
+      expect(onCreated).toHaveBeenCalledWith(created, { network: 'instagram', handle: 'aito.3d' }),
+    );
+  });
+
+  it('does not send the handle to Zoho', async () => {
+    const user = userEvent.setup();
+    const spy = vi.spyOn(api, 'createZohoContact');
+    render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
+    await user.type(screen.getByLabelText(/company name/i), 'Aito 3D');
+    await user.click(screen.getByRole('radio', { name: 'Instagram' }));
+    await user.type(screen.getByLabelText(/username/i), 'aito.3d');
+    await user.click(screen.getByRole('button', { name: /create client/i }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(JSON.stringify(spy.mock.calls[0][0])).not.toContain('aito.3d');
   });
 
   it('does not mark the phone field as required', () => {
@@ -171,7 +212,7 @@ describe('NewContactForm', () => {
     // mouse click on the button does not take.
     await user.type(screen.getByLabelText(/^phone/i), 'n/a');
     await user.keyboard('{Enter}');
-    expect(screen.getByText(/needs a phone or an email/i)).toBeInTheDocument();
+    expect(screen.getByText(/needs a phone, an email or a social network/i)).toBeInTheDocument();
     expect(called).toBe(false);
     expect(onCreated).not.toHaveBeenCalled();
   });
