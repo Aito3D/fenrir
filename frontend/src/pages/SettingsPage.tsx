@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Briefcase, Workflow, UploadCloud } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Briefcase, Workflow, UploadCloud, MonitorPlay } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -11,15 +11,18 @@ import { fleetAudience, sponsorHref } from '../utils/fleetAudience';
 import { PRESET_CATEGORIES, parsePresetTriple } from '../utils/temperatureFanPresets';
 import { CALIBRATION_MODES, CALIBRATION_MODE_ACTIVE, CALIBRATION_MODE_INACTIVE } from '../utils/calibrationMode';
 import { PreheatFilamentTargetsEditor } from '../components/PreheatFilamentTargetsEditor';
-import type { APIKey, AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse, CalibrationMode } from '../api/client';
+import type { APIKey, AppSettings, AppSettingsUpdate, PrinterHASensor, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse, CalibrationMode } from '../api/client';
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
 import { SlicerBundlesPanel } from '../components/SlicerBundlesPanel';
 import { SlicerPipelinesPanel } from '../components/SlicerPipelinesPanel';
 import { CameraTokensSection } from './CameraTokensPage';
+import { StreamOverlayBuilder } from '../components/StreamOverlayBuilder';
 import { Collapsible } from '../components/Collapsible';
+import { CopyButton } from '../components/CopyButton';
 import { Button } from '../components/Button';
 import { SmartPlugCard } from '../components/SmartPlugCard';
 import { AddSmartPlugModal } from '../components/AddSmartPlugModal';
+import { HASensorModal } from '../components/HASensorModal';
 import { NotificationProviderCard } from '../components/NotificationProviderCard';
 import { AddNotificationModal } from '../components/AddNotificationModal';
 import { NotificationTemplateEditor } from '../components/NotificationTemplateEditor';
@@ -48,7 +51,7 @@ import { availableLanguages } from '../i18n';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, type ThemeStyle, type DarkBackground, type LightBackground, type ThemeAccent } from '../contexts/ThemeContext';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Palette } from 'lucide-react';
+import { Gauge, Palette } from 'lucide-react';
 import { registerSettingsSearch, getSettingsSearchEntries } from '../lib/settingsSearch';
 import type { UsersSubTab } from '../lib/settingsSearch';
 
@@ -182,6 +185,8 @@ export function SettingsPage() {
   const [humidityDrafts, setHumidityDrafts] = useState<Record<string, string>>({});
   const [showPlugModal, setShowPlugModal] = useState(false);
   const [editingPlug, setEditingPlug] = useState<SmartPlug | null>(null);
+  const [showHASensorModal, setShowHASensorModal] = useState(false);
+  const [editingHASensor, setEditingHASensor] = useState<PrinterHASensor | null>(null);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [editingProvider, setEditingProvider] = useState<NotificationProvider | null>(null);
   const [editingTemplate, setEditingTemplate] = useState<NotificationTemplate | null>(null);
@@ -432,6 +437,12 @@ export function SettingsPage() {
   const { data: printers } = useQuery({
     queryKey: ['printers'],
     queryFn: api.getPrinters,
+  });
+
+  const { data: haSensors } = useQuery({
+    queryKey: ['haSensors'],
+    queryFn: () => api.getHASensors(),
+    enabled: activeTab === 'plugs',
   });
 
   // A business-sized fleet gets the commercial ask instead of the donation ask.
@@ -884,6 +895,16 @@ export function SettingsPage() {
   const pendingGcodeSnippetsRef = useRef<string | null>(null);
   const isSavingRef = useRef(false);
   const isInitialLoadRef = useRef(true);
+  // #2716: the last server snapshot this page reconciled with. It is what
+  // makes "the user edited this field" a well-defined question: a field where
+  // localSettings still equals the baseline has not been touched since that
+  // reconcile, so a newer server value can be taken instead of the page's stale
+  // copy being written back over it. Before this the debounced save diffed
+  // against the live ['settings'] cache, which made a value changed on the
+  // server -- another tab, another user, a backup restore, a refetch driven by
+  // any of the ~30 other observers of the key -- indistinguishable from an edit,
+  // and reverted it a few hundred ms later with no user interaction at all.
+  const serverBaselineRef = useRef<AppSettings | null>(null);
 
   // Sync local state when settings load
   useEffect(() => {
@@ -893,6 +914,9 @@ export function SettingsPage() {
         ...settings,
         external_url: settings.external_url || window.location.origin,
       };
+      // The baseline is the raw server row, not this adjusted copy: a detected
+      // external_url has to read as a local change so it still gets persisted.
+      serverBaselineRef.current = settings;
       setLocalSettings(settingsWithExternalUrl);
       // Mark initial load complete after a short delay
       setTimeout(() => {
@@ -901,9 +925,37 @@ export function SettingsPage() {
     }
   }, [settings, localSettings]);
 
+  // #2716: reconcile a moved server snapshot into the local copy. A field the
+  // user has not touched since the last reconcile takes the server's value; a
+  // field they have edited keeps theirs and is saved over it by the debounced
+  // effect below, so the newer of the two writes wins either way. Declared
+  // before that effect so the baseline has already moved by the time it
+  // computes its diff in the same commit.
+  useEffect(() => {
+    const baseline = serverBaselineRef.current;
+    if (!settings || !localSettings || !baseline || settings === baseline) {
+      return;
+    }
+    const adopted: Record<string, unknown> = {};
+    for (const key of Object.keys(settings) as (keyof AppSettings)[]) {
+      if (settings[key] !== baseline[key] && localSettings[key] === baseline[key]) {
+        adopted[key] = settings[key];
+      }
+    }
+    serverBaselineRef.current = settings;
+    if (Object.keys(adopted).length > 0) {
+      setLocalSettings(prev => (prev ? { ...prev, ...(adopted as Partial<AppSettings>) } : prev));
+    }
+  }, [settings, localSettings]);
+
   const updateMutation = useMutation({
     mutationFn: api.updateSettings,
     onSuccess: (data) => {
+      // #2716: the row we just saved becomes the snapshot to diff against.
+      // The setQueryData below would normally get the effect above to do this,
+      // but only if react-query hands back a new object; setting it here means
+      // the baseline never lags behind a save regardless.
+      serverBaselineRef.current = data;
       queryClient.setQueryData(['settings'], data);
       // Don't call setLocalSettings(data) here — it would overwrite in-progress
       // user input (e.g. typing a hostname) with the stale saved snapshot,
@@ -944,7 +996,8 @@ export function SettingsPage() {
   // Debounced auto-save when localSettings change
   useEffect(() => {
     // Skip if initial load or no settings
-    if (isInitialLoadRef.current || !localSettings || !settings) {
+    const baseline = serverBaselineRef.current;
+    if (isInitialLoadRef.current || !localSettings || !settings || !baseline) {
       return;
     }
 
@@ -958,87 +1011,87 @@ export function SettingsPage() {
 
     // Check if there are actual changes
     const hasChanges =
-      settings.auto_archive !== localSettings.auto_archive ||
-      settings.save_thumbnails !== localSettings.save_thumbnails ||
-      settings.capture_finish_photo !== localSettings.capture_finish_photo ||
-      (settings.finish_photo_restore_plate ?? true) !== (localSettings.finish_photo_restore_plate ?? true) ||
-      settings.default_filament_cost !== localSettings.default_filament_cost ||
-      settings.currency !== localSettings.currency ||
-      settings.energy_cost_per_kwh !== localSettings.energy_cost_per_kwh ||
-      settings.energy_tracking_mode !== localSettings.energy_tracking_mode ||
-      settings.check_updates !== localSettings.check_updates ||
-      (settings.check_printer_firmware ?? true) !== (localSettings.check_printer_firmware ?? true) ||
-      (settings.include_beta_updates ?? false) !== (localSettings.include_beta_updates ?? false) ||
-      (settings.local_login_enabled ?? true) !== (localSettings.local_login_enabled ?? true) ||
-      settings.notification_language !== localSettings.notification_language ||
-      (settings.bed_cooled_threshold ?? 35) !== (localSettings.bed_cooled_threshold ?? 35) ||
-      settings.ams_humidity_good !== localSettings.ams_humidity_good ||
-      settings.ams_humidity_fair !== localSettings.ams_humidity_fair ||
-      settings.ams_temp_good !== localSettings.ams_temp_good ||
-      settings.ams_temp_fair !== localSettings.ams_temp_fair ||
-      settings.ams_history_retention_days !== localSettings.ams_history_retention_days ||
-      settings.disable_filament_warnings !== localSettings.disable_filament_warnings ||
-      settings.prefer_lowest_filament !== localSettings.prefer_lowest_filament ||
-      (settings.queue_drying_enabled ?? false) !== (localSettings.queue_drying_enabled ?? false) ||
-      (settings.queue_drying_block ?? false) !== (localSettings.queue_drying_block ?? false) ||
-      (settings.ambient_drying_enabled ?? false) !== (localSettings.ambient_drying_enabled ?? false) ||
-      (settings.print_drying_enabled ?? false) !== (localSettings.print_drying_enabled ?? false) ||
-      (settings.drying_presets ?? '') !== (localSettings.drying_presets ?? '') ||
-      (settings.ams_humidity_thresholds ?? '') !== (localSettings.ams_humidity_thresholds ?? '') ||
-      settings.per_printer_mapping_expanded !== localSettings.per_printer_mapping_expanded ||
-      settings.date_format !== localSettings.date_format ||
-      settings.time_format !== localSettings.time_format ||
-      settings.default_printer_id !== localSettings.default_printer_id ||
-      settings.ftp_retry_enabled !== localSettings.ftp_retry_enabled ||
-      settings.ftp_retry_count !== localSettings.ftp_retry_count ||
-      settings.ftp_retry_delay !== localSettings.ftp_retry_delay ||
-      settings.ftp_timeout !== localSettings.ftp_timeout ||
-      settings.mqtt_enabled !== localSettings.mqtt_enabled ||
-      settings.mqtt_broker !== localSettings.mqtt_broker ||
-      settings.mqtt_port !== localSettings.mqtt_port ||
-      settings.mqtt_username !== localSettings.mqtt_username ||
-      settings.mqtt_password !== localSettings.mqtt_password ||
-      settings.mqtt_topic_prefix !== localSettings.mqtt_topic_prefix ||
-      settings.mqtt_use_tls !== localSettings.mqtt_use_tls ||
-      settings.external_url !== localSettings.external_url ||
-      settings.ha_enabled !== localSettings.ha_enabled ||
-      settings.ha_url !== localSettings.ha_url ||
-      settings.ha_token !== localSettings.ha_token ||
-      (settings.library_archive_mode ?? 'ask') !== (localSettings.library_archive_mode ?? 'ask') ||
-      Number(settings.library_disk_warning_gb ?? 5) !== Number(localSettings.library_disk_warning_gb ?? 5) ||
-      (settings.camera_view_mode ?? 'window') !== (localSettings.camera_view_mode ?? 'window') ||
-      (settings.preferred_slicer ?? 'bambu_studio') !== (localSettings.preferred_slicer ?? 'bambu_studio') ||
-      (settings.open_in_slicer ?? null) !== (localSettings.open_in_slicer ?? null) ||
-      (settings.use_slicer_api ?? false) !== (localSettings.use_slicer_api ?? false) ||
-      (settings.orcaslicer_api_url ?? '') !== (localSettings.orcaslicer_api_url ?? '') ||
-      (settings.slicer_stall_timeout_minutes ?? 15) !== (localSettings.slicer_stall_timeout_minutes ?? 15) ||
-      (settings.bambu_studio_api_url ?? '') !== (localSettings.bambu_studio_api_url ?? '') ||
-      settings.prometheus_enabled !== localSettings.prometheus_enabled ||
-      settings.prometheus_token !== localSettings.prometheus_token ||
-      (settings.user_notifications_enabled ?? true) !== (localSettings.user_notifications_enabled ?? true) ||
-      (settings.default_bed_levelling ?? 'auto') !== (localSettings.default_bed_levelling ?? 'auto') ||
-      (settings.default_flow_cali ?? 'auto') !== (localSettings.default_flow_cali ?? 'auto') ||
-      (settings.default_vibration_cali ?? true) !== (localSettings.default_vibration_cali ?? true) ||
-      (settings.default_layer_inspect ?? false) !== (localSettings.default_layer_inspect ?? false) ||
-      (settings.default_timelapse ?? false) !== (localSettings.default_timelapse ?? false) ||
-      (settings.default_nozzle_offset_cali ?? 'auto') !== (localSettings.default_nozzle_offset_cali ?? 'auto') ||
-      (settings.stagger_group_size ?? 2) !== (localSettings.stagger_group_size ?? 2) ||
-      (settings.stagger_interval_minutes ?? 5) !== (localSettings.stagger_interval_minutes ?? 5) ||
-      (settings.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
-      (settings.queue_max_concurrent_uploads ?? 4) !== (localSettings.queue_max_concurrent_uploads ?? 4) ||
-      (settings.preheat_enabled ?? false) !== (localSettings.preheat_enabled ?? false) ||
-      (settings.preheat_filament_targets ?? '') !== (localSettings.preheat_filament_targets ?? '') ||
-      (settings.preheat_max_wait_seconds ?? 900) !== (localSettings.preheat_max_wait_seconds ?? 900) ||
-      (settings.preheat_soak_seconds ?? 300) !== (localSettings.preheat_soak_seconds ?? 300) ||
-      (settings.nozzle_temp_presets ?? '') !== (localSettings.nozzle_temp_presets ?? '') ||
-      (settings.bed_temp_presets ?? '') !== (localSettings.bed_temp_presets ?? '') ||
-      (settings.chamber_temp_presets ?? '') !== (localSettings.chamber_temp_presets ?? '') ||
-      (settings.fan_speed_presets ?? '') !== (localSettings.fan_speed_presets ?? '') ||
-      (settings.session_max_hours ?? 24) !== (localSettings.session_max_hours ?? 24) ||
-      (settings.billing_enabled ?? false) !== (localSettings.billing_enabled ?? false) ||
-      (settings.printer_kill_switch_enabled ?? false) !== (localSettings.printer_kill_switch_enabled ?? false) ||
-      (settings.finance_budget_reset_day ?? 1) !== (localSettings.finance_budget_reset_day ?? 1) ||
-      (settings.finance_budget_reset_timezone ?? 'UTC') !== (localSettings.finance_budget_reset_timezone ?? 'UTC');
+      baseline.auto_archive !== localSettings.auto_archive ||
+      baseline.save_thumbnails !== localSettings.save_thumbnails ||
+      baseline.capture_finish_photo !== localSettings.capture_finish_photo ||
+      (baseline.finish_photo_restore_plate ?? true) !== (localSettings.finish_photo_restore_plate ?? true) ||
+      baseline.default_filament_cost !== localSettings.default_filament_cost ||
+      baseline.currency !== localSettings.currency ||
+      baseline.energy_cost_per_kwh !== localSettings.energy_cost_per_kwh ||
+      baseline.energy_tracking_mode !== localSettings.energy_tracking_mode ||
+      baseline.check_updates !== localSettings.check_updates ||
+      (baseline.check_printer_firmware ?? true) !== (localSettings.check_printer_firmware ?? true) ||
+      (baseline.include_beta_updates ?? false) !== (localSettings.include_beta_updates ?? false) ||
+      (baseline.local_login_enabled ?? true) !== (localSettings.local_login_enabled ?? true) ||
+      baseline.notification_language !== localSettings.notification_language ||
+      (baseline.bed_cooled_threshold ?? 35) !== (localSettings.bed_cooled_threshold ?? 35) ||
+      baseline.ams_humidity_good !== localSettings.ams_humidity_good ||
+      baseline.ams_humidity_fair !== localSettings.ams_humidity_fair ||
+      baseline.ams_temp_good !== localSettings.ams_temp_good ||
+      baseline.ams_temp_fair !== localSettings.ams_temp_fair ||
+      baseline.ams_history_retention_days !== localSettings.ams_history_retention_days ||
+      baseline.disable_filament_warnings !== localSettings.disable_filament_warnings ||
+      baseline.prefer_lowest_filament !== localSettings.prefer_lowest_filament ||
+      (baseline.queue_drying_enabled ?? false) !== (localSettings.queue_drying_enabled ?? false) ||
+      (baseline.queue_drying_block ?? false) !== (localSettings.queue_drying_block ?? false) ||
+      (baseline.ambient_drying_enabled ?? false) !== (localSettings.ambient_drying_enabled ?? false) ||
+      (baseline.print_drying_enabled ?? false) !== (localSettings.print_drying_enabled ?? false) ||
+      (baseline.drying_presets ?? '') !== (localSettings.drying_presets ?? '') ||
+      (baseline.ams_humidity_thresholds ?? '') !== (localSettings.ams_humidity_thresholds ?? '') ||
+      baseline.per_printer_mapping_expanded !== localSettings.per_printer_mapping_expanded ||
+      baseline.date_format !== localSettings.date_format ||
+      baseline.time_format !== localSettings.time_format ||
+      baseline.default_printer_id !== localSettings.default_printer_id ||
+      baseline.ftp_retry_enabled !== localSettings.ftp_retry_enabled ||
+      baseline.ftp_retry_count !== localSettings.ftp_retry_count ||
+      baseline.ftp_retry_delay !== localSettings.ftp_retry_delay ||
+      baseline.ftp_timeout !== localSettings.ftp_timeout ||
+      baseline.mqtt_enabled !== localSettings.mqtt_enabled ||
+      baseline.mqtt_broker !== localSettings.mqtt_broker ||
+      baseline.mqtt_port !== localSettings.mqtt_port ||
+      baseline.mqtt_username !== localSettings.mqtt_username ||
+      baseline.mqtt_password !== localSettings.mqtt_password ||
+      baseline.mqtt_topic_prefix !== localSettings.mqtt_topic_prefix ||
+      baseline.mqtt_use_tls !== localSettings.mqtt_use_tls ||
+      baseline.external_url !== localSettings.external_url ||
+      baseline.ha_enabled !== localSettings.ha_enabled ||
+      baseline.ha_url !== localSettings.ha_url ||
+      baseline.ha_token !== localSettings.ha_token ||
+      (baseline.library_archive_mode ?? 'ask') !== (localSettings.library_archive_mode ?? 'ask') ||
+      Number(baseline.library_disk_warning_gb ?? 5) !== Number(localSettings.library_disk_warning_gb ?? 5) ||
+      (baseline.camera_view_mode ?? 'window') !== (localSettings.camera_view_mode ?? 'window') ||
+      (baseline.preferred_slicer ?? 'bambu_studio') !== (localSettings.preferred_slicer ?? 'bambu_studio') ||
+      (baseline.open_in_slicer ?? null) !== (localSettings.open_in_slicer ?? null) ||
+      (baseline.use_slicer_api ?? false) !== (localSettings.use_slicer_api ?? false) ||
+      (baseline.orcaslicer_api_url ?? '') !== (localSettings.orcaslicer_api_url ?? '') ||
+      (baseline.slicer_stall_timeout_minutes ?? 15) !== (localSettings.slicer_stall_timeout_minutes ?? 15) ||
+      (baseline.bambu_studio_api_url ?? '') !== (localSettings.bambu_studio_api_url ?? '') ||
+      baseline.prometheus_enabled !== localSettings.prometheus_enabled ||
+      baseline.prometheus_token !== localSettings.prometheus_token ||
+      (baseline.user_notifications_enabled ?? true) !== (localSettings.user_notifications_enabled ?? true) ||
+      (baseline.default_bed_levelling ?? 'auto') !== (localSettings.default_bed_levelling ?? 'auto') ||
+      (baseline.default_flow_cali ?? 'auto') !== (localSettings.default_flow_cali ?? 'auto') ||
+      (baseline.default_vibration_cali ?? true) !== (localSettings.default_vibration_cali ?? true) ||
+      (baseline.default_layer_inspect ?? false) !== (localSettings.default_layer_inspect ?? false) ||
+      (baseline.default_timelapse ?? false) !== (localSettings.default_timelapse ?? false) ||
+      (baseline.default_nozzle_offset_cali ?? 'auto') !== (localSettings.default_nozzle_offset_cali ?? 'auto') ||
+      (baseline.stagger_group_size ?? 2) !== (localSettings.stagger_group_size ?? 2) ||
+      (baseline.stagger_interval_minutes ?? 5) !== (localSettings.stagger_interval_minutes ?? 5) ||
+      (baseline.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
+      (baseline.queue_max_concurrent_uploads ?? 4) !== (localSettings.queue_max_concurrent_uploads ?? 4) ||
+      (baseline.preheat_enabled ?? false) !== (localSettings.preheat_enabled ?? false) ||
+      (baseline.preheat_filament_targets ?? '') !== (localSettings.preheat_filament_targets ?? '') ||
+      (baseline.preheat_max_wait_seconds ?? 900) !== (localSettings.preheat_max_wait_seconds ?? 900) ||
+      (baseline.preheat_soak_seconds ?? 300) !== (localSettings.preheat_soak_seconds ?? 300) ||
+      (baseline.nozzle_temp_presets ?? '') !== (localSettings.nozzle_temp_presets ?? '') ||
+      (baseline.bed_temp_presets ?? '') !== (localSettings.bed_temp_presets ?? '') ||
+      (baseline.chamber_temp_presets ?? '') !== (localSettings.chamber_temp_presets ?? '') ||
+      (baseline.fan_speed_presets ?? '') !== (localSettings.fan_speed_presets ?? '') ||
+      (baseline.session_max_hours ?? 24) !== (localSettings.session_max_hours ?? 24) ||
+      (baseline.billing_enabled ?? false) !== (localSettings.billing_enabled ?? false) ||
+      (baseline.printer_kill_switch_enabled ?? false) !== (localSettings.printer_kill_switch_enabled ?? false) ||
+      (baseline.finance_budget_reset_day ?? 1) !== (localSettings.finance_budget_reset_day ?? 1) ||
+      (baseline.finance_budget_reset_timezone ?? 'UTC') !== (localSettings.finance_budget_reset_timezone ?? 'UTC');
 
     if (!hasChanges) {
       return;
@@ -1315,6 +1368,21 @@ export function SettingsPage() {
       }
     }, 50);
   };
+
+  // #2664 (reporter pchulpjoost): `docker compose pull` only works from the
+  // directory holding the compose file, so the bare command the update box
+  // printed could not be pasted anywhere useful. The saved setting wins; when
+  // it is blank we fall back to whatever the backend could infer, and when
+  // that is blank too we print the command without a `cd` rather than a made-up
+  // path that would fail on paste.
+  const composeDir =
+    (localSettings?.docker_compose_dir ?? '').trim() || (updateCheck?.compose_dir_detected ?? '');
+  // Quoted only when it has to be. The backend restricts this field to path
+  // characters, so quotes, $ and backticks cannot be in it and double-quoting
+  // a path with a space is safe.
+  const composeUpdateCommand = composeDir
+    ? `cd ${/\s/.test(composeDir) ? `"${composeDir}"` : composeDir} && docker compose pull && docker compose up -d`
+    : 'docker compose pull && docker compose up -d';
 
   return (
     <CardDensityProvider density="dense">
@@ -2819,9 +2887,33 @@ export function SettingsPage() {
                         <p className="text-sm text-bambu-gray mb-2">
                           {t('settings.updateViaDocker')}
                         </p>
-                        <code className="block text-xs bg-bambu-dark p-2 rounded text-bambu-green font-mono">
-                          docker compose pull && docker compose up -d
-                        </code>
+                        <div className="flex items-start gap-1">
+                          <code className="flex-1 block text-xs bg-bambu-dark p-2 rounded text-bambu-green font-mono break-all select-all">
+                            {composeUpdateCommand}
+                          </code>
+                          <CopyButton
+                            value={composeUpdateCommand}
+                            titleKey="settings.copyUpdateCommand"
+                            copiedTitleKey="printers.copied"
+                            className="ml-0 p-2 rounded hover:bg-bambu-dark text-bambu-gray hover:text-white transition-colors flex-shrink-0"
+                            iconClassName="w-4 h-4"
+                          />
+                        </div>
+                        <label className="block mt-3">
+                          <span className="block text-xs text-bambu-gray mb-1">
+                            {t('settings.composeDirectory')}
+                          </span>
+                          <input
+                            type="text"
+                            value={localSettings?.docker_compose_dir ?? ''}
+                            onChange={(e) => updateSetting('docker_compose_dir', e.target.value)}
+                            placeholder={updateCheck?.compose_dir_detected || '/opt/bambuddy'}
+                            className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded text-sm text-white font-mono placeholder:text-bambu-gray/60 focus:outline-none focus:border-bambu-green"
+                          />
+                          <span className="block text-xs text-bambu-gray mt-1">
+                            {t('settings.composeDirectoryHint')}
+                          </span>
+                        </label>
                       </div>
                     ) : updateCheck?.update_method === 'windows_installer' ? (
                       <div className="mt-3 p-3 bg-bambu-dark-tertiary rounded-lg">
@@ -3595,6 +3687,88 @@ export function SettingsPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Home Assistant sensors (#1148, #448). Sits under the plugs on the
+              same tab: same integration, same credentials, but read-only —
+              these are contacts and thermometers, not switches. */}
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Gauge className="w-5 h-5 text-bambu-green" />
+                {t('haSensors.sectionTitle')}
+              </h2>
+              <Button
+                className="whitespace-nowrap"
+                disabled={!printers?.length}
+                onClick={() => {
+                  setEditingHASensor(null);
+                  setShowHASensorModal(true);
+                }}
+              >
+                <Plus className="w-4 h-4" />
+                {t('haSensors.add')}
+              </Button>
+            </div>
+
+            {haSensors && haSensors.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {haSensors.map((sensor) => {
+                  const printer = printers?.find((p) => p.id === sensor.printer_id);
+                  return (
+                    <Card key={sensor.id}>
+                      <CardContent className="py-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-white font-medium truncate">{sensor.name}</div>
+                            <div className="text-xs text-bambu-gray truncate">{sensor.entity_id}</div>
+                            <div className="text-xs text-bambu-gray mt-1">
+                              {printer?.name ?? t('haSensors.unknownPrinter')}
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => {
+                              setEditingHASensor(sensor);
+                              setShowHASensorModal(true);
+                            }}
+                          >
+                            {t('common.edit')}
+                          </Button>
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-3">
+                          {sensor.block_print && (
+                            <span className="px-2 py-0.5 text-xs rounded bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400">
+                              {t('haSensors.badgeBlocks')}
+                            </span>
+                          )}
+                          {sensor.notify_on_alert && (
+                            <span className="px-2 py-0.5 text-xs rounded bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400">
+                              {t('haSensors.badgeNotifies')}
+                            </span>
+                          )}
+                          {!sensor.show_on_printer_card && (
+                            <span className="px-2 py-0.5 text-xs rounded bg-bambu-dark-tertiary text-bambu-gray">
+                              {t('haSensors.badgeHidden')}
+                            </span>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            ) : (
+              <Card>
+                <CardContent className="py-8">
+                  <div className="text-center text-bambu-gray">
+                    <Gauge className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                    <p className="text-sm">{t('haSensors.empty')}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </div>
       )}
 
@@ -4322,6 +4496,21 @@ export function SettingsPage() {
               </CardHeader>
               <CardContent>
                 <CameraTokensSection />
+              </CardContent>
+            </Card>
+
+            {/* Streaming-overlay URL builder (#1422). Sits under the camera
+                tokens it usually needs — an overlay for a login-enabled
+                deployment is a token plus a URL, and both are made here. */}
+            <Card className="mt-6">
+              <CardHeader>
+                <h3 className="text-base font-semibold text-white flex items-center gap-2" id="card-stream-overlay">
+                  <MonitorPlay className="w-4 h-4 text-bambu-green" />
+                  {t('streamOverlay.builder.title', 'Streaming Overlay')}
+                </h3>
+              </CardHeader>
+              <CardContent>
+                <StreamOverlayBuilder />
               </CardContent>
             </Card>
           </div>
@@ -5605,6 +5794,18 @@ export function SettingsPage() {
           onClose={() => {
             setShowPlugModal(false);
             setEditingPlug(null);
+          }}
+        />
+      )}
+
+      {/* Home Assistant Sensor Modal (#1148) */}
+      {showHASensorModal && (
+        <HASensorModal
+          sensor={editingHASensor}
+          printers={printers ?? []}
+          onClose={() => {
+            setShowHASensorModal(false);
+            setEditingHASensor(null);
           }}
         />
       )}

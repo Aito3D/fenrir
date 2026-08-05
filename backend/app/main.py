@@ -34,12 +34,14 @@ from backend.app.api.routes import (
     firmware,
     github_backup,
     groups,
+    ha_sensors,
     inventory,
     kprofiles,
     labels,
     library,
     library_tags,
     library_trash,
+    library_variants,
     local_backup,
     local_presets,
     maintenance,
@@ -96,6 +98,7 @@ from backend.app.services.bambu_ftp import (
 )
 from backend.app.services.bambu_mqtt import PrinterState
 from backend.app.services.github_backup import github_backup_service
+from backend.app.services.ha_sensor_manager import ha_sensor_manager
 from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.library_trash import library_trash_service
 from backend.app.services.local_backup import local_backup_service
@@ -1334,9 +1337,29 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     # Include AMS dry_time and tray state values so drying/slot changes trigger broadcasts
     ams_dry_key = tuple(a.get("dry_time", 0) for a in (state.raw_data.get("ams") or [])) if state.raw_data else ()
     # Include tray states so load/unload transitions (state 11→10) trigger broadcasts (#784)
+    #
+    # The filament identity fields are here because Configure Slot writes
+    # exactly those and nothing else. Re-configuring a slot from PLA to another
+    # brand or colour of PLA leaves id/tray_type/state identical, so the key
+    # matched, this function returned before broadcasting, and the card kept
+    # showing the old filament until the 30s fallback poll or a page reload —
+    # even though the configure route asks the printer for a fresh pushall and
+    # that push does carry the new values. Reset always worked, because it
+    # clears tray_type.
+    #
+    # These fields only change when someone configures a slot or swaps a spool,
+    # so unlike temperature or progress they add no broadcast traffic mid-print.
     ams_tray_key = (
         tuple(
-            (t.get("id"), t.get("tray_type", ""), t.get("state"))
+            (
+                t.get("id"),
+                t.get("tray_type", ""),
+                t.get("state"),
+                t.get("tray_color", ""),
+                t.get("tray_info_idx", ""),
+                t.get("tray_sub_brands", ""),
+                t.get("cali_idx"),
+            )
             for a in (state.raw_data.get("ams") or [])
             for t in a.get("tray", [])
         )
@@ -5166,6 +5189,18 @@ async def on_print_complete(printer_id: int, data: dict):
         # Post-commit side effects (notifications, MQTT relay, auto-off) use
         # their own sessions and have their own error handling — no retry needed.
         if queue_item_id is not None:
+            # Batch orders (#342): this run may have been the last one an order
+            # owed. Re-evaluate here rather than lazily on read, so a finished
+            # order reports itself complete without someone opening the page.
+            try:
+                from backend.app.services.print_batch import refresh_batch_status_for_item
+
+                async with async_session() as db:
+                    await refresh_batch_status_for_item(db, queue_item_id)
+                    await db.commit()
+            except Exception as e:
+                logger.warning("[BATCH] Failed to refresh batch status for queue item %s: %s", queue_item_id, e)
+
             # MQTT relay - publish queue job completed
             try:
                 printer_info = printer_manager.get_printer(printer_id)
@@ -5598,6 +5633,10 @@ async def on_print_complete(printer_id: int, data: dict):
                 await write_log_entry(
                     db,
                     archive_id=archive.id,
+                    # Captured by _update_queue_status above; None for
+                    # printer-initiated prints with no queue row. Batch
+                    # cost/energy roll-up joins on it (#342).
+                    queue_item_id=queue_item_id,
                     status=_run_status,
                     print_name=archive.print_name,
                     printer_name=p_info.name if p_info else None,
@@ -7159,6 +7198,25 @@ async def lifespan(app: FastAPI):
 
     await init_db()
 
+    # After migrations, so the is_env_managed column exists. Never raises --
+    # a bad BAMBUDDY_OIDC_* value is logged and skipped rather than blocking
+    # startup (see apply_env_oidc_provider).
+    from backend.app.core.oidc_env import apply_env_oidc_provider
+
+    async with async_session() as oidc_db:
+        await apply_env_oidc_provider(oidc_db)
+
+    # Close out batches that finished before `completed` was a reachable status
+    # (#342). Without this the Batches tab opens on every batch created since
+    # the feature shipped, all still marked active. Never blocks startup.
+    try:
+        from backend.app.services.print_batch import backfill_batch_statuses
+
+        async with async_session() as batch_db:
+            await backfill_batch_statuses(batch_db)
+    except Exception as exc:
+        logging.warning("[BATCH] Startup status backfill failed: %s", exc)
+
     # Register an app-scoped httpx client for Bambu Cloud services so
     # per-request BambuCloudService instances reuse the same connection pool
     # (important for routes like /cloud/filament-info that chain many
@@ -7472,6 +7530,9 @@ async def lifespan(app: FastAPI):
     # Start the smart plug scheduler for time-based on/off
     smart_plug_manager.start_scheduler()
 
+    # Start the Home Assistant sensor poller (#1148)
+    ha_sensor_manager.start()
+
     # Resume any pending auto-offs that were interrupted by restart
     await smart_plug_manager.resume_pending_auto_offs()
 
@@ -7550,6 +7611,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     print_scheduler.stop()
     smart_plug_manager.stop_scheduler()
+    ha_sensor_manager.stop()
     notification_service.stop_digest_scheduler()
     github_backup_service.stop_scheduler()
     local_backup_service.stop_scheduler()
@@ -7827,6 +7889,18 @@ async def security_headers_middleware(request, call_next):
             "base-uri 'self'; " + _frame_ancestors("'none'")
         )
     else:
+        # The streaming overlay is embedded same-origin by the URL builder's
+        # preview in Settings (#1422) — the same reason /gcode-viewer allows
+        # 'self' above. Embedding from anywhere else is still refused: 'self'
+        # only permits a framer on this origin, which is Bambuddy's own UI, so
+        # a clickjacking page on another host is blocked exactly as before.
+        # (The overlay draws status over a camera feed and its only interactive
+        # element is the logo link, so there is nothing to bait a click into
+        # even from a same-origin framer.) Cross-origin embedding of the
+        # overlay — Home Assistant on another port — remains what
+        # TRUSTED_FRAME_ORIGINS is for, and _frame_ancestors already folds that
+        # allowlist in.
+        embeddable_same_origin = request.url.path.startswith("/overlay/")
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             f"script-src 'self' 'nonce-{csp_nonce}'; "
@@ -7837,7 +7911,7 @@ async def security_headers_middleware(request, call_next):
             "font-src 'self' data:; "
             "object-src 'none'; "
             "base-uri 'self'; "
-            "frame-src 'self' http: https:; " + _frame_ancestors("'none'")
+            "frame-src 'self' http: https:; " + _frame_ancestors("'self'" if embeddable_same_origin else "'none'")
         )
     if request.url.scheme == "https":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
@@ -8039,6 +8113,7 @@ app.include_router(cloud.router, prefix=app_settings.api_prefix)
 app.include_router(orca_cloud.router, prefix=app_settings.api_prefix)
 app.include_router(local_presets.router, prefix=app_settings.api_prefix)
 app.include_router(smart_plugs.router, prefix=app_settings.api_prefix)
+app.include_router(ha_sensors.router, prefix=app_settings.api_prefix)
 app.include_router(print_log.router, prefix=app_settings.api_prefix)
 app.include_router(print_queue.router, prefix=app_settings.api_prefix)
 app.include_router(kprofiles.router, prefix=app_settings.api_prefix)
@@ -8057,6 +8132,7 @@ app.include_router(projects.router, prefix=app_settings.api_prefix)
 app.include_router(library.router, prefix=app_settings.api_prefix)
 app.include_router(library_tags.router, prefix=app_settings.api_prefix)
 app.include_router(library_trash.router, prefix=app_settings.api_prefix)
+app.include_router(library_variants.router, prefix=app_settings.api_prefix)
 app.include_router(slice_jobs.router, prefix=app_settings.api_prefix)
 app.include_router(slicer_pipelines.router, prefix=app_settings.api_prefix)
 app.include_router(pipeline_runs.pipeline_run_create_router, prefix=app_settings.api_prefix)
