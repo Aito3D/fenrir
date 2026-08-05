@@ -290,7 +290,7 @@ describe('ProjectDetailPanel client fields', () => {
     await waitFor(() => expect(screen.getByTestId('panel-value-ring')).toHaveAttribute('aria-valuemax', '9000'));
     // `.textContent`, not toHaveTextContent: Intl renders a NARROW NO-BREAK
     // SPACE as the group separator and the matcher's whitespace normalisation
-    // makes "$9 000.00" and "$9 000.00" look identical when they differ.
+    // makes "$9 000.00" and "$9\u202F000.00" look identical when they differ.
     expect(screen.getByTestId('panel-header-total').textContent).toBe(formatMoney(9000, 'USD'));
   });
 
@@ -307,7 +307,7 @@ describe('ProjectDetailPanel client fields', () => {
     // the money beside it is what the client is being charged.
     // `.textContent`, not toHaveTextContent: Intl renders a NARROW NO-BREAK
     // SPACE as the group separator and the matcher's whitespace normalisation
-    // makes "$9 000.00" and "$9 000.00" look identical when they differ.
+    // makes "$9 000.00" and "$9\u202F000.00" look identical when they differ.
     expect(screen.getByTestId('panel-header-total').textContent).toBe(formatMoney(8500, 'USD'));
   });
 
