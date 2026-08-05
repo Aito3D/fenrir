@@ -163,6 +163,44 @@ describe('ShippingFields', () => {
     expect(screen.getByText(/no rate from zoho/i)).toBeInTheDocument();
   });
 
+  it('warns that shipping is unavailable while the catalogue has not resolved, and not once it has', () => {
+    // Distinct from the amber "no rate from Zoho" line asserted above: that
+    // one is per-service (the catalogue answered but carried no rate); this
+    // one is the whole-form aito.shippingUnavailable warning for a catalogue
+    // that never resolved at all.
+    const { unmount } = render(<Harness initial={emptyShippingDraft(null)} catalogueResolved={false} />);
+    expect(screen.getByText(/shipping services are unavailable while zoho is unreachable/i)).toBeInTheDocument();
+    unmount();
+
+    setup();
+    expect(screen.queryByText(/shipping services are unavailable/i)).not.toBeInTheDocument();
+  });
+
+  it('normalizes a hand-typed recipient on blur — title-cased first name, upper-cased last name', async () => {
+    // Same casing convention contact-derived recipients already carry
+    // (formatDisplayName): the first name's blur runs titleCaseSegments, the
+    // last name's blur trims and upper-cases.
+    setup();
+    const first = screen.getByLabelText(/recipient first name/i);
+    await userEvent.type(first, 'jean-pierre');
+    await userEvent.tab();
+    expect(first).toHaveValue('Jean-Pierre');
+
+    const last = screen.getByLabelText(/recipient last name/i);
+    await userEvent.type(last, 'dupont');
+    await userEvent.tab();
+    expect(last).toHaveValue('DUPONT');
+  });
+
+  it('caps both name inputs at the server limit of 100 characters', () => {
+    // Mirrors AitoShippingInput's 100-char columns — without the client-side
+    // cap the only signal for breaching it is a 422 behind a generic
+    // "save failed" toast.
+    setup();
+    expect(screen.getByLabelText(/recipient first name/i)).toHaveAttribute('maxlength', '100');
+    expect(screen.getByLabelText(/recipient last name/i)).toHaveAttribute('maxlength', '100');
+  });
+
   it('shows an error only after a field has been left', async () => {
     setup({ firstName: '' });
     expect(screen.queryByText(/recipient name missing/i)).not.toBeInTheDocument();

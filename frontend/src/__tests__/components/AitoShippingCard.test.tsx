@@ -334,4 +334,70 @@ describe('ShippingCard — Save', () => {
     });
     expect(client.getQueryState(['aito-events', 7])?.isInvalidated).toBe(true);
   });
+
+  it('shows the aito.saveFailed toast and stays in edit mode when the PATCH rejects', async () => {
+    // No services handler needed: the stored shipment already carries a
+    // price, so `draftFromProject` yields a complete draft and Save reaches
+    // the mutation without touching the rate row. `setEditing(false)` lives
+    // in the per-mutate onSuccess alone, so a rejection must leave the form
+    // open with the operator's draft intact — closing it would throw away
+    // the very edit the toast says was not saved.
+    const spy = vi.spyOn(api, 'updateAitoProject').mockRejectedValue(new Error('nope'));
+    renderWithBoard(shipped);
+
+    await userEvent.click(screen.getByRole('button', { name: /edit shipping/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(await screen.findByText(/could not save your changes/i)).toBeInTheDocument();
+    // Still editing: the form's fields and its Save are on screen, and the
+    // read view's Edit control is not.
+    expect(screen.getByLabelText(/recipient first name/i)).toHaveValue('Jean-Pierre');
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /edit shipping/i })).not.toBeInTheDocument();
+  });
+
+  it('posts the full draft from the Add path — island pick seeds the rate, blur normalizes the names', async () => {
+    // The Edit test above starts from a stored shipment; this one starts
+    // from nothing at all, so every field the payload carries comes from the
+    // form itself: the island pick (which seeds price and service), the two
+    // hand-typed names (normalized by their blur handlers as focus moves on),
+    // and the phone joined back into the house +CC-XXXXXXXX format.
+    server.use(
+      http.get('/api/v1/aito/shipping/services', () =>
+        HttpResponse.json({
+          services: [
+            {
+              key: 'tuamotu',
+              name: 'Livraison Avion Tuamotu',
+              rate: 3200,
+              islands: [{ key: 'rangiroa', label: 'Rangiroa' }],
+            },
+          ],
+          catalogue_resolved: true,
+        }),
+      ),
+    );
+    const spy = vi.spyOn(api, 'updateAitoProject').mockResolvedValue(shipped);
+    renderWithBoard(unshipped);
+
+    await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
+    const island = await screen.findByLabelText(/destination island/i);
+    await userEvent.type(island, 'Rangiroa');
+    await userEvent.click(await screen.findByRole('option', { name: 'Rangiroa' }));
+    await userEvent.type(screen.getByLabelText(/recipient first name/i), 'jean-pierre');
+    await userEvent.type(screen.getByLabelText(/recipient last name/i), 'dupont');
+    await userEvent.type(screen.getByLabelText(/recipient phone/i), '89645864');
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith(7, {
+        shipping_island: 'rangiroa',
+        shipping_first_name: 'Jean-Pierre',
+        shipping_last_name: 'DUPONT',
+        shipping_phone: '+689-89645864',
+        shipping_price: 3200,
+      }),
+    );
+  });
 });

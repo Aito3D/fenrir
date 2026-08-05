@@ -54,6 +54,30 @@ describe('TaskStepFields', () => {
     expect(onChange.mock.calls.at(-1)?.[0].scanCost).toBeNull();
   });
 
+  it('switching a chip off emits null for that service, not zero — the service stops existing', async () => {
+    // Same null-vs-0 rule the clear-a-cost test above pins, but through the
+    // chip: toggling a priced service off must report its cost as null, the
+    // value that disables it everywhere else, never 0 (a real free step).
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<TaskStepFields task={{ ...emptyTaskDraft(), scanCost: 1200 }} onChange={onChange} />);
+
+    await user.click(screen.getByRole('button', { name: 'Remove Scan' }));
+    expect(onChange.mock.calls.at(-1)?.[0].scanCost).toBeNull();
+  });
+
+  it('labels an enabled chip Remove and a disabled one Add', () => {
+    // The two aria-label variants (aito.removeServiceChip / aito.addService)
+    // are what tell a screen reader which way the toggle goes — aria-pressed
+    // carries the state alongside.
+    render(<TaskStepFields task={{ ...emptyTaskDraft(), scanCost: 1200 }} onChange={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'Remove Scan' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Add Modeling' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('button', { name: 'Add Scan' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remove Modeling' })).not.toBeInTheDocument();
+  });
+
   it('printing: cost and quantity stay editable side by side on an unconfigured install', () => {
     // No calculator queries are mocked in this file, so ImpressionFields
     // takes its "no printers configured" early return — the cost/quantity

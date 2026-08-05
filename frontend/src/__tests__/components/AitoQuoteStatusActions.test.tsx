@@ -230,6 +230,21 @@ describe('QuoteStatusActions', () => {
     }
   });
 
+  it('warns that Zoho was not updated when the board saved but the push did not sync', async () => {
+    // The success handler's second toast (useQuoteStatusMutation ~line 49):
+    // the board's own write landed, so no rollback and the normal success
+    // toast still fires — but a quote-backed project whose push to Books
+    // failed gets the aito.zohoNotUpdated error toast on top of it.
+    vi.spyOn(api, 'setAitoQuoteStatus').mockResolvedValue({ project, zoho_synced: false });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<QuoteStatusActions project={project} />);
+
+    await user.pointer({ keys: '[MouseLeft>]', target: screen.getByRole('button', { name: /mark as sent/i }) });
+    vi.advanceTimersByTime(600);
+
+    expect(await screen.findByText(/zoho was not updated/i)).toBeInTheDocument();
+  });
+
   it('moves the card the moment accept is held, before the request resolves', async () => {
     // A quote already sent to the client (Accept is only offered once the
     // quote is out — see the "ACCEPT AND DECLINE ARE HIDDEN" note on

@@ -1450,6 +1450,110 @@ describe('AitoPage (backend board)', () => {
         const quoteColumn = screen.getByRole('heading', { name: 'Quote' }).closest('.rounded-xl') as HTMLElement;
         expect(within(quoteColumn).queryByText('Imported job')).not.toBeInTheDocument();
       });
+
+      it('maps done flags and an untitled line onto the placeholder — a done scan relocates it past Scan', async () => {
+        // Pins the wire-shape -> TaskLike map in AitoPage's onImport: the
+        // `*_done ?? false` fallbacks must place the placeholder from the
+        // done flags the preview actually carries, and a null-titled quote
+        // line (`title ?? undefined`) must not crash the mapping.
+        const acceptedPreview: ZohoQuotePreview = {
+          ...preview,
+          quote: { ...preview.quote, status: 'accepted' },
+          tasks: [
+            {
+              ...preview.tasks[0],
+              title: null,
+              scan_cost: 500,
+              scan_done: true,
+              impression_cost: 800,
+              impression_done: false,
+            },
+          ],
+        };
+        vi.spyOn(api, 'createAitoProject').mockImplementation(() => new Promise(() => {})); // never resolves
+        server.use(
+          http.get('/api/v1/zoho/estimates', () =>
+            HttpResponse.json([
+              {
+                id: 'e9', number: 'DEV26-9001', customer_name: 'Import Client',
+                date: '2026-07-29', total: 1200, currency_code: 'XPF', status: 'accepted',
+              },
+            ]),
+          ),
+          http.get('/api/v1/zoho/estimates/:id/preview', () => HttpResponse.json(acceptedPreview)),
+        );
+        renderPage([]);
+        const user = userEvent.setup();
+        await user.click(await screen.findByRole('button', { name: /^import$/i }));
+        const drawer = (await screen.findByRole('dialog', { name: /import a quote/i })) as HTMLElement;
+        await user.click(await screen.findByText('DEV26-9001'));
+        await within(drawer).findByText('Printing');
+        await user.click(within(drawer).getByRole('button', { name: /^import$/i }));
+
+        const printColumn = screen
+          .getByRole('heading', { name: 'Printing & Machining' })
+          .closest('.rounded-xl') as HTMLElement;
+        expect(within(printColumn).getByText('Imported job')).toBeInTheDocument();
+        const scanColumn = screen.getByRole('heading', { name: 'Scan' }).closest('.rounded-xl') as HTMLElement;
+        expect(within(scanColumn).queryByText('Imported job')).not.toBeInTheDocument();
+      });
+
+      it('keeps a reopened drawer non-importable while the first import is still in flight', async () => {
+        // `submitting={importMutation.isPending}` exists for exactly this
+        // window: the drawer closes at mutate time, so the only way to a
+        // duplicate create is reopening it before the POST settles.
+        const createSpy = vi
+          .spyOn(api, 'createAitoProject')
+          .mockImplementation(() => new Promise(() => {})); // never resolves
+        renderPage([]);
+        const user = userEvent.setup();
+        await startImport(user); // closes the drawer with the POST still pending
+
+        await user.click(await screen.findByRole('button', { name: /^import$/i }));
+        const drawer = (await screen.findByRole('dialog', { name: /import a quote/i })) as HTMLElement;
+        // Scoped to the drawer: the placeholder card on the board behind it
+        // already displays the same quote number.
+        await user.click(await within(drawer).findByText('DEV26-9001'));
+        await within(drawer).findByText('Printing');
+        const importButton = within(drawer).getByRole('button', { name: /^import$/i });
+        // aria-disabled, not disabled — the click must still land so the
+        // checklist can explain itself, but it must not submit.
+        expect(importButton).toHaveAttribute('aria-disabled', 'true');
+        await user.click(importButton);
+        expect(createSpy).toHaveBeenCalledTimes(1);
+      });
+
+      it('dismissing the drawer without importing leaves the board untouched and reopenable', async () => {
+        const createSpy = vi.spyOn(api, 'createAitoProject').mockResolvedValue(makeProject());
+        renderPage([]);
+        const user = userEvent.setup();
+        server.use(
+          http.get('/api/v1/zoho/estimates', () =>
+            HttpResponse.json([
+              {
+                id: 'e9', number: 'DEV26-9001', customer_name: 'Import Client',
+                date: '2026-07-29', total: 1200, currency_code: 'XPF', status: 'draft',
+              },
+            ]),
+          ),
+          http.get('/api/v1/zoho/estimates/:id/preview', () => HttpResponse.json(preview)),
+        );
+        await user.click(await screen.findByRole('button', { name: /^import$/i }));
+        const drawer = (await screen.findByRole('dialog', { name: /import a quote/i })) as HTMLElement;
+        await user.click(await screen.findByText('DEV26-9001'));
+        await within(drawer).findByText('Printing');
+
+        await user.click(within(drawer).getByRole('button', { name: 'Close' }));
+        await waitFor(() =>
+          expect(screen.queryByRole('dialog', { name: /import a quote/i })).not.toBeInTheDocument(),
+        );
+        expect(createSpy).not.toHaveBeenCalled();
+        expect(screen.queryByText('Imported job')).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: /^import$/i }));
+        expect(await screen.findByRole('dialog', { name: /import a quote/i })).toBeInTheDocument();
+        await screen.findByText('DEV26-9001');
+      });
     });
 
     // The direct proof that this uses `applyCreate`, not `applyRestore`: the
