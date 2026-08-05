@@ -83,6 +83,79 @@ export function emptyTaskDraft(): TaskDraft {
   };
 }
 
+/** Fill an unknown-shaped, previously-persisted task out to the CURRENT
+ *  `TaskDraft`, keeping every field that is there and defaulting the rest.
+ *
+ *  The new-project drawer round-trips its drafts through localStorage under a
+ *  key (`aito.newProjectDraft.v1`) that is not bumped when `TaskDraft` gains a
+ *  field — and it has gained several: the four per-service descriptions, `uid`,
+ *  `impressionDiscountPct`. A blob written before any of those restores a task
+ *  missing them, and the fields are read UNGUARDED all over the drawer
+ *  (`TaskStepList` does `task[DESCRIPTION_FIELD[service]].trim()` on every
+ *  render, `tasksSignature` the same) — so the drawer threw
+ *  "Cannot read properties of undefined (reading 'trim')" up to the router
+ *  error boundary the moment it opened, and stayed broken until the operator
+ *  cleared their storage. This is the one boundary that data crosses, so it is
+ *  the one place that has to be defensive; every reader downstream is free to
+ *  keep trusting the type.
+ *
+ *  Filling, not rejecting: a stale blob is somebody's half-typed quote, and
+ *  the fields that go missing are additive ones — a task with no description
+ *  is exactly a task whose description is ''. Type-checked per field rather
+ *  than spread over the default, because a hand-edited or truncated blob can
+ *  hold a string where a number belongs, and `{...base, ...raw}` would pass
+ *  that straight through to the same class of crash it is meant to stop. */
+export function normaliseTaskDraft(raw: unknown): TaskDraft {
+  // Per call, so each uid-less legacy row gets its own uid — rowKey() keys
+  // unsaved rows on it, and a shared one hands a row's mounted inputs to its
+  // neighbour (see `rowKey`).
+  const base = emptyTaskDraft();
+  if (typeof raw !== 'object' || raw === null) return base;
+
+  const task = raw as Record<string, unknown>;
+  const str = (value: unknown) => (typeof value === 'string' ? value : '');
+  // Finite check, not just typeof: JSON.parse yields no NaN, but a null cost
+  // and a NaN cost mean different things everywhere downstream and only one
+  // of them is representable.
+  const num = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+  const bool = (value: unknown) => value === true;
+  const nested = (value: unknown) =>
+    (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>;
+  const impression = nested(task.impression);
+  const done = nested(task.done);
+
+  return {
+    id: num(task.id),
+    uid: typeof task.uid === 'string' && task.uid !== '' ? task.uid : base.uid,
+    title: str(task.title),
+    scanDescription: str(task.scanDescription),
+    modelisationDescription: str(task.modelisationDescription),
+    impressionDescription: str(task.impressionDescription),
+    usinageDescription: str(task.usinageDescription),
+    scanCost: num(task.scanCost),
+    modelisationCost: num(task.modelisationCost),
+    usinageCost: num(task.usinageCost),
+    impression: {
+      printerId: num(impression.printerId),
+      filamentId: num(impression.filamentId),
+      weightG: num(impression.weightG),
+      timeMin: num(impression.timeMin),
+      // Quantity is the one number with no null state — 1 is the floor the
+      // whole pricing path assumes.
+      quantity: num(impression.quantity) ?? 1,
+      color: str(impression.color),
+    },
+    impressionCost: num(task.impressionCost),
+    impressionDiscountPct: num(task.impressionDiscountPct),
+    done: {
+      scan: bool(done.scan),
+      modelisation: bool(done.modelisation),
+      impression: bool(done.impression),
+      usinage: bool(done.usinage),
+    },
+  };
+}
+
 export function splitMinutes(total: number): { days: number; hours: number; minutes: number } {
   const t = Math.max(0, Math.floor(total || 0));
   return { days: Math.floor(t / 1440), hours: Math.floor((t % 1440) / 60), minutes: t % 60 };

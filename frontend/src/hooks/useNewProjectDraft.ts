@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { normaliseTaskDraft } from '../utils/taskDraft';
 import type { ClientDraft } from '../utils/clientDraft';
 import type { TaskDraft } from '../utils/taskDraft';
 import type { ShippingDraft } from '../utils/shippingDraft';
@@ -25,13 +26,45 @@ export function clearNewProjectDraft(): void {
   }
 }
 
+/** Every key of a shape this hook restores WHOLE rather than field by field.
+ *  A blob written before one of them existed is missing it, and the drawer
+ *  reads them unguarded (`draft.email.trim()`, `shipping.blurred.island`), so
+ *  an incomplete half is a render crash — see `normaliseTaskDraft` for the
+ *  full story. Presence only: the values themselves come from our own writer,
+ *  and a type check per field here would be a second copy of two interfaces
+ *  that would drift from the real ones. */
+const CLIENT_KEYS = [
+  'id', 'name', 'isDefault', 'isCompany', 'countryCode', 'nationalNumber', 'email',
+  'touched', 'blurred', 'original',
+];
+const SHIPPING_KEYS = [
+  'island', 'service', 'firstName', 'lastName', 'countryCode', 'nationalNumber',
+  'price', 'priceEdited', 'blurred',
+];
+
+function complete<T>(value: unknown, keys: string[]): T | null {
+  if (typeof value !== 'object' || value === null) return null;
+  return keys.every((key) => key in value) ? (value as T) : null;
+}
+
+/** Reads the stored blob back, repairing anything an older build wrote.
+ *
+ *  Tasks are FILLED (a half-typed quote is worth keeping); the client and
+ *  shipping halves are DROPPED when incomplete, because both are re-picked in
+ *  one gesture — a contact from the combobox, an island from the list — and a
+ *  half-restored contact would be worse than none: it would look chosen. */
 function readDraft(): PersistedDraft | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PersistedDraft;
     if (!Array.isArray(parsed.tasks)) return null;
-    return parsed;
+    return {
+      ...parsed,
+      tasks: parsed.tasks.map(normaliseTaskDraft),
+      client: complete<ClientDraft>(parsed.client, CLIENT_KEYS),
+      shipping: complete<ShippingDraft>(parsed.shipping, SHIPPING_KEYS),
+    };
   } catch {
     return null;
   }
