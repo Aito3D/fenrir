@@ -40,7 +40,7 @@ from backend.app.schemas.aito import (
 from backend.app.services.aito_board_rules import SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.aito_events import diff_fields, kinds_for_depth, record
 from backend.app.services.aito_quote_status import adopt_quote_status
-from backend.app.services.aito_quote_sync import request_immediate_sync
+from backend.app.services.aito_quote_sync import request_debounced_sync, request_immediate_sync
 from backend.app.services.aito_shipping import (
     SERVICE_LABELS,
     grouped_islands,
@@ -451,6 +451,23 @@ def _mark_pending_if_ours(project: AitoProject) -> None:
     """
     if project.quote_sync_state != "unmanaged":
         _mark_pending(project)
+
+
+def _wake_worker(queued: bool) -> None:
+    """Ask the sync worker to drain, for an edit that left a project pending.
+
+    Call AFTER the commit, never before — the worker reads through its own
+    session, and a wake that fires ahead of the commit finds nothing (see
+    ``request_debounced_sync``). ``queued`` must therefore be captured BEFORE
+    the commit: ``expire_on_commit`` expires every attribute, so reading
+    ``project.quote_sync_state`` afterwards is a lazy load on an async session.
+
+    Debounced, not immediate: an edit gets a bounded wait rather than the full
+    300s poll, while a burst of task ticks still collapses into one PUT.
+    Creation uses ``request_immediate_sync`` instead — see there.
+    """
+    if queued:
+        request_debounced_sync()
 
 
 def _actor(user: User | None) -> str | None:
@@ -890,7 +907,9 @@ async def add_task(
     if not was_pending and project.quote_sync_state == "pending":
         await record(db, project.id, "sync.queued", actor_class="system")
     await _apply_rules(db, project, await _summary_for(db, project_id), actor=_actor(current_user))
+    queued = project.quote_sync_state == "pending"
     await db.commit()
+    _wake_worker(queued)
     await db.refresh(task)
     return _task_to_response(task)
 
@@ -982,7 +1001,9 @@ async def update_task(
         await record(db, project.id, "sync.queued", actor_class="system")
     if project:
         await _apply_rules(db, project, await _summary_for(db, task.project_id), actor=_actor(current_user))
+    queued = project is not None and project.quote_sync_state == "pending"
     await db.commit()
+    _wake_worker(queued)
     await db.refresh(task)
     return _task_to_response(task)
 
@@ -1011,7 +1032,9 @@ async def delete_task(
     await db.flush()  # so the deleted row is out of _summary_for's SELECT
     if project:
         await _apply_rules(db, project, await _summary_for(db, task.project_id), actor=_actor(current_user))
+    queued = project is not None and project.quote_sync_state == "pending"
     await db.commit()
+    _wake_worker(queued)
 
 
 @router.post("/import", response_model=list[AitoProjectResponse], status_code=201)
@@ -1192,7 +1215,9 @@ async def update_project(
     )
     if not was_pending and project.quote_sync_state == "pending":
         await record(db, project.id, "sync.queued", actor_class="system")
+    queued = project.quote_sync_state == "pending"
     await db.commit()
+    _wake_worker(queued)
     await db.refresh(project)
     return _to_response(project, await _summary_for(db, project.id), await _shipping_names(db))
 
@@ -1313,7 +1338,9 @@ async def restore_project(
         subject_type="project",
         subject_id=project.id,
     )
+    queued = project.quote_sync_state == "pending"
     await db.commit()
+    _wake_worker(queued)
     await db.refresh(project)
     return _to_response(project, summary, await _shipping_names(db))
 
@@ -1341,4 +1368,6 @@ async def delete_project(
         subject_type="project",
         subject_id=project.id,
     )
+    queued = project.quote_sync_state == "pending"
     await db.commit()
+    _wake_worker(queued)

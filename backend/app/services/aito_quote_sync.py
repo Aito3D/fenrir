@@ -19,6 +19,7 @@ Phase 2 poller.
 
 import asyncio
 import logging
+import time
 from datetime import datetime
 
 from sqlalchemy import and_, or_, select
@@ -881,6 +882,21 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
                 return
             await reconcile_quote_status(db, project, estimate)
 
+            # The estimate's own total, adopted from the read the reconcile
+            # above already paid for. Before this, `quote_total` was written
+            # ONLY by `_apply_estimate` — i.e. only on a push — so a quote
+            # whose price was edited in Books kept reporting the figure it had
+            # at our last push, for as long as nobody edited the project.
+            #
+            # Guarded on the key being present rather than coerced with
+            # `or 0` the way `_apply_estimate` does it. That coercion is right
+            # there and wrong here: it reads back the response to a write it
+            # just made, where an absent total genuinely means "this quote has
+            # no lines". This reads an estimate that already exists, so a
+            # partial payload would zero a real quote's total instead.
+            if estimate.get("total") is not None:
+                project.quote_total = float(estimate["total"])
+
             now = datetime.utcnow()
             if should_pull_comments(project, estimate, now):
                 try:
@@ -1333,10 +1349,30 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
 # two of them exhausted a Standard plan. See test_aito_quote_sync_interval.
 _DEFAULT_INTERVAL_SECONDS = 300
 
+# How long an EDIT waits before the drain it asked for actually runs. The
+# window exists to keep the outbox's burst-collapsing: ten task ticks made
+# while the operator works through a card still cost one PUT, not ten. Ten
+# seconds because that is under the threshold at which a user goes looking for
+# the quote in Books, and far enough above a human's typing cadence that an
+# ordinary edit session lands as a single push.
+#
+# Note what this does NOT cost in quota: a wake drains PENDING projects only
+# (run_sync_once(pending_only=True)), so it spends exactly the Books calls
+# those projects were going to spend at the next tick anyway. It never
+# reconciles the quoted-but-idle projects the 300s interval above exists to
+# budget for.
+EDIT_DEBOUNCE_SECONDS = 10.0
+
 # Set by request_immediate_sync, consumed by run_sync_loop. A plain Event, not
 # a queue: N wakes before the loop gets there collapse into one drain, which
 # is exactly right — the drain re-reads every pending row anyway.
 _wake = asyncio.Event()
+
+# Monotonic instant the current edit window closes, or None when no edit is
+# waiting. Read and written from both the request path and the loop, which is
+# safe without a lock because both run on the same event loop and neither
+# awaits between reading and writing it.
+_debounce_deadline: float | None = None
 
 
 def request_immediate_sync() -> None:
@@ -1347,12 +1383,47 @@ def request_immediate_sync() -> None:
     commit finds nothing, clears the event, and leaves the project waiting out
     the full interval after all.
 
-    Deliberately NOT called from every _mark_pending site. Creation is the one
-    moment a user is watching for a quote to appear; edits keep the outbox's
-    burst-collapsing (docstring above) so ten task ticks inside one interval
-    still cost one PUT, not ten.
+    Creation is what this is for: the one moment a user is watching for a
+    quote to appear. It also CANCELS any edit window in flight rather than
+    queueing behind it — the drain re-reads every pending row, so the waiting
+    edit rides along with the create instead of delaying it. Edits themselves
+    go through ``request_debounced_sync``.
     """
+    global _debounce_deadline
+    _debounce_deadline = None
     _wake.set()
+
+
+def request_debounced_sync() -> None:
+    """Ask the loop to drain PENDING projects after a short window.
+
+    The edit counterpart of ``request_immediate_sync``, and subject to the
+    same "after the commit, never before" rule.
+
+    The FIRST call opens the window; later calls inside it do NOT push the
+    deadline out. That is a fixed window, not a trailing debounce, and the
+    difference matters: a trailing timer lets an operator who keeps editing
+    starve the push indefinitely, which is the failure this replaced (edits
+    marked the project pending and then waited out the full 300s interval).
+    A fixed window still collapses the burst into one PUT while bounding how
+    long any single edit can wait at EDIT_DEBOUNCE_SECONDS.
+    """
+    global _debounce_deadline
+    if _debounce_deadline is None:
+        _debounce_deadline = time.monotonic() + EDIT_DEBOUNCE_SECONDS
+    _wake.set()
+
+
+def _debounce_delay() -> float:
+    """Seconds still to wait on the open edit window, or 0 when none is."""
+    if _debounce_deadline is None:
+        return 0.0
+    return max(0.0, _debounce_deadline - time.monotonic())
+
+
+def _clear_debounce() -> None:
+    global _debounce_deadline
+    _debounce_deadline = None
 
 
 async def sync_interval_seconds(db: AsyncSession) -> int:
@@ -1402,6 +1473,14 @@ async def run_sync_loop() -> None:
                 await asyncio.wait_for(_wake.wait(), timeout=remaining)
             except asyncio.TimeoutError:
                 break
+            # An edit's window, waited out here rather than in the request
+            # handler: every further edit that lands during this sleep is
+            # absorbed into the same drain, which is the whole point of the
+            # window. A creation sets no deadline (and clears any standing
+            # one), so it falls straight through with no delay.
+            if (delay := _debounce_delay()) > 0:
+                await asyncio.sleep(delay)
+            _clear_debounce()
             # Cleared BEFORE draining: a wake that lands mid-drain either made
             # its row visible in time to be selected, or re-sets the event and
             # the next lap of this inner loop picks it up. Cleared after, it

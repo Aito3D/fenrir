@@ -149,6 +149,55 @@ async def test_create_wakes_the_quote_sync_worker(async_client):
 
 
 @pytest.mark.asyncio
+async def test_every_edit_that_touches_the_quote_wakes_the_worker(async_client):
+    """An edit changes what the quote must say, so it must reach Books on the
+    edit window rather than sitting out the full 300s poll.
+
+    Each case below is an independent write path — they do not share a
+    `_mark_pending` call site — so one shared assertion would not catch a path
+    that forgot to wake.
+    """
+    from backend.app.services import aito_quote_sync
+
+    project_id = (await _create(async_client)).json()["id"]
+    task_id = (
+        await async_client.post(f"/api/v1/aito/{project_id}/tasks", json={"scan_cost": 1000})
+    ).json()["id"]
+
+    async def wakes(call):
+        aito_quote_sync._wake.clear()
+        aito_quote_sync._debounce_deadline = None
+        response = await call()
+        assert response.status_code < 300, response.text
+        return aito_quote_sync._wake.is_set()
+
+    assert await wakes(lambda: async_client.patch(f"/api/v1/aito/{project_id}", json={"description": "Autre"}))
+    assert await wakes(lambda: async_client.post(f"/api/v1/aito/{project_id}/tasks", json={"scan_cost": 2000}))
+    assert await wakes(lambda: async_client.patch(f"/api/v1/aito/tasks/{task_id}", json={"scan_cost": 3000}))
+    assert await wakes(lambda: async_client.delete(f"/api/v1/aito/tasks/{task_id}"))
+
+
+@pytest.mark.asyncio
+async def test_trashing_and_restoring_wake_the_worker_too(async_client):
+    """Both change what Books must say about the quote's status, and both go
+    through their own `_mark_pending_if_ours` call site rather than sharing
+    one with the edit paths above."""
+    from backend.app.services import aito_quote_sync
+
+    project_id = (await _create(async_client)).json()["id"]
+
+    aito_quote_sync._wake.clear()
+    aito_quote_sync._debounce_deadline = None
+    assert (await async_client.delete(f"/api/v1/aito/{project_id}")).status_code == 204
+    assert aito_quote_sync._wake.is_set()
+
+    aito_quote_sync._wake.clear()
+    aito_quote_sync._debounce_deadline = None
+    assert (await async_client.post(f"/api/v1/aito/{project_id}/restore")).status_code == 200
+    assert aito_quote_sync._wake.is_set()
+
+
+@pytest.mark.asyncio
 async def test_impression_discount_round_trips_through_task_responses(async_client):
     """Regression: _task_to_response used to drop impression_discount_pct, so
     every response reported null. The frontend keeps each mutation's response

@@ -2,6 +2,7 @@
 seam. No network, no real Books org."""
 
 import json
+import time
 from datetime import datetime
 
 import httpx
@@ -34,6 +35,28 @@ def reset_zoho_service():
     yield
     zoho_service.invalidate_token()
     zoho_service.transport = None
+
+
+@pytest.fixture(autouse=True)
+def fresh_wake_event():
+    """Give each test its own ``_wake``.
+
+    ``asyncio.Event`` binds itself to the first event loop that awaits it
+    (``_LoopBoundMixin``), and ``_wake`` is a module-level singleton while
+    every test gets a fresh loop. So the first test to drive ``run_sync_loop``
+    binds the event for the whole session and every later one dies with
+    "bound to a different event loop" — silently, inside a background task,
+    which reads as "the wake simply never drained". Rebinding here is what
+    lets more than one test exercise the loop.
+    """
+    import asyncio
+
+    from backend.app.services import aito_quote_sync
+
+    aito_quote_sync._wake = asyncio.Event()
+    aito_quote_sync._debounce_deadline = None
+    yield
+    aito_quote_sync._debounce_deadline = None
 
 
 @pytest.fixture(autouse=True)
@@ -3721,3 +3744,185 @@ async def test_a_resolvable_shipping_service_reaches_books_with_the_right_item_a
     assert "Jean-Pierre DUPONT" in shipping_line["description"]
     assert "Rangiroa" in shipping_line["description"]
     assert "header_name" not in shipping_line
+
+
+# --- Edits reach Books on a debounced wake, not at the next 300s tick --------
+
+
+def _always(value):
+    """An async stand-in for the loop's gating coroutines, which this test
+    neither drives nor cares about."""
+
+    async def _call(*args, **kwargs):
+        return value
+
+    return _call
+
+
+
+def test_a_burst_of_edits_shares_one_debounce_window(monkeypatch):
+    """The FIRST edit of a burst sets the deadline and later ones must not
+    push it out.
+
+    A trailing debounce (each call resetting the timer) lets a user who keeps
+    typing starve the push indefinitely. A fixed window collapses the burst
+    into one PUT — the property the 300s interval was protecting — while
+    bounding how long any edit can wait at EDIT_DEBOUNCE_SECONDS.
+    """
+    from backend.app.services import aito_quote_sync
+
+    monkeypatch.setattr(aito_quote_sync, "_debounce_deadline", None)
+    monkeypatch.setattr(aito_quote_sync, "EDIT_DEBOUNCE_SECONDS", 10.0)
+    clock = iter([100.0, 103.0, 109.0])
+    monkeypatch.setattr(aito_quote_sync.time, "monotonic", lambda: next(clock))
+
+    aito_quote_sync.request_debounced_sync()
+    first = aito_quote_sync._debounce_deadline
+    aito_quote_sync.request_debounced_sync()
+    aito_quote_sync.request_debounced_sync()
+
+    assert first == 110.0
+    assert aito_quote_sync._debounce_deadline == 110.0
+
+
+def test_a_create_cancels_a_pending_edit_debounce(monkeypatch):
+    """A creation is the one moment a user is watching for a quote to appear,
+    so it must not be made to wait out an edit's window. The drain re-reads
+    every pending row anyway, so it takes the edit along with it."""
+    from backend.app.services import aito_quote_sync
+
+    monkeypatch.setattr(aito_quote_sync, "_debounce_deadline", 999.0)
+    aito_quote_sync.request_immediate_sync()
+    assert aito_quote_sync._debounce_deadline is None
+
+
+@pytest.mark.asyncio
+async def test_an_edit_drains_on_the_debounce_not_the_interval(monkeypatch):
+    """run_sync_loop must honour the edit window: one PENDING-only drain, and
+    not before the window closes.
+
+    Driven against the loop's own collaborators rather than a database. Two
+    reasons: the scheduling IS the change under test (which drain runs, and
+    when), and a second test spinning a real run_sync_loop over the in-memory
+    StaticPool engine poisons the shared connection at teardown — see the
+    teardown error the older wake test already reports.
+    """
+    import asyncio
+    import contextlib
+
+    from backend.app.services import aito_quote_sync
+
+    drains: list[tuple[bool, float]] = []
+
+    @contextlib.asynccontextmanager
+    async def fake_session():
+        yield None
+
+    async def fake_run_sync_once(db, pending_only=False):
+        drains.append((pending_only, time.monotonic()))
+        return 0
+
+    monkeypatch.setattr(aito_quote_sync, "async_session", fake_session)
+    monkeypatch.setattr(aito_quote_sync, "run_sync_once", fake_run_sync_once)
+    monkeypatch.setattr(aito_quote_sync, "sync_enabled", _always(True))
+    monkeypatch.setattr(aito_quote_sync.zoho_service, "is_configured", _always(True))
+    monkeypatch.setattr(aito_quote_sync, "sync_interval_seconds", _always(300))
+    monkeypatch.setattr(aito_quote_sync, "EDIT_DEBOUNCE_SECONDS", 0.3)
+    monkeypatch.setattr(aito_quote_sync, "_debounce_deadline", None)
+
+    loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
+    try:
+        # The startup full pass, which is not what this test is about.
+        await asyncio.sleep(0.05)
+        assert drains == [(False, drains[0][1])]
+
+        # A burst of three edits, well inside one window.
+        opened = time.monotonic()
+        aito_quote_sync.request_debounced_sync()
+        await asyncio.sleep(0.05)
+        aito_quote_sync.request_debounced_sync()
+        aito_quote_sync.request_debounced_sync()
+
+        # Still nothing: the window has not closed.
+        await asyncio.sleep(0.05)
+        assert len(drains) == 1
+
+        for _ in range(100):
+            await asyncio.sleep(0.02)
+            if len(drains) > 1:
+                break
+        # Exactly one drain for the three edits, PENDING-only (a wake must
+        # never reconcile the quoted-but-idle projects the interval budgets
+        # for), and not before the window closed.
+        assert len(drains) == 2
+        pending_only, at = drains[1]
+        assert pending_only is True
+        assert at - opened >= 0.3
+    finally:
+        loop_task.cancel()
+        await asyncio.gather(loop_task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_adopts_the_estimates_current_total(db_session):
+    """A price edited directly in Books must become visible to the board.
+
+    `quote_total` used to be written only by `_apply_estimate`, which runs on
+    a PUSH — so a quote edited in Books kept reporting whatever it totalled at
+    the last push, indefinitely, for a project nobody edited again. The sweep
+    already reads the estimate to reconcile its status; adopting the total
+    from that same read costs no extra call.
+    """
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    project.quote_total = 5000
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {"estimate_id": "E1", "status": "accepted", "total": 7200}
+                },
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await sync_project(db_session, project)
+
+    assert project.quote_total == 7200
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_leaves_the_total_alone_when_the_estimate_omits_it(db_session):
+    """A response without a `total` is no evidence the quote is worth nothing.
+
+    `_apply_estimate` can use `or 0` because it reads the response to a write
+    it just made, where an absent total means "no lines yet". A sweep reads an
+    estimate that already exists, so the same coercion would zero a real
+    quote's total on any partial payload.
+    """
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    project.quote_total = 5000
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "accepted"}},
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await sync_project(db_session, project)
+
+    assert project.quote_total == 5000
