@@ -105,6 +105,8 @@ export function HoldButton({
   hint,
   disabled = false,
   className = '',
+  radiusClassName = 'rounded-md',
+  hintPlacement = 'top',
   progress = 'ring',
   barClassName = 'bg-red-400/25',
   children,
@@ -115,6 +117,20 @@ export function HoldButton({
   hint: string;
   disabled?: boolean;
   className?: string;
+  /** The button's corner radius, as its own prop rather than something a
+   *  caller can pass through `className`, for the same reason padding and
+   *  border are documented above: `rounded-md` compiles AFTER `rounded-full`
+   *  in Tailwind's own utility order, so a caller adding `rounded-full` loses
+   *  to the base whatever the source order. Slotting the caller's value into
+   *  the same position emits exactly one radius class and no conflict.
+   *  Defaults to `rounded-md`, unchanged for every existing caller. */
+  radiusClassName?: string;
+  /** Which side the hold hint pops to. `top` for anything sitting on a footer
+   *  bar or in a scrollable body — the default, so no existing caller moves.
+   *  `bottom` for a button near the TOP of a clipped container: the panel root
+   *  is `overflow-hidden`, so a hint above the header's first row is cut off
+   *  entirely rather than merely tight. */
+  hintPlacement?: 'top' | 'bottom';
   /** See `HoldProgress`. Defaults to `ring` so every existing caller — the
    *  task-row delete, the quote status pills, the board and grid actions —
    *  is unchanged. */
@@ -241,7 +257,7 @@ export function HoldButton({
           e.stopPropagation();
           cancelHold();
         }}
-        className={`relative inline-flex items-center gap-1.5 rounded-md transition-[color,background-color,opacity,border-color] duration-100 focus-visible:outline-none focus-visible:ring-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+        className={`relative inline-flex items-center gap-1.5 ${radiusClassName} transition-[color,background-color,opacity,border-color] duration-100 focus-visible:outline-none focus-visible:ring-2 disabled:opacity-40 disabled:cursor-not-allowed ${
           // Clip the bar to the button's own radius; harmless for the ring,
           // which is inside the box anyway.
           progress === 'bar' ? 'overflow-hidden ' : ''
@@ -333,7 +349,9 @@ export function HoldButton({
         {children}
       </button>
       {showHint && (
-        <div className="absolute bottom-full right-0 mb-1 whitespace-nowrap rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-2 py-1 text-xs text-white shadow-lg animate-fade-in">
+        <div className={`absolute z-20 ${
+          hintPlacement === 'bottom' ? 'top-full left-0 mt-1' : 'bottom-full right-0 mb-1'
+        } whitespace-nowrap rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-2 py-1 text-xs text-white shadow-lg animate-fade-in`}>
           {hint}
         </div>
       )}

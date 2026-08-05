@@ -1208,9 +1208,9 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
    elevation for the whole animation, and several themes define --card-shadow
    as a multi-layer value with an accent glow. */
 @keyframes urgent-halo {
-  0%   { box-shadow: 0 0 0 0 rgb(239 68 68 / .55), 0 0 10px -2px rgb(239 68 68 / .7), var(--card-shadow); }
-  70%  { box-shadow: 0 0 0 7px rgb(239 68 68 / 0), 0 0 10px -2px rgb(239 68 68 / .7), var(--card-shadow); }
-  100% { box-shadow: 0 0 0 0 rgb(239 68 68 / 0),  0 0 10px -2px rgb(239 68 68 / .7), var(--card-shadow); }
+  0%   { box-shadow: 0 0 0 0 rgb(251 191 36 / .55), 0 0 10px -2px rgb(251 191 36 / .7), var(--card-shadow); }
+  70%  { box-shadow: 0 0 0 7px rgb(251 191 36 / 0), 0 0 10px -2px rgb(251 191 36 / .7), var(--card-shadow); }
+  100% { box-shadow: 0 0 0 0 rgb(251 191 36 / 0),  0 0 10px -2px rgb(251 191 36 / .7), var(--card-shadow); }
 }
 /* Cascade, both halves — get one without the other and the next repair is wrong:
    1. This rule is UNLAYERED, and unlayered declarations outrank every Tailwind
@@ -1226,9 +1226,12 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
       declaration and does NOT, so it is the one place that needs the doubled
       class. */
 .animate-urgent-halo {
-  /* --status-error, not the accent: urgency is a fixed semantic red and must
-     not shift when the user changes theme colour. */
-  border-color: var(--status-error);
+  /* --status-warning (amber-500), not the accent: urgency is a fixed semantic
+     yellow and must not shift when the user changes theme colour. The border
+     is a step deeper than the halo's amber-400 so the card's own edge still
+     reads as an edge against its own glow. Red is the destructive colour on
+     this board — delete, decline — and urgency is neither. */
+  border-color: var(--status-warning);
   animation: urgent-halo 2.2s ease-out infinite;
 }
 /* The signal survives for anyone who has asked for less motion — as a static
@@ -1239,7 +1242,7 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
 @media (prefers-reduced-motion: reduce) {
   .animate-urgent-halo.animate-urgent-halo {
     animation: none;
-    box-shadow: 0 0 10px -1px rgb(239 68 68 / .6), var(--card-shadow);
+    box-shadow: 0 0 10px -1px rgb(251 191 36 / .6), var(--card-shadow);
   }
 }
 

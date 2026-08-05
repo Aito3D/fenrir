@@ -345,6 +345,19 @@ function PanelHeader({
               {shippingIslandLabel}
             </span>
           )}
+          {/* The urgent flag lives in this row rather than on the footer bar
+              because when it is SET it is a status pill, not an action — the
+              same class of fact as the quote status and the destination
+              beside it — and the row a person scans on open is where that
+              fact has to be. The footer keeps the transitions that move the
+              card off its column; this never was one of those.
+              Wrapped in a shrink-0 span because HoldButton's own outer div —
+              not its button — is what lands in this flex row, so the class
+              cannot be passed through `className`; without it a long client
+              or island label squeezes "Marquer urgent" out of shape. */}
+          <span className="flex-shrink-0">
+            <UrgentButton project={project} />
+          </span>
         </div>
         {/* 1.35rem at -.01em, not `text-xl`: the reference title is a step
             larger than Tailwind's 1.25rem, and the negative tracking is what
@@ -1050,7 +1063,6 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               finding the card again. The two blocks are mutually exclusive by
               construction (see ProjectDoneAction), so this never crowds. */}
           <span className="flex-1" />
-          <UrgentButton project={project} />
           <QuoteStatusActions project={project} layout="row" />
           <ProjectDoneAction project={project} />
         </div>

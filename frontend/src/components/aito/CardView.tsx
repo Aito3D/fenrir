@@ -253,12 +253,18 @@ export function CardView({
             {project.client_name ?? t('aito.noClient')}
           </p>
           {/* The chip is what keeps the signal from being colour-only. The halo
-              alone is invisible to a red-green colourblind operator, and this
-              is a board where missing "urgent" costs real money. */}
+              alone is invisible to a colourblind operator, and this is a board
+              where missing "urgent" costs real money.
+              Dark text on the amber, not white: white on amber-400 is a ~1.9:1
+              pair and this chip is 8px bold uppercase — the one place on the
+              card with no contrast to spare. A fixed neutral rather than a
+              theme token, because the fill is fixed too: `bambu-dark` follows
+              --bg-primary and would go near-white under a light theme, putting
+              us back at white on amber. */}
           {project.urgent && (
             <span
               data-testid="aito-card-urgent"
-              className="flex-shrink-0 rounded-[.2rem] bg-status-error px-1 text-[.6rem] font-bold uppercase tracking-wider text-white"
+              className="flex-shrink-0 rounded-[.2rem] bg-amber-400 px-1 text-[.6rem] font-bold uppercase tracking-wider text-neutral-900"
             >
               {t('aito.urgent')}
             </span>
