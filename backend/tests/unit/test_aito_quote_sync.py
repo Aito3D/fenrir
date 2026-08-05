@@ -1255,7 +1255,29 @@ async def test_wake_drains_a_pending_project_without_waiting_for_the_interval(db
 
     from backend.app.services import aito_quote_sync
 
-    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    # The worker's sessions are tracked so the teardown below can wait for
+    # them to CLOSE before cancelling the loop. The test's success poll sees
+    # `quote_id` the moment the drain commits — while the tick's tail (the
+    # `async with async_session()` exit, reset-on-return) is still running.
+    # Cancelling there interrupts that close mid-await, SQLAlchemy terminates
+    # the pooled aiosqlite connection — and on the in-memory StaticPool engine
+    # that is THE connection, so db_session's own teardown then rolls back on
+    # a dead connection ("no active connection"), failing the test at
+    # teardown deterministically whenever this test runs first in a worker.
+    live_sessions: set[AsyncSession] = set()
+
+    class TrackedSession(AsyncSession):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            live_sessions.add(self)
+
+        async def close(self) -> None:
+            try:
+                await super().close()
+            finally:
+                live_sessions.discard(self)
+
+    maker = async_sessionmaker(test_engine, class_=TrackedSession, expire_on_commit=False)
     monkeypatch.setattr(aito_quote_sync, "async_session", maker)
 
     await _configure_zoho(db_session)
@@ -1295,6 +1317,14 @@ async def test_wake_drains_a_pending_project_without_waiting_for_the_interval(db
                 break
         assert project.quote_id == "E1"
         assert project.quote_sync_state == "idle"
+        # Condition-based, not a sleep: only cancel once every worker session
+        # has fully closed, so the cancellation lands in the loop's idle
+        # wait_for and can never terminate the shared pooled connection.
+        for _ in range(100):
+            if not live_sessions:
+                break
+            await asyncio.sleep(0.01)
+        assert not live_sessions
     finally:
         loop_task.cancel()
         await asyncio.gather(loop_task, return_exceptions=True)
@@ -3759,7 +3789,6 @@ def _always(value):
     return _call
 
 
-
 def test_a_burst_of_edits_shares_one_debounce_window(monkeypatch):
     """The FIRST edit of a burst sets the deadline and later ones must not
     push it out.
@@ -3804,8 +3833,9 @@ async def test_an_edit_drains_on_the_debounce_not_the_interval(monkeypatch):
     Driven against the loop's own collaborators rather than a database. Two
     reasons: the scheduling IS the change under test (which drain runs, and
     when), and a second test spinning a real run_sync_loop over the in-memory
-    StaticPool engine poisons the shared connection at teardown — see the
-    teardown error the older wake test already reports.
+    StaticPool engine risks poisoning the shared connection at teardown —
+    the wake test now waits for the worker's sessions to close before
+    cancelling for exactly that reason.
     """
     import asyncio
     import contextlib
@@ -3883,9 +3913,7 @@ async def test_the_sweep_adopts_the_estimates_current_total(db_session):
     zoho_service.transport = httpx.MockTransport(
         zoho_handler(
             {
-                ("GET", "/estimates/E1"): {
-                    "estimate": {"estimate_id": "E1", "status": "accepted", "total": 7200}
-                },
+                ("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "accepted", "total": 7200}},
                 ("GET", "/estimates/E1/comments"): {"comments": []},
             }
         )
