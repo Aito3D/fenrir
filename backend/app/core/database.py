@@ -4431,6 +4431,16 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN zoho_comments_watermark VARCHAR(30)")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN zoho_comments_checked_at DATETIME")
 
+    # Migration: Aito shipping (Livraison Avion). Six nullable columns; a NULL
+    # shipping_island means the project has no shipment. All existing rows
+    # correctly read as "no shipping" with no backfill.
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN shipping_island VARCHAR(50)")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN shipping_service VARCHAR(20)")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN shipping_first_name VARCHAR(100)")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN shipping_last_name VARCHAR(100)")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN shipping_phone VARCHAR(50)")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN shipping_price FLOAT")
+
     await _backfill_aito_events(conn)
 
     # Migration: per-file print progress inside a project (#1897).

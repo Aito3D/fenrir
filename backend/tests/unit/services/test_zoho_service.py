@@ -6,6 +6,7 @@ import json
 import httpx
 import pytest
 
+from backend.app.api.routes.settings import set_setting
 from backend.app.services.zoho import (
     ZohoAmbiguousReferenceError,
     ZohoNotConfiguredError,
@@ -726,3 +727,122 @@ async def test_get_estimate_pdf_rejects_a_200_that_is_not_a_pdf(async_client, db
     zoho_service.transport = _transport(handler)
     with pytest.raises(ZohoUpstreamError):
         await zoho_service.get_estimate_pdf(db_session, "EST-1")
+
+
+@pytest.mark.asyncio
+async def test_get_shipping_catalogue_fetches_once_then_serves_the_cache(db_session, monkeypatch):
+    calls = []
+
+    async def fake_request(db, method, path, **kwargs):
+        calls.append(path)
+        return {"items": [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200}]}
+
+    monkeypatch.setattr(zoho_service, "_request", fake_request)
+    first = await zoho_service.get_shipping_catalogue(db_session)
+    second = await zoho_service.get_shipping_catalogue(db_session)
+    assert first["tuamotu"].item_id == "1"
+    assert first["tuamotu"].rate == 3200.0
+    assert second["tuamotu"].item_id == "1"
+    assert len(calls) == 1, "the 24h cache must not re-fetch"
+
+
+@pytest.mark.asyncio
+async def test_get_shipping_catalogue_survives_zoho_being_down(db_session, monkeypatch):
+    async def ok(db, method, path, **kwargs):
+        return {"items": [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200}]}
+
+    monkeypatch.setattr(zoho_service, "_request", ok)
+    await zoho_service.get_shipping_catalogue(db_session)
+    await set_setting(db_session, "zoho_shipping_catalogue_at", "2000-01-01T00:00:00")
+
+    boom_calls = {"n": 0}
+
+    async def boom(db, method, path, **kwargs):
+        boom_calls["n"] += 1
+        raise ZohoUpstreamError("down")
+
+    monkeypatch.setattr(zoho_service, "_request", boom)
+    stale = await zoho_service.get_shipping_catalogue(db_session)
+    assert stale["tuamotu"].item_id == "1", "a failed refresh must not lose the ids"
+
+    # A failed refresh must not stamp zoho_shipping_catalogue_at, or every
+    # existing test would stay green even if that write were accidentally
+    # moved out of the success-only `else:` arm — which would silently
+    # suppress retries for 24h. A second failed attempt must retry the fetch.
+    again = await zoho_service.get_shipping_catalogue(db_session)
+    assert again["tuamotu"].item_id == "1"
+    assert boom_calls["n"] == 2, "the stale timestamp must not have been refreshed by the failed attempt"
+
+
+@pytest.mark.asyncio
+async def test_get_shipping_catalogue_is_empty_when_never_resolved(db_session, monkeypatch):
+    async def boom(db, method, path, **kwargs):
+        raise ZohoUpstreamError("down")
+
+    monkeypatch.setattr(zoho_service, "_request", boom)
+    assert await zoho_service.get_shipping_catalogue(db_session) == {}
+
+
+@pytest.mark.asyncio
+async def test_get_shipping_catalogue_refresh_false_never_touches_the_network(db_session, monkeypatch):
+    """refresh=False is for callers that only need OWNERSHIP of ids already
+    learned — never a fresh rate — so it must answer from cache alone, even
+    when the cache is missing or stale enough that refresh=True would
+    trigger a fetch."""
+    calls = []
+
+    async def fake_request(db, method, path, **kwargs):
+        calls.append(path)
+        return {"items": [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200}]}
+
+    monkeypatch.setattr(zoho_service, "_request", fake_request)
+    # No cache exists at all yet.
+    result = await zoho_service.get_shipping_catalogue(db_session, refresh=False)
+    assert result == {}
+    assert calls == [], "refresh=False must never call Books, cold cache or not"
+
+
+@pytest.mark.asyncio
+async def test_get_shipping_catalogue_refresh_false_still_serves_a_warm_cache(db_session, monkeypatch):
+    """Warms the cache, then makes it STALE, so `fresh` is False and the
+    `not fresh` arm is actually exercised. The earlier version of this test
+    warmed the cache and left it fresh, which passes verbatim whether or not
+    `refresh` is honoured — it never exercises the branch it claims to cover.
+    Staling it first the way `test_get_shipping_catalogue_survives_zoho_being_down`
+    does means this fails if refresh=False is ever ignored."""
+
+    async def fake_request(db, method, path, **kwargs):
+        return {"items": [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200}]}
+
+    monkeypatch.setattr(zoho_service, "_request", fake_request)
+    await zoho_service.get_shipping_catalogue(db_session)  # warms the cache
+    await set_setting(db_session, "zoho_shipping_catalogue_at", "2000-01-01T00:00:00")  # ...then stales it
+
+    calls = []
+
+    async def boom(db, method, path, **kwargs):
+        calls.append(path)
+        raise AssertionError("refresh=False must not call Books even with a stale-but-warm cache")
+
+    monkeypatch.setattr(zoho_service, "_request", boom)
+    cached = await zoho_service.get_shipping_catalogue(db_session, refresh=False)
+    assert cached["tuamotu"].item_id == "1"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_get_catalogue_never_calls_items(db_session, monkeypatch):
+    """Pins the regression this fixed: get_catalogue sits on the sync
+    worker's hot path, including _create_quote's fast path, which must make
+    ZERO Zoho calls when a project has no priced service. Ownership only
+    needs ids already learned, so get_catalogue must never fetch."""
+    calls = []
+
+    async def fake_request(db, method, path, **kwargs):
+        calls.append(path)
+        return {"items": [{"item_id": "1", "name": "Livraison Avion Tuamotu", "rate": 3200}]}
+
+    monkeypatch.setattr(zoho_service, "_request", fake_request)
+    await zoho_service.get_catalogue(db_session)
+    assert "/items" not in calls
+    assert calls == []

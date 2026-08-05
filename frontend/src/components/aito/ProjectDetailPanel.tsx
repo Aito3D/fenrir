@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Building2, Check, Copy, ExternalLink, Loader2, Mail, Phone, RefreshCw, User } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Building2, Check, Copy, ExternalLink, Loader2, Mail, Phone, Plane, RefreshCw, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ActivityRail } from './history/ActivityRail';
@@ -15,6 +15,7 @@ import {
   QUOTE_STATUS_PILL_TONE_CLASSES,
   QUOTE_STATUS_TEXT_TONE_CLASSES,
 } from './quoteStatus';
+import { ShippingCard } from './ShippingCard';
 import { stagesWithWork } from './services';
 import { StageRail } from './StageRail';
 import { TaskEditor } from './TaskEditor';
@@ -30,6 +31,7 @@ import { copyTextToClipboard } from '../../utils/clipboard';
 import { parseUTCDate } from '../../utils/date';
 import { formatMoney } from '../../utils/pricing';
 import { applyDescription, applySyncState } from '../../utils/aitoOptimistic';
+import { islandLabel } from '../../utils/shippingDraft';
 import { taskDraftToTaskCreate } from '../../utils/taskDraft';
 import { focusRingCls, inputCls } from '../formStyles';
 import { useToast } from '../../contexts/ToastContext';
@@ -106,8 +108,13 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'error';
  *  `SaveIndicator` uses below, so the two transient confirmations in this panel
  *  behave alike. A copy that fails leaves the icon alone rather than raising a
  *  toast, which is what `PrinterInfoModal` does with the same helper: the check
- *  mark IS the claim that it worked, so withholding it is the honest report. */
-function CopyableValue({
+ *  mark IS the claim that it worked, so withholding it is the honest report.
+ *
+ *  Exported for `ShippingCard`, which needs the identical copy-not-link
+ *  behaviour for the shipment's recipient phone — the freight desk calls that
+ *  number the same way the workshop calls the client's, and a second copy of
+ *  this component would be the one place the two could drift. */
+export function CopyableValue({
   value,
   label,
   icon: Icon,
@@ -226,6 +233,22 @@ function PanelHeader({
   stepsTotal: number;
 }) {
   const { t } = useTranslation();
+  // Same query key ShippingCard and the create drawer use, so this shares
+  // their cache rather than issuing its own request for a table that rarely
+  // changes. Only needed for the LABEL — the pill itself gates on
+  // `project.shipping_island` alone, never on this query having resolved.
+  const shippingServicesQuery = useQuery({
+    queryKey: ['aito-shipping-services'],
+    queryFn: api.getAitoShippingServices,
+    staleTime: 60 * 60_000,
+  });
+  // Shared with ShippingCard and the create drawer's own rail/checklist — see
+  // `islandLabel`'s doc for why the degrade has to be one computation, not
+  // three: this pill and the card twelve lines below it used to fall back
+  // differently (raw key here, a naive capitalisation there) and could show
+  // two different spellings of the same island in one panel with Zoho down.
+  const shippingIslandLabel =
+    project.shipping_island !== null ? islandLabel(project.shipping_island, shippingServicesQuery.data?.services ?? []) : null;
   return (
     <div
       // `relative z-[2]` so the cast shadow below paints ONTO the body rather
@@ -301,6 +324,19 @@ function PanelHeader({
               className={`${eyebrowCls} border rounded-[.4rem] px-[.4rem] py-[.05rem] ${QUOTE_STATUS_PILL_TONE_CLASSES[quoteStatusTone(project.quote_status)]}`}
             >
               {quoteStatusText(t, project.quote_status)}
+            </span>
+          )}
+          {/* Sky, not green: green is the colour of WORK on this board, and a
+              destination is not work. Rendered in the header rather than only
+              in the card below because this is the fact the person opening
+              the panel most needs before scrolling anywhere. */}
+          {project.shipping_island !== null && (
+            <span
+              data-testid="panel-shipping-pill"
+              className="inline-flex items-center gap-1.5 rounded-full border border-sky-400/30 bg-sky-400/[0.14] px-2 py-0.5 text-[11px] font-semibold text-sky-400"
+            >
+              <Plane className="h-3.5 w-3.5" aria-hidden="true" />
+              {shippingIslandLabel}
             </span>
           )}
         </div>
@@ -886,6 +922,8 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               )}
 
               <RecordCard project={project} latestEvent={latestEvent} />
+
+              <ShippingCard project={project} currency={currency} />
             </div>
 
             <div

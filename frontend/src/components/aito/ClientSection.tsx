@@ -1,14 +1,18 @@
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { RotateCcw } from 'lucide-react';
+import { Plane, RotateCcw } from 'lucide-react';
 import { api } from '../../api/client';
 import type { ZohoContact } from '../../api/client';
 import { ClientCombobox } from './ClientCombobox';
 import { PhoneInput } from './PhoneInput';
 import { FieldError } from './FieldError';
+import { ShippingFields } from './ShippingFields';
 import { visibleClientDraftErrors, defaultClientDraft, draftFromContact, parsePhone } from '../../utils/clientDraft';
 import type { ClientDraft } from '../../utils/clientDraft';
+import { emptyShippingDraft } from '../../utils/shippingDraft';
+import type { ShippingDraft } from '../../utils/shippingDraft';
+import { useCurrency } from '../../hooks/useCurrency';
 import { focusRingCls, inputCls, inputErrorCls, labelCls } from '../formStyles';
 
 export interface ClientSectionProps {
@@ -17,6 +21,8 @@ export interface ClientSectionProps {
   onCreateNew: () => void;
   defaultContactId: string;
   defaultContactName: string;
+  shipping: ShippingDraft | null;
+  onShippingChange: (next: ShippingDraft | null) => void;
 }
 
 /** The client half of the Aito new-project form: who the client is, plus the
@@ -31,12 +37,22 @@ export function ClientSection({
   onCreateNew,
   defaultContactId,
   defaultContactName,
+  shipping,
+  onShippingChange,
 }: ClientSectionProps) {
   const { t } = useTranslation();
+  const currency = useCurrency();
   const statusQuery = useQuery({
     queryKey: ['zoho-status', { probe: false }],
     queryFn: () => api.getZohoStatus(),
     staleTime: 60_000,
+  });
+  const servicesQuery = useQuery({
+    queryKey: ['aito-shipping-services'],
+    queryFn: api.getAitoShippingServices,
+    // The island table is app data and the rates change at most daily. One
+    // request per session is the point of the server-side cache.
+    staleTime: 60 * 60_000,
   });
 
   if (statusQuery.data?.configured === false) {
@@ -171,6 +187,42 @@ export function ClientSection({
           </button>
         </div>
         <FieldError messageKey={errors.email} />
+      </div>
+
+      <div className="border-t border-bambu-dark-tertiary pt-3 mt-3">
+        {shipping === null ? (
+          <button
+            type="button"
+            onClick={() => onShippingChange(emptyShippingDraft(value))}
+            className={`flex w-full items-center justify-center gap-2 rounded-[.6rem] border border-dashed border-sky-400/45 bg-sky-400/[0.05] px-3 py-2.5 text-sm font-semibold text-sky-400 transition-colors hover:bg-sky-400/10 ${focusRingCls}`}
+          >
+            <Plane className="h-4 w-4" />
+            {t('aito.shippingAdd')}
+          </button>
+        ) : (
+          <div className="animate-rise rounded-[.6rem] border border-sky-400/35 bg-sky-400/[0.04] p-3">
+            <div className="mb-2.5 flex items-center gap-2">
+              <Plane className="h-4 w-4 text-sky-400" aria-hidden="true" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-sky-400">
+                {t('aito.shippingTitle')}
+              </span>
+              <button
+                type="button"
+                onClick={() => onShippingChange(null)}
+                className={`ml-auto rounded-md px-1.5 py-0.5 text-xs text-bambu-gray transition-colors hover:bg-bambu-dark-tertiary hover:text-white ${focusRingCls}`}
+              >
+                {t('aito.shippingRemove')}
+              </button>
+            </div>
+            <ShippingFields
+              value={shipping}
+              onChange={onShippingChange}
+              services={servicesQuery.data?.services ?? []}
+              catalogueResolved={servicesQuery.data?.catalogue_resolved ?? false}
+              currency={currency}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

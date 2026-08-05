@@ -1,6 +1,7 @@
 """Aito production board: DB-backed Kanban with soft delete."""
 
 import logging
+import re
 from datetime import datetime
 from typing import Literal
 
@@ -26,6 +27,9 @@ from backend.app.schemas.aito import (
     AitoProjectUpdate,
     AitoQuoteStatusResponse,
     AitoQuoteStatusUpdate,
+    AitoShippingIsland,
+    AitoShippingService,
+    AitoShippingServicesResponse,
     AitoSummarizeRequest,
     AitoSummarizeResponse,
     AitoTaskCreate,
@@ -37,6 +41,11 @@ from backend.app.services.aito_board_rules import SERVICES, TaskSummary, evaluat
 from backend.app.services.aito_events import diff_fields, kinds_for_depth, record
 from backend.app.services.aito_quote_status import adopt_quote_status
 from backend.app.services.aito_quote_sync import request_immediate_sync
+from backend.app.services.aito_shipping import (
+    SERVICE_LABELS,
+    grouped_islands,
+    service_for_island,
+)
 from backend.app.services.openrouter import OpenRouterNotConfiguredError, OpenRouterUpstreamError, summarize_tasks
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
 from backend.app.utils.http import build_content_disposition
@@ -44,6 +53,36 @@ from backend.app.utils.http import build_content_disposition
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/aito", tags=["aito"])
+
+# Deliberately stricter than the client's own ClientDraft.formatPhone, which
+# will happily emit something as short as +689-123: this is the API boundary
+# that has to hold, not the form, so it requires 4+ national digits rather
+# than merely matching the country-code-dash shape formatPhone produces.
+_SHIPPING_PHONE_RE = re.compile(r"^\+\d{1,4}-\d{4,14}$")
+
+
+_SHIPPING_COLUMNS = (
+    "shipping_island",
+    "shipping_service",
+    "shipping_first_name",
+    "shipping_last_name",
+    "shipping_phone",
+    "shipping_price",
+)
+
+
+def _mentions_shipping(fields: dict) -> bool:
+    """True when the payload touches at least one shipping column.
+
+    Guards the ``get_shipping_catalogue`` RATE lookup that feeds
+    ``_validated_shipping``: that call is a genuine Zoho fetch (unlike
+    ``_shipping_names``'s cache-only read), so an ordinary edit that never
+    mentions shipping — a description tweak, a client change — must not pay
+    for it. ``_validated_shipping`` itself would no-op on such a payload
+    (``supplied`` comes up empty), but only after the caller already paid for
+    the catalogue read.
+    """
+    return any(key in fields for key in _SHIPPING_COLUMNS)
 
 
 async def _tasks_by_project(db: AsyncSession, project_ids: list[int]) -> dict[int, list[AitoTask]]:
@@ -72,12 +111,124 @@ async def _summary_for(db: AsyncSession, project_id: int) -> TaskSummary:
     return summarise((await _tasks_by_project(db, [project_id])).get(project_id, ()))
 
 
-def _to_response(p: AitoProject, summary: TaskSummary) -> AitoProjectResponse:
-    """`summary` is required, never defaulted. The detail panel writes PATCH
-    responses straight into the board cache with setQueryData, replacing the
-    row — so an endpoint that quietly returned zeros would blank a card's
-    badges and nothing would fail. Requiring it makes every call site state
-    its intent."""
+def _validated_shipping(
+    fields: dict, rates: dict[str, float | None], current: AitoProject | None = None
+) -> dict | None:
+    """The six shipping columns to write, or None when nothing was supplied.
+
+    Returns every one of the six, so a caller can `setattr` them wholesale and
+    never leave two of them disagreeing.
+
+    Consistency is checked on the MERGED row, not on the payload — the same
+    rule the client_id/client_name check in `update_project` follows, and for
+    the same reason. On a PATCH, `current` is the stored project, so
+    correcting one field of an existing shipment works without resending the
+    other three; on a create there is nothing to merge with and a partial
+    payload is a 422.
+
+    An explicit `shipping_island: null` returns all six as None — the
+    documented way to detach a shipment. A whitespace-only island (`"   "`),
+    by contrast, is NOT treated as a detach — it is a 422, the same as a
+    blank first name, last name or phone — so a client bug that trims an
+    island down to nothing does not silently drop a shipment. `shipping_service`
+    is derived from the island here and is never read from `fields`.
+
+    Changing the island ALONE re-derives `shipping_service` from it, but
+    KEEPS the stored `shipping_price` — the price is frozen at attach time,
+    not re-looked-up on every edit. A caller that changes a shipment's island
+    to a DIFFERENT service must resend `shipping_price` in the same request,
+    or the shipment keeps billing the previous service's rate under the new
+    service's name.
+    """
+    supplied = {key: fields[key] for key in fields if key in _SHIPPING_COLUMNS}
+    if not supplied:
+        return None
+
+    def merged(key: str):
+        if key in supplied:
+            return supplied[key]
+        return getattr(current, key, None) if current is not None else None
+
+    raw_island = merged("shipping_island")
+    if raw_island is not None and not raw_island.strip():
+        # Distinguished from the None case below: an explicit blank string is
+        # a client bug (or a UI regression) trying to clear the field, not
+        # the documented way to detach a shipment — that is a literal null.
+        raise HTTPException(status_code=422, detail="shipping_island must not be blank")
+    island = (raw_island or "").strip()
+    if not island:
+        # Either an explicit detach (raw_island is None because the payload
+        # sent shipping_island: null), or a field sent for a project that has
+        # no shipment to correct (raw_island is None because neither the
+        # payload nor `current` ever set one). Both end with all six
+        # cleared, which is the right answer for the first and harmless for
+        # the second: there was nothing there to lose.
+        return dict.fromkeys(_SHIPPING_COLUMNS)
+
+    service = service_for_island(island)
+    if service is None:
+        raise HTTPException(status_code=422, detail=f"Unknown shipping island {island!r}")
+
+    first_name = (merged("shipping_first_name") or "").strip()
+    last_name = (merged("shipping_last_name") or "").strip()
+    phone = (merged("shipping_phone") or "").strip()
+    if not first_name or not last_name or not phone:
+        raise HTTPException(status_code=422, detail="Shipping needs a first name, a last name and a phone")
+    if not _SHIPPING_PHONE_RE.match(phone):
+        raise HTTPException(status_code=422, detail="shipping_phone must look like +689-89645864")
+
+    price = merged("shipping_price")
+    if price is None:
+        price = rates.get(service)
+    if price is None:
+        raise HTTPException(status_code=422, detail="No rate is known for this service — supply shipping_price")
+
+    return {
+        "shipping_island": island,
+        # Derived, never taken from the payload.
+        "shipping_service": service,
+        "shipping_first_name": first_name,
+        "shipping_last_name": last_name,
+        "shipping_phone": phone,
+        "shipping_price": float(price),
+    }
+
+
+async def _shipping_names(db: AsyncSession) -> dict[str, str]:
+    """Service key -> Books display name, resolved once per request and
+    shared by every card `_to_response` builds for it.
+
+    ``refresh=False``: this sits on the board's hot read path — polled every
+    10s while a quote is pending, plus on every WebSocket invalidation and
+    window focus (list_projects, list_trash, move_project, set_quote_status,
+    restore_project all await it) — and a DISPLAY NAME needs a fresh rate
+    even less than the ownership check in ``zoho.get_catalogue`` does: the
+    name comes from our own ``SERVICE_LABELS``, not from anything Books
+    returns, only the item id needs to have been learned at all. Mirrors the
+    reasoning documented there. The cache is warmed elsewhere — the drawer's
+    services endpoint and ``aito_quote_sync``'s deferral handler — so a stale
+    or cold cache here just means an empty name map, never a network call."""
+    return {
+        service: item.name for service, item in (await zoho_service.get_shipping_catalogue(db, refresh=False)).items()
+    }
+
+
+def _to_response(p: AitoProject, summary: TaskSummary, shipping_names: dict[str, str]) -> AitoProjectResponse:
+    """`summary` and `shipping_names` are both required, never defaulted. The
+    detail panel writes PATCH (and move / quote-status / restore) responses
+    straight into the board cache with setQueryData, replacing the row — so
+    an endpoint that quietly returned zeros, or an empty shipping_names map,
+    would blank a card's badges — or its shipping service name, on a card
+    that HAS a shipment — and nothing would fail. Requiring both makes every
+    call site state its intent instead of forgetting one silently.
+
+    `shipping_names` is resolved ONCE per request by the caller
+    (`_shipping_names`), not per row: the catalogue is one cached read and
+    every card on the board shares it. This function stays synchronous —
+    it cannot await the catalogue itself, or the board list would force one
+    fetch per card. A caller with genuinely no shipment in play may pass an
+    explicitly-named empty dict, but should prefer resolving it — it costs
+    one cached settings read, and correctness beats the saving."""
     _, lock = evaluate(p.quote_status, p.board_column, summary.pending)
     return AitoProjectResponse(
         id=p.id,
@@ -119,6 +270,13 @@ def _to_response(p: AitoProject, summary: TaskSummary) -> AitoProjectResponse:
             for steps in summary.steps_by_task
         ],
         move_lock=lock,
+        shipping_island=p.shipping_island,
+        shipping_service=p.shipping_service,
+        shipping_first_name=p.shipping_first_name,
+        shipping_last_name=p.shipping_last_name,
+        shipping_phone=p.shipping_phone,
+        shipping_price=p.shipping_price,
+        shipping_service_name=shipping_names.get(p.shipping_service or ""),
         created_at=p.created_at,
         updated_at=p.updated_at,
     )
@@ -369,7 +527,8 @@ async def list_projects(
     )
     projects = list((await db.execute(stmt)).scalars().all())
     task_rows = await _tasks_by_project(db, [p.id for p in projects])
-    return [_to_response(p, summarise(task_rows.get(p.id, ()))) for p in projects]
+    shipping_names = await _shipping_names(db)
+    return [_to_response(p, summarise(task_rows.get(p.id, ())), shipping_names) for p in projects]
 
 
 @router.get("/trash", response_model=list[AitoProjectResponse])
@@ -385,7 +544,8 @@ async def list_trash(
     )
     projects = list((await db.execute(stmt)).scalars().all())
     task_rows = await _tasks_by_project(db, [p.id for p in projects])
-    return [_to_response(p, summarise(task_rows.get(p.id, ()))) for p in projects]
+    shipping_names = await _shipping_names(db)
+    return [_to_response(p, summarise(task_rows.get(p.id, ())), shipping_names) for p in projects]
 
 
 @router.post("/", response_model=AitoProjectResponse, status_code=201)
@@ -400,6 +560,11 @@ async def create_project(
         # coordinates live on the project row rather than in Zoho. Imports are
         # exempt: an existing Zoho quote's contact may carry neither channel.
         raise HTTPException(status_code=400, detail="Client must have a phone or an email")
+    create_fields = payload.model_dump(exclude_unset=True)
+    rates = {}
+    if _mentions_shipping(create_fields):
+        rates = {service: item.rate for service, item in (await zoho_service.get_shipping_catalogue(db)).items()}
+    shipping = _validated_shipping(create_fields, rates)
     # New cards land on top of the quote column: shift existing cards down.
     for row in await _active_in_column(db, "devis"):
         row.position += 1
@@ -426,6 +591,7 @@ async def create_project(
         # Absent unless an import backdates it — an explicit None would write a
         # NULL rather than fall through to the column's server default.
         **({"created_at": created_at} if created_at else {}),
+        **(shipping or {}),
     )
     for task_payload in payload.tasks:
         _reject_ticks_without_acceptance(payload.quote_status, task_payload.model_dump())
@@ -474,7 +640,7 @@ async def create_project(
         # Only the own-quote branch — an import owes Books nothing yet.
         request_immediate_sync()
     await db.refresh(project)
-    return _to_response(project, summary)
+    return _to_response(project, summary, await _shipping_names(db))
 
 
 @router.post("/summarize", response_model=AitoSummarizeResponse)
@@ -493,6 +659,36 @@ async def summarize_project(
     except OpenRouterUpstreamError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
     return AitoSummarizeResponse(summary=summary, model=model)
+
+
+@router.get("/shipping/services", response_model=AitoShippingServicesResponse)
+async def list_shipping_services(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+):
+    """The five air-freight services, their islands and their Books rates.
+
+    Registered before the /{project_id} routes on purpose — a literal segment
+    after a parametric route would 422 instead of matching (FastAPI would try
+    to parse "shipping" as a project_id). Same reason /summarize sits where it
+    does.
+
+    The island list is app data and is always served; only the rates need
+    Zoho.
+    """
+    catalogue = await zoho_service.get_shipping_catalogue(db)
+    return AitoShippingServicesResponse(
+        catalogue_resolved=bool(catalogue),
+        services=[
+            AitoShippingService(
+                key=service,
+                name=catalogue[service].name if service in catalogue else SERVICE_LABELS[service],
+                rate=catalogue[service].rate if service in catalogue else None,
+                islands=[AitoShippingIsland(key=key, label=label) for key, label in islands],
+            )
+            for service, islands in grouped_islands()
+        ],
+    )
 
 
 @router.get("/{project_id}/tasks", response_model=list[AitoTaskResponse])
@@ -860,8 +1056,11 @@ async def import_legacy_projects(
     for p in created:
         await db.refresh(p)
     # Imported projects are task-free by construction: the legacy localStorage
-    # board had no concept of tasks.
-    return [_to_response(p, TaskSummary()) for p in created]
+    # board had no concept of tasks. Explicit empty map, not a resolved one:
+    # AitoProjectImportItem carries no shipping fields at all, so no imported
+    # project can have a shipment — an empty map is correct here, not merely
+    # a shortcut.
+    return [_to_response(p, TaskSummary(), {}) for p in created]
 
 
 @router.patch("/{project_id}/move", response_model=AitoProjectResponse)
@@ -920,7 +1119,7 @@ async def move_project(
         )
     await db.commit()
     await db.refresh(project)
-    return _to_response(project, summary)
+    return _to_response(project, summary, await _shipping_names(db))
 
 
 @router.patch("/{project_id}", response_model=AitoProjectResponse)
@@ -952,6 +1151,20 @@ async def update_project(
     if merged_client_id is not None and not merged_client_name:
         raise HTTPException(status_code=422, detail="client_name is required when client_id is set")
 
+    # Only fetched when the payload actually mentions a shipping column: an
+    # ordinary description or client edit must not pay for a Zoho catalogue
+    # read it will never use. See `_mentions_shipping`.
+    rates = {}
+    if _mentions_shipping(fields):
+        rates = {service: item.rate for service, item in (await zoho_service.get_shipping_catalogue(db)).items()}
+    # `current=project` so correcting ONE field of an existing shipment works
+    # without resending the other three — the merged row is what has to be
+    # consistent, not the payload.
+    shipping = _validated_shipping(fields, rates, current=project)
+    if shipping is not None:
+        for key, value in shipping.items():
+            setattr(project, key, value)
+
     if "description" in fields:
         project.description = fields["description"].strip()
     for key in ("client_id", "client_name", "client_phone", "client_email", "client_is_company"):
@@ -959,7 +1172,12 @@ async def update_project(
             setattr(project, key, fields[key])
     # Captured before the mark: it is unconditional and idempotent, so
     # checking the post-mark state alone would fire sync.queued on every edit
-    # to an already-pending project, not just the transition into it.
+    # to an already-pending project, not just the transition into it. The
+    # shipping fields above are applied before this line runs, so a
+    # shipping-only PATCH on a project that had settled to idle/error/locked
+    # is marked pending by this same call, exactly like any other field edit
+    # — see test_patch_attaches_shipping_and_requeues_the_quote, which drives
+    # a project to idle first and asserts the transition back into pending.
     was_pending = project.quote_sync_state == "pending"
     _mark_pending_if_ours(project)
     await record(
@@ -976,7 +1194,7 @@ async def update_project(
         await record(db, project.id, "sync.queued", actor_class="system")
     await db.commit()
     await db.refresh(project)
-    return _to_response(project, await _summary_for(db, project.id))
+    return _to_response(project, await _summary_for(db, project.id), await _shipping_names(db))
 
 
 @router.post("/{project_id}/quote-status", response_model=AitoQuoteStatusResponse)
@@ -1031,8 +1249,9 @@ async def set_quote_status(
     # _request (a token-refresh write, a settings read) can leave the session
     # needing a rollback — a following _to_response call would then raise
     # PendingRollbackError instead of the intended best-effort
-    # zoho_synced=False response.
-    project_response = _to_response(project, summary)
+    # zoho_synced=False response. Same reasoning covers _shipping_names: it
+    # is itself a DB read, so it has to happen up here too.
+    project_response = _to_response(project, summary, await _shipping_names(db))
 
     zoho_synced = False
     if project.quote_id:
@@ -1096,7 +1315,7 @@ async def restore_project(
     )
     await db.commit()
     await db.refresh(project)
-    return _to_response(project, summary)
+    return _to_response(project, summary, await _shipping_names(db))
 
 
 @router.delete("/{project_id}", status_code=204)

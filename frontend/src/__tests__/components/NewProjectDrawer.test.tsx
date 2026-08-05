@@ -6,10 +6,42 @@ import { server } from '../mocks/server';
 import { render } from '../utils';
 import { NewProjectDrawer } from '../../components/aito/NewProjectDrawer';
 import { api } from '../../api/client';
+import type { AitoShippingService } from '../../api/client';
 import { defaultClientDraft } from '../../utils/clientDraft';
 import { emptyTaskDraft } from '../../utils/taskDraft';
 
 const DEFAULT_ID = '66407000001237340';
+
+// Same fixture as AitoShippingFields.test.tsx / AitoIslandCombobox.test.tsx:
+// two services so a shipment can pick a real island and get a real rate.
+const SHIPPING_SERVICES: AitoShippingService[] = [
+  {
+    key: 'tuamotu',
+    name: 'Livraison Avion Tuamotu',
+    rate: 3200,
+    islands: [{ key: 'rangiroa', label: 'Rangiroa' }],
+  },
+  {
+    key: 'australes',
+    name: 'Livraison Avion Australes',
+    rate: 4100,
+    islands: [{ key: 'rurutu', label: 'Rurutu' }],
+  },
+];
+
+// A real person, distinct from the default walk-in contact, so shipping's
+// name pre-fill (which only ever happens for a non-company client) has
+// something to split — and their directory phone doubles as the client
+// reachability every shipping test that clicks Create depends on.
+const JEAN_PIERRE = {
+  id: 'zJeanPierre',
+  name: 'Jean-Pierre DUPONT',
+  company_name: '',
+  customer_sub_type: 'individual',
+  phone: '',
+  mobile: '87123456',
+  email: 'jp@example.pf',
+};
 
 // Ported from NewProjectModal.test.tsx: the drawer renders TaskEditor
 // unconditionally, and every TaskRow's edit form mounts ImpressionFields,
@@ -81,6 +113,9 @@ beforeEach(() => {
     http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(mockFilaments)),
     http.get('/api/v1/calculator/printers/', () => HttpResponse.json(mockPrinters)),
     http.get('/api/v1/calculator/defaults', () => HttpResponse.json(mockDefaults)),
+    http.get('/api/v1/aito/shipping/services', () =>
+      HttpResponse.json({ services: SHIPPING_SERVICES, catalogue_resolved: true }),
+    ),
   );
   vi.mocked(api.summarizeAitoProject).mockResolvedValue({
     summary: 'Résumé IA.',
@@ -110,6 +145,38 @@ const createButton = () => screen.getByRole('button', { name: /Create Project/i 
 // "needs a phone or an email" hint, so an unscoped query matches twice.
 const checklistLine = (text: string | RegExp) =>
   within(screen.getByTestId('drawer-checklist')).getByText(text).closest('[data-state]') as HTMLElement;
+
+/** Opens the Client section and picks Jean-Pierre DUPONT — a real, reachable
+ *  person distinct from the default walk-in contact — rather than typing a
+ *  phone onto the default. Two things depend on this: shipping's name
+ *  pre-fill (only ever populated for a non-company client) needs a name to
+ *  split, and Jean-Pierre's directory mobile makes the client reachable
+ *  without a separate typing step, so tests that go on to click Create are
+ *  blocked by shipping alone, not by an incidental missing phone. */
+async function openClientSection() {
+  server.use(http.get('/api/v1/zoho/contacts', () => HttpResponse.json([JEAN_PIERRE])));
+  await userEvent.click(clientHeader());
+  const combobox = await screen.findByRole('combobox', { name: /client/i });
+  await userEvent.clear(combobox);
+  await userEvent.type(combobox, 'Jean');
+  await userEvent.click(await screen.findByText('Jean-Pierre DUPONT'));
+}
+
+/** Prices the seeded task at 10 000 — the round number the receipt/total
+ *  tests build their arithmetic on. */
+async function fillOneTask() {
+  await userEvent.click(screen.getByRole('button', { name: 'Add Scan' }));
+  fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10000' } });
+}
+
+/** Opens the island combobox and picks the given label. Uses `findByRole` for
+ *  the option, not `getByRole`: the island table is its own query
+ *  (`aito-shipping-services`) and may not have resolved the instant the
+ *  dropdown opens. */
+async function pickIsland(label: string) {
+  await userEvent.click(screen.getByRole('combobox', { name: /destination island/i }));
+  await userEvent.click(await screen.findByRole('option', { name: label }));
+}
 
 describe('NewProjectDrawer', () => {
   it('renders work-first sections and no Cancel button', async () => {
@@ -458,6 +525,139 @@ describe('NewProjectDrawer', () => {
       'Résumé IA.',
       expect.objectContaining({ id: DEFAULT_ID, isDefault: true }),
       [expect.objectContaining({ scanCost: 10 })],
+      null,
     );
+  });
+
+  it('has no shipping block until the button is pressed', async () => {
+    await renderDrawer();
+    await openClientSection();
+    expect(screen.queryByLabelText(/destination island/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /add shipping/i })).toBeInTheDocument();
+  });
+
+  it('reveals the fields, pre-filled from the client', async () => {
+    await renderDrawer();
+    await openClientSection();
+    await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
+    expect(screen.getByLabelText(/recipient first name/i)).toHaveValue('Jean-Pierre');
+    expect(screen.getByLabelText(/recipient last name/i)).toHaveValue('DUPONT');
+  });
+
+  it('adds no checklist line while there is no shipment', async () => {
+    await renderDrawer();
+    expect(within(screen.getByTestId('drawer-checklist')).queryByText(/shipping/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the shipping checklist line once a block exists, and completes it', async () => {
+    await renderDrawer();
+    await openClientSection();
+    await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
+    const checklist = within(screen.getByTestId('drawer-checklist'));
+    expect(checklist.getByText(/shipping being filled in/i)).toBeInTheDocument();
+    await pickIsland('Rangiroa');
+    expect(await checklist.findByText(/shipping to rangiroa/i)).toBeInTheDocument();
+  });
+
+  it('blocks Create on an incomplete shipment and reveals why on the click', async () => {
+    const onCreate = vi.fn();
+    await renderDrawer({ onCreate });
+    await fillOneTask();
+    await openClientSection();
+    await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
+    await userEvent.click(createButton());
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(within(screen.getByTestId('drawer-checklist')).getByText(/island missing/i)).toBeInTheDocument();
+  });
+
+  it('puts the shipping cost in the rail receipt and the project total', async () => {
+    await renderDrawer();
+    await fillOneTask(); // 10 000
+    await openClientSection();
+    await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
+    await pickIsland('Rangiroa'); // 3 200
+    expect(screen.getByTestId('rail-shipping-row')).toHaveTextContent('Rangiroa');
+    expect(screen.getByTestId('rail-project-total')).toHaveTextContent('13 200');
+  });
+
+  it('hands the shipment to onCreate', async () => {
+    const onCreate = vi.fn();
+    await renderDrawer({ onCreate });
+    await fillOneTask();
+    await openClientSection();
+    await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
+    await pickIsland('Rangiroa');
+    await userEvent.click(createButton());
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Object),
+      expect.any(Array),
+      expect.objectContaining({ island: 'rangiroa', service: 'tuamotu', price: 3200 }),
+    );
+  });
+
+  it('removing the shipment restores the button and clears the checklist line', async () => {
+    await renderDrawer();
+    await openClientSection();
+    await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
+    await userEvent.click(screen.getByRole('button', { name: /remove shipping/i }));
+    expect(screen.getByRole('button', { name: /add shipping/i })).toBeInTheDocument();
+    expect(within(screen.getByTestId('drawer-checklist')).queryByText(/shipping/i)).not.toBeInTheDocument();
+  });
+
+  it('round-trips a shipment through localStorage across unmount/remount', async () => {
+    const { unmount } = await renderDrawer();
+    await openClientSection();
+    await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
+    await pickIsland('Rangiroa');
+    await waitFor(() =>
+      expect(localStorage.setItem).toHaveBeenCalledWith(
+        'aito.newProjectDraft.v1',
+        expect.stringContaining('"island":"rangiroa"'),
+      ),
+    );
+    unmount();
+
+    render(<NewProjectDrawer onClose={vi.fn()} onCreate={vi.fn()} />);
+    await userEvent.click(clientHeader());
+    expect(await screen.findByLabelText(/recipient first name/i)).toHaveValue('Jean-Pierre');
+    expect(screen.getByLabelText(/destination island/i)).toHaveValue('Rangiroa');
+  });
+
+  it('hold-to-reset also clears the shipment', async () => {
+    await renderDrawer();
+    await openClientSection();
+    await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
+    await pickIsland('Rangiroa');
+    await waitFor(() => expect(screen.getByLabelText(/destination island/i)).toHaveValue('Rangiroa'));
+
+    // Same real-timer HoldButton drive as the plain "hold-to-reset" test above.
+    fireEvent.pointerDown(screen.getByRole('button', { name: /reset draft/i }));
+    await waitFor(() => expect(screen.queryByLabelText(/destination island/i)).not.toBeInTheDocument(), {
+      timeout: 2000,
+    });
+    // `resetDraft` sets `draft` to null synchronously; the default-contact
+    // effect that reseeds it (and remounts `ClientSection`, which is what the
+    // Add-shipping button lives inside) runs a beat later.
+    await waitFor(() => expect(screen.getByRole('button', { name: /add shipping/i })).toBeInTheDocument());
+    expect(within(screen.getByTestId('drawer-checklist')).queryByText(/shipping/i)).not.toBeInTheDocument();
+  });
+
+  it('a legacy persisted draft with no shipping key reads as null, not a crash', async () => {
+    localStorage.setItem(
+      'aito.newProjectDraft.v1',
+      JSON.stringify({
+        tasks: [emptyTaskDraft()],
+        client: null,
+        summaryText: '',
+        summaryEdited: false,
+        summarySignature: '',
+        // No `shipping` key at all — the pre-feature shape.
+      }),
+    );
+    await renderDrawer();
+    await openClientSection();
+    expect(screen.getByRole('button', { name: /add shipping/i })).toBeInTheDocument();
+    expect(within(screen.getByTestId('drawer-checklist')).queryByText(/shipping/i)).not.toBeInTheDocument();
   });
 });

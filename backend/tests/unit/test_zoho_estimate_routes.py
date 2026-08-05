@@ -1,11 +1,14 @@
 """Zoho estimate search and quote preview: service mapping and route errors."""
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 import httpx
 import pytest
 
+from backend.app.api.routes.settings import set_setting
+from backend.app.services.aito_shipping import SERVICE_LABELS
 from backend.app.services.zoho import zoho_service
 
 
@@ -238,3 +241,83 @@ async def test_preview_flags_an_already_imported_quote(async_client):
     await async_client.delete(f"/api/v1/aito/{project_id}")
     body = (await async_client.get(f"/api/v1/zoho/estimates/{estimate['estimate_id']}/preview")).json()
     assert body["existing_project_id"] is None
+
+
+async def _seed_warm_shipping_catalogue(service: str = "tuamotu", item_id: str = "SHIP-TUAMOTU") -> None:
+    """Writes a resolved shipping catalogue directly into settings, the same
+    shape ``zoho.get_shipping_catalogue`` itself produces, so the route can be
+    exercised against a resolvable shipping item without a real Books
+    ``/items`` call."""
+    from backend.app.core.database import async_session
+
+    catalogue = {service: {"item_id": item_id, "name": SERVICE_LABELS[service], "rate": 3200.0}}
+    async with async_session() as db:
+        await set_setting(db, "zoho_shipping_catalogue", json.dumps(catalogue))
+        await set_setting(db, "zoho_shipping_catalogue_at", datetime.utcnow().isoformat())
+        await db.commit()
+
+
+def _shipping_estimate(*, item_id: str = "SHIP-TUAMOTU", island: str = "Rangiroa") -> dict:
+    return {
+        "estimate_id": "e-ship-1",
+        "estimate_number": "DEV26-9101",
+        "is_inclusive_tax": True,
+        "price_precision": 0,
+        "line_items": [
+            {
+                "item_id": item_id,
+                "sku": "LIV-TU",
+                "name": "Livraison Avion Tuamotu",
+                "description": f"Nom: Jean-Pierre DUPONT\nTéléphone: +689-89645864\nÎle: {island}",
+                "rate": 3200,
+                "quantity": 1,
+                "item_order": 1,
+            }
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_preview_response_carries_a_resolved_shipment(async_client):
+    """The regression test: `build_preview`'s "shipping" key must actually
+    reach the HTTP response, not just the internal dict — that is exactly
+    what a pure `build_preview` unit test cannot catch, since
+    `ZohoQuotePreview` filters the response independently."""
+    await _configure(async_client)
+    await _seed_warm_shipping_catalogue()
+    estimate = _shipping_estimate()
+    zoho_service.transport = httpx.MockTransport(_books_handler(estimate))
+    body = (await async_client.get(f"/api/v1/zoho/estimates/{estimate['estimate_id']}/preview")).json()
+    assert body["shipping"] == {
+        "island": "rangiroa",
+        "service": "tuamotu",
+        "first_name": "Jean-Pierre",
+        "last_name": "DUPONT",
+        "phone": "+689-89645864",
+        "price": 3200.0,
+    }
+    assert body["skipped_lines"] == []
+
+
+@pytest.mark.asyncio
+async def test_preview_shipping_is_null_when_the_quote_has_no_shipping_line(async_client):
+    await _configure(async_client)
+    estimate = _estimate("dev-2461-three-services")
+    zoho_service.transport = httpx.MockTransport(_books_handler(estimate))
+    body = (await async_client.get(f"/api/v1/zoho/estimates/{estimate['estimate_id']}/preview")).json()
+    assert body["shipping"] is None
+
+
+@pytest.mark.asyncio
+async def test_preview_shipping_is_null_when_the_island_does_not_resolve(async_client):
+    """Ours by item id, but the island text does not match anything we know.
+    The project is created without a shipment; the line is not lost — it
+    survives on the quote via build_line_items' echo rule — and it must not
+    be reported as an unimportable skipped line either."""
+    await _configure(async_client)
+    await _seed_warm_shipping_catalogue()
+    estimate = _shipping_estimate(island="Atlantis")
+    zoho_service.transport = httpx.MockTransport(_books_handler(estimate))
+    body = (await async_client.get(f"/api/v1/zoho/estimates/{estimate['estimate_id']}/preview")).json()
+    assert body["shipping"] is None
+    assert body["skipped_lines"] == []

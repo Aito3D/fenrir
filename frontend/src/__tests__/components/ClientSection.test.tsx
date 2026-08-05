@@ -6,6 +6,7 @@ import { server } from '../mocks/server';
 import { render } from '../utils';
 import { ClientSection } from '../../components/aito/ClientSection';
 import { defaultClientDraft, draftFromContact } from '../../utils/clientDraft';
+import type { AitoShippingService } from '../../api/client';
 
 const DEFAULT_ID = '66407000001237340';
 const DEFAULT_NAME = 'Client de passage';
@@ -16,6 +17,22 @@ const acme = {
   phone: '', mobile: '89645864', email: 'hi@acme.pf',
 };
 
+// Same fixture as AitoShippingFields.test.tsx / AitoIslandCombobox.test.tsx.
+const SHIPPING_SERVICES: AitoShippingService[] = [
+  {
+    key: 'tuamotu',
+    name: 'Livraison Avion Tuamotu',
+    rate: 3200,
+    islands: [{ key: 'rangiroa', label: 'Rangiroa' }],
+  },
+  {
+    key: 'australes',
+    name: 'Livraison Avion Australes',
+    rate: 4100,
+    islands: [{ key: 'rurutu', label: 'Rurutu' }],
+  },
+];
+
 beforeEach(() => {
   server.use(
     http.get('/api/v1/zoho/status', () =>
@@ -25,6 +42,9 @@ beforeEach(() => {
       }),
     ),
     http.get('/api/v1/zoho/contacts', () => HttpResponse.json([acme])),
+    http.get('/api/v1/aito/shipping/services', () =>
+      HttpResponse.json({ services: SHIPPING_SERVICES, catalogue_resolved: true }),
+    ),
   );
 });
 
@@ -36,6 +56,8 @@ const renderSection = (value = defaultClientDraft(DEFAULT_ID, DEFAULT_NAME), onC
       onCreateNew={vi.fn()}
       defaultContactId={DEFAULT_ID}
       defaultContactName={DEFAULT_NAME}
+      shipping={null}
+      onShippingChange={vi.fn()}
     />,
   );
   return onChange;
@@ -68,6 +90,8 @@ describe('ClientSection', () => {
         onCreateNew={vi.fn()}
         defaultContactId={DEFAULT_ID}
         defaultContactName={DEFAULT_NAME}
+        shipping={null}
+        onShippingChange={vi.fn()}
       />,
     );
     await user.type(screen.getByLabelText(/^phone/i), '9');
@@ -81,6 +105,8 @@ describe('ClientSection', () => {
         onCreateNew={vi.fn()}
         defaultContactId={DEFAULT_ID}
         defaultContactName={DEFAULT_NAME}
+        shipping={null}
+        onShippingChange={vi.fn()}
       />,
     );
     await user.click(screen.getByRole('button', { name: /revert phone/i }));
@@ -103,6 +129,8 @@ describe('ClientSection', () => {
         onCreateNew={vi.fn()}
         defaultContactId={DEFAULT_ID}
         defaultContactName={DEFAULT_NAME}
+        shipping={null}
+        onShippingChange={vi.fn()}
       />
     );
     const user = userEvent.setup();
@@ -133,6 +161,8 @@ describe('ClientSection', () => {
         onCreateNew={vi.fn()}
         defaultContactId={DEFAULT_ID}
         defaultContactName={DEFAULT_NAME}
+        shipping={null}
+        onShippingChange={vi.fn()}
       />
     );
     const user = userEvent.setup();
@@ -192,6 +222,34 @@ describe('ClientSection', () => {
     renderSection(draftFromContact(acme, DEFAULT_ID), onChange);
     await user.click(screen.getByRole('button', { name: /default client/i }));
     expect(onChange).toHaveBeenCalledWith(defaultClientDraft(DEFAULT_ID, DEFAULT_NAME));
+  });
+
+  it('reveals shipping fields on Add shipping, and clears them on Remove shipping', async () => {
+    let shipping: import('../../utils/shippingDraft').ShippingDraft | null = null;
+    const section = () => (
+      <ClientSection
+        value={defaultClientDraft(DEFAULT_ID, DEFAULT_NAME)}
+        onChange={vi.fn()}
+        onCreateNew={vi.fn()}
+        defaultContactId={DEFAULT_ID}
+        defaultContactName={DEFAULT_NAME}
+        shipping={shipping}
+        onShippingChange={(next) => {
+          shipping = next;
+          rerender(section());
+        }}
+      />
+    );
+    const user = userEvent.setup();
+    const { rerender } = render(section());
+
+    expect(screen.queryByLabelText(/destination island/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /add shipping/i }));
+    expect(screen.getByLabelText(/destination island/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /remove shipping/i }));
+    expect(screen.queryByLabelText(/destination island/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /add shipping/i })).toBeInTheDocument();
   });
 
   it('replaces the whole block with a settings link when Zoho is not configured', async () => {

@@ -51,6 +51,7 @@ const preview: ZohoQuotePreview = {
     { ...emptyTask, title: 'helice', impression_cost: 200 },
   ],
   skipped_lines: [],
+  shipping: null,
   existing_project_id: null,
 };
 

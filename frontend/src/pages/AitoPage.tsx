@@ -18,6 +18,7 @@ import { api, type AitoProject } from '../api/client';
 import { formatPhone } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
 import type { TaskDraft } from '../utils/taskDraft';
+import type { ShippingDraft } from '../utils/shippingDraft';
 import { matchesSearch } from '../utils/aitoSearch';
 import { useCardFlight } from '../hooks/useCardFlight';
 import { useCardMorph } from '../hooks/useCardMorph';
@@ -195,7 +196,7 @@ export function AitoPage() {
     departureTarget: (key) => (doneIds.has(Number(key)) ? 'archive' : null),
   });
 
-  const createProject = (description: string, draft: ClientDraft, tasks: TaskDraft[]) => {
+  const createProject = (description: string, draft: ClientDraft, tasks: TaskDraft[], shipping: ShippingDraft | null) => {
     // Closed here, not in onSuccess: the whole point is that the modal does
     // not sit open through a round trip. The placeholder is what tells the
     // user their card exists.
@@ -204,6 +205,7 @@ export function AitoPage() {
       description,
       draft,
       tasks,
+      shipping,
       placeholder: placeholderProject({
         description,
         client_id: draft.id,

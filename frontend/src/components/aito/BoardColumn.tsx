@@ -3,7 +3,7 @@ import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useTranslation } from 'react-i18next';
-import { Check, Send } from 'lucide-react';
+import { Check, Plane, Send } from 'lucide-react';
 import { CardView } from './CardView';
 import { HoldButton } from './HoldButton';
 import type { ColumnMeta } from './columns';
@@ -133,7 +133,15 @@ function SortableCard({
                   project.quote_invoiced ? 'animate-invoiced-glow text-bambu-green' : 'text-bambu-green/70'
                 }`}
               >
-                <Check className="relative w-3.5 h-3.5" />
+                {/* A shipped project ends at the airport, not at the counter,
+                    and that is the one thing the person about to archive it
+                    needs to know. Enlarged from the check's w-3.5: a plane at
+                    check size reads as a smudge rather than an aircraft. */}
+                {project.shipping_island !== null ? (
+                  <Plane className="relative w-[1.15rem] h-[1.15rem]" />
+                ) : (
+                  <Check className="relative w-3.5 h-3.5" />
+                )}
               </HoldButton>
             )}
           </>

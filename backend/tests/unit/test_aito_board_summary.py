@@ -122,7 +122,7 @@ def test_to_response_carries_the_step_counters():
         updated_at=datetime.now(),
     )
     summary = summarise([_Task(scan_cost=1.0, scan_done=True, impression_cost=2.0)])
-    response = _to_response(project, summary)
+    response = _to_response(project, summary, {})  # no shipment on this in-memory project
     assert response.steps_total == 2
     assert response.steps_done == 1
 
@@ -147,7 +147,7 @@ def test_to_response_carries_the_pending_services():
         updated_at=datetime.now(),
     )
     summary = summarise([_Task(scan_cost=1.0, scan_done=True, impression_cost=2.0)])
-    response = _to_response(project, summary)
+    response = _to_response(project, summary, {})  # no shipment on this in-memory project
     assert response.task_services == ["scan", "impression"]
     assert response.task_pending == ["impression"]
 
