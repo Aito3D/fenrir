@@ -185,6 +185,7 @@ const DE_COGNATES = [
 const FR_COGNATES = [
   'Auto ({{resolved}})', 'Backend & Auth',  // real words/terms in this locale
   'Scan',  // aito.serviceScan3D — "Scan" is the term in this locale too
+  'Urgent',  // aito.urgent — same word in French (adjectif : « urgent »)
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Filament',
