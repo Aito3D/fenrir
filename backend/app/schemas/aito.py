@@ -353,6 +353,45 @@ class AitoQuoteStatusResponse(BaseModel):
     zoho_synced: bool
 
 
+class AitoQuoteEmailRecipient(BaseModel):
+    """One address this quote can be emailed to, as Books offers it."""
+
+    email: str
+    name: str
+    contact_person_id: str
+
+
+class AitoQuoteEmailContent(BaseModel):
+    """The send modal's prefill.
+
+    ``body`` is Books' rendered HTML. The client displays it as PLAIN TEXT and
+    never injects it into the DOM — a preview is not worth an injection
+    surface fed by an upstream template.
+    """
+
+    subject: str
+    body: str
+    recipients: list[AitoQuoteEmailRecipient]
+    # The address to preselect: the project's own client_email when it has
+    # one, else Books' first recipient. None only when there is nobody to
+    # send to, which the modal renders as an explicit message rather than an
+    # empty dropdown.
+    default_email: str | None
+
+
+class AitoQuoteEmailRequest(BaseModel):
+    to: str
+
+
+class AitoQuoteEmailResponse(BaseModel):
+    """``marked_sent`` is a transport detail, exactly like
+    ``AitoQuoteStatusResponse.zoho_synced``: ``project`` goes straight into
+    the board cache and has no business carrying one request's outcome."""
+
+    project: AitoProjectResponse
+    marked_sent: bool
+
+
 class AitoEventResponse(BaseModel):
     id: int
     occurred_at: datetime

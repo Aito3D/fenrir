@@ -25,6 +25,8 @@ from backend.app.schemas.aito import (
     AitoProjectMove,
     AitoProjectResponse,
     AitoProjectUpdate,
+    AitoQuoteEmailContent,
+    AitoQuoteEmailRecipient,
     AitoQuoteStatusResponse,
     AitoQuoteStatusUpdate,
     AitoShippingIsland,
@@ -48,7 +50,13 @@ from backend.app.services.aito_shipping import (
     service_for_island,
 )
 from backend.app.services.openrouter import OpenRouterNotConfiguredError, OpenRouterUpstreamError, summarize_tasks
-from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import (
+    ZohoNotConfiguredError,
+    ZohoNotFound,
+    ZohoRequestRejected,
+    ZohoUpstreamError,
+    zoho_service,
+)
 from backend.app.utils.http import build_content_disposition
 
 logger = logging.getLogger(__name__)
@@ -852,6 +860,71 @@ async def get_quote_pdf(
         # other non-Latin-1 character in it would raise UnicodeEncodeError and
         # turn this into an unhandled 500.
         headers={"Content-Disposition": build_content_disposition(filename, disposition="inline")},
+    )
+
+
+async def _quote_email_content(db: AsyncSession, project: AitoProject) -> tuple[dict, str | None]:
+    """Books' email prefill for this project's quote, plus the address to preselect.
+
+    The project's own ``client_email`` is folded in when Books does not
+    already offer it: it is an address a human attached to this card on
+    purpose, and dropping it would leave a hand-attached client unsendable.
+    It also becomes the default — the card's client is who the shop means
+    when they hit Send, whichever contact person Books happens to flag.
+
+    Returns the content with its recipients widened, and the default address
+    (None when there is nobody at all to send to).
+    """
+    content = await zoho_service.get_estimate_email_content(db, project.quote_id)
+    recipients = list(content["recipients"])
+    client_email = (project.client_email or "").strip()
+    if client_email and not any(r["email"].lower() == client_email.lower() for r in recipients):
+        recipients.insert(0, {"email": client_email, "name": project.client_name or "", "contact_person_id": ""})
+    default = client_email or (recipients[0]["email"] if recipients else None)
+    return {**content, "recipients": recipients}, default
+
+
+def _quote_email_http_error(e: Exception) -> HTTPException:
+    """Books' failures, mapped for the two quote-email routes.
+
+    The isinstance order is load-bearing: ZohoNotFound and
+    ZohoRequestRejected both subclass ZohoUpstreamError, so testing the base
+    first would swallow them both into a 502 and lose Books' own message —
+    which is what tells the user "this contact has no email address".
+    """
+    if isinstance(e, ZohoNotFound):
+        return HTTPException(status_code=404, detail=str(e))
+    if isinstance(e, ZohoRequestRejected):
+        return HTTPException(status_code=400, detail=str(e))
+    return HTTPException(status_code=502, detail=str(e))
+
+
+@router.get("/{project_id}/quote-email", response_model=AitoQuoteEmailContent)
+async def get_quote_email(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+):
+    """What Books would send if this quote were emailed right now.
+
+    Preview only. The send path deliberately re-reads all of this rather than
+    trusting whatever the client echoes back — see ``send_quote_email``.
+    """
+    project = await db.get(AitoProject, project_id)
+    if project is None or project.status == "deleted":
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.quote_id:
+        raise HTTPException(status_code=404, detail="This project has no Zoho quote")
+    try:
+        content, default_email = await _quote_email_content(db, project)
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito quote email prefill failed for project %s: %s", project_id, e)
+        raise _quote_email_http_error(e) from e
+    return AitoQuoteEmailContent(
+        subject=content["subject"],
+        body=content["body"],
+        recipients=[AitoQuoteEmailRecipient(**r) for r in content["recipients"]],
+        default_email=default_email,
     )
 
 
