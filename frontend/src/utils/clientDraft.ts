@@ -223,12 +223,17 @@ export function defaultClientDraft(id: string, name: string): ClientDraft {
  *  a field. `useNewProjectDraft` drops a client half that is missing any key it
  *  reads unguarded, and dropping a whole contact over two fields the user
  *  probably never used would be a worse trade than filling them. An
- *  unrecognised network is dropped rather than kept: the UI has no icon for it. */
+ *  unrecognised network is dropped rather than kept: the UI has no icon for
+ *  it. The handle is dropped along with it — the pairing invariant is atomic
+ *  everywhere else (the backend, `SocialInput`, every reachability gate), and
+ *  a network-less handle surviving here would enable Create only for the
+ *  server to 422 it, with the orphaned handle invisible until a pill click. */
 export function normaliseClientDraft(draft: ClientDraft): ClientDraft {
+  const socialNetwork = isSocialNetwork(draft.socialNetwork) ? draft.socialNetwork : null;
   return {
     ...draft,
-    socialNetwork: isSocialNetwork(draft.socialNetwork) ? draft.socialNetwork : null,
-    socialHandle: typeof draft.socialHandle === 'string' ? draft.socialHandle : '',
+    socialNetwork,
+    socialHandle: socialNetwork && typeof draft.socialHandle === 'string' ? draft.socialHandle : '',
   };
 }
 

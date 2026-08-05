@@ -315,8 +315,17 @@ describe('social network on the draft', () => {
     expect(repaired.socialHandle).toBe('');
   });
 
-  it('drops a network a newer build might have written', () => {
-    const draft = { ...defaultClientDraft('default-id', 'Walk-in'), socialNetwork: 'myspace' };
-    expect(normaliseClientDraft(draft as never).socialNetwork).toBeNull();
+  it('drops a network a newer build might have written, and the handle with it', () => {
+    // The pairing invariant is atomic everywhere else — a half-pair surviving
+    // here would enable Create only for the server to 422 it, with the
+    // orphaned handle invisible until a pill click.
+    const draft = {
+      ...defaultClientDraft('default-id', 'Walk-in'),
+      socialNetwork: 'myspace',
+      socialHandle: 'moana.3d',
+    };
+    const repaired = normaliseClientDraft(draft as never);
+    expect(repaired.socialNetwork).toBeNull();
+    expect(repaired.socialHandle).toBe('');
   });
 });
