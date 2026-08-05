@@ -3,7 +3,7 @@ import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useTranslation } from 'react-i18next';
-import { Check, Plane, Send } from 'lucide-react';
+import { Check, Plane, Send, ThumbsUp } from 'lucide-react';
 import { CardView } from './CardView';
 import { HoldButton } from './HoldButton';
 import type { ColumnMeta } from './columns';
@@ -59,8 +59,9 @@ function SortableCard({
   // per-project, and this component is already the one-per-project layer.
   // Hoisting it to the board would mean either one mutation per column (wrong
   // project) or a lookup by id (a second source of truth for which project a
-  // card is).
-  const markSent = useQuoteStatusMutation(project);
+  // card is). One hook for both quote buttons below — mark-sent and accept
+  // are the same transition endpoint fed a different status.
+  const quoteStatus = useQuoteStatusMutation(project);
 
   // Finish's counterpart to the Quote column's mark-sent: the board's only
   // other manual transition, and the only way to reach Done now that the
@@ -100,15 +101,37 @@ function SortableCard({
               // is the server's derived value (aito_board_rules.evaluate); the
               // frontend derives nothing of its own here.
               <HoldButton
-                onHold={() => markSent.mutate('sent')}
+                onHold={() => quoteStatus.mutate('sent')}
                 durationMs={500}
-                disabled={markSent.isPending}
+                disabled={quoteStatus.isPending}
                 label={t('aito.markSent')}
                 hint={t('aito.holdToConfirm')}
                 progress="perimeter"
                 className="p-1 -m-1 text-amber-400/70 hover:text-amber-400 hover:bg-amber-400/10 focus-visible:ring-amber-400/40 data-[holding=true]:text-amber-400"
               >
                 <Send className="relative w-3.5 h-3.5" />
+              </HoldButton>
+            )}
+            {project.column === 'waiting' && (
+              // Waiting's counterpart to the Quote column's mark-sent: the
+              // acceptance is what releases the card onto the work columns,
+              // so it belongs on the card for the same reason — the column
+              // can be cleared without opening anything. Accept only:
+              // declining is rarer and destructive-adjacent, and stays behind
+              // the detail panel with the rest of QuoteStatusActions. Same
+              // server-derived gate as devis — a card is in `waiting` exactly
+              // when its status is sent/viewed/expired, so no status check is
+              // re-derived here.
+              <HoldButton
+                onHold={() => quoteStatus.mutate('accepted')}
+                durationMs={500}
+                disabled={quoteStatus.isPending}
+                label={t('aito.acceptQuote')}
+                hint={t('aito.holdToConfirm')}
+                progress="perimeter"
+                className="p-1 -m-1 text-bambu-green/70 hover:text-bambu-green hover:bg-bambu-green/10 focus-visible:ring-bambu-green/40 data-[holding=true]:text-bambu-green"
+              >
+                <ThumbsUp className="relative w-3.5 h-3.5" />
               </HoldButton>
             )}
             {project.column === 'finish' && project.move_lock === null && (

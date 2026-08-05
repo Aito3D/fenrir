@@ -213,6 +213,69 @@ describe('board card actions — mark as sent', () => {
   });
 });
 
+describe('board card actions — accept quote', () => {
+  it('offers accept-quote on a card in the Waiting column', () => {
+    renderColumn(card({ column: 'waiting', quote_status: 'sent' }));
+    expect(screen.getByRole('button', { name: /accept quote/i })).toBeEnabled();
+  });
+
+  it('does not offer accept-quote in any other column', () => {
+    // Column/status pairs as the server derives them (aito_board_rules): a
+    // devis card has no settled-able quote, work columns hold an accepted one.
+    const cases = [
+      { column: 'devis', quote_status: null },
+      { column: 'scan', quote_status: 'accepted' },
+      { column: 'model', quote_status: 'accepted' },
+      { column: 'print', quote_status: 'accepted' },
+      { column: 'finish', quote_status: 'accepted' },
+    ] as const;
+    for (const over of cases) {
+      const { unmount } = renderColumn(card(over));
+      expect(screen.queryByRole('button', { name: /accept quote/i })).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('offers no accept-quote on a placeholder card', () => {
+    renderColumn(card({ id: -1, column: 'waiting', quote_status: 'sent' }));
+    expect(screen.queryByRole('button', { name: /accept quote/i })).not.toBeInTheDocument();
+  });
+
+  it('sends the accepted status only once the 500ms hold completes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Same reasoning as the mark-as-sent equivalent: hold the promise open by
+    // hand so the pending state is actually observable.
+    vi.spyOn(api, 'setAitoQuoteStatus').mockImplementation(() => new Promise(() => {}));
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderColumn(card({ column: 'waiting', quote_status: 'sent' }));
+      const button = screen.getByRole('button', { name: /accept quote/i });
+
+      await user.pointer({ keys: '[MouseLeft>]', target: button });
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(button).toBeEnabled();
+
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(button).toBeDisabled();
+
+      // The status literal, spelled out: the card and the panel share one
+      // mutation hook, so the only thing this button can get wrong on its own
+      // is which transition it fires.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(api.setAitoQuoteStatus).toHaveBeenCalledWith(12, { status: 'accepted' });
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+  });
+});
+
 describe('board card actions — mark as done', () => {
   it('offers mark-as-done on a released card in Finish', () => {
     renderColumn(card({ column: 'finish', move_lock: null }));
