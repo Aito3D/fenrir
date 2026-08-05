@@ -21,7 +21,11 @@ export interface PhoneInputProps {
   disabled?: boolean;
 }
 
-const options = COUNTRY_CODES.map((c) => ({ value: c.code, label: `${c.code} ${c.name}` }));
+// `label` (the dropdown row, and what the search filters on) keeps the country
+// name; `shortLabel` (the closed field) is the dialling code alone. The name
+// was never information once a code is picked — it only truncated mid-word
+// ("+689 French") and stole the width the national number actually needs.
+const options = COUNTRY_CODES.map((c) => ({ value: c.code, label: `${c.code} ${c.name}`, shortLabel: c.code }));
 
 // What a country code can look like mid-entry: an optional leading '+' and up
 // to 4 digits. `SearchableSelect` with `allowCustom` fires its onChange on
@@ -50,7 +54,7 @@ export function PhoneInput({
 
   return (
     <div className="flex gap-2">
-      <div className="w-36 flex-shrink-0">
+      <div className="w-24 flex-shrink-0">
         {/* SearchableSelect renders its own role="combobox" input, so it needs a
             real label of its own — otherwise it is a second, unnamed combobox
             sitting next to the client search. `id` lands on the inner input. */}
@@ -66,6 +70,9 @@ export function PhoneInput({
           }}
           options={options}
           allowCustom
+          // The field is now too narrow for its own rows on purpose, so the
+          // menu sizes to the country names instead of to the field.
+          menuWidth="auto"
           disabled={disabled}
         />
       </div>

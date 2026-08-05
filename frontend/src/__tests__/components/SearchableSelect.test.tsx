@@ -105,6 +105,53 @@ describe('SearchableSelect keyboard navigation', () => {
     expect(screen.getByRole('option', { name: 'SUNLU' })).toBeInTheDocument();
   });
 
+  // `shortLabel` splits what the CLOSED control shows from what the list rows
+  // show, so a control can be deliberately too narrow for its own options
+  // (PhoneInput's dialling-code picker: `+689` in the field, `+689 French
+  // Polynesia` in the menu). The whole point is that shortening the field
+  // costs nothing searchable, so the row text and the filter are pinned here
+  // together — a `shortLabel` that leaked into either would shrink the menu
+  // and silently kill search-by-country-name in all three phone forms.
+  describe('shortLabel', () => {
+    const CODES = [
+      { value: '+33', label: '+33 France', shortLabel: '+33' },
+      { value: '+689', label: '+689 French Polynesia', shortLabel: '+689' },
+      { value: '+1', label: '+1 United States' }, // no shortLabel: the other 6 call sites
+    ];
+
+    it('shows the short form in the closed control and the full label in the list', async () => {
+      const user = userEvent.setup();
+      render(<SearchableSelect value="+689" onChange={vi.fn()} options={CODES} allowCustom />);
+      const input = screen.getByRole('combobox');
+
+      expect(input).toHaveValue('+689');
+
+      await user.click(input);
+      expect(screen.getByRole('option', { name: '+689 French Polynesia' })).toBeInTheDocument();
+      // The open placeholder keeps showing the SHORT form: it sits in the same
+      // narrow field the closed control does, so the full label would just
+      // truncate there.
+      expect(input).toHaveAttribute('placeholder', '+689');
+    });
+
+    it('still filters on the full label, so a country name finds its code', async () => {
+      const user = userEvent.setup();
+      render(<SearchableSelect value="+689" onChange={vi.fn()} options={CODES} allowCustom />);
+      const input = screen.getByRole('combobox');
+
+      await user.click(input);
+      await user.type(input, 'France');
+
+      expect(screen.getByRole('option', { name: '+33 France' })).toBeInTheDocument();
+      expect(screen.queryByRole('option', { name: '+1 United States' })).not.toBeInTheDocument();
+    });
+
+    it('falls back to the label when an option defines no shortLabel', () => {
+      render(<SearchableSelect value="+1" onChange={vi.fn()} options={CODES} allowCustom />);
+      expect(screen.getByRole('combobox')).toHaveValue('+1 United States');
+    });
+  });
+
   it('allowCustom: Enter picks the "use custom" row when nothing matches', async () => {
     const user = userEvent.setup();
     const { onChange, input } = setup({ allowCustom: true });

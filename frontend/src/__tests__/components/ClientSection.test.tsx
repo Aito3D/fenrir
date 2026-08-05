@@ -214,6 +214,12 @@ describe('ClientSection', () => {
     await user.click(countryInput);
     await user.type(countryInput, 'France');
     expect(onChange).not.toHaveBeenCalled();
+    // The positive half, and the reason this test is named after searching BY
+    // NAME: the picker now shows only the dialling code once one is chosen
+    // (SearchableSelect's `shortLabel`), so if that short form ever leaked
+    // into the option rows the filter would match nothing here and the
+    // assertion above would still pass while country search quietly died.
+    expect(screen.getByRole('option', { name: '+33 France' })).toBeInTheDocument();
   });
 
   it('resets the whole draft to the default client', async () => {

@@ -58,9 +58,15 @@ export function ShippingFields({ value, onChange, services, catalogueResolved, c
         <FieldError messageKey={errors.island} />
       </div>
 
+      {/* Wraps rather than overflows: in the detail panel's 20rem column the
+          service name and the rate control cannot share a line, and a
+          non-wrapping row put the input on top of the Zoho rate text.
+          `basis-32` (not the `basis-0` that bare `flex-1` implies) is what
+          makes the wrap happen at all — a zero-basis item never overflows its
+          line, so the row would never break. */}
       {service && (
-        <div className="flex items-center gap-3 rounded-lg border border-sky-400/30 bg-sky-400/[0.07] px-3 py-2">
-          <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-sky-400/30 bg-sky-400/[0.07] px-3 py-2">
+          <div className="min-w-0 flex-1 basis-32">
             <p className="truncate text-sm font-semibold text-white">{service.name}</p>
             {zohoRate !== null ? (
               <p className="text-xs text-bambu-gray">
@@ -70,29 +76,39 @@ export function ShippingFields({ value, onChange, services, catalogueResolved, c
               <p className="text-xs text-amber-400">{t('aito.shippingNoRate')}</p>
             )}
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <label htmlFor="aito-shipping-rate" className="sr-only">
               {t('aito.shippingRate')}
             </label>
-            <input
-              id="aito-shipping-rate"
-              type="number"
-              min={0}
-              inputMode="numeric"
-              value={value.price ?? ''}
-              onChange={(e) =>
-                onChange({
-                  ...value,
-                  price: e.target.value === '' ? null : Number(e.target.value),
-                  // Sticky: once the operator has taken the price over, a later
-                  // island change must not quietly overwrite it.
-                  priceEdited: true,
-                })
-              }
-              className={`${inputCls} w-28 text-right`}
-            />
+            {/* The width lives on this wrapper, never as `w-28` on the input:
+                `inputCls` already carries `w-full`, and Tailwind emits `.w-full`
+                AFTER `.w-28` in the sheet, so the narrow class silently lost and
+                the field stretched to its intrinsic `type=number` size — which
+                is what painted it over the rate text. */}
+            <div className="w-24">
+              <input
+                id="aito-shipping-rate"
+                type="number"
+                min={0}
+                inputMode="numeric"
+                autoComplete="off"
+                value={value.price ?? ''}
+                onChange={(e) =>
+                  onChange({
+                    ...value,
+                    price: e.target.value === '' ? null : Number(e.target.value),
+                    // Sticky: once the operator has taken the price over, a later
+                    // island change must not quietly overwrite it.
+                    priceEdited: true,
+                  })
+                }
+                className={`${inputCls} text-right`}
+              />
+            </div>
             {value.priceEdited && (
-              <span className="text-[11px] italic text-bambu-gray">{t('aito.shippingRateEdited')}</span>
+              <span className="whitespace-nowrap text-[11px] italic text-bambu-gray">
+                {t('aito.shippingRateEdited')}
+              </span>
             )}
             {value.priceEdited && zohoRate !== null && (
               <button
@@ -117,6 +133,18 @@ export function ShippingFields({ value, onChange, services, catalogueResolved, c
           <input
             id="aito-shipping-first"
             type="text"
+            // `new-password`, not `off`: Chrome ignores `off` on anything that
+            // looks like a name or a phone and offers its saved-address list
+            // anyway, which lands right on top of the field below. Same idiom
+            // `IslandCombobox` and `PhoneInput` already use for the same reason.
+            autoComplete="new-password"
+            // The server caps both name columns at 100 (`AitoShippingInput`),
+            // while a client name may be 200 — and `splitRecipientName` puts
+            // everything but the last token in the first name, so a seeded
+            // value can arrive over the limit without anyone typing. The cap
+            // belongs here because the only signal for breaching it server-side
+            // is a 422 behind a generic "save failed" toast.
+            maxLength={100}
             value={value.firstName}
             onChange={(e) => onChange({ ...value, firstName: e.target.value })}
             onBlur={(e) =>
@@ -142,6 +170,8 @@ export function ShippingFields({ value, onChange, services, catalogueResolved, c
           <input
             id="aito-shipping-last"
             type="text"
+            autoComplete="new-password"
+            maxLength={100}
             value={value.lastName}
             onChange={(e) => onChange({ ...value, lastName: e.target.value })}
             onBlur={(e) =>

@@ -5,6 +5,11 @@ import { ChevronDown } from 'lucide-react';
 export interface SearchableSelectOption {
   value: string;
   label: string;
+  /** What the closed control shows when this option is selected, when that
+   *  wants to be shorter than the row in the list — a dialling code picker
+   *  shows `+689` in a narrow field but still lists `+689 French Polynesia`
+   *  so the country is readable and searchable. Defaults to `label`. */
+  shortLabel?: string;
 }
 
 interface SearchableSelectProps {
@@ -17,6 +22,10 @@ interface SearchableSelectProps {
   disabled?: boolean;
   /** id for the inner text input so an external <label htmlFor> can target it. */
   id?: string;
+  /** 'trigger' (default) matches the menu to the control's width. 'auto' lets
+   *  it size to its rows instead, never narrower than the control — for a
+   *  control deliberately too narrow for its own options (see `shortLabel`). */
+  menuWidth?: 'trigger' | 'auto';
 }
 
 /** Lightweight searchable dropdown — text input + chevron + filtered list of
@@ -33,6 +42,7 @@ export function SearchableSelect({
   placeholderKey,
   disabled,
   id,
+  menuWidth = 'trigger',
 }: SearchableSelectProps) {
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
@@ -75,7 +85,11 @@ export function SearchableSelect({
     };
   }, [open]);
 
-  const selectedLabel = options.find((o) => o.value === value)?.label ?? value;
+  // The closed control shows `shortLabel` when the option defines one; the
+  // list rows below always show the full `label`, and the filter matches
+  // against it, so shortening the control never costs a searchable word.
+  const selected = options.find((o) => o.value === value);
+  const selectedLabel = selected ? (selected.shortLabel ?? selected.label) : value;
   const displayValue = open ? search : selectedLabel;
   // While the dropdown is open and nothing has been typed, keep the current
   // selection visible as a bright placeholder instead of blanking the field.
@@ -172,7 +186,9 @@ export function SearchableSelect({
           ref={listRef}
           role="listbox"
           id={`${baseId}-listbox`}
-          className="absolute z-50 left-0 right-0 mt-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg max-h-64 overflow-y-auto animate-dropdown-in"
+          className={`absolute z-50 left-0 mt-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg max-h-64 overflow-y-auto animate-dropdown-in ${
+            menuWidth === 'auto' ? 'w-max min-w-full max-w-[16rem]' : 'right-0'
+          }`}
         >
           {filteredOptions.length === 0 && !allowCustom && (
             <div className="px-3 py-2 text-sm text-bambu-gray">{t('inventory.noResults')}</div>
