@@ -1913,3 +1913,81 @@ async def test_urgent_404s_on_a_trashed_project(async_client):
 
     r = await async_client.patch(f"/api/v1/aito/{project_id}/urgent", json={"urgent": True})
     assert r.status_code == 404
+
+
+def test_social_pair_rejects_a_handle_without_a_network():
+    from pydantic import ValidationError
+
+    from backend.app.schemas.aito import AitoProjectCreate
+
+    with pytest.raises(ValidationError, match="client_social_network is required"):
+        AitoProjectCreate(
+            description="a job",
+            client_id="c1",
+            client_name="Client",
+            client_social_handle="aito.3d",
+        )
+
+
+def test_social_pair_rejects_an_unknown_network():
+    from pydantic import ValidationError
+
+    from backend.app.schemas.aito import AitoProjectCreate
+
+    with pytest.raises(ValidationError, match="client_social_network must be one of"):
+        AitoProjectCreate(
+            description="a job",
+            client_id="c1",
+            client_name="Client",
+            client_social_network="myspace",
+            client_social_handle="aito.3d",
+        )
+
+
+def test_social_blank_handle_clears_the_network():
+    from backend.app.schemas.aito import AitoProjectCreate
+
+    payload = AitoProjectCreate(
+        description="a job",
+        client_id="c1",
+        client_name="Client",
+        client_social_network="instagram",
+        client_social_handle="   ",
+    )
+    assert payload.client_social_network is None
+    assert payload.client_social_handle is None
+
+
+def test_social_handle_is_trimmed():
+    from backend.app.schemas.aito import AitoProjectCreate
+
+    payload = AitoProjectCreate(
+        description="a job",
+        client_id="c1",
+        client_name="Client",
+        client_social_network="messenger",
+        client_social_handle="  aito.3d  ",
+    )
+    assert payload.client_social_handle == "aito.3d"
+
+
+def test_update_without_social_keys_leaves_them_unset():
+    """The pairing validator must not mark the fields as set, or an ordinary
+    description edit would clear a stored handle through the route's
+    `model_dump(exclude_unset=True)`."""
+    from backend.app.schemas.aito import AitoProjectUpdate
+
+    payload = AitoProjectUpdate(description="just the text")
+    dumped = payload.model_dump(exclude_unset=True)
+    assert "client_social_network" not in dumped
+    assert "client_social_handle" not in dumped
+
+
+def test_update_clearing_the_handle_sets_both_keys():
+    """Clearing IS a mention, so both keys must be written as NULL."""
+    from backend.app.schemas.aito import AitoProjectUpdate
+
+    payload = AitoProjectUpdate(client_social_handle="")
+    dumped = payload.model_dump(exclude_unset=True)
+    assert dumped["client_social_network"] is None
+    assert dumped["client_social_handle"] is None
