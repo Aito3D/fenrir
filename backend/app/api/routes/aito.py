@@ -527,7 +527,13 @@ async def list_projects(
     stmt = (
         select(AitoProject)
         .where(AitoProject.status == "active")
-        .order_by(AitoProject.board_column, AitoProject.position, AitoProject.id)
+        # Urgent first WITHIN each column, and display-only: stored `position`
+        # values are untouched, so manual drag order still holds inside the
+        # urgent group and inside the normal group. The trade is that an
+        # urgent card cannot be dragged below a normal one — it snaps back on
+        # the next fetch. Rewriting `position` on flag would "fix" that by
+        # destroying the operator's ordering irreversibly, which is worse.
+        .order_by(AitoProject.board_column, AitoProject.urgent.desc(), AitoProject.position, AitoProject.id)
     )
     projects = list((await db.execute(stmt)).scalars().all())
     task_rows = await _tasks_by_project(db, [p.id for p in projects])

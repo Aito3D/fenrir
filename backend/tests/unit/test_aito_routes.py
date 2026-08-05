@@ -192,6 +192,30 @@ async def test_create_and_list(async_client):
 
 
 @pytest.mark.asyncio
+async def test_board_lists_urgent_cards_first_within_their_column(async_client):
+    """Display ordering only. Manual drag order still holds inside the urgent
+    group and inside the normal group — stored `position` values are never
+    rewritten, which is what keeps a flag from destroying the operator's
+    ordering irreversibly."""
+    first = (await _create(async_client, description="first")).json()
+    second = (await _create(async_client, description="second")).json()
+    third = (await _create(async_client, description="third")).json()
+
+    # All three land in devis. Flag the two that are NOT at the top.
+    await async_client.patch(f"/api/v1/aito/{first['id']}/urgent", json={"urgent": True})
+    await async_client.patch(f"/api/v1/aito/{second['id']}/urgent", json={"urgent": True})
+
+    board = (await async_client.get("/api/v1/aito/")).json()
+    devis = [p for p in board if p["column"] == "devis"]
+
+    assert [p["urgent"] for p in devis] == [True, True, False]
+    # Within the urgent group, the stored position order is intact.
+    urgent_positions = [p["position"] for p in devis if p["urgent"]]
+    assert urgent_positions == sorted(urgent_positions)
+    assert devis[-1]["id"] == third["id"]
+
+
+@pytest.mark.asyncio
 async def test_move_reindexes_within_a_column(async_client):
     """Reordering is always allowed, whatever a card's lock: it changes
     priority, not state."""
