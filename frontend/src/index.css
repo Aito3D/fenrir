@@ -1212,6 +1212,19 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
   70%  { box-shadow: 0 0 0 7px rgb(239 68 68 / 0), 0 0 10px -2px rgb(239 68 68 / .7), var(--card-shadow); }
   100% { box-shadow: 0 0 0 0 rgb(239 68 68 / 0),  0 0 10px -2px rgb(239 68 68 / .7), var(--card-shadow); }
 }
+/* Cascade, both halves — get one without the other and the next repair is wrong:
+   1. This rule is UNLAYERED, and unlayered declarations outrank every Tailwind
+      utility layer whatever their specificity (Tailwind v4 is pulled in with a
+      bare `@import "tailwindcss"`, and this file declares no layer of its own).
+      That is why one class beats the card's `hover:border-bambu-green/40`
+      without any specificity padding — do not add some.
+   2. But an unlayered rule still LOSES to a LATER unlayered rule in this same
+      file, and `.card-shadow { box-shadow: var(--card-shadow) }` (further down)
+      is exactly that, on the very same element (CardView renders both classes).
+      The animated halo escapes it because a running animation outranks normal
+      declarations outright; the reduced-motion glow below is a plain
+      declaration and does NOT, so it is the one place that needs the doubled
+      class. */
 .animate-urgent-halo {
   /* --status-error, not the accent: urgency is a fixed semantic red and must
      not shift when the user changes theme colour. */
@@ -1219,9 +1232,12 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
   animation: urgent-halo 2.2s ease-out infinite;
 }
 /* The signal survives for anyone who has asked for less motion — as a static
-   glow rather than a pulsing one, exactly like .animate-invoiced-glow above. */
+   glow rather than a pulsing one, exactly like .animate-invoiced-glow above.
+   The class is repeated to outweigh the later `.card-shadow` (see above); the
+   rule stays here, beside the animation it replaces, rather than being exiled
+   below `.card-shadow` where nobody would find it. */
 @media (prefers-reduced-motion: reduce) {
-  .animate-urgent-halo {
+  .animate-urgent-halo.animate-urgent-halo {
     animation: none;
     box-shadow: 0 0 10px -1px rgb(239 68 68 / .6), var(--card-shadow);
   }
