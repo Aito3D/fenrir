@@ -115,6 +115,21 @@ def _map_contact(contact: dict) -> dict:
     }
 
 
+def _map_email_recipient(contact: dict) -> dict:
+    """One entry of a Books estimate-email ``to_contacts`` list.
+
+    ``name`` goes through ``normalize_display_name`` so a contact person
+    reads the same here as in the Aito client picker. Books splits the name
+    into first/last and some rows carry only one of the two, which that
+    helper already tolerates.
+    """
+    return {
+        "email": contact.get("email", ""),
+        "name": normalize_display_name(contact.get("first_name", ""), contact.get("last_name", "")),
+        "contact_person_id": contact.get("contact_person_id", ""),
+    }
+
+
 def _map_estimate_summary(estimate: dict) -> dict:
     """Zoho estimate -> the flat row the Aito quote picker lists."""
     return {
@@ -287,6 +302,38 @@ class ZohoService:
             # produces a blank print dialog and no clue why.
             raise ZohoUpstreamError("Zoho Books did not return a PDF")
         return response.content
+
+    async def get_estimate_email_content(self, db: AsyncSession, estimate_id: str) -> dict:
+        """The estimate's default email, as Books would send it right now.
+
+        Books nests this under ``data`` rather than a named key. ``to_contacts``
+        is the client's contact persons WITH their addresses — the only
+        authoritative answer to "who may receive this quote", which is why the
+        send path re-reads it rather than trusting what a caller echoes back.
+
+        Recipients with no address are dropped: Books includes contact persons
+        who have none, and offering one is offering a send that must fail.
+        """
+        data = (await self._request(db, "GET", f"/estimates/{estimate_id}/email")).get("data", {})
+        return {
+            "subject": data.get("subject", ""),
+            "body": data.get("body", ""),
+            "recipients": [_map_email_recipient(c) for c in (data.get("to_contacts") or []) if c.get("email")],
+        }
+
+    async def email_estimate(self, db: AsyncSession, estimate_id: str, *, to_mail_ids: list[str]) -> None:
+        """Email the estimate through Books, on the org's default template.
+
+        ``subject`` and ``body`` are deliberately absent from the body: Books
+        renders its own default estimate template when they are omitted, and
+        that is the one carrying the org's branding. Echoing back the HTML
+        ``get_estimate_email_content`` returned would round-trip the template
+        through this app for no gain and give us a way to corrupt it.
+
+        Books marks the estimate ``sent`` as a side effect. Callers must NOT
+        follow this with ``set_estimate_status`` or ``advance_estimate_status``.
+        """
+        await self._request(db, "POST", f"/estimates/{estimate_id}/email", json={"to_mail_ids": to_mail_ids})
 
     async def search_contacts(self, db: AsyncSession, query: str) -> list[dict]:
         payload = await self._request(db, "GET", "/contacts", params={"search_text": query})
