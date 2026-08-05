@@ -65,7 +65,7 @@ function readDraft(): PersistedDraft | null {
       tasks: parsed.tasks.map(normaliseTaskDraft),
       // Normalised, not key-checked: the two social fields arrived after this
       // blob format did, and `complete()` would drop the whole contact over
-      // them. CLIENT_KEYS below deliberately does NOT list them.
+      // them. CLIENT_KEYS above deliberately does NOT list them.
       client: (() => {
         const client = complete<ClientDraft>(parsed.client, CLIENT_KEYS);
         return client && normaliseClientDraft(client);

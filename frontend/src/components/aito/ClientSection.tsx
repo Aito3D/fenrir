@@ -26,8 +26,10 @@ export interface ClientSectionProps {
   onShippingChange: (next: ShippingDraft | null) => void;
 }
 
-/** The client half of the Aito new-project form: who the client is, plus the
- *  phone and email that will be written back to Zoho.
+/** The client half of the Aito new-project form: who the client is, the phone
+ *  and email that will be written back to Zoho, the social handle that never
+ *  leaves the card (see `ClientDraft.socialNetwork`'s own doc), and the
+ *  shipment.
  *
  *  Reset visibility keys off `touched`, never a value diff — a contact stored
  *  as a bare `89645864` re-formats to `+689-89645864`, so a value test would

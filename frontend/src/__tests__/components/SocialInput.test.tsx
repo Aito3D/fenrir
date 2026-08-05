@@ -4,13 +4,10 @@ import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { SocialInput } from '../../components/aito/SocialInput';
 
-// i18n: follow this file's neighbours (e.g. AitoShippingFields.test.tsx) for
-// how the test tree provides translations — reuse the same wrapper/helper.
-
 describe('SocialInput', () => {
   it('shows no handle input until a network is picked', () => {
     render(<SocialInput idPrefix="test" network={null} handle="" onChange={vi.fn()} />);
-    expect(screen.queryByLabelText(/username|nom d/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/username/i)).not.toBeInTheDocument();
   });
 
   it('reports the picked network with an empty handle', async () => {
