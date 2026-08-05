@@ -11,6 +11,7 @@ import { ProjectDoneAction } from './ProjectDoneAction';
 import { ProjectProgress } from './ProjectProgress';
 import { QuotePrintButton } from './QuotePrintButton';
 import { QuoteStatusActions } from './QuoteStatusActions';
+import { SendQuoteButton } from './SendQuoteButton';
 import {
   quoteStatusLabelKey,
   quoteStatusTone,
@@ -892,14 +893,17 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                     )}
                   </dl>
 
-                  {/* Print is the only action here. "Open in Zoho" was a
-                      second control doing exactly what the quote number above
-                      already does when you click it — two affordances for one
-                      destination, in a card six rows tall.
-                      Full width because it is alone: a lone half-width button
-                      leaves a ragged gap, and at this size the label is the
-                      target rather than the icon beside it. */}
-                  <QuotePrintButton project={project} withLabel className="w-full justify-center mt-3" />
+                  {/* Print and Send, side by side. Print used to be full width
+                      because it was the only action in this card; it no longer
+                      is, so the two share the row at flex-1 rather than
+                      leaving a ragged gap. "Open in Zoho" is still absent: the
+                      quote number above already goes there when clicked, and
+                      two affordances for one destination in a six-row card is
+                      what got it removed. */}
+                  <div className="flex gap-2 mt-3">
+                    <QuotePrintButton project={project} withLabel className="flex-1 justify-center" />
+                    <SendQuoteButton project={project} className="flex-1 justify-center" />
+                  </div>
                   </>
                   )}
 

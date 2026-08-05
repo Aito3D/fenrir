@@ -7,6 +7,7 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'project.created': 'aito.history.projectCreated',
   'quote.created': 'aito.history.quoteCreated',
   'quote.sent': 'aito.history.quoteSent',
+  'quote.emailed': 'aito.history.quoteEmailed',
   'quote.viewed': 'aito.history.quoteViewed',
   'quote.accepted': 'aito.history.quoteAccepted',
   'quote.declined': 'aito.history.quoteDeclined',
