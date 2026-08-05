@@ -93,6 +93,20 @@ class AitoClientSocialInput(BaseModel):
         """
         if not ({"client_social_network", "client_social_handle"} & self.model_fields_set):
             return self
+        if "client_social_handle" not in self.model_fields_set:
+            # The network was mentioned but the handle was not. A body like
+            # `{"client_social_network": "tiktok"}` alone would otherwise fall
+            # through to `update_project`'s `model_dump(exclude_unset=True)`,
+            # which only NULLs the fields it sees — so the network would
+            # change while the handle stayed unmentioned (untouched), leaving
+            # the merged row an orphaned network with the OLD handle still
+            # attached to it. Rejecting here is what makes "change the
+            # network, keep the handle" not a thing a partial update can do —
+            # the design's own words. A network explicitly cleared to null
+            # needs no handle to go with it.
+            if self.client_social_network is not None:
+                raise ValueError("client_social_handle is required when client_social_network is set")
+            return self
         handle = (self.client_social_handle or "").strip()
         if not handle:
             # A blank handle is not a channel. Dropping the network with it is

@@ -1991,6 +1991,31 @@ def test_update_clearing_the_handle_sets_both_keys():
     assert dumped["client_social_handle"] is None
 
 
+def test_update_network_alone_is_rejected():
+    """A body carrying only `client_social_network` is a network-without-handle
+    per the design doc's pairing invariant — without this check,
+    `update_project`'s `model_dump(exclude_unset=True)` would write the new
+    network and NULL any stored handle to match, since the handle key was
+    never mentioned."""
+    from pydantic import ValidationError
+
+    from backend.app.schemas.aito import AitoProjectUpdate
+
+    with pytest.raises(ValidationError, match="client_social_handle is required"):
+        AitoProjectUpdate(client_social_network="tiktok")
+
+
+def test_update_network_explicitly_cleared_alone_is_fine():
+    """Unlike a non-null network, `{"client_social_network": null}` alone
+    asserts nothing that needs a handle to go with it."""
+    from backend.app.schemas.aito import AitoProjectUpdate
+
+    payload = AitoProjectUpdate(client_social_network=None)
+    dumped = payload.model_dump(exclude_unset=True)
+    assert dumped["client_social_network"] is None
+    assert "client_social_handle" not in dumped
+
+
 @pytest.mark.asyncio
 async def test_create_accepts_a_social_handle_as_the_only_channel(async_client):
     r = await _create(
@@ -2050,3 +2075,19 @@ async def test_patch_without_social_keys_leaves_the_handle_alone(async_client):
     assert patched.status_code == 200
     assert patched.json()["client_social_handle"] == "moana.fb"
     assert patched.json()["client_social_network"] == "messenger"
+
+
+@pytest.mark.asyncio
+async def test_patch_network_alone_422s_instead_of_nulling_the_stored_handle(async_client):
+    """A PATCH body carrying only `client_social_network` must not silently
+    clear a stored handle it never mentioned."""
+    created = await _create(async_client, client_social_network="messenger", client_social_handle="moana.fb")
+    project_id = created.json()["id"]
+
+    r = await async_client.patch(f"/api/v1/aito/{project_id}", json={"client_social_network": "tiktok"})
+    assert r.status_code == 422
+
+    board = (await async_client.get("/api/v1/aito/")).json()
+    unchanged = next(p for p in board if p["id"] == project_id)
+    assert unchanged["client_social_handle"] == "moana.fb"
+    assert unchanged["client_social_network"] == "messenger"
