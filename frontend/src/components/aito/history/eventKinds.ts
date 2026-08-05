@@ -29,6 +29,8 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'sync.conflict': 'aito.history.syncConflict',
   'sync.status_rejected': 'aito.history.syncStatusRejected',
   'poll.reconciled': 'aito.history.pollReconciled',
+  'project.urgent.set': 'aito.history.projectUrgentSet',
+  'project.urgent.cleared': 'aito.history.projectUrgentCleared',
 };
 
 /** Red overrides the actor colour: a failure is the one thing worth finding
