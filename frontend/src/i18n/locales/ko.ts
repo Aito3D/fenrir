@@ -77,6 +77,7 @@ export default {
     socialHandlePlaceholder: 'username',
     socialRemove: 'SNS 제거',
     socialEdit: 'SNS 편집',
+    createClient: '새 고객 만들기',
     newClientTitle: '새 고객',
     companyName: '회사명',
     firstName: '이름',

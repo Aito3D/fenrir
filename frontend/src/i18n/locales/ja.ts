@@ -77,6 +77,7 @@ export default {
     socialHandlePlaceholder: 'username',
     socialRemove: 'SNSを削除',
     socialEdit: 'SNSを編集',
+    createClient: '新規取引先を作成',
     newClientTitle: '新規取引先',
     companyName: '会社名',
     firstName: '名',

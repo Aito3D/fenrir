@@ -67,6 +67,8 @@ export default {
     countryCode: "Код країни",
     phonePlaceholder: "87123456",
     emailPlaceholder: "client@example.com",
+    revertPhone: "Скасувати зміну телефону",
+    revertEmail: "Скасувати зміну ел. пошти",
     socialNetworkMessenger: "Messenger",
     socialNetworkInstagram: "Instagram",
     socialNetworkWhatsapp: "WhatsApp",

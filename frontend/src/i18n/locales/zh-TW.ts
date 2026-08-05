@@ -77,6 +77,7 @@ export default {
     socialHandlePlaceholder: 'username',
     socialRemove: '移除社群網路',
     socialEdit: '編輯社群網路',
+    createClient: '建立新客戶',
     newClientTitle: '新增客戶',
     companyName: '公司名稱',
     firstName: '名字',

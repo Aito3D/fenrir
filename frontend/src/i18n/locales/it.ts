@@ -77,6 +77,7 @@ export default {
     socialHandlePlaceholder: 'nome.utente',
     socialRemove: 'Rimuovi il social network',
     socialEdit: 'Modifica il social network',
+    createClient: 'Crea nuovo cliente',
     newClientTitle: 'Nuovo cliente',
     companyName: 'Ragione sociale',
     firstName: 'Nome',

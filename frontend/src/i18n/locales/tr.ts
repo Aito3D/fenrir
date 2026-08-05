@@ -77,6 +77,7 @@ export default {
     socialHandlePlaceholder: 'kullaniciadi',
     socialRemove: 'Sosyal ağı kaldır',
     socialEdit: 'Sosyal ağı düzenle',
+    createClient: 'Yeni müşteri oluştur',
     newClientTitle: 'Yeni müşteri',
     companyName: 'Şirket adı',
     firstName: 'Ad',

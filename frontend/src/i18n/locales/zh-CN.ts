@@ -77,6 +77,7 @@ export default {
     socialHandlePlaceholder: 'username',
     socialRemove: '移除社交网络',
     socialEdit: '编辑社交网络',
+    createClient: '创建新客户',
     newClientTitle: '新建客户',
     companyName: '公司名称',
     firstName: '名字',
