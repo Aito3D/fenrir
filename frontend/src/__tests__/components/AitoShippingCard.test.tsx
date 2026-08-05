@@ -39,6 +39,41 @@ describe('ShippingCard', () => {
     expect(screen.queryByText(/^shipping$/i)).not.toBeInTheDocument();
   });
 
+  // Add seeds the recipient from the project's client, exactly as the create
+  // drawer seeds itself from its client draft — the panel used to open this
+  // form blank and make the operator retype a name and a number the panel
+  // header is already showing.
+  it('prefills the recipient from the client when adding a shipment', async () => {
+    const withClient = {
+      ...unshipped,
+      client_name: 'Jean-Pierre DUPONT',
+      client_phone: '+689-89645864',
+      client_is_company: false,
+    } as unknown as AitoProject;
+    render(<ShippingCard project={withClient} currency="XPF" />);
+    await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
+    expect(screen.getByLabelText(/recipient first name/i)).toHaveValue('Jean-Pierre');
+    expect(screen.getByLabelText(/recipient last name/i)).toHaveValue('DUPONT');
+    expect(screen.getByLabelText(/country code/i)).toHaveValue('+689');
+    expect(screen.getByLabelText(/recipient phone/i)).toHaveValue('89645864');
+  });
+
+  // A company has no person to split, so only the phone carries over — same
+  // rule `emptyShippingDraft` applies for the drawer.
+  it('seeds only the phone when the client is a company', async () => {
+    const company = {
+      ...unshipped,
+      client_name: 'AITO 3D SARL',
+      client_phone: '+689-40123456',
+      client_is_company: true,
+    } as unknown as AitoProject;
+    render(<ShippingCard project={company} currency="XPF" />);
+    await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
+    expect(screen.getByLabelText(/recipient first name/i)).toHaveValue('');
+    expect(screen.getByLabelText(/recipient last name/i)).toHaveValue('');
+    expect(screen.getByLabelText(/recipient phone/i)).toHaveValue('40123456');
+  });
+
   it('opens the same four fields on edit', async () => {
     render(<ShippingCard project={shipped} currency="XPF" />);
     await userEvent.click(screen.getByRole('button', { name: /edit shipping/i }));

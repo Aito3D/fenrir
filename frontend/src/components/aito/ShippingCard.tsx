@@ -100,8 +100,33 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
     onError: () => showToast(t('aito.saveFailed'), 'error'),
   });
 
+  // Seeded from the project's stored client, exactly as the create drawer
+  // seeds itself from its live client draft (`ClientSection`): the recipient
+  // is the client on the overwhelming majority of parcels, and retyping a name
+  // and a number the panel header already carries — pinned above a column the
+  // operator has usually scrolled — is the busywork the drawer stopped asking
+  // for. `emptyShippingDraft` owns the rules — company contacts seed no name,
+  // a blank phone falls back to the default dialling code — so the two
+  // surfaces cannot drift on them.
+  //
+  // `?? false` reads a NULL `client_is_company` as a person, and that is a
+  // choice, not an oversight: the column arrived by ALTER TABLE, so rows
+  // predating it hold NULL, and seeding a company's name splits it into
+  // "AITO 3D / SARL". Prefilling anyway is still the better default — the
+  // recipient the operator sees rejoins to exactly the client name, and it is
+  // sitting in an editable field in front of them before anything is saved,
+  // whereas an empty field on a legacy project just reads as the feature
+  // being broken.
   const openAdd = () => {
-    setDraft(emptyShippingDraft(null));
+    const { countryCode, nationalNumber } = parsePhone(project.client_phone ?? '');
+    setDraft(
+      emptyShippingDraft({
+        name: project.client_name ?? '',
+        isCompany: project.client_is_company ?? false,
+        countryCode,
+        nationalNumber,
+      }),
+    );
     setEditing(true);
   };
   const openEdit = () => {

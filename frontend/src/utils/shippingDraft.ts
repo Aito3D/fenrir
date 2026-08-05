@@ -59,8 +59,18 @@ export function splitRecipientName(displayName: string): { firstName: string; la
  *  A COMPANY contact has no person to split, so the names start empty and the
  *  operator types whoever actually receives the parcel — which is the correct
  *  behaviour for a business anyway. Pre-filled values are a starting point,
- *  never a binding: editing them never writes back to the Zoho contact. */
-export function emptyShippingDraft(client: ClientDraft | null): ShippingDraft {
+ *  never a binding: editing them never writes back to the Zoho contact.
+ *
+ *  The parameter is a `Pick` of `ClientDraft` rather than the draft itself:
+ *  the create drawer has a live draft to hand over, but `ShippingCard` on the
+ *  detail panel has only the project's stored `client_*` columns, and it
+ *  should not have to fake the drawer's `touched`/`original` bookkeeping —
+ *  which means nothing there — just to seed four fields. Keeping it a `Pick`
+ *  (rather than a hand-written shape) is what makes a later rename in
+ *  `ClientDraft` a compile error here instead of a silently dead seed. */
+export function emptyShippingDraft(
+  client: Pick<ClientDraft, 'name' | 'isCompany' | 'countryCode' | 'nationalNumber'> | null,
+): ShippingDraft {
   const person = client && !client.isCompany ? splitRecipientName(client.name) : { firstName: '', lastName: '' };
   return {
     island: '',
