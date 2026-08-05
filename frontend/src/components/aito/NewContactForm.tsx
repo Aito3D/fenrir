@@ -47,19 +47,18 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
   const hasName = hasCompany || (firstName.trim().length > 0 && lastName.trim().length > 0);
   const preview = hasCompany ? companyName.trim() : formatDisplayName(firstName, lastName);
 
-  // Required here, but NOT in the shared validator: ClientSection uses
-  // validatePhone to edit an existing client, where an empty value is valid and
-  // clearing a number is a supported edit.
-  const phoneError = nationalNumber.replace(/\D/g, '')
-    ? validatePhone({ countryCode, nationalNumber })
-    : 'aito.phoneRequired';
+  const phoneError = validatePhone({ countryCode, nationalNumber });
   const emailError = validateEmail(email);
+  // Neither field is required on its own, but the drawer (and the backend's
+  // project-create route) refuse a client with no way to reach them — so the
+  // same phone-OR-email rule applies here, surfaced as an always-visible hint
+  // rather than a per-field error.
+  const reachable = nationalNumber.replace(/\D/g, '') !== '' || email.trim() !== '';
   const visibleErrors = maskVisibleErrors({ phone: phoneError, email: emailError }, blurred);
   // The button gates on what the user can SEE, the submit handler on what is
-  // actually true — so a disabled button always has a message beside it, and an
-  // untouched empty phone reveals its message on the first press instead of
-  // disabling the button with no explanation.
-  const canSubmit = hasName && !visibleErrors.phone && !visibleErrors.email;
+  // actually true — so a disabled button always has a message beside it
+  // (`reachable` may gate too because its hint is never masked).
+  const canSubmit = hasName && reachable && !visibleErrors.phone && !visibleErrors.email;
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -83,7 +82,7 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
         // computed before this call, so the guard below re-checks the raw
         // errors rather than re-reading it.
         setBlurred({ phone: true, email: true });
-        if (!hasName || phoneError || emailError) return;
+        if (!hasName || !reachable || phoneError || emailError) return;
         setError(null);
         createMutation.mutate();
       }}
@@ -147,11 +146,10 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
 
         <div>
           <label htmlFor="aito-new-phone" className={labelCls}>
-            {t('aito.clientPhone')} <span className="text-status-error">*</span>
+            {t('aito.clientPhone')}
           </label>
           <PhoneInput
             id="aito-new-phone"
-            required
             countryCode={countryCode}
             nationalNumber={nationalNumber}
             invalid={visibleErrors.phone !== null}
@@ -182,6 +180,8 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
           />
           <FieldError messageKey={visibleErrors.email} />
         </div>
+
+        {!reachable && <p className="text-xs text-bambu-gray">{t('aito.ruleClientContact')}</p>}
 
         {error && <p className="text-sm text-status-error">{error}</p>}
       </div>

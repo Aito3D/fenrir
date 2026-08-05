@@ -100,8 +100,7 @@ describe('NewContactForm', () => {
     await user.clear(screen.getByLabelText(/^email/i));
     await user.type(screen.getByLabelText(/^email/i), 'hi@acme.pf');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    // The phone is empty but never blurred, so its error stays masked: a real
-    // but invisible error must not disable the button.
+    // The phone is empty, but an email alone makes the client reachable.
     expect(screen.getByRole('button', { name: /create client/i })).toBeEnabled();
   });
 
@@ -117,7 +116,7 @@ describe('NewContactForm', () => {
     expect(onCreated).not.toHaveBeenCalled();
   });
 
-  it('blocks submission with an empty phone and reveals the requirement on submit', async () => {
+  it('blocks submission when the client has neither a phone nor an email', async () => {
     let called = false;
     server.use(
       http.post('/api/v1/zoho/contacts', () => {
@@ -129,39 +128,28 @@ describe('NewContactForm', () => {
     render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
     await user.type(screen.getByLabelText(/company name/i), 'ACME SARL');
 
-    // A name alone used to be enough; the phone is required now.
+    // The phone alone is not required, but some way to reach the client is —
+    // the same rule the drawer and the backend enforce.
+    expect(screen.getByText(/needs a phone or an email/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /create client/i })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: /create client/i }));
-    expect(screen.getByRole('alert')).toHaveTextContent(/required/i);
     expect(called).toBe(false);
   });
 
-  it('accepts the submission once a valid phone is supplied', async () => {
+  it('accepts the submission with an email and no phone', async () => {
     const onCreated = vi.fn();
     const user = userEvent.setup();
     render(<NewContactForm onCancel={vi.fn()} onCreated={onCreated} />);
     await user.type(screen.getByLabelText(/company name/i), 'ACME SARL');
-    await user.click(screen.getByRole('button', { name: /create client/i }));
-    expect(screen.getByRole('alert')).toHaveTextContent(/required/i);
-
-    await user.type(screen.getByLabelText(/^phone/i), '87123456');
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText(/^email/i), 'hi@acme.pf');
+    expect(screen.queryByText(/needs a phone or an email/i)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /create client/i }));
     await waitFor(() => expect(onCreated).toHaveBeenCalled());
   });
 
-  it('reports the length error, not the required error, for a short phone', async () => {
-    const user = userEvent.setup();
+  it('does not mark the phone field as required', () => {
     render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
-    await user.type(screen.getByLabelText(/company name/i), 'ACME SARL');
-    await user.type(screen.getByLabelText(/^phone/i), '12');
-    await user.tab();
-    expect(screen.getByRole('alert')).toHaveTextContent(/4 and 14 digits/i);
-    expect(screen.getByRole('alert')).not.toHaveTextContent(/required/i);
-  });
-
-  it('marks the phone field as required', () => {
-    render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
-    expect(screen.getByLabelText(/^phone/i)).toHaveAttribute('aria-required', 'true');
+    expect(screen.getByLabelText(/^phone/i)).not.toHaveAttribute('aria-required');
   });
 
   it('rejects a non-digit phone submitted via Enter and never calls the API', async () => {
@@ -177,12 +165,13 @@ describe('NewContactForm', () => {
     render(<NewContactForm onCancel={vi.fn()} onCreated={onCreated} />);
     await user.type(screen.getByLabelText(/company name/i), 'ACME SARL');
     // Typing a non-digit value like "n/a" leaves the phone field non-empty by
-    // `.trim()` but empty once stripped to digits. Enter submits the form
+    // `.trim()` but empty once stripped to digits, so the client counts as
+    // having no phone (and no email) at all. Enter submits the form
     // implicitly without blurring the field, which is exactly the path a
     // mouse click on the button does not take.
     await user.type(screen.getByLabelText(/^phone/i), 'n/a');
     await user.keyboard('{Enter}');
-    expect(screen.getByRole('alert')).toHaveTextContent(/required/i);
+    expect(screen.getByText(/needs a phone or an email/i)).toBeInTheDocument();
     expect(called).toBe(false);
     expect(onCreated).not.toHaveBeenCalled();
   });
