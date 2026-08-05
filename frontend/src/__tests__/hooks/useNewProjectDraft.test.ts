@@ -161,4 +161,31 @@ describe('useNewProjectDraft', () => {
     unmount();
     expect(localStorage.getItem('aito.newProjectDraft.v1')).toBeNull();
   });
+
+  it('restores a stored client written before the social fields existed', () => {
+    const client = {
+      id: 'c1',
+      name: 'Moana',
+      isDefault: false,
+      isCompany: false,
+      countryCode: '+689',
+      nationalNumber: '87123456',
+      email: '',
+      touched: { phone: false, email: false },
+      blurred: { phone: false, email: false },
+      original: { phone: '+689-87123456', email: '', phoneField: 'mobile' },
+    };
+    localStorage.setItem(
+      'aito.newProjectDraft.v1',
+      JSON.stringify({ tasks: [], client, summaryText: '', summaryEdited: false, summarySignature: '' }),
+    );
+
+    const { result } = renderHook(() => useNewProjectDraft());
+
+    // The client half survives — the two new keys are filled, not treated as a
+    // missing half that drops the whole contact.
+    expect(result.current.initial?.client?.name).toBe('Moana');
+    expect(result.current.initial?.client?.socialNetwork).toBeNull();
+    expect(result.current.initial?.client?.socialHandle).toBe('');
+  });
 });

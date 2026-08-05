@@ -29,6 +29,8 @@ const card = (over: Partial<AitoProject> = {}): AitoProject => ({
   client_phone: null,
   client_email: null,
   client_is_company: null,
+  client_social_network: null,
+  client_social_handle: null,
   quote_id: null,
   quote_number: null,
   quote_date: null,

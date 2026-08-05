@@ -347,6 +347,10 @@ export function placeholderProject(fields: {
     client_phone: fields.client_phone,
     client_email: fields.client_email,
     client_is_company: fields.client_is_company,
+    // Not sourced from `fields`: the picker and create-payload wiring land in
+    // a later task. Until then a placeholder card simply has no handle yet.
+    client_social_network: null,
+    client_social_handle: null,
     quote_id: null,
     quote_number: fields.quote_number ?? null,
     quote_date: null,

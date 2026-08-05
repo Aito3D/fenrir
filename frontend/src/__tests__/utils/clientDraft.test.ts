@@ -11,6 +11,8 @@ import {
   visibleClientDraftErrors,
   draftFromContact,
   defaultClientDraft,
+  isSocialNetwork,
+  normaliseClientDraft,
 } from '../../utils/clientDraft';
 import { COUNTRY_CODES, DEFAULT_COUNTRY_CODE } from '../../utils/countryCodes';
 
@@ -263,9 +265,58 @@ describe('defaultClientDraft', () => {
       countryCode: '+689',
       nationalNumber: '',
       email: '',
+      socialNetwork: null,
+      socialHandle: '',
       touched: { phone: false, email: false },
       blurred: { phone: false, email: false },
       original: { phone: '', email: '', phoneField: 'mobile' },
     });
+  });
+});
+
+describe('social network on the draft', () => {
+  it('defaults to no social channel', () => {
+    const draft = defaultClientDraft('default-id', 'Walk-in');
+    expect(draft.socialNetwork).toBeNull();
+    expect(draft.socialHandle).toBe('');
+  });
+
+  it('starts a contact-seeded draft with no social channel, since Zoho holds none', () => {
+    const draft = draftFromContact(
+      {
+        id: 'c1',
+        name: 'Moana',
+        email: 'moana@example.com',
+        phone: '',
+        mobile: '+689-87123456',
+        customer_sub_type: 'individual',
+      } as never,
+      'default-id',
+    );
+    expect(draft.socialNetwork).toBeNull();
+    expect(draft.socialHandle).toBe('');
+  });
+
+  it('recognises exactly the four supported networks', () => {
+    expect(isSocialNetwork('instagram')).toBe(true);
+    expect(isSocialNetwork('messenger')).toBe(true);
+    expect(isSocialNetwork('whatsapp')).toBe(true);
+    expect(isSocialNetwork('tiktok')).toBe(true);
+    expect(isSocialNetwork('myspace')).toBe(false);
+    expect(isSocialNetwork(undefined)).toBe(false);
+  });
+
+  it('fills the social fields on a draft written before they existed', () => {
+    const legacy = { ...defaultClientDraft('default-id', 'Walk-in') } as Record<string, unknown>;
+    delete legacy.socialNetwork;
+    delete legacy.socialHandle;
+    const repaired = normaliseClientDraft(legacy as never);
+    expect(repaired.socialNetwork).toBeNull();
+    expect(repaired.socialHandle).toBe('');
+  });
+
+  it('drops a network a newer build might have written', () => {
+    const draft = { ...defaultClientDraft('default-id', 'Walk-in'), socialNetwork: 'myspace' };
+    expect(normaliseClientDraft(draft as never).socialNetwork).toBeNull();
   });
 });

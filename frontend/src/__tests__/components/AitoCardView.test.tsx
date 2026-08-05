@@ -16,6 +16,8 @@ const project: AitoProject = {
   client_phone: '+689-87123456',
   client_email: 'hi@acme.pf',
   client_is_company: null,
+  client_social_network: null,
+  client_social_handle: null,
   quote_id: null,
   quote_number: null,
   quote_date: null,
