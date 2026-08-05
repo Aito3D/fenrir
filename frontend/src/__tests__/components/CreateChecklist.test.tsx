@@ -30,6 +30,14 @@ describe('CreateChecklist', () => {
     expect(line.closest('[data-state]')).toHaveAttribute('data-state', 'wait');
   });
 
+  it('shows the social handle as the contact when it is the only reachable channel', () => {
+    // Pins NewProjectDrawer's `clientContact={phone || email || socialHandle}`
+    // (drawer:555) — a social-only client (no phone, no email) must not show
+    // "Client reachable — " with nothing after the dash.
+    renderChecklist({ ...base, clientReachable: true, clientContact: 'moana.raiatea' });
+    expect(screen.getByText('Client reachable — moana.raiatea')).toBeInTheDocument();
+  });
+
   it('client line stays neutral until revealed, then goes miss', () => {
     const { rerender } = renderChecklist({ ...base });
     expect(screen.getByText('Client needs a phone, an email or a social network').closest('[data-state]')).toHaveAttribute('data-state', 'wait');

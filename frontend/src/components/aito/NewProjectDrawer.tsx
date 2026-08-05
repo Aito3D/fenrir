@@ -541,9 +541,9 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
             />
 
             {/* Wrapped for scoping, not styling: the client section's header
-                hint says the same "needs a phone or an email" this checklist
-                does, so a test (or a screen reader user scanning the rail)
-                needs the two to be distinguishable. */}
+                hint says the same "needs a phone, an email or a social
+                network" this checklist does, so a test (or a screen reader
+                user scanning the rail) needs the two to be distinguishable. */}
             <div data-testid="drawer-checklist">
               <CreateChecklist
                 taskCount={tasks.length}
@@ -552,7 +552,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
                 summaryState={summaryState}
                 clientAccountName={draft?.name ?? t('aito.noClient')}
                 clientReachable={clientReachable}
-                clientContact={phone || email}
+                clientContact={phone || email || socialHandle}
                 clientRevealed={clientRevealed}
                 shipping={shipping}
                 shippingIslandLabel={shippingIslandLabel}

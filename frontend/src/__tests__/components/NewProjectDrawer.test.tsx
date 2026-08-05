@@ -679,6 +679,23 @@ describe('NewProjectDrawer', () => {
     await waitFor(() => expect(createButton()).toHaveAttribute('aria-disabled', 'false'));
   });
 
+  it('shows the handle, not a blank contact, on the checklist for a social-only client', async () => {
+    // Regression for the checklist reading "Client reachable — " with nothing
+    // after the dash: `clientContact` must fall through to the social handle
+    // exactly like the section header's own hint does, for the one client
+    // this feature exists to serve — reachable on Instagram alone.
+    const user = userEvent.setup();
+    await renderDrawer();
+    await fillOneTask();
+    await user.click(clientHeader());
+    await user.click(screen.getByRole('radio', { name: 'Instagram' }));
+    await user.type(screen.getByLabelText(/username/i), 'moana.3d');
+
+    await waitFor(() =>
+      expect(within(screen.getByTestId('drawer-checklist')).getByText('Client reachable — moana.3d')).toBeInTheDocument(),
+    );
+  });
+
   it('sends the social pair on create', async () => {
     const user = userEvent.setup();
     const { onCreate } = await renderDrawer();

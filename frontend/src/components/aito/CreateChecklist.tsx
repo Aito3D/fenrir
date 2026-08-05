@@ -14,7 +14,7 @@ export interface CreateChecklistProps {
   summaryState: 'waiting' | 'generating' | 'ready';
   clientAccountName: string;
   clientReachable: boolean;
-  /** Contact channel shown when reachable (phone or email). */
+  /** Contact channel shown when reachable (phone, email or social handle). */
   clientContact: string;
   /** True once the client fields have been blurred (or a submit attempt happened). */
   clientRevealed: boolean;
