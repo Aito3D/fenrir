@@ -1724,3 +1724,14 @@ async def test_declining_preserves_the_acceptance_stamp(async_client):
 
     assert declined["quote_status"] == "declined"
     assert declined["quote_accepted_at"] == first
+
+
+@pytest.mark.asyncio
+async def test_new_projects_are_not_urgent(async_client):
+    """The flag is opt-in. A card nobody has touched must never glow."""
+    created = await _create(async_client)
+    assert created.status_code == 201
+    assert created.json()["urgent"] is False
+
+    listed = await async_client.get("/api/v1/aito/")
+    assert [p["urgent"] for p in listed.json()] == [False]

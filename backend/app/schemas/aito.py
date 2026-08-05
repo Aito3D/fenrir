@@ -269,6 +269,10 @@ class AitoProjectResponse(BaseModel):
     # comment on AitoProject.quote_invoiced. Separate from quote_sync_state ==
     # 'locked', which also covers tax-exclusive quotes that were never billed.
     quote_invoiced: bool
+    # A local board signal, never synced to Zoho — see the column comment on
+    # AitoProject.urgent. Display ordering only: the board sorts urgent cards
+    # to the top of their column without rewriting stored `position` values.
+    urgent: bool
     quote_sync_error: str | None
     # Why the status reconciler is blocked, if it is, and what Books read when
     # it was recorded — 'conflict' (both sides decided and differ) or

@@ -256,6 +256,9 @@ def _to_response(p: AitoProject, summary: TaskSummary, shipping_names: dict[str,
         # in memory and never flushed (see test_aito_board_summary.py) still
         # reads quote_invoiced as None here.
         quote_invoiced=bool(p.quote_invoiced),
+        # Mirrors quote_invoiced above: an in-memory AitoProject that never
+        # went through a DB flush leaves urgent as None too.
+        urgent=bool(p.urgent),
         quote_sync_error=p.quote_sync_error,
         quote_status_block=p.quote_status_block,
         quote_status_remote=p.quote_status_remote,

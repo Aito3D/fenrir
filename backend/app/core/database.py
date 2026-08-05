@@ -4361,6 +4361,13 @@ async def run_migrations(conn):
         f"ALTER TABLE aito_projects ADD COLUMN quote_invoiced BOOLEAN NOT NULL DEFAULT {_aito_invoiced_default}",
     )
 
+    # Migration: urgent flag on Aito projects (2026-08-04).
+    _aito_urgent_default = "0" if is_sqlite() else "false"
+    await _safe_execute(
+        conn,
+        f"ALTER TABLE aito_projects ADD COLUMN urgent BOOLEAN NOT NULL DEFAULT {_aito_urgent_default}",
+    )
+
     await _safe_execute(
         conn,
         "CREATE INDEX IF NOT EXISTS ix_aito_projects_quote_sync_state ON aito_projects (quote_sync_state)",

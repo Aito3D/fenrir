@@ -49,7 +49,8 @@
         "title": "free scan"
       }
     ],
-    "tasks_total": 0.0
+    "tasks_total": 0.0,
+    "urgent": false
   },
   {
     "client_email": null,
@@ -89,7 +90,8 @@
     "task_pending": [],
     "task_services": [],
     "task_steps": [],
-    "tasks_total": 0.0
+    "tasks_total": 0.0,
+    "urgent": false
   },
   {
     "client_email": null,
@@ -141,7 +143,8 @@
         "title": "c"
       }
     ],
-    "tasks_total": 3000.0
+    "tasks_total": 3000.0,
+    "urgent": false
   },
   {
     "client_email": null,
@@ -206,7 +209,8 @@
         "title": "b"
       }
     ],
-    "tasks_total": 8400.0
+    "tasks_total": 8400.0,
+    "urgent": false
   },
   {
     "client_email": null,
@@ -258,6 +262,7 @@
         "title": "d"
       }
     ],
-    "tasks_total": 0.0
+    "tasks_total": 0.0,
+    "urgent": false
   }
 ]
