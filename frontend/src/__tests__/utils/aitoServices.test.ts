@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { stagesWithWork } from '../../components/aito/services';
+import { summariseTasks } from '../../utils/aitoBoardRules';
 import type { TaskDraft } from '../../utils/taskDraft';
 
 /** A task carrying only the fields the rules read. `done` must list every
@@ -57,5 +58,43 @@ describe('stagesWithWork', () => {
 
   it('returns nothing for a project with no priced steps', () => {
     expect(stagesWithWork([task()])).toEqual([]);
+  });
+
+  it('applies the impression discount to the stage value', () => {
+    const result = stagesWithWork([task({ impressionCost: 10000, impressionDiscountPct: 10 })]);
+    expect(result).toEqual([
+      { column: 'print', stepsDone: 0, stepsTotal: 1, value: 9000, valueDone: 0 },
+    ]);
+  });
+
+  it('applies the impression discount to the ticked value too', () => {
+    const result = stagesWithWork([
+      task({
+        impressionCost: 10000,
+        impressionDiscountPct: 25,
+        done: { scan: false, modelisation: false, impression: true, usinage: false },
+      }),
+    ]);
+    expect(result).toEqual([
+      { column: 'print', stepsDone: 1, stepsTotal: 1, value: 7500, valueDone: 7500 },
+    ]);
+  });
+
+  it('leaves usinage undiscounted while discounting impression in the same stage', () => {
+    const result = stagesWithWork([
+      task({ impressionCost: 10000, usinageCost: 4000, impressionDiscountPct: 10 }),
+    ]);
+    expect(result).toEqual([
+      { column: 'print', stepsDone: 0, stepsTotal: 2, value: 13000, valueDone: 0 },
+    ]);
+  });
+
+  it('agrees with summariseTasks on a discounted project total', () => {
+    const tasks = [
+      task({ uid: 'a', scanCost: 3500, impressionCost: 10000, impressionDiscountPct: 10 }),
+      task({ uid: 'b', usinageCost: 4000 }),
+    ];
+    const stageValue = stagesWithWork(tasks).reduce((sum, s) => sum + s.value, 0);
+    expect(stageValue).toBe(summariseTasks(tasks).total);
   });
 });

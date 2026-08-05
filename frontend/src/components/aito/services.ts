@@ -80,10 +80,17 @@ export function stagesWithWork(tasks: readonly TaskDraft[]): StageWork[] {
         // null is "absent from the job"; 0 is "quoted free" and is a real step.
         if (cost === null) continue;
         entry.stepsTotal += 1;
-        entry.value += cost;
+        // `impressionCost` is stored PRE-discount (see TaskDraft), so the
+        // discount lands here — exactly as `summariseTasks` does it. Without
+        // this, the panel header's total (which reduces `value` over every
+        // stage) reported the pre-discount figure while the board's own
+        // `tasks_total` reported the discounted one, and neither the panel
+        // nor the StageRail matched what the Zoho quote actually says.
+        const value = service === 'impression' ? cost * (1 - (task.impressionDiscountPct ?? 0) / 100) : cost;
+        entry.value += value;
         if (task.done[service]) {
           entry.stepsDone += 1;
-          entry.valueDone += cost;
+          entry.valueDone += value;
         }
       }
     }

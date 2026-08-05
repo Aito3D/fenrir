@@ -55,12 +55,17 @@ export function Money({
   currency,
   className = '',
   countUp = false,
+  testId,
 }: {
   value: number;
   currency: string;
   className?: string;
   /** Animate numerically toward the settled value — headline totals only. */
   countUp?: boolean;
+  /** Same `testId` convention `ProjectProgress` follows — a headline total
+   *  that has to be asserted on needs a handle that does not depend on the
+   *  formatted string or on its position in the DOM. */
+  testId?: string;
 }) {
   // The displayed amount always tracks `value` live; the remount key uses the
   // SETTLED value so the tick animation plays once after typing pauses
@@ -69,10 +74,14 @@ export function Money({
   const settled = useSettledValue(value, 250);
   const counted = useCountUp(settled, countUp);
   if (countUp) {
-    return <span className={`tabular-nums ${className}`}>{formatMoney(counted, currency)}</span>;
+    return (
+      <span data-testid={testId} className={`tabular-nums ${className}`}>
+        {formatMoney(counted, currency)}
+      </span>
+    );
   }
   return (
-    <span key={settled} className={`tabular-nums animate-value-tick ${className}`}>
+    <span key={settled} data-testid={testId} className={`tabular-nums animate-value-tick ${className}`}>
       {formatMoney(value, currency)}
     </span>
   );

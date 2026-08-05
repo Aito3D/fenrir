@@ -211,6 +211,7 @@ function PanelHeader({
   currency,
   valueDone,
   valueTotal,
+  quotedTotal,
   stepsDone,
   stepsTotal,
 }: {
@@ -218,6 +219,16 @@ function PanelHeader({
   currency: string;
   valueDone: number;
   valueTotal: number;
+  /** What the client is actually charged: the discounted work value plus the
+   *  air freight. `build_line_items` puts the shipping line on the estimate,
+   *  so `estimate.total` includes it — a header that showed `valueTotal`
+   *  alone could never equal the quote on a shipped project.
+   *
+   *  Kept separate from `valueTotal` rather than folded into it because the
+   *  RING is a progress indicator over work anyone can tick, and freight is
+   *  not a step: adding it to the ring's denominator would stop a finished
+   *  project ever reading 100 %. */
+  quotedTotal: number;
   /** Summed from `stagesWithWork(tasks)`, NOT `project.steps_done`/`steps_total`.
    *  Those are server board fields that lag a local tick; stagesWithWork is
    *  local and updates the instant a step is ticked. Money and step count used
@@ -394,8 +405,9 @@ function PanelHeader({
           {/* -.02em: the total is the largest run of digits in the panel, and
               tabular figures at 1.5rem sit noticeably loose without it. */}
           <Money
+            testId="panel-header-total"
             currency={currency}
-            value={valueTotal}
+            value={quotedTotal}
             className="block text-[1.5rem] leading-tight font-semibold tracking-[-0.02em] text-white"
           />
           <span data-testid="panel-header-caption" className="block text-xs text-bambu-gray tabular-nums">
@@ -582,6 +594,9 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   const stageWork = stagesWithWork(tasks);
   const valueTotal = stageWork.reduce((sum, s) => sum + s.value, 0);
   const valueDone = stageWork.reduce((sum, s) => sum + s.valueDone, 0);
+  // The figure the quote states, not the work value — see PanelHeader's
+  // `quotedTotal` doc for why freight is added here and not to the ring.
+  const quotedTotal = valueTotal + (project.shipping_price ?? 0);
   // Same source as the money above, not project.steps_done/steps_total — see
   // PanelHeader's doc on why those two used to visibly disagree.
   const stepsDone = stageWork.reduce((sum, s) => sum + s.stepsDone, 0);
@@ -708,6 +723,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
           currency={currency}
           valueDone={valueDone}
           valueTotal={valueTotal}
+          quotedTotal={quotedTotal}
           stepsDone={stepsDone}
           stepsTotal={stepsTotal}
         />

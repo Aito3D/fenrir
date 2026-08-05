@@ -188,6 +188,59 @@ describe('ImportQuoteDrawer', () => {
     expect(screen.getByTestId('import-receipt-totals')).toBeInTheDocument();
   });
 
+  it('discounts the impression line in the receipt total', async () => {
+    // impression_cost arrives PRE-discount (aito_quote_import._build_task
+    // adopts the percent separately), so a 10 %-discounted 2 400 line is
+    // quoted at 2 160 — 3 000 + 2 160 + 200 = 5 360, not 5 600.
+    respondWith({
+      ...preview,
+      quote: { ...preview.quote, total: 5360 },
+      tasks: [
+        { ...preview.tasks[0], impression_discount_pct: 10 },
+        preview.tasks[1],
+      ],
+    });
+    const user = userEvent.setup();
+    render(<ImportQuoteDrawer onClose={vi.fn()} onImport={vi.fn()} />);
+    await pickTheQuote(user);
+
+    const totals = await screen.findByTestId('import-receipt-totals');
+    await waitFor(() => expect(totals.textContent?.replace(/\s/g, ' ')).toContain('5 360'));
+  });
+
+  it('counts the shipping line toward the project total, as the quote does', async () => {
+    // build_line_items puts the freight on the estimate, so quote.total
+    // includes it. Without it the receipt reported a project total that
+    // disagreed with the quote on every shipped import.
+    respondWith({
+      ...preview,
+      quote: { ...preview.quote, total: 8600 },
+      shipping: { island: 'raiatea', service: 'group_a', first_name: 'Marie', last_name: 'EXEMPLE', phone: '+689-87123456', price: 3000 },
+    });
+    const user = userEvent.setup();
+    render(<ImportQuoteDrawer onClose={vi.fn()} onImport={vi.fn()} />);
+    await pickTheQuote(user);
+
+    const totals = await screen.findByTestId('import-receipt-totals');
+    await waitFor(() => expect(totals.textContent?.replace(/\s/g, ' ')).toContain('8 600'));
+  });
+
+  it('stays quiet about totals when the project matches the quote', async () => {
+    // The mismatch caption used to fire on every discounted or shipped quote,
+    // reporting a disagreement the import had not actually introduced.
+    respondWith({
+      ...preview,
+      quote: { ...preview.quote, total: 8600 },
+      shipping: { island: 'raiatea', service: 'group_a', first_name: 'Marie', last_name: 'EXEMPLE', phone: '+689-87123456', price: 3000 },
+    });
+    const user = userEvent.setup();
+    render(<ImportQuoteDrawer onClose={vi.fn()} onImport={vi.fn()} />);
+    await pickTheQuote(user);
+
+    await screen.findByTestId('import-receipt-totals');
+    expect(screen.queryByTestId('import-total-mismatch')).not.toBeInTheDocument();
+  });
+
   it('reports a preview that could not be loaded', async () => {
     server.use(http.get('/api/v1/zoho/estimates/:id/preview', () => HttpResponse.json({ detail: 'x' }, { status: 502 })));
     const user = userEvent.setup();

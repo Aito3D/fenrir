@@ -35,10 +35,19 @@ function servicesOf(task: AitoTaskCreate): string[] {
   return enabled;
 }
 
+/** What the quote charges for one preview task.
+ *
+ *  `impression_cost` arrives PRE-discount — `_build_task` in
+ *  services/aito_quote_import.py adopts the line's percent into
+ *  `impression_discount_pct` rather than baking it into the cost, so the two
+ *  never double-count — which means the percent has to be applied here.
+ *  Mirrors `summarise` (backend/app/services/aito_board_rules.py) and
+ *  `summariseTasks` (utils/aitoBoardRules.ts); this preview cannot call
+ *  either, since it holds snake_case `AitoTaskCreate` payloads rather than
+ *  `TaskDraft`s. */
 function taskTotal(task: AitoTaskCreate): number {
-  return (
-    (task.scan_cost ?? 0) + (task.modelisation_cost ?? 0) + (task.impression_cost ?? 0) + (task.usinage_cost ?? 0)
-  );
+  const impression = (task.impression_cost ?? 0) * (1 - (task.impression_discount_pct ?? 0) / 100);
+  return (task.scan_cost ?? 0) + (task.modelisation_cost ?? 0) + impression + (task.usinage_cost ?? 0);
 }
 
 /** Pick a quote, see what it becomes, import it — the import workbench's twin
@@ -100,7 +109,12 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
 
   const currency = preview?.quote.currency_code || configuredCurrency;
   const currencyMismatch = Boolean(preview && preview.quote.currency_code !== configuredCurrency);
-  const projectTotal = (preview?.tasks ?? []).reduce((sum, task) => sum + taskTotal(task), 0);
+  // Plus the freight: `build_line_items` puts the shipping line on the
+  // estimate, so `quote.total` counts it and a task-only sum could never
+  // agree with the quote on a shipped import — which made the mismatch
+  // caption below fire on every one of them.
+  const projectTotal =
+    (preview?.tasks ?? []).reduce((sum, task) => sum + taskTotal(task), 0) + (preview?.shipping?.price ?? 0);
   const hasTasks = (preview?.tasks.length ?? 0) > 0;
   // A quote already backing an ACTIVE project is a hard block, not a warn:
   // the backend 409s the create anyway (_reject_duplicate_quote), so letting
@@ -329,7 +343,7 @@ export function ImportQuoteDrawer({ onClose, onImport, submitting = false }: Imp
                 <Money currency={currency} value={projectTotal} className="flex-shrink-0 font-bold text-bambu-green-light" />
               </div>
               {preview && projectTotal !== preview.quote.total && (
-                <p className="text-xs text-bambu-gray">
+                <p data-testid="import-total-mismatch" className="text-xs text-bambu-gray">
                   {t('aito.quoteTotals', {
                     project: projectTotal.toLocaleString(i18n.language),
                     quote: preview.quote.total.toLocaleString(i18n.language),

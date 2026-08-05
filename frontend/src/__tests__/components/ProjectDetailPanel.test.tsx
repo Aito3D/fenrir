@@ -276,6 +276,40 @@ describe('ProjectDetailPanel client fields', () => {
     expect(screen.getByTestId('panel-value-ring')).toHaveAttribute('aria-valuemax', '18000');
   });
 
+  it('discounts the impression line in the header total', async () => {
+    // impression_cost is stored PRE-discount, so a 10 %-discounted 10 000
+    // line is quoted at 9 000 — which is what the Zoho estimate says and so
+    // what the panel must say. The header used to sum the raw costs.
+    server.use(
+      http.get('/api/v1/aito/12/tasks', () =>
+        HttpResponse.json([{ ...mockTask, scan_cost: null, impression_cost: 10000, impression_discount_pct: 10 }]),
+      ),
+    );
+    show();
+    await waitFor(() => expect(screen.getByTestId('panel-value-ring')).toHaveAttribute('aria-valuemax', '9000'));
+    // `.textContent`, not toHaveTextContent: Intl renders a NARROW NO-BREAK
+    // SPACE as the group separator and the matcher's whitespace normalisation
+    // makes "$9 000.00" and "$9 000.00" look identical when they differ.
+    expect(screen.getByTestId('panel-header-total').textContent).toBe(formatMoney(9000, 'USD'));
+  });
+
+  it('adds the air freight to the header total, as the quote does', async () => {
+    // build_line_items appends the shipping line to the estimate, so
+    // estimate.total includes it. A header total that summed only the task
+    // stages could never equal the quote on a shipped project.
+    server.use(
+      http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([{ ...mockTask, scan_cost: 3500 }])),
+    );
+    show({ shipping_island: 'raiatea', shipping_service: 'group_a', shipping_price: 5000 });
+    await waitFor(() => expect(screen.getByTestId('panel-value-ring')).toHaveAttribute('aria-valuemax', '3500'));
+    // The RING stays on work value (shipping is not a step anyone ticks), but
+    // the money beside it is what the client is being charged.
+    // `.textContent`, not toHaveTextContent: Intl renders a NARROW NO-BREAK
+    // SPACE as the group separator and the matcher's whitespace normalisation
+    // makes "$9 000.00" and "$9 000.00" look identical when they differ.
+    expect(screen.getByTestId('panel-header-total').textContent).toBe(formatMoney(8500, 'USD'));
+  });
+
   it('gives the ring the same formatted amount the visible caption shows', async () => {
     // Regression: the ring's aria-label used to interpolate the raw number
     // (`t('aito.amountDone', { amount: `${done}` })`) while the caption right
