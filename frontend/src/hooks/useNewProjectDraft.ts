@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ClientDraft } from '../utils/clientDraft';
 import type { TaskDraft } from '../utils/taskDraft';
+import type { ShippingDraft } from '../utils/shippingDraft';
 
 const STORAGE_KEY = 'aito.newProjectDraft.v1';
 const SAVE_DEBOUNCE_MS = 400;
@@ -11,6 +12,9 @@ export interface PersistedDraft {
   summaryText: string;
   summaryEdited: boolean;
   summarySignature: string;
+  /** Optional so a blob written before shipping existed still reads: the key
+   *  is simply absent and reads as undefined. No storage version bump. */
+  shipping?: ShippingDraft | null;
 }
 
 export function clearNewProjectDraft(): void {

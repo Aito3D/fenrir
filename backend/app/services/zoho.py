@@ -6,19 +6,29 @@ a 401 from the Books API invalidates the cache and retries exactly once.
 """
 
 import asyncio
+import json
+import logging
 import re
 import time
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.services.aito_quote_export import Catalogue
+from backend.app.services.aito_shipping import SERVICE_LABELS, ShippingItem, merge_shipping_catalogue
+
+logger = logging.getLogger(__name__)
 
 _EXPIRY_MARGIN_SECONDS = 300
 _REQUIRED_KEYS = ("zoho_client_id", "zoho_client_secret", "zoho_refresh_token", "zoho_organization_id")
 DEFAULT_CONTACT_ID_FALLBACK = "66407000001237340"
 DEFAULT_CONTACT_NAME_FALLBACK = "Client de passage"
+
+# One refresh a day. The ids barely ever move and the rates move rarely; the
+# point of the cache is that opening the create drawer costs nothing.
+_SHIPPING_CACHE_TTL = timedelta(hours=24)
 
 # Statuses Books will only accept once the estimate has left draft. Its
 # lifecycle is draft -> sent -> accepted/declined and it enforces that: POSTing
@@ -444,13 +454,124 @@ class ZohoService:
         async def value(key: str, fallback: str) -> str:
             return (await get_setting(db, key)) or fallback
 
+        # get_catalogue sits on the sync worker's hot path, including
+        # _create_quote's fast path, which must make ZERO Zoho calls when a
+        # project has no priced service. Ownership (Catalogue.item_ids() ->
+        # is_foreign) only needs ids already learned, never a fresh rate, so
+        # a cache read here is correct — refresh=False is deliberate, not a
+        # placeholder for a warm-up this call never performs.
+        #
+        # This is also the ONLY route the sync worker has to the shipping
+        # catalogue, and it never warms it: the cache is warmed exclusively
+        # by the drawer's GET /aito/shipping/services endpoint. In practice
+        # that is fine — a shipping-carrying project implies the drawer was
+        # used to attach it, so the cache is warm by construction, and it
+        # stays warm because the settings row is durable and
+        # merge_shipping_catalogue never forgets an id once learned.
+        #
+        # But a project that gains shipping WITHOUT going through the drawer
+        # (e.g. a direct DB write, or a future entry point) has no
+        # self-healing route back to a warm cache — nothing here will ever
+        # fetch it. The sync task must detect an unresolved service itself
+        # (Catalogue.shipping_item_id raising KeyError) and warm the cache
+        # then, rather than assume this call already did.
+        shipping = await self.get_shipping_catalogue(db, refresh=False)
         return Catalogue(
             scan_item_id=await value("zoho_item_scan_id", "66407000006501192"),
             modelisation_item_id=await value("zoho_item_modelisation_id", "66407000006485001"),
             impression_item_id=await value("zoho_item_impression_id", "66407000006485012"),
             usinage_item_id=await value("zoho_item_usinage_id", "66407000006884825"),
             tax_id=await value("zoho_service_tax_id", "66407000009281008"),
+            shipping={service: item.item_id for service, item in shipping.items()},
         )
+
+    async def list_items(self, db: AsyncSession, search_text: str) -> list[dict]:
+        """Books items matching a free-text search. Used to resolve the
+        shipping catalogue by name; nothing else needs the item list."""
+        body = await self._request(db, "GET", "/items", params={"search_text": search_text})
+        return body.get("items") or []
+
+    async def get_shipping_catalogue(self, db: AsyncSession, *, refresh: bool = True) -> dict[str, ShippingItem]:
+        """The 5 "Livraison Avion" items, resolved from Books and cached.
+
+        Refreshed only when the cache is missing or more than
+        ``_SHIPPING_CACHE_TTL`` old, so opening the create drawer never costs a
+        Zoho call and the whole feature costs at most one request a day.
+
+        ``refresh=False`` means "answer from cache only, never touch the
+        network" — for callers that need OWNERSHIP (an id already learned is
+        still owned, cold cache or not), not an up-to-date rate. The default
+        stays ``True`` so the drawer's own endpoint keeps refreshing without
+        passing anything.
+
+        A failed refresh is NOT an error: the previous cache is returned
+        unchanged. Ids are never forgotten — see
+        ``aito_shipping.merge_shipping_catalogue`` for why that rule is
+        load-bearing rather than merely tidy. An empty dict means either Books
+        has never been reachable, or a refresh DID succeed but none of the
+        items it returned matched a known service name (e.g. the catalogue
+        was respelled) — callers must treat either case as "cannot push",
+        never as "no shipping services exist".
+        """
+        from backend.app.api.routes.settings import get_setting, set_setting
+
+        raw = await get_setting(db, "zoho_shipping_catalogue")
+        try:
+            cached = json.loads(raw) if raw else {}
+        except ValueError:
+            cached = {}
+        if not isinstance(cached, dict):
+            # Valid JSON but the wrong shape ("null", "[]", ...) — treat like
+            # no cache rather than raising on the .items() below.
+            cached = {}
+
+        checked_at = await get_setting(db, "zoho_shipping_catalogue_at")
+        fresh = False
+        if checked_at:
+            try:
+                age = datetime.now(timezone.utc).replace(tzinfo=None) - datetime.fromisoformat(checked_at)
+                fresh = age < _SHIPPING_CACHE_TTL
+            except (TypeError, ValueError):
+                # TypeError: fromisoformat parsed a tz-aware datetime (an
+                # offset-bearing string) and subtracting it from the naive
+                # `now` above raises TypeError, not ValueError.
+                fresh = False
+
+        if refresh and not fresh:
+            try:
+                items = await self.list_items(db, "Livraison Avion")
+            except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+                # Deliberately swallowed: a stale catalogue still bills
+                # correctly, and the drawer must open with Books unreachable.
+                logger.warning("Aito shipping catalogue refresh failed: %s", e)
+            else:
+                cached = merge_shipping_catalogue(cached, items)
+                await set_setting(db, "zoho_shipping_catalogue", json.dumps(cached))
+                await set_setting(
+                    db,
+                    "zoho_shipping_catalogue_at",
+                    datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+                )
+                # Deliberately no commit here: this getter is called from
+                # request handlers and the sync worker, neither of which is
+                # commit-neutral (create_project commits its whole unit of
+                # work exactly once; run_sync_once commits once per project).
+                # A commit hidden in here would persist a half-built caller
+                # transaction. The caller's own commit (or get_db's
+                # end-of-request commit) carries these two set_setting calls
+                # along with it; if the caller instead rolls back, the cache
+                # write is discarded and the next call just re-fetches from
+                # Zoho — benign, at worst one extra API call.
+
+        return {
+            service: ShippingItem(
+                item_id=entry["item_id"],
+                name=entry.get("name") or SERVICE_LABELS.get(service, ""),
+                rate=entry.get("rate"),
+            )
+            for service, entry in cached.items()
+            if isinstance(entry, dict) and entry.get("item_id")
+        }
 
     async def get_contact(self, db: AsyncSession, contact_id: str) -> dict:
         return _map_contact((await self._request(db, "GET", f"/contacts/{contact_id}")).get("contact", {}))

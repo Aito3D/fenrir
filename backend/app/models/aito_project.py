@@ -106,5 +106,25 @@ class AitoProject(Base):
     # watermark has moved, or when the last pull is more than 4 hours old.
     zoho_comments_watermark: Mapped[str | None] = mapped_column(String(30), nullable=True)
     zoho_comments_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Optional air freight to an outer island. `shipping_island IS NULL` IS the
+    # definition of "no shipping" — one field decides it, so no half-existing
+    # state is representable, and every read site tests that field and nothing
+    # else.
+    #
+    # The island KEY is stored, not its display label, so respelling a label in
+    # services/aito_shipping.py never orphans a project.
+    shipping_island: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Snapshotted rather than re-derived from the island on read, for the same
+    # reason the client fields are: a project must keep rendering — and keep
+    # billing — the service it was quoted at, even if the lookup table later
+    # moves that island into another group.
+    shipping_service: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    shipping_first_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    shipping_last_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # House format, +CC-XXXXXXXX, same as client_phone.
+    shipping_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Frozen at attach time exactly like a task's cost. The Zoho rate is a
+    # default, not a live figure: the quote bills what the operator was shown.
+    shipping_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

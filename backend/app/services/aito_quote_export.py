@@ -11,9 +11,10 @@ and ``parse_time_min`` for exactly that reason, and the round-trip tests are
 the guard.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from backend.app.services.aito_quote_import import service_for_sku
+from backend.app.services.aito_quote_import import parse_description, service_for_sku
+from backend.app.services.aito_shipping import island_for_label
 
 # Canonical service order — the same order the board renders badges in and the
 # order lines are emitted within a task. Mirrors SERVICE_RANK in
@@ -59,6 +60,22 @@ class ExportTask:
     modelisation_description: str | None = None
     impression_description: str | None = None
     usinage_description: str | None = None
+
+
+@dataclass(frozen=True)
+class ExportShipping:
+    """One project's air freight, flattened for export.
+
+    ``island_label`` is the display label, not the key: it is what the quote
+    prints and what ``aito_quote_import.island_for_label`` reads back.
+    """
+
+    service: str
+    island_label: str
+    first_name: str
+    last_name: str
+    phone: str
+    price: float
 
 
 def cost_of(task: ExportTask, service: str) -> float | None:
@@ -168,12 +185,28 @@ def build_description(service: str, task: ExportTask) -> str:
     return "\n".join(lines)
 
 
+def build_shipping_description(shipping: ExportShipping) -> str:
+    """The shipping line's description, in the same ``Label: valeur`` row
+    convention every other line uses — so ``parse_description`` reads it back
+    with no new parser. Recipient first, because that is what the freight desk
+    asks for; the island last, because it is the row the importer keys on and
+    a first occurrence wins there."""
+    name = f"{shipping.first_name} {shipping.last_name}".strip()
+    return "\n".join(
+        f"{label}: {value}"
+        for label, value in (("Nom", name), ("Téléphone", shipping.phone), ("Île", shipping.island_label))
+        if value
+    )
+
+
 _TITLE_MAX = 200
 
 
 @dataclass(frozen=True)
 class Catalogue:
-    """The Books item ids the four services map onto, plus the services tax.
+    """The Books item ids the four services map onto, plus the services tax,
+    plus the Books item ids the up-to-five "Livraison Avion" shipping
+    services map onto.
 
     Loaded from the settings table rather than hardcoded so a catalogue change
     in Books does not need a redeploy.
@@ -184,6 +217,12 @@ class Catalogue:
     impression_item_id: str
     usinage_item_id: str
     tax_id: str
+    # Service key -> Books item id for the five "Livraison Avion" items,
+    # resolved from Books and cached (services/zoho.get_shipping_catalogue).
+    # A default of {} keeps every existing construction valid; an EMPTY map
+    # means the catalogue has never resolved, which callers must treat as
+    # "cannot push" rather than "no shipping".
+    shipping: dict[str, str] = field(default_factory=dict)
 
     def item_id(self, service: str) -> str:
         return {
@@ -193,10 +232,36 @@ class Catalogue:
             "usinage": self.usinage_item_id,
         }[service]
 
+    def shipping_item_id(self, service: str) -> str:
+        """The Books item for one shipping service. Raises KeyError when the
+        catalogue has not resolved it.
+
+        ``aito_quote_sync.load_export_shipping`` pre-checks membership in
+        ``self.shipping`` before ever building an ``ExportShipping`` and
+        raises its own ``ShippingCatalogueUnavailable`` at that point instead
+        — so in practice this method's KeyError never actually fires;
+        ``build_line_items`` only calls it once ``load_export_shipping`` has
+        already proven the key exists. The pre-check, not a catch here, is
+        what turns an unresolved entry into a RETRYABLE pending state rather
+        than the terminal ``quote_sync_state = "error"`` the no-priced-service
+        guards elsewhere in ``aito_quote_sync.py`` use: an unresolved
+        catalogue entry means "not warm yet," not "never will be," and a
+        terminal state would strand the project permanently even after the
+        cache warms — the opposite of what the situation calls for.
+        """
+        return self.shipping[service]
+
     def item_ids(self) -> frozenset[str]:
-        """The four catalogue ids, for ownership checks that must not rely on
-        SKU prefixes alone — see ``is_foreign``."""
-        return frozenset({self.scan_item_id, self.modelisation_item_id, self.impression_item_id, self.usinage_item_id})
+        """Every catalogue id, for ownership checks that must not rely on SKU
+        prefixes alone — see ``is_foreign``. The shipping ids are in here for
+        exactly the same reason the four service ids are: without them our own
+        shipping line reads as foreign, and a foreign line is BOTH preserved by
+        line_item_id AND re-emitted from the project, duplicating a little more
+        on every push."""
+        return frozenset(
+            {self.scan_item_id, self.modelisation_item_id, self.impression_item_id, self.usinage_item_id}
+            | set(self.shipping.values())
+        )
 
 
 def impression_rate_quantity(task: ExportTask) -> tuple[float, int]:
@@ -212,9 +277,21 @@ def impression_rate_quantity(task: ExportTask) -> tuple[float, int]:
     return round((task.impression_cost or 0) / quantity), quantity
 
 
+def _existing_island(description: str | None) -> str | None:
+    """The island key an existing shipping line's `Île:` row reverse-lookups
+    to, or None when the row is absent or names an island we do not
+    recognise. Reuses the importer's own ``parse_description`` (no cycle:
+    ``aito_quote_import`` does not import this module) rather than a second
+    regex, so this reads a line exactly the way ``parse_shipping_line``
+    would — the two must never disagree about which lines are "ours"."""
+    labels, _ = parse_description(description, {"ile": "Île"})
+    return island_for_label(labels.get("ile"))
+
+
 def is_foreign(line: dict, catalogue: Catalogue) -> bool:
     """True for a line this app does not own: not a header, and not one of the
-    four AITO service items. Retail items, laser cuts, delivery fees.
+    items ``Catalogue.item_ids()`` claims — the four service items plus up to
+    five shipping items. Retail items, laser cuts, delivery fees.
 
     Ownership is checked two ways, either of which is enough to claim the
     line: the catalogue's item id, or the SKU prefix. The item id check comes
@@ -243,6 +320,7 @@ def build_line_items(
     tasks: list[ExportTask],
     existing_line_items: list[dict],
     catalogue: Catalogue,
+    shipping: ExportShipping | None = None,
 ) -> list[dict]:
     """The full ``line_items`` array for a create or update.
 
@@ -250,10 +328,39 @@ def build_line_items(
     always, even when it is the only task on the quote. The header is the ONLY
     place the task title is written now, so dropping it for a lone task would
     leave that quote naming its job nowhere and re-import titleless. A task
-    with no priced service emits no line at all, header included. Then every
-    foreign line, echoed as a bare ``line_item_id``, which Books expands back
-    into the untouched original. Omitting a line deletes it, so anything not
-    returned here is gone.
+    with no priced service emits no line at all, header included.
+
+    Then, when ``shipping`` is given, the project's air-freight line: it comes
+    right after the tasks and before any preserved foreign lines, carries no
+    ``header_name`` (the shipment belongs to no task, so no header should
+    claim it), and its description is ``build_shipping_description(shipping)``.
+
+    Then every foreign line, echoed as a bare ``line_item_id``, which Books
+    expands back into the untouched original. Omitting a line deletes it, so
+    anything not returned here is gone. This is also where an EXISTING
+    shipping line the project no longer describes gets handled: when
+    ``shipping`` is None, a line whose ``item_id`` is one of
+    ``catalogue.shipping.values()`` is echoed by ``line_item_id`` ONLY when
+    its ``Île:`` row does NOT reverse-lookup to a known island via
+    ``island_for_label`` (``_existing_island`` returns None) — the same
+    "could not resolve this line" case that makes ``parse_shipping_line``
+    decline to parse it on import, whether because it came from a quote whose
+    island this app does not know or because a human typed it into Books by
+    hand. A line whose island IS one we recognise is one this app could only
+    have written itself — ``is_foreign`` would not otherwise save it, since
+    the line is ours by item id — so a detach (clearing ``shipping_island``
+    and pushing with ``shipping=None``) is now allowed to drop it, and
+    omitting it here is exactly what deletes it in Books.
+
+    Trade made explicitly, since the two properties cannot both hold: the
+    spec's original claim that "a shipping line typed by hand directly in
+    Books survives our pushes" no longer holds unconditionally — it now only
+    survives when its island does not match one of ours. A well-formed
+    hand-typed line naming a real island is indistinguishable from a line
+    this app wrote and then detached, so it is treated as the latter. When
+    ``shipping`` is given, this whole echo is skipped, because the
+    freshly-built shipping line above already represents it and echoing the
+    old one too would leave the quote with two.
 
     A header is ``header_name`` stamped on every one of the task's item lines
     — that is how Books itself stores one (reference: quote DEV26-2506, where
@@ -290,8 +397,39 @@ def build_line_items(
                     **({"discount": discount} if discount else {}),
                 }
             )
+    if shipping is not None:
+        lines.append(
+            {
+                "item_id": catalogue.shipping_item_id(shipping.service),
+                "tax_id": catalogue.tax_id,
+                "unit": "Projet",
+                "rate": shipping.price,
+                "quantity": 1,
+                "description": build_shipping_description(shipping),
+                # No header_name on purpose: the shipment belongs to no task,
+                # and a header would file it under whichever task title
+                # happened to precede it.
+            }
+        )
+    shipping_ids = frozenset(catalogue.shipping.values())
     for line in sorted(existing_line_items, key=lambda item: item.get("item_order") or 0):
-        if is_foreign(line, catalogue) and line.get("line_item_id"):
+        if not line.get("line_item_id"):
+            continue
+        # A shipping line the project does not describe. It is OURS by item
+        # id, so `is_foreign` says no — but that alone does not mean it
+        # should survive. Echo it (rather than let it fall through and be
+        # deleted) only when its island is one `island_for_label` does NOT
+        # recognise: that is the "could not have authored this" case —
+        # imported from a quote naming an island we don't know, or typed by
+        # hand in Books. A recognised island means this app wrote the line,
+        # so a detach (the operator cleared the shipment and pushed with
+        # `shipping=None`) must be allowed to delete it, and simply not
+        # echoing it here is what does that.
+        if shipping is None and line.get("item_id") in shipping_ids:
+            if _existing_island(line.get("description")) is None:
+                lines.append({"line_item_id": line["line_item_id"]})
+            continue
+        if is_foreign(line, catalogue):
             lines.append({"line_item_id": line["line_item_id"]})
     for position, line in enumerate(lines, start=1):
         line["item_order"] = position

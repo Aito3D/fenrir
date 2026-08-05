@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 AitoColumn = Literal["devis", "waiting", "scan", "model", "print", "finish", "done"]
 
@@ -54,6 +54,43 @@ def _check_phone(value: str) -> str:
     return value
 
 
+class AitoShippingIsland(BaseModel):
+    key: str
+    label: str
+
+
+class AitoShippingService(BaseModel):
+    key: str
+    name: str
+    # None when this item was never matched in Books. The drawer then requires
+    # the operator to type a price instead of pre-filling one.
+    rate: float | None
+    islands: list[AitoShippingIsland]
+
+
+class AitoShippingServicesResponse(BaseModel):
+    services: list[AitoShippingService]
+    # False when Books has never been reachable. The islands are served
+    # regardless — they are static app data and need no network.
+    catalogue_resolved: bool
+
+
+class AitoShippingInput(BaseModel):
+    """The four required fields plus an optional price override.
+
+    `shipping_service` is deliberately absent: the server derives it from the
+    island and never trusts a client-supplied value.
+    """
+
+    shipping_island: str | None = Field(default=None, max_length=50)
+    shipping_first_name: str | None = Field(default=None, max_length=100)
+    shipping_last_name: str | None = Field(default=None, max_length=100)
+    shipping_phone: str | None = Field(default=None, max_length=50)
+    shipping_price: float | None = Field(default=None, ge=0)
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class AitoTaskBase(BaseModel):
     """A NULL cost means the service is disabled; 0 stays meaningful as free."""
 
@@ -98,7 +135,7 @@ class AitoTaskResponse(AitoTaskBase):
     updated_at: datetime
 
 
-class AitoProjectCreate(BaseModel):
+class AitoProjectCreate(AitoShippingInput):
     # 10_000 is generous headroom over anything a human types — it exists to keep a
     # pathological payload from ballooning the row or the AI summarizer's prompt.
     description: str = Field(min_length=1, max_length=10_000)
@@ -158,7 +195,7 @@ class AitoProjectMove(BaseModel):
     position: int = Field(ge=0)
 
 
-class AitoProjectUpdate(BaseModel):
+class AitoProjectUpdate(AitoShippingInput):
     """Content edits from the card detail panel. Ordering (column/position) is
     owned by the /move endpoint and deliberately not accepted here."""
 
@@ -266,6 +303,22 @@ class AitoProjectResponse(BaseModel):
     # services/aito_board_rules.evaluate. The frontend renders its lock badge
     # and computes its allowed droppables from this and nothing else.
     move_lock: Literal["quote", "waiting", "declined", "steps"] | None
+    # Optional air freight. `shipping_island is None` IS "no shipping"; the
+    # frontend tests that field and nothing else.
+    shipping_island: str | None
+    shipping_service: str | None
+    shipping_first_name: str | None
+    shipping_last_name: str | None
+    shipping_phone: str | None
+    shipping_price: float | None
+    # The Books item's display name, resolved from the cached catalogue so the
+    # board list does not force the frontend to join every card against the
+    # services endpoint. None when the catalogue has never resolved; the panel
+    # falls back to the service key's own label. No default: `_to_response`
+    # requires its `shipping_names` argument for exactly this reason — a
+    # future call site that forgot it should fail loudly, not validate a
+    # silently-blanked field.
+    shipping_service_name: str | None
     created_at: datetime
     updated_at: datetime
 

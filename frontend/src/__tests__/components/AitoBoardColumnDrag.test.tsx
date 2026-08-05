@@ -123,6 +123,13 @@ const project: AitoProject = {
   steps_done: 0,
   task_steps: [],
   move_lock: null,
+  shipping_island: null,
+  shipping_service: null,
+  shipping_first_name: null,
+  shipping_last_name: null,
+  shipping_phone: null,
+  shipping_price: null,
+  shipping_service_name: null,
   created_at: '2026-07-27T00:00:00',
   updated_at: '2026-07-27T00:00:00',
 };

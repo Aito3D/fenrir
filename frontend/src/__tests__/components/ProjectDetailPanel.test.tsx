@@ -49,6 +49,13 @@ const project: AitoProject = {
   steps_done: 0,
   task_steps: [],
   move_lock: null,
+  shipping_island: null,
+  shipping_service: null,
+  shipping_first_name: null,
+  shipping_last_name: null,
+  shipping_phone: null,
+  shipping_price: null,
+  shipping_service_name: null,
   created_at: '2026-07-27T00:00:00',
   updated_at: '2026-07-27T00:00:00',
 };
@@ -1927,6 +1934,24 @@ describe('ProjectDetailPanel visual parity: header quote-status pill', () => {
   it('omits the pill entirely when the project has no quote status', () => {
     show({ quote_number: 'DEV26-2462', quote_status: null });
     expect(screen.queryByTestId('panel-quote-status-pill')).not.toBeInTheDocument();
+  });
+});
+
+describe('ProjectDetailPanel visual parity: header shipping pill', () => {
+  it('shows the destination island as a sky pill in the eyebrow', () => {
+    show({ shipping_island: 'rangiroa' });
+    const pill = screen.getByTestId('panel-shipping-pill');
+    // No catalogue mock in this file, so this is the segment-capitalized
+    // fallback (`islandLabel`'s degrade path) — 'rangiroa' has no hyphen to
+    // split, so it renders identically to what the real catalogue would say.
+    expect(pill).toHaveTextContent('Rangiroa');
+    expect(pill.querySelector('svg.lucide-plane')).not.toBeNull();
+    expect(pill.className).toContain('text-sky-400');
+  });
+
+  it('omits the pill entirely when the project has no shipment', () => {
+    show({ shipping_island: null });
+    expect(screen.queryByTestId('panel-shipping-pill')).not.toBeInTheDocument();
   });
 });
 

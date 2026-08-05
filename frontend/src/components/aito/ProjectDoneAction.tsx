@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Check } from 'lucide-react';
+import { Check, Plane } from 'lucide-react';
 import { HoldButton } from './HoldButton';
 import { useColumnMoveMutation } from '../../hooks/useColumnMoveMutation';
 import { type AitoProject } from '../../api/client';
@@ -66,7 +66,15 @@ export function ProjectDoneAction({ project }: { project: AitoProject }) {
         project.quote_invoiced ? 'animate-invoiced-glow' : ''
       }`}
     >
-      <Check className="w-3.5 h-3.5" />
+      {/* Both surfaces offer the one Finish -> Done transition and must never
+          disagree — see BoardColumn's SortableCard for the identical swap
+          and its reasoning (enlarged so a plane at check size doesn't read
+          as a smudge). */}
+      {project.shipping_island !== null ? (
+        <Plane className="w-[1.15rem] h-[1.15rem]" />
+      ) : (
+        <Check className="w-3.5 h-3.5" />
+      )}
       <span className="text-sm">{t('aito.markProjectDone')}</span>
     </HoldButton>
   );

@@ -26,6 +26,7 @@ import unicodedata
 from dataclasses import dataclass
 
 from backend.app.schemas.aito import is_plausible_phone
+from backend.app.services.aito_shipping import island_for_label
 
 # The four Aito services, in the canonical order the board renders badges in
 # (mirrors SERVICES in backend/app/services/aito_board_rules.py).
@@ -75,14 +76,24 @@ def _fold(value: str) -> str:
     return "".join(c for c in decomposed if not unicodedata.combining(c)).lower()
 
 
-def parse_description(text: str | None) -> tuple[dict[str, str], tuple[str, ...]]:
+def parse_description(
+    text: str | None, allowed: dict[str, str] | None = None
+) -> tuple[dict[str, str], tuple[str, ...]]:
     """Split a line item's description into labelled values and free text.
 
     A row is a labelled value only when its prefix is one of the catalogue
     templates' known labels; 'Couleur Noir de face.' has no colon and
     'Note: x' has an unknown label, so both stay free text. When a label
     repeats, the first value wins.
+
+    ``allowed`` overrides which prefixes count as labelled values. Defaults
+    to ``LABEL_DISPLAY``, the catalogue templates' own labels. The shipping
+    parser passes its OWN set instead, so shipping labels never become
+    labelled values on an ordinary service line — where they would be
+    captured but not re-emitted by ``LABEL_ORDER``, and so erased from the
+    quote on the next push.
     """
+    allowed = allowed if allowed is not None else LABEL_DISPLAY
     labels: dict[str, str] = {}
     free: list[str] = []
     for raw_row in (text or "").split("\n"):
@@ -90,7 +101,7 @@ def parse_description(text: str | None) -> tuple[dict[str, str], tuple[str, ...]
         if not row or _fold(row) == _BOILERPLATE:
             continue
         match = _LABEL_RE.match(row)
-        if match and _fold(match.group(1)) in LABEL_DISPLAY:
+        if match and _fold(match.group(1)) in allowed:
             key = _fold(match.group(1))
             if key in labels:
                 # First value already won the field; the losing row must
@@ -233,8 +244,78 @@ def _discount_pct(line: dict) -> float | None:
     return pct if 0 < pct <= 100 else None
 
 
-def parse_lines(estimate: dict) -> tuple[list[ParsedLine], list[dict]]:
-    """Split an estimate's line items into recognised services and skipped rows.
+@dataclass(frozen=True)
+class ParsedShipping:
+    """One recognised shipping line, read back into project fields."""
+
+    service: str
+    island: str
+    first_name: str
+    last_name: str
+    phone: str
+    price: float
+
+
+def _split_recipient(name: str) -> tuple[str, str]:
+    """'Jean-Pierre DUPONT' -> ('Jean-Pierre', 'DUPONT').
+
+    The exporter writes the house convention (title-cased first, upper-cased
+    last), so the LAST whitespace-separated token is the family name. A single
+    token is a family name with no given name, not the reverse — that is how
+    the shop's directory spells a company recipient.
+    """
+    parts = (name or "").strip().split()
+    if not parts:
+        return "", ""
+    if len(parts) == 1:
+        return "", parts[0]
+    return " ".join(parts[:-1]), parts[-1]
+
+
+# The shipping line's own labels, deliberately NOT folded into LABEL_DISPLAY.
+# LABEL_DISPLAY feeds parse_description for every line, service or shipping
+# alike, and LABEL_ORDER (which _build_task uses to re-emit a preserved
+# label) has no entries for these — so a "Nom:"/"Île:"/"Téléphone:" row on an
+# ordinary service line would be captured as a label by parse_description but
+# never written back out, silently erasing it from the quote on the next
+# push. Passed explicitly to parse_description below instead, so only a
+# shipping line's own description is ever read through this map.
+_SHIPPING_LABELS: dict[str, str] = {"nom": "Nom", "telephone": "Téléphone", "ile": "Île"}
+
+
+def parse_shipping_line(line: dict, shipping_ids: dict[str, str]) -> ParsedShipping | None:
+    """A shipping line, read back into project fields, or None.
+
+    None on any doubt — a line that is not one of ours, or whose island we
+    cannot resolve. The project then simply has no shipping, and
+    ``aito_quote_export.build_line_items`` echoes the untouched line back on
+    the next push rather than deleting it. Guessing here would put a wrong
+    island on a real quote; declining costs nothing.
+    """
+    by_id = {item_id: service for service, item_id in (shipping_ids or {}).items()}
+    service = by_id.get(line.get("item_id"))
+    if service is None:
+        return None
+    labels, _ = parse_description(line.get("description"), _SHIPPING_LABELS)
+    island = island_for_label(labels.get("ile"))
+    if island is None:
+        return None
+    first_name, last_name = _split_recipient(labels.get("nom", ""))
+    return ParsedShipping(
+        service=service,
+        island=island,
+        first_name=first_name,
+        last_name=last_name,
+        phone=(labels.get("telephone") or "").strip(),
+        price=float(line.get("rate") or 0),
+    )
+
+
+def parse_lines(
+    estimate: dict, shipping_ids: dict[str, str] | None = None
+) -> tuple[list[ParsedLine], list[dict], ParsedShipping | None]:
+    """Split an estimate's line items into recognised services, skipped rows,
+    and (at most one) recognised shipment.
 
     Headers mark task boundaries two ways. The format Books actually stores
     (quote DEV26-2506) has NO header row: each grouped line carries
@@ -245,16 +326,34 @@ def parse_lines(estimate: dict) -> tuple[list[ParsedLine], list[dict]]:
     app's export used to emit — is still honoured as a boundary marker: it is
     dropped from the output and flagged onto the next recognised line rather
     than being reported to the user as an unimportable line.
+
+    When ``shipping_ids`` resolves to an empty map (a cold catalogue cache —
+    see ``zoho.get_catalogue``), a shipping line is not recognised as ours by
+    id and so falls through to the ordinary SKU check, which also does not
+    know it: it IS reported to the operator as a skipped row. That is a
+    deliberate consequence of never guessing a shipping line by name or SKU,
+    not an oversight — the line itself is unaffected, since the export step's
+    echo rule still preserves it by ``line_item_id`` on the next push.
     """
     inclusive = bool(estimate.get("is_inclusive_tax"))
     precision = int(estimate.get("price_precision") or 0)
     recognised: list[ParsedLine] = []
     skipped: list[dict] = []
+    shipping: ParsedShipping | None = None
     pending_boundary = False
     previous_header = None
     for line in sorted(estimate.get("line_items") or [], key=lambda item: item.get("item_order") or 0):
         if line.get("line_item_category") == "header":
             pending_boundary = True
+            continue
+        shipment = parse_shipping_line(line, shipping_ids or {})
+        if shipment is not None:
+            shipping = shipment
+            continue
+        if line.get("item_id") in set((shipping_ids or {}).values()):
+            # Ours, but unparseable (an island we do not know). Not a task and
+            # not something to report as unimportable — the export step echoes
+            # it back untouched.
             continue
         amount = _line_amount(line, inclusive=inclusive, precision=precision)
         service = service_for_sku(line.get("sku"))
@@ -279,7 +378,7 @@ def parse_lines(estimate: dict) -> tuple[list[ParsedLine], list[dict]]:
         )
         pending_boundary = False
         previous_header = header
-    return recognised, skipped
+    return recognised, skipped, shipping
 
 
 def group_lines(lines: list[ParsedLine]) -> list[list[ParsedLine]]:
@@ -518,9 +617,11 @@ def _client_snapshot(estimate: dict, contact: dict | None) -> dict:
     }
 
 
-def build_preview(estimate: dict, contact: dict | None, quote_url: str) -> dict:
+def build_preview(
+    estimate: dict, contact: dict | None, quote_url: str, shipping_ids: dict[str, str] | None = None
+) -> dict:
     """Everything the import modal needs, in the shape POST /aito/ accepts."""
-    lines, skipped = parse_lines(estimate)
+    lines, skipped, shipping = parse_lines(estimate, shipping_ids)
     tasks = [_build_task(group) for group in group_lines(lines)]
     titles = [task["title"] for task in tasks if task["title"]]
     number = estimate.get("estimate_number") or ""
@@ -539,4 +640,16 @@ def build_preview(estimate: dict, contact: dict | None, quote_url: str) -> dict:
         "suggested_description": "\n".join(titles) or number,
         "tasks": tasks,
         "skipped_lines": skipped,
+        "shipping": (
+            {
+                "island": shipping.island,
+                "service": shipping.service,
+                "first_name": shipping.first_name,
+                "last_name": shipping.last_name,
+                "phone": shipping.phone,
+                "price": shipping.price,
+            }
+            if shipping
+            else None
+        ),
     }

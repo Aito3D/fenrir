@@ -29,10 +29,17 @@ from backend.app.core.tasks import spawn_background_task
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
-from backend.app.models.filament import Filament
+from backend.app.models.calculator import CalculatorFilament
 from backend.app.services.aito_events import record
-from backend.app.services.aito_quote_export import ExportTask, build_line_items
+from backend.app.services.aito_quote_export import (
+    Catalogue,
+    ExportShipping,
+    ExportTask,
+    build_line_items,
+    enabled_services,
+)
 from backend.app.services.aito_quote_status import adopt_quote_status
+from backend.app.services.aito_shipping import island_label
 from backend.app.services.aito_zoho_comments import mirror_comments, should_pull_comments
 from backend.app.services.zoho import (
     ZohoAmbiguousReferenceError,
@@ -65,6 +72,17 @@ SYNC_FAILURE_LIMIT = 5
 # full asymmetry) and by _apply_estimate (the copy-back's half of it).
 _DECIDED = frozenset({"accepted", "declined"})
 
+# Project id -> the deferral reason already logged for it in THIS process.
+# Log-spam suppression only, which is why it is process-local: a restart
+# costs exactly one extra WARNING and nothing else. Deliberately NOT
+# persisted on the project. quote_sync_error belongs to the line-item sync
+# path, and recording another subsystem's state in it is the mistake
+# documented on AitoProject.quote_status_block — five defects across four
+# review rounds. A deferral is not an error and must leave no trace on the
+# row: the project stays `pending` with a clean error field, exactly as it
+# was before this handler ran.
+_deferred_reasons: dict[int, str] = {}
+
 
 def _clear_block(project: AitoProject) -> None:
     """No reason to be blocked any more. Unconditional and always safe: these
@@ -88,6 +106,46 @@ def _clear_block(project: AitoProject) -> None:
     project.quote_status_remote = None
 
 
+class ShippingCatalogueUnavailable(Exception):
+    """The project carries shipping but its Books item is unknown.
+
+    Raised rather than silently skipping the line: a quote written without the
+    shipping it was promised is a quote that can be sent to a client, and that
+    is not recoverable. The caller leaves the project `pending` so the next
+    tick — by which time the catalogue may have resolved — tries again. See
+    `sync_project`'s own `except ShippingCatalogueUnavailable` handler, which
+    must sit before the broad handler that increments `quote_sync_failures`:
+    nothing here is a failure of the project's own, so it must not spend any
+    of the retry budget SYNC_FAILURE_LIMIT protects, nor land in the terminal
+    'error' state the no-priced-service guards elsewhere in this module use.
+    """
+
+
+def load_export_shipping(project: AitoProject, catalogue: Catalogue) -> ExportShipping | None:
+    """The project's shipment, flattened for the I/O-free exporter.
+
+    `shipping_island IS NULL` is the definition of no shipping, so that field
+    alone decides — nothing else on the project is consulted to reach that
+    conclusion. An island whose key is no longer in the lookup table still
+    exports, using the stored key itself as the label: the quote must keep
+    saying what it said, and a table edit is not a reason to stop billing a
+    job already in flight.
+    """
+    if not project.shipping_island:
+        return None
+    service = project.shipping_service or ""
+    if service not in catalogue.shipping:
+        raise ShippingCatalogueUnavailable(f"No Books item for shipping service {service!r}")
+    return ExportShipping(
+        service=service,
+        island_label=island_label(project.shipping_island) or project.shipping_island,
+        first_name=project.shipping_first_name or "",
+        last_name=project.shipping_last_name or "",
+        phone=project.shipping_phone or "",
+        price=float(project.shipping_price or 0),
+    )
+
+
 async def load_export_tasks(db: AsyncSession, project_id: int) -> list[ExportTask]:
     """The project's tasks, flattened for the I/O-free exporter.
 
@@ -108,8 +166,16 @@ async def load_export_tasks(db: AsyncSession, project_id: int) -> list[ExportTas
     filament_ids = {row.impression_filament_id for row in rows if row.impression_filament_id is not None}
     materials: dict[int, str] = {}
     if filament_ids:
-        found = (await db.execute(select(Filament).where(Filament.id.in_(filament_ids)))).scalars().all()
-        materials = {f.id: f.type for f in found}
+        # CalculatorFilament, NOT the AMS inventory `filaments` table: the
+        # drawer's picker is api.getCalculatorFilaments, so the ids stored on
+        # tasks live in the calculator's id-space. `material` is the bare type
+        # ("PETG", "PA6-CF") — exactly what ExportTask.material documents.
+        found = (
+            (await db.execute(select(CalculatorFilament).where(CalculatorFilament.id.in_(filament_ids))))
+            .scalars()
+            .all()
+        )
+        materials = {f.id: f.material for f in found}
     return [
         ExportTask(
             title=row.title,
@@ -208,8 +274,8 @@ def _apply_estimate(project: AitoProject, estimate: dict) -> None:
 
 async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
     catalogue = await zoho_service.get_catalogue(db)
-    line_items = build_line_items(await load_export_tasks(db, project.id), [], catalogue)
-    if not line_items:
+    tasks = await load_export_tasks(db, project.id)
+    if not any(enabled_services(task) for task in tasks):
         # Every project is meant to carry a priced service (the create modal
         # enforces it), but a project whose only task was emptied by hand would
         # otherwise POST an estimate with no lines. A terminal state, not a
@@ -217,10 +283,18 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         # project re-selected and re-checked every single tick forever. The
         # user's next edit (which is required to fix this anyway) goes through
         # _mark_pending_if_ours and re-marks it pending as normal.
+        #
+        # Decided on TASK content, not on the built line_items array: shipping
+        # alone must never make a project quotable. build_line_items appends
+        # the shipping line unconditionally, so gating on "the array came out
+        # empty" would let a project with zero priced tasks but shipping
+        # attached POST a shipping-only estimate — this guard has to run
+        # before shipping is ever threaded in.
         project.quote_sync_state = "error"
         project.quote_sync_error = "Project has no priced service yet"
         project.quote_sync_failures = 0
         return
+    line_items = build_line_items(tasks, [], catalogue, shipping=load_export_shipping(project, catalogue))
     # Idempotency guard: a prior tick can have POSTed successfully and then
     # died before the commit that would have recorded the returned
     # estimate_id (the project stays 'pending' either way). Without this
@@ -622,12 +696,8 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         await record(db, project.id, "sync.locked", actor_class="system", subject_type="project", subject_id=project.id)
         return
     catalogue = await zoho_service.get_catalogue(db)
-    line_items = build_line_items(
-        await load_export_tasks(db, project.id),
-        estimate.get("line_items") or [],
-        catalogue,
-    )
-    if not line_items:
+    tasks = await load_export_tasks(db, project.id)
+    if not any(enabled_services(task) for task in tasks):
         # Mirrors the create-path guard: a project whose only priced service
         # was just cleared by hand would otherwise PUT an empty line_items
         # array, and Books deletes every Aito line a live quote had. A
@@ -636,6 +706,16 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         # /estimates/{id} against Books every 300s for as long as it sits
         # empty. The next edit that adds a service back re-marks it pending
         # as normal, same as create.
+        #
+        # Decided on TASK content, not on the built line_items array, for the
+        # same reason as the create-path guard: build_line_items appends the
+        # shipping line unconditionally, and existing foreign lines are echoed
+        # unconditionally too, so either alone would make "the array came out
+        # empty" the wrong test — a project with zero priced tasks but
+        # shipping attached would otherwise PUT a shipping-only line_items
+        # array onto a LIVE quote, deleting every real task line it had. This
+        # is the destructive half of the two guards; the other only skips a
+        # POST.
         project.quote_sync_state = "error"
         project.quote_sync_error = "Project has no priced service left; nothing was written to the quote"
         project.quote_sync_failures = 0
@@ -649,6 +729,12 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
             detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
         )
         return
+    line_items = build_line_items(
+        tasks,
+        estimate.get("line_items") or [],
+        catalogue,
+        shipping=load_export_shipping(project, catalogue),
+    )
     updated = await zoho_service.update_estimate_lines(db, project.quote_id, line_items)
     await _write_back_rounded_impression(db, project.id)
     _apply_estimate(project, updated)
@@ -901,9 +987,66 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
             await _create_quote(db, project)
         else:
             await _update_quote(db, project)
+        # Reached only when _create_quote/_update_quote returned WITHOUT
+        # raising ShippingCatalogueUnavailable — this tick's push (or one of
+        # their own terminal-error branches) completed normally. Drop any
+        # stale deferral memory for this project so a later recurrence of the
+        # same reason logs afresh rather than staying suppressed forever by a
+        # dict entry from before whatever changed.
+        _deferred_reasons.pop(project_id, None)
     except ZohoNotConfiguredError:
         # Not a failure: sync is simply off. Leave the project pending so it
         # syncs the moment credentials are entered.
+        return
+    except ShippingCatalogueUnavailable as e:
+        # Not an error state: nothing is wrong with the project, the catalogue
+        # simply has not resolved yet. Stay `pending` and retry next tick
+        # rather than burning a failure and eventually going to 'error' — see
+        # the exception's own docstring, and Catalogue.shipping_item_id's, for
+        # why a terminal state here would be the opposite of what this
+        # situation calls for.
+        #
+        # get_catalogue's own shipping read is always refresh=False (see the
+        # comment above that call), so it is never what warms the cache. The
+        # drawer's GET /aito/shipping/services endpoint (Task 7) warms it on
+        # the happy path — it is the only other refresh=True caller now that
+        # the board list's `_shipping_names` (aito.py) reads cache-only, since
+        # a display name never needs a fresh rate. But that endpoint only
+        # runs when someone has the drawer open. For a project that gained
+        # shipping without going through it (an importer path, a wiped
+        # settings row, first boot with Books down), nothing else would ever
+        # fetch a resolution. Warm it here too, once, so the NEXT tick has a
+        # chance even if this one still has to defer.
+        message = str(e)
+        # Logged only on the tick this exact deferral reason first appears,
+        # via _deferred_reasons rather than any column on the project. This is
+        # log-spam suppression, not a fact about the row, so a permanently
+        # unresolvable service (e.g. Books' catalogue item was renamed) logs
+        # once per process instead of one WARNING per tick forever — and
+        # project.quote_sync_error is left untouched: a deferral is not an
+        # error and must leave no trace on the row (see _deferred_reasons'
+        # own comment for why this is deliberately NOT the same pattern as
+        # the sync.failed handlers below, which do own that column).
+        if _deferred_reasons.get(project_id) != message:
+            logger.warning("Aito project %s deferred: %s", project_id, e)
+            _deferred_reasons[project_id] = message
+        try:
+            await zoho_service.get_shipping_catalogue(db, refresh=True)
+        except Exception:
+            # Best-effort, and must stay that way: get_shipping_catalogue
+            # already swallows ZohoNotConfiguredError/ZohoUpstreamError from
+            # its own list_items call (see its docstring), but a DB error
+            # from its get_setting/set_setting calls, or a bug in
+            # merge_shipping_catalogue on a pathological /items payload,
+            # would otherwise escape uncaught. Because this call sits INSIDE
+            # an except block, no sibling handler in this same function would
+            # catch that — it would escape sync_project entirely, breaking
+            # its own "never raises" promise, and since run_sync_once calls
+            # sync_project outside its own try, it would abort the whole tick
+            # for every project still left in the batch. A failed warm-up
+            # changes nothing about this tick's outcome: the project was
+            # already deferring, and next tick tries the warm-up again.
+            logger.warning("Aito shipping catalogue warm-up failed for project %s", project_id, exc_info=True)
         return
     except ZohoRequestRejected as e:
         # Books rejected the payload. Retrying an identical body cannot help.
