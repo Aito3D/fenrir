@@ -1,0 +1,30 @@
+{
+  "estimate_id": "66407000009472001",
+  "estimate_number": "DEV26-2472",
+  "date": "2026-08-04",
+  "status": "sent",
+  "customer_id": "66407000003700001",
+  "customer_name": "SARL Exemple Import",
+  "currency_code": "XPF",
+  "is_inclusive_tax": true,
+  "price_precision": 0,
+  "total": 3200,
+  "line_items": [
+    {
+      "line_item_id": "S1",
+      "item_order": 1,
+      "item_id": "66407000007000101",
+      "sku": "",
+      "name": "Livraison Avion Tuamotu",
+      "description": "Nom: Moana TEMARII\nTéléphone: +689-87112233\nÎle: Rangiroa",
+      "quantity": 1,
+      "rate": 3200,
+      "item_total": 2832,
+      "line_item_taxes": [
+        {
+          "tax_amount": 368
+        }
+      ]
+    }
+  ]
+}

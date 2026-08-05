@@ -1,0 +1,13 @@
+{
+  "estimate_id": "66407000009471001",
+  "estimate_number": "DEV26-2471",
+  "date": "2026-08-03",
+  "status": "draft",
+  "customer_id": "66407000003700001",
+  "customer_name": "SARL Exemple Import",
+  "currency_code": "XPF",
+  "is_inclusive_tax": true,
+  "price_precision": 0,
+  "total": 0,
+  "line_items": []
+}

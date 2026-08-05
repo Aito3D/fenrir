@@ -1,0 +1,68 @@
+{
+  "estimate_id": "66407000009470001",
+  "estimate_number": "DEV26-2470",
+  "date": "2026-08-03",
+  "status": "draft",
+  "customer_id": "66407000003700001",
+  "customer_name": "SARL Exemple Import",
+  "currency_code": "XPF",
+  "is_inclusive_tax": true,
+  "price_precision": 0,
+  "total": 27500,
+  "line_items": [
+    {
+      "line_item_id": "H1L1",
+      "item_order": 1,
+      "header_id": "66407000009470101",
+      "header_name": "Hélice bâbord",
+      "item_id": "66407000006501192",
+      "sku": "P3DSCAN",
+      "name": "Scan3D - Prestation \"AITO 3D\"",
+      "description": "Info: Numérisation de l'hélice d'origine.\n*Fichier non cédé*",
+      "quantity": 1,
+      "rate": 3500,
+      "item_total": 3097,
+      "line_item_taxes": [
+        {
+          "tax_amount": 403
+        }
+      ]
+    },
+    {
+      "line_item_id": "H1L2",
+      "item_order": 2,
+      "header_id": "66407000009470101",
+      "header_name": "Hélice bâbord",
+      "item_id": "66407000006485012",
+      "sku": "P3DIMP",
+      "name": "Impression3D - Prestation \"AITO 3D\"",
+      "description": "Matériau: ASA\nPoids: 210 gr\nTemps: 13h\nCouleur: Noir",
+      "quantity": 1,
+      "rate": 12000,
+      "item_total": 10619,
+      "line_item_taxes": [
+        {
+          "tax_amount": 1381
+        }
+      ]
+    },
+    {
+      "line_item_id": "H2L1",
+      "item_order": 3,
+      "header_id": "66407000009470102",
+      "header_name": "Hélice tribord",
+      "item_id": "66407000006884825",
+      "sku": "U3DIMP",
+      "name": "Usinage - Prestation \"AITO 3D\"",
+      "description": "Info: Reprise du moyeu au tour.",
+      "quantity": 1,
+      "rate": 12000,
+      "item_total": 10619,
+      "line_item_taxes": [
+        {
+          "tax_amount": 1381
+        }
+      ]
+    }
+  ]
+}
