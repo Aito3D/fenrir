@@ -1105,6 +1105,16 @@ async def move_project(
 
     source_column = project.board_column
     destination = await _active_in_column(db, payload.column, exclude_id=project.id)
+    # The client's `position` is an index into the DISPLAYED order, which puts
+    # urgent cards first (see list_projects and the same sort in
+    # frontend/src/utils/aitoBoard.ts). `_active_in_column` returns the STORED
+    # order and must keep doing so — grouping urgent cards in `position` itself
+    # would bake the flag into the operator's manual ordering permanently.
+    # So renumber in display order here instead: without this, every drag in a
+    # column holding an urgent card that is not already top lands N slots off,
+    # and some slots become unreachable. Python's sort is stable, so
+    # `position, id` order still holds inside each of the two groups.
+    destination.sort(key=lambda row: not row.urgent)
     insert_at = min(payload.position, len(destination))
     destination.insert(insert_at, project)
     project.board_column = payload.column

@@ -230,6 +230,60 @@ async def test_move_reindexes_within_a_column(async_client):
     assert board[b["id"]]["position"] == 1
 
 
+def _devis_order(board: list[dict]) -> list[str]:
+    return [p["description"] for p in board if p["column"] == "devis"]
+
+
+@pytest.mark.asyncio
+async def test_move_lands_where_it_was_dropped_when_the_column_holds_an_urgent_card(async_client):
+    """`position` indexes the DISPLAYED order, which is urgent-first.
+
+    A column reading [b, a, c, d] on screen (b flagged, stored positions
+    a=0, b=1, c=2, d=3) must accept a drop of `d` at display index 1 and put
+    it there. Renumbering in stored order instead would insert `d` between a
+    and b, and the next fetch would show [b, a, d, c] — the card visibly
+    snapping back one slot, with the dropped slot unreachable by any repeat
+    of the same drag.
+    """
+    # Creation prepends, so create back-to-front to get a=0, b=1, c=2, d=3.
+    for description in ("d", "c", "b", "a"):
+        await _create(async_client, description=description)
+    ids = {p["description"]: p["id"] for p in (await async_client.get("/api/v1/aito/")).json()}
+
+    await async_client.patch(f"/api/v1/aito/{ids['b']}/urgent", json={"urgent": True})
+    assert _devis_order((await async_client.get("/api/v1/aito/")).json()) == ["b", "a", "c", "d"]
+
+    r = await async_client.patch(f"/api/v1/aito/{ids['d']}/move", json={"column": "devis", "position": 1})
+    assert r.status_code == 200
+
+    assert _devis_order((await async_client.get("/api/v1/aito/")).json()) == ["b", "d", "a", "c"]
+
+
+@pytest.mark.asyncio
+async def test_move_cannot_drag_an_urgent_card_below_a_normal_one(async_client):
+    """The one ordering constraint the urgent flag deliberately imposes.
+
+    Urgency is a display-only sort, so a flagged card always redisplays above
+    the unflagged ones however far down it is dropped. Pinned here so a later
+    change cannot quietly turn it into stored-position grouping.
+    """
+    for description in ("c", "b", "a"):
+        await _create(async_client, description=description)
+    ids = {p["description"]: p["id"] for p in (await async_client.get("/api/v1/aito/")).json()}
+
+    await async_client.patch(f"/api/v1/aito/{ids['b']}/urgent", json={"urgent": True})
+    assert _devis_order((await async_client.get("/api/v1/aito/")).json()) == ["b", "a", "c"]
+
+    r = await async_client.patch(f"/api/v1/aito/{ids['b']}/move", json={"column": "devis", "position": 2})
+    assert r.status_code == 200
+
+    board = (await async_client.get("/api/v1/aito/")).json()
+    assert _devis_order(board) == ["b", "a", "c"]
+    # The drop was still honoured in the stored order it was given.
+    stored = {p["description"]: p["position"] for p in board if p["column"] == "devis"}
+    assert stored == {"a": 0, "c": 1, "b": 2}
+
+
 @pytest.mark.asyncio
 async def test_move_to_another_column_is_409_when_locked(async_client):
     a = (await _create(async_client)).json()
