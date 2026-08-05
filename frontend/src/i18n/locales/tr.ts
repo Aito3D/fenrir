@@ -24,7 +24,7 @@ export default {
     sendQuoteSubject: 'Konu',
     sendQuoteConfirm: 'Gönder',
     sendQuoteNoRecipients: 'Bu müşterinin Zoho’da e-posta adresi yok.',
-    sendQuoteLoadFailed: 'E-posta ayrıntıları yüklenmedi',
+    sendQuoteLoadFailed: 'E-posta ayrıntıları yüklenemedi',
     quoteEmailed: 'Teklif {{email}} adresine gönderildi',
     quoteEmailFailed: 'Teklif gönderilemedi',
     acceptQuote: 'Teklifi kabul et',
