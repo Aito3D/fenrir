@@ -49,6 +49,7 @@ export default defineConfig([
       '**/components/IconPicker.tsx',
       '**/components/Layout.tsx',
       '**/components/HMSErrorModal.tsx',
+      '**/components/aito/SocialInput.tsx',
     ],
     rules: {
       'react-refresh/only-export-components': 'off',
