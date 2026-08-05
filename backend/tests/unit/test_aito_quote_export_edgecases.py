@@ -27,18 +27,18 @@ CATALOGUE = Catalogue(
 
 
 def _task(**overrides) -> ExportTask:
-    fields = dict(
-        title="Piece",
-        scan_cost=None,
-        modelisation_cost=None,
-        usinage_cost=None,
-        impression_cost=None,
-        impression_quantity=None,
-        impression_weight_g=None,
-        impression_time_min=None,
-        impression_color=None,
-        material=None,
-    )
+    fields = {
+        "title": "Piece",
+        "scan_cost": None,
+        "modelisation_cost": None,
+        "usinage_cost": None,
+        "impression_cost": None,
+        "impression_quantity": None,
+        "impression_weight_g": None,
+        "impression_time_min": None,
+        "impression_color": None,
+        "material": None,
+    }
     fields.update(overrides)
     return ExportTask(**fields)
 
@@ -134,6 +134,12 @@ def test_quantity_zero_none_and_negative_all_clamp_to_one():
 
 def test_missing_cost_yields_rate_zero():
     assert impression_rate_quantity(_task(impression_cost=None, impression_quantity=4)) == (0, 4)
+
+
+def test_an_out_of_contract_float_quantity_truncates():
+    """ExportTask types the quantity int | None, but a float that sneaks past
+    the contract is truncated by int(), not rounded — 1.9 bills as 1 unit."""
+    assert impression_rate_quantity(_task(impression_cost=1000, impression_quantity=1.9)) == (1000, 1)
 
 
 def test_non_dividing_total_rounds_the_per_unit_rate():

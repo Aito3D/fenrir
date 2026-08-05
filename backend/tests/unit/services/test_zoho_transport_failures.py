@@ -186,8 +186,8 @@ async def test_double_401_surfaces_as_generic_401_after_exactly_one_retry(db_ses
 
 @pytest.mark.asyncio
 async def test_token_refresh_500_mid_business_call_propagates_the_token_error(db_session):
-    """An expired cache whose refresh then 500s: the business call surfaces
-    the token failure, not a misleading Books error."""
+    """An empty token cache whose refresh then 500s: the business call
+    surfaces the token failure, not a misleading Books error."""
     await _configure(db_session)
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -342,9 +342,7 @@ async def test_tz_aware_checked_at_reads_as_stale_and_triggers_a_refresh(db_sess
         if (token := _token_ok(request)) is not None:
             return token
         fetched.append(request.url.path)
-        return httpx.Response(
-            200, json={"items": [{"item_id": "T1", "name": "Livraison Avion Tuamotu", "rate": 3200}]}
-        )
+        return httpx.Response(200, json={"items": [{"item_id": "T1", "name": "Livraison Avion Tuamotu", "rate": 3200}]})
 
     zoho_service.transport = httpx.MockTransport(handler)
     catalogue = await zoho_service.get_shipping_catalogue(db_session, refresh=True)

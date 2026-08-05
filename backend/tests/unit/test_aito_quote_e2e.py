@@ -7,9 +7,10 @@ JSON Books receives, and a hostile wire (429s, outages, malformed 200s) must
 degrade into the documented per-project states, never a crash or a half-write.
 
 Mocking follows the house rules: ``zoho_service.transport`` for anything that
-asserts wire shape, instance-level monkeypatching never (see the
-instance-shadow warning in test_aito_quote_email.py), and the three autouse
-reset fixtures below mirror test_aito_quote_sync.py exactly.
+asserts wire shape, class-level monkeypatching never — patch the INSTANCE if
+you must patch at all (see the instance-shadow warning in
+test_aito_quote_email.py) — and the three autouse reset fixtures below mirror
+test_aito_quote_sync.py exactly.
 """
 
 import json
@@ -86,9 +87,7 @@ async def _seed_shipping_cache(db) -> None:
     """A warm, fresh shipping catalogue so route-side refresh=True calls are
     answered from cache and the sync worker owns the shipping item id."""
     await set_setting(db, "zoho_shipping_catalogue", json.dumps({"tuamotu": {"item_id": "SHIP-T", "rate": 3200}}))
-    await set_setting(
-        db, "zoho_shipping_catalogue_at", datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
-    )
+    await set_setting(db, "zoho_shipping_catalogue_at", datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
     await db.commit()
 
 
@@ -386,17 +385,17 @@ async def test_accepting_a_draft_quote_marks_it_sent_first_on_the_wire(async_cli
 
 
 def _swept_project(**overrides) -> AitoProject:
-    fields = dict(
-        description="Swept",
-        board_column="waiting",
-        position=0,
-        status="active",
-        client_id="C1",
-        client_name="Client",
-        quote_id="E5",
-        quote_status="sent",
-        quote_sync_state="idle",
-    )
+    fields = {
+        "description": "Swept",
+        "board_column": "waiting",
+        "position": 0,
+        "status": "active",
+        "client_id": "C1",
+        "client_name": "Client",
+        "quote_id": "E5",
+        "quote_status": "sent",
+        "quote_sync_state": "idle",
+    }
     fields.update(overrides)
     return AitoProject(**fields)
 
@@ -496,6 +495,45 @@ async def test_create_response_without_an_estimate_id_stays_pending_and_retries(
     assert project.quote_id is None
     assert project.quote_sync_failures == 1
     assert project.quote_sync_error == "Zoho returned no estimate_id; the push cannot be confirmed"
+
+
+@pytest.mark.asyncio
+async def test_update_response_without_an_estimate_id_stays_pending_and_retries(db_session):
+    """The update-path twin of the create test above: a PUT answered 200 with
+    no ``estimate`` key cannot confirm the push, so the project must stay
+    pending with one failure on the meter — and the identity Books already
+    gave it must survive untouched (no half-write)."""
+    project = _swept_project(quote_sync_state="pending", quote_status="draft", quote_number="DEV26-9100")
+    db_session.add(project)
+    await db_session.flush()
+    from backend.app.models.aito_task import AitoTask
+
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Piece", scan_cost=1000))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E5"): {
+                    "estimate": {
+                        "estimate_id": "E5",
+                        "status": "draft",
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E5"): {"code": 0},
+            }
+        )
+    )
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "pending"
+    assert project.quote_sync_failures == 1
+    assert project.quote_sync_error == "Zoho returned no estimate_id; the push cannot be confirmed"
+    assert project.quote_id == "E5"
+    assert project.quote_number == "DEV26-9100"
 
 
 @pytest.mark.asyncio

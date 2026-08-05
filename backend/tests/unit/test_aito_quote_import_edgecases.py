@@ -135,6 +135,10 @@ def test_books_shaped_headers_split_tasks_even_across_rising_ranks():
     assert first["impression_weight_g"] == 210
     assert first["impression_time_min"] == 780
     assert first["impression_color"] == "Noir"
+    # Matériau is NOT one of the consumed impression labels (the material is
+    # resolved from the filament on export), so it must be preserved verbatim
+    # in the service's description.
+    assert first["impression_description"] == "Matériau: ASA"
     assert first["scan_description"] == "Numérisation de l'hélice d'origine."
     assert second["usinage_cost"] == 12000
     assert second["usinage_description"] == "Reprise du moyeu au tour."
