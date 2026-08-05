@@ -398,6 +398,68 @@ describe('ProjectDetailPanel client fields', () => {
   });
 });
 
+describe('ProjectDetailPanel social handle', () => {
+  // Same reason the activity-rail describe block restores mocks: without it,
+  // an api.updateAitoProject spy from one of these tests leaks into whatever
+  // runs after it and its PATCHes never reach msw.
+  afterEach(() => vi.restoreAllMocks());
+
+  it('shows a stored social handle in the header', () => {
+    show({ client_social_network: 'instagram', client_social_handle: 'moana.3d' });
+    expect(screen.getByText('moana.3d')).toBeInTheDocument();
+  });
+
+  it('shows nothing when there is no social handle', () => {
+    show({ client_social_network: null, client_social_handle: null });
+    expect(screen.queryByRole('button', { name: /social/i })).not.toBeInTheDocument();
+  });
+
+  it('patches both keys when the handle is edited', async () => {
+    const user = userEvent.setup();
+    const spy = vi.spyOn(api, 'updateAitoProject').mockResolvedValue({
+      ...project,
+      client_social_network: 'tiktok',
+      client_social_handle: 'moana.tt',
+    });
+    show({ client_social_network: 'instagram', client_social_handle: 'moana.3d' });
+
+    await user.click(screen.getByRole('button', { name: /edit the social network/i }));
+    await user.click(screen.getByRole('radio', { name: 'TikTok' }));
+    const input = screen.getByLabelText(/username/i);
+    await user.clear(input);
+    await user.type(input, 'moana.tt');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith(project.id, {
+        client_social_network: 'tiktok',
+        client_social_handle: 'moana.tt',
+      }),
+    );
+  });
+
+  it('clears both keys when the handle is emptied', async () => {
+    const user = userEvent.setup();
+    const spy = vi.spyOn(api, 'updateAitoProject').mockResolvedValue({
+      ...project,
+      client_social_network: null,
+      client_social_handle: null,
+    });
+    show({ client_social_network: 'instagram', client_social_handle: 'moana.3d' });
+
+    await user.click(screen.getByRole('button', { name: /edit the social network/i }));
+    await user.clear(screen.getByLabelText(/username/i));
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith(project.id, {
+        client_social_network: null,
+        client_social_handle: null,
+      }),
+    );
+  });
+});
+
 describe('ProjectDetailPanel tasks', () => {
   it('fetches and renders the project\'s tasks on open', async () => {
     show();

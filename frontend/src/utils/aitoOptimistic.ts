@@ -226,6 +226,29 @@ export function applyShipping(
   });
 }
 
+/** Mirror of the server's own write for the client's social channel
+ *  (backend/app/api/routes/aito.py:update_project). The two fields move
+ *  together — a null network with a live handle is a state the server refuses,
+ *  so the cache must never show it either. Unlike `applyShipping`, there is no
+ *  `?? project.x` fallback: null here means "cleared", not "unchanged", because
+ *  the panel always submits both keys. */
+export function applyClientSocial(
+  projects: AitoProject[] | undefined,
+  id: number,
+  patch: Pick<AitoProjectUpdate, 'client_social_network' | 'client_social_handle'>,
+): AitoProject[] | undefined {
+  if (!projects) return undefined;
+  return projects.map((project) =>
+    project.id === id
+      ? {
+          ...project,
+          client_social_network: patch.client_social_network ?? null,
+          client_social_handle: patch.client_social_handle ?? null,
+        }
+      : project,
+  );
+}
+
 /** Remove the project without renumbering survivors in its column. Mirrors the
  *  server's soft delete (backend/app/api/routes/aito.py:delete_project), which
  *  only sets `status = "deleted"` and never touches other rows' positions. The
