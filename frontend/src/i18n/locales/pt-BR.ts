@@ -3808,6 +3808,7 @@ export default {
     scanFolder: 'Escanear',
     toast: {
       folderCreated: 'Pasta criada',
+      openInSlicerFailed: 'Não foi possível abrir no fatiador',
       folderDeleted: 'Pasta excluída',
       fileDeleted: 'Arquivo excluído',
       filesDeleted: 'Excluídos {{count}} arquivos',
@@ -5415,6 +5416,9 @@ export default {
   // Model Viewer
   modelViewer: {
     openInSlicer: 'Abrir no Slicer',
+    openInSlicerWith: 'Abrir em {{slicer}}',
+    moreSlicerOptions: 'Mais opções de fatiador',
+    openInSlicerFailed: 'Não foi possível abrir no fatiador',
     tabs: {
       model: 'Modelo 3D',
       gcode: 'Pré-visualização G-code',
@@ -5465,6 +5469,61 @@ export default {
   },
 
   // Smart Plugs
+  haSensors: {
+    label: 'Sensores',
+    unavailable: 'Indisponível',
+    blocksPrints: '{{entity}} — segura as impressões enquanto houver alerta',
+    states: {
+      open: 'Aberto',
+      closed: 'Fechado',
+      unlocked: 'Destrancado',
+      locked: 'Trancado',
+      detected: 'Detectado',
+      clear: 'Livre',
+      wet: 'Molhado',
+      dry: 'Seco',
+      problem: 'Problema',
+      ok: 'OK',
+      running: 'Em funcionamento',
+      stopped: 'Parado',
+      on: 'Ligado',
+      off: 'Desligado',
+    },
+    sectionTitle: 'Sensores do Home Assistant',
+    add: 'Adicionar sensor',
+    addTitle: 'Adicionar sensor do Home Assistant',
+    editTitle: 'Editar sensor do Home Assistant',
+    empty: 'Nenhum sensor ainda. Vincule um contato de porta ou um termômetro do Home Assistant para exibi-lo no cartão da impressora.',
+    unknownPrinter: 'Impressora desconhecida',
+    badgeBlocks: 'Segura impressões',
+    badgeNotifies: 'Notifica',
+    badgeHidden: 'Oculto no cartão',
+    printer: 'Impressora',
+    entity: 'Entidade',
+    searchPlaceholder: 'Buscar entidades...',
+    noEntities: 'Nenhuma entidade correspondente',
+    name: 'Nome exibido',
+    alertWhen: 'Alertar quando',
+    alertNever: 'Nunca — apenas exibir',
+    alertAbove: 'Acima de',
+    alertBelow: 'Abaixo de',
+    alertHint: 'O estado de alerta destaca o sensor no cartão da impressora e habilita as opções abaixo.',
+    showOnCard: 'Mostrar no cartão da impressora',
+    notifyOnAlert: 'Enviar uma notificação quando o alerta começar',
+    blockPrint: 'Segurar as impressões na fila enquanto houver alerta',
+    blockPrintHint: 'Os trabalhos permanecem na fila e começam sozinhos quando o sensor normaliza. Ignorado enquanto o Home Assistant estiver inacessível.',
+    toast: {
+      created: 'Sensor adicionado',
+      updated: 'Sensor salvo',
+      deleted: 'Sensor removido',
+    },
+    error: {
+      pickEntity: 'Escolha uma entidade do Home Assistant',
+      nameRequired: 'Informe um nome exibido',
+      printerRequired: 'Escolha uma impressora',
+      alertRequired: 'Defina primeiro uma condição de alerta',
+    },
+  },
   smartPlugs: {
     offline: 'Offline',
     admin: 'Administrador',
@@ -5777,6 +5836,8 @@ export default {
     notificationEvents: 'Eventos de Notificação',
     progressPercent: '(25%, 50%, 75%)',
     bedCooledAfterPrint: '(após conclusão da impressão)',
+    haSensorAlert: 'Alerta de sensor',
+    haSensorAlertDescription: '(um sensor do Home Assistant vinculado precisa de atenção)',
     // Per-event ntfy priority (#990)
     eventPriority: {
       sectionTitle: 'Prioridade ntfy',

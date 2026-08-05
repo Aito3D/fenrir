@@ -3849,6 +3849,7 @@ export default {
     scanFolder: "Сканувати",
     toast: {
       folderCreated: "Папка створена",
+      openInSlicerFailed: "Не вдалося відкрити у слайсері",
       folderDeleted: "Папку видалено",
       fileDeleted: "Файл видалено",
       filesDeleted: "Видалені файли {{count}}.",
@@ -5470,6 +5471,9 @@ export default {
   // Model Viewer
   modelViewer: {
     openInSlicer: "Відкрити у слайсері",
+    openInSlicerWith: "Відкрити у {{slicer}}",
+    moreSlicerOptions: "Більше варіантів слайсера",
+    openInSlicerFailed: "Не вдалося відкрити у слайсері",
     tabs: {
       model: "3D-модель",
       gcode: "Попередній перегляд G-коду",
@@ -5520,6 +5524,61 @@ export default {
   },
 
   // Smart Plugs
+  haSensors: {
+    label: "Датчики",
+    unavailable: "Недоступно",
+    blocksPrints: "{{entity}} — утримує друк, поки триває сповіщення",
+    states: {
+      open: "Відчинено",
+      closed: "Зачинено",
+      unlocked: "Розблоковано",
+      locked: "Заблоковано",
+      detected: "Виявлено",
+      clear: "Чисто",
+      wet: "Волого",
+      dry: "Сухо",
+      problem: "Проблема",
+      ok: "Норма",
+      running: "Працює",
+      stopped: "Зупинено",
+      on: "Увімк",
+      off: "Вимк",
+    },
+    sectionTitle: "Датчики Home Assistant",
+    add: "Додати датчик",
+    addTitle: "Додати датчик Home Assistant",
+    editTitle: "Редагувати датчик Home Assistant",
+    empty: "Датчиків ще немає. Прив'яжіть дверний контакт або термометр із Home Assistant, щоб показати його на картці принтера.",
+    unknownPrinter: "Невідомий принтер",
+    badgeBlocks: "Утримує друк",
+    badgeNotifies: "Сповіщає",
+    badgeHidden: "Приховано на картці",
+    printer: "Принтер",
+    entity: "Сутність",
+    searchPlaceholder: "Пошук сутностей...",
+    noEntities: "Немає відповідних сутностей",
+    name: "Відображувана назва",
+    alertWhen: "Сповіщати коли",
+    alertNever: "Ніколи — лише показувати",
+    alertAbove: "Вище",
+    alertBelow: "Нижче",
+    alertHint: "Стан сповіщення підсвічує датчик на картці принтера та вмикає параметри нижче.",
+    showOnCard: "Показувати на картці принтера",
+    notifyOnAlert: "Надсилати сповіщення, коли спрацьовує",
+    blockPrint: "Утримувати друк у черзі, поки триває сповіщення",
+    blockPrintHint: "Завдання лишаються в черзі й запускаються самі, коли датчик повертається до норми. Ігнорується, поки Home Assistant недоступний.",
+    toast: {
+      created: "Датчик додано",
+      updated: "Датчик збережено",
+      deleted: "Датчик видалено",
+    },
+    error: {
+      pickEntity: "Оберіть сутність Home Assistant",
+      nameRequired: "Введіть відображувану назву",
+      printerRequired: "Оберіть принтер",
+      alertRequired: "Спершу задайте умову сповіщення",
+    },
+  },
   smartPlugs: {
     offline: "Не в мережі",
     admin: "Адміністрування",
@@ -5832,6 +5891,8 @@ export default {
     notificationEvents: "Події сповіщень",
     progressPercent: "(25%, 50%, 75%)",
     bedCooledAfterPrint: "(після завершення друку)",
+    haSensorAlert: "Сповіщення датчика",
+    haSensorAlertDescription: "(пов'язаний датчик Home Assistant потребує уваги)",
     // Per-event ntfy priority (#990)
     eventPriority: {
       sectionTitle: "Пріоритет ntfy",

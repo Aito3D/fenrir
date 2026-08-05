@@ -35,6 +35,7 @@ from backend.app.services.bambu_ftp import (
 )
 from backend.app.services.bambu_mqtt import HMS_MQTT_VERIFY_FAILED
 from backend.app.services.filament_deficit import compute_deficit_for_queue_item
+from backend.app.services.ha_sensor_manager import ha_sensor_manager
 from backend.app.services.notification_service import notification_service
 from backend.app.services.printer_manager import (
     printer_manager,
@@ -396,6 +397,43 @@ def _nozzle_mismatch_message(sliced_nozzle: float | None, installed: list[float]
     )
 
 
+def _describe_filament(entry: dict, nozzle_key: str) -> str:
+    """One-line "PETG #000000 (left nozzle)" for an error message (#2771).
+
+    Shared by the required and loaded sides, which name their extruder
+    differently: a 3MF requirement carries ``nozzle_id``, a loaded tray carries
+    ``extruder_id``. Both are MQTT extruder ids — 0 is the right/main nozzle,
+    1 the left/deputy — and both are absent on single-nozzle printers, where
+    naming a nozzle would be noise.
+    """
+    parts = [(entry.get("type") or "filament").upper()]
+    if entry.get("color"):
+        parts.append(str(entry["color"]))
+    nozzle = entry.get(nozzle_key)
+    if nozzle == 0:
+        parts.append("(right nozzle)")
+    elif nozzle == 1:
+        parts.append("(left nozzle)")
+    return " ".join(parts)
+
+
+def _unmatched_filament_message(required: list[dict], loaded: list[dict]) -> str:
+    """Explain that nothing loaded matches what the file needs (#2771).
+
+    Only ever built for a printer with no AMS, where the loaded list is short
+    enough to quote in full and there is no "load another spool and hit Resume"
+    recovery — the external spool holder is all there is, so the user needs to
+    be told which filament to put on it.
+    """
+    want = ", ".join(_describe_filament(r, "nozzle_id") for r in required)
+    have = ", ".join(_describe_filament(f, "extruder_id") for f in loaded)
+    return (
+        f"No filament loaded on this printer matches the file. It needs {want}; "
+        f"the printer has {have} and no AMS. Load the required filament on the "
+        f"external spool holder, or send this job to a printer that has it."
+    )
+
+
 class PrintScheduler:
     """Background scheduler that processes the print queue."""
 
@@ -663,6 +701,31 @@ class PrintScheduler:
                 if inflight_pid is not None:
                     busy_printers.add(inflight_pid)
 
+            # Printers held by a Home Assistant sensor interlock (#1148) — an
+            # enclosure door left open, say. The fixed-printer branch turns
+            # this into a waiting_reason the user can act on; the model-based
+            # branch hides these printers from the matcher so an "Any <model>"
+            # job runs on a sibling instead of queueing behind the held one.
+            #
+            # Deliberately NOT merged into busy_printers, even though that set
+            # already means "unavailable this pass". _check_auto_drying reads
+            # it as "is currently printing" and would put an idle-but-held
+            # printer down the mid-print drying path, which caps the drying
+            # temperature and skips the queue-only gating. A held printer is
+            # idle; it should dry exactly as it did before.
+            #
+            # Only sensors we actually read and found alerting appear here; see
+            # ha_sensor_manager.blocked_printers. A Home Assistant that is down
+            # holds nothing.
+            interlocked: dict[int, str] = {}
+            try:
+                interlocked = await ha_sensor_manager.blocked_printers(db)
+            except Exception as e:
+                # Never let the interlock stop the queue running. A broken
+                # lookup means no holds, not no dispatches.
+                logger.warning("Home Assistant interlock check failed: %s", e)
+                interlocked = {}
+
             # Log skip reasons once per queue check (not per item)
             skip_reasons: dict[str, int] = {}
 
@@ -722,6 +785,28 @@ class PrintScheduler:
                     continue
 
                 if item.printer_id:
+                    # Held by a sensor interlock (#1148). Checked before the
+                    # busy_printers test that would otherwise swallow it
+                    # silently — "waiting for a printer" and "waiting for you
+                    # to shut the enclosure" need to read differently, and only
+                    # one of them is something the user can fix.
+                    #
+                    # The interlock is the only thing that writes a
+                    # waiting_reason on this branch — the model-based branch
+                    # nulls it at the moment it assigns a printer — so any
+                    # reason still standing once the hold lifts is stale and is
+                    # cleared here. Doing it at dispatch instead would leave a
+                    # shut door reading "Waiting on Enclosure Door" for as long
+                    # as the printer stayed busy with something else.
+                    interlock_reason = interlocked.get(item.printer_id)
+                    reason = f"Waiting on {interlock_reason}" if interlock_reason else None
+                    if item.waiting_reason != reason:
+                        item.waiting_reason = reason
+                        await db.commit()
+                    if interlock_reason:
+                        skip_reasons["sensor_interlock"] = skip_reasons.get("sensor_interlock", 0) + 1
+                        continue
+
                     # Specific printer assignment (existing behavior)
                     if item.printer_id in busy_printers:
                         continue
@@ -808,7 +893,10 @@ class PrintScheduler:
                     # (all -1). A stored all-[-1] mapping is a bug artifact — a
                     # frontend status-load race can persist [-1] (#2589) — and
                     # must be recomputed from live trays rather than trusted.
-                    await self._ensure_ams_mapping(db, item.printer_id, item)
+                    unmappable = await self._ensure_ams_mapping(db, item.printer_id, item)
+                    if unmappable:
+                        await self._fail_unmappable_item(db, item, item.printer_id, unmappable)
+                        continue
 
                     # Filament-deficit pre-dispatch check (#1496). If the
                     # assigned spool can't satisfy any required slot grams,
@@ -917,7 +1005,10 @@ class PrintScheduler:
                         match_id, match_reason = await self._find_idle_printer_for_model(
                             db,
                             candidate.target_model,
-                            busy_printers,
+                            # Sensor-held printers are unavailable to the
+                            # matcher but stay out of busy_printers itself
+                            # (#1148) — see where `interlocked` is built.
+                            busy_printers | interlocked.keys(),
                             effective_types,
                             item.target_location,
                             filament_overrides=filament_overrides,
@@ -1010,7 +1101,10 @@ class PrintScheduler:
                         # missing OR unresolved (all -1). Critical for model-based
                         # jobs where mapping wasn't computed upfront, and it also
                         # self-heals a bogus stored [-1] (#2589).
-                        await self._ensure_ams_mapping(db, printer_id, item)
+                        unmappable = await self._ensure_ams_mapping(db, printer_id, item)
+                        if unmappable:
+                            await self._fail_unmappable_item(db, item, printer_id, unmappable)
+                            continue
 
                         # Filament-deficit pre-dispatch check (#1496).
                         if await self._block_on_filament_deficit(db, item):
@@ -1625,7 +1719,7 @@ class PrintScheduler:
             # actually going to run so history and the ETA agree with reality.
             item.print_time_seconds = variant.print_time_seconds
 
-    async def _ensure_ams_mapping(self, db: AsyncSession, printer_id: int, item: PrintQueueItem) -> None:
+    async def _ensure_ams_mapping(self, db: AsyncSession, printer_id: int, item: PrintQueueItem) -> str | None:
         """Ensure the queue item carries a usable AMS mapping before dispatch.
 
         Recomputes from live printer status when the stored mapping is missing OR
@@ -1641,6 +1735,14 @@ class PrintScheduler:
         external selection; the print command then keeps use_ams=True and the
         firmware surfaces a clear AMS-mapping error instead of silently printing
         to the empty external feed.
+
+        Returns an actionable message when that firmware error is the only
+        possible outcome — the matcher ran, matched nothing, and the printer has
+        no AMS to load a different spool into (#2771). The caller fails the item
+        on it instead of spending an upload on a print that cannot start.
+        Returns None everywhere else, including every case where we simply lack
+        the data to judge, so dispatch is only ever blocked on a positive
+        finding.
         """
         stored_mapping: list | None = None
         if item.ams_mapping:
@@ -1652,7 +1754,7 @@ class PrintScheduler:
         # Already resolved (present and not all-unresolved) — keep as-is so a
         # user's manual mapping is never overwritten.
         if item.ams_mapping and not _mapping_is_all_unresolved(stored_mapping):
-            return
+            return None
 
         computed_mapping = await self._compute_ams_mapping_for_printer(db, printer_id, item)
         if computed_mapping and not _mapping_is_all_unresolved(computed_mapping):
@@ -1664,7 +1766,9 @@ class PrintScheduler:
                 computed_mapping,
             )
             await db.commit()
-        elif _mapping_is_all_unresolved(stored_mapping):
+            return None
+
+        if _mapping_is_all_unresolved(stored_mapping):
             logger.warning(
                 "Queue item %s: stored ams_mapping %s is unresolved and could not be recomputed "
                 "from live status on printer %s; clearing it so dispatch does not treat it as external",
@@ -1674,6 +1778,105 @@ class PrintScheduler:
             )
             item.ams_mapping = None
             await db.commit()
+
+        return await self._unmappable_without_ams_message(db, printer_id, item, computed_mapping)
+
+    async def _unmappable_without_ams_message(
+        self,
+        db: AsyncSession,
+        printer_id: int,
+        item: PrintQueueItem,
+        computed_mapping: list[int] | None,
+    ) -> str | None:
+        """Message for a mapping that resolved nothing on an AMS-less printer (#2771).
+
+        A print dispatched with no mapping goes out as ``use_ams: true`` with no
+        ``ams_mapping`` and no ``ams_mapping2``, which the firmware rejects with
+        0700_8012 "Failed to get AMS mapping table" — after Bambuddy has already
+        uploaded several megabytes and burned its dispatch retries. With an AMS
+        attached that error is worth reaching: the user can load the right spool
+        and press Resume, so this returns None and today's behaviour stands. With
+        no AMS there is nothing to resume into — the external spool holder is the
+        whole inventory — so the useful answer is to say which filament is
+        missing and stop.
+
+        Fail-safe by construction, mirroring the nozzle-diameter guard (#1899):
+        every branch that lacks the evidence to be sure returns None.
+        """
+        # None means the matcher never ran (no requirements parsed from the 3MF,
+        # or nothing loaded at all) rather than "ran and matched nothing". Those
+        # dispatch as they always have.
+        if not _mapping_is_all_unresolved(computed_mapping):
+            return None
+
+        status = printer_manager.get_status(printer_id)
+        if status is None:
+            return None
+
+        # "No AMS" has to be a fact the printer stated, not the absence of a
+        # statement. `raw_data["ams"]` is written only once an AMS push has been
+        # handled and is preserved across partial pushes thereafter, so a missing
+        # key means we have not heard yet — most likely a reconnect, where the
+        # trays of a fully loaded AMS would be invisible for a few seconds. An
+        # empty list is the positive report of a printer with no AMS.
+        ams_units = status.raw_data.get("ams")
+        if not isinstance(ams_units, list) or ams_units:
+            return None
+
+        required = await self._get_filament_requirements(db, item)
+        loaded = self._build_loaded_filaments(status)
+        if not required or not loaded:
+            # Both were non-empty moments ago or the matcher could not have run.
+            # If the picture changed under us, say nothing rather than fail an
+            # item on stale evidence.
+            return None
+        self._apply_filament_overrides(item, required)
+        return _unmatched_filament_message(required, loaded)
+
+    async def _fail_unmappable_item(
+        self, db: AsyncSession, item: PrintQueueItem, printer_id: int, message: str
+    ) -> None:
+        """Fail a queue item whose filament mapping cannot resolve (#2771).
+
+        This replaces a failure, not a success: without it the item is uploaded,
+        rejected by the firmware with 0700_8012, retried twice more and failed
+        anyway with "never started the print after N dispatch attempts". So this
+        applies on the model-based path too, even though it means an "Any <model>"
+        job stops at the first printer offered rather than trying its siblings —
+        deferring instead would need the check to move inside
+        ``_find_printer_for_model``'s candidate loop, since un-assigning here just
+        re-assigns the same printer on the next tick.
+        """
+        item.status = "failed"
+        item.error_message = message
+        item.completed_at = datetime.now(timezone.utc)
+        item.waiting_reason = None
+        await db.commit()
+        logger.warning(
+            "Queue item %s: no usable AMS mapping on printer %s — %s",
+            item.id,
+            printer_id,
+            message,
+        )
+
+        job_name = await self._get_job_name(db, item)
+        printer = await self._get_printer(db, printer_id)
+        await notification_service.on_queue_job_failed(
+            job_name=job_name,
+            printer_id=printer_id,
+            printer_name=printer.name if printer else "Unknown",
+            reason=message,
+            db=db,
+        )
+        try:
+            await ws_manager.send_queue_item_failed(
+                user_id=item.created_by_id,
+                queue_item_id=item.id,
+                printer_id=printer_id,
+                reason="filament_unmappable",
+            )
+        except Exception:
+            pass
 
     async def _compute_ams_mapping_for_printer(
         self, db: AsyncSession, printer_id: int, item: PrintQueueItem
@@ -1727,37 +1930,7 @@ class PrintScheduler:
             logger.debug("No filament requirements found for queue item %s", item.id)
             return None
 
-        # Apply filament overrides if present
-        if item.filament_overrides:
-            try:
-                overrides = json.loads(item.filament_overrides)
-                override_map = {o["slot_id"]: o for o in overrides}
-                for req in filament_reqs:
-                    if req["slot_id"] in override_map:
-                        override = override_map[req["slot_id"]]
-                        req["type"] = override["type"]
-                        req["color"] = override["color"]
-                        # A manual/preference override SWAPS the slot's filament, so the
-                        # 3MF's original tray_info_idx now points at the old spool and must
-                        # be cleared — matching then falls back to type+colour. A
-                        # force_color_match override is not a swap: it carries the 3MF's
-                        # intended variant (Basic GFA00 / Matte GFA01 / Silk GFA06), so keep
-                        # it here too, letting the matcher pin the correct variant slot on a
-                        # printer holding two same-colour spools of different variants (#2650).
-                        # If that variant isn't loaded the matcher falls back to type+colour,
-                        # so an eligible printer never fails to map.
-                        req["tray_info_idx"] = (
-                            override.get("tray_info_idx", "") if override.get("force_color_match") else ""
-                        )
-                        logger.debug(
-                            "Queue item %s: Override slot %d -> %s %s",
-                            item.id,
-                            req["slot_id"],
-                            override["type"],
-                            override["color"],
-                        )
-            except (json.JSONDecodeError, KeyError, TypeError) as e:
-                logger.warning("Failed to apply filament overrides for queue item %s: %s", item.id, e)
+        self._apply_filament_overrides(item, filament_reqs)
 
         # Build loaded filaments from printer status
         loaded_filaments = self._build_loaded_filaments(status)
@@ -1790,6 +1963,47 @@ class PrintScheduler:
         return self._match_filaments_to_slots(
             filament_reqs, loaded_filaments, prefer_lowest, inventory_remain_overrides, fts_installed
         )
+
+    def _apply_filament_overrides(self, item: PrintQueueItem, filament_reqs: list[dict]) -> None:
+        """Rewrite ``filament_reqs`` in place with the item's per-slot overrides.
+
+        Extracted from ``_compute_ams_mapping_for_printer`` so the unmappable
+        diagnosis (#2771) describes the filament the matcher actually looked
+        for, not the one the 3MF was sliced with — naming the pre-override
+        filament in a user-facing error would send the user to load the wrong
+        spool.
+        """
+        if not item.filament_overrides:
+            return
+        try:
+            overrides = json.loads(item.filament_overrides)
+            override_map = {o["slot_id"]: o for o in overrides}
+            for req in filament_reqs:
+                if req["slot_id"] in override_map:
+                    override = override_map[req["slot_id"]]
+                    req["type"] = override["type"]
+                    req["color"] = override["color"]
+                    # A manual/preference override SWAPS the slot's filament, so the
+                    # 3MF's original tray_info_idx now points at the old spool and must
+                    # be cleared — matching then falls back to type+colour. A
+                    # force_color_match override is not a swap: it carries the 3MF's
+                    # intended variant (Basic GFA00 / Matte GFA01 / Silk GFA06), so keep
+                    # it here too, letting the matcher pin the correct variant slot on a
+                    # printer holding two same-colour spools of different variants (#2650).
+                    # If that variant isn't loaded the matcher falls back to type+colour,
+                    # so an eligible printer never fails to map.
+                    req["tray_info_idx"] = (
+                        override.get("tray_info_idx", "") if override.get("force_color_match") else ""
+                    )
+                    logger.debug(
+                        "Queue item %s: Override slot %d -> %s %s",
+                        item.id,
+                        req["slot_id"],
+                        override["type"],
+                        override["color"],
+                    )
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            logger.warning("Failed to apply filament overrides for queue item %s: %s", item.id, e)
 
     def _build_override_direct_mapping(self, force_overrides: list[dict], status) -> list[int] | None:
         """Build an AMS mapping directly from force-color overrides without a 3MF.
@@ -1864,6 +2078,38 @@ class PrintScheduler:
         # Get ams_extruder_map for dual-nozzle printers (H2D, H2D Pro)
         ams_extruder_map = status.raw_data.get("ams_extruder_map", {})
 
+        # Dual-nozzle detection, used below to route external spools to an
+        # extruder (#2771). Mirrors `buildLoadedFilaments` in the frontend,
+        # which was corrected for #1257 while this copy kept the old signal.
+        #
+        # `ams_extruder_map` is derived from AMS info bits, so a dual-nozzle
+        # printer with zero AMS units reports an empty map — and every external
+        # spool then got `extruder_id=None`, which the nozzle-aware filter in
+        # `_match_filaments_to_slots` rejects outright because `None` equals
+        # neither 0 nor 1. On an X2D feeding from external spools only that left
+        # nothing to match, the mapping came back all -1, and the print went out
+        # with `use_ams: true` and no mapping table at all — firmware 0700_8012,
+        # "Failed to get AMS mapping table".
+        #
+        # `nozzles` is always a two-entry list (the state seeds it with two empty
+        # NozzleInfo stubs), so its length proves nothing; only a populated
+        # diameter on the second entry means real hardware. The other two signals
+        # are fallbacks for firmware revisions that surface one but not the
+        # other: a populated `ams_extruder_map` is dual-nozzle by construction,
+        # and so is more than one `vt_tray` entry, since single-nozzle printers
+        # expose exactly one external feed.
+        nozzles = getattr(status, "nozzles", None) or []
+        vt_trays = status.raw_data.get("vt_tray") or []
+        is_dual_nozzle = bool(
+            (len(nozzles) > 1 and getattr(nozzles[1], "nozzle_diameter", ""))
+            or ams_extruder_map
+            # isinstance, because a dict here would count its ~30 keys as trays.
+            # bambu_mqtt normalises vt_tray to a list before it reaches raw_data,
+            # so this is unreachable — but the loop below would raise on a dict
+            # and that is the pre-existing behaviour to keep, not to paper over.
+            or (isinstance(vt_trays, list) and len(vt_trays) > 1)
+        )
+
         # Parse AMS units from raw_data
         ams_data = status.raw_data.get("ams", [])
         for ams_unit in ams_data:
@@ -1900,7 +2146,7 @@ class PrintScheduler:
                     )
 
         # Check external spool(s) (vt_tray is a list)
-        for idx, vt in enumerate(status.raw_data.get("vt_tray") or []):
+        for idx, vt in enumerate(vt_trays):
             if vt.get("tray_type"):
                 color = self._normalize_color(vt.get("tray_color", ""))
                 tray_id = int(vt.get("id", 254))
@@ -1914,7 +2160,9 @@ class PrintScheduler:
                         "is_ht": False,
                         "is_external": True,
                         "global_tray_id": tray_id,
-                        "extruder_id": (255 - tray_id) if ams_extruder_map else None,
+                        # 254 = VIRTUAL_TRAY_DEPUTY_ID feeds extruder 1 (left),
+                        # 255 = VIRTUAL_TRAY_MAIN_ID feeds extruder 0 (right).
+                        "extruder_id": (255 - tray_id) if is_dual_nozzle else None,
                         "remain": vt.get("remain", -1),
                     }
                 )
