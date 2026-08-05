@@ -230,7 +230,7 @@ export function CardView({
           overlay
             ? 'rotate-1 scale-[1.02] border-bambu-green/40 shadow-2xl cursor-grabbing'
             : 'border-bambu-dark-tertiary card-shadow transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-bambu-green/40 hover:shadow-lg motion-reduce:hover:translate-y-0'
-        } ${placeholder ? 'opacity-60' : ''}`}
+        } ${placeholder ? 'opacity-60' : ''} ${project.urgent ? 'animate-urgent-halo' : ''}`}
       >
         <div className="flex items-center gap-2 px-3 pt-2.5">
           {/* `aria-hidden` with the label carried in text beside it, so the
@@ -252,6 +252,17 @@ export function CardView({
             </span>
             {project.client_name ?? t('aito.noClient')}
           </p>
+          {/* The chip is what keeps the signal from being colour-only. The halo
+              alone is invisible to a red-green colourblind operator, and this
+              is a board where missing "urgent" costs real money. */}
+          {project.urgent && (
+            <span
+              data-testid="aito-card-urgent"
+              className="flex-shrink-0 rounded-[.2rem] bg-status-error px-1 text-[.6rem] font-bold uppercase tracking-wider text-white"
+            >
+              {t('aito.urgent')}
+            </span>
+          )}
           {/* Moved up from the footer: the name row is where a person's eye
               already lands, and an aging job is exactly the fact that belongs
               beside the name, not buried under a description. Heat ramp with

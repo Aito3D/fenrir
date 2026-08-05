@@ -26,6 +26,7 @@ const project: AitoProject = {
   quote_accepted_at: null,
   quote_sync_state: 'idle',
   quote_invoiced: false,
+  urgent: false,
   quote_sync_error: null,
   quote_status_block: null,
   quote_status_remote: null,
@@ -415,6 +416,22 @@ describe('CardView', () => {
     target.focus();
     await user.keyboard('{Enter}');
     expect(onExpand).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the urgent chip and halo on an urgent project', () => {
+    const { container } = render(<CardView project={{ ...project, urgent: true }} onExpand={vi.fn()} />);
+
+    expect(screen.getByTestId('aito-card-urgent')).toBeInTheDocument();
+    // The halo must sit on the CARD element, not the shell: the shell holds
+    // collapsed height for the hover-reveal and carries no card styling.
+    expect(container.querySelector('[data-aito-card]')).toHaveClass('animate-urgent-halo');
+  });
+
+  it('renders neither chip nor halo on a normal project', () => {
+    const { container } = render(<CardView project={{ ...project, urgent: false }} onExpand={vi.fn()} />);
+
+    expect(screen.queryByTestId('aito-card-urgent')).not.toBeInTheDocument();
+    expect(container.querySelector('[data-aito-card]')).not.toHaveClass('animate-urgent-halo');
   });
 });
 

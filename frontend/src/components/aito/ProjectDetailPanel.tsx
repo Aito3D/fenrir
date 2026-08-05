@@ -21,6 +21,7 @@ import { ShippingCard } from './ShippingCard';
 import { stagesWithWork } from './services';
 import { StageRail } from './StageRail';
 import { TaskEditor } from './TaskEditor';
+import { UrgentButton } from './UrgentButton';
 import { AITO_CARD_VT_NAME } from '../../hooks/useCardMorph';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
@@ -1049,6 +1050,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               finding the card again. The two blocks are mutually exclusive by
               construction (see ProjectDoneAction), so this never crowds. */}
           <span className="flex-1" />
+          <UrgentButton project={project} />
           <QuoteStatusActions project={project} layout="row" />
           <ProjectDoneAction project={project} />
         </div>

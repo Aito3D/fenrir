@@ -30,6 +30,7 @@ const card = (id: number, column: AitoProject['column'], position: number): Aito
   quote_accepted_at: null,
   quote_sync_state: 'idle',
   quote_invoiced: false,
+  urgent: false,
   quote_sync_error: null,
   quote_status_block: null,
   quote_status_remote: null,
@@ -65,6 +66,20 @@ describe('buildBoard', () => {
     const rogue = { ...card(5, 'devis', 0), column: 'archive' as AitoProject['column'] };
     const board = buildBoard([rogue, card(1, 'devis', 0)]);
     expect(board.devis.map((p) => p.id)).toEqual([1]);
+  });
+
+  it('sorts urgent cards to the top of their column, keeping position order inside each group', () => {
+    const project = (id: number, position: number, urgent: boolean) =>
+      ({ id, column: 'devis', position, urgent }) as unknown as AitoProject;
+
+    const board = buildBoard([
+      project(1, 0, false),
+      project(2, 1, true),
+      project(3, 2, false),
+      project(4, 3, true),
+    ]);
+
+    expect(board.devis.map((p) => p.id)).toEqual([2, 4, 1, 3]);
   });
 });
 
@@ -132,6 +147,46 @@ describe('computeMoveTarget', () => {
 
   it('asks for a resync when the active card is on no column', () => {
     expect(computeMoveTarget(emptyBoard(), 42, 'devis', 'devis')).toEqual({ kind: 'resync' });
+  });
+
+  it('round-trips through the server when the column holds an urgent card', () => {
+    // `position` is an index into the DISPLAYED order (urgent first), so the
+    // server has to renumber in that same order — see move_project in
+    // backend/app/api/routes/aito.py. This pins the two halves together: what
+    // the drag reports must be what the next fetch renders.
+    const serverMove = (
+      projects: AitoProject[],
+      activeId: number,
+      column: AitoProject['column'],
+      position: number,
+    ): AitoProject[] => {
+      const moving = projects.find((p) => p.id === activeId)!;
+      const destination = projects
+        .filter((p) => p.column === column && p.id !== activeId)
+        .sort((a, b) => Number(b.urgent) - Number(a.urgent) || a.position - b.position);
+      destination.splice(Math.min(position, destination.length), 0, moving);
+      return destination.map((p, index) => ({ ...p, column, position: index }));
+    };
+
+    const stored = [
+      card(1, 'devis', 0),
+      { ...card(2, 'devis', 1), urgent: true },
+      card(3, 'devis', 2),
+      card(4, 'devis', 3),
+    ];
+    const board = buildBoard(stored);
+    expect(board.devis.map((p) => p.id)).toEqual([2, 1, 3, 4]);
+
+    // Drag card 4 up onto the slot card 1 occupies on screen (display index 1).
+    const result = computeMoveTarget(board, 4, 1, 'devis');
+    expect(result.kind).toBe('move');
+    if (result.kind !== 'move') return;
+    expect(result.position).toBe(1);
+    expect(result.board.devis.map((p) => p.id)).toEqual([2, 4, 1, 3]);
+
+    // What the server stores must redisplay as what the drag showed.
+    const refetched = buildBoard(serverMove(stored, 4, result.column, result.position));
+    expect(refetched.devis.map((p) => p.id)).toEqual([2, 4, 1, 3]);
   });
 });
 

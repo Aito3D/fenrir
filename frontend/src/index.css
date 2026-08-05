@@ -1200,6 +1200,49 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
   }
 }
 
+/* Urgent: a ring that expands outward and fades, leaving the border crisp.
+   Only the halo moves — the card's own edge never goes soft, so a column of
+   several urgent cards still reads as a column of cards rather than as a
+   smear. `var(--card-shadow)` is repeated in EVERY stop because box-shadow is
+   a single property: a keyframe that omitted it would drop the card's
+   elevation for the whole animation, and several themes define --card-shadow
+   as a multi-layer value with an accent glow. */
+@keyframes urgent-halo {
+  0%   { box-shadow: 0 0 0 0 rgb(239 68 68 / .55), 0 0 10px -2px rgb(239 68 68 / .7), var(--card-shadow); }
+  70%  { box-shadow: 0 0 0 7px rgb(239 68 68 / 0), 0 0 10px -2px rgb(239 68 68 / .7), var(--card-shadow); }
+  100% { box-shadow: 0 0 0 0 rgb(239 68 68 / 0),  0 0 10px -2px rgb(239 68 68 / .7), var(--card-shadow); }
+}
+/* Cascade, both halves — get one without the other and the next repair is wrong:
+   1. This rule is UNLAYERED, and unlayered declarations outrank every Tailwind
+      utility layer whatever their specificity (Tailwind v4 is pulled in with a
+      bare `@import "tailwindcss"`, and this file declares no layer of its own).
+      That is why one class beats the card's `hover:border-bambu-green/40`
+      without any specificity padding — do not add some.
+   2. But an unlayered rule still LOSES to a LATER unlayered rule in this same
+      file, and `.card-shadow { box-shadow: var(--card-shadow) }` (further down)
+      is exactly that, on the very same element (CardView renders both classes).
+      The animated halo escapes it because a running animation outranks normal
+      declarations outright; the reduced-motion glow below is a plain
+      declaration and does NOT, so it is the one place that needs the doubled
+      class. */
+.animate-urgent-halo {
+  /* --status-error, not the accent: urgency is a fixed semantic red and must
+     not shift when the user changes theme colour. */
+  border-color: var(--status-error);
+  animation: urgent-halo 2.2s ease-out infinite;
+}
+/* The signal survives for anyone who has asked for less motion — as a static
+   glow rather than a pulsing one, exactly like .animate-invoiced-glow above.
+   The class is repeated to outweigh the later `.card-shadow` (see above); the
+   rule stays here, beside the animation it replaces, rather than being exiled
+   below `.card-shadow` where nobody would find it. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-urgent-halo.animate-urgent-halo {
+    animation: none;
+    box-shadow: 0 0 10px -1px rgb(239 68 68 / .6), var(--card-shadow);
+  }
+}
+
 /* Calculator tables: rows carry a SOLID background so the sticky first
    column can `bg-inherit` it — translucent hover tints on the row would let
    scrolled columns bleed through the sticky cell. */

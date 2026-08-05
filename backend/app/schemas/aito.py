@@ -224,6 +224,14 @@ class AitoProjectUpdate(AitoShippingInput):
         return value if value is None else _check_phone(value)
 
 
+class AitoUrgentUpdate(BaseModel):
+    """Body of PATCH /aito/{id}/urgent. A single required field: this route
+    exists to write exactly one flag, so `exclude_unset` semantics (which
+    `AitoProjectUpdate` needs) would only make "absent" ambiguous here."""
+
+    urgent: bool
+
+
 class AitoTaskStepsResponse(BaseModel):
     """One task's steps, for the board card's per-task rows.
 
@@ -269,6 +277,10 @@ class AitoProjectResponse(BaseModel):
     # comment on AitoProject.quote_invoiced. Separate from quote_sync_state ==
     # 'locked', which also covers tax-exclusive quotes that were never billed.
     quote_invoiced: bool
+    # A local board signal, never synced to Zoho — see the column comment on
+    # AitoProject.urgent. Display ordering only: the board sorts urgent cards
+    # to the top of their column without rewriting stored `position` values.
+    urgent: bool
     quote_sync_error: str | None
     # Why the status reconciler is blocked, if it is, and what Books read when
     # it was recorded — 'conflict' (both sides decided and differ) or

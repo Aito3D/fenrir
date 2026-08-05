@@ -111,6 +111,7 @@ const project: AitoProject = {
   quote_accepted_at: null,
   quote_sync_state: 'idle',
   quote_invoiced: false,
+  urgent: false,
   quote_sync_error: null,
   quote_status_block: null,
   quote_status_remote: null,
