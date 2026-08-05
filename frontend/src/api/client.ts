@@ -3620,6 +3620,23 @@ export interface AitoProjectUpdate {
   shipping_price?: number | null;
 }
 
+export interface AitoQuoteEmailRecipient {
+  email: string;
+  name: string;
+  contact_person_id: string;
+}
+
+export interface AitoQuoteEmailContent {
+  subject: string;
+  /** Books' rendered HTML. Rendered as PLAIN TEXT by SendQuoteModal and never
+   *  injected into the DOM — a preview is not worth an injection surface fed
+   *  by an upstream template. */
+  body: string;
+  recipients: AitoQuoteEmailRecipient[];
+  /** The address to preselect, or null when this client has none at all. */
+  default_email: string | null;
+}
+
 export interface AitoShippingIsland {
   key: string;
   label: string;
@@ -6622,6 +6639,17 @@ export const api = {
     }),
   setAitoQuoteStatus: (id: number, data: { status: 'sent' | 'accepted' | 'declined' }) =>
     request<{ project: AitoProject; zoho_synced: boolean }>(`/aito/${id}/quote-status`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  /** What Books would send if this quote were emailed now — preview only.
+   *  The POST re-reads it server-side rather than trusting anything sent
+   *  back, so this is safe to treat as display data. */
+  getAitoQuoteEmail: (id: number) => request<AitoQuoteEmailContent>(`/aito/${id}/quote-email`),
+  /** Email the quote through Books. `marked_sent` is true when the card was
+   *  in the Quote column and has therefore moved to Waiting. */
+  sendAitoQuoteEmail: (id: number, data: { to: string }) =>
+    request<{ project: AitoProject; marked_sent: boolean }>(`/aito/${id}/quote-email`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
