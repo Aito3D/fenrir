@@ -1735,3 +1735,54 @@ async def test_new_projects_are_not_urgent(async_client):
 
     listed = await async_client.get("/api/v1/aito/")
     assert [p["urgent"] for p in listed.json()] == [False]
+
+
+@pytest.mark.asyncio
+async def test_urgent_toggles_and_never_queues_a_zoho_push(async_client, db_session):
+    """The whole reason this has its own route. update_project ends with an
+    unconditional _mark_pending_if_ours, so routing `urgent` through it would
+    queue a quote push for a field the quote does not have — and churn the
+    sync state on locked quotes, where writes are already known to be unsafe."""
+    project_id = (await _create(async_client)).json()["id"]
+
+    before = (await db_session.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one()
+    sync_state_before = before.quote_sync_state
+    failures_before = before.quote_sync_failures
+
+    flagged = await async_client.patch(f"/api/v1/aito/{project_id}/urgent", json={"urgent": True})
+    assert flagged.status_code == 200
+    assert flagged.json()["urgent"] is True
+
+    db_session.expire_all()
+    after = (await db_session.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one()
+    assert after.quote_sync_state == sync_state_before
+    assert after.quote_sync_failures == failures_before
+
+    cleared = await async_client.patch(f"/api/v1/aito/{project_id}/urgent", json={"urgent": False})
+    assert cleared.status_code == 200
+    assert cleared.json()["urgent"] is False
+
+
+@pytest.mark.asyncio
+async def test_urgent_records_one_story_event_per_real_change(async_client):
+    """Double-taps must not spam the timeline: an unchanged value records
+    nothing, so the history reads as decisions rather than as button presses."""
+    project_id = (await _create(async_client)).json()["id"]
+
+    await async_client.patch(f"/api/v1/aito/{project_id}/urgent", json={"urgent": True})
+    await async_client.patch(f"/api/v1/aito/{project_id}/urgent", json={"urgent": True})
+    await async_client.patch(f"/api/v1/aito/{project_id}/urgent", json={"urgent": False})
+
+    events = (await async_client.get(f"/api/v1/aito/{project_id}/events?depth=story")).json()["events"]
+    kinds = [e["kind"] for e in events]
+    assert kinds.count("project.urgent.set") == 1
+    assert kinds.count("project.urgent.cleared") == 1
+
+
+@pytest.mark.asyncio
+async def test_urgent_404s_on_a_trashed_project(async_client):
+    project_id = (await _create(async_client)).json()["id"]
+    await async_client.delete(f"/api/v1/aito/{project_id}")
+
+    r = await async_client.patch(f"/api/v1/aito/{project_id}/urgent", json={"urgent": True})
+    assert r.status_code == 404

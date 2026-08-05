@@ -35,6 +35,8 @@ KINDS: dict[str, str] = {
     "stage.changed": "story",
     "project.trashed": "story",
     "project.restored": "story",
+    "project.urgent.set": "story",
+    "project.urgent.cleared": "story",
     # detail: everything a person did by hand.
     "task.added": "detail",
     "task.updated": "detail",

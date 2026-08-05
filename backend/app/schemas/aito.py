@@ -224,6 +224,14 @@ class AitoProjectUpdate(AitoShippingInput):
         return value if value is None else _check_phone(value)
 
 
+class AitoUrgentUpdate(BaseModel):
+    """Body of PATCH /aito/{id}/urgent. A single required field: this route
+    exists to write exactly one flag, so `exclude_unset` semantics (which
+    `AitoProjectUpdate` needs) would only make "absent" ambiguous here."""
+
+    urgent: bool
+
+
 class AitoTaskStepsResponse(BaseModel):
     """One task's steps, for the board card's per-task rows.
 
