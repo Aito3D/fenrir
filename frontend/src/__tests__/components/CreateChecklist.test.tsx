@@ -32,9 +32,9 @@ describe('CreateChecklist', () => {
 
   it('client line stays neutral until revealed, then goes miss', () => {
     const { rerender } = renderChecklist({ ...base });
-    expect(screen.getByText('Client needs a phone or an email').closest('[data-state]')).toHaveAttribute('data-state', 'wait');
+    expect(screen.getByText('Client needs a phone, an email or a social network').closest('[data-state]')).toHaveAttribute('data-state', 'wait');
     rerender(<CreateChecklist {...base} clientRevealed />);
-    expect(screen.getByText('Client needs a phone or an email').closest('[data-state]')).toHaveAttribute('data-state', 'miss');
+    expect(screen.getByText('Client needs a phone, an email or a social network').closest('[data-state]')).toHaveAttribute('data-state', 'miss');
   });
 
   it('a satisfied line grows its tick in and transitions its colours', () => {
