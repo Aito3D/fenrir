@@ -74,6 +74,74 @@ describe('ShippingCard', () => {
     expect(screen.getByLabelText(/recipient phone/i)).toHaveValue('40123456');
   });
 
+  // The card is the last thing in the panel's left column, so the editor opens
+  // below the fold and its Save button reads as cut off. jsdom has no layout,
+  // so what is pinned here is the CONTRACT — that the reveal is asked for on
+  // open and again when the form grows — not the resulting geometry.
+  describe('reveals the editor when it opens or grows', () => {
+    const withScrollSpy = async (run: (spy: ReturnType<typeof vi.fn>) => Promise<void>) => {
+      const spy = vi.fn();
+      const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
+      Element.prototype.scrollIntoView = spy;
+      try {
+        await run(spy);
+      } finally {
+        if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original);
+        else delete (Element.prototype as Partial<Element>).scrollIntoView;
+      }
+    };
+
+    it('scrolls the form into view when Add opens it', async () => {
+      await withScrollSpy(async (spy) => {
+        render(<ShippingCard project={unshipped} currency="XPF" />);
+        await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
+        expect(spy).toHaveBeenCalledWith(expect.objectContaining({ block: 'nearest' }));
+      });
+    });
+
+    // The case the deps list exists for, and the reason an island is picked
+    // FIRST: Save on an incomplete draft reveals the missing-name errors and
+    // makes the form taller, pushing the button that was just clicked back
+    // under the footer. Picking the island has already set `blurred.island`,
+    // so watching that one flag would see no change here and never re-reveal —
+    // which is why the effect watches the whole `blurred` object. Without the
+    // island step this test passes either way and pins nothing.
+    it('scrolls again when a failed Save reveals the error lines', async () => {
+      server.use(
+        http.get('/api/v1/aito/shipping/services', () =>
+          HttpResponse.json({
+            services: [
+              {
+                key: 'tuamotu',
+                name: 'Livraison Avion Tuamotu',
+                rate: 3200,
+                islands: [{ key: 'rangiroa', label: 'Rangiroa' }],
+              },
+            ],
+            catalogue_resolved: true,
+          }),
+        ),
+      );
+      await withScrollSpy(async (spy) => {
+        render(<ShippingCard project={unshipped} currency="XPF" />);
+        await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
+
+        const island = await screen.findByLabelText(/destination island/i);
+        await userEvent.type(island, 'Rangiroa');
+        await userEvent.click(await screen.findByRole('option', { name: 'Rangiroa' }));
+        // The island is in and its flag is set; anything after this is the
+        // failed-Save growth alone.
+        spy.mockClear();
+
+        // The recipient is still empty, so this reveals errors instead of saving.
+        await userEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+        expect(screen.getByLabelText(/recipient first name/i)).toHaveAttribute('aria-invalid', 'true');
+        expect(spy).toHaveBeenCalledWith(expect.objectContaining({ block: 'nearest' }));
+      });
+    });
+  });
+
   it('opens the same four fields on edit', async () => {
     render(<ShippingCard project={shipped} currency="XPF" />);
     await userEvent.click(screen.getByRole('button', { name: /edit shipping/i }));

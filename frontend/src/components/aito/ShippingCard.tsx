@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Phone, Plane } from 'lucide-react';
@@ -67,6 +67,28 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
   const { showToast } = useToast();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<ShippingDraft | null>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+
+  // This card is the LAST thing in the panel's left column, so a form that
+  // opens here — or grows a row, once an island resolves to a service and its
+  // rate line appears — puts its own Cancel/Save below the fold. The column
+  // scrolls, but its scrollbar is hidden (`scrollbar-hide`), so nothing on
+  // screen says so and the buttons simply read as cut off. `block: 'nearest'`
+  // scrolls the least amount that brings the form's bottom edge back inside,
+  // and does nothing at all when it is already fully visible.
+  // (`?.` on the call: jsdom has no scrollIntoView — same guard
+  // SearchableSelect's highlight-follow effect uses.)
+  useEffect(() => {
+    if (!editing) return;
+    editorRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+    // `blurred` as a whole, not `blurred.island`: `save()` flips all four flags
+    // at once, which is what makes the error lines appear and the form taller —
+    // but by then the island has almost always been picked already, so its flag
+    // is ALREADY true and watching it would miss exactly the case it was meant
+    // to catch. The object identity changes on every blur and on that failed
+    // Save, and never on a keystroke (`ShippingFields` only re-spreads it in
+    // its blur handlers), so this stays a handful of fires per session.
+  }, [editing, draft?.service, draft?.blurred]);
 
   // Same query key the create drawer and ClientSection use, so this shares
   // their cache instead of re-fetching a table that rarely changes.
@@ -210,7 +232,9 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
       </div>
 
       {editing && draft ? (
-        <>
+        // `scroll-mb-4` so the reveal above leaves the Save row a little air
+        // above the panel footer instead of flush against it.
+        <div ref={editorRef} className="scroll-mb-4">
           <ShippingFields
             value={draft}
             onChange={setDraft}
@@ -235,7 +259,7 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
               {t('common.save')}
             </button>
           </div>
-        </>
+        </div>
       ) : (
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm items-baseline">
           <dt className="text-bambu-gray">{t('aito.shippingIsland')}</dt>
