@@ -28,6 +28,10 @@ KINDS: dict[str, str] = {
     "project.created": "story",
     "quote.created": "story",
     "quote.sent": "story",
+    # An email actually left the building — a harder fact than quote.sent,
+    # which is also set by a human clicking "Mark as sent" for a quote handed
+    # over in person. Story depth: it belongs to the project's narrative.
+    "quote.emailed": "story",
     "quote.viewed": "story",
     "quote.accepted": "story",
     "quote.declined": "story",

@@ -130,3 +130,113 @@ async def test_prefill_maps_a_rejection_to_400(async_client, monkeypatch):
     response = await async_client.get(f"/api/v1/aito/{project['id']}/quote-email")
     assert response.status_code == 400
     assert "No email address" in response.json()["detail"]
+
+
+async def _events(async_client, project_id) -> list[str]:
+    body = (await async_client.get(f"/api/v1/aito/{project_id}/events?depth=detail")).json()
+    return [e["kind"] for e in body["events"]]
+
+
+@pytest.mark.asyncio
+async def test_send_from_devis_marks_sent_and_moves_to_waiting(async_client, books_email):
+    project = await _create(async_client)
+    assert project["column"] == "devis"
+
+    response = await async_client.post(f"/api/v1/aito/{project['id']}/quote-email", json={"to": "contact@example.pf"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["marked_sent"] is True
+    assert body["project"]["column"] == "waiting"
+    assert body["project"]["quote_status"] == "sent"
+    assert books_email == [("EST-9", ["contact@example.pf"])]
+    kinds = await _events(async_client, project["id"])
+    assert "quote.emailed" in kinds
+    assert "quote.sent" in kinds
+
+
+@pytest.mark.asyncio
+async def test_send_from_waiting_leaves_the_card_alone(async_client, books_email):
+    project = await _create(async_client)
+    await async_client.post(f"/api/v1/aito/{project['id']}/quote-status", json={"status": "sent"})
+
+    body = (
+        await async_client.post(f"/api/v1/aito/{project['id']}/quote-email", json={"to": "contact@example.pf"})
+    ).json()
+
+    assert body["marked_sent"] is False
+    assert body["project"]["column"] == "waiting"
+    assert books_email == [("EST-9", ["contact@example.pf"])]
+
+
+@pytest.mark.asyncio
+async def test_resending_an_accepted_quote_never_demotes_it(async_client, books_email):
+    # The one outcome this endpoint must never have: knocking authorised work
+    # back off the board because someone re-sent the paperwork.
+    project = await _create(async_client)
+    await async_client.post(f"/api/v1/aito/{project['id']}/quote-status", json={"status": "accepted"})
+    before = (await async_client.get("/api/v1/aito/")).json()
+    accepted = next(p for p in before if p["id"] == project["id"])
+
+    body = (
+        await async_client.post(f"/api/v1/aito/{project['id']}/quote-email", json={"to": "contact@example.pf"})
+    ).json()
+
+    assert body["marked_sent"] is False
+    assert body["project"]["quote_status"] == "accepted"
+    assert body["project"]["column"] == accepted["column"]
+    assert body["project"]["quote_accepted_at"] == accepted["quote_accepted_at"]
+
+
+@pytest.mark.asyncio
+async def test_an_address_outside_the_allowlist_is_refused_without_sending(async_client, books_email):
+    project = await _create(async_client)
+
+    response = await async_client.post(
+        f"/api/v1/aito/{project['id']}/quote-email", json={"to": "attacker@evil.example"}
+    )
+
+    assert response.status_code == 422
+    assert books_email == []  # Zoho was never asked to send anything
+    assert "quote.emailed" not in await _events(async_client, project["id"])
+
+
+@pytest.mark.asyncio
+async def test_a_failed_send_changes_nothing(async_client, books_email, monkeypatch):
+    project = await _create(async_client)
+
+    async def boom(db, estimate_id, *, to_mail_ids):
+        raise ZohoUpstreamError("Zoho Books unreachable: ConnectError")
+
+    monkeypatch.setattr(zoho_service, "email_estimate", boom)
+
+    response = await async_client.post(f"/api/v1/aito/{project['id']}/quote-email", json={"to": "contact@example.pf"})
+
+    assert response.status_code == 502
+    after = next(p for p in (await async_client.get("/api/v1/aito/")).json() if p["id"] == project["id"])
+    assert after["column"] == "devis"
+    assert after["quote_status"] is None
+    assert "quote.emailed" not in await _events(async_client, project["id"])
+
+
+@pytest.mark.asyncio
+async def test_send_never_pushes_a_status_to_books(async_client, books_email, monkeypatch):
+    # Books already marks the estimate sent as a side effect of emailing it.
+    # A second status POST is a redundant round trip that can fail on its own.
+    project = await _create(async_client)
+
+    async def fail(*args, **kwargs):
+        raise AssertionError("the email path must not push a status to Books")
+
+    monkeypatch.setattr(zoho_service, "set_estimate_status", fail)
+    monkeypatch.setattr(zoho_service, "advance_estimate_status", fail)
+
+    response = await async_client.post(f"/api/v1/aito/{project['id']}/quote-email", json={"to": "contact@example.pf"})
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_send_404s_without_a_quote(async_client, books_email):
+    project = await _create(async_client, quote_id=None, quote_number=None)
+    response = await async_client.post(f"/api/v1/aito/{project['id']}/quote-email", json={"to": "contact@example.pf"})
+    assert response.status_code == 404

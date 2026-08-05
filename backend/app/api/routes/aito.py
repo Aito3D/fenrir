@@ -27,6 +27,8 @@ from backend.app.schemas.aito import (
     AitoProjectUpdate,
     AitoQuoteEmailContent,
     AitoQuoteEmailRecipient,
+    AitoQuoteEmailRequest,
+    AitoQuoteEmailResponse,
     AitoQuoteStatusResponse,
     AitoQuoteStatusUpdate,
     AitoShippingIsland,
@@ -925,6 +927,100 @@ async def get_quote_email(
         body=content["body"],
         recipients=[AitoQuoteEmailRecipient(**r) for r in content["recipients"]],
         default_email=default_email,
+    )
+
+
+@router.post("/{project_id}/quote-email", response_model=AitoQuoteEmailResponse)
+async def send_quote_email(
+    project_id: int,
+    payload: AitoQuoteEmailRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Email this project's quote through Books, then move the card.
+
+    ZOHO-FIRST, deliberately against the local-first rule the rest of this
+    file follows. In ``set_quote_status`` the board records a decision a human
+    already made, so it must survive Books being unreachable. Here the email
+    IS the act: a card parked in Waiting after a failed send is a lie about a
+    message the client never received. So nothing is written locally until
+    Books confirms.
+
+    The card only moves when it is in the Quote column. Re-sending a quote
+    that is already out — or already accepted — is a real thing to want, and
+    it must never demote the card. Gated on ``board_column`` rather than
+    ``quote_status`` because that is the rule as specified; ``evaluate()``
+    derives one from the other, so they cannot disagree.
+    """
+    project = (
+        await db.execute(select(AitoProject).where(AitoProject.id == project_id, AitoProject.status == "active"))
+    ).scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.quote_id:
+        raise HTTPException(status_code=404, detail="This project has no Zoho quote")
+
+    try:
+        content, _ = await _quote_email_content(db, project)
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito quote email prefill failed for project %s: %s", project_id, e)
+        await db.rollback()
+        raise _quote_email_http_error(e) from e
+
+    # Re-read rather than trust the request. An allowlist the caller supplies
+    # is not an allowlist: without this the endpoint is an open relay, and any
+    # authenticated user could send arbitrary addresses mail from the
+    # company's Zoho account, on the company's own template and branding.
+    recipient = payload.to.strip()
+    if recipient.lower() not in {r["email"].lower() for r in content["recipients"]}:
+        raise HTTPException(status_code=422, detail="That address is not a recipient of this quote")
+
+    try:
+        await zoho_service.email_estimate(db, project.quote_id, to_mail_ids=[recipient])
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito quote email failed for project %s: %s", project_id, e)
+        # A DB-layer failure inside the Zoho call (a token-refresh write, a
+        # settings read) can leave this session needing a rollback; without
+        # it, get_db's implicit commit would raise PendingRollbackError and
+        # turn the mapped error below into a 500.
+        await db.rollback()
+        raise _quote_email_http_error(e) from e
+
+    await record(
+        db,
+        project.id,
+        "quote.emailed",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="project",
+        subject_id=project.id,
+        detail={"email": recipient},
+    )
+
+    summary = await _summary_for(db, project.id)
+    marked_sent = project.board_column == "devis"
+    if marked_sent:
+        adopt_quote_status(project, "sent")
+        # Our side just moved, so any recorded block describes an attempt that
+        # no longer exists — same reasoning as set_quote_status.
+        project.quote_status_block = None
+        project.quote_status_remote = None
+        await _apply_rules(db, project, summary, actor=_actor(current_user))
+        await record(
+            db,
+            project.id,
+            "quote.sent",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=project.id,
+        )
+
+    await db.commit()
+    await db.refresh(project)
+    return AitoQuoteEmailResponse(
+        project=_to_response(project, summary, await _shipping_names(db)),
+        marked_sent=marked_sent,
     )
 
 
