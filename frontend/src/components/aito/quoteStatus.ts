@@ -62,10 +62,13 @@ export const QUOTE_STATUS_PILL_TONE_CLASSES: Record<QuoteStatusTone, string> = {
   // band, where the base accent is too close to its own background to read.
   // The border and fill stay on the base accent — they are behind the text,
   // not competing with it.
-  success: 'text-bambu-green-light border-bambu-green/40 bg-bambu-green/10',
-  error: 'text-status-error border-status-error/40 bg-status-error/10',
-  warning: 'text-status-warning border-status-warning/40 bg-status-warning/10',
-  neutral: 'text-bambu-gray-light border-bambu-gray/40 bg-bambu-gray/10',
+  // /30 border and /[0.14] fill, matching the destination and urgent pills
+  // beside it — at /40 and /10 this one read as an outline while they read as
+  // filled, which is most of why the row looked like three unrelated objects.
+  success: 'text-bambu-green-light border-bambu-green/30 bg-bambu-green/[0.14]',
+  error: 'text-status-error border-status-error/30 bg-status-error/[0.14]',
+  warning: 'text-status-warning border-status-warning/30 bg-status-warning/[0.14]',
+  neutral: 'text-bambu-gray-light border-bambu-gray/30 bg-bambu-gray/[0.14]',
 };
 
 export const QUOTE_STATUS_TEXT_TONE_CLASSES: Record<QuoteStatusTone, string> = {

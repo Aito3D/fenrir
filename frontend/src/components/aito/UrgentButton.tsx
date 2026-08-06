@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle } from 'lucide-react';
 import { HoldButton } from './HoldButton';
+import { headerPillRadiusCls, headerPillTypeCls } from './panelTypography';
 import { useUrgentMutation } from '../../hooks/useUrgentMutation';
 import { type AitoProject } from '../../api/client';
 
@@ -16,7 +17,7 @@ import { type AitoProject } from '../../api/client';
  *  floating over the middle of the label rather than as progress.
  *
  *  Shaped as one of the header's status pills rather than as a footer button:
- *  once set, this IS the urgent pill — same rounded-full outline, 11px
+ *  once set, this IS the urgent pill — same .4rem outline, 11px
  *  semibold type and 3.5 glyph as the shipping pill beside it — so the flag
  *  reads as a fact about the project in the row where the project's other
  *  facts already live, and the control that sets it is the same object. The
@@ -48,7 +49,7 @@ export function UrgentButton({ project }: { project: AitoProject }) {
       disabled={mutation.isPending}
       label={on ? t('aito.clearUrgent') : t('aito.markUrgent')}
       hint={on ? t('aito.holdToClearUrgent') : t('aito.holdToMarkUrgent')}
-      radiusClassName="rounded-full"
+      radiusClassName={headerPillRadiusCls}
       // Downward: the panel root is `overflow-hidden` and this pill sits on
       // the header's first row, so the default upward hint would be clipped
       // away entirely rather than merely cramped.
@@ -57,7 +58,7 @@ export function UrgentButton({ project }: { project: AitoProject }) {
       // pill next to it. Clear: an outline-only ghost of the same pill, so the
       // control keeps its place in the row without claiming colour it has not
       // earned — the header band already carries three coloured facts.
-      className={`whitespace-nowrap border px-2 py-0.5 text-[11px] font-semibold ${
+      className={`whitespace-nowrap ${headerPillTypeCls} ${
         on
           ? 'border-amber-400/30 bg-amber-400/[0.14] text-amber-400 hover:bg-amber-400/25'
           : 'border-bambu-dark-tertiary text-bambu-gray hover:border-amber-400/50 hover:text-amber-400'

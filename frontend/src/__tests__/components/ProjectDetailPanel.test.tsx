@@ -2073,8 +2073,28 @@ describe('ProjectDetailPanel visual parity: header quote-status pill', () => {
     expect(pill).toHaveTextContent('Accepted');
     // Accent-themed, not a literal colour — see the panel's theming rule.
     expect(pill.className).toContain('text-bambu-green');
-    expect(pill.className).toContain('border-bambu-green/40');
-    expect(pill.className).toContain('bg-bambu-green/10');
+    // /30 + /[0.14], the shared header-pill tone. At the old /40 + /10 this
+    // pill read as an outline while its neighbours read as filled.
+    expect(pill.className).toContain('border-bambu-green/30');
+    expect(pill.className).toContain('bg-bambu-green/[0.14]');
+  });
+
+  it('gives the quote-status and destination pills one identical recipe', () => {
+    // The three header pills drifted into three different objects once —
+    // uppercase .72rem eyebrow beside 11px semibold, /10 fill beside /[0.14],
+    // capsule beside .4rem. They now share `headerPillCls`; this pins that
+    // they cannot drift apart again on shape, type or padding.
+    show({ quote_number: 'DEV26-2462', quote_status: 'accepted', shipping_island: 'moorea' });
+    const quote = screen.getByTestId('panel-quote-status-pill');
+    const shipping = screen.getByTestId('panel-shipping-pill');
+
+    for (const shared of ['rounded-[.4rem]', 'px-2', 'py-0.5', 'text-[11px]', 'font-semibold']) {
+      expect(quote.className).toContain(shared);
+      expect(shipping.className).toContain(shared);
+    }
+    // The eyebrow treatment is what made the quote pill the odd one out.
+    expect(quote.className).not.toContain('uppercase');
+    expect(quote.className).not.toContain('text-[.72rem]');
   });
 
   it('omits the pill entirely when the project has no quote status', () => {

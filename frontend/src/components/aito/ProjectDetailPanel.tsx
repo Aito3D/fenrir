@@ -6,7 +6,7 @@ import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ActivityRail } from './history/ActivityRail';
 import { PanelAgeStat } from './PanelAgeStat';
-import { eyebrowCls } from './panelTypography';
+import { eyebrowCls, headerPillCls } from './panelTypography';
 import { ProjectDoneAction } from './ProjectDoneAction';
 import { ProjectProgress } from './ProjectProgress';
 import { QuotePrintButton } from './QuotePrintButton';
@@ -353,7 +353,7 @@ function PanelHeader({
           {project.quote_status && (
             <span
               data-testid="panel-quote-status-pill"
-              className={`${eyebrowCls} border rounded-[.4rem] px-[.4rem] py-[.05rem] ${QUOTE_STATUS_PILL_TONE_CLASSES[quoteStatusTone(project.quote_status)]}`}
+              className={`${headerPillCls} ${QUOTE_STATUS_PILL_TONE_CLASSES[quoteStatusTone(project.quote_status)]}`}
             >
               {quoteStatusText(t, project.quote_status)}
             </span>
@@ -365,7 +365,7 @@ function PanelHeader({
           {project.shipping_island !== null && (
             <span
               data-testid="panel-shipping-pill"
-              className="inline-flex items-center gap-1.5 rounded-full border border-sky-400/30 bg-sky-400/[0.14] px-2 py-0.5 text-[11px] font-semibold text-sky-400"
+              className={`${headerPillCls} border-sky-400/30 bg-sky-400/[0.14] text-sky-400`}
             >
               <Plane className="h-3.5 w-3.5" aria-hidden="true" />
               {shippingIslandLabel}
