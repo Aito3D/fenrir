@@ -2562,6 +2562,7 @@ export interface PrintQueueBulkUpdate {
   // Auto-print G-code injection
   gcode_injection?: boolean;
   cost_center_id?: number | null;
+  estimated_cost?: number | null;
 }
 
 export interface PrintQueueBulkUpdateResponse {
