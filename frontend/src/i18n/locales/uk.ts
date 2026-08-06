@@ -3874,6 +3874,12 @@ export default {
 
   // Projects
   projects: {
+    parentLabel: "Батьківський проєкт",
+    parentNone: "Немає (проєкт верхнього рівня)",
+    parentHint: "Вкладіть цей проєкт в інший, щоб його показники підсумовувалися в головному проєкті",
+    partOf: "Частина проєкту {{name}}",
+    subProjectCount: "Підпроєктів: {{count}}",
+    subProjectsOf: "Підпроєкти проєкту {{name}}",
     title: "Проєкти",
     subtitle: "Організовуйте та відстежуйте свої проєкти 3D-друку",
     newProject: "Новий проєкт",
@@ -4021,6 +4027,12 @@ export default {
     },
     subProjects: {
       title: "Підпроєкти ({{count}})",
+      jobs: "Завдань: {{count}}",
+    },
+    rollup: {
+      title: "Разом із підпроєктами: {{count}}",
+      progress: "Загальний прогрес",
+      percentComplete: "Завершено {{percent}}%",
     },
     notes: {
       title: "Примітки",

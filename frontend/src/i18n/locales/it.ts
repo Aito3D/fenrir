@@ -3833,6 +3833,12 @@ export default {
 
   // Projects
   projects: {
+    parentLabel: 'Progetto principale',
+    parentNone: 'Nessuno (progetto di primo livello)',
+    parentHint: 'Annida questo progetto in un altro perché i suoi numeri confluiscano in un progetto principale',
+    partOf: 'Parte di {{name}}',
+    subProjectCount: '{{count}} sotto-progetti',
+    subProjectsOf: 'Sotto-progetti di {{name}}',
     title: 'Progetti',
     subtitle: 'Organizza e traccia i tuoi progetti di stampa 3D',
     newProject: 'Nuovo progetto',
@@ -3980,6 +3986,12 @@ export default {
     },
     subProjects: {
       title: 'Sotto-progetti ({{count}})',
+      jobs: '{{count}} lavori',
+    },
+    rollup: {
+      title: 'Inclusi {{count}} sotto-progetti',
+      progress: 'Avanzamento complessivo',
+      percentComplete: '{{percent}}% completato',
     },
     notes: {
       title: 'Note',
