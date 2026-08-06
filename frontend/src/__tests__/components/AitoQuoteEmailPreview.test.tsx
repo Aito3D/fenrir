@@ -44,6 +44,20 @@ describe('QuoteEmailPreview', () => {
     expect(srcdocOf(container)).not.toContain('<img');
   });
 
+  it('strips SVG and input tracking-pixel lookalikes, not just <img>', () => {
+    // FORBID_TAGS alone does not cover DOMPurify's default SVG/MathML tag
+    // sets, so these two remote-resource vectors need USE_PROFILES: {html}.
+    const hostile =
+      '<svg><image href="https://tracker.example/p.gif"></svg>' +
+      '<input type="image" src="https://tracker.example/p.gif">';
+    const { container } = render(<QuoteEmailPreview html={hostile} />);
+    const srcdoc = srcdocOf(container);
+    expect(srcdoc).not.toContain('tracker.example');
+    expect(srcdoc).not.toContain('<svg');
+    expect(srcdoc).not.toContain('<image');
+    expect(srcdoc).not.toContain('<input');
+  });
+
   it('keeps the template style block, which is why this is an iframe', () => {
     // Fidelity: the template's own CSS is the reason for frame isolation.
     // Stripping it would discard exactly what the iframe was chosen to buy.

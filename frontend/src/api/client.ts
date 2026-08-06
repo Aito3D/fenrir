@@ -3637,9 +3637,9 @@ export interface AitoQuoteEmailRecipient {
 
 export interface AitoQuoteEmailContent {
   subject: string;
-  /** Books' rendered HTML. Rendered as PLAIN TEXT by SendQuoteModal and never
-   *  injected into the DOM — a preview is not worth an injection surface fed
-   *  by an upstream template. */
+  /** Books' rendered HTML. Sanitized with DOMPurify and rendered by
+   *  QuoteEmailPreview inside an iframe with sandbox="" and an in-document
+   *  default-src 'none' CSP — never inlined into the app document. */
   body: string;
   recipients: AitoQuoteEmailRecipient[];
   /** The address to preselect, or null when this client has none at all. */
