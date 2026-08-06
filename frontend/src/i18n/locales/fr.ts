@@ -22,6 +22,7 @@ export default {
     sendQuoteTitle: 'Envoyer le devis par e-mail',
     sendQuoteRecipient: 'Destinataire',
     sendQuoteSubject: 'Objet',
+    sendQuoteMessage: 'Aperçu du message',
     sendQuoteConfirm: 'Envoyer',
     sendQuoteNoRecipients: "Ce client n'a aucune adresse e-mail dans Zoho.",
     sendQuoteLoadFailed: "Impossible de charger les détails de l'e-mail",

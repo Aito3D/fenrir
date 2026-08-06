@@ -22,6 +22,7 @@ export default {
     sendQuoteTitle: 'Angebot per E-Mail senden',
     sendQuoteRecipient: 'Empfänger',
     sendQuoteSubject: 'Betreff',
+    sendQuoteMessage: 'Nachrichtenvorschau',
     sendQuoteConfirm: 'Senden',
     sendQuoteNoRecipients: 'Dieser Kunde hat keine E-Mail-Adresse in Zoho.',
     sendQuoteLoadFailed: 'E-Mail-Details konnten nicht geladen werden',

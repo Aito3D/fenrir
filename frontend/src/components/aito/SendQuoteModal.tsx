@@ -7,7 +7,7 @@ import { Button } from '../Button';
 import { inputCls, labelCls } from '../formStyles';
 import { api, type AitoProject } from '../../api/client';
 import { useSendQuoteMutation } from '../../hooks/useSendQuoteMutation';
-import { htmlToText } from './htmlToText';
+import { QuoteEmailPreview } from './QuoteEmailPreview';
 
 /** Pick an address and email this project's quote through Zoho Books.
  *
@@ -62,55 +62,70 @@ export function SendQuoteModal({
       onClick={mutation.isPending ? undefined : onClose}
     >
       <Card
-        className="w-full max-w-md animate-modal-in"
+        // max-w-2xl, not max-w-md: Books' templates are built on fixed-width
+        // tables that re-wrap into nonsense in a narrower frame.
+        // max-h-[90vh] + flex flex-col: the preview can be up to 26rem tall,
+        // so on short viewports the card must cap its own height and let the
+        // content scroll internally rather than pushing the Send/Cancel row
+        // off-screen.
+        className="w-full max-w-2xl max-h-[90vh] flex flex-col animate-modal-in"
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
-        <CardContent className="p-6">
+        <CardContent className="p-6 flex flex-col min-h-0">
           <h3 className="text-lg font-semibold text-white mb-4">{t('aito.sendQuoteTitle')}</h3>
 
-          {isPending && (
-            <div className="flex items-center gap-2 text-bambu-gray text-sm py-6">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              {t('common.loading')}
-            </div>
-          )}
+          {/* Scrollable content region: everything except the button row, so
+              the row below stays reachable even when the preview pushes the
+              card past the viewport height. */}
+          <div className="overflow-y-auto flex-1 min-h-0">
+            {isPending && (
+              <div className="flex items-center gap-2 text-bambu-gray text-sm py-6">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {t('common.loading')}
+              </div>
+            )}
 
-          {isError && (
-            <p className="text-status-error text-sm py-6">{t('aito.sendQuoteLoadFailed')}</p>
-          )}
+            {isError && (
+              <p className="text-status-error text-sm py-6">{t('aito.sendQuoteLoadFailed')}</p>
+            )}
 
-          {data && (
-            <>
-              <label className={labelCls} htmlFor="send-quote-recipient">
-                {t('aito.sendQuoteRecipient')}
-              </label>
-              {recipients.length === 0 ? (
-                <p className="text-bambu-gray text-sm">{t('aito.sendQuoteNoRecipients')}</p>
-              ) : (
-                <select
-                  id="send-quote-recipient"
-                  className={inputCls}
-                  value={to}
-                  onChange={(e) => setTo(e.target.value)}
-                  disabled={mutation.isPending}
-                >
-                  {recipients.map((r) => (
-                    <option key={r.email} value={r.email}>
-                      {r.name ? `${r.name} — ${r.email}` : r.email}
-                    </option>
-                  ))}
-                </select>
-              )}
+            {data && (
+              <>
+                <label className={labelCls} htmlFor="send-quote-recipient">
+                  {t('aito.sendQuoteRecipient')}
+                </label>
+                {recipients.length === 0 ? (
+                  <p className="text-bambu-gray text-sm">{t('aito.sendQuoteNoRecipients')}</p>
+                ) : (
+                  <select
+                    id="send-quote-recipient"
+                    className={inputCls}
+                    value={to}
+                    onChange={(e) => setTo(e.target.value)}
+                    disabled={mutation.isPending}
+                  >
+                    {recipients.map((r) => (
+                      <option key={r.email} value={r.email}>
+                        {r.name ? `${r.name} — ${r.email}` : r.email}
+                      </option>
+                    ))}
+                  </select>
+                )}
 
-              <dl className="mt-4 text-sm">
-                <dt className="text-bambu-gray">{t('aito.sendQuoteSubject')}</dt>
-                <dd className="text-white mt-1">{data.subject}</dd>
-              </dl>
-              <p className="mt-3 max-h-32 overflow-y-auto whitespace-pre-line text-xs text-bambu-gray border border-bambu-dark-tertiary rounded-lg p-3">
-                {htmlToText(data.body)}
-              </p>
-            </>
-          )}
+                <div className="mt-4">
+                  <span className={labelCls}>{t('aito.sendQuoteSubject')}</span>
+                  <p className="text-white text-sm">{data.subject}</p>
+                </div>
+
+                <div className="mt-4">
+                  <span id="send-quote-message-label" className={labelCls}>
+                    {t('aito.sendQuoteMessage')}
+                  </span>
+                  <QuoteEmailPreview html={data.body} labelledBy="send-quote-message-label" />
+                </div>
+              </>
+            )}
+          </div>
 
           <div className="flex gap-3 mt-6">
             <Button

@@ -22,6 +22,7 @@ export default {
     sendQuoteTitle: '通过电子邮件发送报价单',
     sendQuoteRecipient: '收件人',
     sendQuoteSubject: '主题',
+    sendQuoteMessage: '邮件正文预览',
     sendQuoteConfirm: '发送',
     sendQuoteNoRecipients: '该客户在 Zoho 中没有电子邮件地址。',
     sendQuoteLoadFailed: '无法加载邮件详情',
