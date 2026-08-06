@@ -1225,10 +1225,16 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
    a single property: a keyframe that omitted it would drop the card's
    elevation for the whole animation, and several themes define --card-shadow
    as a multi-layer value with an accent glow. */
+/* Deliberately understated. The ring travels 4px rather than 7 and peaks at
+   .26 rather than .55, and the steady glow behind it sits at .42 rather than
+   .7 — the card should look like it is breathing, not signalling. The card
+   also lost its URGENT chip, so this is now the primary cue; it is kept
+   legible by the persistent amber border and the always-on glow, which do not
+   depend on catching the pulse at its peak. */
 @keyframes urgent-halo {
-  0%   { box-shadow: 0 0 0 0 rgb(251 191 36 / .55), 0 0 10px -2px rgb(251 191 36 / .7), var(--card-shadow); }
-  70%  { box-shadow: 0 0 0 7px rgb(251 191 36 / 0), 0 0 10px -2px rgb(251 191 36 / .7), var(--card-shadow); }
-  100% { box-shadow: 0 0 0 0 rgb(251 191 36 / 0),  0 0 10px -2px rgb(251 191 36 / .7), var(--card-shadow); }
+  0%   { box-shadow: 0 0 0 0 rgb(251 191 36 / .26), 0 0 9px -3px rgb(251 191 36 / .42), var(--card-shadow); }
+  70%  { box-shadow: 0 0 0 4px rgb(251 191 36 / 0), 0 0 9px -3px rgb(251 191 36 / .42), var(--card-shadow); }
+  100% { box-shadow: 0 0 0 0 rgb(251 191 36 / 0),  0 0 9px -3px rgb(251 191 36 / .42), var(--card-shadow); }
 }
 /* Cascade, both halves — get one without the other and the next repair is wrong:
    1. This rule is UNLAYERED, and unlayered declarations outrank every Tailwind
@@ -1250,7 +1256,10 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
      reads as an edge against its own glow. Red is the destructive colour on
      this board — delete, decline — and urgency is neither. */
   border-color: var(--status-warning);
-  animation: urgent-halo 2.2s ease-out infinite;
+  /* 3.4s and ease-in-out, not 2.2s ease-out: the old curve snapped outward and
+     came back, which reads as a blink. A longer symmetric cycle is what makes
+     the same gesture read as subtle rather than merely fainter. */
+  animation: urgent-halo 3.4s ease-in-out infinite;
 }
 /* The signal survives for anyone who has asked for less motion — as a static
    glow rather than a pulsing one, exactly like .animate-invoiced-pulse above.
@@ -1260,7 +1269,7 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
 @media (prefers-reduced-motion: reduce) {
   .animate-urgent-halo.animate-urgent-halo {
     animation: none;
-    box-shadow: 0 0 10px -1px rgb(251 191 36 / .6), var(--card-shadow);
+    box-shadow: 0 0 9px -2px rgb(251 191 36 / .42), var(--card-shadow);
   }
 }
 

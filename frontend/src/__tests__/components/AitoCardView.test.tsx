@@ -420,16 +420,23 @@ describe('CardView', () => {
     expect(onExpand).toHaveBeenCalledTimes(1);
   });
 
-  it('renders the urgent chip and halo on an urgent project', () => {
+  it('signals urgency with the halo, and to screen readers only in text', () => {
     const { container } = render(<CardView project={{ ...project, urgent: true }} onExpand={vi.fn()} />);
 
-    expect(screen.getByTestId('aito-card-urgent')).toBeInTheDocument();
+    // The chip is gone as a visible element, but the word must survive for
+    // anyone who cannot see a box-shadow — hence sr-only rather than removed.
+    const flag = screen.getByTestId('aito-card-urgent');
+    expect(flag).toBeInTheDocument();
+    expect(flag).toHaveClass('sr-only');
+    // Guards the actual regression risk: that someone "cleans up" the sr-only
+    // span back into a painted chip.
+    expect(flag).not.toHaveClass('bg-amber-400');
     // The halo must sit on the CARD element, not the shell: the shell holds
     // collapsed height for the hover-reveal and carries no card styling.
     expect(container.querySelector('[data-aito-card]')).toHaveClass('animate-urgent-halo');
   });
 
-  it('renders neither chip nor halo on a normal project', () => {
+  it('renders neither flag nor halo on a normal project', () => {
     const { container } = render(<CardView project={{ ...project, urgent: false }} onExpand={vi.fn()} />);
 
     expect(screen.queryByTestId('aito-card-urgent')).not.toBeInTheDocument();
