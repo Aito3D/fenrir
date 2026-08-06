@@ -7,7 +7,7 @@ import { Button } from '../Button';
 import { inputCls, labelCls } from '../formStyles';
 import { api, type AitoProject } from '../../api/client';
 import { useSendQuoteMutation } from '../../hooks/useSendQuoteMutation';
-import { htmlToText } from './htmlToText';
+import { QuoteEmailPreview } from './QuoteEmailPreview';
 
 /** Pick an address and email this project's quote through Zoho Books.
  *
@@ -62,7 +62,9 @@ export function SendQuoteModal({
       onClick={mutation.isPending ? undefined : onClose}
     >
       <Card
-        className="w-full max-w-md animate-modal-in"
+        // max-w-2xl, not max-w-md: Books' templates are built on fixed-width
+        // tables that re-wrap into nonsense in a narrower frame.
+        className="w-full max-w-2xl animate-modal-in"
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
         <CardContent className="p-6">
@@ -102,13 +104,15 @@ export function SendQuoteModal({
                 </select>
               )}
 
-              <dl className="mt-4 text-sm">
-                <dt className="text-bambu-gray">{t('aito.sendQuoteSubject')}</dt>
-                <dd className="text-white mt-1">{data.subject}</dd>
-              </dl>
-              <p className="mt-3 max-h-32 overflow-y-auto whitespace-pre-line text-xs text-bambu-gray border border-bambu-dark-tertiary rounded-lg p-3">
-                {htmlToText(data.body)}
-              </p>
+              <div className="mt-4">
+                <span className={labelCls}>{t('aito.sendQuoteSubject')}</span>
+                <p className="text-white text-sm">{data.subject}</p>
+              </div>
+
+              <div className="mt-4">
+                <span className={labelCls}>{t('aito.sendQuoteMessage')}</span>
+                <QuoteEmailPreview html={data.body} />
+              </div>
             </>
           )}
 

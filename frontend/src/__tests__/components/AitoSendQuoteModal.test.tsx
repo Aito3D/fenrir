@@ -3,7 +3,6 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { SendQuoteModal } from '../../components/aito/SendQuoteModal';
-import { htmlToText } from '../../components/aito/htmlToText';
 import { api } from '../../api/client';
 import type { AitoProject } from '../../api/client';
 
@@ -78,17 +77,28 @@ describe('SendQuoteModal', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('renders the body as text, never as markup', async () => {
+  it('renders the body in a locked-down frame, never in the page', async () => {
     // The body is Books' HTML. It is upstream content on a template we do
-    // not control, so it must not reach the DOM as markup.
-    const hostile = '<img src=x onerror="window.__pwned = true"><script>window.__pwned = true</script>Bonjour';
-    expect(htmlToText(hostile)).toBe('Bonjour');
+    // not control, so it must never become live markup in the app document.
+    const hostile =
+      '<img src=x onerror="window.__pwned = true">' +
+      '<script>window.__pwned = true</script>Bonjour';
 
     vi.spyOn(api, 'getAitoQuoteEmail').mockResolvedValue({ ...CONTENT, body: hostile });
     const { container } = render(<SendQuoteModal project={project} onClose={() => {}} />);
 
     await screen.findByLabelText(/recipient/i);
+
+    // Nothing from the body reached the app document itself...
     expect(container.querySelector('img')).toBeNull();
     expect(container.querySelector('script')).toBeNull();
+
+    // ...and what did reach the frame is sanitised and sandboxed.
+    const frame = container.querySelector('iframe')!;
+    expect(frame.getAttribute('sandbox')).toBe('');
+    const srcdoc = frame.getAttribute('srcdoc') || '';
+    expect(srcdoc).not.toContain('<script');
+    expect(srcdoc).not.toContain('onerror');
+    expect(srcdoc).toContain('Bonjour');
   });
 });
