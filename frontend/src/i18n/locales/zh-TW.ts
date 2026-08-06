@@ -22,6 +22,7 @@ export default {
     sendQuoteTitle: '以電子郵件傳送報價單',
     sendQuoteRecipient: '收件者',
     sendQuoteSubject: '主旨',
+    sendQuoteMessage: '郵件內容預覽',
     sendQuoteConfirm: '傳送',
     sendQuoteNoRecipients: '此客戶在 Zoho 中沒有電子郵件地址。',
     sendQuoteLoadFailed: '無法載入郵件詳細資料',

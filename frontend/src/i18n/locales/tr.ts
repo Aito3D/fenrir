@@ -22,6 +22,7 @@ export default {
     sendQuoteTitle: 'Teklifi e-posta ile gönder',
     sendQuoteRecipient: 'Alıcı',
     sendQuoteSubject: 'Konu',
+    sendQuoteMessage: 'Mesaj önizlemesi',
     sendQuoteConfirm: 'Gönder',
     sendQuoteNoRecipients: 'Bu müşterinin Zoho’da e-posta adresi yok.',
     sendQuoteLoadFailed: 'E-posta ayrıntıları yüklenemedi',

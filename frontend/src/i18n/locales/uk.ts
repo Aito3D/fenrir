@@ -23,6 +23,7 @@ export default {
     sendQuoteTitle: "Надіслати кошторис електронною поштою",
     sendQuoteRecipient: "Одержувач",
     sendQuoteSubject: "Тема",
+    sendQuoteMessage: "Попередній перегляд повідомлення",
     sendQuoteConfirm: "Надіслати",
     sendQuoteNoRecipients: "У цього клієнта немає адреси електронної пошти в Zoho.",
     sendQuoteLoadFailed: "Не вдалося завантажити дані листа",

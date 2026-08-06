@@ -22,6 +22,7 @@ export default {
     sendQuoteTitle: 'Send quote by email',
     sendQuoteRecipient: 'Recipient',
     sendQuoteSubject: 'Subject',
+    sendQuoteMessage: 'Message preview',
     sendQuoteConfirm: 'Send',
     sendQuoteNoRecipients: 'This client has no email address in Zoho.',
     sendQuoteLoadFailed: 'Could not load the email details',

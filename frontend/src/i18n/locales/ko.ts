@@ -22,6 +22,7 @@ export default {
     sendQuoteTitle: '견적서를 이메일로 보내기',
     sendQuoteRecipient: '받는 사람',
     sendQuoteSubject: '제목',
+    sendQuoteMessage: '메시지 미리보기',
     sendQuoteConfirm: '보내기',
     sendQuoteNoRecipients: '이 고객은 Zoho에 이메일 주소가 없습니다.',
     sendQuoteLoadFailed: '이메일 정보를 불러오지 못했습니다',

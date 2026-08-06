@@ -22,6 +22,7 @@ export default {
     sendQuoteTitle: 'Enviar presupuesto por correo',
     sendQuoteRecipient: 'Destinatario',
     sendQuoteSubject: 'Asunto',
+    sendQuoteMessage: 'Vista previa del mensaje',
     sendQuoteConfirm: 'Enviar',
     sendQuoteNoRecipients: 'Este cliente no tiene dirección de correo en Zoho.',
     sendQuoteLoadFailed: 'No se pudieron cargar los detalles del correo',

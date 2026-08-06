@@ -22,6 +22,7 @@ export default {
     sendQuoteTitle: '見積書をメールで送信',
     sendQuoteRecipient: '宛先',
     sendQuoteSubject: '件名',
+    sendQuoteMessage: 'メッセージのプレビュー',
     sendQuoteConfirm: '送信',
     sendQuoteNoRecipients: 'この顧客には Zoho にメールアドレスが登録されていません。',
     sendQuoteLoadFailed: 'メールの詳細を読み込めませんでした',

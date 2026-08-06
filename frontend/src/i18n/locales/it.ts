@@ -22,6 +22,7 @@ export default {
     sendQuoteTitle: 'Invia preventivo via e-mail',
     sendQuoteRecipient: 'Destinatario',
     sendQuoteSubject: 'Oggetto',
+    sendQuoteMessage: 'Anteprima del messaggio',
     sendQuoteConfirm: 'Invia',
     sendQuoteNoRecipients: 'Questo cliente non ha un indirizzo e-mail in Zoho.',
     sendQuoteLoadFailed: "Impossibile caricare i dettagli dell'e-mail",

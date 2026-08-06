@@ -22,6 +22,7 @@ export default {
     sendQuoteTitle: 'Отправить смету по электронной почте',
     sendQuoteRecipient: 'Получатель',
     sendQuoteSubject: 'Тема',
+    sendQuoteMessage: 'Предварительный просмотр сообщения',
     sendQuoteConfirm: 'Отправить',
     sendQuoteNoRecipients: 'У этого клиента нет адреса электронной почты в Zoho.',
     sendQuoteLoadFailed: 'Не удалось загрузить данные письма',
