@@ -13,7 +13,7 @@ evidence: aito.py:375-398 pre-check is TOCTOU; concurrent create/restore hits uq
 
 ## T-002
 priority: P1
-status: IN_PROGRESS
+status: DONE
 attempts: 1
 round: 1
 first_seen_iteration: 0

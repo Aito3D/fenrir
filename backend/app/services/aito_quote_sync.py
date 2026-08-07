@@ -685,6 +685,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         # must fail closed, not fall through to the PUT below — this guard
         # protects real customer money and an absent field is not evidence
         # of anything safe.
+        was_already_locked = project.quote_sync_state == "locked"
         project.quote_sync_state = "locked"
         if estimate.get("status") is not None:
             adopt_quote_status(project, estimate["status"])
@@ -695,7 +696,10 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         # sweep permanently, so nothing would ever clear a stale block again.
         _clear_block(project)
         project.quote_sync_failures = 0
-        await record(db, project.id, "sync.locked", actor_class="system", subject_type="project", subject_id=project.id)
+        if not was_already_locked:
+            await record(
+                db, project.id, "sync.locked", actor_class="system", subject_type="project", subject_id=project.id
+            )
         return
     catalogue = await zoho_service.get_catalogue(db)
     tasks = await load_export_tasks(db, project.id)

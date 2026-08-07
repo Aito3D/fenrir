@@ -18,6 +18,7 @@ from backend.app.services.aito_quote_sync import (
     SYNC_FAILURE_LIMIT,
     ShippingCatalogueUnavailable,
     _deferred_reasons,
+    _update_quote,
     load_export_shipping,
     run_sync_once,
     sync_project,
@@ -1437,6 +1438,70 @@ async def test_tax_exclusive_estimate_is_locked_and_never_written(db_session):
     assert project.quote_sync_state == "locked"
     assert project.quote_sync_error
     assert not any(entry[0] == "PUT" for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_tax_exclusive_relock_does_not_duplicate_sync_locked_event(db_session):
+    """T-002: the tax-exclusive branch of _update_quote (aito_quote_sync.py)
+    must debounce its own 'sync.locked' event exactly like the sibling lock
+    sites (the invoiced branch above, _create_quote, and the swept branch),
+    each of which captures `was_already_locked` before mutating
+    quote_sync_state and skips record() when it was already True. Calling
+    _update_quote directly (as the swept branch's sibling call already does
+    from a non-'pending' entry state, see sync_project) exercises that guard
+    without depending on how the project got into 'locked' beforehand.
+
+    First call: project is not yet locked, so exactly one sync.locked event
+    must land. Second call, entered with quote_sync_state already 'locked'
+    from the first: it must record no additional event."""
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    await _configure_zoho(db_session)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "draft",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": False,
+                        "line_items": [],
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    async def _locked_events():
+        return (
+            (
+                await db_session.execute(
+                    select(AitoEvent).where(AitoEvent.project_id == project.id, AitoEvent.kind == "sync.locked")
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert project.quote_sync_state != "locked"
+    await _update_quote(db_session, project)
+    await db_session.commit()
+    assert project.quote_sync_state == "locked"
+
+    events = await _locked_events()
+    assert len(events) == 1, "first lock must record exactly one sync.locked event"
+
+    # Re-entering with quote_sync_state already 'locked' (mirrors how the
+    # swept branch in sync_project can call _update_quote from a non-pending
+    # state) must not write a second sync.locked row.
+    await _update_quote(db_session, project)
+    await db_session.commit()
+    assert project.quote_sync_state == "locked"
+
+    events = await _locked_events()
+    assert len(events) == 1, "re-locking an already-locked project must not duplicate the sync.locked event"
 
 
 @pytest.mark.asyncio
