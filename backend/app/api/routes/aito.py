@@ -272,6 +272,8 @@ def _to_response(p: AitoProject, summary: TaskSummary, shipping_names: dict[str,
         # Mirrors quote_invoiced above: an in-memory AitoProject that never
         # went through a DB flush leaves urgent as None too.
         urgent=bool(p.urgent),
+        # Mirrors urgent above: in-memory rows that never flushed read None.
+        version=p.version or 0,
         quote_sync_error=p.quote_sync_error,
         quote_status_block=p.quote_status_block,
         quote_status_remote=p.quote_status_remote,

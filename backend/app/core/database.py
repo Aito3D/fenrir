@@ -4368,6 +4368,8 @@ async def run_migrations(conn):
         f"ALTER TABLE aito_projects ADD COLUMN urgent BOOLEAN NOT NULL DEFAULT {_aito_urgent_default}",
     )
 
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN version INTEGER NOT NULL DEFAULT 0")
+
     await _safe_execute(
         conn,
         "CREATE INDEX IF NOT EXISTS ix_aito_projects_quote_sync_state ON aito_projects (quote_sync_state)",

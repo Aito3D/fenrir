@@ -401,6 +401,9 @@ class AitoProjectResponse(BaseModel):
     # future call site that forgot it should fail loudly, not validate a
     # silently-blanked field.
     shipping_service_name: str | None
+    # Content-fields revision — see AitoProject.version. The detail panel
+    # echoes this back as expected_version on PATCH.
+    version: int
     created_at: datetime
     updated_at: datetime
 

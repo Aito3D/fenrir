@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, event, func, inspect as sa_inspect
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.database import Base
@@ -149,3 +149,41 @@ class AitoProject(Base):
     shipping_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    # Content-fields revision, backing the detail panel's optimistic-
+    # concurrency guard (PATCH expected_version -> 409). Bumped by the
+    # before_update listener below ONLY when a VERSIONED_FIELDS member
+    # changed: background writers (quote sync, rule moves, urgent, ticks)
+    # rewrite this row constantly, and bumping on those would 409 an
+    # operator's edit because a sync ticked in the background.
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+
+# The fields the detail panel edits and the version guard protects. A field
+# added to AitoProjectUpdate later must be added here too, or concurrent
+# edits to it will silently last-write-win.
+VERSIONED_FIELDS: frozenset[str] = frozenset(
+    {
+        "description",
+        "client_id",
+        "client_name",
+        "client_phone",
+        "client_email",
+        "client_is_company",
+        "client_social_network",
+        "client_social_handle",
+        "shipping_island",
+        "shipping_service",
+        "shipping_first_name",
+        "shipping_last_name",
+        "shipping_phone",
+        "shipping_price",
+    }
+)
+
+
+@event.listens_for(AitoProject, "before_update")
+def _bump_version_on_content_change(_mapper, _connection, target: "AitoProject") -> None:
+    state = sa_inspect(target)
+    changed = {attr.key for attr in state.attrs if attr.history.has_changes()}
+    if changed & VERSIONED_FIELDS:
+        target.version = (target.version or 0) + 1
