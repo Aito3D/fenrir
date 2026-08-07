@@ -30,7 +30,7 @@ import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useLatestProjectEvent } from '../../hooks/useLatestProjectEvent';
 import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { useProjectTasks } from '../../hooks/useProjectTasks';
-import { api, type AitoEvent, type AitoProject, type AitoProjectUpdate } from '../../api/client';
+import { api, ApiError, type AitoEvent, type AitoProject, type AitoProjectUpdate } from '../../api/client';
 import { Money } from '../calculator/shared';
 import { ageAnchor, agingColorCls } from '../../utils/aitoAging';
 import { copyTextToClipboard } from '../../utils/clipboard';
@@ -675,7 +675,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   const { showToast } = useToast();
 
   const updateMutation = useOptimisticBoardMutation<AitoProject, AitoProjectUpdate>({
-    mutationFn: (patch) => api.updateAitoProject(project.id, patch),
+    mutationFn: (patch) => api.updateAitoProject(project.id, { ...patch, expected_version: project.version }),
     // A description edit shows immediately; the retry-sync button sends the
     // description UNCHANGED (its only job is to re-mark the project pending
     // for the worker), so it writes the sync state instead. One transform,
@@ -693,7 +693,11 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
       );
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
     },
-    onError: () => showToast(t('aito.saveFailed'), 'error'),
+    onError: (error) =>
+      showToast(
+        t(error instanceof ApiError && error.code === 'version_conflict' ? 'aito.editConflict' : 'aito.saveFailed'),
+        'error',
+      ),
   });
 
   // Its own mutation rather than a third branch of `updateMutation.transform`:
@@ -702,7 +706,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   // transform, PATCH response into the cache, events invalidated because the
   // server records a project.updated for this write like any other.
   const socialMutation = useOptimisticBoardMutation<AitoProject, AitoProjectUpdate>({
-    mutationFn: (patch) => api.updateAitoProject(project.id, patch),
+    mutationFn: (patch) => api.updateAitoProject(project.id, { ...patch, expected_version: project.version }),
     transform: (previous, patch) => applyClientSocial(previous, project.id, patch),
     flashId: () => project.id,
     onSuccess: (updatedProject) => {
@@ -711,7 +715,11 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
       );
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
     },
-    onError: () => showToast(t('aito.saveFailed'), 'error'),
+    onError: (error) =>
+      showToast(
+        t(error instanceof ApiError && error.code === 'version_conflict' ? 'aito.editConflict' : 'aito.saveFailed'),
+        'error',
+      ),
   });
 
   const [editingSocial, setEditingSocial] = useState(false);

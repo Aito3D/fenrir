@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
 import { useBoardSync } from './useBoardSync';
 import { flashRevert } from './useRevertFlash';
-import type { AitoProject } from '../api/client';
+import { ApiError, type AitoProject } from '../api/client';
 
 export interface OptimisticBoardOptions<TData, TVars> {
   mutationFn: (vars: TVars) => Promise<TData>;
@@ -59,6 +59,13 @@ export function useOptimisticBoardMutation<TData, TVars>(
       const id = options.flashId?.(vars);
       if (id !== undefined && id !== null) flashRevert(id);
       options.onError?.(error, vars);
+      if (error instanceof ApiError && error.status === 409) {
+        // A conflict means the server state moved under us: the rollback above
+        // restored a snapshot that is ALSO stale. Refetch unconditionally —
+        // this is the one case where waiting for the last settle would leave
+        // every operator looking at a board the server already disowned.
+        queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+      }
     },
     onSuccess: (data, vars) => {
       options.onSuccess?.(data, vars);

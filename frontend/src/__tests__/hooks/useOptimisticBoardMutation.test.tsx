@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { __resetBoardSync } from '../../hooks/useBoardSync';
 import { flashRevert } from '../../hooks/useRevertFlash';
+import { ApiError } from '../../api/client';
 
 // The wrapper imports `flashRevert` as a direct binding, so vi.spyOn on the
 // namespace would patch an object nobody reads. Mock the module instead, and
@@ -159,5 +160,25 @@ describe('useOptimisticBoardMutation', () => {
 
     act(() => result.current.mutate('x'));
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('server said this', 'x'));
+  });
+
+  it('refetches the board when the server reports a 409 conflict', async () => {
+    const { client, wrapper } = harness();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+    const { result } = renderHook(
+      () =>
+        useOptimisticBoardMutation<unknown, void>({
+          mutationFn: () =>
+            Promise.reject(new ApiError('conflict', 409, 'version_conflict', { code: 'version_conflict' })),
+          transform: (previous) => previous,
+        }),
+      { wrapper },
+    );
+
+    await act(async () => {
+      result.current.mutate();
+      await waitFor(() => expect(result.current.isError).toBe(true));
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['aito-projects'] });
   });
 });

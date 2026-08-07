@@ -438,6 +438,7 @@ describe('ProjectDetailPanel social handle', () => {
       expect(spy).toHaveBeenCalledWith(project.id, {
         client_social_network: 'instagram',
         client_social_handle: 'moana.3d',
+        expected_version: project.version,
       }),
     );
   });
@@ -462,6 +463,7 @@ describe('ProjectDetailPanel social handle', () => {
       expect(spy).toHaveBeenCalledWith(project.id, {
         client_social_network: 'tiktok',
         client_social_handle: 'moana.tt',
+        expected_version: project.version,
       }),
     );
   });
@@ -483,6 +485,7 @@ describe('ProjectDetailPanel social handle', () => {
       expect(spy).toHaveBeenCalledWith(project.id, {
         client_social_network: null,
         client_social_handle: null,
+        expected_version: project.version,
       }),
     );
   });
@@ -1634,7 +1637,9 @@ describe('ProjectDetailPanel sync row', () => {
     show({ quote_sync_state: 'error', quote_sync_error: 'Zoho: invalid customer_id' });
     await user.click(await screen.findByRole('button', { name: 'Retry' }));
 
-    await waitFor(() => expect(capturedBody).toEqual({ description: project.description }));
+    await waitFor(() =>
+      expect(capturedBody).toEqual({ description: project.description, expected_version: project.version }),
+    );
   });
 });
 
@@ -2280,7 +2285,9 @@ describe('ProjectDetailPanel description regeneration', () => {
     const button = screen.getByRole('button', { name: 'Regenerate' });
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
-    await waitFor(() => expect(patchBody).toEqual({ description: 'Résumé IA.' }));
+    await waitFor(() =>
+      expect(patchBody).toEqual({ description: 'Résumé IA.', expected_version: project.version }),
+    );
     expect(summarizeBody!.tasks).toHaveLength(1);
     expect(summarizeBody!.tasks[0].title).toBe(mockTask.title);
     // The transient acknowledgement the manual-edit path shows.

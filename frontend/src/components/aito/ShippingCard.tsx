@@ -11,7 +11,7 @@ import { parsePhone } from '../../utils/clientDraft';
 import { applyShipping } from '../../utils/aitoOptimistic';
 import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { useToast } from '../../contexts/ToastContext';
-import { api, type AitoProject, type AitoProjectUpdate, type AitoShippingService } from '../../api/client';
+import { api, ApiError, type AitoProject, type AitoProjectUpdate, type AitoShippingService } from '../../api/client';
 import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
 
@@ -110,7 +110,7 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
   // skipping the invalidation would leave their timeline stale after every
   // add/edit/remove until something else happened to refetch it.
   const shippingMutation = useOptimisticBoardMutation<AitoProject, AitoProjectUpdate>({
-    mutationFn: (patch) => api.updateAitoProject(project.id, patch),
+    mutationFn: (patch) => api.updateAitoProject(project.id, { ...patch, expected_version: project.version }),
     transform: (previous, patch) => applyShipping(previous, project.id, patch),
     flashId: () => project.id,
     onSuccess: (updatedProject) => {
@@ -119,7 +119,11 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
       );
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
     },
-    onError: () => showToast(t('aito.saveFailed'), 'error'),
+    onError: (error) =>
+      showToast(
+        t(error instanceof ApiError && error.code === 'version_conflict' ? 'aito.editConflict' : 'aito.saveFailed'),
+        'error',
+      ),
   });
 
   // Seeded from the project's stored client, exactly as the create drawer

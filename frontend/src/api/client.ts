@@ -6655,7 +6655,10 @@ export const api = {
       body: JSON.stringify(data),
     }),
   setAitoQuoteStatus: (id: number, data: { status: 'sent' | 'accepted' | 'declined' }) =>
-    request<{ project: AitoProject; zoho_synced: boolean }>(`/aito/${id}/quote-status`, {
+    // `no_op` is true when the request repeated a decision already applied —
+    // the row echoed back is fresh but nothing changed and no Zoho push
+    // happened, so callers use it to skip the success/warning toasts.
+    request<{ project: AitoProject; zoho_synced: boolean; no_op: boolean }>(`/aito/${id}/quote-status`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
