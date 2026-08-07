@@ -446,6 +446,21 @@ describe('CardView', () => {
     expect(document.querySelector('[data-aito-card]')?.className).not.toContain('animate-flag-halo');
     expect(screen.queryByTestId('aito-card-flag')).not.toBeInTheDocument();
   });
+
+  it('recedes a paused card with a tinted edge and never gives it a halo', () => {
+    render(<CardView project={{ ...project, flag: 'pause' }} onExpand={vi.fn()} />);
+
+    const card = document.querySelector('[data-aito-card]') as HTMLElement;
+    expect(card.className).toContain('flag-pause-edge');
+    expect(card.className).toContain('opacity-60');
+    // A pulse is a call to action; this card is the one nobody can act on.
+    expect(card.className).not.toContain('animate-flag-halo');
+  });
+
+  it('names the pause flag for assistive tech', () => {
+    render(<CardView project={{ ...project, flag: 'pause' }} onExpand={vi.fn()} />);
+    expect(screen.getByTestId('aito-card-flag')).toHaveTextContent('Paused');
+  });
 });
 
 describe('hybrid card anatomy', () => {

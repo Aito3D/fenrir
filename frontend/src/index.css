@@ -1269,6 +1269,19 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
    footer bar, never in the header pill row where these do. */
 .flag-urgent { --flag-halo: 251 191 36; --flag-border: var(--status-warning); }
 .flag-sav    { --flag-halo: 251 113 133; --flag-border: #f43f5e; }
+/* Pause is the one flag that does NOT ask for attention, so it gets the
+   inverse of the halo: the card recedes and keeps only a quiet edge. No
+   keyframes here and none are wanted — a pulse is a call to action, and a
+   paused card is precisely the one nobody can act on.
+   Unlayered, like the halo above, so it beats the card's own
+   `hover:border-bambu-green/40` with no specificity padding — do not add
+   any. It needs NEITHER of the halo's other two devices: the doubled-class
+   form exists only to outweigh the later `.card-shadow`, which sets
+   box-shadow (this sets border-color, so they never collide), and a
+   reduced-motion fallback would have no motion to replace.
+   teal-500, literal and never a token: a fixed semantic that must not follow
+   the user's accent colour, exactly like amber and rose above. */
+.flag-pause-edge { border-color: #14b8a6; }
 /* The signal survives for anyone who has asked for less motion — as a static
    glow rather than a pulsing one, exactly like .animate-invoiced-pulse above.
    The class is repeated to outweigh the later `.card-shadow` (see above); the
