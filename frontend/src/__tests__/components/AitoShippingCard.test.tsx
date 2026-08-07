@@ -12,6 +12,7 @@ import type { AitoProject } from '../../api/client';
 
 const shipped = {
   id: 7,
+  version: 4,
   shipping_island: 'rangiroa',
   shipping_service: 'tuamotu',
   shipping_service_name: 'Livraison Avion Tuamotu',
@@ -21,7 +22,7 @@ const shipped = {
   shipping_price: 3200,
 } as unknown as AitoProject;
 
-const unshipped = { id: 7, shipping_island: null } as unknown as AitoProject;
+const unshipped = { id: 7, version: 4, shipping_island: null } as unknown as AitoProject;
 
 describe('ShippingCard', () => {
   it('shows every fact about the shipment', () => {
@@ -281,7 +282,9 @@ describe('ShippingCard — Remove', () => {
       await user.pointer({ keys: '[MouseLeft>]', target: screen.getByRole('button', { name: /remove shipping/i }) });
       vi.advanceTimersByTime(600);
 
-      await waitFor(() => expect(spy).toHaveBeenCalledWith(7, { shipping_island: null }));
+      await waitFor(() =>
+        expect(spy).toHaveBeenCalledWith(7, { shipping_island: null, expected_version: 4 }),
+      );
       await waitFor(() => {
         expect(client.getQueryData<AitoProject[]>(['aito-projects'])![0].shipping_island).toBeNull();
       });
@@ -331,6 +334,7 @@ describe('ShippingCard — Save', () => {
         shipping_last_name: 'DUPONT',
         shipping_phone: '+689-89645864',
         shipping_price: 4100,
+        expected_version: 4,
       }),
     );
     await waitFor(() => {
@@ -401,6 +405,7 @@ describe('ShippingCard — Save', () => {
         shipping_last_name: 'DUPONT',
         shipping_phone: '+689-89645864',
         shipping_price: 3200,
+        expected_version: 4,
       }),
     );
   });
