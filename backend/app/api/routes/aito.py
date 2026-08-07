@@ -1528,6 +1528,26 @@ async def set_quote_status(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    if payload.status == project.quote_status:
+        # Someone (possibly this same operator, double-clicking) already
+        # applied this exact decision. Nothing to write, record, or push —
+        # and no 'Zoho not updated' warning to trigger, hence zoho_synced=True.
+        summary = await _summary_for(db, project.id)
+        return AitoQuoteStatusResponse(
+            project=_to_response(project, summary, await _shipping_names(db)),
+            zoho_synced=True,
+            no_op=True,
+        )
+    if project.quote_status in ("accepted", "declined"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "quote_status_conflict",
+                "current": project.quote_status,
+                "message": f"Quote was already {project.quote_status} by someone else",
+            },
+        )
+
     adopt_quote_status(project, payload.status)
     # Our side just moved, so any recorded block describes an attempt that no
     # longer exists. This is what lets quote_status_remote alone identify a

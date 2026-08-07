@@ -429,6 +429,9 @@ class AitoQuoteStatusResponse(BaseModel):
 
     project: AitoProjectResponse
     zoho_synced: bool
+    # True when the requested status was already the current one: nothing was
+    # written, recorded, or pushed. The frontend skips its toasts on this.
+    no_op: bool = False
 
 
 class AitoQuoteEmailRecipient(BaseModel):
