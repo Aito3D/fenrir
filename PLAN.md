@@ -68,7 +68,7 @@ evidence: identical select+404 at aito.py:1028-1032,1367-1371,1440-1444,1557-156
 
 ## T-007
 priority: P2
-status: IN_PROGRESS
+status: DONE
 attempts: 1
 round: 1
 first_seen_iteration: 0

@@ -556,6 +556,24 @@ def _wake_worker(queued: bool) -> None:
         request_debounced_sync()
 
 
+async def _commit_and_wake(db: AsyncSession, queued: bool) -> None:
+    """Commit the session, then wake the sync worker if this call left a
+    project pending.
+
+    ``queued`` must already reflect the pre-commit state — see
+    ``_wake_worker``'s docstring for why that capture has to happen before
+    the commit performed here, not after.
+
+    Not used by every commit-then-wake site: any handler where the commit is
+    itself wrapped in error handling (see ``restore_project``'s
+    ``IntegrityError`` branch) keeps its commit and wake calls separate,
+    since folding them together here would pull the wake call inside that
+    handler's try/except.
+    """
+    await db.commit()
+    _wake_worker(queued)
+
+
 def _actor(user: User | None) -> str | None:
     """The username to snapshot on an event.
 
@@ -1220,8 +1238,7 @@ async def add_task(
         await record(db, project.id, "sync.queued", actor_class="system")
     await _apply_rules(db, project, await _summary_for(db, project_id), actor=_actor(current_user))
     queued = project.quote_sync_state == "pending"
-    await db.commit()
-    _wake_worker(queued)
+    await _commit_and_wake(db, queued)
     await _broadcast_changed("task", task.project_id, _actor(current_user))
     await db.refresh(task)
     return _task_to_response(task)
@@ -1315,8 +1332,7 @@ async def update_task(
     if project:
         await _apply_rules(db, project, await _summary_for(db, task.project_id), actor=_actor(current_user))
     queued = project is not None and project.quote_sync_state == "pending"
-    await db.commit()
-    _wake_worker(queued)
+    await _commit_and_wake(db, queued)
     await _broadcast_changed("task", task.project_id, _actor(current_user))
     await db.refresh(task)
     return _task_to_response(task)
@@ -1348,8 +1364,7 @@ async def delete_task(
     if project:
         await _apply_rules(db, project, await _summary_for(db, task_project_id), actor=_actor(current_user))
     queued = project is not None and project.quote_sync_state == "pending"
-    await db.commit()
-    _wake_worker(queued)
+    await _commit_and_wake(db, queued)
     await _broadcast_changed("task", task_project_id, _actor(current_user))
 
 
@@ -1553,8 +1568,7 @@ async def update_project(
     if not was_pending and project.quote_sync_state == "pending":
         await record(db, project.id, "sync.queued", actor_class="system")
     queued = project.quote_sync_state == "pending"
-    await db.commit()
-    _wake_worker(queued)
+    await _commit_and_wake(db, queued)
     # Same no-op silence `set_project_flag` and `set_quote_status` already
     # give a repeated/empty write — see their own comments. `changes` alone
     # is not enough here: a shipping PATCH sends its six columns through
@@ -1812,6 +1826,5 @@ async def delete_project(
         subject_id=project.id,
     )
     queued = project.quote_sync_state == "pending"
-    await db.commit()
-    _wake_worker(queued)
+    await _commit_and_wake(db, queued)
     await _broadcast_changed("delete", project_id, _actor(current_user))
