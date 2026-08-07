@@ -3,3 +3,8 @@ SNAPSHOTS 7/7 · SURFACE unchanged (sec-3 recording-style note) · COVERAGE 60%/
 REGRESSIONS none · frontend 3880/0 · 2 backend fails judged: library_slice flake (passes isolated), plug_energy_history pre-existing time-of-day bug ~30min/day around Berlin midnight, both outside scope, untouched since BASE
 REMAINING_ISSUES: 3x low (test docstring wrong about swept-branch reachability; _is_duplicate_active_quote_error fails open off-SQLite; SURFACE.md sec-3 not replayable by its regen cmd — frozen, deferred to final report)
 
+=== 2026-08-07 12:28 · ITERATION 2 · VERDICT: PASS ===
+SNAPSHOTS 7/7 · SURFACE unchanged · COVERAGE 60%/87%/80.84% all held · REGRESSIONS none
+T-015 judged legitimate bug fix (disabled button stops pointer events so cancelHold never runs; all 11 call sites checked; no happy-path regression). T-016 verified inert. T-017 comment claims validated against code.
+plug_energy_history failure re-confirmed as pre-existing Berlin-midnight test bug (mechanism checked, not trusted). REMAINING_ISSUES: none
+
