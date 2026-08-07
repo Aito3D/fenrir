@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Building2, Eye, GripVertical, Lock, User } from 'lucide-react';
 import { TaskMiniRows } from './TaskMiniRows';
-import type { AitoProject } from '../../api/client';
+import type { AitoFlag, AitoProject } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAitoViewers } from '../../hooks/useAitoPresence';
 import { formatElapsedTime, parseUTCDate } from '../../utils/date';
@@ -44,6 +44,19 @@ export interface CardViewProps {
  *  the reveal stops being something you ask for and becomes something that
  *  happens to you. Pressing cancels it outright; see `cancelHoverIntent`. */
 const HOVER_REVEAL_MS = 2000;
+
+/** Static lookups, not interpolated class names. These are hand-written CSS
+ *  classes (index.css) rather than Tailwind utilities, so interpolation would
+ *  compile — but a record keeps them greppable and makes a new flag value a
+ *  type error here rather than a silently unstyled card. */
+const FLAG_HALO_CLS: Record<AitoFlag, string> = {
+  urgent: 'animate-flag-halo flag-urgent',
+  sav: 'animate-flag-halo flag-sav',
+};
+const FLAG_LABEL_KEY: Record<AitoFlag, string> = {
+  urgent: 'aito.urgent',
+  sav: 'aito.sav',
+};
 
 /** Presentational card, shared by the in-column sortable wrapper and the
  *  DragOverlay clone.
@@ -238,7 +251,7 @@ export function CardView({
           overlay
             ? 'rotate-1 scale-[1.02] border-bambu-green/40 shadow-2xl cursor-grabbing'
             : 'border-bambu-dark-tertiary card-shadow transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-bambu-green/40 hover:shadow-lg motion-reduce:hover:translate-y-0'
-        } ${placeholder ? 'opacity-60' : ''} ${project.urgent ? 'animate-urgent-halo' : ''}`}
+        } ${placeholder ? 'opacity-60' : ''} ${project.flag ? FLAG_HALO_CLS[project.flag] : ''}`}
       >
         <div className="flex items-center gap-2 px-3 pt-2.5">
           {/* `aria-hidden` with the label carried in text beside it, so the
@@ -260,16 +273,16 @@ export function CardView({
             </span>
             {project.client_name ?? t('aito.noClient')}
           </p>
-          {/* The visible chip was removed deliberately — the amber halo and the
-              amber border now carry the signal on their own. What stays is the
+          {/* The visible chip was removed deliberately — the halo and the
+              border now carry the signal on their own. What stays is the
               text, `sr-only`: the halo is a box-shadow and a border colour, and
               neither is announced by a screen reader, so dropping this too
-              would make "urgent" purely visual rather than merely non-textual.
+              would make the flag purely visual rather than merely non-textual.
               Keep the testid on it — the tests assert the signal still exists,
               not that it is painted. */}
-          {project.urgent && (
-            <span data-testid="aito-card-urgent" className="sr-only">
-              {t('aito.urgent')}
+          {project.flag && (
+            <span data-testid="aito-card-flag" className="sr-only">
+              {t(FLAG_LABEL_KEY[project.flag])}
             </span>
           )}
           {/* Live presence: someone else has this card's panel open right

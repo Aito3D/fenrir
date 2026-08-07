@@ -10,6 +10,7 @@
     "column": "devis",
     "created_by": null,
     "description": "zero cost",
+    "flag": null,
     "id": 2,
     "move_lock": "quote",
     "position": 0,
@@ -52,7 +53,6 @@
       }
     ],
     "tasks_total": 0.0,
-    "urgent": false,
     "version": 0
   },
   {
@@ -66,6 +66,7 @@
     "column": "devis",
     "created_by": null,
     "description": "no tasks",
+    "flag": null,
     "id": 1,
     "move_lock": "quote",
     "position": 1,
@@ -96,7 +97,6 @@
     "task_services": [],
     "task_steps": [],
     "tasks_total": 0.0,
-    "urgent": false,
     "version": 0
   },
   {
@@ -110,6 +110,7 @@
     "column": "finish",
     "created_by": null,
     "description": "accepted",
+    "flag": null,
     "id": 4,
     "move_lock": null,
     "position": 0,
@@ -152,7 +153,6 @@
       }
     ],
     "tasks_total": 3000.0,
-    "urgent": false,
     "version": 0
   },
   {
@@ -166,6 +166,7 @@
     "column": "print",
     "created_by": null,
     "description": "mixed",
+    "flag": null,
     "id": 3,
     "move_lock": "steps",
     "position": 0,
@@ -221,7 +222,6 @@
       }
     ],
     "tasks_total": 8400.0,
-    "urgent": false,
     "version": 0
   },
   {
@@ -235,6 +235,7 @@
     "column": "scan",
     "created_by": null,
     "description": "accepted zero pending",
+    "flag": null,
     "id": 5,
     "move_lock": "steps",
     "position": 0,
@@ -277,7 +278,6 @@
       }
     ],
     "tasks_total": 0.0,
-    "urgent": false,
     "version": 0
   }
 ]

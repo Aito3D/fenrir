@@ -17,8 +17,10 @@ CONTENT = {
 def books_email(monkeypatch):
     """Books answers the prefill, and records every send.
 
-    Patched on the zoho_service INSTANCE, not the class — a class-level patch
-    is masked by instance shadows other modules in this suite leave behind.
+    Patched on the zoho_service INSTANCE so the fakes need no ``self``. That is
+    safe only because ``reset_zoho_singleton_shadows`` in conftest strips the
+    shadow monkeypatch's undo leaves behind on the singleton — without it this
+    fixture silently disarms every later class-level patch of the same method.
     """
     sent: list[tuple[str, list[str]]] = []
 

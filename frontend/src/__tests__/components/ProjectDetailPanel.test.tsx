@@ -41,7 +41,7 @@ const project: AitoProject = {
   quote_accepted_at: null,
   quote_sync_state: 'idle',
   quote_invoiced: false,
-  urgent: false,
+  flag: null,
   quote_sync_error: null,
   quote_status_block: null,
   quote_status_remote: null,
@@ -378,10 +378,12 @@ describe('ProjectDetailPanel client fields', () => {
     try {
       const user = userEvent.setup();
       show();
-      expect(screen.queryByRole('link', { name: '+689-87123456' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /87123456|87\.12\.34\.56/ })).not.toBeInTheDocument();
       expect(screen.queryByRole('link', { name: 'hi@acme.pf' })).not.toBeInTheDocument();
 
-      await user.click(screen.getByRole('button', { name: /\+689-87123456/ }));
+      // Displayed pretty — `(+689) 87.12.34.56` — but the copy is the canonical
+      // stored `+689-87123456`: dots are for eyes, the raw value is for pasting.
+      await user.click(screen.getByRole('button', { name: /\(\+689\) 87\.12\.34\.56/ }));
       expect(await navigator.clipboard.readText()).toBe('+689-87123456');
 
       await user.click(screen.getByRole('button', { name: /hi@acme\.pf/ }));
@@ -2136,7 +2138,7 @@ describe('ProjectDetailPanel visual parity: header shipping pill', () => {
 describe('ProjectDetailPanel visual parity: header contact icons', () => {
   it('gives the phone and email chips a leading icon, matching the reference', () => {
     show();
-    const phoneButton = screen.getByRole('button', { name: /\+689-87123456/ });
+    const phoneButton = screen.getByRole('button', { name: /\(\+689\) 87\.12\.34\.56/ });
     expect(phoneButton.querySelector('svg.lucide-phone')).not.toBeNull();
     const emailButton = screen.getByRole('button', { name: /hi@acme\.pf/ });
     expect(emailButton.querySelector('svg.lucide-mail')).not.toBeNull();

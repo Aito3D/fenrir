@@ -96,6 +96,40 @@ def reset_spoolman_location_sync_cache():
 
 
 @pytest.fixture(autouse=True)
+def reset_zoho_singleton_shadows():
+    """Strip method shadows left on the ``zoho_service`` singleton.
+
+    ``monkeypatch.setattr(zoho_service, "email_estimate", fake)`` patches an
+    attribute that lives on the *class*, so monkeypatch records the resolved
+    bound method as the "original" and its undo writes that bound method into
+    ``zoho_service.__dict__``. The instance then permanently shadows the class,
+    and every later ``monkeypatch.setattr(ZohoService, ...)`` is invisible on
+    the singleton — the real method runs, raises ``ZohoNotConfiguredError``,
+    and the route reports ``zoho_synced=False``.
+
+    That made five ``test_aito_routes`` tests fail under ``pytest -k aito``
+    while passing under ``-n 30`` (xdist shards by file, so the poisoner and
+    the victims land on different workers), and made two others — the ones
+    asserting *no* Zoho call happened — pass vacuously against a spy that was
+    never installed.
+
+    Only ``__init__``'s own attributes are legitimate here; anything else in
+    ``__dict__`` is a leak. Cleaning before as well as after means a test is
+    protected from whatever ran ahead of it, not just tidy on the way out."""
+    from backend.app.services.zoho import ZohoService, zoho_service
+
+    baseline = frozenset(ZohoService().__dict__)
+
+    def _strip():
+        for key in set(zoho_service.__dict__) - baseline:
+            del zoho_service.__dict__[key]
+
+    _strip()
+    yield
+    _strip()
+
+
+@pytest.fixture(autouse=True)
 def reset_auth_enabled_cache():
     """Drop the module-level auth-enabled cache between tests (issue #2572).
 

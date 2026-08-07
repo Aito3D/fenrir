@@ -2,7 +2,7 @@
 
 Bumps ONLY when a field the detail panel edits (description / client_* /
 shipping_*) actually changes — background writers (sync-state flips, rule
-moves, urgent toggles) must NOT bump it, or every open panel would false-409
+moves, flag toggles) must NOT bump it, or every open panel would false-409
 the moment the sync worker ticked. See VERSIONED_FIELDS on the model.
 """
 
@@ -48,12 +48,12 @@ async def test_no_op_content_edit_does_not_bump(async_client):
 
 
 @pytest.mark.asyncio
-async def test_urgent_toggle_does_not_bump(async_client, db_session):
+async def test_flag_toggle_does_not_bump(async_client, db_session):
     project_id = (await _create(async_client)).json()["id"]
-    updated = (await async_client.patch(f"/api/v1/aito/{project_id}/urgent", json={"urgent": True})).json()
+    updated = (await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "urgent"})).json()
     assert updated["version"] == 0
     row = (await db_session.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one()
-    assert row.urgent is True
+    assert row.flag == "urgent"
 
 
 @pytest.mark.asyncio

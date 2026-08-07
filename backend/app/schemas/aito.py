@@ -214,7 +214,12 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     client_phone: str | None = Field(default=None, max_length=50)
     client_email: str | None = Field(default=None, max_length=200)
     client_is_company: bool | None = None
-    quote_id: str | None = Field(default=None, max_length=50)
+    # Books estimate ids are opaque alphanumerics. The charset matters: this value
+    # is interpolated into the Books URL path, and httpx normalises dot segments,
+    # so an unconstrained id can walk out of /books/v3 onto any Zoho endpoint with
+    # the org's OAuth token. `zoho._seg` escapes it too — this rejects the request
+    # outright rather than forwarding a nonsense id upstream.
+    quote_id: str | None = Field(default=None, max_length=50, pattern=r"^[A-Za-z0-9_-]+$")
     quote_number: str | None = Field(default=None, max_length=50)
     quote_date: str | None = Field(default=None, max_length=10)
     quote_total: float | None = Field(default=None, ge=0)
@@ -297,12 +302,17 @@ class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput):
         return value if value is None else _check_phone(value)
 
 
-class AitoUrgentUpdate(BaseModel):
-    """Body of PATCH /aito/{id}/urgent. A single required field: this route
-    exists to write exactly one flag, so `exclude_unset` semantics (which
-    `AitoProjectUpdate` needs) would only make "absent" ambiguous here."""
+AitoFlag = Literal["urgent", "sav"]
 
-    urgent: bool
+
+class AitoFlagUpdate(BaseModel):
+    """Body of PATCH /aito/{id}/flag. A single required field: this route
+    exists to write exactly one flag, so `exclude_unset` semantics (which
+    `AitoProjectUpdate` needs) would only make "absent" ambiguous here.
+
+    `None` is the third state — no flag — not "leave it alone"."""
+
+    flag: AitoFlag | None
 
 
 class AitoTaskStepsResponse(BaseModel):
@@ -353,9 +363,9 @@ class AitoProjectResponse(BaseModel):
     # 'locked', which also covers tax-exclusive quotes that were never billed.
     quote_invoiced: bool
     # A local board signal, never synced to Zoho — see the column comment on
-    # AitoProject.urgent. Display ordering only: the board sorts urgent cards
-    # to the top of their column without rewriting stored `position` values.
-    urgent: bool
+    # AitoProject.flag. Display ordering only: the board sorts flagged cards to
+    # the top of their column without rewriting stored `position` values.
+    flag: AitoFlag | None
     quote_sync_error: str | None
     # Why the status reconciler is blocked, if it is, and what Books read when
     # it was recorded — 'conflict' (both sides decided and differ) or

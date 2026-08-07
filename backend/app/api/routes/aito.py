@@ -20,6 +20,7 @@ from backend.app.models.user import User
 from backend.app.schemas.aito import (
     AitoEventPage,
     AitoEventResponse,
+    AitoFlagUpdate,
     AitoNoteCreate,
     AitoProjectCreate,
     AitoProjectImport,
@@ -41,7 +42,6 @@ from backend.app.schemas.aito import (
     AitoTaskResponse,
     AitoTaskStepsResponse,
     AitoTaskUpdate,
-    AitoUrgentUpdate,
 )
 from backend.app.services.aito_board_rules import SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.aito_events import diff_fields, kinds_for_depth, record
@@ -81,6 +81,11 @@ _SHIPPING_COLUMNS = (
     "shipping_phone",
     "shipping_price",
 )
+
+# kind -> event, spelled out rather than f-string-built, so every kind in
+# services/aito_events.KINDS stays greppable from its call site.
+_FLAG_SET_EVENT: dict[str, str] = {"urgent": "project.urgent.set", "sav": "project.sav.set"}
+_FLAG_CLEARED_EVENT: dict[str, str] = {"urgent": "project.urgent.cleared", "sav": "project.sav.cleared"}
 
 
 def _mentions_shipping(fields: dict) -> bool:
@@ -270,10 +275,12 @@ def _to_response(p: AitoProject, summary: TaskSummary, shipping_names: dict[str,
         # in memory and never flushed (see test_aito_board_summary.py) still
         # reads quote_invoiced as None here.
         quote_invoiced=bool(p.quote_invoiced),
-        # Mirrors quote_invoiced above: an in-memory AitoProject that never
-        # went through a DB flush leaves urgent as None too.
-        urgent=bool(p.urgent),
-        # Mirrors urgent above: in-memory rows that never flushed read None.
+        # No bool() coercion, unlike quote_invoiced above: the column is
+        # nullable, so an in-memory AitoProject that never went through a DB
+        # flush already reads as None, which is exactly "no flag".
+        flag=p.flag,
+        # Mirrors quote_invoiced above: in-memory rows that never flushed
+        # read None.
         version=p.version or 0,
         quote_sync_error=p.quote_sync_error,
         quote_status_block=p.quote_status_block,
@@ -574,13 +581,13 @@ async def list_projects(
     stmt = (
         select(AitoProject)
         .where(AitoProject.status == "active")
-        # Urgent first WITHIN each column, and display-only: stored `position`
+        # Flagged first WITHIN each column, and display-only: stored `position`
         # values are untouched, so manual drag order still holds inside the
-        # urgent group and inside the normal group. The trade is that an
-        # urgent card cannot be dragged below a normal one — it snaps back on
+        # flagged group and inside the normal group. The trade is that a
+        # flagged card cannot be dragged below a normal one — it snaps back on
         # the next fetch. Rewriting `position` on flag would "fix" that by
         # destroying the operator's ordering irreversibly, which is worse.
-        .order_by(AitoProject.board_column, AitoProject.urgent.desc(), AitoProject.position, AitoProject.id)
+        .order_by(AitoProject.board_column, AitoProject.flag.is_(None), AitoProject.position, AitoProject.id)
     )
     projects = list((await db.execute(stmt)).scalars().all())
     task_rows = await _tasks_by_project(db, [p.id for p in projects])
@@ -1348,15 +1355,16 @@ async def move_project(
     source_column = project.board_column
     destination = await _active_in_column(db, payload.column, exclude_id=project.id)
     # The client's `position` is an index into the DISPLAYED order, which puts
-    # urgent cards first (see list_projects and the same sort in
+    # flagged cards first (see list_projects and the same sort in
     # frontend/src/utils/aitoBoard.ts). `_active_in_column` returns the STORED
-    # order and must keep doing so — grouping urgent cards in `position` itself
-    # would bake the flag into the operator's manual ordering permanently.
-    # So renumber in display order here instead: without this, every drag in a
-    # column holding an urgent card that is not already top lands N slots off,
-    # and some slots become unreachable. Python's sort is stable, so
-    # `position, id` order still holds inside each of the two groups.
-    destination.sort(key=lambda row: not row.urgent)
+    # order and must keep doing so — grouping flagged cards in `position`
+    # itself would bake the flag into the operator's manual ordering
+    # permanently. So renumber in display order here instead: without this,
+    # every drag in a column holding a flagged card that is not already top
+    # lands N slots off, and some slots become unreachable. Python's sort is
+    # stable, so `position, id` order still holds inside each of the two
+    # groups.
+    destination.sort(key=lambda row: row.flag is None)
     insert_at = min(payload.position, len(destination))
     destination.insert(insert_at, project)
     project.board_column = payload.column
@@ -1474,7 +1482,7 @@ async def update_project(
     queued = project.quote_sync_state == "pending"
     await db.commit()
     _wake_worker(queued)
-    # Same no-op silence `set_project_urgent` and `set_quote_status` already
+    # Same no-op silence `set_project_flag` and `set_quote_status` already
     # give a repeated/empty write — see their own comments. `changes` alone
     # is not enough here: a shipping PATCH sends its six columns through
     # `_validated_shipping`/setattr rather than `diff_fields`, so `shipping
@@ -1488,22 +1496,22 @@ async def update_project(
     return _to_response(project, await _summary_for(db, project.id), await _shipping_names(db))
 
 
-@router.patch("/{project_id}/urgent", response_model=AitoProjectResponse)
-async def set_project_urgent(
+@router.patch("/{project_id}/flag", response_model=AitoProjectResponse)
+async def set_project_flag(
     project_id: int,
-    payload: AitoUrgentUpdate,
+    payload: AitoFlagUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
-    """Flag a project urgent, or clear it.
+    """Set a project's board flag — 'urgent', 'sav' — or clear it.
 
     Its own route rather than a field on `AitoProjectUpdate`, and the reason is
     the last thing `update_project` does: `_mark_pending_if_ours` runs
     unconditionally there, queueing a Zoho quote push on every edit. That is
     right for description and client fields, which Zoho mirrors. It is wrong
-    for `urgent` — Zoho has no field for it, so the push would carry nothing;
-    it would churn `quote_sync_state` on `locked` quotes, where writes are
-    already known to be unsafe; and it would fill the timeline with
+    for `flag` — Zoho has no field for either value, so the push would carry
+    nothing; it would churn `quote_sync_state` on `locked` quotes, where writes
+    are already known to be unsafe; and it would fill the timeline with
     `sync.queued` noise generated by a purely local toggle. So this route
     deliberately does NOT call it, and a test asserts the sync state survives.
 
@@ -1519,19 +1527,33 @@ async def set_project_urgent(
 
     # Idempotent: re-sending the value the row already holds is a 200 with no
     # event, so a double-tap does not spam the timeline with non-decisions.
-    if project.urgent != payload.urgent:
-        project.urgent = payload.urgent
-        await record(
-            db,
-            project.id,
-            "project.urgent.set" if payload.urgent else "project.urgent.cleared",
-            actor_class="user",
-            actor_name=_actor(current_user),
-            subject_type="project",
-            subject_id=project.id,
-        )
+    if project.flag != payload.flag:
+        previous = project.flag
+        project.flag = payload.flag
+        # Switching flags is two facts, so it is two rows. Cleared first, so
+        # the timeline reads in the order the change actually happened.
+        if previous:
+            await record(
+                db,
+                project.id,
+                _FLAG_CLEARED_EVENT[previous],
+                actor_class="user",
+                actor_name=_actor(current_user),
+                subject_type="project",
+                subject_id=project.id,
+            )
+        if payload.flag:
+            await record(
+                db,
+                project.id,
+                _FLAG_SET_EVENT[payload.flag],
+                actor_class="user",
+                actor_name=_actor(current_user),
+                subject_type="project",
+                subject_id=project.id,
+            )
         await db.commit()
-        await _broadcast_changed("urgent", project.id, _actor(current_user))
+        await _broadcast_changed("flag", project.id, _actor(current_user))
         await db.refresh(project)
 
     return _to_response(project, await _summary_for(db, project.id), await _shipping_names(db))

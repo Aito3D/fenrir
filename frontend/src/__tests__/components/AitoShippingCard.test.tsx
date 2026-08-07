@@ -29,7 +29,8 @@ describe('ShippingCard', () => {
     render(<ShippingCard project={shipped} currency="XPF" />);
     expect(screen.getByText('Rangiroa')).toBeInTheDocument();
     expect(screen.getByText('Jean-Pierre DUPONT')).toBeInTheDocument();
-    expect(screen.getByText('+689-89645864')).toBeInTheDocument();
+    // Displayed in the dotted reading format, same as the client phone above it.
+    expect(screen.getByText('(+689) 89.64.58.64')).toBeInTheDocument();
     expect(screen.getByText('Livraison Avion Tuamotu')).toBeInTheDocument();
     expect(screen.getByText(/3\s?200/)).toBeInTheDocument();
   });

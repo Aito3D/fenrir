@@ -27,8 +27,8 @@ export const eyebrowCls = 'text-[.72rem] uppercase tracking-[.08em]';
 export const headerPillCls =
   'inline-flex items-center gap-1.5 border rounded-[.4rem] px-2 py-0.5 text-[11px] font-semibold';
 
-/** The same recipe, split for `HoldButton` callers (the urgent pill), which
- *  supplies its own `inline-flex`, `gap-1.5` and radius and therefore cannot
- *  take `headerPillCls` whole. Keep these two in step with it. */
+/** The same recipe's radius, split out for `HoldButton` callers (the flag
+ *  pill's segments), which supply their own `inline-flex`, `gap-1.5` and
+ *  radius and therefore cannot take `headerPillCls` whole. Keep it in step
+ *  with the radius above. */
 export const headerPillRadiusCls = 'rounded-[.4rem]';
-export const headerPillTypeCls = 'border px-2 py-0.5 text-[11px] font-semibold';

@@ -109,6 +109,8 @@ export function HoldButton({
   hintPlacement = 'top',
   progress = 'ring',
   barClassName = 'bg-red-400/25',
+  pressEffect = 'scale',
+  ariaPressed,
   children,
 }: {
   onHold: () => void;
@@ -140,6 +142,19 @@ export function HoldButton({
    *  Defaults to the destructive red; Accept passes green, because a bar that
    *  fills red under "Accept quote" reads as the wrong outcome mid-gesture. */
   barClassName?: string;
+  /** Whether the press itself is animated on the OUTER wrapper. `scale` — the
+   *  default, unchanged for every existing caller — grows the button while
+   *  held and bounces it on completion. `none` for a button living inside a
+   *  clipped container (`FlagControl`'s segmented pill), where both would be
+   *  cut off by the parent's `overflow-hidden` and read as broken; there the
+   *  bar fill carries progress on its own. */
+  pressEffect?: 'scale' | 'none';
+  /** Reflects a live on/off state on the underlying `<button>`, e.g. a
+   *  segmented control where the pressed segment is the active choice.
+   *  Optional and `undefined` by default so no existing caller gains the
+   *  attribute — only a caller that has a real pressed/unpressed state (like
+   *  `FlagControl`'s segments) passes it. */
+  ariaPressed?: boolean;
   children: ReactNode;
 }) {
   const [holding, setHolding] = useState(false);
@@ -210,15 +225,20 @@ export function HoldButton({
 
   return (
     <div
-      className={`relative motion-safe:transition-transform motion-safe:ease-linear ${
-        holding ? 'scale-[1.08] motion-reduce:scale-100' : ''
-      } ${completed ? 'animate-hold-bounce' : ''}`}
-      style={{ transitionDuration: holding ? `${durationMs}ms` : '150ms' }}
+      className={`relative ${
+        pressEffect === 'scale'
+          ? `motion-safe:transition-transform motion-safe:ease-linear ${
+              holding ? 'scale-[1.08] motion-reduce:scale-100' : ''
+            } ${completed ? 'animate-hold-bounce' : ''}`
+          : ''
+      }`}
+      style={pressEffect === 'scale' ? { transitionDuration: holding ? `${durationMs}ms` : '150ms' } : undefined}
     >
       <button
         ref={buttonRef}
         type="button"
         aria-label={label}
+        aria-pressed={ariaPressed}
         title={hint}
         disabled={disabled}
         data-holding={holding || undefined}

@@ -41,6 +41,8 @@ KINDS: dict[str, str] = {
     "project.restored": "story",
     "project.urgent.set": "story",
     "project.urgent.cleared": "story",
+    "project.sav.set": "story",
+    "project.sav.cleared": "story",
     # detail: everything a person did by hand.
     "task.added": "detail",
     "task.updated": "detail",

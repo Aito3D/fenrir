@@ -1178,6 +1178,11 @@ async def _backfill_aito_events(conn) -> None:
     recoverable from its current row -- and the Zoho side needs no backfill at
     all, because Books has kept its comments since the quote was written and the
     mirror imports the lot on its first poll.
+
+    No NULL guard on ``p.created_at``: ``aito_events.occurred_at`` is NOT NULL,
+    so a NULL source would abort startup here -- but ``aito_projects.created_at``
+    is itself NOT NULL and has been since the table was created, so the row this
+    would guard against cannot be written in the first place.
     """
     from sqlalchemy import text
 
@@ -4368,7 +4373,53 @@ async def run_migrations(conn):
         f"ALTER TABLE aito_projects ADD COLUMN urgent BOOLEAN NOT NULL DEFAULT {_aito_urgent_default}",
     )
 
+    # Migration: content-fields revision counter for optimistic concurrency
+    # (2026-08-07) — see AitoProject.version and its before_update listener.
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN version INTEGER NOT NULL DEFAULT 0")
+
+    # Migration: three-state board flag on Aito projects (2026-08-06).
+    # Replaces `urgent` above. NULL, 'urgent' or 'sav' — one column rather than
+    # two booleans, so "urgent AND sav" is not a state that can be written and
+    # then has to be forbidden in the route, the optimistic transform and both
+    # sort comparators.
+    _aito_flag_existed = await _column_exists(conn, "aito_projects", "flag")
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN flag VARCHAR(16)")
+    # The `urgent` column above is now DEAD and is deliberately not dropped —
+    # this file only ever adds. Nothing reads or writes it: the attribute is
+    # gone from the AitoProject model, and its NOT NULL DEFAULT 0 keeps inserts
+    # legal without it. Do not revive it; `flag` is the flag.
+    #
+    # The `ALTER TABLE ... ADD COLUMN urgent` above, however, is NOT dead and
+    # must stay. On a fresh install `create_all` builds `aito_projects` from
+    # the current model, which no longer declares `urgent` at all — that ALTER
+    # is the only reason the column exists on a fresh install, and the
+    # backfill immediately below reads it. Deleting it breaks every fresh
+    # install with "no such column: urgent".
+    #
+    # DML, not DDL — conn.execute() inside a savepoint per _safe_execute's own
+    # docstring, not _safe_execute itself: that helper only swallows DDL
+    # idempotency errors, and a failed backfill must never be silently eaten.
+    # `urgent IS TRUE`, not `urgent = 1`: `urgent` is a real BOOLEAN on
+    # PostgreSQL, where `= 1` raises "operator does not exist: boolean =
+    # integer" (aborting every PostgreSQL deployment's startup); `IS TRUE`
+    # reads correctly against a BOOLEAN column on both PostgreSQL and SQLite
+    # (>=3.23).
+    #
+    # Gated on `_aito_flag_existed` (captured above, before the ALTER TABLE
+    # that adds the column), NOT on `AND flag IS NULL` — `run_migrations` runs
+    # on every startup, and nothing ever writes the dead `urgent` column
+    # again, so `urgent` stays frozen at whatever it was pre-migration
+    # forever. An `AND flag IS NULL` guard would look idempotent but is not:
+    # the moment an operator clears a flag in the UI, `flag` goes back to
+    # NULL while the frozen `urgent` is still TRUE, and the very next restart
+    # would silently resurrect the flag the operator just cleared, with no
+    # timeline event. Gating on column existence instead makes the backfill
+    # run exactly once, on the boot that adds the column, and never again.
+    from sqlalchemy import text
+
+    if not _aito_flag_existed:
+        async with conn.begin_nested():
+            await conn.execute(text("UPDATE aito_projects SET flag = 'urgent' WHERE urgent IS TRUE"))
 
     await _safe_execute(
         conn,

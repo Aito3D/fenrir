@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parsePhone,
   formatPhone,
+  formatPhoneDisplay,
   titleCaseSegments,
   formatDisplayName,
   validateEmail,
@@ -61,6 +62,37 @@ describe('formatPhone', () => {
 
   it('round-trips a house-format number', () => {
     expect(formatPhone(parsePhone('+689-87296912'))).toBe('+689-87296912');
+  });
+});
+
+describe('formatPhoneDisplay', () => {
+  it('renders the house format as (+CC) with dot-separated digit pairs', () => {
+    expect(formatPhoneDisplay('+689-87755669')).toBe('(+689) 87.75.56.69');
+  });
+
+  it('keeps leading zeros and handles longer national numbers', () => {
+    expect(formatPhoneDisplay('+33-0179753070')).toBe('(+33) 01.79.75.30.70');
+  });
+
+  it('falls back to the default country code for a bare number', () => {
+    expect(formatPhoneDisplay('89645864')).toBe('(+689) 89.64.58.64');
+  });
+
+  it('leaves a trailing single digit as its own group', () => {
+    expect(formatPhoneDisplay('+689-8775566')).toBe('(+689) 87.75.56.6');
+  });
+
+  it('returns an empty string for blank input', () => {
+    expect(formatPhoneDisplay('')).toBe('');
+    expect(formatPhoneDisplay('   ')).toBe('');
+  });
+
+  it('passes a digitless free-text value through instead of blanking it', () => {
+    // Zoho stores the phone as free text. Formatting these to '' would render
+    // an icon with nothing beside it, because `display ?? value` in
+    // CopyableValue does not fall through on an empty string.
+    expect(formatPhoneDisplay('à confirmer')).toBe('à confirmer');
+    expect(formatPhoneDisplay('  bureau  ')).toBe('bureau');
   });
 });
 
