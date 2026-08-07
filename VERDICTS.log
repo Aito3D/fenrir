@@ -8,3 +8,8 @@ SNAPSHOTS 7/7 · SURFACE unchanged · COVERAGE 60%/87%/80.84% all held · REGRES
 T-015 judged legitimate bug fix (disabled button stops pointer events so cancelHold never runs; all 11 call sites checked; no happy-path regression). T-016 verified inert. T-017 comment claims validated against code.
 plug_energy_history failure re-confirmed as pre-existing Berlin-midnight test bug (mechanism checked, not trusted). REMAINING_ISSUES: none
 
+=== 2026-08-07 12:58 · ITERATION 3 · VERDICT: PASS ===
+SNAPSHOTS 7/7 · SURFACE unchanged · ratchets held exactly (backend aito 260 missed, fe 80.84%/358 missed) · REGRESSIONS none
+Extractions verified byte-identical per site (_lock_project order+_UNSET sentinel, _terminal_error incl. catch-all logger placement). T-018 judged genuine narrow fix; test non-tautological.
+REMAINING_ISSUES: 4x low (ratchet blind-spot note — suggest per-file missed counts; backend TOTAL +18 missed = xdist nondeterminism, not code; stranded comments at quote_sync swept branch ~950-976 -> fold into T-027; SQLite-only error-text match restated for final record)
+
