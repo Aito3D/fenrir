@@ -1269,7 +1269,7 @@ async def delete_task(
 async def import_legacy_projects(
     payload: AitoProjectImport,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     """One-time localStorage migration. Guard counts ALL rows (incl. soft-deleted)
     so a double-fire can never duplicate the board."""
@@ -1306,7 +1306,7 @@ async def import_legacy_projects(
     await db.commit()
     for p in created:
         await db.refresh(p)
-    await _broadcast_changed("import", None, _actor(_))
+    await _broadcast_changed("import", None, _actor(current_user))
     # Imported projects are task-free by construction: the legacy localStorage
     # board had no concept of tasks. Explicit empty map, not a resolved one:
     # AitoProjectImportItem carries no shipping fields at all, so no imported
@@ -1474,7 +1474,16 @@ async def update_project(
     queued = project.quote_sync_state == "pending"
     await db.commit()
     _wake_worker(queued)
-    await _broadcast_changed("update", project.id, _actor(current_user))
+    # Same no-op silence `set_project_urgent` and `set_quote_status` already
+    # give a repeated/empty write — see their own comments. `changes` alone
+    # is not enough here: a shipping PATCH sends its six columns through
+    # `_validated_shipping`/setattr rather than `diff_fields`, so `shipping
+    # is not None` (the payload touched at least one shipping column) is
+    # ORed in even though it does not itself prove the merged row changed —
+    # matching the spec's error-handling table (only guarded PATCHes that
+    # actually change something need the rest of the board to hear about it).
+    if changes or shipping is not None:
+        await _broadcast_changed("update", project.id, _actor(current_user))
     await db.refresh(project)
     return _to_response(project, await _summary_for(db, project.id), await _shipping_names(db))
 

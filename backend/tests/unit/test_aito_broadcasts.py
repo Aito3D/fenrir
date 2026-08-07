@@ -45,6 +45,17 @@ async def test_move_delete_restore_broadcast(async_client, broadcast):
 
 
 @pytest.mark.asyncio
+async def test_no_op_patch_does_not_broadcast(async_client, broadcast):
+    project_id = (await _create(async_client)).json()["id"]
+    # Same description the create call already stored — diff_fields sees no
+    # change and _validated_shipping is never even reached (no shipping
+    # column in the payload), so this must stay as silent as a repeated
+    # quote-status transition.
+    await async_client.patch(f"/api/v1/aito/{project_id}", json={"description": "Support GoPro"})
+    assert _actions(broadcast) == ["create"]  # the no-op PATCH stayed silent
+
+
+@pytest.mark.asyncio
 async def test_no_op_quote_status_does_not_broadcast(async_client, broadcast, monkeypatch):
     from backend.app.services.zoho import zoho_service
 
