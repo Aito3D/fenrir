@@ -343,6 +343,25 @@ def _to_response(p: AitoProject, summary: TaskSummary, shipping_names: dict[str,
     )
 
 
+async def _project_response(
+    db: AsyncSession, p: AitoProject, summary: TaskSummary | None = None
+) -> AitoProjectResponse:
+    """`_to_response(p, summary, shipping_names)` with `shipping_names`
+    always resolved here via `_shipping_names`, and `summary` resolved via
+    `_summary_for` too when the caller has none in hand yet.
+
+    Callers that already computed `summary` earlier — because a step before
+    the response build needed it too (`_apply_rules`, `evaluate`, or simply
+    because it was cheaper to derive from rows already in memory) — pass it
+    explicitly, and this function only awaits `_shipping_names`. That keeps
+    the original evaluation order in both cases: summary before shipping
+    names.
+    """
+    if summary is None:
+        summary = await _summary_for(db, p.id)
+    return _to_response(p, summary, await _shipping_names(db))
+
+
 def _task_to_response(t: AitoTask) -> AitoTaskResponse:
     return AitoTaskResponse(
         id=t.id,
@@ -808,7 +827,7 @@ async def create_project(
         request_immediate_sync()
     await _broadcast_changed("create", project.id, _actor(current_user))
     await db.refresh(project)
-    return _to_response(project, summary, await _shipping_names(db))
+    return await _project_response(db, project, summary)
 
 
 @router.post("/summarize", response_model=AitoSummarizeResponse)
@@ -1161,7 +1180,7 @@ async def send_quote_email(
     await _broadcast_changed("quote-email", project.id, _actor(current_user))
     await db.refresh(project)
     return AitoQuoteEmailResponse(
-        project=_to_response(project, summary, await _shipping_names(db)),
+        project=await _project_response(db, project, summary),
         marked_sent=marked_sent,
     )
 
@@ -1482,7 +1501,7 @@ async def move_project(
     await db.commit()
     await _broadcast_changed("move", project.id, _actor(current_user))
     await db.refresh(project)
-    return _to_response(project, summary, await _shipping_names(db))
+    return await _project_response(db, project, summary)
 
 
 @router.patch("/{project_id}", response_model=AitoProjectResponse)
@@ -1580,7 +1599,7 @@ async def update_project(
     if changes or shipping is not None:
         await _broadcast_changed("update", project.id, _actor(current_user))
     await db.refresh(project)
-    return _to_response(project, await _summary_for(db, project.id), await _shipping_names(db))
+    return await _project_response(db, project)
 
 
 @router.patch("/{project_id}/flag", response_model=AitoProjectResponse)
@@ -1639,7 +1658,7 @@ async def set_project_flag(
         await _broadcast_changed("flag", project.id, _actor(current_user))
         await db.refresh(project)
 
-    return _to_response(project, await _summary_for(db, project.id), await _shipping_names(db))
+    return await _project_response(db, project)
 
 
 @router.post("/{project_id}/quote-status", response_model=AitoQuoteStatusResponse)
@@ -1671,7 +1690,7 @@ async def set_quote_status(
         # and no 'Zoho not updated' warning to trigger, hence zoho_synced=True.
         summary = await _summary_for(db, project.id)
         return AitoQuoteStatusResponse(
-            project=_to_response(project, summary, await _shipping_names(db)),
+            project=await _project_response(db, project, summary),
             zoho_synced=True,
             no_op=True,
         )
@@ -1719,11 +1738,11 @@ async def set_quote_status(
     # Built BEFORE the Zoho call, not after: the project's data cannot change
     # in between, and a DB-layer failure inside set_estimate_status's
     # _request (a token-refresh write, a settings read) can leave the session
-    # needing a rollback — a following _to_response call would then raise
-    # PendingRollbackError instead of the intended best-effort
+    # needing a rollback — a following _project_response call would then
+    # raise PendingRollbackError instead of the intended best-effort
     # zoho_synced=False response. Same reasoning covers _shipping_names: it
     # is itself a DB read, so it has to happen up here too.
-    project_response = _to_response(project, summary, await _shipping_names(db))
+    project_response = await _project_response(db, project, summary)
 
     zoho_synced = False
     if project.quote_id:
@@ -1803,7 +1822,7 @@ async def restore_project(
     _wake_worker(queued)
     await _broadcast_changed("restore", project.id, _actor(current_user))
     await db.refresh(project)
-    return _to_response(project, summary, await _shipping_names(db))
+    return await _project_response(db, project, summary)
 
 
 @router.delete("/{project_id}", status_code=204)

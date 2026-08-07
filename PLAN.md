@@ -90,33 +90,33 @@ evidence: aito_quote_sync.py:1229-1230 early-returns True for pending so pending
 
 ## T-009
 priority: P2
-status: OPEN
-attempts: 0
+status: DONE
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 5
 title: aito.py: extract _project_response wrapper (8 call sites)
 files: backend/app/api/routes/aito.py
 evidence: aito.py:752,1109,1428,1531,1594,1630,1682,1749 repeat _to_response(project, summary, await _shipping_names(db)); preserve set_quote_status (1682) building response BEFORE Zoho call
 
 ## T-010
 priority: P2
-status: OPEN
-attempts: 0
+status: IN_PROGRESS
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 5
 title: aito.py: extract _shipping_rates helper (2 identical projections)
 files: backend/app/api/routes/aito.py
 evidence: byte-identical rates dict comprehension at aito.py:672 and 1473 behind same _mentions_shipping guard; extract next to _shipping_names (248)
 
 ## T-011
 priority: P2
-status: OPEN
-attempts: 0
+status: IN_PROGRESS
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 5
 title: aito.py: extract shared quote-email preamble
 files: backend/app/api/routes/aito.py
 evidence: aito.py:988-997 and 1028-1041 duplicate lookup->no-quote-404->_quote_email_content->_quote_email_http_error; keep the extra rollback at 1040 (belt-and-braces per 1065-1071)
