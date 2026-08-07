@@ -4373,6 +4373,18 @@ async def run_migrations(conn):
         f"ALTER TABLE aito_projects ADD COLUMN urgent BOOLEAN NOT NULL DEFAULT {_aito_urgent_default}",
     )
 
+    # Migration: three-state board flag on Aito projects (2026-08-06).
+    # Replaces `urgent` above. NULL, 'urgent' or 'sav' — one column rather than
+    # two booleans, so "urgent AND sav" is not a state that can be written and
+    # then has to be forbidden in the route, the optimistic transform and both
+    # sort comparators.
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN flag VARCHAR(16)")
+    # The `urgent` column above is now DEAD and is deliberately not dropped —
+    # this file only ever adds. Nothing reads or writes it: the attribute is
+    # gone from the AitoProject model, and its NOT NULL DEFAULT 0 keeps inserts
+    # legal without it. Do not revive it; `flag` is the flag.
+    await _safe_execute(conn, "UPDATE aito_projects SET flag = 'urgent' WHERE urgent = 1 AND flag IS NULL")
+
     await _safe_execute(
         conn,
         "CREATE INDEX IF NOT EXISTS ix_aito_projects_quote_sync_state ON aito_projects (quote_sync_state)",

@@ -81,18 +81,21 @@ class AitoProject(Base):
     # tax-exclusive quotes — the board's "this job is billed, archive it" glow
     # must not fire for those.
     quote_invoiced: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
-    # A local board signal: "this job is late / promised / on fire". Zoho has
-    # no field for it and must never be told, which is why it is written by
-    # its own route rather than by update_project — that one ends with an
-    # unconditional _mark_pending_if_ours, and queueing a quote push for a
-    # field the quote does not have is pure noise (and churns the sync state
-    # on locked quotes, where writes are already known to be unsafe).
+    # A local board signal with three states: NULL, 'urgent' ("this job is late
+    # / promised / on fire") or 'sav' ("it came back and needs handling
+    # again"). Mutually exclusive by construction — that is why this is one
+    # nullable column and not two booleans. Zoho has no field for either and
+    # must never be told, which is why it is written by its own route rather
+    # than by update_project — that one ends with an unconditional
+    # _mark_pending_if_ours, and queueing a quote push for a field the quote
+    # does not have is pure noise (and churns the sync state on locked quotes,
+    # where writes are already known to be unsafe).
     #
     # Never cleared automatically: not on a column move, not on trash, not on
     # restore. A flag someone set by hand is theirs to clear by hand, and
     # silently dropping it would make the board lie in the one direction that
     # costs money.
-    urgent: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    flag: Mapped[str | None] = mapped_column(String(16), nullable=True)
     quote_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     quote_sync_failures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # The estimate's last_modified_time as Zoho reported it on our last write.

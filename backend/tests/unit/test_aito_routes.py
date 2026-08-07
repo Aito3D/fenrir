@@ -239,26 +239,33 @@ async def test_create_and_list(async_client):
 
 
 @pytest.mark.asyncio
-async def test_board_lists_urgent_cards_first_within_their_column(async_client):
-    """Display ordering only. Manual drag order still holds inside the urgent
+async def test_board_lists_flagged_cards_first_within_their_column(async_client):
+    """Display ordering only. Manual drag order still holds inside the flagged
     group and inside the normal group — stored `position` values are never
     rewritten, which is what keeps a flag from destroying the operator's
-    ordering irreversibly."""
+    ordering irreversibly.
+
+    Both flags are peers, so the sort tests "flagged at all", not which flag —
+    an SAV card and an urgent card rank equally and fall back to position."""
     first = (await _create(async_client, description="first")).json()
     second = (await _create(async_client, description="second")).json()
     third = (await _create(async_client, description="third")).json()
 
-    # All three land in devis. Flag the two that are NOT at the top.
-    await async_client.patch(f"/api/v1/aito/{first['id']}/urgent", json={"urgent": True})
-    await async_client.patch(f"/api/v1/aito/{second['id']}/urgent", json={"urgent": True})
+    # All three land in devis. Creation prepends (each new card takes
+    # position 0 and shifts the rest down), so of the two flagged here,
+    # `second` holds the lower stored position — it must flag "urgent" for
+    # the flagged group to read position-ascending as ["urgent", "sav"].
+    # One of each flag, so neither can be seen to outrank the other.
+    await async_client.patch(f"/api/v1/aito/{second['id']}/flag", json={"flag": "urgent"})
+    await async_client.patch(f"/api/v1/aito/{first['id']}/flag", json={"flag": "sav"})
 
     board = (await async_client.get("/api/v1/aito/")).json()
     devis = [p for p in board if p["column"] == "devis"]
 
-    assert [p["urgent"] for p in devis] == [True, True, False]
-    # Within the urgent group, the stored position order is intact.
-    urgent_positions = [p["position"] for p in devis if p["urgent"]]
-    assert urgent_positions == sorted(urgent_positions)
+    assert [p["flag"] for p in devis] == ["urgent", "sav", None]
+    # Within the flagged group, the stored position order is intact.
+    flagged_positions = [p["position"] for p in devis if p["flag"]]
+    assert flagged_positions == sorted(flagged_positions)
     assert devis[-1]["id"] == third["id"]
 
 
@@ -282,8 +289,8 @@ def _devis_order(board: list[dict]) -> list[str]:
 
 
 @pytest.mark.asyncio
-async def test_move_lands_where_it_was_dropped_when_the_column_holds_an_urgent_card(async_client):
-    """`position` indexes the DISPLAYED order, which is urgent-first.
+async def test_move_lands_where_it_was_dropped_when_the_column_holds_a_flagged_card(async_client):
+    """`position` indexes the DISPLAYED order, which is flagged-first.
 
     A column reading [b, a, c, d] on screen (b flagged, stored positions
     a=0, b=1, c=2, d=3) must accept a drop of `d` at display index 1 and put
@@ -297,7 +304,7 @@ async def test_move_lands_where_it_was_dropped_when_the_column_holds_an_urgent_c
         await _create(async_client, description=description)
     ids = {p["description"]: p["id"] for p in (await async_client.get("/api/v1/aito/")).json()}
 
-    await async_client.patch(f"/api/v1/aito/{ids['b']}/urgent", json={"urgent": True})
+    await async_client.patch(f"/api/v1/aito/{ids['b']}/flag", json={"flag": "urgent"})
     assert _devis_order((await async_client.get("/api/v1/aito/")).json()) == ["b", "a", "c", "d"]
 
     r = await async_client.patch(f"/api/v1/aito/{ids['d']}/move", json={"column": "devis", "position": 1})
@@ -307,18 +314,18 @@ async def test_move_lands_where_it_was_dropped_when_the_column_holds_an_urgent_c
 
 
 @pytest.mark.asyncio
-async def test_move_cannot_drag_an_urgent_card_below_a_normal_one(async_client):
-    """The one ordering constraint the urgent flag deliberately imposes.
+async def test_move_cannot_drag_a_flagged_card_below_a_normal_one(async_client):
+    """The one ordering constraint the flag deliberately imposes.
 
-    Urgency is a display-only sort, so a flagged card always redisplays above
-    the unflagged ones however far down it is dropped. Pinned here so a later
-    change cannot quietly turn it into stored-position grouping.
+    Being flagged is a display-only sort, so a flagged card always redisplays
+    above the unflagged ones however far down it is dropped. Pinned here so a
+    later change cannot quietly turn it into stored-position grouping.
     """
     for description in ("c", "b", "a"):
         await _create(async_client, description=description)
     ids = {p["description"]: p["id"] for p in (await async_client.get("/api/v1/aito/")).json()}
 
-    await async_client.patch(f"/api/v1/aito/{ids['b']}/urgent", json={"urgent": True})
+    await async_client.patch(f"/api/v1/aito/{ids['b']}/flag", json={"flag": "urgent"})
     assert _devis_order((await async_client.get("/api/v1/aito/")).json()) == ["b", "a", "c"]
 
     r = await async_client.patch(f"/api/v1/aito/{ids['b']}/move", json={"column": "devis", "position": 2})
@@ -1852,20 +1859,18 @@ async def test_declining_preserves_the_acceptance_stamp(async_client):
 
 
 @pytest.mark.asyncio
-async def test_new_projects_are_not_urgent(async_client):
-    """The flag is opt-in. A card nobody has touched must never glow."""
+async def test_new_projects_have_no_flag(async_client):
     created = await _create(async_client)
-    assert created.status_code == 201
-    assert created.json()["urgent"] is False
+    assert created.json()["flag"] is None
 
     listed = await async_client.get("/api/v1/aito/")
-    assert [p["urgent"] for p in listed.json()] == [False]
+    assert [p["flag"] for p in listed.json()] == [None]
 
 
 @pytest.mark.asyncio
-async def test_urgent_toggles_and_never_queues_a_zoho_push(async_client, db_session):
+async def test_flag_toggles_and_never_queues_a_zoho_push(async_client, db_session):
     """The whole reason this has its own route. update_project ends with an
-    unconditional _mark_pending_if_ours, so routing `urgent` through it would
+    unconditional _mark_pending_if_ours, so routing `flag` through it would
     queue a quote push for a field the quote does not have — and churn the
     sync state on locked quotes, where writes are already known to be unsafe."""
     project_id = (await _create(async_client)).json()["id"]
@@ -1874,29 +1879,37 @@ async def test_urgent_toggles_and_never_queues_a_zoho_push(async_client, db_sess
     sync_state_before = before.quote_sync_state
     failures_before = before.quote_sync_failures
 
-    flagged = await async_client.patch(f"/api/v1/aito/{project_id}/urgent", json={"urgent": True})
+    flagged = await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "urgent"})
     assert flagged.status_code == 200
-    assert flagged.json()["urgent"] is True
+    assert flagged.json()["flag"] == "urgent"
 
     db_session.expire_all()
     after = (await db_session.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one()
     assert after.quote_sync_state == sync_state_before
     assert after.quote_sync_failures == failures_before
 
-    cleared = await async_client.patch(f"/api/v1/aito/{project_id}/urgent", json={"urgent": False})
+    # Switching flags is still a purely local write, not just clearing one.
+    switched = await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "sav"})
+    assert switched.status_code == 200
+    assert switched.json()["flag"] == "sav"
+
+    db_session.expire_all()
+    after_switch = (await db_session.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one()
+    assert after_switch.quote_sync_state == sync_state_before
+    assert after_switch.quote_sync_failures == failures_before
+
+    cleared = await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": None})
     assert cleared.status_code == 200
-    assert cleared.json()["urgent"] is False
+    assert cleared.json()["flag"] is None
 
 
 @pytest.mark.asyncio
-async def test_urgent_records_one_story_event_per_real_change(async_client):
-    """Double-taps must not spam the timeline: an unchanged value records
-    nothing, so the history reads as decisions rather than as button presses."""
+async def test_flag_records_one_story_event_per_real_change(async_client):
     project_id = (await _create(async_client)).json()["id"]
 
-    await async_client.patch(f"/api/v1/aito/{project_id}/urgent", json={"urgent": True})
-    await async_client.patch(f"/api/v1/aito/{project_id}/urgent", json={"urgent": True})
-    await async_client.patch(f"/api/v1/aito/{project_id}/urgent", json={"urgent": False})
+    await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "urgent"})
+    await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "urgent"})  # no-op
+    await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": None})
 
     events = (await async_client.get(f"/api/v1/aito/{project_id}/events?depth=story")).json()["events"]
     kinds = [e["kind"] for e in events]
@@ -1905,11 +1918,35 @@ async def test_urgent_records_one_story_event_per_real_change(async_client):
 
 
 @pytest.mark.asyncio
-async def test_urgent_404s_on_a_trashed_project(async_client):
+async def test_switching_flags_records_the_clear_and_the_set(async_client):
+    """Two things changed, so the timeline says two things. No new renderer is
+    needed: both kinds already map to their own label."""
+    project_id = (await _create(async_client)).json()["id"]
+
+    await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "urgent"})
+    await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "sav"})
+
+    events = (await async_client.get(f"/api/v1/aito/{project_id}/events?depth=story")).json()["events"]
+    kinds = [e["kind"] for e in events]
+    assert kinds.count("project.urgent.cleared") == 1
+    assert kinds.count("project.sav.set") == 1
+    assert kinds.count("project.urgent.set") == 1
+
+
+@pytest.mark.asyncio
+async def test_flag_rejects_an_unknown_value(async_client):
+    project_id = (await _create(async_client)).json()["id"]
+
+    r = await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "later"})
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_flag_404s_on_a_trashed_project(async_client):
     project_id = (await _create(async_client)).json()["id"]
     await async_client.delete(f"/api/v1/aito/{project_id}")
 
-    r = await async_client.patch(f"/api/v1/aito/{project_id}/urgent", json={"urgent": True})
+    r = await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "urgent"})
     assert r.status_code == 404
 
 
