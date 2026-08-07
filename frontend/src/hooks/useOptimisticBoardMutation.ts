@@ -1,7 +1,41 @@
-import { useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
+import { useMutation, useQueryClient, type QueryClient, type UseMutationResult } from '@tanstack/react-query';
 import { useBoardSync } from './useBoardSync';
 import { flashRevert } from './useRevertFlash';
 import { ApiError, type AitoProject } from '../api/client';
+
+/** The freshest ACKED version for a project, read straight from the
+ *  `['aito-projects']` cache rather than trusting a `mutationFn` closure's
+ *  render-time snapshot of `project.version`.
+ *
+ *  `useOptimisticBoardMutation`'s shared `{id: 'aito-board'}` scope
+ *  serializes every board write's EXECUTION — react-query queues a second
+ *  mutation's `mutationFn` call behind the first one's settle. But the
+ *  CLOSURE `.mutate()` builds is bound to whichever render was current when
+ *  `.mutate()` was invoked, and a same-client back-to-back save (blur the
+ *  description, then click Save on the shipping card before the first PATCH
+ *  resolves) can call `.mutate()` for the second write before any render has
+ *  seen the first one's response — so the queued closure still carries the
+ *  pre-first-save version. Confirmed empirically in
+ *  AitoDetailPanelOptimistic.test.tsx's F2 suite: without this, the second
+ *  request's `expected_version` stays stale even though it does not go out
+ *  on the wire until after the first one's `onSuccess` has already landed.
+ *
+ *  Reading the cache INSIDE the `mutationFn` body — rather than closing over
+ *  `project.version` — fixes it: the function's body runs fresh at whatever
+ *  moment the retryer actually calls it, and `getQueryData` always reflects
+ *  the latest committed cache entry at that instant, independent of whether
+ *  React has re-rendered the component that built the closure. The
+ *  optimistic transforms never touch `version` (only a real server response
+ *  does — see utils/aitoOptimistic.ts), so this is genuinely the latest
+ *  ACKED value, never a value from another write's not-yet-confirmed
+ *  optimistic guess. `fallback` covers the cache-miss case (board query has
+ *  no data yet), same shape as `OptimisticBoardOptions.transform`'s own
+ *  `undefined`-means-"leave it alone" contract. */
+export function latestProjectVersion(queryClient: QueryClient, projectId: number, fallback: number): number {
+  return (
+    queryClient.getQueryData<AitoProject[]>(['aito-projects'])?.find((p) => p.id === projectId)?.version ?? fallback
+  );
+}
 
 export interface OptimisticBoardOptions<TData, TVars> {
   mutationFn: (vars: TVars) => Promise<TData>;

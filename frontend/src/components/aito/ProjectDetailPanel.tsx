@@ -29,7 +29,7 @@ import { sendAitoPresence, useAitoViewers } from '../../hooks/useAitoPresence';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useLatestProjectEvent } from '../../hooks/useLatestProjectEvent';
-import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
+import { latestProjectVersion, useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { useProjectTasks } from '../../hooks/useProjectTasks';
 import { api, ApiError, type AitoEvent, type AitoProject, type AitoProjectUpdate } from '../../api/client';
 import { Money } from '../calculator/shared';
@@ -45,6 +45,7 @@ import { taskDraftToTaskCreate } from '../../utils/taskDraft';
 import { focusRingCls, inputCls } from '../formStyles';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
+import { showVersionConflictToast } from './versionConflictToast';
 
 /** Explicit map rather than a template literal key: the i18n gate scans for
  *  literal `t('...')` calls, and a dynamic key is invisible to it. */
@@ -677,7 +678,13 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   const { showToast } = useToast();
 
   const updateMutation = useOptimisticBoardMutation<AitoProject, AitoProjectUpdate>({
-    mutationFn: (patch) => api.updateAitoProject(project.id, { ...patch, expected_version: project.version }),
+    // `latestProjectVersion`, not `project.version`: see its own doc — the
+    // description save fires on blur, so a fast second board write from the
+    // same operator (e.g. the shipping card's Save) can queue behind this
+    // one with a mutationFn closure bound to a render that predates this
+    // write's response landing.
+    mutationFn: (patch) =>
+      api.updateAitoProject(project.id, { ...patch, expected_version: latestProjectVersion(queryClient, project.id, project.version) }),
     // A description edit shows immediately; the retry-sync button sends the
     // description UNCHANGED (its only job is to re-mark the project pending
     // for the worker), so it writes the sync state instead. One transform,
@@ -695,11 +702,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
       );
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
     },
-    onError: (error) =>
-      showToast(
-        t(error instanceof ApiError && error.code === 'version_conflict' ? 'aito.editConflict' : 'aito.saveFailed'),
-        'error',
-      ),
+    onError: (error) => showVersionConflictToast(error, t, showToast),
   });
 
   // Its own mutation rather than a third branch of `updateMutation.transform`:
@@ -708,7 +711,13 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   // transform, PATCH response into the cache, events invalidated because the
   // server records a project.updated for this write like any other.
   const socialMutation = useOptimisticBoardMutation<AitoProject, AitoProjectUpdate>({
-    mutationFn: (patch) => api.updateAitoProject(project.id, { ...patch, expected_version: project.version }),
+    // `latestProjectVersion`, not `project.version`: see its own doc — the
+    // description save fires on blur, so a fast second board write from the
+    // same operator (e.g. the shipping card's Save) can queue behind this
+    // one with a mutationFn closure bound to a render that predates this
+    // write's response landing.
+    mutationFn: (patch) =>
+      api.updateAitoProject(project.id, { ...patch, expected_version: latestProjectVersion(queryClient, project.id, project.version) }),
     transform: (previous, patch) => applyClientSocial(previous, project.id, patch),
     flashId: () => project.id,
     onSuccess: (updatedProject) => {
@@ -717,11 +726,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
       );
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
     },
-    onError: (error) =>
-      showToast(
-        t(error instanceof ApiError && error.code === 'version_conflict' ? 'aito.editConflict' : 'aito.saveFailed'),
-        'error',
-      ),
+    onError: (error) => showVersionConflictToast(error, t, showToast),
   });
 
   const [editingSocial, setEditingSocial] = useState(false);
@@ -803,8 +808,21 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
       { description: next },
       {
         onSuccess: () => setDescState('saved'),
-        onError: () => {
+        onError: (error) => {
           setDescState('error');
+          // The spec's error-handling table promises the operator's typed
+          // text survives a version conflict (someone else saved first):
+          // reopen the editor with exactly what they typed rather than the
+          // revert-to-server behaviour every other failure gets, so a retry
+          // after the board refresh doesn't cost them the edit. `next`, not
+          // `draft` — `draft` may already have been reset to the (now
+          // stale) `project.description` by the effect above, which fires
+          // the instant `setEditingDesc(false)` above lands.
+          if (error instanceof ApiError && error.code === 'version_conflict') {
+            setDraft(next);
+            setEditingDesc(true);
+            return;
+          }
           setDraft(project.description);
         },
       },
