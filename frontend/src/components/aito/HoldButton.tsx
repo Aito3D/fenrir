@@ -58,8 +58,8 @@ const BAR_DURATION_CLS: Record<HoldDurationMs, string> = {
   1000: 'transition-transform duration-[1000ms] ease-linear motion-reduce:duration-200',
 };
 // The perimeter variant animates the same stroke-dashoffset the ring does, so
-// it shares the ring's transition property — kept as its own map anyway, since
-// the two are free to diverge and a shared constant would hide that.
+// it shares the ring's transition property outright — aliased rather than a
+// separate map, so the two staying identical is enforced, not just assumed.
 const PERIMETER_DURATION_CLS = RING_DURATION_CLS;
 
 /** How the hold's progress is drawn.
@@ -211,6 +211,20 @@ export function HoldButton({
     },
     [],
   );
+
+  // A hold in flight must not commit once the caller has withdrawn the
+  // action out from under it — e.g. a mutation started elsewhere flips
+  // `disabled` mid-hold. Without this, the setTimeout scheduled in
+  // `startHold` survives the flip and fires `onHold` regardless, since it
+  // only checked `disabled` at press time. No hint popover here: this is a
+  // programmatic cancel, not a released tap.
+  useEffect(() => {
+    if (!disabled) return;
+    if (holdTimerRef.current) {
+      clearHoldTimer();
+      setHolding(false);
+    }
+  }, [disabled]);
 
   useLayoutEffect(() => {
     if (progress !== 'perimeter') return;

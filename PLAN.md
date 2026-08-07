@@ -156,33 +156,33 @@ evidence: aito_quote_import.py:353 rebuilds set((shipping_ids or {}).values()) p
 
 ## T-015
 priority: P1
-status: OPEN
-attempts: 0
+status: DONE
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 2
 title: HoldButton: cancel in-flight hold when disabled flips true (+fix contradictory PERIMETER comment)
 files: frontend/src/components/aito/HoldButton.tsx
 evidence: HoldButton.tsx:180-193 startHold checks disabled only at press; setTimeout at 185 survives disabled flip and fires onHold at 191 (callers gate on live mutation state: FlagControl.tsx:248, DoneGrid.tsx:39). Add effect clearing timer on disabled. Also HoldButton.tsx:60-63 comment claims separate map above an alias. Add characterization test for hold-commit path first (FlagControl 51% cov)
 
 ## T-016
 priority: P1
-status: OPEN
-attempts: 0
+status: IN_PROGRESS
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 2
 title: ProjectDetailPanel: remove dead+stuck 'error' SaveState value
 files: frontend/src/components/aito/ProjectDetailPanel.tsx
 evidence: SaveIndicator (649-661) renders null for 'error'; setters at 823/863 set it; reset effect 802-806 only clears 'saved'; nothing reads it (1007 reads 'saving' only). Removing 'error' from SaveState (93) + setters is rendered-identical dead-code removal. Surfacing errors would be a feature -> final report
 
 ## T-017
 priority: P1
-status: OPEN
-attempts: 0
+status: IN_PROGRESS
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 2
 title: aitoOptimistic applyShipping: resolve ??-fallback vs verbatim-doc contradiction
 files: frontend/src/utils/aitoOptimistic.ts
 evidence: aitoOptimistic.ts:188-189 doc promises five posted fields applied verbatim; 218-225 uses ?? project fallbacks; shippingDraft.ts:146 legitimately posts null price so clearing a rate leaves stale price in cache one roundtrip. CHECK tests first: if tests assert ?? deliberately, fix the doc only; else make verbatim per doc. Util is surface-frozen: no export renames
