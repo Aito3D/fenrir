@@ -265,6 +265,13 @@ async def _shipping_names(db: AsyncSession) -> dict[str, str]:
     }
 
 
+async def _shipping_rates(db: AsyncSession) -> dict[str, float]:
+    """Service key -> Books rate, for the two mutation paths that validate a
+    shipping payload (create and update) and only need it once
+    `_mentions_shipping` has already confirmed the request touches shipping."""
+    return {service: item.rate for service, item in (await zoho_service.get_shipping_catalogue(db)).items()}
+
+
 def _to_response(p: AitoProject, summary: TaskSummary, shipping_names: dict[str, str]) -> AitoProjectResponse:
     """`summary` and `shipping_names` are both required, never defaulted. The
     detail panel writes PATCH (and move / quote-status / restore) responses
@@ -732,7 +739,7 @@ async def create_project(
     create_fields = payload.model_dump(exclude_unset=True)
     rates = {}
     if _mentions_shipping(create_fields):
-        rates = {service: item.rate for service, item in (await zoho_service.get_shipping_catalogue(db)).items()}
+        rates = await _shipping_rates(db)
     shipping = _validated_shipping(create_fields, rates)
     # New cards land on top of the quote column: shift existing cards down.
     for row in await _active_in_column(db, "devis"):
@@ -1542,7 +1549,7 @@ async def update_project(
     # read it will never use. See `_mentions_shipping`.
     rates = {}
     if _mentions_shipping(fields):
-        rates = {service: item.rate for service, item in (await zoho_service.get_shipping_catalogue(db)).items()}
+        rates = await _shipping_rates(db)
     # `current=project` so correcting ONE field of an existing shipment works
     # without resending the other three — the merged row is what has to be
     # consistent, not the payload.

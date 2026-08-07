@@ -101,7 +101,7 @@ evidence: aito.py:752,1109,1428,1531,1594,1630,1682,1749 repeat _to_response(pro
 
 ## T-010
 priority: P2
-status: IN_PROGRESS
+status: DONE
 attempts: 1
 round: 1
 first_seen_iteration: 0
