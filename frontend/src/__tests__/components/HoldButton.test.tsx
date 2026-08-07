@@ -70,6 +70,15 @@ describe('HoldButton pressEffect', () => {
     const wrapper = screen.getByRole('button').parentElement!;
     fireEvent.pointerDown(screen.getByRole('button'));
     expect(wrapper.className).not.toContain('scale-');
+  });
+
+  it('does not bounce on completion when pressEffect is none', () => {
+    vi.useFakeTimers();
+    render(<HoldButton {...base} pressEffect="none">Go</HoldButton>);
+    const wrapper = screen.getByRole('button').parentElement!;
+    fireEvent.pointerDown(screen.getByRole('button'));
+    act(() => vi.advanceTimersByTime(500));
     expect(wrapper.className).not.toContain('animate-hold-bounce');
+    vi.useRealTimers();
   });
 });
