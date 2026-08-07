@@ -28,6 +28,6 @@ export function useUrgentMutation(project: AitoProject) {
       );
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
     },
-    onError: () => showToast(t('aito.urgentFailed'), 'error'),
+    onError: () => showToast(t('aito.flagFailed'), 'error'),
   });
 }
