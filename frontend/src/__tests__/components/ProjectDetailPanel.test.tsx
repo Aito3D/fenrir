@@ -8,6 +8,7 @@ import { server } from '../mocks/server';
 import { render } from '../utils';
 import { ProjectDetailPanel } from '../../components/aito/ProjectDetailPanel';
 import { diffTaskDraft } from '../../hooks/useProjectTasks';
+import { registerPresenceSender, setAitoPresenceState, __resetAitoPresence } from '../../hooks/useAitoPresence';
 import { AuthProvider } from '../../contexts/AuthContext';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { api } from '../../api/client';
@@ -2410,5 +2411,38 @@ describe('ProjectDetailPanel record card age echo', () => {
     const echo = within(screen.getByTestId('record-created')).getByTestId('record-age');
     expect(echo).toHaveClass('text-red-400');
     expect(echo).not.toHaveClass('font-medium');
+  });
+});
+
+describe('ProjectDetailPanel presence', () => {
+  beforeEach(() => __resetAitoPresence());
+  afterEach(() => __resetAitoPresence());
+
+  it('shows no banner when the presence store has no other viewer', () => {
+    show();
+    expect(screen.queryByTestId('aito-presence-banner')).not.toBeInTheDocument();
+  });
+
+  it('shows the banner once the presence store reports another viewer', () => {
+    show();
+    act(() => setAitoPresenceState({ [String(project.id)]: ['Marie'] }));
+    expect(screen.getByTestId('aito-presence-banner')).toHaveTextContent('Marie');
+  });
+
+  it('sends its own presence on mount and clears it on unmount', () => {
+    // Registered BEFORE render, with the store freshly reset (ownProjectId
+    // null) — registering doesn't itself send anything until the panel's
+    // mount effect calls sendAitoPresence, so every call captured here is
+    // one the panel actually triggered.
+    const send = vi.fn();
+    registerPresenceSender(send);
+
+    const { unmount } = render(
+      <ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} />,
+    );
+    expect(send).toHaveBeenCalledWith({ type: 'aito_presence', project_id: project.id });
+
+    unmount();
+    expect(send).toHaveBeenLastCalledWith({ type: 'aito_presence', project_id: null });
   });
 });

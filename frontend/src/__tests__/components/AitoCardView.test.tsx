@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
+import { server } from '../mocks/server';
 import { render } from '../utils';
 import { CardView } from '../../components/aito/CardView';
 import { setAitoPresenceState, __resetAitoPresence } from '../../hooks/useAitoPresence';
+import { setAuthToken } from '../../api/client';
 import type { AitoProject } from '../../api/client';
 
 const project: AitoProject = {
@@ -731,7 +734,50 @@ describe('CardView — hover to read a clamped description', () => {
 
 describe('CardView — live viewer badge', () => {
   beforeEach(() => __resetAitoPresence());
-  afterEach(() => __resetAitoPresence());
+  afterEach(() => {
+    __resetAitoPresence();
+    // The api client's auth token is module-scope state that outlives any
+    // one render — an authenticated test that forgets to clear it would
+    // leak a token into every test that runs after it in this file.
+    setAuthToken(null);
+  });
+
+  it('filters the authenticated operator out of the badge, keeping the other viewer', async () => {
+    // Every other test in this file inherits the MSW default
+    // (auth_enabled: false), which leaves useAuth().user null — so the
+    // `name !== user?.username` filter in CardView is never exercised
+    // against a real value there. Enable auth and answer /auth/me as
+    // 'paul' so the filter has an actual username to compare against.
+    server.use(
+      http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+      http.get('/api/v1/auth/me', () =>
+        HttpResponse.json({
+          id: 1,
+          username: 'paul',
+          role: 'admin',
+          is_active: true,
+          is_admin: true,
+          groups: [],
+          permissions: [],
+          created_at: '2026-01-01T00:00:00Z',
+        }),
+      ),
+    );
+    // setAuthToken (not a raw localStorage write) so the client's in-memory
+    // token is actually set before AuthProvider's mount-time checkAuthStatus
+    // reads it via getAuthToken() — client.ts caches the token in a module
+    // variable rather than re-reading storage on every call.
+    setAuthToken('test-token', 'persistent');
+
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    act(() => setAitoPresenceState({ [String(project.id)]: ['paul', 'Marie'] }));
+
+    // findBy*, not getBy*: the badge only appears once AuthProvider's async
+    // auth/me fetch resolves and the filter drops 'paul' from the list.
+    const badge = await screen.findByTestId('aito-card-viewers');
+    expect(badge).toHaveTextContent('1');
+    expect(badge).toHaveAttribute('title', 'Marie');
+  });
 
   it('shows the viewer count once someone else has the project open', () => {
     render(<CardView project={project} onExpand={vi.fn()} />);
