@@ -46,7 +46,7 @@ evidence: aito_quote_sync.py:1068-1103,1104-1124,1125-1139,1174-1215 repeat roll
 
 ## T-005
 priority: P2
-status: IN_PROGRESS
+status: DONE
 attempts: 1
 round: 1
 first_seen_iteration: 0

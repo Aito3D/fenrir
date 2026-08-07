@@ -108,6 +108,55 @@ def _clear_block(project: AitoProject) -> None:
     project.quote_status_remote = None
 
 
+class _Unset:
+    """Sentinel distinguishing "leave quote_sync_error alone" from "set it to
+    None" -- the swept branch of sync_project deliberately does the former
+    (see its own comment), while the invoiced branch of _update_quote does
+    the latter."""
+
+
+_UNSET = _Unset()
+
+
+async def _lock_project(
+    db: AsyncSession,
+    project: AitoProject,
+    project_id: int,
+    *,
+    reason: str | None | _Unset = _UNSET,
+    invoiced: bool = False,
+    estimate: dict | None = None,
+    clear_block: bool = False,
+    reset_failures: bool = False,
+) -> None:
+    """Flip a project into 'locked' and record the transition exactly once.
+
+    Shared by every site that locks a project (create-path tax-exclusive,
+    update-path invoiced and tax-exclusive, and the sweep's own invoiced
+    catch-up): all four capture `was_already_locked` before mutating state so
+    the debounce below never double-records a project that was already
+    locked. The parameters carry each site's own variance -- the lock reason
+    (or none, via the `_UNSET` sentinel, to leave `quote_sync_error`
+    untouched entirely), whether `quote_invoiced` gets stamped, whether a
+    quote status is adopted from a freshly-read estimate, and whether a
+    stale block/failure count is cleared -- never normalized away.
+    """
+    was_already_locked = project.quote_sync_state == "locked"
+    project.quote_sync_state = "locked"
+    if invoiced:
+        project.quote_invoiced = True
+    if estimate is not None and estimate.get("status") is not None:
+        adopt_quote_status(project, estimate["status"])
+    if not isinstance(reason, _Unset):
+        project.quote_sync_error = reason
+    if clear_block:
+        _clear_block(project)
+    if reset_failures:
+        project.quote_sync_failures = 0
+    if not was_already_locked:
+        await record(db, project_id, "sync.locked", actor_class="system", subject_type="project", subject_id=project_id)
+
+
 class ShippingCatalogueUnavailable(Exception):
     """The project carries shipping but its Books item is unknown.
 
@@ -363,15 +412,14 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         # invoiced quote so no further line items are ever written to it, and
         # record why. `is not True` fails closed: an absent field is treated
         # the same as an explicit False, never assumed safe.
-        was_already_locked = project.quote_sync_state == "locked"
-        project.quote_sync_state = "locked"
-        project.quote_sync_error = (
-            "This quote is tax-exclusive; Aito costs are tax-inclusive and cannot be pushed without inflating the total"
+        await _lock_project(
+            db,
+            project,
+            project.id,
+            reason=(
+                "This quote is tax-exclusive; Aito costs are tax-inclusive and cannot be pushed without inflating the total"
+            ),
         )
-        if not was_already_locked:
-            await record(
-                db, project.id, "sync.locked", actor_class="system", subject_type="project", subject_id=project.id
-            )
 
 
 def _is_locked(estimate: dict) -> bool:
@@ -651,25 +699,24 @@ async def _reconcile_status(db: AsyncSession, project: AitoProject, estimate: di
 async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
     estimate = await zoho_service.get_estimate(db, project.quote_id)
     if _is_locked(estimate):
-        was_already_locked = project.quote_sync_state == "locked"
-        project.quote_sync_state = "locked"
         # Sticky: Books does not practically un-invoice. Set only here, never
         # in the tax-exclusive lock branch below, and never back to False.
-        project.quote_invoiced = True
-        if estimate.get("status") is not None:
-            adopt_quote_status(project, estimate["status"])
-        project.quote_sync_error = None
+        #
         # A locked project leaves the sweep for good, so a block recorded
         # before it was invoiced would render on the card forever with nothing
         # left running that could ever clear it. There is also nothing left to
         # push: the block described an attempt this module will never make
         # again.
-        _clear_block(project)
-        project.quote_sync_failures = 0
-        if not was_already_locked:
-            await record(
-                db, project.id, "sync.locked", actor_class="system", subject_type="project", subject_id=project.id
-            )
+        await _lock_project(
+            db,
+            project,
+            project.id,
+            reason=None,
+            invoiced=True,
+            estimate=estimate,
+            clear_block=True,
+            reset_failures=True,
+        )
         return
     if await _reconcile_status(db, project, estimate):
         return
@@ -685,21 +732,19 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         # must fail closed, not fall through to the PUT below — this guard
         # protects real customer money and an absent field is not evidence
         # of anything safe.
-        was_already_locked = project.quote_sync_state == "locked"
-        project.quote_sync_state = "locked"
-        if estimate.get("status") is not None:
-            adopt_quote_status(project, estimate["status"])
-        project.quote_sync_error = (
-            "This quote is tax-exclusive; Aito costs are tax-inclusive and cannot be pushed without inflating the total"
-        )
         # Same as the invoiced branch above: 'locked' is excluded from the
         # sweep permanently, so nothing would ever clear a stale block again.
-        _clear_block(project)
-        project.quote_sync_failures = 0
-        if not was_already_locked:
-            await record(
-                db, project.id, "sync.locked", actor_class="system", subject_type="project", subject_id=project.id
-            )
+        await _lock_project(
+            db,
+            project,
+            project.id,
+            reason=(
+                "This quote is tax-exclusive; Aito costs are tax-inclusive and cannot be pushed without inflating the total"
+            ),
+            estimate=estimate,
+            clear_block=True,
+            reset_failures=True,
+        )
         return
     catalogue = await zoho_service.get_catalogue(db)
     tasks = await load_export_tasks(db, project.id)
@@ -919,28 +964,16 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
                 # quote_status and quote_sync_error alone: 'locked' is
                 # excluded from every later sweep, so there is no ongoing
                 # status to keep in sync, and no error to clear away either.
-                was_already_locked = project.quote_sync_state == "locked"
-                project.quote_sync_state = "locked"
                 # Sticky, same as _update_quote's lock branch above: Books
                 # does not practically un-invoice.
-                project.quote_invoiced = True
+                #
                 # quote_status and quote_sync_error are deliberately left
                 # alone (above), but a recorded block is neither: 'locked'
                 # leaves the sweep for good, so a block kept here would render
                 # "Books refused to change this quote to ..." beside "Quote
                 # invoiced" forever, describing a push this module will never
                 # attempt again.
-                _clear_block(project)
-                project.quote_sync_failures = 0
-                if not was_already_locked:
-                    await record(
-                        db,
-                        project_id,
-                        "sync.locked",
-                        actor_class="system",
-                        subject_type="project",
-                        subject_id=project_id,
-                    )
+                await _lock_project(db, project, project_id, invoiced=True, clear_block=True, reset_failures=True)
                 return
             await reconcile_quote_status(db, project, estimate)
 
