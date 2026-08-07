@@ -23,7 +23,7 @@ import { ShippingCard } from './ShippingCard';
 import { stagesWithWork } from './services';
 import { StageRail } from './StageRail';
 import { TaskEditor } from './TaskEditor';
-import { UrgentButton } from './UrgentButton';
+import { FlagControl } from './FlagControl';
 import { AITO_CARD_VT_NAME } from '../../hooks/useCardMorph';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
@@ -377,7 +377,7 @@ function PanelHeader({
               {shippingIslandLabel}
             </span>
           )}
-          {/* The urgent flag lives in this row rather than on the footer bar
+          {/* The board flag lives in this row rather than on the footer bar
               because when it is SET it is a status pill, not an action — the
               same class of fact as the quote status and the destination
               beside it — and the row a person scans on open is where that
@@ -388,7 +388,7 @@ function PanelHeader({
               cannot be passed through `className`; without it a long client
               or island label squeezes "Marquer urgent" out of shape. */}
           <span className="flex-shrink-0">
-            <UrgentButton project={project} />
+            <FlagControl project={project} />
           </span>
         </div>
         {/* 1.35rem at -.01em, not `text-xl`: the reference title is a step
