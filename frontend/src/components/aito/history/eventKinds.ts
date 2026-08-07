@@ -34,6 +34,8 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'project.urgent.cleared': 'aito.history.projectUrgentCleared',
   'project.sav.set': 'aito.history.projectSavSet',
   'project.sav.cleared': 'aito.history.projectSavCleared',
+  'project.pause.set': 'aito.history.projectPauseSet',
+  'project.pause.cleared': 'aito.history.projectPauseCleared',
 };
 
 /** Red overrides the actor colour: a failure is the one thing worth finding
