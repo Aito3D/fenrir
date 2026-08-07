@@ -1186,7 +1186,18 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
         # the record() call four lines down does its own flush.
         await _rollback_after_terminal_failure(db)
         project.quote_sync_state = "error"
-        project.quote_sync_error = str(e)
+        # The class name, never str(e). Unlike the ZohoUpstreamError branches
+        # above — whose messages zoho._raise_for_status curates into "HTTP 429"
+        # or Books' own user-actionable text — anything can land here, and a
+        # SQLAlchemy DBAPIError's str() embeds the full statement and its bound
+        # parameters (client names, phones, emails). quote_sync_error is a
+        # public field of AitoProjectResponse, rendered verbatim in the detail
+        # panel and as a card tooltip, and copied into the sync.failed event —
+        # so str(e) would persist that PII to the immutable timeline as well as
+        # showing it. The class name still discriminates one bug from the next,
+        # which is what the dedupe check below needs; the detail stays in the
+        # logger.exception call at the end of this handler.
+        project.quote_sync_error = f"Unexpected sync error ({e.__class__.__name__})"
         # Same reason as the three handlers above: this is a terminal error of
         # its own, not the outage escalation, and must not be mistaken for one
         # by the sweep path's recovery.

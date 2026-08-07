@@ -92,7 +92,7 @@ export function CameraPage() {
       document.title = `${printer.name} - ${t('camera.title')}`;
     }
     return () => {
-      document.title = 'Bambuddy';
+      document.title = 'Fenrir';
     };
   }, [printer, t]);
 

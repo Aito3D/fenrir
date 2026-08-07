@@ -37,7 +37,7 @@ import { copyTextToClipboard } from '../../utils/clipboard';
 import { elapsedDays, parseUTCDate } from '../../utils/date';
 import { formatMoney } from '../../utils/pricing';
 import { applyClientSocial, applyDescription, applySyncState } from '../../utils/aitoOptimistic';
-import { isSocialNetwork } from '../../utils/clientDraft';
+import { formatPhoneDisplay, isSocialNetwork } from '../../utils/clientDraft';
 import type { SocialNetwork } from '../../utils/clientDraft';
 import { islandLabel } from '../../utils/shippingDraft';
 import { taskDraftToTaskCreate } from '../../utils/taskDraft';
@@ -115,10 +115,15 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'error';
  *  this component would be the one place the two could drift. */
 export function CopyableValue({
   value,
+  display,
   label,
   icon: Icon,
 }: {
   value: string;
+  /** What to render (and announce) instead of `value` — e.g. the dotted
+   *  `(+689) 87.75.56.69` reading of a phone. The copy still delivers `value`:
+   *  the pretty form is for eyes, the canonical form is for pasting. */
+  display?: string;
   label: string;
   /** A leading glyph — `Phone` / `Mail` in the header — purely decorative
    *  (the accessible name is still the label+value pair below), so it needs
@@ -127,6 +132,7 @@ export function CopyableValue({
 }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
+  const shown = display ?? value;
 
   useEffect(() => {
     if (!copied) return;
@@ -139,7 +145,7 @@ export function CopyableValue({
       type="button"
       // The value alone is the name a screen reader would read; this says what
       // pressing it does, which is the part that is not obvious.
-      aria-label={`${label}: ${value} — ${t('common.copy')}`}
+      aria-label={`${label}: ${shown} — ${t('common.copy')}`}
       title={copied ? t('common.copied') : t('common.copy')}
       onClick={async () => {
         if (await copyTextToClipboard(value)) setCopied(true);
@@ -147,7 +153,7 @@ export function CopyableValue({
       className="group inline-flex items-center gap-1.5 max-w-full min-w-0 rounded-md text-bambu-gray-light hover:text-bambu-green transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
     >
       {Icon && <Icon className="w-3.5 h-3.5 flex-shrink-0" />}
-      <span className="truncate">{value}</span>
+      <span className="truncate">{shown}</span>
       {copied ? (
         <Check className="w-3.5 h-3.5 flex-shrink-0 text-bambu-green animate-tick-in" />
       ) : (
@@ -422,7 +428,12 @@ function PanelHeader({
             reading as the two things you copy out of this header. */}
         <div className="flex items-center gap-4 mt-2.5 text-[.82rem] font-medium">
           {project.client_phone && (
-            <CopyableValue value={project.client_phone} label={t('aito.phoneLabel')} icon={Phone} />
+            <CopyableValue
+              value={project.client_phone}
+              display={formatPhoneDisplay(project.client_phone)}
+              label={t('aito.phoneLabel')}
+              icon={Phone}
+            />
           )}
           {project.client_email && (
             <CopyableValue value={project.client_email} label={t('aito.emailLabel')} icon={Mail} />

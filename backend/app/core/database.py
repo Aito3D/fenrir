@@ -1178,6 +1178,11 @@ async def _backfill_aito_events(conn) -> None:
     recoverable from its current row -- and the Zoho side needs no backfill at
     all, because Books has kept its comments since the quote was written and the
     mirror imports the lot on its first poll.
+
+    No NULL guard on ``p.created_at``: ``aito_events.occurred_at`` is NOT NULL,
+    so a NULL source would abort startup here -- but ``aito_projects.created_at``
+    is itself NOT NULL and has been since the table was created, so the row this
+    would guard against cannot be written in the first place.
     """
     from sqlalchemy import text
 

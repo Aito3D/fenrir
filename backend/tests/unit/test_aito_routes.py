@@ -2091,3 +2091,25 @@ async def test_patch_network_alone_422s_instead_of_nulling_the_stored_handle(asy
     unchanged = next(p for p in board if p["id"] == project_id)
     assert unchanged["client_social_handle"] == "moana.fb"
     assert unchanged["client_social_network"] == "messenger"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "quote_id",
+    ["../../../crm/v2/Leads", "12345/../../x", "EST 9", "EST/9", "EST.9"],
+)
+async def test_a_quote_id_with_path_characters_is_rejected(async_client, quote_id):
+    """quote_id is interpolated into the Books URL path. zoho._seg escapes it
+    as well, but a request carrying one of these is nonsense whatever the
+    intent — reject it at the boundary rather than forwarding it upstream."""
+    r = await _create(async_client, quote_id=quote_id, quote_number="QT-9")
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_ordinary_estimate_ids_still_pass(async_client):
+    """The charset has to stay wide enough for both shapes Books hands out."""
+    for quote_id in ("EST-9", "460000000012345", "est_9"):
+        r = await _create(async_client, quote_id=quote_id, quote_number=f"QT-{quote_id}")
+        assert r.status_code == 201, r.text
+        assert r.json()["quote_id"] == quote_id

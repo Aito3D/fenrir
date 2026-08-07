@@ -94,6 +94,23 @@ export function formatPhone(phone: ParsedPhone): string {
   return national ? `${phone.countryCode}-${national}` : '';
 }
 
+/** Read-only rendering of a stored phone: `+689-87755669` -> `(+689) 87.75.56.69`.
+ *  Goes through `parsePhone`, so a bare `89645864` displays with the default
+ *  code, the same assumption `PhoneInput` already shows when editing. An odd
+ *  digit count leaves the last digit as its own group rather than hiding it.
+ *
+ *  Zoho stores the number as free text, so a digitless value like `à confirmer`
+ *  is a real row, not a bug. Those pass through verbatim rather than formatting
+ *  to nothing: callers render this via `CopyableValue`'s `display` prop, and
+ *  `display ?? value` does NOT fall through on `''` — returning empty here
+ *  would blank the whole chip and leave the copy button unlabelled. */
+export function formatPhoneDisplay(raw: string): string {
+  const parsed = parsePhone(raw);
+  if (!parsed.nationalNumber) return raw.trim();
+  const pairs = parsed.nationalNumber.match(/\d{1,2}/g) ?? [];
+  return `(${parsed.countryCode}) ${pairs.join('.')}`;
+}
+
 /** Capitalize every space- or hyphen-separated segment: 'jean-pierre' -> 'Jean-Pierre'. */
 export function titleCaseSegments(value: string): string {
   return value

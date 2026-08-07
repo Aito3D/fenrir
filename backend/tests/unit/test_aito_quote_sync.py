@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy import select
 
 from backend.app.api.routes.settings import set_setting
+from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.services.aito_quote_export import Catalogue
@@ -243,7 +244,60 @@ async def test_unexpected_bug_in_one_project_does_not_abort_the_next(db_session,
     assert good.quote_sync_state == "idle"
     assert bad.quote_sync_state == "error"
     assert bad.quote_id is None
-    assert "simulated bug" in (bad.quote_sync_error or "")
+    # The class name, not the exception text: quote_sync_error is rendered to
+    # users and copied into the timeline, so the catch-all deliberately does not
+    # store str(e) (a DBAPIError's would carry the SQL and its bound PII).
+    assert bad.quote_sync_error == "Unexpected sync error (TypeError)"
+
+
+@pytest.mark.asyncio
+async def test_an_unexpected_error_never_leaks_its_message_into_the_card(db_session, monkeypatch):
+    """quote_sync_error is a public field of AitoProjectResponse, rendered
+    verbatim in the detail panel and as a card tooltip, and copied into the
+    immutable sync.failed event. A SQLAlchemy DBAPIError's str() embeds the
+    statement and its bound parameters -- client names, phones, emails -- so
+    the catch-all must record the exception's class, never its text."""
+    project = AitoProject(
+        description="Piece",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_sync_state="pending",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="T", scan_cost=5000))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    secret = "contact@example.pf / +689 87 75 56 69"
+
+    from backend.app.services import aito_quote_sync
+
+    def leaky(*args, **kwargs):
+        raise RuntimeError(f"UPDATE aito_projects SET client_email=? [{secret}]")
+
+    monkeypatch.setattr(aito_quote_sync, "build_line_items", leaky)
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+
+    assert project.quote_sync_state == "error"
+    assert project.quote_sync_error == "Unexpected sync error (RuntimeError)"
+    assert secret not in (project.quote_sync_error or "")
+
+    events = (
+        (
+            await db_session.execute(
+                select(AitoEvent).where(AitoEvent.project_id == project.id, AitoEvent.kind == "sync.failed")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert events, "the failure should still be recorded"
+    assert all(secret not in json.dumps(e.detail or {}) for e in events)
 
 
 @pytest.mark.asyncio

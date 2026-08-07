@@ -7,7 +7,7 @@ import { HoldButton } from './HoldButton';
 import { CopyableValue } from './ProjectDetailPanel';
 import { emptyShippingDraft, islandLabel, isShippingComplete, shippingPayload } from '../../utils/shippingDraft';
 import type { ShippingDraft } from '../../utils/shippingDraft';
-import { parsePhone } from '../../utils/clientDraft';
+import { formatPhoneDisplay, parsePhone } from '../../utils/clientDraft';
 import { applyShipping } from '../../utils/aitoOptimistic';
 import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { useToast } from '../../contexts/ToastContext';
@@ -268,7 +268,12 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
           <dd className="text-right min-w-0 truncate text-white">{recipient}</dd>
           <dt className="text-bambu-gray">{t('aito.shippingPhone')}</dt>
           <dd className="flex justify-end min-w-0">
-            <CopyableValue value={project.shipping_phone ?? ''} label={t('aito.shippingPhone')} icon={Phone} />
+            <CopyableValue
+              value={project.shipping_phone ?? ''}
+              display={formatPhoneDisplay(project.shipping_phone ?? '')}
+              label={t('aito.shippingPhone')}
+              icon={Phone}
+            />
           </dd>
           <dt className="text-bambu-gray">{t('aito.shippingService')}</dt>
           <dd className="text-right min-w-0 truncate text-white">{serviceName}</dd>

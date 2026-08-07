@@ -214,7 +214,12 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     client_phone: str | None = Field(default=None, max_length=50)
     client_email: str | None = Field(default=None, max_length=200)
     client_is_company: bool | None = None
-    quote_id: str | None = Field(default=None, max_length=50)
+    # Books estimate ids are opaque alphanumerics. The charset matters: this value
+    # is interpolated into the Books URL path, and httpx normalises dot segments,
+    # so an unconstrained id can walk out of /books/v3 onto any Zoho endpoint with
+    # the org's OAuth token. `zoho._seg` escapes it too — this rejects the request
+    # outright rather than forwarding a nonsense id upstream.
+    quote_id: str | None = Field(default=None, max_length=50, pattern=r"^[A-Za-z0-9_-]+$")
     quote_number: str | None = Field(default=None, max_length=50)
     quote_date: str | None = Field(default=None, max_length=10)
     quote_total: float | None = Field(default=None, ge=0)

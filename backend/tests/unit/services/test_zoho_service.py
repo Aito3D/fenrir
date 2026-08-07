@@ -846,3 +846,24 @@ async def test_get_catalogue_never_calls_items(db_session, monkeypatch):
     await zoho_service.get_catalogue(db_session)
     assert "/items" not in calls
     assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_an_estimate_id_cannot_walk_out_of_the_books_prefix(db_session, monkeypatch):
+    """quote_id arrives as free text on the create payload and lands in the
+    Books URL path. httpx normalises dot segments when it builds the request,
+    so an unescaped `../../../crm/v2/Leads` would leave /books/v3 entirely and
+    hit an arbitrary Zoho endpoint carrying the org's OAuth token."""
+    seen = []
+
+    async def capture(db, method, path, **kwargs):
+        seen.append(path)
+        return {"estimate": {}}
+
+    monkeypatch.setattr(zoho_service, "_request", capture)
+    await zoho_service.get_estimate(db_session, "../../../crm/v2/Leads")
+
+    assert seen == ["/estimates/..%2F..%2F..%2Fcrm%2Fv2%2FLeads"]
+    # The property that actually matters, checked the way httpx sees it:
+    url = httpx.Request("GET", f"https://books.example{seen[0]}").url
+    assert str(url).startswith("https://books.example/estimates/")

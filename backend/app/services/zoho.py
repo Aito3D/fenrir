@@ -11,7 +11,7 @@ import logging
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlparse
+from urllib.parse import quote as urlquote, urlparse
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +20,22 @@ from backend.app.services.aito_quote_export import Catalogue
 from backend.app.services.aito_shipping import SERVICE_LABELS, ShippingItem, merge_shipping_catalogue
 
 logger = logging.getLogger(__name__)
+
+
+def _seg(value: str) -> str:
+    """Escape one path segment before it is interpolated into a Books URL.
+
+    ``quote_id`` reaches us as free text on the create payload, and httpx
+    normalises dot segments when it builds the request — so an id of
+    ``../../../crm/v2/Leads`` escapes the ``/books/v3`` prefix entirely and
+    reaches an arbitrary Zoho endpoint carrying the org's OAuth token. Escaping
+    with ``safe=""`` keeps ``/`` and ``.`` inside the segment where they belong.
+
+    The schema also constrains ``quote_id``; this is the backstop for every
+    other id (contacts, contact persons) and for whatever the next caller
+    forgets to validate."""
+    return urlquote(value, safe="")
+
 
 _EXPIRY_MARGIN_SECONDS = 300
 _REQUIRED_KEYS = ("zoho_client_id", "zoho_client_secret", "zoho_refresh_token", "zoho_organization_id")
@@ -288,7 +304,7 @@ class ZohoService:
         fatal for a PDF body. Error responses ARE still JSON, so the failure
         path parses and the success path does not.
         """
-        response = await self._send(db, "GET", f"/estimates/{estimate_id}", params={"accept": "pdf"})
+        response = await self._send(db, "GET", f"/estimates/{_seg(estimate_id)}", params={"accept": "pdf"})
         if response.status_code >= 400:
             try:
                 payload = response.json() if response.content else {}
@@ -314,7 +330,7 @@ class ZohoService:
         Recipients with no address are dropped: Books includes contact persons
         who have none, and offering one is offering a send that must fail.
         """
-        data = (await self._request(db, "GET", f"/estimates/{estimate_id}/email")).get("data", {})
+        data = (await self._request(db, "GET", f"/estimates/{_seg(estimate_id)}/email")).get("data", {})
         return {
             "subject": data.get("subject", ""),
             "body": data.get("body", ""),
@@ -333,7 +349,7 @@ class ZohoService:
         Books marks the estimate ``sent`` as a side effect. Callers must NOT
         follow this with ``set_estimate_status`` or ``advance_estimate_status``.
         """
-        await self._request(db, "POST", f"/estimates/{estimate_id}/email", json={"to_mail_ids": to_mail_ids})
+        await self._request(db, "POST", f"/estimates/{_seg(estimate_id)}/email", json={"to_mail_ids": to_mail_ids})
 
     async def search_contacts(self, db: AsyncSession, query: str) -> list[dict]:
         payload = await self._request(db, "GET", "/contacts", params={"search_text": query})
@@ -355,7 +371,7 @@ class ZohoService:
 
     async def get_estimate(self, db: AsyncSession, estimate_id: str) -> dict:
         """The full estimate, line items included."""
-        return (await self._request(db, "GET", f"/estimates/{estimate_id}")).get("estimate", {})
+        return (await self._request(db, "GET", f"/estimates/{_seg(estimate_id)}")).get("estimate", {})
 
     async def list_estimate_comments(self, db: AsyncSession, estimate_id: str) -> list[dict]:
         """The estimate's comments AND its system history.
@@ -365,7 +381,7 @@ class ZohoService:
         next polled. That difference is the whole reason the timeline mirrors
         this instead of inferring status changes from the estimate itself.
         """
-        payload = await self._request(db, "GET", f"/estimates/{estimate_id}/comments")
+        payload = await self._request(db, "GET", f"/estimates/{_seg(estimate_id)}/comments")
         return payload.get("comments") or []
 
     async def find_estimate_by_reference(
@@ -456,12 +472,12 @@ class ZohoService:
         them, that is how a hand-edited note gets clobbered.
         """
         body = {"line_items": line_items}
-        return (await self._request(db, "PUT", f"/estimates/{estimate_id}", json=body)).get("estimate", {})
+        return (await self._request(db, "PUT", f"/estimates/{_seg(estimate_id)}", json=body)).get("estimate", {})
 
     async def set_estimate_status(self, db: AsyncSession, estimate_id: str, status: str) -> None:
         """`sent`, `accepted` or `declined`. There is no `draft`: Books offers
         no way back, so declining an estimate is one-way through the API."""
-        await self._request(db, "POST", f"/estimates/{estimate_id}/status/{status}")
+        await self._request(db, "POST", f"/estimates/{_seg(estimate_id)}/status/{_seg(status)}")
 
     async def advance_estimate_status(
         self, db: AsyncSession, estimate_id: str, target: str, *, current: str | None = None
@@ -621,7 +637,7 @@ class ZohoService:
         }
 
     async def get_contact(self, db: AsyncSession, contact_id: str) -> dict:
-        return _map_contact((await self._request(db, "GET", f"/contacts/{contact_id}")).get("contact", {}))
+        return _map_contact((await self._request(db, "GET", f"/contacts/{_seg(contact_id)}")).get("contact", {}))
 
     async def books_app_url(self, db: AsyncSession, estimate_id: str) -> str:
         """Deep link into the Books web app for this org's region.
@@ -707,7 +723,7 @@ class ZohoService:
         mirrors of the primary contact person, so writes must target the person.
         A contact with no persons at all gets one created.
         """
-        contact = (await self._request(db, "GET", f"/contacts/{contact_id}")).get("contact", {})
+        contact = (await self._request(db, "GET", f"/contacts/{_seg(contact_id)}")).get("contact", {})
         persons = contact.get("contact_persons") or []
         primary = next((p for p in persons if p.get("is_primary_contact")), persons[0] if persons else None)
 
@@ -720,7 +736,9 @@ class ZohoService:
             return
 
         if primary:
-            await self._request(db, "PUT", f"/contacts/contactpersons/{primary['contact_person_id']}", json=fields)
+            await self._request(
+                db, "PUT", f"/contacts/contactpersons/{_seg(primary['contact_person_id'])}", json=fields
+            )
         else:
             await self._request(
                 db,
