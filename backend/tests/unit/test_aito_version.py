@@ -62,3 +62,40 @@ async def test_quote_status_change_does_not_bump(async_client):
     response = await async_client.post(f"/api/v1/aito/{project_id}/quote-status", json={"status": "sent"})
     assert response.status_code == 200
     assert response.json()["project"]["version"] == 0
+
+
+@pytest.mark.asyncio
+async def test_stale_expected_version_conflicts(async_client):
+    project_id = (await _create(async_client)).json()["id"]
+    first = await async_client.patch(
+        f"/api/v1/aito/{project_id}", json={"description": "Operator A's edit", "expected_version": 0}
+    )
+    assert first.status_code == 200
+    assert first.json()["version"] == 1
+
+    second = await async_client.patch(
+        f"/api/v1/aito/{project_id}", json={"description": "Operator B's edit", "expected_version": 0}
+    )
+    assert second.status_code == 409
+    assert second.json()["detail"]["code"] == "version_conflict"
+    # The losing write must not have landed.
+    board = (await async_client.get("/api/v1/aito/")).json()
+    assert board[0]["description"] == "Operator A's edit"
+
+
+@pytest.mark.asyncio
+async def test_matching_expected_version_passes(async_client):
+    project_id = (await _create(async_client)).json()["id"]
+    response = await async_client.patch(
+        f"/api/v1/aito/{project_id}", json={"description": "fresh edit", "expected_version": 0}
+    )
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_omitted_expected_version_skips_the_check(async_client):
+    """API-key/scripted callers that never learned the version keep working."""
+    project_id = (await _create(async_client)).json()["id"]
+    await async_client.patch(f"/api/v1/aito/{project_id}", json={"description": "one", "expected_version": 0})
+    response = await async_client.patch(f"/api/v1/aito/{project_id}", json={"description": "two"})
+    assert response.status_code == 200

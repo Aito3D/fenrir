@@ -273,6 +273,11 @@ class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput):
     client_phone: str | None = Field(default=None, max_length=50)
     client_email: str | None = Field(default=None, max_length=200)
     client_is_company: bool | None = None
+    # Optimistic-concurrency token: the AitoProject.version the client last
+    # rendered. Mismatch -> 409 version_conflict, nothing written. Optional so
+    # API-key callers that never fetched a version keep working; the frontend
+    # always sends it.
+    expected_version: int | None = None
 
     @field_validator("description")
     @classmethod

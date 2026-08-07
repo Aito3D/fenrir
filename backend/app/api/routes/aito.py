@@ -1375,7 +1375,15 @@ async def update_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    if payload.expected_version is not None and payload.expected_version != (project.version or 0):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "version_conflict", "message": "Project was updated by someone else"},
+        )
+
     fields = payload.model_dump(exclude_unset=True)
+    # A guard token, not a column — it must not reach diff_fields or setattr.
+    fields.pop("expected_version", None)
     # Captured before anything is applied, or diff_fields would compare the
     # new value against itself and return [].
     changes = diff_fields(project, fields)
