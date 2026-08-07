@@ -454,7 +454,9 @@ describe('AitoPage (backend board)', () => {
     await user.type(textarea, 'Support GoPro v2');
     await user.tab();
 
-    await waitFor(() => expect(patched).toHaveBeenCalledWith({ description: 'Support GoPro v2' }));
+    await waitFor(() =>
+      expect(patched).toHaveBeenCalledWith({ description: 'Support GoPro v2', expected_version: project.version }),
+    );
     expect(await within(panel).findByText('Saved')).toBeInTheDocument();
   });
 
