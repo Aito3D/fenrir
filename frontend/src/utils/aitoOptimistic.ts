@@ -185,8 +185,26 @@ export function applySyncState(
  *  `shipping_island: null` is the documented way to detach a shipment, and
  *  clears all SEVEN of those `AitoProject` properties (all six columns plus
  *  the presentation-only name), not just the five the request body carries.
+ *
  *  Any other island value is `ShippingCard` writing an add or an edit, and
- *  applies exactly the five posted fields verbatim.
+ *  writes each of the five posted fields with a `?? project.x` fallback —
+ *  not because the server treats a posted null as "keep the old value" (it
+ *  doesn't: `_validated_shipping` in backend/app/api/routes/aito.py handles
+ *  an explicitly-null field differently per column — a null `shipping_price`
+ *  re-derives from the service's current catalogue rate, while a null first
+ *  name, last name or phone 422s the whole request) but because the fallback
+ *  never actually has anything to fall back FROM. `ShippingCard.save()` only
+ *  calls this mutation once `isShippingComplete(draft)` holds
+ *  (frontend/src/utils/shippingDraft.ts), which requires all five fields —
+ *  price included, 0 is a real value but null is not — to already be
+ *  non-null, so `shippingPayload` always hands this five concrete, validated
+ *  values on that path. The only other caller, `remove()`, sends
+ *  `{ shipping_island: null }` alone, which takes the detach branch above and
+ *  never reaches this one. The `??` is defensive rather than a strict spread
+ *  so a future caller that DID send a sparser patch would degrade to
+ *  "unchanged" instead of optimistically blanking a field the request never
+ *  touched — and either way, a misprediction is rolled back by
+ *  `useOptimisticBoardMutation`'s `onError` the moment the response disagrees.
  *
  *  `shipping_service`/`shipping_service_name` are never part of the payload
  *  on an add or edit, so both are left exactly as they were until the

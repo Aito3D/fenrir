@@ -178,7 +178,7 @@ evidence: SaveIndicator (649-661) renders null for 'error'; setters at 823/863 s
 
 ## T-017
 priority: P1
-status: IN_PROGRESS
+status: DONE
 attempts: 1
 round: 1
 first_seen_iteration: 0
