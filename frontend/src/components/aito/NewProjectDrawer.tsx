@@ -209,6 +209,14 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
 
   // Persist on every meaningful change. Section open-states and the reveal
   // sets are deliberately absent: they are about this visit, not the draft.
+  // `generateNonce` is here not because its own value is persisted, but
+  // because it is the one piece of state that always bumps in the same
+  // synchronous block as `summarySignatureRef` (see `openClient`) — so it is
+  // what makes this effect re-run and re-read the ref's CURRENT value
+  // whenever the signature changes on its own, instead of persisting it only
+  // as a side effect of some other field changing later. `resetDraft`'s ref
+  // clear needs no such proxy: it always lands alongside a tasks/draft/
+  // summaryText/summaryEdited/shipping reset, which already reruns this.
   useEffect(() => {
     persistence.save({
       tasks,
@@ -219,7 +227,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
       shipping,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, draft, summaryText, summaryEdited, shipping]);
+  }, [tasks, draft, summaryText, summaryEdited, shipping, generateNonce]);
 
   const toggleSection = (id: SectionId) =>
     setOpenSections((current) => {
@@ -296,13 +304,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   // amber, and only then does this go false.
   const shippingValid =
     shipping === null || Object.values(visibleShippingDraftErrors(shipping)).every((error) => error === null);
-  const canCreate =
-    tasks.length > 0
-    && projectHasPricedService(tasks)
-    && clientReachable
-    && clientValid
-    && configured
-    && shippingValid;
+  const canCreate = allPriced && clientReachable && clientValid && configured && shippingValid;
 
   const summaryState = summaryText.trim() !== '' ? 'ready' : generateNonce > 0 ? 'generating' : 'waiting';
 

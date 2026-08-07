@@ -9,6 +9,7 @@ import { api } from '../../api/client';
 import type { AitoShippingService } from '../../api/client';
 import { defaultClientDraft } from '../../utils/clientDraft';
 import { emptyTaskDraft } from '../../utils/taskDraft';
+import { tasksSignature } from '../../utils/aitoSummary';
 
 const DEFAULT_ID = '66407000001237340';
 
@@ -249,6 +250,30 @@ describe('NewProjectDrawer', () => {
     await user.click(clientHeader());
     await user.click(clientHeader());
     await waitFor(() => expect(api.summarizeAitoProject).toHaveBeenCalledTimes(2));
+  });
+
+  it('persists the freshly opened signature immediately, not the one from before Client opened', async () => {
+    // Regression for a stale-ref bug: opening Client updates
+    // `summarySignatureRef` synchronously, but the save effect used to key
+    // only off tasks/draft/summaryText/summaryEdited/shipping, so a save
+    // triggered by an earlier change (here, pricing the task) could persist
+    // the OLD signature and never get a chance to re-save the new one.
+    // Never resolving the summarize call isolates that: if summaryText later
+    // changed on its own, it would re-trigger the save effect anyway and
+    // mask the bug.
+    vi.mocked(api.summarizeAitoProject).mockImplementation(() => new Promise(() => {}));
+    const user = userEvent.setup();
+    await renderDrawer();
+    await fillOneTask();
+
+    const expectedSignature = tasksSignature([{ ...emptyTaskDraft(), scanCost: 10000 }]);
+    await user.click(clientHeader());
+
+    await waitFor(() => {
+      const raw = localStorage.getItem('aito.newProjectDraft.v1');
+      expect(raw).toBeTruthy();
+      expect(JSON.parse(raw as string).summarySignature).toBe(expectedSignature);
+    });
   });
 
   it('hand-edited summary survives reopening Client', async () => {

@@ -35,22 +35,22 @@ evidence: aito.py:1288 captures task_project_id 'before delete: unreadable on th
 
 ## T-004
 priority: P2
-status: OPEN
-attempts: 0
+status: IN_PROGRESS
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 3
 title: quote_sync: extract _terminal_error helper for 4 terminal handlers
 files: backend/app/services/aito_quote_sync.py
 evidence: aito_quote_sync.py:1068-1103,1104-1124,1125-1139,1174-1215 repeat rollback->state=error->quote_sync_error->failures=0->conditional record(sync.failed); ~90 lines collapse; makes counter-reset invariant (958-969) structural
 
 ## T-005
 priority: P2
-status: OPEN
-attempts: 0
+status: IN_PROGRESS
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 3
 title: quote_sync: extract _lock_project helper for 4 lock blocks
 files: backend/app/services/aito_quote_sync.py
 evidence: aito_quote_sync.py:366-374,653-673,688-699,861-883 all set locked/_clear_block/zero failures/conditional sync.locked, differing only in error string, invoiced flag, status adoption; do AFTER the debounce fix task
@@ -189,11 +189,11 @@ evidence: aitoOptimistic.ts:188-189 doc promises five posted fields applied verb
 
 ## T-018
 priority: P1
-status: OPEN
-attempts: 0
+status: DONE
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 3
 title: NewProjectDrawer: persist current summarySignature (stale ref in save effect) + reuse allPriced
 files: frontend/src/components/aito/NewProjectDrawer.tsx
 evidence: 212-222 saves summarySignatureRef.current under deps [tasks,draft,summaryText,summaryEdited,shipping] w/ eslint-disable; openClient mutates ref at 241-242, resetDraft clears at 261, neither a dep -> persisted signature lags one change. Fix without touching save-debounce. Also 272 vs 301: canCreate recomputes projectHasPricedService(tasks) and redundant length check — reuse allPriced
