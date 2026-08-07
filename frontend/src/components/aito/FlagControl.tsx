@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Flag, RotateCcw } from 'lucide-react';
+import { AlertTriangle, Flag, Pause, RotateCcw, type LucideIcon } from 'lucide-react';
 import { HoldButton } from './HoldButton';
 import { headerPillRadiusCls } from './panelTypography';
 import { useFlagMutation } from '../../hooks/useFlagMutation';
 import { type AitoFlag, type AitoProject } from '../../api/client';
 
 /** Per-flag styling, spelled out in full rather than composed, because
- *  Tailwind cannot see a constructed class name and because the two tones are
- *  fixed semantics — amber for urgency, rose for a returned job — that must
- *  not shift when the user changes accent colour. Red is the destructive
- *  colour on this board and lives on the footer bar; rose never shares a strip
- *  with it. */
+ *  Tailwind cannot see a constructed class name and because the tones are
+ *  fixed semantics — amber for urgency, rose for a returned job, teal for a
+ *  paused job — that must not shift when the user changes accent colour. Red
+ *  is the destructive colour on this board and lives on the footer bar; rose
+ *  never shares a strip with it. */
 const TONE: Record<AitoFlag, { on: string; off: string; bar: string; ring: string }> = {
   urgent: {
     on: 'text-amber-400',
@@ -25,7 +25,42 @@ const TONE: Record<AitoFlag, { on: string; off: string; bar: string; ring: strin
     bar: 'bg-rose-400/25',
     ring: 'focus-visible:ring-rose-400/40',
   },
+  pause: {
+    on: 'text-teal-400',
+    off: 'text-bambu-gray hover:text-teal-400',
+    bar: 'bg-teal-400/25',
+    ring: 'focus-visible:ring-teal-400/40',
+  },
 };
+
+/** Copy and glyph per flag. Records rather than the chained ternaries this
+ *  file carried at two flags: with three, each of those becomes a nested
+ *  chain evaluated inside a JSX attribute, and every one is a place to put
+ *  the wrong string against the wrong flag. A record keeps each string
+ *  greppable and makes a future fourth flag a compile error rather than a
+ *  silently missing label. */
+const COPY: Record<AitoFlag, { mark: string; clear: string; holdMark: string; holdClear: string }> = {
+  urgent: {
+    mark: 'aito.markUrgent',
+    clear: 'aito.clearUrgent',
+    holdMark: 'aito.holdToMarkUrgent',
+    holdClear: 'aito.holdToClearUrgent',
+  },
+  sav: {
+    mark: 'aito.markSav',
+    clear: 'aito.clearSav',
+    holdMark: 'aito.holdToMarkSav',
+    holdClear: 'aito.holdToClearSav',
+  },
+  pause: {
+    mark: 'aito.markPause',
+    clear: 'aito.clearPause',
+    holdMark: 'aito.holdToMarkPause',
+    holdClear: 'aito.holdToClearPause',
+  },
+};
+const GLYPH: Record<AitoFlag, LucideIcon> = { urgent: AlertTriangle, sav: RotateCcw, pause: Pause };
+const LABEL_KEY: Record<AitoFlag, string> = { urgent: 'aito.urgent', sav: 'aito.sav', pause: 'aito.pause' };
 
 /** The container's own skin once a flag is live — this is the moment the
  *  control stops being a control and becomes a status pill, matched to the
@@ -33,19 +68,21 @@ const TONE: Record<AitoFlag, { on: string; off: string; bar: string; ring: strin
 const CONTAINER_TONE: Record<AitoFlag, string> = {
   urgent: 'border-amber-400/30 bg-amber-400/[0.14]',
   sav: 'border-rose-400/30 bg-rose-400/[0.14]',
+  pause: 'border-teal-400/30 bg-teal-400/[0.14]',
 };
 
-const ORDER: AitoFlag[] = ['urgent', 'sav'];
+const ORDER: AitoFlag[] = ['urgent', 'sav', 'pause'];
 
-/** One object for both board flags, because they are mutually exclusive and a
+/** One object for all board flags, because they are mutually exclusive and a
  *  person picks between them rather than toggling each.
  *
  *  At rest and unflagged it is a ghost chip. On hover, focus or tap it opens
- *  into two hold-to-confirm segments; once a flag is set it collapses onto
- *  that segment alone and IS the status pill — same .4rem outline, 11px
- *  semibold type and 3.5 glyph as the shipping pill beside it. So the flag
- *  reads as a fact about the project in the row where the project's other
- *  facts already live, and the control that sets it is the same object.
+ *  into hold-to-confirm segments, one per flag; once a flag is set it
+ *  collapses onto that segment alone and IS the status pill — same .4rem
+ *  outline, 11px semibold type and 3.5 glyph as the shipping pill beside it.
+ *  So the flag reads as a fact about the project in the row where the
+ *  project's other facts already live, and the control that sets it is the
+ *  same object.
  *
  *  Holds are symmetric — the same 0.5s sets and clears. A flagged job is
  *  exactly the thing that must not be un-flagged by a stray click, and a
@@ -175,10 +212,11 @@ export function FlagControl({ project }: { project: AitoProject }) {
         </button>
       </span>
 
-      {ORDER.map((kind) => {
+      {ORDER.map((kind, index) => {
         const on = flag === kind;
         const shown = open || on;
         const tone = TONE[kind];
+        const Glyph = GLYPH[kind];
         return (
           <span
             key={kind}
@@ -188,10 +226,12 @@ export function FlagControl({ project }: { project: AitoProject }) {
             // tree — without this, browse mode reads two permanently-disabled
             // buttons whenever the control is closed and unflagged.
             aria-hidden={shown ? undefined : true}
-            // A hairline between the two only while both are open — a divider
-            // beside nothing is just a stray line.
+            // A hairline before every segment after the first, only while
+            // open — a divider beside nothing is just a stray line, and
+            // index-based (not "is this the last kind") is what still draws
+            // correctly as segments are added.
             className={`overflow-hidden transition-[max-width,opacity] duration-[260ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${
-              kind === 'sav' && open ? 'border-l border-bambu-dark-tertiary' : ''
+              index > 0 && open ? 'border-l border-bambu-dark-tertiary' : ''
             } ${shown ? 'max-w-[9rem] opacity-100' : 'max-w-0 opacity-0'}`}
           >
             <HoldButton
@@ -207,10 +247,8 @@ export function FlagControl({ project }: { project: AitoProject }) {
               pressEffect="none"
               disabled={mutation.isPending || !shown}
               ariaPressed={on}
-              label={on ? t(kind === 'urgent' ? 'aito.clearUrgent' : 'aito.clearSav') : t(kind === 'urgent' ? 'aito.markUrgent' : 'aito.markSav')}
-              hint={on
-                ? t(kind === 'urgent' ? 'aito.holdToClearUrgent' : 'aito.holdToClearSav')
-                : t(kind === 'urgent' ? 'aito.holdToMarkUrgent' : 'aito.holdToMarkSav')}
+              label={t(on ? COPY[kind].clear : COPY[kind].mark)}
+              hint={t(on ? COPY[kind].holdClear : COPY[kind].holdMark)}
               // Square: the CONTAINER owns the corners. `rounded-md` compiles
               // after `rounded-none` in Tailwind's own order, so this has to go
               // through radiusClassName rather than className — see HoldButton.
@@ -228,12 +266,8 @@ export function FlagControl({ project }: { project: AitoProject }) {
                 on ? tone.on : tone.off
               } ${tone.ring}`}
             >
-              {kind === 'urgent' ? (
-                <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
-              ) : (
-                <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-              )}
-              {t(kind === 'urgent' ? 'aito.urgent' : 'aito.sav')}
+              <Glyph className="h-3.5 w-3.5" aria-hidden="true" />
+              {t(LABEL_KEY[kind])}
             </HoldButton>
           </span>
         );
