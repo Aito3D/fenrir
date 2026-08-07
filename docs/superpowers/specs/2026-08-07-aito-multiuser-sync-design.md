@@ -29,8 +29,14 @@ Three distinct problem classes: **freshness**, **duplicate actions**,
    client document would create a second source of truth.
 2. **Duplicate quote actions:** *hybrid* — repeating the same transition is
    an idempotent no-op (200 with current state, no second Zoho push, no
-   duplicate event); a *conflicting* transition (Accept vs Decline) is a 409
-   with a clear message, and the client refreshes to show the real state.
+   duplicate event); a *conflicting* transition is a 409 with a clear
+   message, and the client refreshes to show the real state.
+   **Refined 2026-08-07 (user decision):** the 409 is *asymmetric* —
+   `declined → accepted` stays ALLOWED because the panel deliberately offers
+   Accept on a declined card to reopen it ("latest go-ahead wins", see
+   QuoteStatusActions.tsx). 409 fires only on transitions a fresh UI never
+   offers, which therefore can only come from a stale view: changing an
+   *accepted* quote to anything else, and `declined → sent`.
 3. **Presence lock style:** *soft lock* — banner + avatar badge, never
    read-only. The Phase-1 version check is the actual collision guard.
 
