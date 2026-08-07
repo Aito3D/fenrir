@@ -167,7 +167,7 @@ evidence: HoldButton.tsx:180-193 startHold checks disabled only at press; setTim
 
 ## T-016
 priority: P1
-status: IN_PROGRESS
+status: DONE
 attempts: 1
 round: 1
 first_seen_iteration: 0

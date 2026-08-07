@@ -90,7 +90,7 @@ interface ProjectDetailPanelProps {
   onDelete?: () => void;
 }
 
-type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+type SaveState = 'idle' | 'saving' | 'saved';
 
 /** A contact detail that copies itself.
  *
@@ -820,7 +820,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
       {
         onSuccess: () => setDescState('saved'),
         onError: (error) => {
-          setDescState('error');
+          setDescState('idle');
           // The spec's error-handling table promises the operator's typed
           // text survives a version conflict (someone else saved first):
           // reopen the editor with exactly what they typed rather than the
@@ -860,7 +860,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
         {
           onSuccess: () => setDescState('saved'),
           onError: () => {
-            setDescState('error');
+            setDescState('idle');
             setDraft(project.description);
           },
         },
