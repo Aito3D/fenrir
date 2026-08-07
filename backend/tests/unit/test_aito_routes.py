@@ -339,6 +339,31 @@ async def test_move_cannot_drag_a_flagged_card_below_a_normal_one(async_client):
 
 
 @pytest.mark.asyncio
+async def test_board_sinks_paused_cards_below_unflagged_ones(async_client):
+    """Urgent and SAV mean "look at this"; pause means the opposite. So the
+    board is three tiers, not two: attention flags, then unflagged, then
+    paused — with stored `position` still breaking ties inside each tier and
+    never being rewritten."""
+    a = (await _create(async_client, description="a")).json()
+    # b and c are never referenced by id — do NOT assign them. Ruff's F rules
+    # are enabled and F841 would reject an unused local.
+    await _create(async_client, description="b")
+    await _create(async_client, description="c")
+    d = (await _create(async_client, description="d")).json()
+    # Stored devis order is now d(0), c(1), b(2), a(3).
+
+    await async_client.patch(f"/api/v1/aito/{d['id']}/flag", json={"flag": "pause"})
+    await async_client.patch(f"/api/v1/aito/{a['id']}/flag", json={"flag": "urgent"})
+
+    board = (await async_client.get("/api/v1/aito/")).json()
+
+    # `a` rose from last to first, `d` sank from first to last, and the two
+    # unflagged cards kept their stored order between them.
+    assert _devis_order(board) == ["a", "c", "b", "d"]
+    assert [p["flag"] for p in board if p["column"] == "devis"] == ["urgent", None, None, "pause"]
+
+
+@pytest.mark.asyncio
 async def test_move_to_another_column_is_409_when_locked(async_client):
     a = (await _create(async_client)).json()
     r = await async_client.patch(f"/api/v1/aito/{a['id']}/move", json={"column": "print", "position": 0})

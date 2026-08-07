@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
@@ -93,6 +93,32 @@ _FLAG_CLEARED_EVENT: dict[str, str] = {
     "sav": "project.sav.cleared",
     "pause": "project.pause.cleared",
 }
+
+# Display rank for the board. Urgent and SAV mean "look at this" and rise;
+# pause means the opposite and sinks; unflagged sits between them. Stored
+# `position` breaks ties inside each tier, exactly as before.
+#
+# ONE dict, three consumers — the SQL `case` below, the Python sort in the
+# reorder handler, and (mirrored) `flagRank` in frontend/src/utils/aitoBoard.ts.
+# Open-coding the comparison at each site is how the board starts saying one
+# thing in SQL and another in the client.
+_FLAG_RANK: dict[str, int] = {"urgent": 0, "sav": 0, "pause": 2}
+_UNFLAGGED_RANK = 1
+
+
+def _flag_rank(flag: str | None) -> int:
+    """Rank for the Python-side sort. An unrecognised value ranks as
+    unflagged rather than raising: this runs on a drag, and a row written by
+    a newer version of the app must not make the board un-draggable."""
+    return _UNFLAGGED_RANK if flag is None else _FLAG_RANK.get(flag, _UNFLAGGED_RANK)
+
+
+# NULL compares as NULL (never True) in SQL, so an unflagged row falls
+# through to `else_` and lands on _UNFLAGGED_RANK — same as _flag_rank.
+_FLAG_ORDER = case(
+    *[(AitoProject.flag == name, rank) for name, rank in _FLAG_RANK.items()],
+    else_=_UNFLAGGED_RANK,
+)
 
 
 def _mentions_shipping(fields: dict) -> bool:
@@ -570,13 +596,14 @@ async def list_projects(
     stmt = (
         select(AitoProject)
         .where(AitoProject.status == "active")
-        # Flagged first WITHIN each column, and display-only: stored `position`
-        # values are untouched, so manual drag order still holds inside the
-        # flagged group and inside the normal group. The trade is that a
-        # flagged card cannot be dragged below a normal one — it snaps back on
-        # the next fetch. Rewriting `position` on flag would "fix" that by
-        # destroying the operator's ordering irreversibly, which is worse.
-        .order_by(AitoProject.board_column, AitoProject.flag.is_(None), AitoProject.position, AitoProject.id)
+        # Ranked WITHIN each column, and display-only: stored `position`
+        # values are untouched, so manual drag order still holds inside each
+        # tier. The trade is that a card cannot be dragged out of its tier —
+        # a flagged card snaps back above a normal one, and a paused card
+        # snaps back below one, on the next fetch. Rewriting `position` on
+        # flag would "fix" that by destroying the operator's ordering
+        # irreversibly, which is worse.
+        .order_by(AitoProject.board_column, _FLAG_ORDER, AitoProject.position, AitoProject.id)
     )
     projects = list((await db.execute(stmt)).scalars().all())
     task_rows = await _tasks_by_project(db, [p.id for p in projects])
@@ -1343,9 +1370,9 @@ async def move_project(
     # permanently. So renumber in display order here instead: without this,
     # every drag in a column holding a flagged card that is not already top
     # lands N slots off, and some slots become unreachable. Python's sort is
-    # stable, so `position, id` order still holds inside each of the two
-    # groups.
-    destination.sort(key=lambda row: row.flag is None)
+    # stable, so `position, id` order still holds inside each of the three
+    # tiers.
+    destination.sort(key=lambda row: _flag_rank(row.flag))
     insert_at = min(payload.position, len(destination))
     destination.insert(insert_at, project)
     project.board_column = payload.column
