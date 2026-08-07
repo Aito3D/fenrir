@@ -109,6 +109,7 @@ export function HoldButton({
   hintPlacement = 'top',
   progress = 'ring',
   barClassName = 'bg-red-400/25',
+  pressEffect = 'scale',
   children,
 }: {
   onHold: () => void;
@@ -140,6 +141,13 @@ export function HoldButton({
    *  Defaults to the destructive red; Accept passes green, because a bar that
    *  fills red under "Accept quote" reads as the wrong outcome mid-gesture. */
   barClassName?: string;
+  /** Whether the press itself is animated on the OUTER wrapper. `scale` — the
+   *  default, unchanged for every existing caller — grows the button while
+   *  held and bounces it on completion. `none` for a button living inside a
+   *  clipped container (`FlagControl`'s segmented pill), where both would be
+   *  cut off by the parent's `overflow-hidden` and read as broken; there the
+   *  bar fill carries progress on its own. */
+  pressEffect?: 'scale' | 'none';
   children: ReactNode;
 }) {
   const [holding, setHolding] = useState(false);
@@ -210,10 +218,14 @@ export function HoldButton({
 
   return (
     <div
-      className={`relative motion-safe:transition-transform motion-safe:ease-linear ${
-        holding ? 'scale-[1.08] motion-reduce:scale-100' : ''
-      } ${completed ? 'animate-hold-bounce' : ''}`}
-      style={{ transitionDuration: holding ? `${durationMs}ms` : '150ms' }}
+      className={`relative ${
+        pressEffect === 'scale'
+          ? `motion-safe:transition-transform motion-safe:ease-linear ${
+              holding ? 'scale-[1.08] motion-reduce:scale-100' : ''
+            } ${completed ? 'animate-hold-bounce' : ''}`
+          : ''
+      }`}
+      style={pressEffect === 'scale' ? { transitionDuration: holding ? `${durationMs}ms` : '150ms' } : undefined}
     >
       <button
         ref={buttonRef}

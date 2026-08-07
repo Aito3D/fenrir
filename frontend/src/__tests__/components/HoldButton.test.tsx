@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, act } from '@testing-library/react';
+import { fireEvent, screen, act, render as rtlRender } from '@testing-library/react';
+import { render } from '../utils';
 import { HoldButton } from '../../components/aito/HoldButton';
 
 // The perimeter SVG only renders once the button has a measured box; jsdom
@@ -9,7 +10,7 @@ Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true
 Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, value: 24 });
 
 function renderPerimeter(onHold = vi.fn()) {
-  render(
+  rtlRender(
     <HoldButton onHold={onHold} durationMs={500} label="reset" hint="hold" progress="perimeter">
       x
     </HoldButton>,
@@ -46,5 +47,29 @@ describe('HoldButton completion choreography', () => {
     act(() => vi.advanceTimersByTime(700)); // choreography window ends
     expect(button.parentElement!.className).not.toContain('animate-hold-bounce');
     vi.useRealTimers();
+  });
+});
+
+describe('HoldButton pressEffect', () => {
+  const base = {
+    onHold: vi.fn(),
+    durationMs: 500 as const,
+    label: 'Test',
+    hint: 'Hold 0.5s',
+  };
+
+  it('scales its wrapper while held by default', () => {
+    render(<HoldButton {...base}>Go</HoldButton>);
+    const wrapper = screen.getByRole('button').parentElement!;
+    fireEvent.pointerDown(screen.getByRole('button'));
+    expect(wrapper.className).toContain('scale-[1.08]');
+  });
+
+  it('does not scale its wrapper when pressEffect is none', () => {
+    render(<HoldButton {...base} pressEffect="none">Go</HoldButton>);
+    const wrapper = screen.getByRole('button').parentElement!;
+    fireEvent.pointerDown(screen.getByRole('button'));
+    expect(wrapper.className).not.toContain('scale-');
+    expect(wrapper.className).not.toContain('animate-hold-bounce');
   });
 });
