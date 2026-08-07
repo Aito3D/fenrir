@@ -110,6 +110,7 @@ export function HoldButton({
   progress = 'ring',
   barClassName = 'bg-red-400/25',
   pressEffect = 'scale',
+  ariaPressed,
   children,
 }: {
   onHold: () => void;
@@ -148,6 +149,12 @@ export function HoldButton({
    *  cut off by the parent's `overflow-hidden` and read as broken; there the
    *  bar fill carries progress on its own. */
   pressEffect?: 'scale' | 'none';
+  /** Reflects a live on/off state on the underlying `<button>`, e.g. a
+   *  segmented control where the pressed segment is the active choice.
+   *  Optional and `undefined` by default so no existing caller gains the
+   *  attribute — only a caller that has a real pressed/unpressed state (like
+   *  `FlagControl`'s segments) passes it. */
+  ariaPressed?: boolean;
   children: ReactNode;
 }) {
   const [holding, setHolding] = useState(false);
@@ -231,6 +238,7 @@ export function HoldButton({
         ref={buttonRef}
         type="button"
         aria-label={label}
+        aria-pressed={ariaPressed}
         title={hint}
         disabled={disabled}
         data-holding={holding || undefined}

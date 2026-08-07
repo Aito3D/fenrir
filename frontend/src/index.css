@@ -1218,19 +1218,22 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
   }
 }
 
-/* Urgent: a ring that expands outward and fades, leaving the border crisp.
-   Only the halo moves — the card's own edge never goes soft, so a column of
-   several urgent cards still reads as a column of cards rather than as a
-   smear. `var(--card-shadow)` is repeated in EVERY stop because box-shadow is
-   a single property: a keyframe that omitted it would drop the card's
-   elevation for the whole animation, and several themes define --card-shadow
-   as a multi-layer value with an accent glow. */
+/* Flagged card: a ring that expands outward and fades, leaving the border
+   crisp. Shared by both board flags — urgent (amber) and SAV/returned (rose)
+   — via the `--flag-halo` custom property each tone's class (`.flag-urgent`,
+   `.flag-sav`, below) sets to its own colour; the keyframes themselves know
+   nothing about which flag is live. Only the halo moves — the card's own edge
+   never goes soft, so a column of several flagged cards still reads as a
+   column of cards rather than as a smear. `var(--card-shadow)` is repeated in
+   EVERY stop because box-shadow is a single property: a keyframe that omitted
+   it would drop the card's elevation for the whole animation, and several
+   themes define --card-shadow as a multi-layer value with an accent glow. */
 /* Deliberately understated. The ring travels 4px rather than 7 and peaks at
    .26 rather than .55, and the steady glow behind it sits at .42 rather than
    .7 — the card should look like it is breathing, not signalling. The card
-   also lost its URGENT chip, so this is now the primary cue; it is kept
-   legible by the persistent amber border and the always-on glow, which do not
-   depend on catching the pulse at its peak. */
+   also has no painted flag chip, so this halo is the primary cue; it is kept
+   legible by the persistent coloured border and the always-on glow, which do
+   not depend on catching the pulse at its peak. */
 @keyframes flag-halo {
   0%   { box-shadow: 0 0 0 0 rgb(var(--flag-halo) / .26), 0 0 9px -3px rgb(var(--flag-halo) / .42), var(--card-shadow); }
   70%  { box-shadow: 0 0 0 4px rgb(var(--flag-halo) / 0), 0 0 9px -3px rgb(var(--flag-halo) / .42), var(--card-shadow); }

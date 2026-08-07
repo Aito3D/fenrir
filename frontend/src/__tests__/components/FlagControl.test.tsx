@@ -179,4 +179,48 @@ describe('FlagControl', () => {
     openControl();
     expect(screen.getByTestId('flag-control')).toHaveAttribute('data-open', 'true');
   });
+
+  it('reports aria-pressed on each segment reflecting the live flag', () => {
+    render(<FlagControl project={{ ...baseProject, flag: 'sav' }} />);
+    fireEvent.focus(screen.getByTestId('flag-control'));
+    expect(segment('sav')).toHaveAttribute('aria-pressed', 'true');
+    expect(segment('urgent')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('keeps focus inside the control after a keyboard commit, instead of dropping it to <body>', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(api, 'setAitoProjectFlag').mockResolvedValue({} as AitoProject);
+    render(<FlagControl project={{ ...baseProject, flag: null }} />);
+
+    const root = screen.getByTestId('flag-control');
+    fireEvent.focus(root);
+    const button = segment('urgent');
+    button.focus();
+    fireEvent.keyDown(button, { key: 'Enter' });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+
+    expect(document.activeElement).toBe(root);
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it('collapses onto the flagged segment when closed, leaving the other segment collapsed and disabled', () => {
+    render(<FlagControl project={{ ...baseProject, flag: 'urgent' }} />);
+    const root = screen.getByTestId('flag-control');
+    expect(root).toHaveAttribute('data-open', 'false');
+
+    const urgentWrapper = screen.getByTestId('flag-segment-urgent');
+    expect(urgentWrapper.className).toContain('max-w-[9rem]');
+    expect(urgentWrapper.className).toContain('opacity-100');
+    expect(urgentWrapper).not.toHaveAttribute('aria-hidden');
+    expect(within(urgentWrapper).getByRole('button')).not.toBeDisabled();
+
+    const savWrapper = screen.getByTestId('flag-segment-sav');
+    expect(savWrapper.className).toContain('max-w-0');
+    expect(savWrapper.className).toContain('opacity-0');
+    expect(savWrapper).toHaveAttribute('aria-hidden', 'true');
+    expect(within(savWrapper).getByRole('button', { hidden: true })).toBeDisabled();
+  });
 });

@@ -1860,7 +1860,9 @@ async def test_declining_preserves_the_acceptance_stamp(async_client):
 
 @pytest.mark.asyncio
 async def test_new_projects_have_no_flag(async_client):
+    """The flag is opt-in. A card nobody has touched must never glow."""
     created = await _create(async_client)
+    assert created.status_code == 201
     assert created.json()["flag"] is None
 
     listed = await async_client.get("/api/v1/aito/")
@@ -1905,6 +1907,8 @@ async def test_flag_toggles_and_never_queues_a_zoho_push(async_client, db_sessio
 
 @pytest.mark.asyncio
 async def test_flag_records_one_story_event_per_real_change(async_client):
+    """Double-taps must not spam the timeline: an unchanged value records
+    nothing, so the history reads as decisions rather than as button presses."""
     project_id = (await _create(async_client)).json()["id"]
 
     await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "urgent"})

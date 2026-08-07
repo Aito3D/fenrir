@@ -423,7 +423,14 @@ describe('CardView', () => {
   it('paints the amber halo and names the flag for assistive tech when urgent', () => {
     render(<CardView project={{ ...project, flag: 'urgent' }} onExpand={vi.fn()} />);
     expect(document.querySelector('[data-aito-card]')?.className).toContain('flag-urgent');
-    expect(screen.getByTestId('aito-card-flag')).toBeInTheDocument();
+    // The chip is gone as a visible element, but the word must survive for
+    // anyone who cannot see a box-shadow — hence sr-only rather than removed.
+    const flag = screen.getByTestId('aito-card-flag');
+    expect(flag).toBeInTheDocument();
+    expect(flag).toHaveClass('sr-only');
+    // Guards the actual regression risk: that someone "cleans up" the
+    // sr-only span back into a painted chip.
+    expect(flag).not.toHaveClass('bg-amber-400');
   });
 
   it('paints the rose halo when the project is SAV', () => {

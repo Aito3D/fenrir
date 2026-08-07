@@ -60,12 +60,20 @@ export function FlagControl({ project }: { project: AitoProject }) {
   const mutation = useFlagMutation(project);
   const flag = project.flag;
   const [open, setOpen] = useState(false);
-  // The resting chip stays mounted while it holds focus, even though opening
-  // collapses it. Unmounting it under its own focus would send focus to
-  // <body>, and the blur handler would immediately close what the click just
-  // opened.
+  // Kept visible whenever the resting chip itself holds focus, even after
+  // opening collapses it for everyone else. The chip is never unmounted here
+  // — it is CSS-collapsed to `max-w-0 opacity-0`, and a zero-width,
+  // opacity-0 element keeps focus just fine — so without this a keyboard
+  // user's focus ring would end up sitting on an invisible, zero-width
+  // button.
   const [restFocused, setRestFocused] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  // Set immediately before `choose()`'s own `rootRef.current.focus()` and
+  // cleared the moment that focus event is observed, so the root's `onFocus`
+  // can tell "I just parked focus here after a commit" apart from a real
+  // focus arriving on the root from outside (there is no other signal —
+  // both look like a focus event whose target IS the root).
+  const suppressNextRootFocusRef = useRef(false);
   // A one-shot bump on commit, so the collapse reads as "that landed" rather
   // than as the pill merely losing its hover. It lives on the CONTAINER
   // because each segment passes `pressEffect="none"` — HoldButton's own bounce
@@ -95,6 +103,13 @@ export function FlagControl({ project }: { project: AitoProject }) {
     setBumping(true);
     if (bumpTimer.current) clearTimeout(bumpTimer.current);
     bumpTimer.current = setTimeout(() => setBumping(false), 340);
+    // The held segment is about to go `disabled` (via `mutation.isPending`,
+    // then via `!shown` once the flag change lands), which blurs it and would
+    // otherwise throw a keyboard user's focus back to <body>. Move focus to
+    // the root instead — it is a valid target (`tabIndex={-1}` below) that
+    // survives both disablements, so focus stays inside the control.
+    suppressNextRootFocusRef.current = true;
+    rootRef.current?.focus();
   };
 
   const restShown = !flag && (!open || restFocused);
@@ -104,11 +119,33 @@ export function FlagControl({ project }: { project: AitoProject }) {
       ref={rootRef}
       data-testid="flag-control"
       data-open={open}
-      role="group"
-      aria-label={t('aito.markFlag')}
+      // Not `role="group"` + `aria-label` here — the resting chip's own text
+      // is the same `aito.markFlag` string, so a screen reader would announce
+      // "Mark, group" immediately followed by "Mark, button". Each segment is
+      // self-describing ("Mark urgent" / "Mark returned") without a group
+      // label.
+      //
+      // `tabIndex={-1}`: not a Tab stop (the segments and the resting chip
+      // already are), but a valid `.focus()` target — see `choose()`, which
+      // parks focus here after a commit so a disabled segment losing focus
+      // does not throw a keyboard user back to <body>.
+      tabIndex={-1}
       onPointerEnter={() => setOpen(true)}
       onPointerLeave={() => setOpen(false)}
-      onFocus={() => setOpen(true)}
+      onFocus={(e) => {
+        // Focus landing on the root itself is normally a real "open me"
+        // request (e.g. a screen reader or a test focusing the control
+        // directly) and should open it — EXCEPT immediately after `choose()`
+        // parks focus here on commit, where reopening would undo the close
+        // that same commit just did. `suppressNextRootFocusRef` is the only
+        // way to tell those two apart; both are a focus event whose target
+        // is the root.
+        if (e.target === e.currentTarget && suppressNextRootFocusRef.current) {
+          suppressNextRootFocusRef.current = false;
+          return;
+        }
+        setOpen(true);
+      }}
       onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
       }}
@@ -146,10 +183,15 @@ export function FlagControl({ project }: { project: AitoProject }) {
           <span
             key={kind}
             data-testid={`flag-segment-${kind}`}
+            // Collapsed segments are `disabled` (below) and so already
+            // untabbable, but a disabled button is still in the accessibility
+            // tree — without this, browse mode reads two permanently-disabled
+            // buttons whenever the control is closed and unflagged.
+            aria-hidden={shown ? undefined : true}
             // A hairline between the two only while both are open — a divider
             // beside nothing is just a stray line.
             className={`overflow-hidden transition-[max-width,opacity] duration-[260ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${
-              kind === 'sav' && open && shown ? 'border-l border-bambu-dark-tertiary' : ''
+              kind === 'sav' && open ? 'border-l border-bambu-dark-tertiary' : ''
             } ${shown ? 'max-w-[9rem] opacity-100' : 'max-w-0 opacity-0'}`}
           >
             <HoldButton
@@ -164,6 +206,7 @@ export function FlagControl({ project }: { project: AitoProject }) {
               // bounce would both be cut off — see HoldButton's pressEffect.
               pressEffect="none"
               disabled={mutation.isPending || !shown}
+              ariaPressed={on}
               label={on ? t(kind === 'urgent' ? 'aito.clearUrgent' : 'aito.clearSav') : t(kind === 'urgent' ? 'aito.markUrgent' : 'aito.markSav')}
               hint={on
                 ? t(kind === 'urgent' ? 'aito.holdToClearUrgent' : 'aito.holdToClearSav')
