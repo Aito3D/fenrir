@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import async_session
 from backend.app.core.tasks import spawn_background_task
+from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
@@ -1337,6 +1338,12 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
 
             await _apply_rules(db, project, await _summary_for(db, project.id))
             await db.commit()
+            try:
+                await ws_manager.broadcast(
+                    {"type": "aito_changed", "action": "quote-sync", "project_id": project_id, "actor": None}
+                )
+            except Exception:
+                logger.warning("aito_changed broadcast failed for quote-sync", exc_info=True)
         except Exception:
             await db.rollback()
             logger.exception("Aito quote sync failed to commit project %s", project_id)

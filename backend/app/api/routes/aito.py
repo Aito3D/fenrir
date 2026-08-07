@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
@@ -498,6 +499,21 @@ def _actor(user: User | None) -> str | None:
     return user.username if user is not None else None
 
 
+async def _broadcast_changed(action: str, project_id: int | None, actor: str | None) -> None:
+    """Fan out one board-changed signal to every connected operator.
+
+    Best-effort, after commit: the board must stay correct with the WS layer
+    down (same stance as the Zoho push in set_quote_status), so failures are
+    logged and swallowed. The payload names WHAT happened, not the new state
+    — clients respond by refetching, which keeps one code path for all
+    twelve mutations.
+    """
+    try:
+        await ws_manager.broadcast({"type": "aito_changed", "action": action, "project_id": project_id, "actor": actor})
+    except Exception:
+        logger.warning("aito_changed broadcast failed for %s on project %s", action, project_id, exc_info=True)
+
+
 async def _mark_project_pending_for_task(db: AsyncSession, project_id: int) -> tuple[AitoProject | None, bool]:
     """Task endpoints address a task, not a project, so the parent has to be
     loaded to be marked. A missing parent is not an error here: the task's own
@@ -689,6 +705,7 @@ async def create_project(
         # own session, and a wake racing an uncommitted row drains nothing.
         # Only the own-quote branch — an import owes Books nothing yet.
         request_immediate_sync()
+    await _broadcast_changed("create", project.id, _actor(current_user))
     await db.refresh(project)
     return _to_response(project, summary, await _shipping_names(db))
 
@@ -830,6 +847,7 @@ async def add_note(
         note=payload.note,
     )
     await db.commit()
+    await _broadcast_changed("comment", project_id, _actor(current_user))
     await db.refresh(event)
     return AitoEventResponse.model_validate(event)
 
@@ -1043,6 +1061,7 @@ async def send_quote_email(
         )
 
     await db.commit()
+    await _broadcast_changed("quote-email", project.id, _actor(current_user))
     await db.refresh(project)
     return AitoQuoteEmailResponse(
         project=_to_response(project, summary, await _shipping_names(db)),
@@ -1115,6 +1134,7 @@ async def add_task(
     queued = project.quote_sync_state == "pending"
     await db.commit()
     _wake_worker(queued)
+    await _broadcast_changed("task", task.project_id, _actor(current_user))
     await db.refresh(task)
     return _task_to_response(task)
 
@@ -1209,6 +1229,7 @@ async def update_task(
     queued = project is not None and project.quote_sync_state == "pending"
     await db.commit()
     _wake_worker(queued)
+    await _broadcast_changed("task", task.project_id, _actor(current_user))
     await db.refresh(task)
     return _task_to_response(task)
 
@@ -1222,6 +1243,7 @@ async def delete_task(
     """Hard delete, unlike projects: tasks need no stable visible number, and
     hold-to-remove is already a deliberate gesture."""
     task = await _get_task_or_404(db, task_id)
+    task_project_id = task.project_id  # captured before delete: unreadable on the row after
     project, _was_pending = await _mark_project_pending_for_task(db, task.project_id)
     await record(
         db,
@@ -1240,6 +1262,7 @@ async def delete_task(
     queued = project is not None and project.quote_sync_state == "pending"
     await db.commit()
     _wake_worker(queued)
+    await _broadcast_changed("task", task_project_id, _actor(current_user))
 
 
 @router.post("/import", response_model=list[AitoProjectResponse], status_code=201)
@@ -1283,6 +1306,7 @@ async def import_legacy_projects(
     await db.commit()
     for p in created:
         await db.refresh(p)
+    await _broadcast_changed("import", None, _actor(_))
     # Imported projects are task-free by construction: the legacy localStorage
     # board had no concept of tasks. Explicit empty map, not a resolved one:
     # AitoProjectImportItem carries no shipping fields at all, so no imported
@@ -1356,6 +1380,7 @@ async def move_project(
             changes=[{"field": "column", "from": source_column, "to": project.board_column}],
         )
     await db.commit()
+    await _broadcast_changed("move", project.id, _actor(current_user))
     await db.refresh(project)
     return _to_response(project, summary, await _shipping_names(db))
 
@@ -1449,6 +1474,7 @@ async def update_project(
     queued = project.quote_sync_state == "pending"
     await db.commit()
     _wake_worker(queued)
+    await _broadcast_changed("update", project.id, _actor(current_user))
     await db.refresh(project)
     return _to_response(project, await _summary_for(db, project.id), await _shipping_names(db))
 
@@ -1496,6 +1522,7 @@ async def set_project_urgent(
             subject_id=project.id,
         )
         await db.commit()
+        await _broadcast_changed("urgent", project.id, _actor(current_user))
         await db.refresh(project)
 
     return _to_response(project, await _summary_for(db, project.id), await _shipping_names(db))
@@ -1576,6 +1603,7 @@ async def set_quote_status(
         subject_id=project.id,
     )
     await db.commit()
+    await _broadcast_changed("quote-status", project.id, _actor(current_user))
     await db.refresh(project)
 
     # Built BEFORE the Zoho call, not after: the project's data cannot change
@@ -1650,6 +1678,7 @@ async def restore_project(
     queued = project.quote_sync_state == "pending"
     await db.commit()
     _wake_worker(queued)
+    await _broadcast_changed("restore", project.id, _actor(current_user))
     await db.refresh(project)
     return _to_response(project, summary, await _shipping_names(db))
 
@@ -1680,3 +1709,4 @@ async def delete_project(
     queued = project.quote_sync_state == "pending"
     await db.commit()
     _wake_worker(queued)
+    await _broadcast_changed("delete", project_id, _actor(current_user))
