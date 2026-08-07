@@ -79,7 +79,7 @@ evidence: queued-capture/commit/_wake_worker at aito.py:1176-1179,1271-1274,1304
 
 ## T-008
 priority: P2
-status: IN_PROGRESS
+status: DONE
 attempts: 1
 round: 1
 first_seen_iteration: 0

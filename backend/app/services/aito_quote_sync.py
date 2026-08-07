@@ -1271,7 +1271,9 @@ def _still_selected(project: AitoProject) -> bool:
     return (
         project.status == "active"
         and project.quote_id is not None
-        and project.quote_sync_state not in ("pending", "unmanaged", "locked")
+        # 'pending' omitted here (unlike the SQL mirror's not_in): the early
+        # return above already handles it, so this branch never sees it.
+        and project.quote_sync_state not in ("unmanaged", "locked")
     )
 
 
