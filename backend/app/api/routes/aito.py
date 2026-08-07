@@ -1066,11 +1066,7 @@ async def send_quote_email(
     ``quote_status`` because that is the rule as specified; ``evaluate()``
     derives one from the other, so they cannot disagree.
     """
-    project = (
-        await db.execute(select(AitoProject).where(AitoProject.id == project_id, AitoProject.status == "active"))
-    ).scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await _get_active_project_or_404(db, project_id)
     if not project.quote_id:
         raise HTTPException(status_code=404, detail="This project has no Zoho quote")
 
@@ -1179,6 +1175,15 @@ async def _get_task_or_404(db: AsyncSession, task_id: int) -> AitoTask:
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
+
+
+async def _get_active_project_or_404(db: AsyncSession, project_id: int) -> AitoProject:
+    project = (
+        await db.execute(select(AitoProject).where(AitoProject.id == project_id, AitoProject.status == "active"))
+    ).scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
 
 
 @router.post("/{project_id}/tasks", response_model=AitoTaskResponse, status_code=201)
@@ -1405,11 +1410,7 @@ async def move_project(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
-    project = (
-        await db.execute(select(AitoProject).where(AitoProject.id == project_id, AitoProject.status == "active"))
-    ).scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await _get_active_project_or_404(db, project_id)
 
     summary = await _summary_for(db, project.id)
 
@@ -1478,11 +1479,7 @@ async def update_project(
 ):
     """Edit a card's content. Only fields present in the body are written, so a
     null client_phone clears it while an omitted one is left alone."""
-    project = (
-        await db.execute(select(AitoProject).where(AitoProject.id == project_id, AitoProject.status == "active"))
-    ).scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await _get_active_project_or_404(db, project_id)
 
     if payload.expected_version is not None and payload.expected_version != (project.version or 0):
         raise HTTPException(
@@ -1595,11 +1592,7 @@ async def set_project_flag(
     one would need adding to the API-key classification lists and the role
     defaults, and "may edit an Aito card" is exactly the right authority here.
     """
-    project = (
-        await db.execute(select(AitoProject).where(AitoProject.id == project_id, AitoProject.status == "active"))
-    ).scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await _get_active_project_or_404(db, project_id)
 
     # Idempotent: re-sending the value the row already holds is a 200 with no
     # event, so a double-tap does not spam the timeline with non-decisions.
@@ -1656,11 +1649,7 @@ async def set_quote_status(
     reported as ``zoho_synced`` — never a non-200, or a Books outage would
     block the shop from recording a decision the client already made.
     """
-    project = (
-        await db.execute(select(AitoProject).where(AitoProject.id == project_id, AitoProject.status == "active"))
-    ).scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await _get_active_project_or_404(db, project_id)
 
     if payload.status == project.quote_status:
         # Someone (possibly this same operator, double-clicking) already
@@ -1810,11 +1799,7 @@ async def delete_project(
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_DELETE),
 ):
     """Soft delete: the row is kept forever, only hidden from the board."""
-    project = (
-        await db.execute(select(AitoProject).where(AitoProject.id == project_id, AitoProject.status == "active"))
-    ).scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await _get_active_project_or_404(db, project_id)
     project.status = "deleted"
     _mark_pending_if_ours(project)
     await record(

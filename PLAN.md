@@ -57,33 +57,33 @@ evidence: aito_quote_sync.py:366-374,653-673,688-699,861-883 all set locked/_cle
 
 ## T-006
 priority: P2
-status: OPEN
-attempts: 0
+status: DONE
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 4
 title: aito.py: extract _get_active_project_or_404 (6 copies)
 files: backend/app/api/routes/aito.py
 evidence: identical select+404 at aito.py:1028-1032,1367-1371,1440-1444,1557-1561,1618-1622,1759-1763 mirroring existing _get_task_or_404 (1136-1140); restore_project (1719-1723) uses status==deleted, keep separate
 
 ## T-007
 priority: P2
-status: OPEN
-attempts: 0
+status: IN_PROGRESS
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 4
 title: aito.py: extract _commit_and_wake tail (6 copies)
 files: backend/app/api/routes/aito.py
 evidence: queued-capture/commit/_wake_worker at aito.py:1176-1179,1271-1274,1304-1307,1517-1519,1744-1747,1775-1778; ordering load-bearing (516-530); must NOT reorder _wake_worker vs _broadcast_changed which differs per handler
 
 ## T-008
 priority: P2
-status: OPEN
-attempts: 0
+status: IN_PROGRESS
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 4
 title: quote_sync: drop unreachable pending clause in _still_selected
 files: backend/app/services/aito_quote_sync.py
 evidence: aito_quote_sync.py:1229-1230 early-returns True for pending so pending in not_in tuple at 1234 is dead; SQL mirror at 1265 is NOT dead, only Python copy changes
