@@ -42,6 +42,8 @@
 - semgrep (--config auto) over aito scope: 0 findings
 - gitleaks: 5 findings, ALL outside aito scope (github_backup.py, .github/workflows/repo-stats.yml, redaction-test fixtures) — out of scope, no tasks
 - pip-audit: 6 vulns, all in starlette 0.52.1 (PYSEC-2026-161/248/249/2280/2281). Dependency bump touches requirements outside aito scope → recorded, NOT tasked. Flag to user in final report.
+- npm audit (prod deps): dompurify moderate (IN_PLACE hook XSS), react-router + react-router-dom high (RSC-mode CSRF bypass; app does not use RSC mode). Dependency bumps outside aito scope → recorded, NOT tasked. Flag to user in final report.
+- ruff check + format on aito backend: clean. ESLint on aito frontend: clean.
 
 ## Frozen artifacts (no one may modify mid-run)
 - PROBES.json, snapshots/, SURFACE.md, tools/ (plan.py, snapshot.py, probe_boardrules.cjs)
