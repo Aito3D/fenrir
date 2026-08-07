@@ -112,7 +112,7 @@ evidence: byte-identical rates dict comprehension at aito.py:672 and 1473 behind
 
 ## T-011
 priority: P2
-status: IN_PROGRESS
+status: DONE
 attempts: 1
 round: 1
 first_seen_iteration: 0

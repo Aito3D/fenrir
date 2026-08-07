@@ -1059,6 +1059,32 @@ def _quote_email_http_error(e: Exception) -> HTTPException:
     return HTTPException(status_code=502, detail=str(e))
 
 
+async def _load_quote_email_content(
+    db: AsyncSession, project: AitoProject, project_id: int, *, rollback_on_error: bool = False
+) -> tuple[dict, str | None]:
+    """Shared preamble for both quote-email routes: no-quote 404, then Books lookup.
+
+    ``project`` is already resolved by the caller — the two routes fetch it
+    differently (get_quote_email accepts any non-deleted status,
+    send_quote_email requires "active" via ``_get_active_project_or_404``),
+    so that part stays at the call site rather than being folded in here.
+
+    ``rollback_on_error`` is only set by the send path. See the comment in
+    ``send_quote_email`` for why it needs a clean session before re-raising;
+    the preview path (``get_quote_email``) never had a rollback here and must
+    not gain one.
+    """
+    if not project.quote_id:
+        raise HTTPException(status_code=404, detail="This project has no Zoho quote")
+    try:
+        return await _quote_email_content(db, project)
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito quote email prefill failed for project %s: %s", project_id, e)
+        if rollback_on_error:
+            await db.rollback()
+        raise _quote_email_http_error(e) from e
+
+
 @router.get("/{project_id}/quote-email", response_model=AitoQuoteEmailContent)
 async def get_quote_email(
     project_id: int,
@@ -1073,13 +1099,7 @@ async def get_quote_email(
     project = await db.get(AitoProject, project_id)
     if project is None or project.status == "deleted":
         raise HTTPException(status_code=404, detail="Project not found")
-    if not project.quote_id:
-        raise HTTPException(status_code=404, detail="This project has no Zoho quote")
-    try:
-        content, default_email = await _quote_email_content(db, project)
-    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
-        logger.warning("Aito quote email prefill failed for project %s: %s", project_id, e)
-        raise _quote_email_http_error(e) from e
+    content, default_email = await _load_quote_email_content(db, project, project_id)
     return AitoQuoteEmailContent(
         subject=content["subject"],
         body=content["body"],
@@ -1111,15 +1131,7 @@ async def send_quote_email(
     derives one from the other, so they cannot disagree.
     """
     project = await _get_active_project_or_404(db, project_id)
-    if not project.quote_id:
-        raise HTTPException(status_code=404, detail="This project has no Zoho quote")
-
-    try:
-        content, _ = await _quote_email_content(db, project)
-    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
-        logger.warning("Aito quote email prefill failed for project %s: %s", project_id, e)
-        await db.rollback()
-        raise _quote_email_http_error(e) from e
+    content, _ = await _load_quote_email_content(db, project, project_id, rollback_on_error=True)
 
     # Re-read rather than trust the request. An allowlist the caller supplies
     # is not an allowlist: without this the endpoint is an open relay, and any
