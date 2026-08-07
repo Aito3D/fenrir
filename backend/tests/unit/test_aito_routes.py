@@ -1349,13 +1349,23 @@ async def test_declining_sends_the_card_to_done(async_client):
 
 
 @pytest.mark.asyncio
-async def test_accepting_a_declined_quote_reopens_it(async_client):
+async def test_accepting_a_declined_quote_is_blocked(async_client):
+    """Reopening a declined quote by re-deciding it through this route is no
+    longer a supported flow: Task 3's hybrid guard treats a decline as
+    terminal, so a different decision on top of it 409s naming the standing
+    one instead of silently overriding it (see test_aito_quote_status_conflicts.py).
+    This test used to assert the reopen worked (accepted -> column "print");
+    that is the old double-apply behavior the guard exists to remove."""
     p = (await _create(async_client, quote_status="draft")).json()
     await _add_task(async_client, p["id"], impression_cost=2400.0)
     await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "declined"})
 
     r = await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "accepted"})
-    assert r.json()["project"]["column"] == "print"
+    assert r.status_code == 409
+    assert r.json()["detail"]["current"] == "declined"
+
+    board = {row["id"]: row for row in (await async_client.get("/api/v1/aito/")).json()}
+    assert board[p["id"]]["column"] == "done"
 
 
 @pytest.mark.asyncio
@@ -1372,17 +1382,33 @@ async def test_marking_sent_parks_the_card_in_waiting(async_client):
 
 @pytest.mark.asyncio
 async def test_accepting_from_waiting_lands_on_the_right_stage(async_client):
-    p = (await _create(async_client, quote_status="accepted")).json()
-    t = (await _add_task(async_client, p["id"], scan_cost=1.0, impression_cost=1.0)).json()
-    await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
+    """Rewritten for Task 3's hybrid guard, which makes "accepted" terminal:
+    the original test seeded the project already-accepted, ticked a step (only
+    legal once accepted — see `_reject_ticks_without_acceptance`), THEN sent
+    it back out and re-accepted it, asserting the earlier tick survived the
+    round trip. That accepted -> sent leg is exactly the conflict the guard
+    409s on now (old double-apply behavior), so the round trip itself is gone.
 
-    # Out with the client: the ticks stand, the card parks in waiting.
+    What remains reachable, and is what this test now checks: draft -> sent
+    parks the card in waiting with no ticks possible yet; accepting from
+    there derives the stage from the tasks' (untouched) pending set, landing
+    on the first stage with outstanding work; and a tick made afterwards
+    (now legal, since the project is accepted) still advances the column via
+    the task PATCH route alone, with no further quote-status call needed.
+    """
+    p = (await _create(async_client, quote_status="draft")).json()
+    t = (await _add_task(async_client, p["id"], scan_cost=1.0, impression_cost=1.0)).json()
+
     await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "sent"})
     board = {row["id"]: row for row in (await async_client.get("/api/v1/aito/")).json()}
     assert board[p["id"]]["column"] == "waiting"
 
     r = await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "accepted"})
-    assert r.json()["project"]["column"] == "print"
+    assert r.json()["project"]["column"] == "scan"
+
+    await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
+    board = {row["id"]: row for row in (await async_client.get("/api/v1/aito/")).json()}
+    assert board[p["id"]]["column"] == "print"
 
 
 @pytest.mark.asyncio
@@ -1674,8 +1700,13 @@ async def test_changing_the_board_status_clears_a_recorded_block(async_client, d
     blocked attempt: our side cannot drift away from the recorded attempt
     without the record being cleared, so the reconciler never has to store
     (and re-parse) the pair.
+
+    Seeded as "sent" rather than "accepted": Task 3's hybrid guard makes
+    "accepted" terminal, and accepted -> declined is exactly the conflict
+    that guard exists to 409 on. "sent" is not terminal, so sent -> declined
+    is an ordinary progression that still exercises the block-clearing path.
     """
-    created = (await _create(async_client, quote_status="accepted")).json()
+    created = (await _create(async_client, quote_status="sent")).json()
     project = (await db_session.execute(select(AitoProject).where(AitoProject.id == created["id"]))).scalar_one()
     project.quote_status_block = "rejected"
     project.quote_status_remote = "draft"
@@ -1837,18 +1868,24 @@ async def test_accepting_stamps_quote_accepted_at(async_client):
 
 
 @pytest.mark.asyncio
-async def test_declining_preserves_the_acceptance_stamp(async_client):
+async def test_declining_an_accepted_quote_is_a_conflict_that_preserves_the_stamp(async_client):
+    """accepted -> declined is exactly the conflict Task 3's hybrid guard
+    409s on (see test_aito_quote_status_conflicts.py::test_conflicting_decision_is_409),
+    so the decline never applies; this test now checks the corollary — a
+    rejected attempt must not perturb quote_accepted_at either. Previously
+    this asserted the decline succeeded and the stamp survived it; that
+    success path is the old double-apply behavior the guard removes."""
     created = await _create(async_client)
     pid = created.json()["id"]
     accepted = await async_client.post(f"/api/v1/aito/{pid}/quote-status", json={"status": "accepted"})
     first = accepted.json()["project"]["quote_accepted_at"]
 
-    declined = (await async_client.post(f"/api/v1/aito/{pid}/quote-status", json={"status": "declined"})).json()[
-        "project"
-    ]
+    declined = await async_client.post(f"/api/v1/aito/{pid}/quote-status", json={"status": "declined"})
+    assert declined.status_code == 409
 
-    assert declined["quote_status"] == "declined"
-    assert declined["quote_accepted_at"] == first
+    board = {row["id"]: row for row in (await async_client.get("/api/v1/aito/")).json()}
+    assert board[pid]["quote_status"] == "accepted"
+    assert board[pid]["quote_accepted_at"] == first
 
 
 @pytest.mark.asyncio
