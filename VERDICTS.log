@@ -13,3 +13,8 @@ SNAPSHOTS 7/7 · SURFACE unchanged · ratchets held exactly (backend aito 260 mi
 Extractions verified byte-identical per site (_lock_project order+_UNSET sentinel, _terminal_error incl. catch-all logger placement). T-018 judged genuine narrow fix; test non-tautological.
 REMAINING_ISSUES: 4x low (ratchet blind-spot note — suggest per-file missed counts; backend TOTAL +18 missed = xdist nondeterminism, not code; stranded comments at quote_sync swept branch ~950-976 -> fold into T-027; SQLite-only error-text match restated for final record)
 
+=== 2026-08-07 13:40 · ITERATION 4 · VERDICT: PASS ===
+SNAPSHOTS 7/7 · SURFACE unchanged · aito missed 260->249 (dedup, verified no exclusions) · fe 80.84% exact · REGRESSIONS none
+T-006/007/008 verified behavior-identical incl. deliberately-excluded sites (restore_project try/except; db.get 404s). 5 out-of-scope vitest pool-worker startup timeouts, pass isolated.
+REMAINING_ISSUES: 2x INFO only (stale '6 copies' evidence text; helper-placement style)
+
