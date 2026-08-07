@@ -1349,23 +1349,18 @@ async def test_declining_sends_the_card_to_done(async_client):
 
 
 @pytest.mark.asyncio
-async def test_accepting_a_declined_quote_is_blocked(async_client):
-    """Reopening a declined quote by re-deciding it through this route is no
-    longer a supported flow: Task 3's hybrid guard treats a decline as
-    terminal, so a different decision on top of it 409s naming the standing
-    one instead of silently overriding it (see test_aito_quote_status_conflicts.py).
-    This test used to assert the reopen worked (accepted -> column "print");
-    that is the old double-apply behavior the guard exists to remove."""
+async def test_accepting_a_declined_quote_reopens_it(async_client):
+    """declined -> accepted is the deliberate reopen path (Task 3's hybrid
+    guard is asymmetric on purpose: QuoteStatusActions.tsx offers Accept on a
+    declined card, so "latest go-ahead wins" here is not a conflict, unlike
+    accepted -> anything or declined -> sent — see
+    test_aito_quote_status_conflicts.py::test_reaccepting_a_declined_quote_reopens_it)."""
     p = (await _create(async_client, quote_status="draft")).json()
     await _add_task(async_client, p["id"], impression_cost=2400.0)
     await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "declined"})
 
     r = await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "accepted"})
-    assert r.status_code == 409
-    assert r.json()["detail"]["current"] == "declined"
-
-    board = {row["id"]: row for row in (await async_client.get("/api/v1/aito/")).json()}
-    assert board[p["id"]]["column"] == "done"
+    assert r.json()["project"]["column"] == "print"
 
 
 @pytest.mark.asyncio

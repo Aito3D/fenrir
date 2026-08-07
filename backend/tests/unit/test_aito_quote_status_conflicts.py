@@ -2,9 +2,14 @@
 
 The hybrid rule (user-chosen): requesting the status the quote already has
 returns 200 no_op=True — no rules re-run, no timeline event, no Zoho push.
-Requesting a DIFFERENT status when the current one is terminal (accepted /
-declined) is a 409 naming the existing decision. Ordinary progressions
-(None -> sent -> accepted) are untouched.
+The conflict guard is ASYMMETRIC, matching what QuoteStatusActions.tsx
+actually offers a fresh UI: "accepted" is fully terminal (the UI offers no
+button off an accepted card, so any different request is stale); "declined"
+is terminal only against "sent" (re-sending an already-declined quote is not
+offered either). declined -> accepted is exempt on purpose: the UI puts an
+Accept button on a declined card, and "latest go-ahead wins" is the deliberate
+reopen path, not a conflict. Ordinary progressions (None -> sent -> accepted)
+are untouched.
 """
 
 from unittest.mock import AsyncMock
@@ -72,6 +77,22 @@ async def test_regressing_a_terminal_decision_to_sent_is_409(async_client, monke
     resend = await async_client.post(f"/api/v1/aito/{project_id}/quote-status", json={"status": "sent"})
     assert resend.status_code == 409
     assert resend.json()["detail"]["current"] == "declined"
+
+
+@pytest.mark.asyncio
+async def test_reaccepting_a_declined_quote_reopens_it(async_client, monkeypatch):
+    push = AsyncMock()
+    monkeypatch.setattr(zoho_service, "advance_estimate_status", push)
+    project_id = (await _create_with_quote(async_client))["id"]
+
+    declined = await async_client.post(f"/api/v1/aito/{project_id}/quote-status", json={"status": "declined"})
+    assert declined.status_code == 200
+
+    reopened = await async_client.post(f"/api/v1/aito/{project_id}/quote-status", json={"status": "accepted"})
+    assert reopened.status_code == 200
+    assert reopened.json()["no_op"] is False
+    assert reopened.json()["project"]["quote_status"] == "accepted"
+    assert push.await_count == 2  # one push per transition: declined, then accepted
 
 
 @pytest.mark.asyncio

@@ -1538,7 +1538,17 @@ async def set_quote_status(
             zoho_synced=True,
             no_op=True,
         )
-    if project.quote_status in ("accepted", "declined"):
+    # Asymmetric on purpose: 409 fires only on transitions a fresh UI never
+    # offers, so they can only arrive from a stale view (someone else already
+    # decided while this operator was looking at an older board). "accepted"
+    # is fully terminal here — QuoteStatusActions offers no button off an
+    # accepted card, so any different request naming it must be stale.
+    # "declined" is terminal only against "sent" (re-sending an already
+    # -declined quote is not a flow the UI offers either). declined ->
+    # accepted is deliberately exempt: QuoteStatusActions puts an Accept
+    # button on a declined card, and "latest go-ahead wins" is the intended
+    # reopen path, not a conflict.
+    if project.quote_status == "accepted" or (project.quote_status == "declined" and payload.status == "sent"):
         raise HTTPException(
             status_code=409,
             detail={
