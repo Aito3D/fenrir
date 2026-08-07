@@ -3611,6 +3611,9 @@ export interface AitoProject {
   shipping_price: number | null;
   /** The Books item's display name; null when the catalogue never resolved. */
   shipping_service_name: string | null;
+  /** Content-fields revision — echo back as `expected_version` on updates so
+   *  a concurrent edit 409s instead of being silently overwritten. */
+  version: number;
   created_at: string;
   updated_at: string;
 }
@@ -3631,6 +3634,9 @@ export interface AitoProjectUpdate {
   shipping_last_name?: string | null;
   shipping_phone?: string | null;
   shipping_price?: number | null;
+  /** The `version` the client last rendered. Server 409s (code
+   *  `version_conflict`) on mismatch. Omit to skip the check. */
+  expected_version?: number;
 }
 
 export interface AitoQuoteEmailRecipient {
@@ -6653,7 +6659,10 @@ export const api = {
       body: JSON.stringify(data),
     }),
   setAitoQuoteStatus: (id: number, data: { status: 'sent' | 'accepted' | 'declined' }) =>
-    request<{ project: AitoProject; zoho_synced: boolean }>(`/aito/${id}/quote-status`, {
+    // `no_op` is true when the request repeated a decision already applied —
+    // the row echoed back is fresh but nothing changed and no Zoho push
+    // happened, so callers use it to skip the success/warning toasts.
+    request<{ project: AitoProject; zoho_synced: boolean; no_op: boolean }>(`/aito/${id}/quote-status`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),

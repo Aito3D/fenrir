@@ -8,6 +8,8 @@ import { server } from '../mocks/server';
 import { render } from '../utils';
 import { ProjectDetailPanel } from '../../components/aito/ProjectDetailPanel';
 import { diffTaskDraft } from '../../hooks/useProjectTasks';
+import { registerPresenceSender, setAitoPresenceState, __resetAitoPresence } from '../../hooks/useAitoPresence';
+import { AuthProvider } from '../../contexts/AuthContext';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { api } from '../../api/client';
 import type { AitoEvent, AitoProject, AitoTask } from '../../api/client';
@@ -59,6 +61,7 @@ const project: AitoProject = {
   shipping_phone: null,
   shipping_price: null,
   shipping_service_name: null,
+  version: 1,
   created_at: '2026-07-27T00:00:00',
   updated_at: '2026-07-27T00:00:00',
 };
@@ -439,6 +442,7 @@ describe('ProjectDetailPanel social handle', () => {
       expect(spy).toHaveBeenCalledWith(project.id, {
         client_social_network: 'instagram',
         client_social_handle: 'moana.3d',
+        expected_version: project.version,
       }),
     );
   });
@@ -463,6 +467,7 @@ describe('ProjectDetailPanel social handle', () => {
       expect(spy).toHaveBeenCalledWith(project.id, {
         client_social_network: 'tiktok',
         client_social_handle: 'moana.tt',
+        expected_version: project.version,
       }),
     );
   });
@@ -484,6 +489,7 @@ describe('ProjectDetailPanel social handle', () => {
       expect(spy).toHaveBeenCalledWith(project.id, {
         client_social_network: null,
         client_social_handle: null,
+        expected_version: project.version,
       }),
     );
   });
@@ -694,7 +700,9 @@ describe('ProjectDetailPanel tasks', () => {
     const acceptedProject: AitoProject = { ...project, quote_status: 'accepted' };
     const Host = ({ open }: { open: boolean }) => (
       <QueryClientProvider client={client}>
-        <ToastProvider>{open ? <ProjectDetailPanel project={acceptedProject} onClose={vi.fn()} onDelete={vi.fn()} /> : null}</ToastProvider>
+        <AuthProvider>
+          <ToastProvider>{open ? <ProjectDetailPanel project={acceptedProject} onClose={vi.fn()} onDelete={vi.fn()} /> : null}</ToastProvider>
+        </AuthProvider>
       </QueryClientProvider>
     );
 
@@ -1318,7 +1326,9 @@ describe('ProjectDetailPanel tasks', () => {
     const Host = ({ open }: { open: boolean }) => (
       <QueryClientProvider client={client}>
         <BrowserRouter>
-          <ToastProvider>{open ? <ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} /> : null}</ToastProvider>
+          <AuthProvider>
+            <ToastProvider>{open ? <ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} /> : null}</ToastProvider>
+          </AuthProvider>
         </BrowserRouter>
       </QueryClientProvider>
     );
@@ -1635,7 +1645,9 @@ describe('ProjectDetailPanel sync row', () => {
     show({ quote_sync_state: 'error', quote_sync_error: 'Zoho: invalid customer_id' });
     await user.click(await screen.findByRole('button', { name: 'Retry' }));
 
-    await waitFor(() => expect(capturedBody).toEqual({ description: project.description }));
+    await waitFor(() =>
+      expect(capturedBody).toEqual({ description: project.description, expected_version: project.version }),
+    );
   });
 });
 
@@ -2281,7 +2293,9 @@ describe('ProjectDetailPanel description regeneration', () => {
     const button = screen.getByRole('button', { name: 'Regenerate' });
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
-    await waitFor(() => expect(patchBody).toEqual({ description: 'Résumé IA.' }));
+    await waitFor(() =>
+      expect(patchBody).toEqual({ description: 'Résumé IA.', expected_version: project.version }),
+    );
     expect(summarizeBody!.tasks).toHaveLength(1);
     expect(summarizeBody!.tasks[0].title).toBe(mockTask.title);
     // The transient acknowledgement the manual-edit path shows.
@@ -2399,5 +2413,38 @@ describe('ProjectDetailPanel record card age echo', () => {
     const echo = within(screen.getByTestId('record-created')).getByTestId('record-age');
     expect(echo).toHaveClass('text-red-400');
     expect(echo).not.toHaveClass('font-medium');
+  });
+});
+
+describe('ProjectDetailPanel presence', () => {
+  beforeEach(() => __resetAitoPresence());
+  afterEach(() => __resetAitoPresence());
+
+  it('shows no banner when the presence store has no other viewer', () => {
+    show();
+    expect(screen.queryByTestId('aito-presence-banner')).not.toBeInTheDocument();
+  });
+
+  it('shows the banner once the presence store reports another viewer', () => {
+    show();
+    act(() => setAitoPresenceState({ [String(project.id)]: ['Marie'] }));
+    expect(screen.getByTestId('aito-presence-banner')).toHaveTextContent('Marie');
+  });
+
+  it('sends its own presence on mount and clears it on unmount', () => {
+    // Registered BEFORE render, with the store freshly reset (ownProjectId
+    // null) — registering doesn't itself send anything until the panel's
+    // mount effect calls sendAitoPresence, so every call captured here is
+    // one the panel actually triggered.
+    const send = vi.fn();
+    registerPresenceSender(send);
+
+    const { unmount } = render(
+      <ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} />,
+    );
+    expect(send).toHaveBeenCalledWith({ type: 'aito_presence', project_id: project.id });
+
+    unmount();
+    expect(send).toHaveBeenLastCalledWith({ type: 'aito_presence', project_id: null });
   });
 });

@@ -278,6 +278,11 @@ class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput):
     client_phone: str | None = Field(default=None, max_length=50)
     client_email: str | None = Field(default=None, max_length=200)
     client_is_company: bool | None = None
+    # Optimistic-concurrency token: the AitoProject.version the client last
+    # rendered. Mismatch -> 409 version_conflict, nothing written. Optional so
+    # API-key callers that never fetched a version keep working; the frontend
+    # always sends it.
+    expected_version: int | None = None
 
     @field_validator("description")
     @classmethod
@@ -413,6 +418,9 @@ class AitoProjectResponse(BaseModel):
     # future call site that forgot it should fail loudly, not validate a
     # silently-blanked field.
     shipping_service_name: str | None
+    # Content-fields revision — see AitoProject.version. The detail panel
+    # echoes this back as expected_version on PATCH.
+    version: int
     created_at: datetime
     updated_at: datetime
 
@@ -433,6 +441,9 @@ class AitoQuoteStatusResponse(BaseModel):
 
     project: AitoProjectResponse
     zoho_synced: bool
+    # True when the requested status was already the current one: nothing was
+    # written, recorded, or pushed. The frontend skips its toasts on this.
+    no_op: bool = False
 
 
 class AitoQuoteEmailRecipient(BaseModel):

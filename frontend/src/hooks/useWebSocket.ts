@@ -4,6 +4,8 @@ import { useToast } from '../contexts/ToastContext';
 import { useTranslation } from 'react-i18next';
 import { api, ApiError } from '../api/client';
 import { inventoryLocationsQueryKey } from '../utils/inventoryQueries';
+import { useBoardSync } from './useBoardSync';
+import { registerPresenceSender, setAitoPresenceState } from './useAitoPresence';
 
 // The only auth-failure close code /api/v1/ws emits (websocket.py
 // _WS_CLOSE_UNAUTHORIZED). A 4401 means the ws-token was missing / invalid /
@@ -27,6 +29,14 @@ interface WebSocketMessage {
   // PipelineRunResponse payload — typed loosely here so the WebSocket hook
   // doesn't pull the full client.ts types in.
   run?: { pipeline_id?: number | null };
+  // Aito board mutations (multi-user sync). ``actor`` is the acting user's
+  // display name, or null for API-key/system-driven changes.
+  action?: string;
+  project_id?: number;
+  actor?: string | null;
+  // Aito presence (multi-user sync). Sent once on connect and again on every
+  // presence change, keyed by project id.
+  viewers?: Record<string, string[]>;
 }
 
 export function useWebSocket() {
@@ -38,6 +48,7 @@ export function useWebSocket() {
   // timeout — a leaked reconnect that kept minting ws-tokens post-logout).
   const disposedRef = useRef(false);
   const queryClient = useQueryClient();
+  const boardSync = useBoardSync();
   const [isConnected, setIsConnected] = useState(false);
   const lastMissingSpoolWarningRef = useRef<Map<number, string>>(new Map());
   const { showToast } = useToast();
@@ -54,6 +65,13 @@ export function useWebSocket() {
   // Throttle message processing to prevent browser freeze
   const messageQueueRef = useRef<WebSocketMessage[]>([]);
   const processingRef = useRef(false);
+
+  // Aito board resync: its own short trailing debounce, NOT debouncedInvalidate
+  // above — that one waits 3s to protect print-completion bursts, and a Kanban
+  // move that takes 3s to appear on a colleague's screen defeats the feature.
+  const aitoResyncTimeoutRef = useRef<number | null>(null);
+  const aitoTrashDirtyRef = useRef(false);
+  const aitoEventsDirtyRef = useRef<Set<number>>(new Set());
 
   // Use ref for handleMessage to avoid stale closure in connect
   const handleMessageRef = useRef<(message: WebSocketMessage) => void>(() => {});
@@ -138,6 +156,12 @@ export function useWebSocket() {
     ws.onopen = () => {
       if (import.meta.env.MODE !== 'test') console.log('[WebSocket] Connected');
       setIsConnected(true);
+      // A fresh socket has no memory of what this client was presenting
+      // before it dropped — the server's viewer map lost us the instant the
+      // old connection closed. Registering a live sender here replays our
+      // own presence (see useAitoPresence.registerPresenceSender) so a
+      // reconnect heals without the panel/card having to notice anything.
+      registerPresenceSender((msg) => ws.send(JSON.stringify(msg)));
       // Start ping interval
       pingInterval = window.setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -171,6 +195,9 @@ export function useWebSocket() {
       }
       setIsConnected(false);
       wsRef.current = null;
+      // No live socket to send through — own presence is remembered by the
+      // store and replays automatically once a new sender registers on open.
+      registerPresenceSender(null);
 
       // Don't reconnect after an auth rejection (4401) or once the provider has
       // unmounted — both would just respawn the /auth/ws-token loop. A 4401 is
@@ -477,8 +504,38 @@ export function useWebSocket() {
           queryClient.invalidateQueries({ queryKey: ['pipeline-runs', message.run.pipeline_id] });
         }
         break;
+
+      case 'aito_changed': {
+        if (message.action === 'delete' || message.action === 'restore') {
+          aitoTrashDirtyRef.current = true;
+        }
+        if (typeof message.project_id === 'number') {
+          aitoEventsDirtyRef.current.add(message.project_id);
+        }
+        if (aitoResyncTimeoutRef.current) clearTimeout(aitoResyncTimeoutRef.current);
+        aitoResyncTimeoutRef.current = window.setTimeout(() => {
+          aitoResyncTimeoutRef.current = null;
+          // Gated: while one of OUR writes is in flight, the arbitration's
+          // last-settle invalidation already covers this event — refetching
+          // now would race the optimistic cache. See useBoardSync.
+          boardSync.resyncIfIdle(queryClient);
+          if (aitoTrashDirtyRef.current) {
+            aitoTrashDirtyRef.current = false;
+            queryClient.invalidateQueries({ queryKey: ['aito-trash'] });
+          }
+          for (const id of aitoEventsDirtyRef.current) {
+            queryClient.invalidateQueries({ queryKey: ['aito-events', id] });
+          }
+          aitoEventsDirtyRef.current.clear();
+        }, 300);
+        break;
+      }
+
+      case 'aito_presence_state':
+        setAitoPresenceState(message.viewers ?? {});
+        break;
     }
-  }, [queryClient, debouncedInvalidate, throttledPrinterStatusUpdate, showToast, t]);
+  }, [queryClient, debouncedInvalidate, throttledPrinterStatusUpdate, showToast, t, boardSync]);
 
   // Keep the ref updated with latest handleMessage
   useEffect(() => {
@@ -504,6 +561,9 @@ export function useWebSocket() {
       }
       if (printerStatusTimeoutRef.current) {
         clearTimeout(printerStatusTimeoutRef.current);
+      }
+      if (aitoResyncTimeoutRef.current) {
+        clearTimeout(aitoResyncTimeoutRef.current);
       }
       if (wsRef.current) {
         wsRef.current.close();

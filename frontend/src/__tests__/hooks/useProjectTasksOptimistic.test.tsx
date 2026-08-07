@@ -16,6 +16,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import { ProjectDetailPanel } from '../../components/aito/ProjectDetailPanel';
+import { AuthProvider } from '../../contexts/AuthContext';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { api } from '../../api/client';
 import type { AitoProject, AitoTask } from '../../api/client';
@@ -68,6 +69,7 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
     shipping_phone: null,
     shipping_price: null,
     shipping_service_name: null,
+    version: 1,
     created_at: '2026-07-27T00:00:00',
     updated_at: '2026-07-27T00:00:00',
   };
@@ -178,9 +180,11 @@ async function renderTasks({
   rtlRender(
     <QueryClientProvider client={client}>
       <BrowserRouter>
-        <ToastProvider>
-          <ProjectDetailPanel project={resolvedProject} onClose={() => {}} onDelete={() => {}} />
-        </ToastProvider>
+        <AuthProvider>
+          <ToastProvider>
+            <ProjectDetailPanel project={resolvedProject} onClose={() => {}} onDelete={() => {}} />
+          </ToastProvider>
+        </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>,
   );

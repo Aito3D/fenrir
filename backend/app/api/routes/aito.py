@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
@@ -312,6 +313,9 @@ def _to_response(p: AitoProject, summary: TaskSummary, shipping_names: dict[str,
         # nullable, so an in-memory AitoProject that never went through a DB
         # flush already reads as None, which is exactly "no flag".
         flag=p.flag,
+        # Mirrors quote_invoiced above: in-memory rows that never flushed
+        # read None.
+        version=p.version or 0,
         quote_sync_error=p.quote_sync_error,
         quote_status_block=p.quote_status_block,
         quote_status_remote=p.quote_status_remote,
@@ -536,6 +540,21 @@ def _actor(user: User | None) -> str | None:
     return user.username if user is not None else None
 
 
+async def _broadcast_changed(action: str, project_id: int | None, actor: str | None) -> None:
+    """Fan out one board-changed signal to every connected operator.
+
+    Best-effort, after commit: the board must stay correct with the WS layer
+    down (same stance as the Zoho push in set_quote_status), so failures are
+    logged and swallowed. The payload names WHAT happened, not the new state
+    — clients respond by refetching, which keeps one code path for all
+    twelve mutations.
+    """
+    try:
+        await ws_manager.broadcast({"type": "aito_changed", "action": action, "project_id": project_id, "actor": actor})
+    except Exception:
+        logger.warning("aito_changed broadcast failed for %s on project %s", action, project_id, exc_info=True)
+
+
 async def _mark_project_pending_for_task(db: AsyncSession, project_id: int) -> tuple[AitoProject | None, bool]:
     """Task endpoints address a task, not a project, so the parent has to be
     loaded to be marked. A missing parent is not an error here: the task's own
@@ -728,6 +747,7 @@ async def create_project(
         # own session, and a wake racing an uncommitted row drains nothing.
         # Only the own-quote branch — an import owes Books nothing yet.
         request_immediate_sync()
+    await _broadcast_changed("create", project.id, _actor(current_user))
     await db.refresh(project)
     return _to_response(project, summary, await _shipping_names(db))
 
@@ -869,6 +889,7 @@ async def add_note(
         note=payload.note,
     )
     await db.commit()
+    await _broadcast_changed("comment", project_id, _actor(current_user))
     await db.refresh(event)
     return AitoEventResponse.model_validate(event)
 
@@ -1082,6 +1103,7 @@ async def send_quote_email(
         )
 
     await db.commit()
+    await _broadcast_changed("quote-email", project.id, _actor(current_user))
     await db.refresh(project)
     return AitoQuoteEmailResponse(
         project=_to_response(project, summary, await _shipping_names(db)),
@@ -1154,6 +1176,7 @@ async def add_task(
     queued = project.quote_sync_state == "pending"
     await db.commit()
     _wake_worker(queued)
+    await _broadcast_changed("task", task.project_id, _actor(current_user))
     await db.refresh(task)
     return _task_to_response(task)
 
@@ -1248,6 +1271,7 @@ async def update_task(
     queued = project is not None and project.quote_sync_state == "pending"
     await db.commit()
     _wake_worker(queued)
+    await _broadcast_changed("task", task.project_id, _actor(current_user))
     await db.refresh(task)
     return _task_to_response(task)
 
@@ -1261,6 +1285,7 @@ async def delete_task(
     """Hard delete, unlike projects: tasks need no stable visible number, and
     hold-to-remove is already a deliberate gesture."""
     task = await _get_task_or_404(db, task_id)
+    task_project_id = task.project_id  # captured before delete: unreadable on the row after
     project, _was_pending = await _mark_project_pending_for_task(db, task.project_id)
     await record(
         db,
@@ -1279,13 +1304,14 @@ async def delete_task(
     queued = project is not None and project.quote_sync_state == "pending"
     await db.commit()
     _wake_worker(queued)
+    await _broadcast_changed("task", task_project_id, _actor(current_user))
 
 
 @router.post("/import", response_model=list[AitoProjectResponse], status_code=201)
 async def import_legacy_projects(
     payload: AitoProjectImport,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     """One-time localStorage migration. Guard counts ALL rows (incl. soft-deleted)
     so a double-fire can never duplicate the board."""
@@ -1322,6 +1348,7 @@ async def import_legacy_projects(
     await db.commit()
     for p in created:
         await db.refresh(p)
+    await _broadcast_changed("import", None, _actor(current_user))
     # Imported projects are task-free by construction: the legacy localStorage
     # board had no concept of tasks. Explicit empty map, not a resolved one:
     # AitoProjectImportItem carries no shipping fields at all, so no imported
@@ -1396,6 +1423,7 @@ async def move_project(
             changes=[{"field": "column", "from": source_column, "to": project.board_column}],
         )
     await db.commit()
+    await _broadcast_changed("move", project.id, _actor(current_user))
     await db.refresh(project)
     return _to_response(project, summary, await _shipping_names(db))
 
@@ -1415,7 +1443,15 @@ async def update_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    if payload.expected_version is not None and payload.expected_version != (project.version or 0):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "version_conflict", "message": "Project was updated by someone else"},
+        )
+
     fields = payload.model_dump(exclude_unset=True)
+    # A guard token, not a column — it must not reach diff_fields or setattr.
+    fields.pop("expected_version", None)
     # Captured before anything is applied, or diff_fields would compare the
     # new value against itself and return [].
     changes = diff_fields(project, fields)
@@ -1481,6 +1517,16 @@ async def update_project(
     queued = project.quote_sync_state == "pending"
     await db.commit()
     _wake_worker(queued)
+    # Same no-op silence `set_project_flag` and `set_quote_status` already
+    # give a repeated/empty write — see their own comments. `changes` alone
+    # is not enough here: a shipping PATCH sends its six columns through
+    # `_validated_shipping`/setattr rather than `diff_fields`, so `shipping
+    # is not None` (the payload touched at least one shipping column) is
+    # ORed in even though it does not itself prove the merged row changed —
+    # matching the spec's error-handling table (only guarded PATCHes that
+    # actually change something need the rest of the board to hear about it).
+    if changes or shipping is not None:
+        await _broadcast_changed("update", project.id, _actor(current_user))
     await db.refresh(project)
     return _to_response(project, await _summary_for(db, project.id), await _shipping_names(db))
 
@@ -1542,6 +1588,7 @@ async def set_project_flag(
                 subject_id=project.id,
             )
         await db.commit()
+        await _broadcast_changed("flag", project.id, _actor(current_user))
         await db.refresh(project)
 
     return _to_response(project, await _summary_for(db, project.id), await _shipping_names(db))
@@ -1574,6 +1621,36 @@ async def set_quote_status(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    if payload.status == project.quote_status:
+        # Someone (possibly this same operator, double-clicking) already
+        # applied this exact decision. Nothing to write, record, or push —
+        # and no 'Zoho not updated' warning to trigger, hence zoho_synced=True.
+        summary = await _summary_for(db, project.id)
+        return AitoQuoteStatusResponse(
+            project=_to_response(project, summary, await _shipping_names(db)),
+            zoho_synced=True,
+            no_op=True,
+        )
+    # Asymmetric on purpose: 409 fires only on transitions a fresh UI never
+    # offers, so they can only arrive from a stale view (someone else already
+    # decided while this operator was looking at an older board). "accepted"
+    # is fully terminal here — QuoteStatusActions offers no button off an
+    # accepted card, so any different request naming it must be stale.
+    # "declined" is terminal only against "sent" (re-sending an already
+    # -declined quote is not a flow the UI offers either). declined ->
+    # accepted is deliberately exempt: QuoteStatusActions puts an Accept
+    # button on a declined card, and "latest go-ahead wins" is the intended
+    # reopen path, not a conflict.
+    if project.quote_status == "accepted" or (project.quote_status == "declined" and payload.status == "sent"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "quote_status_conflict",
+                "current": project.quote_status,
+                "message": f"Quote was already {project.quote_status} by someone else",
+            },
+        )
+
     adopt_quote_status(project, payload.status)
     # Our side just moved, so any recorded block describes an attempt that no
     # longer exists. This is what lets quote_status_remote alone identify a
@@ -1592,6 +1669,7 @@ async def set_quote_status(
         subject_id=project.id,
     )
     await db.commit()
+    await _broadcast_changed("quote-status", project.id, _actor(current_user))
     await db.refresh(project)
 
     # Built BEFORE the Zoho call, not after: the project's data cannot change
@@ -1666,6 +1744,7 @@ async def restore_project(
     queued = project.quote_sync_state == "pending"
     await db.commit()
     _wake_worker(queued)
+    await _broadcast_changed("restore", project.id, _actor(current_user))
     await db.refresh(project)
     return _to_response(project, summary, await _shipping_names(db))
 
@@ -1696,3 +1775,4 @@ async def delete_project(
     queued = project.quote_sync_state == "pending"
     await db.commit()
     _wake_worker(queued)
+    await _broadcast_changed("delete", project_id, _actor(current_user))

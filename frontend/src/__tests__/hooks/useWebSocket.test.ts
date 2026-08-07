@@ -10,6 +10,7 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '../../contexts/ToastContext';
+import { __resetBoardSync, useBoardSync } from '../../hooks/useBoardSync';
 
 // Track WebSocket instances created during tests
 let wsInstances: MockWebSocket[] = [];
@@ -642,6 +643,99 @@ describe('useWebSocket hook', () => {
       }).not.toThrow();
 
       expect(invalidateSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('aito_changed', () => {
+    beforeEach(() => {
+      __resetBoardSync();
+    });
+
+    it('invalidates the board query when no local write is pending', async () => {
+      vi.useFakeTimers();
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+      renderHook(() => useWebSocket(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      await vi.advanceTimersByTimeAsync(0);
+      const ws = wsInstances[wsInstances.length - 1]!;
+      act(() => {
+        ws.open();
+      });
+
+      act(() => {
+        ws.simulateMessage({ type: 'aito_changed', action: 'move', project_id: 3, actor: 'Marie' });
+      });
+
+      await act(async () => {
+        vi.advanceTimersByTime(400);
+      });
+
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['aito-projects'] });
+      vi.useRealTimers();
+    });
+
+    it('drops the refetch while an own write is in flight', async () => {
+      vi.useFakeTimers();
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      const { result: boardSyncResult } = renderHook(() => useBoardSync());
+      act(() => {
+        boardSyncResult.current.begin(); // simulate an in-flight optimistic write
+      });
+
+      renderHook(() => useWebSocket(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      await vi.advanceTimersByTimeAsync(0);
+      const ws = wsInstances[wsInstances.length - 1]!;
+      act(() => {
+        ws.open();
+      });
+
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+      act(() => {
+        ws.simulateMessage({ type: 'aito_changed', action: 'update', project_id: 3, actor: null });
+      });
+
+      await act(async () => {
+        vi.advanceTimersByTime(400);
+      });
+
+      expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['aito-projects'] });
+      vi.useRealTimers();
+    });
+
+    it('also refreshes the trash on delete and restore', async () => {
+      vi.useFakeTimers();
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+      renderHook(() => useWebSocket(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      await vi.advanceTimersByTimeAsync(0);
+      const ws = wsInstances[wsInstances.length - 1]!;
+      act(() => {
+        ws.open();
+      });
+
+      act(() => {
+        ws.simulateMessage({ type: 'aito_changed', action: 'delete', project_id: 9, actor: null });
+      });
+
+      await act(async () => {
+        vi.advanceTimersByTime(400);
+      });
+
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['aito-trash'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['aito-events', 9] });
+      vi.useRealTimers();
     });
   });
 

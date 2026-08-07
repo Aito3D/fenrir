@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Check, Copy, ExternalLink, Loader2, Mail, Pencil, Phone, Plane, Plus, RefreshCw, User } from 'lucide-react';
+import { Building2, Check, Copy, ExternalLink, Eye, Loader2, Mail, Pencil, Phone, Plane, Plus, RefreshCw, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ActivityRail } from './history/ActivityRail';
@@ -25,12 +25,13 @@ import { StageRail } from './StageRail';
 import { TaskEditor } from './TaskEditor';
 import { FlagControl } from './FlagControl';
 import { AITO_CARD_VT_NAME } from '../../hooks/useCardMorph';
+import { sendAitoPresence, useAitoViewers } from '../../hooks/useAitoPresence';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useLatestProjectEvent } from '../../hooks/useLatestProjectEvent';
-import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
+import { latestProjectVersion, useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { useProjectTasks } from '../../hooks/useProjectTasks';
-import { api, type AitoEvent, type AitoProject, type AitoProjectUpdate } from '../../api/client';
+import { api, ApiError, type AitoEvent, type AitoProject, type AitoProjectUpdate } from '../../api/client';
 import { Money } from '../calculator/shared';
 import { ageAnchor, agingColorCls } from '../../utils/aitoAging';
 import { copyTextToClipboard } from '../../utils/clipboard';
@@ -42,7 +43,9 @@ import type { SocialNetwork } from '../../utils/clientDraft';
 import { islandLabel } from '../../utils/shippingDraft';
 import { taskDraftToTaskCreate } from '../../utils/taskDraft';
 import { focusRingCls, inputCls } from '../formStyles';
+import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
+import { showVersionConflictToast } from './versionConflictToast';
 
 /** Explicit map rather than a template literal key: the i18n gate scans for
  *  literal `t('...')` calls, and a dynamic key is invisible to it. */
@@ -686,7 +689,13 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   const { showToast } = useToast();
 
   const updateMutation = useOptimisticBoardMutation<AitoProject, AitoProjectUpdate>({
-    mutationFn: (patch) => api.updateAitoProject(project.id, patch),
+    // `latestProjectVersion`, not `project.version`: see its own doc — the
+    // description save fires on blur, so a fast second board write from the
+    // same operator (e.g. the shipping card's Save) can queue behind this
+    // one with a mutationFn closure bound to a render that predates this
+    // write's response landing.
+    mutationFn: (patch) =>
+      api.updateAitoProject(project.id, { ...patch, expected_version: latestProjectVersion(queryClient, project.id, project.version) }),
     // A description edit shows immediately; the retry-sync button sends the
     // description UNCHANGED (its only job is to re-mark the project pending
     // for the worker), so it writes the sync state instead. One transform,
@@ -704,7 +713,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
       );
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
     },
-    onError: () => showToast(t('aito.saveFailed'), 'error'),
+    onError: (error) => showVersionConflictToast(error, t, showToast),
   });
 
   // Its own mutation rather than a third branch of `updateMutation.transform`:
@@ -713,7 +722,13 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   // transform, PATCH response into the cache, events invalidated because the
   // server records a project.updated for this write like any other.
   const socialMutation = useOptimisticBoardMutation<AitoProject, AitoProjectUpdate>({
-    mutationFn: (patch) => api.updateAitoProject(project.id, patch),
+    // `latestProjectVersion`, not `project.version`: see its own doc — the
+    // description save fires on blur, so a fast second board write from the
+    // same operator (e.g. the shipping card's Save) can queue behind this
+    // one with a mutationFn closure bound to a render that predates this
+    // write's response landing.
+    mutationFn: (patch) =>
+      api.updateAitoProject(project.id, { ...patch, expected_version: latestProjectVersion(queryClient, project.id, project.version) }),
     transform: (previous, patch) => applyClientSocial(previous, project.id, patch),
     flashId: () => project.id,
     onSuccess: (updatedProject) => {
@@ -722,7 +737,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
       );
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
     },
-    onError: () => showToast(t('aito.saveFailed'), 'error'),
+    onError: (error) => showVersionConflictToast(error, t, showToast),
   });
 
   const [editingSocial, setEditingSocial] = useState(false);
@@ -804,8 +819,21 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
       { description: next },
       {
         onSuccess: () => setDescState('saved'),
-        onError: () => {
+        onError: (error) => {
           setDescState('error');
+          // The spec's error-handling table promises the operator's typed
+          // text survives a version conflict (someone else saved first):
+          // reopen the editor with exactly what they typed rather than the
+          // revert-to-server behaviour every other failure gets, so a retry
+          // after the board refresh doesn't cost them the edit. `next`, not
+          // `draft` — `draft` may already have been reset to the (now
+          // stale) `project.description` by the effect above, which fires
+          // the instant `setEditingDesc(false)` above lands.
+          if (error instanceof ApiError && error.code === 'version_conflict') {
+            setDraft(next);
+            setEditingDesc(true);
+            return;
+          }
           setDraft(project.description);
         },
       },
@@ -856,6 +884,16 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
     if (!editingRef.current) onClose();
   });
 
+  // Presence: tell everyone we are looking at this card, for exactly as long
+  // as we are. Cleanup runs on close AND on switching cards (project.id dep).
+  useEffect(() => {
+    sendAitoPresence(project.id);
+    return () => sendAitoPresence(null);
+  }, [project.id]);
+
+  const { user } = useAuth();
+  const otherViewers = useAitoViewers(project.id).filter((name) => name !== (user?.username ?? ''));
+
   return (
     <div
       className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 [view-transition-name:aito-backdrop]"
@@ -905,6 +943,21 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
           onCancelSocial={() => setEditingSocial(false)}
           socialSaving={socialMutation.isPending}
         />
+
+        {/* Who else has this project open right now. Filtered to exclude
+            ourselves — otherwise every panel would greet its own operator.
+            (Auth-disabled installs list every viewer as "Operator", including
+            the one reading this — spec-accepted; there is no per-connection
+            identity to filter against there.) */}
+        {otherViewers.length > 0 && (
+          <div
+            data-testid="aito-presence-banner"
+            className="flex-shrink-0 flex items-center gap-2 border-b border-amber-400/20 bg-amber-500/10 px-5 py-2 text-sm text-amber-300"
+          >
+            <Eye className="w-4 h-4 flex-none" aria-hidden="true" />
+            {t('aito.viewingNow', { name: otherViewers.join(', ') })}
+          </div>
+        )}
 
         <div className="overflow-y-auto scrollbar-hide flex-1 min-h-0 lg:flex lg:flex-col lg:overflow-hidden">
           {/* Three columns, three scrollers — but only from `lg` up, where the

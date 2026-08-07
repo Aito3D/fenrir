@@ -4373,6 +4373,10 @@ async def run_migrations(conn):
         f"ALTER TABLE aito_projects ADD COLUMN urgent BOOLEAN NOT NULL DEFAULT {_aito_urgent_default}",
     )
 
+    # Migration: content-fields revision counter for optimistic concurrency
+    # (2026-08-07) — see AitoProject.version and its before_update listener.
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN version INTEGER NOT NULL DEFAULT 0")
+
     # Migration: three-state board flag on Aito projects (2026-08-06).
     # Replaces `urgent` above. NULL, 'urgent' or 'sav' (later widened to
     # 'pause') — one column rather than two booleans, so "urgent AND sav" is

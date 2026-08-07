@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOptimisticBoardMutation } from './useOptimisticBoardMutation';
 import { applyQuoteStatus } from '../utils/aitoOptimistic';
-import { api, type AitoProject } from '../api/client';
+import { api, ApiError, type AitoProject } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 
 // Module scope: a plain object literal, identical on every render, so it
@@ -34,7 +34,7 @@ export function useQuoteStatusMutation(project: AitoProject) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
-  return useOptimisticBoardMutation<{ project: AitoProject; zoho_synced: boolean }, QuoteStatus>({
+  return useOptimisticBoardMutation<{ project: AitoProject; zoho_synced: boolean; no_op: boolean }, QuoteStatus>({
     mutationFn: (status) => api.setAitoQuoteStatus(project.id, { status }),
     transform: (previous, status) => applyQuoteStatus(previous, project.id, status),
     flashId: () => project.id,
@@ -43,11 +43,21 @@ export function useQuoteStatusMutation(project: AitoProject) {
         prev?.map((p) => (p.id === result.project.id ? result.project : p)) ?? prev,
       );
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
+      // A repeat of a decision someone already applied: the board row above is
+      // fresh, but there is nothing to announce and no Zoho push happened.
+      if (result.no_op) return;
       showToast(t(TOAST_KEYS[status]), 'success');
       // The board is right either way — only the push to Books failed. No
       // rollback: this is a warning about Zoho, not a refused change.
       if (project.quote_id && !result.zoho_synced) showToast(t('aito.zohoNotUpdated'), 'error');
     },
-    onError: () => showToast(t('aito.saveFailed'), 'error'),
+    onError: (error) => {
+      if (error instanceof ApiError && error.code === 'quote_status_conflict') {
+        const current = error.detail?.current;
+        showToast(t(current === 'declined' ? 'aito.quoteConflictDeclined' : 'aito.quoteConflictAccepted'), 'warning');
+        return;
+      }
+      showToast(t('aito.saveFailed'), 'error');
+    },
   });
 }

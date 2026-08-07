@@ -9,11 +9,12 @@ import { emptyShippingDraft, islandLabel, isShippingComplete, shippingPayload } 
 import type { ShippingDraft } from '../../utils/shippingDraft';
 import { formatPhoneDisplay, parsePhone } from '../../utils/clientDraft';
 import { applyShipping } from '../../utils/aitoOptimistic';
-import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
+import { latestProjectVersion, useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { useToast } from '../../contexts/ToastContext';
 import { api, type AitoProject, type AitoProjectUpdate, type AitoShippingService } from '../../api/client';
 import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
+import { showVersionConflictToast } from './versionConflictToast';
 
 /** Every shipment field the project already carries, reshaped into the same
  *  draft `ShippingFields` drives in the create drawer.
@@ -110,7 +111,13 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
   // skipping the invalidation would leave their timeline stale after every
   // add/edit/remove until something else happened to refetch it.
   const shippingMutation = useOptimisticBoardMutation<AitoProject, AitoProjectUpdate>({
-    mutationFn: (patch) => api.updateAitoProject(project.id, patch),
+    // `latestProjectVersion`, not `project.version` — see its doc on
+    // `useOptimisticBoardMutation.ts`. A same-client back-to-back save
+    // (description blur, then this card's Save before the first PATCH
+    // resolves) would otherwise carry a version this mutationFn's own
+    // closure captured before the first write's response landed.
+    mutationFn: (patch) =>
+      api.updateAitoProject(project.id, { ...patch, expected_version: latestProjectVersion(queryClient, project.id, project.version) }),
     transform: (previous, patch) => applyShipping(previous, project.id, patch),
     flashId: () => project.id,
     onSuccess: (updatedProject) => {
@@ -119,7 +126,7 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
       );
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
     },
-    onError: () => showToast(t('aito.saveFailed'), 'error'),
+    onError: (error) => showVersionConflictToast(error, t, showToast),
   });
 
   // Seeded from the project's stored client, exactly as the create drawer

@@ -123,6 +123,9 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
 
         logger.info("Sent initial status for %s printers", len(statuses))
 
+        # Send initial Aito presence state (who is viewing which project).
+        await websocket.send_json(ws_manager.aito_presence_state())
+
         # Keep connection alive and handle incoming messages.
         while True:
             data = await websocket.receive_json()
@@ -149,6 +152,18 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
                                 ),
                             }
                         )
+
+            # Aito presence: "I am viewing project N" / None on panel close.
+            elif data.get("type") == "aito_presence":
+                pid = data.get("project_id")
+                # bool is an int subclass in Python — isinstance(True, int) is
+                # True — so `isinstance(pid, int)` alone admits a stray
+                # `project_id: true/false` as presence for project 1/0. Same
+                # junk-tolerance stance as the rest of this branch: treat it
+                # as absent rather than stamping bogus presence.
+                await ws_manager.set_aito_presence(
+                    websocket, pid if isinstance(pid, int) and not isinstance(pid, bool) else None
+                )
 
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected normally")

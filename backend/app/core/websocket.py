@@ -18,11 +18,36 @@ class ConnectionManager:
         async with self._lock:
             self.active_connections.append(websocket)
 
+    def aito_presence_state(self) -> dict[str, Any]:
+        """The full viewer map, keyed by stringified project id (JSON object
+        keys are strings anyway; stringifying here keeps the payload identical
+        to what the frontend indexes). Presence is stored on the connection
+        state (aito_project_id) so it cannot leak or outlive disconnection."""
+        viewers: dict[str, list[str]] = {}
+        for conn in self.active_connections:
+            project_id = getattr(conn.state, "aito_project_id", None)
+            if project_id is not None:
+                name = getattr(conn.state, "bambuddy_principal", None) or "Operator"
+                viewers.setdefault(str(project_id), []).append(name)
+        return {"type": "aito_presence_state", "viewers": viewers}
+
+    async def set_aito_presence(self, websocket: WebSocket, project_id: int | None):
+        """Record which Aito project this connection is viewing (None: none),
+        then broadcast the full map. Mutation under the lock, broadcast after —
+        broadcast() takes the same lock and would deadlock inside it."""
+        async with self._lock:
+            websocket.state.aito_project_id = project_id
+        await self.broadcast(self.aito_presence_state())
+
     async def disconnect(self, websocket: WebSocket):
         """Remove a WebSocket connection."""
+        had_presence = False
         async with self._lock:
+            had_presence = getattr(websocket.state, "aito_project_id", None) is not None
             if websocket in self.active_connections:
                 self.active_connections.remove(websocket)
+        if had_presence:
+            await self.broadcast(self.aito_presence_state())
 
     async def broadcast(self, message: dict[str, Any]):
         """Broadcast a message to all connected clients."""

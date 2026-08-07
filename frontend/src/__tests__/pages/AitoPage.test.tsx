@@ -29,6 +29,7 @@ const project = {
   move_lock: null,
   shipping_island: null, shipping_service: null, shipping_first_name: null, shipping_last_name: null,
   shipping_phone: null, shipping_price: null, shipping_service_name: null,
+  version: 1,
   created_at: '2026-07-01T10:00:00Z', updated_at: '2026-07-02T10:00:00Z',
 };
 
@@ -80,6 +81,7 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
     shipping_phone: null,
     shipping_price: null,
     shipping_service_name: null,
+    version: 1,
     created_at: '2026-07-27T00:00:00',
     updated_at: '2026-07-27T00:00:00',
   };
@@ -452,7 +454,9 @@ describe('AitoPage (backend board)', () => {
     await user.type(textarea, 'Support GoPro v2');
     await user.tab();
 
-    await waitFor(() => expect(patched).toHaveBeenCalledWith({ description: 'Support GoPro v2' }));
+    await waitFor(() =>
+      expect(patched).toHaveBeenCalledWith({ description: 'Support GoPro v2', expected_version: project.version }),
+    );
     expect(await within(panel).findByText('Saved')).toBeInTheDocument();
   });
 
@@ -741,6 +745,7 @@ describe('AitoPage (backend board)', () => {
       shipping_phone: null,
       shipping_price: null,
       shipping_service_name: null,
+      version: 1,
       created_at: '2026-07-01T10:00:00Z',
       updated_at: '2026-07-02T10:00:00Z',
     };
