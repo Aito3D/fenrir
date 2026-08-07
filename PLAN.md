@@ -24,7 +24,7 @@ evidence: aito_quote_sync.py:698 records sync.locked without was_already_locked 
 
 ## T-003
 priority: P1
-status: IN_PROGRESS
+status: DONE
 attempts: 1
 round: 1
 first_seen_iteration: 0

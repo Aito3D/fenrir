@@ -1341,7 +1341,7 @@ async def delete_task(
     await db.delete(task)
     await db.flush()  # so the deleted row is out of _summary_for's SELECT
     if project:
-        await _apply_rules(db, project, await _summary_for(db, task.project_id), actor=_actor(current_user))
+        await _apply_rules(db, project, await _summary_for(db, task_project_id), actor=_actor(current_user))
     queued = project is not None and project.quote_sync_state == "pending"
     await db.commit()
     _wake_worker(queued)
