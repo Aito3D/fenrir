@@ -286,3 +286,14 @@ title: QuotePrintButton: track revoke timer + clear frameRef on success path
 files: frontend/src/components/aito/QuotePrintButton.tsx
 evidence: cleanup() at 72-77 schedules bare setTimeout(REVOKE_DELAY_MS) not stored in timeoutRef so unmount effect 55-68 can't clear it; frameRef set at 100 never nulled after successful cleanup at 122 so unmount may .remove() an already-removed node
 
+## T-027
+priority: P3
+status: OPEN
+attempts: 0
+round: 1
+first_seen_iteration: 0
+last_touched_iteration: 0
+title: Fix misleading wording from verifier round 1 (test docstring + fail-open note)
+files: backend/tests/unit/test_aito_quote_sync.py, backend/app/api/routes/aito.py
+evidence: verifier iter-1: test docstring at test_aito_quote_sync.py:1450,1497 claims swept branch reaches _update_quote non-pending — control flow contradicts (returns at 887); reword to defensive-parity-with-366/654/865. Also note SQLite-message dependence as precondition in _is_duplicate_active_quote_error docstring (aito.py:414-424). Comment/docstring only, zero code change
+
