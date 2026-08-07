@@ -2,33 +2,33 @@
 
 ## T-001
 priority: P1
-status: OPEN
-attempts: 0
+status: DONE
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 1
 title: aito.py: map duplicate-quote IntegrityError race to 409
 files: backend/app/api/routes/aito.py
 evidence: aito.py:375-398 pre-check is TOCTOU; concurrent create/restore hits uq_aito_project_active_quote at commit (aito.py:744) and escapes as 500; wrap commit, re-raise as same 409. Pre-check must stay (index skipped on installs with pre-existing dupes, database.py:4458)
 
 ## T-002
 priority: P1
-status: OPEN
-attempts: 0
+status: IN_PROGRESS
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 1
 title: quote_sync: debounce sync.locked in _update_quote tax-exclusive branch
 files: backend/app/services/aito_quote_sync.py
 evidence: aito_quote_sync.py:698 records sync.locked without was_already_locked guard unlike sibling sites 654/669, 366/371, 861/874; locked+tax-exclusive project re-edited writes one extra sync.locked row per edit, violating documented one-row-per-moment rule
 
 ## T-003
 priority: P1
-status: OPEN
-attempts: 0
+status: IN_PROGRESS
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 1
 title: aito.py delete_task: use captured task_project_id after delete
 files: backend/app/api/routes/aito.py
 evidence: aito.py:1288 captures task_project_id 'before delete: unreadable on the row after' but aito.py:1303 still reads task.project_id after db.delete+flush; works only via SQLAlchemy keeping deleted-instance attrs until commit

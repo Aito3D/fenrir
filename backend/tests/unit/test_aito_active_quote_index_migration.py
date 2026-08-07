@@ -18,9 +18,10 @@ from __future__ import annotations
 import logging
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from backend.app.core.database import run_migrations
 
@@ -182,3 +183,88 @@ async def test_a_pre_existing_duplicate_is_skipped_not_fatal(engine, caplog):
 
         rows = await conn.execute(text("SELECT COUNT(*) FROM aito_projects WHERE quote_id = 'EST-9'"))
         assert rows.scalar() == 2  # untouched — no silent repair
+
+
+@pytest.fixture
+async def migrated_session(engine):
+    """A session bound to a schema that has actually run `run_migrations` —
+    unlike `conftest.py`'s `db_session`/`async_client` fixtures (built via
+    `Base.metadata.create_all`, see the module docstring), so
+    `uq_aito_project_active_quote` genuinely exists underneath it."""
+    async with engine.begin() as conn:
+        await run_migrations(conn)
+    session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with session_maker() as session:
+        yield session
+
+
+async def _bypass_precheck(monkeypatch):
+    """Patch `_reject_duplicate_quote` to a no-op, reproducing the window a
+    genuine concurrent request would hit: both requests pass the SELECT
+    pre-check and race each other into the unique index at commit."""
+    from backend.app.api.routes import aito as aito_routes
+
+    async def _noop(db, quote_id, exclude_id=None):
+        return None
+
+    monkeypatch.setattr(aito_routes, "_reject_duplicate_quote", _noop)
+    return aito_routes
+
+
+@pytest.mark.asyncio
+async def test_a_concurrent_create_race_on_the_index_is_a_409_not_a_500(migrated_session, monkeypatch):
+    """T-001: `_reject_duplicate_quote` (aito.py's SELECT pre-check) is TOCTOU
+    — two concurrent creates for the same quote can both pass it and then
+    race each other into `uq_aito_project_active_quote` at commit
+    (aito.py:744). Bypassing the pre-check reproduces exactly that race; the
+    commit must map the resulting IntegrityError to the SAME 409 the
+    pre-check itself raises, not let it escape as an unhandled 500."""
+    from backend.app.api.routes import aito as aito_routes
+    from backend.app.schemas.aito import AitoProjectCreate
+
+    payload = AitoProjectCreate(
+        description="Helice",
+        client_id="C1",
+        client_name="Client",
+        quote_id="EST-9",
+        quote_number="QT-9",
+    )
+    first = await aito_routes.create_project(payload=payload, db=migrated_session, current_user=None)
+    assert first.quote_id == "EST-9"
+
+    await _bypass_precheck(monkeypatch)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await aito_routes.create_project(payload=payload, db=migrated_session, current_user=None)
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == aito_routes._DUPLICATE_QUOTE_DETAIL
+
+
+@pytest.mark.asyncio
+async def test_a_concurrent_restore_race_on_the_index_is_a_409_not_a_500(migrated_session, monkeypatch):
+    """T-001, the restore side (aito.py:1726-1730 in the evidence trail): a
+    project is trashed to free its quote, a second project claims that quote,
+    then the first is restored. If the restore's own pre-check is bypassed —
+    exactly what a genuine concurrent restore would race past — the real
+    partial unique index, not the pre-check, must be what turns this into a
+    409 rather than an unhandled 500."""
+    from backend.app.api.routes import aito as aito_routes
+    from backend.app.schemas.aito import AitoProjectCreate
+
+    payload = AitoProjectCreate(
+        description="Helice",
+        client_id="C1",
+        client_name="Client",
+        quote_id="EST-9",
+        quote_number="QT-9",
+    )
+    first = await aito_routes.create_project(payload=payload, db=migrated_session, current_user=None)
+    await aito_routes.delete_project(project_id=first.id, db=migrated_session, current_user=None)
+    await aito_routes.create_project(payload=payload, db=migrated_session, current_user=None)  # claims the quote
+
+    await _bypass_precheck(monkeypatch)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await aito_routes.restore_project(project_id=first.id, db=migrated_session, current_user=None)
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == aito_routes._DUPLICATE_QUOTE_DETAIL

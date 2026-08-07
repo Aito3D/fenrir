@@ -7,6 +7,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
@@ -372,6 +373,9 @@ def _task_to_response(t: AitoTask) -> AitoTaskResponse:
     )
 
 
+_DUPLICATE_QUOTE_DETAIL = "This quote already has a project on the board"
+
+
 async def _reject_duplicate_quote(db: AsyncSession, quote_id: str | None, exclude_id: int | None = None) -> None:
     """A quote may back at most one ACTIVE project.
 
@@ -385,6 +389,14 @@ async def _reject_duplicate_quote(db: AsyncSession, quote_id: str | None, exclud
     would make every hand-made card collide with the first one.
 
     ``exclude_id`` is the row being restored, which must not count itself.
+
+    This is a TOCTOU pre-check, not the enforcement: two concurrent requests
+    can both pass it and then race each other into `uq_aito_project_active_quote`
+    at commit. `_is_duplicate_active_quote_error` catches that race at the
+    commit sites and raises this same 409 — this pre-check still has to stay,
+    because the index is skipped at startup on installs with pre-existing
+    duplicate quotes (see run_migrations in database.py), leaving it as the
+    only guard there.
     """
     if quote_id is None:
         return
@@ -395,7 +407,21 @@ async def _reject_duplicate_quote(db: AsyncSession, quote_id: str | None, exclud
     if exclude_id is not None:
         stmt = stmt.where(AitoProject.id != exclude_id)
     if (await db.execute(stmt.limit(1))).scalar_one_or_none() is not None:
-        raise HTTPException(status_code=409, detail="This quote already has a project on the board")
+        raise HTTPException(status_code=409, detail=_DUPLICATE_QUOTE_DETAIL)
+
+
+def _is_duplicate_active_quote_error(exc: IntegrityError) -> bool:
+    """True when ``exc`` is the `uq_aito_project_active_quote` race, not some other failure.
+
+    SQLite's message for a partial-unique-index violation names the column the
+    index is built on, not the index itself: "UNIQUE constraint failed:
+    aito_projects.quote_id". That string is unambiguous here — `quote_id` is a
+    plain indexed column (see aito_project.py), so this partial index is the
+    only unique constraint that can ever produce it — which safely tells this
+    race apart from unrelated IntegrityErrors that can surface from the same
+    commit (e.g. `aito_events.zoho_comment_id`).
+    """
+    return "aito_projects.quote_id" in str(exc.orig)
 
 
 async def _active_in_column(db: AsyncSession, column: str, exclude_id: int | None = None) -> list[AitoProject]:
@@ -721,27 +747,42 @@ async def create_project(
         _mark_pending(project)
     # Flush so the project has an id the tasks can reference; one commit still
     # covers both, so a failure creates neither.
-    await db.flush()
-    await record(
-        db,
-        project.id,
-        "project.created",
-        actor_class="user",
-        actor_name=_actor(current_user),
-        subject_type="project",
-        subject_id=project.id,
-        detail={"imported_from": project.quote_number} if project.quote_number else None,
-    )
-    new_tasks = [
-        AitoTask(project_id=project.id, position=position, **task_payload.model_dump())
-        for position, task_payload in enumerate(payload.tasks)
-    ]
-    db.add_all(new_tasks)
-    # The tasks were just inserted from the payload, so they are already in
-    # hand: summarise them rather than reading them back.
-    summary = summarise(new_tasks)
-    await _apply_rules(db, project, summary, actor=_actor(current_user))
-    await db.commit()
+    #
+    # The flush (an INSERT of `project`) is the earliest point a concurrent
+    # writer's own commit of the same active quote_id can be felt: SQLite
+    # enforces the partial unique index immediately, per-statement, not
+    # deferred to COMMIT — and every DB call from here on (this flush,
+    # record()'s own flush, and any autoflush a later SELECT triggers on the
+    # dirty `project` row) can be the one that surfaces it. Everything down to
+    # the final commit is wrapped in the same try so none of those spots can
+    # leak the race as an unhandled 500.
+    try:
+        await db.flush()
+        await record(
+            db,
+            project.id,
+            "project.created",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=project.id,
+            detail={"imported_from": project.quote_number} if project.quote_number else None,
+        )
+        new_tasks = [
+            AitoTask(project_id=project.id, position=position, **task_payload.model_dump())
+            for position, task_payload in enumerate(payload.tasks)
+        ]
+        db.add_all(new_tasks)
+        # The tasks were just inserted from the payload, so they are already in
+        # hand: summarise them rather than reading them back.
+        summary = summarise(new_tasks)
+        await _apply_rules(db, project, summary, actor=_actor(current_user))
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        if _is_duplicate_active_quote_error(exc):
+            raise HTTPException(status_code=409, detail=_DUPLICATE_QUOTE_DETAIL) from exc
+        raise
     if payload.quote_id is None:
         # After the commit, never before: the sync worker reads through its
         # own session, and a wake racing an uncommitted row drains nothing.
@@ -1730,19 +1771,32 @@ async def restore_project(
     project.status = "active"
     project.position = position
     _mark_pending_if_ours(project)
-    summary = await _summary_for(db, project.id)
-    await _apply_rules(db, project, summary, actor=_actor(current_user))
-    await record(
-        db,
-        project.id,
-        "project.restored",
-        actor_class="user",
-        actor_name=_actor(current_user),
-        subject_type="project",
-        subject_id=project.id,
-    )
-    queued = project.quote_sync_state == "pending"
-    await db.commit()
+    # Flipping `status` to 'active' above only stages the change — SQLite
+    # enforces the partial unique index immediately, per-statement, not
+    # deferred to COMMIT, so any query from here on can be the one that
+    # surfaces a concurrent restore/create of the same quote: autoflush on
+    # `_summary_for`'s own SELECT, record()'s flush, or the final commit.
+    # Everything down to the commit is wrapped in the same try so none of
+    # those spots can leak the race as an unhandled 500.
+    try:
+        summary = await _summary_for(db, project.id)
+        await _apply_rules(db, project, summary, actor=_actor(current_user))
+        await record(
+            db,
+            project.id,
+            "project.restored",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=project.id,
+        )
+        queued = project.quote_sync_state == "pending"
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        if _is_duplicate_active_quote_error(exc):
+            raise HTTPException(status_code=409, detail=_DUPLICATE_QUOTE_DETAIL) from exc
+        raise
     _wake_worker(queued)
     await _broadcast_changed("restore", project.id, _actor(current_user))
     await db.refresh(project)
