@@ -3,7 +3,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
-import { __resetBoardSync } from '../../hooks/useBoardSync';
+import { __resetBoardSync, useBoardSync } from '../../hooks/useBoardSync';
 import { flashRevert } from '../../hooks/useRevertFlash';
 import { ApiError } from '../../api/client';
 
@@ -162,9 +162,24 @@ describe('useOptimisticBoardMutation', () => {
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('server said this', 'x'));
   });
 
-  it('refetches the board when the server reports a 409 conflict', async () => {
+  it('refetches the board when the server reports a 409 conflict, even while another write is still pending', async () => {
+    // A bare "did invalidateQueries get called with the board key" assertion
+    // is NOT a regression guard here: useBoardSync's own settle() already
+    // invalidates ['aito-projects'] unconditionally whenever `pendingWrites`
+    // drops to zero — which is exactly what happens after ANY lone mutation's
+    // onSettled, success or failure. Deleting the explicit 409 branch in
+    // onError would leave a same-shaped assertion green for the wrong reason.
+    // So this test holds a second, independent write open via a raw
+    // `useBoardSync().begin()` (standing in for "some other board mutation
+    // is still in flight") for the whole test — `pendingWrites` never reaches
+    // zero, so settle() can never be the source of an invalidate here. Only
+    // the explicit `error.status === 409` branch can produce one.
     const { client, wrapper } = harness();
-    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries').mockImplementation(() => Promise.resolve());
+
+    const { result: sync } = renderHook(() => useBoardSync(), { wrapper });
+    act(() => sync.current.begin());
+
     const { result } = renderHook(
       () =>
         useOptimisticBoardMutation<unknown, void>({
@@ -179,6 +194,7 @@ describe('useOptimisticBoardMutation', () => {
       result.current.mutate();
       await waitFor(() => expect(result.current.isError).toBe(true));
     });
+
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['aito-projects'] });
   });
 });
