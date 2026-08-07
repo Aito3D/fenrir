@@ -35,7 +35,7 @@ evidence: aito.py:1288 captures task_project_id 'before delete: unreadable on th
 
 ## T-004
 priority: P2
-status: IN_PROGRESS
+status: DONE
 attempts: 1
 round: 1
 first_seen_iteration: 0

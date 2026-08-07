@@ -25,6 +25,7 @@
 - Surface: regenerate each SURFACE.md section with the regen command embedded above it; diff vs committed SURFACE.md.
 
 ## Coverage baseline (may only go up)
+- RATCHET METRIC NOTE (added iter-3): refactoring away *covered* duplicate lines shrinks the denominator and can lower the rounded % without any lost coverage. The binding ratchet for the aito subset is therefore the MISSED-STATEMENT COUNT, which may not increase: baseline 259 missed at BASE; 260 missed as of loop-2 (+1 from new code paths, offset by new tests). Judge "drop" by missed count + missing-lines diff, not the rounded %.
 - Backend TOTAL: 60% (62097 stmts, 24704 miss)
 - Backend aito subset: 86% (1908 stmts, 259 miss) — worst: routes/aito.py 57%
 - Frontend (aito scope, from aito tests only): Statements 80.78% (1505/1863), Lines 83.13% — gate command:
