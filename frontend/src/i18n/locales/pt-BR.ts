@@ -106,6 +106,7 @@ export default {
     moveToTrash: 'Mover para a lixeira',
     stepsCount: '{{done}}/{{total}} etapas',
     amountDone: '{{amount}} concluído',
+    viewingNow: '{{name}} está visualizando este projeto',
     workLeftAtStage: '{{amount}} restante em {{stage}}',
     actorUnknown: 'desconhecido',
     actorUnknownUser: 'usuário desconhecido',

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { api, ApiError } from '../api/client';
 import { inventoryLocationsQueryKey } from '../utils/inventoryQueries';
 import { useBoardSync } from './useBoardSync';
+import { registerPresenceSender, setAitoPresenceState } from './useAitoPresence';
 
 // The only auth-failure close code /api/v1/ws emits (websocket.py
 // _WS_CLOSE_UNAUTHORIZED). A 4401 means the ws-token was missing / invalid /
@@ -33,6 +34,9 @@ interface WebSocketMessage {
   action?: string;
   project_id?: number;
   actor?: string | null;
+  // Aito presence (multi-user sync). Sent once on connect and again on every
+  // presence change, keyed by project id.
+  viewers?: Record<string, string[]>;
 }
 
 export function useWebSocket() {
@@ -152,6 +156,12 @@ export function useWebSocket() {
     ws.onopen = () => {
       if (import.meta.env.MODE !== 'test') console.log('[WebSocket] Connected');
       setIsConnected(true);
+      // A fresh socket has no memory of what this client was presenting
+      // before it dropped — the server's viewer map lost us the instant the
+      // old connection closed. Registering a live sender here replays our
+      // own presence (see useAitoPresence.registerPresenceSender) so a
+      // reconnect heals without the panel/card having to notice anything.
+      registerPresenceSender((msg) => ws.send(JSON.stringify(msg)));
       // Start ping interval
       pingInterval = window.setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -185,6 +195,9 @@ export function useWebSocket() {
       }
       setIsConnected(false);
       wsRef.current = null;
+      // No live socket to send through — own presence is remembered by the
+      // store and replays automatically once a new sender registers on open.
+      registerPresenceSender(null);
 
       // Don't reconnect after an auth rejection (4401) or once the provider has
       // unmounted — both would just respawn the /auth/ws-token loop. A 4401 is
@@ -517,6 +530,10 @@ export function useWebSocket() {
         }, 300);
         break;
       }
+
+      case 'aito_presence_state':
+        setAitoPresenceState(message.viewers ?? {});
+        break;
     }
   }, [queryClient, debouncedInvalidate, throttledPrinterStatusUpdate, showToast, t, boardSync]);
 

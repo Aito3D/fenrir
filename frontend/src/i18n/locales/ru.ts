@@ -106,6 +106,7 @@ export default {
     moveToTrash: 'Переместить в корзину',
     stepsCount: '{{done}}/{{total}} шагов',
     amountDone: '{{amount}} выполнено',
+    viewingNow: '{{name}} просматривает этот проект',
     workLeftAtStage: '{{amount}} осталось на этапе {{stage}}',
     actorUnknown: 'неизвестно',
     actorUnknownUser: 'неизвестный пользователь',

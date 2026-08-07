@@ -106,6 +106,7 @@ export default {
     moveToTrash: 'ゴミ箱に移動',
     stepsCount: '{{done}}/{{total}} ステップ',
     amountDone: '{{amount}} 完了',
+    viewingNow: '{{name}} がこのプロジェクトを表示中です',
     workLeftAtStage: '{{stage}} の残り {{amount}}',
     actorUnknown: '不明',
     actorUnknownUser: '不明なユーザー',

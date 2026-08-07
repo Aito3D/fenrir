@@ -3,6 +3,7 @@ import { screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { CardView } from '../../components/aito/CardView';
+import { setAitoPresenceState, __resetAitoPresence } from '../../hooks/useAitoPresence';
 import type { AitoProject } from '../../api/client';
 
 const project: AitoProject = {
@@ -725,5 +726,41 @@ describe('CardView — hover to read a clamped description', () => {
     act(() => vi.advanceTimersByTime(10000));
 
     expect(description).toHaveClass('line-clamp-2');
+  });
+});
+
+describe('CardView — live viewer badge', () => {
+  beforeEach(() => __resetAitoPresence());
+  afterEach(() => __resetAitoPresence());
+
+  it('shows the viewer count once someone else has the project open', () => {
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    expect(screen.queryByTestId('aito-card-viewers')).not.toBeInTheDocument();
+
+    act(() => setAitoPresenceState({ [String(project.id)]: ['marie'] }));
+
+    const badge = screen.getByTestId('aito-card-viewers');
+    expect(badge).toHaveTextContent('1');
+  });
+
+  it('clears the badge once presence is empty again', () => {
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    act(() => setAitoPresenceState({ [String(project.id)]: ['marie'] }));
+    expect(screen.getByTestId('aito-card-viewers')).toBeInTheDocument();
+
+    act(() => setAitoPresenceState({}));
+    expect(screen.queryByTestId('aito-card-viewers')).not.toBeInTheDocument();
+  });
+
+  it('hides the badge on a placeholder card even with viewers present', () => {
+    render(<CardView project={project} onExpand={vi.fn()} placeholder />);
+    act(() => setAitoPresenceState({ [String(project.id)]: ['marie'] }));
+    expect(screen.queryByTestId('aito-card-viewers')).not.toBeInTheDocument();
+  });
+
+  it('does not crash rendering the drag overlay clone with viewers present', () => {
+    act(() => setAitoPresenceState({ [String(project.id)]: ['marie'] }));
+    expect(() => render(<CardView project={project} overlay />)).not.toThrow();
+    expect(screen.getByTestId('aito-card-viewers')).toBeInTheDocument();
   });
 });

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Check, Copy, ExternalLink, Loader2, Mail, Pencil, Phone, Plane, Plus, RefreshCw, User } from 'lucide-react';
+import { Building2, Check, Copy, ExternalLink, Eye, Loader2, Mail, Pencil, Phone, Plane, Plus, RefreshCw, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { ActivityRail } from './history/ActivityRail';
@@ -25,6 +25,7 @@ import { StageRail } from './StageRail';
 import { TaskEditor } from './TaskEditor';
 import { UrgentButton } from './UrgentButton';
 import { AITO_CARD_VT_NAME } from '../../hooks/useCardMorph';
+import { sendAitoPresence, useAitoViewers } from '../../hooks/useAitoPresence';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useLatestProjectEvent } from '../../hooks/useLatestProjectEvent';
@@ -42,6 +43,7 @@ import type { SocialNetwork } from '../../utils/clientDraft';
 import { islandLabel } from '../../utils/shippingDraft';
 import { taskDraftToTaskCreate } from '../../utils/taskDraft';
 import { focusRingCls, inputCls } from '../formStyles';
+import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 
 /** Explicit map rather than a template literal key: the i18n gate scans for
@@ -853,6 +855,16 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
     if (!editingRef.current) onClose();
   });
 
+  // Presence: tell everyone we are looking at this card, for exactly as long
+  // as we are. Cleanup runs on close AND on switching cards (project.id dep).
+  useEffect(() => {
+    sendAitoPresence(project.id);
+    return () => sendAitoPresence(null);
+  }, [project.id]);
+
+  const { user } = useAuth();
+  const otherViewers = useAitoViewers(project.id).filter((name) => name !== (user?.username ?? ''));
+
   return (
     <div
       className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 [view-transition-name:aito-backdrop]"
@@ -902,6 +914,21 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
           onCancelSocial={() => setEditingSocial(false)}
           socialSaving={socialMutation.isPending}
         />
+
+        {/* Who else has this project open right now. Filtered to exclude
+            ourselves — otherwise every panel would greet its own operator.
+            (Auth-disabled installs list every viewer as "Operator", including
+            the one reading this — spec-accepted; there is no per-connection
+            identity to filter against there.) */}
+        {otherViewers.length > 0 && (
+          <div
+            data-testid="aito-presence-banner"
+            className="flex-shrink-0 flex items-center gap-2 border-b border-amber-400/20 bg-amber-500/10 px-5 py-2 text-sm text-amber-300"
+          >
+            <Eye className="w-4 h-4 flex-none" aria-hidden="true" />
+            {t('aito.viewingNow', { name: otherViewers.join(', ') })}
+          </div>
+        )}
 
         <div className="overflow-y-auto scrollbar-hide flex-1 min-h-0 lg:flex lg:flex-col lg:overflow-hidden">
           {/* Three columns, three scrollers — but only from `lg` up, where the

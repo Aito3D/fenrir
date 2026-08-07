@@ -107,6 +107,7 @@ export default {
     moveToTrash: "Перемістити в кошик",
     stepsCount: "{{done}}/{{total}} кроків",
     amountDone: "{{amount}} виконано",
+    viewingNow: "{{name}} переглядає цей проєкт",
     workLeftAtStage: "{{amount}} залишилося на етапі {{stage}}",
     actorUnknown: "невідомо",
     actorUnknownUser: "невідомий користувач",

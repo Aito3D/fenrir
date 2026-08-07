@@ -106,6 +106,7 @@ export default {
     moveToTrash: 'Sposta nel cestino',
     stepsCount: '{{done}}/{{total}} passaggi',
     amountDone: '{{amount}} completato',
+    viewingNow: '{{name}} sta visualizzando questo progetto',
     workLeftAtStage: '{{amount}} rimanente in {{stage}}',
     actorUnknown: 'sconosciuto',
     actorUnknownUser: 'utente sconosciuto',

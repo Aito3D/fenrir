@@ -106,6 +106,7 @@ export default {
     moveToTrash: 'Mettre à la corbeille',
     stepsCount: '{{done}}/{{total}} étapes',
     amountDone: '{{amount}} fait',
+    viewingNow: '{{name}} consulte ce projet',
     workLeftAtStage: '{{amount}} restant en {{stage}}',
     actorUnknown: 'inconnu',
     actorUnknownUser: 'utilisateur inconnu',

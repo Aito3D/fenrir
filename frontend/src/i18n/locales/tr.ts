@@ -106,6 +106,7 @@ export default {
     moveToTrash: 'Çöp kutusuna taşı',
     stepsCount: '{{done}}/{{total}} adım',
     amountDone: '{{amount}} tamamlandı',
+    viewingNow: '{{name}} bu projeyi görüntülüyor',
     workLeftAtStage: '{{stage}} aşamasında {{amount}} kaldı',
     actorUnknown: 'bilinmiyor',
     actorUnknownUser: 'bilinmeyen kullanıcı',

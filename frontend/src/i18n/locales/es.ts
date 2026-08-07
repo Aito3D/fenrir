@@ -106,6 +106,7 @@ export default {
     moveToTrash: 'Mover a la papelera',
     stepsCount: '{{done}}/{{total}} pasos',
     amountDone: '{{amount}} hecho',
+    viewingNow: '{{name}} está viendo este proyecto',
     workLeftAtStage: '{{amount}} restante en {{stage}}',
     actorUnknown: 'desconocido',
     actorUnknownUser: 'usuario desconocido',

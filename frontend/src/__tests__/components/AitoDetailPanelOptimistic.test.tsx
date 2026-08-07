@@ -3,6 +3,7 @@ import { screen, waitFor, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ProjectDetailPanel } from '../../components/aito/ProjectDetailPanel';
+import { AuthProvider } from '../../contexts/AuthContext';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { __resetBoardSync } from '../../hooks/useBoardSync';
 import { api } from '../../api/client';
@@ -95,9 +96,11 @@ function renderPanel(project: AitoProject) {
   client.setQueryData(['aito-projects'], [project]);
   rtlRender(
     <QueryClientProvider client={client}>
-      <ToastProvider>
-        <ProjectDetailPanel project={project} onClose={() => {}} onDelete={() => {}} />
-      </ToastProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <ProjectDetailPanel project={project} onClose={() => {}} onDelete={() => {}} />
+        </ToastProvider>
+      </AuthProvider>
     </QueryClientProvider>,
   );
   return client;

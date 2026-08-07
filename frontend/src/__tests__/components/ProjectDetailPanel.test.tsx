@@ -8,6 +8,7 @@ import { server } from '../mocks/server';
 import { render } from '../utils';
 import { ProjectDetailPanel } from '../../components/aito/ProjectDetailPanel';
 import { diffTaskDraft } from '../../hooks/useProjectTasks';
+import { AuthProvider } from '../../contexts/AuthContext';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { api } from '../../api/client';
 import type { AitoEvent, AitoProject, AitoTask } from '../../api/client';
@@ -696,7 +697,9 @@ describe('ProjectDetailPanel tasks', () => {
     const acceptedProject: AitoProject = { ...project, quote_status: 'accepted' };
     const Host = ({ open }: { open: boolean }) => (
       <QueryClientProvider client={client}>
-        <ToastProvider>{open ? <ProjectDetailPanel project={acceptedProject} onClose={vi.fn()} onDelete={vi.fn()} /> : null}</ToastProvider>
+        <AuthProvider>
+          <ToastProvider>{open ? <ProjectDetailPanel project={acceptedProject} onClose={vi.fn()} onDelete={vi.fn()} /> : null}</ToastProvider>
+        </AuthProvider>
       </QueryClientProvider>
     );
 
@@ -1320,7 +1323,9 @@ describe('ProjectDetailPanel tasks', () => {
     const Host = ({ open }: { open: boolean }) => (
       <QueryClientProvider client={client}>
         <BrowserRouter>
-          <ToastProvider>{open ? <ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} /> : null}</ToastProvider>
+          <AuthProvider>
+            <ToastProvider>{open ? <ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} /> : null}</ToastProvider>
+          </AuthProvider>
         </BrowserRouter>
       </QueryClientProvider>
     );

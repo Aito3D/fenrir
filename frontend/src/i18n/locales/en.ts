@@ -109,6 +109,7 @@ export default {
     moveToTrash: 'Move to trash',
     stepsCount: '{{done}}/{{total}} steps',
     amountDone: '{{amount}} done',
+    viewingNow: '{{name}} is viewing this project',
     workLeftAtStage: '{{amount}} left at {{stage}}',
     actorUnknown: 'unknown',
     actorUnknownUser: 'unknown user',

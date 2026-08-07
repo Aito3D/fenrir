@@ -106,6 +106,7 @@ export default {
     moveToTrash: '移至垃圾桶',
     stepsCount: '{{done}}/{{total}} 個步驟',
     amountDone: '已完成 {{amount}}',
+    viewingNow: '{{name}} 正在檢視此專案',
     workLeftAtStage: '{{stage}} 還剩 {{amount}}',
     actorUnknown: '未知',
     actorUnknownUser: '未知使用者',

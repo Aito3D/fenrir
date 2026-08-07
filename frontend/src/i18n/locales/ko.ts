@@ -106,6 +106,7 @@ export default {
     moveToTrash: '휴지통으로 이동',
     stepsCount: '{{done}}/{{total}} 단계',
     amountDone: '{{amount}} 완료',
+    viewingNow: '{{name}} 님이 이 프로젝트를 보고 있습니다',
     workLeftAtStage: '{{stage}}에 {{amount}} 남음',
     actorUnknown: '알 수 없음',
     actorUnknownUser: '알 수 없는 사용자',

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Building2, GripVertical, Lock, User } from 'lucide-react';
+import { AlertTriangle, Building2, Eye, GripVertical, Lock, User } from 'lucide-react';
 import { TaskMiniRows } from './TaskMiniRows';
 import type { AitoProject } from '../../api/client';
+import { useAuth } from '../../contexts/AuthContext';
+import { useAitoViewers } from '../../hooks/useAitoPresence';
 import { formatElapsedTime, parseUTCDate } from '../../utils/date';
 import { prefersReducedMotion } from '../../utils/motion';
 import { ageAnchor, agingTextCls } from '../../utils/aitoAging';
@@ -97,6 +99,12 @@ export function CardView({
 
   // Same building/person distinction the expanded card's header makes.
   const ClientIcon = project.client_is_company ? Building2 : User;
+
+  // Live presence (multi-user sync): who else has this project's panel open
+  // right now. Filtered to exclude ourselves, same rule the panel's own
+  // banner follows — otherwise every card would flag its own operator.
+  const { user } = useAuth();
+  const viewers = useAitoViewers(project.id).filter((name) => name !== (user?.username ?? ''));
 
   // Hover-intent reveal of a clamped description. The card floats over its
   // neighbours rather than growing in place: the shell holds the collapsed
@@ -262,6 +270,20 @@ export function CardView({
           {project.urgent && (
             <span data-testid="aito-card-urgent" className="sr-only">
               {t('aito.urgent')}
+            </span>
+          )}
+          {/* Live presence: someone else has this card's panel open right
+              now. Hidden on a placeholder — its id does not exist, so no
+              viewer map entry could ever match it. */}
+          {viewers.length > 0 && !placeholder && (
+            <span
+              data-testid="aito-card-viewers"
+              title={viewers.join(', ')}
+              className="flex-none inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-bambu-dark-tertiary text-[10px] font-medium text-bambu-gray-light"
+            >
+              <Eye className="w-3 h-3" aria-hidden="true" />
+              <span className="sr-only">{t('aito.viewingNow', { name: viewers.join(', ') })}</span>
+              {viewers.length}
             </span>
           )}
           {/* Moved up from the footer: the name row is where a person's eye
