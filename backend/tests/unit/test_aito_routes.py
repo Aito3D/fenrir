@@ -1938,6 +1938,45 @@ async def test_switching_flags_records_the_clear_and_the_set(async_client):
 
 
 @pytest.mark.asyncio
+async def test_pause_flag_sets_and_clears_with_one_event_each(async_client):
+    """Pause is a first-class flag value: it round-trips through the same
+    route and writes the same one-event-per-real-change timeline as the
+    other two, including the no-op on a repeat."""
+    project_id = (await _create(async_client)).json()["id"]
+
+    r = await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "pause"})
+    assert r.status_code == 200
+    assert r.json()["flag"] == "pause"
+
+    await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "pause"})  # no-op
+
+    r = await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": None})
+    assert r.status_code == 200
+    assert r.json()["flag"] is None
+
+    events = (await async_client.get(f"/api/v1/aito/{project_id}/events?depth=story")).json()["events"]
+    kinds = [e["kind"] for e in events]
+    assert kinds.count("project.pause.set") == 1
+    assert kinds.count("project.pause.cleared") == 1
+
+
+@pytest.mark.asyncio
+async def test_switching_urgent_to_pause_records_the_clear_and_the_set(async_client):
+    """Two things changed, so the timeline says two things — and no new
+    renderer is needed, because both kinds map to their own label."""
+    project_id = (await _create(async_client)).json()["id"]
+
+    await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "urgent"})
+    await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "pause"})
+
+    events = (await async_client.get(f"/api/v1/aito/{project_id}/events?depth=story")).json()["events"]
+    kinds = [e["kind"] for e in events]
+    assert kinds.count("project.urgent.set") == 1
+    assert kinds.count("project.urgent.cleared") == 1
+    assert kinds.count("project.pause.set") == 1
+
+
+@pytest.mark.asyncio
 async def test_flag_rejects_an_unknown_value(async_client):
     project_id = (await _create(async_client)).json()["id"]
 
