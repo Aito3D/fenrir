@@ -33,7 +33,9 @@ const FLAG_RANK: Record<AitoFlag, number> = { urgent: 0, sav: 0, pause: 2 };
 const UNFLAGGED_RANK = 1;
 
 export function flagRank(flag: AitoFlag | null): number {
-  return flag === null ? UNFLAGGED_RANK : FLAG_RANK[flag];
+  // An unrecognised value from a newer server must rank as unflagged, not
+  // poison the comparator with NaN — mirrors the backend's `_flag_rank`.
+  return flag === null ? UNFLAGGED_RANK : (FLAG_RANK[flag] ?? UNFLAGGED_RANK);
 }
 
 /** Group the flat server list into drag-friendly columns, ordered by position. */

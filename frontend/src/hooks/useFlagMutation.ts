@@ -7,9 +7,9 @@ import { useToast } from '../contexts/ToastContext';
 /** Set a project's board flag, or clear it.
  *
  *  The optimistic transform only writes the field — it does NOT reorder.
- *  `buildBoard` sorts flagged-first on every render, so writing the field is
- *  enough to move the card, and duplicating the comparator here would be a
- *  second place to get it wrong. */
+ *  `buildBoard` applies the three-tier flag rank on every render, so writing
+ *  the field is enough to move the card, and duplicating the comparator here
+ *  would be a second place to get it wrong. */
 export function useFlagMutation(project: AitoProject) {
   const { t } = useTranslation();
   const { showToast } = useToast();

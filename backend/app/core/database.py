@@ -4374,10 +4374,10 @@ async def run_migrations(conn):
     )
 
     # Migration: three-state board flag on Aito projects (2026-08-06).
-    # Replaces `urgent` above. NULL, 'urgent' or 'sav' — one column rather than
-    # two booleans, so "urgent AND sav" is not a state that can be written and
-    # then has to be forbidden in the route, the optimistic transform and both
-    # sort comparators.
+    # Replaces `urgent` above. NULL, 'urgent' or 'sav' (later widened to
+    # 'pause') — one column rather than two booleans, so "urgent AND sav" is
+    # not a state that can be written and then has to be forbidden in the
+    # route, the optimistic transform and both sort comparators.
     _aito_flag_existed = await _column_exists(conn, "aito_projects", "flag")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN flag VARCHAR(16)")
     # The `urgent` column above is now DEAD and is deliberately not dropped —

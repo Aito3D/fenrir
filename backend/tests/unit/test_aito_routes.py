@@ -245,8 +245,9 @@ async def test_board_lists_flagged_cards_first_within_their_column(async_client)
     rewritten, which is what keeps a flag from destroying the operator's
     ordering irreversibly.
 
-    Both flags are peers, so the sort tests "flagged at all", not which flag —
-    an SAV card and an urgent card rank equally and fall back to position."""
+    Urgent and sav share the top rank as peers — an SAV card and an urgent
+    card rank equally and fall back to position — while pause ranks below
+    unflagged instead. This test covers only the top tier."""
     first = (await _create(async_client, description="first")).json()
     second = (await _create(async_client, description="second")).json()
     third = (await _create(async_client, description="third")).json()
@@ -1924,6 +1925,16 @@ async def test_flag_toggles_and_never_queues_a_zoho_push(async_client, db_sessio
     after_switch = (await db_session.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one()
     assert after_switch.quote_sync_state == sync_state_before
     assert after_switch.quote_sync_failures == failures_before
+
+    # pause is the third flag value and gets the same guarantee.
+    paused = await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "pause"})
+    assert paused.status_code == 200
+    assert paused.json()["flag"] == "pause"
+
+    db_session.expire_all()
+    after_pause = (await db_session.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one()
+    assert after_pause.quote_sync_state == sync_state_before
+    assert after_pause.quote_sync_failures == failures_before
 
     cleared = await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": None})
     assert cleared.status_code == 200

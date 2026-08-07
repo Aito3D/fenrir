@@ -358,8 +358,10 @@ class AitoProjectResponse(BaseModel):
     # 'locked', which also covers tax-exclusive quotes that were never billed.
     quote_invoiced: bool
     # A local board signal, never synced to Zoho — see the column comment on
-    # AitoProject.flag. Display ordering only: the board sorts flagged cards to
-    # the top of their column without rewriting stored `position` values.
+    # AitoProject.flag. Display ordering only: the board ranks cards into
+    # three tiers within their column — urgent and sav rise to the top as
+    # peers, pause sinks to the bottom, unflagged sits in between — without
+    # rewriting stored `position` values.
     flag: AitoFlag | None
     quote_sync_error: str | None
     # Why the status reconciler is blocked, if it is, and what Books read when

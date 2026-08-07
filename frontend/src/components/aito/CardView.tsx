@@ -54,7 +54,7 @@ const HOVER_REVEAL_MS = 2000;
 const FLAG_CARD_CLS: Record<AitoFlag, string> = {
   urgent: 'animate-flag-halo flag-urgent',
   sav: 'animate-flag-halo flag-sav',
-  pause: 'opacity-60 hover:opacity-100 transition-opacity flag-pause-edge',
+  pause: 'opacity-60 hover:opacity-100 focus-within:opacity-100 flag-pause-edge',
 };
 const FLAG_LABEL_KEY: Record<AitoFlag, string> = {
   urgent: 'aito.urgent',
@@ -248,7 +248,7 @@ export function CardView({
         } ${
           overlay
             ? 'rotate-1 scale-[1.02] border-bambu-green/40 shadow-2xl cursor-grabbing'
-            : 'border-bambu-dark-tertiary card-shadow transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-bambu-green/40 hover:shadow-lg motion-reduce:hover:translate-y-0'
+            : 'border-bambu-dark-tertiary card-shadow transition-[border-color,box-shadow,transform,opacity] duration-150 hover:-translate-y-0.5 hover:border-bambu-green/40 hover:shadow-lg motion-reduce:hover:translate-y-0'
         } ${placeholder ? 'opacity-60' : ''} ${project.flag ? FLAG_CARD_CLS[project.flag] : ''}`}
       >
         <div className="flex items-center gap-2 px-3 pt-2.5">

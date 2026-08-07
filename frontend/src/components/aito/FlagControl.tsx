@@ -223,7 +223,7 @@ export function FlagControl({ project }: { project: AitoProject }) {
             data-testid={`flag-segment-${kind}`}
             // Collapsed segments are `disabled` (below) and so already
             // untabbable, but a disabled button is still in the accessibility
-            // tree — without this, browse mode reads two permanently-disabled
+            // tree — without this, browse mode reads three permanently-disabled
             // buttons whenever the control is closed and unflagged.
             aria-hidden={shown ? undefined : true}
             // A hairline before every segment after the first, only while

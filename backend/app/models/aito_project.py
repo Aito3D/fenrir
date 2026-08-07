@@ -81,12 +81,15 @@ class AitoProject(Base):
     # tax-exclusive quotes — the board's "this job is billed, archive it" glow
     # must not fire for those.
     quote_invoiced: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
-    # A local board signal with three states: NULL, 'urgent' ("this job is late
-    # / promised / on fire") or 'sav' ("it came back and needs handling
-    # again"). Mutually exclusive by construction — that is why this is one
-    # nullable column and not two booleans. Zoho has no field for either and
-    # must never be told, which is why it is written by its own route rather
-    # than by update_project — that one ends with an unconditional
+    # A local board signal with four states: NULL, 'urgent' ("this job is late
+    # / promised / on fire"), 'sav' ("it came back and needs handling again"),
+    # or 'pause' ("set this aside for now"). Mutually exclusive by
+    # construction — that is why this is one nullable column and not three
+    # booleans. Urgent and sav rise to the top of their column; pause sinks
+    # to the bottom instead — see the board's rank comparator. Zoho has no
+    # field for any of them and must never be told, which is why it is
+    # written by its own route rather than by update_project — that one ends
+    # with an unconditional
     # _mark_pending_if_ours, and queueing a quote push for a field the quote
     # does not have is pure noise (and churns the sync state on locked quotes,
     # where writes are already known to be unsafe).
