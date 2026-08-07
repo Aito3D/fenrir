@@ -1,4 +1,4 @@
-import type { AitoColumnId, AitoProject } from '../api/client';
+import type { AitoColumnId, AitoFlag, AitoProject } from '../api/client';
 
 export type ColumnId = AitoColumnId;
 export type Board = Record<ColumnId, AitoProject[]>;
@@ -22,21 +22,36 @@ function arrayMove<T>(items: T[], from: number, to: number): T[] {
   return next;
 }
 
+/** Display rank for a column. Urgent and SAV mean "look at this" and rise;
+ *  pause means the opposite and sinks; unflagged sits between them.
+ *
+ *  A Record rather than a chain of comparisons, so adding a fourth flag is a
+ *  type error here rather than a card that silently ranks as unflagged. The
+ *  backend mirrors this in `_FLAG_RANK` / `_flag_rank` (routes/aito.py) and
+ *  the two must not drift. */
+const FLAG_RANK: Record<AitoFlag, number> = { urgent: 0, sav: 0, pause: 2 };
+const UNFLAGGED_RANK = 1;
+
+export function flagRank(flag: AitoFlag | null): number {
+  return flag === null ? UNFLAGGED_RANK : FLAG_RANK[flag];
+}
+
 /** Group the flat server list into drag-friendly columns, ordered by position. */
 export function buildBoard(projects: AitoProject[]): Board {
   const board = emptyBoard();
   for (const project of projects) {
     if (COLUMN_IDS.includes(project.column)) board[project.column].push(project);
   }
-  // Flagged first, then stored position. The server orders the same way
+  // Ranked first, then stored position. The server orders the same way
   // (routes/aito.py:list_projects), but this local sort is load-bearing, not
   // belt-and-braces: every optimistic write rebuilds the board from the
   // React Query cache without a refetch, so a flag would not move its card
   // until the next server round-trip if this only trusted `position`.
-  // Urgent and SAV are peers — the comparator tests "flagged at all", never
-  // which flag, so neither outranks the other.
+  // NOTE the direction: this is ASCENDING (a - b, rank 0 first), where the
+  // old "flagged at all" comparator was descending. Flipping it inverts the
+  // whole board.
   for (const col of COLUMN_IDS) {
-    board[col].sort((a, b) => Number(!!b.flag) - Number(!!a.flag) || a.position - b.position);
+    board[col].sort((a, b) => flagRank(a.flag) - flagRank(b.flag) || a.position - b.position);
   }
   return board;
 }

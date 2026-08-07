@@ -5,6 +5,7 @@ import {
   computeMoveTarget,
   emptyBoard,
   findColumn,
+  flagRank,
   toOptimisticProjects,
 } from '../../utils/aitoBoard';
 import type { AitoFlag, AitoProject } from '../../api/client';
@@ -82,6 +83,29 @@ describe('buildBoard', () => {
     ]);
     // Both flags rank equally — they are peers, so position breaks the tie.
     expect(board.devis.map((p) => p.id)).toEqual([2, 3, 1, 4]);
+  });
+
+  it('sinks paused cards below unflagged ones, keeping position order inside each tier', () => {
+    const makeProject = (id: number, column: AitoProject['column'], position: number, flag: AitoFlag | null) =>
+      ({ id, column, position, flag }) as unknown as AitoProject;
+
+    const board = buildBoard([
+      makeProject(1, 'devis', 0, null),
+      makeProject(2, 'devis', 1, 'pause'),
+      makeProject(3, 'devis', 2, null),
+      makeProject(4, 'devis', 3, 'urgent'),
+      makeProject(5, 'devis', 4, 'sav'),
+    ]);
+
+    // Attention flags (peers, position breaking their tie), then unflagged,
+    // then paused last.
+    expect(board.devis.map((p) => p.id)).toEqual([4, 5, 1, 3, 2]);
+  });
+
+  it('ranks urgent and sav equally and pause below unflagged', () => {
+    expect(flagRank('urgent')).toBe(flagRank('sav'));
+    expect(flagRank('urgent')).toBeLessThan(flagRank(null));
+    expect(flagRank(null)).toBeLessThan(flagRank('pause'));
   });
 });
 
@@ -165,7 +189,7 @@ describe('computeMoveTarget', () => {
       const moving = projects.find((p) => p.id === activeId)!;
       const destination = projects
         .filter((p) => p.column === column && p.id !== activeId)
-        .sort((a, b) => Number(!!b.flag) - Number(!!a.flag) || a.position - b.position);
+        .sort((a, b) => flagRank(a.flag) - flagRank(b.flag) || a.position - b.position);
       destination.splice(Math.min(position, destination.length), 0, moving);
       return destination.map((p, index) => ({ ...p, column, position: index }));
     };

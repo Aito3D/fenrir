@@ -3498,7 +3498,7 @@ export interface AitoTaskSteps {
   title?: string;
 }
 
-export type AitoFlag = 'urgent' | 'sav';
+export type AitoFlag = 'urgent' | 'sav' | 'pause';
 
 export interface AitoProject {
   id: number;
