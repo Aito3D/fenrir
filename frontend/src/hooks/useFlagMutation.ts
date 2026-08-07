@@ -1,24 +1,24 @@
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOptimisticBoardMutation } from './useOptimisticBoardMutation';
-import { api, type AitoProject } from '../api/client';
+import { api, type AitoFlag, type AitoProject } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 
-/** Flag a project urgent, or clear it.
+/** Set a project's board flag, or clear it.
  *
- *  The optimistic transform only flips the boolean — it does NOT reorder.
- *  `buildBoard` sorts urgent-first on every render, so flipping the flag is
- *  enough to move the card, and duplicating the sort here would be a second
- *  place to get the comparator wrong. */
-export function useUrgentMutation(project: AitoProject) {
+ *  The optimistic transform only writes the field — it does NOT reorder.
+ *  `buildBoard` sorts flagged-first on every render, so writing the field is
+ *  enough to move the card, and duplicating the comparator here would be a
+ *  second place to get it wrong. */
+export function useFlagMutation(project: AitoProject) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
-  return useOptimisticBoardMutation<AitoProject, boolean>({
-    mutationFn: (urgent) => api.setAitoProjectUrgent(project.id, urgent),
-    transform: (previous, urgent) =>
-      previous?.map((p) => (p.id === project.id ? { ...p, urgent } : p)),
+  return useOptimisticBoardMutation<AitoProject, AitoFlag | null>({
+    mutationFn: (flag) => api.setAitoProjectFlag(project.id, flag),
+    transform: (previous, flag) =>
+      previous?.map((p) => (p.id === project.id ? { ...p, flag } : p)),
     flashId: () => project.id,
     onSuccess: (row) => {
       // The server's row over the prediction, like every sibling writer: it

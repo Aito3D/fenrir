@@ -3498,6 +3498,8 @@ export interface AitoTaskSteps {
   title?: string;
 }
 
+export type AitoFlag = 'urgent' | 'sav';
+
 export interface AitoProject {
   id: number;
   description: string;
@@ -3548,12 +3550,14 @@ export interface AitoProject {
    *  covers tax-exclusive quotes that were never billed; the board's "this
    *  job is billed, archive it" glow keys off this flag, not the state. */
   quote_invoiced: boolean;
-  /** A local board signal — "this job is late / promised / on fire". Never
-   *  synced to Zoho. Set by holding the Urgent button in the detail panel for
-   *  0.5s; cleared the same way. Drives the card's halo and chip, and sorts
-   *  the card to the top of its column (display only — stored `position` is
-   *  never rewritten). */
-  urgent: boolean;
+  /** A local board signal, never synced to Zoho. 'urgent' — this job is late
+   *  or promised; 'sav' — it came back and needs handling again; null — no
+   *  flag. Mutually exclusive by construction rather than by convention: the
+   *  backend stores one nullable column, not two booleans. Set by holding a
+   *  segment of the detail panel's flag pill for 0.5s; cleared the same way.
+   *  Drives the card's halo and sorts the card to the top of its column
+   *  (display only — stored `position` is never rewritten). */
+  flag: AitoFlag | null;
   /** The last push failure, or null. Only meaningful when quote_sync_state
    *  is 'error'; stale/ignored otherwise. */
   quote_sync_error: string | null;
@@ -6687,12 +6691,12 @@ export const api = {
       body: JSON.stringify(data),
     }),
   /** Its own endpoint, not a field on `updateAitoProject`: the generic PATCH
-   *  queues a Zoho quote push for every edit, and urgency is a workshop fact
-   *  Zoho has no field for. See routes/aito.py:set_project_urgent. */
-  setAitoProjectUrgent: (id: number, urgent: boolean) =>
-    request<AitoProject>(`/aito/${id}/urgent`, {
+   *  queues a Zoho quote push for every edit, and the flag is a workshop fact
+   *  Zoho has no field for. See routes/aito.py:set_project_flag. */
+  setAitoProjectFlag: (id: number, flag: AitoFlag | null) =>
+    request<AitoProject>(`/aito/${id}/flag`, {
       method: 'PATCH',
-      body: JSON.stringify({ urgent }),
+      body: JSON.stringify({ flag }),
     }),
   deleteAitoProject: (id: number) =>
     request<void>(`/aito/${id}`, { method: 'DELETE' }),

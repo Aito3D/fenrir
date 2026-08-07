@@ -7,7 +7,7 @@ import {
   findColumn,
   toOptimisticProjects,
 } from '../../utils/aitoBoard';
-import type { AitoProject } from '../../api/client';
+import type { AitoFlag, AitoProject } from '../../api/client';
 
 const card = (id: number, column: AitoProject['column'], position: number): AitoProject => ({
   id,
@@ -32,7 +32,7 @@ const card = (id: number, column: AitoProject['column'], position: number): Aito
   quote_accepted_at: null,
   quote_sync_state: 'idle',
   quote_invoiced: false,
-  urgent: false,
+  flag: null,
   quote_sync_error: null,
   quote_status_block: null,
   quote_status_remote: null,
@@ -70,18 +70,18 @@ describe('buildBoard', () => {
     expect(board.devis.map((p) => p.id)).toEqual([1]);
   });
 
-  it('sorts urgent cards to the top of their column, keeping position order inside each group', () => {
-    const project = (id: number, position: number, urgent: boolean) =>
-      ({ id, column: 'devis', position, urgent }) as unknown as AitoProject;
+  it('sorts flagged cards to the top of their column, keeping position order inside each group', () => {
+    const makeProject = (id: number, column: AitoProject['column'], position: number, flag: AitoFlag | null) =>
+      ({ id, column, position, flag }) as unknown as AitoProject;
 
     const board = buildBoard([
-      project(1, 0, false),
-      project(2, 1, true),
-      project(3, 2, false),
-      project(4, 3, true),
+      makeProject(1, 'devis', 0, null),
+      makeProject(2, 'devis', 1, 'urgent'),
+      makeProject(3, 'devis', 2, 'sav'),
+      makeProject(4, 'devis', 3, null),
     ]);
-
-    expect(board.devis.map((p) => p.id)).toEqual([2, 4, 1, 3]);
+    // Both flags rank equally — they are peers, so position breaks the tie.
+    expect(board.devis.map((p) => p.id)).toEqual([2, 3, 1, 4]);
   });
 });
 
@@ -165,14 +165,14 @@ describe('computeMoveTarget', () => {
       const moving = projects.find((p) => p.id === activeId)!;
       const destination = projects
         .filter((p) => p.column === column && p.id !== activeId)
-        .sort((a, b) => Number(b.urgent) - Number(a.urgent) || a.position - b.position);
+        .sort((a, b) => Number(!!b.flag) - Number(!!a.flag) || a.position - b.position);
       destination.splice(Math.min(position, destination.length), 0, moving);
       return destination.map((p, index) => ({ ...p, column, position: index }));
     };
 
     const stored = [
       card(1, 'devis', 0),
-      { ...card(2, 'devis', 1), urgent: true },
+      { ...card(2, 'devis', 1), flag: 'urgent' as const },
       card(3, 'devis', 2),
       card(4, 'devis', 3),
     ];

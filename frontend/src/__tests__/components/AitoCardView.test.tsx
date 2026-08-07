@@ -28,7 +28,7 @@ const project: AitoProject = {
   quote_accepted_at: null,
   quote_sync_state: 'idle',
   quote_invoiced: false,
-  urgent: false,
+  flag: null,
   quote_sync_error: null,
   quote_status_block: null,
   quote_status_remote: null,
@@ -420,27 +420,24 @@ describe('CardView', () => {
     expect(onExpand).toHaveBeenCalledTimes(1);
   });
 
-  it('signals urgency with the halo, and to screen readers only in text', () => {
-    const { container } = render(<CardView project={{ ...project, urgent: true }} onExpand={vi.fn()} />);
-
-    // The chip is gone as a visible element, but the word must survive for
-    // anyone who cannot see a box-shadow — hence sr-only rather than removed.
-    const flag = screen.getByTestId('aito-card-urgent');
-    expect(flag).toBeInTheDocument();
-    expect(flag).toHaveClass('sr-only');
-    // Guards the actual regression risk: that someone "cleans up" the sr-only
-    // span back into a painted chip.
-    expect(flag).not.toHaveClass('bg-amber-400');
-    // The halo must sit on the CARD element, not the shell: the shell holds
-    // collapsed height for the hover-reveal and carries no card styling.
-    expect(container.querySelector('[data-aito-card]')).toHaveClass('animate-urgent-halo');
+  it('paints the amber halo and names the flag for assistive tech when urgent', () => {
+    render(<CardView project={{ ...project, flag: 'urgent' }} onExpand={vi.fn()} />);
+    expect(document.querySelector('[data-aito-card]')?.className).toContain('flag-urgent');
+    expect(screen.getByTestId('aito-card-flag')).toBeInTheDocument();
   });
 
-  it('renders neither flag nor halo on a normal project', () => {
-    const { container } = render(<CardView project={{ ...project, urgent: false }} onExpand={vi.fn()} />);
+  it('paints the rose halo when the project is SAV', () => {
+    render(<CardView project={{ ...project, flag: 'sav' }} onExpand={vi.fn()} />);
+    const card = document.querySelector('[data-aito-card]')?.className ?? '';
+    expect(card).toContain('animate-flag-halo');
+    expect(card).toContain('flag-sav');
+    expect(card).not.toContain('flag-urgent');
+  });
 
-    expect(screen.queryByTestId('aito-card-urgent')).not.toBeInTheDocument();
-    expect(container.querySelector('[data-aito-card]')).not.toHaveClass('animate-urgent-halo');
+  it('paints no halo and names no flag when the project has none', () => {
+    render(<CardView project={{ ...project, flag: null }} onExpand={vi.fn()} />);
+    expect(document.querySelector('[data-aito-card]')?.className).not.toContain('animate-flag-halo');
+    expect(screen.queryByTestId('aito-card-flag')).not.toBeInTheDocument();
   });
 });
 

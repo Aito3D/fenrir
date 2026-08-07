@@ -8,7 +8,7 @@ import type { AitoProject } from '../../api/client';
 // A project with every field the board cache needs, defaulted so a test can
 // override only what it cares about — mirrors AitoQuoteStatusActions.test.tsx's
 // `makeProject`, since `UrgentButton` (like `QuoteStatusActions`) needs a full
-// `AitoProject`, not just the `urgent` field it reads.
+// `AitoProject`, not just the `flag` field it reads.
 const baseProject: AitoProject = {
   id: 12,
   description: 'Support de caméra',
@@ -32,7 +32,7 @@ const baseProject: AitoProject = {
   quote_accepted_at: null,
   quote_sync_state: 'idle',
   quote_invoiced: false,
-  urgent: false,
+  flag: null,
   quote_sync_error: null,
   quote_status_block: null,
   quote_status_remote: null,
@@ -63,8 +63,8 @@ describe('UrgentButton', () => {
 
   it('fires at 500ms and not before', async () => {
     vi.useFakeTimers();
-    const setUrgent = vi.spyOn(api, 'setAitoProjectUrgent').mockResolvedValue({} as AitoProject);
-    render(<UrgentButton project={{ ...baseProject, urgent: false }} />);
+    const setUrgent = vi.spyOn(api, 'setAitoProjectFlag').mockResolvedValue({} as AitoProject);
+    render(<UrgentButton project={{ ...baseProject, flag: null }} />);
 
     fireEvent.pointerDown(screen.getByRole('button'));
 
@@ -76,13 +76,13 @@ describe('UrgentButton', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(100);
     });
-    expect(setUrgent).toHaveBeenCalledWith(baseProject.id, true);
+    expect(setUrgent).toHaveBeenCalledWith(baseProject.id, 'urgent');
   });
 
   it('does not toggle on a short tap', async () => {
     vi.useFakeTimers();
-    const setUrgent = vi.spyOn(api, 'setAitoProjectUrgent').mockResolvedValue({} as AitoProject);
-    render(<UrgentButton project={{ ...baseProject, urgent: false }} />);
+    const setUrgent = vi.spyOn(api, 'setAitoProjectFlag').mockResolvedValue({} as AitoProject);
+    render(<UrgentButton project={{ ...baseProject, flag: null }} />);
 
     const button = screen.getByRole('button');
     fireEvent.pointerDown(button);
@@ -97,16 +97,16 @@ describe('UrgentButton', () => {
     expect(setUrgent).not.toHaveBeenCalled();
   });
 
-  it('sends false when the project is already urgent', async () => {
+  it('sends null when the project is already urgent', async () => {
     vi.useFakeTimers();
-    const setUrgent = vi.spyOn(api, 'setAitoProjectUrgent').mockResolvedValue({} as AitoProject);
-    render(<UrgentButton project={{ ...baseProject, urgent: true }} />);
+    const setUrgent = vi.spyOn(api, 'setAitoProjectFlag').mockResolvedValue({} as AitoProject);
+    render(<UrgentButton project={{ ...baseProject, flag: 'urgent' }} />);
 
     fireEvent.pointerDown(screen.getByRole('button'));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(500);
     });
 
-    expect(setUrgent).toHaveBeenCalledWith(baseProject.id, false);
+    expect(setUrgent).toHaveBeenCalledWith(baseProject.id, null);
   });
 });

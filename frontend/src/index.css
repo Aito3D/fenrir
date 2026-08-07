@@ -1231,10 +1231,10 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
    also lost its URGENT chip, so this is now the primary cue; it is kept
    legible by the persistent amber border and the always-on glow, which do not
    depend on catching the pulse at its peak. */
-@keyframes urgent-halo {
-  0%   { box-shadow: 0 0 0 0 rgb(251 191 36 / .26), 0 0 9px -3px rgb(251 191 36 / .42), var(--card-shadow); }
-  70%  { box-shadow: 0 0 0 4px rgb(251 191 36 / 0), 0 0 9px -3px rgb(251 191 36 / .42), var(--card-shadow); }
-  100% { box-shadow: 0 0 0 0 rgb(251 191 36 / 0),  0 0 9px -3px rgb(251 191 36 / .42), var(--card-shadow); }
+@keyframes flag-halo {
+  0%   { box-shadow: 0 0 0 0 rgb(var(--flag-halo) / .26), 0 0 9px -3px rgb(var(--flag-halo) / .42), var(--card-shadow); }
+  70%  { box-shadow: 0 0 0 4px rgb(var(--flag-halo) / 0), 0 0 9px -3px rgb(var(--flag-halo) / .42), var(--card-shadow); }
+  100% { box-shadow: 0 0 0 0 rgb(var(--flag-halo) / 0),  0 0 9px -3px rgb(var(--flag-halo) / .42), var(--card-shadow); }
 }
 /* Cascade, both halves — get one without the other and the next repair is wrong:
    1. This rule is UNLAYERED, and unlayered declarations outrank every Tailwind
@@ -1249,27 +1249,32 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
       declarations outright; the reduced-motion glow below is a plain
       declaration and does NOT, so it is the one place that needs the doubled
       class. */
-.animate-urgent-halo {
-  /* --status-warning (amber-500), not the accent: urgency is a fixed semantic
-     yellow and must not shift when the user changes theme colour. The border
-     is a step deeper than the halo's amber-400 so the card's own edge still
-     reads as an edge against its own glow. Red is the destructive colour on
-     this board — delete, decline — and urgency is neither. */
-  border-color: var(--status-warning);
+.animate-flag-halo {
+  /* One animation, two tones, because urgent and SAV are peers and a second
+     copy of these keyframes would be a second place to drift. The hue comes
+     from the tone class below. */
+  border-color: var(--flag-border);
   /* 3.4s and ease-in-out, not 2.2s ease-out: the old curve snapped outward and
      came back, which reads as a blink. A longer symmetric cycle is what makes
      the same gesture read as subtle rather than merely fainter. */
-  animation: urgent-halo 3.4s ease-in-out infinite;
+  animation: flag-halo 3.4s ease-in-out infinite;
 }
+/* Both tones are FIXED semantics and must not shift when the user changes
+   accent colour. The border is a step deeper than the halo in each, so the
+   card's own edge still reads as an edge against its own glow. Red is the
+   destructive colour on this board — delete, decline — and it lives on the
+   footer bar, never in the header pill row where these do. */
+.flag-urgent { --flag-halo: 251 191 36; --flag-border: var(--status-warning); }
+.flag-sav    { --flag-halo: 251 113 133; --flag-border: #f43f5e; }
 /* The signal survives for anyone who has asked for less motion — as a static
    glow rather than a pulsing one, exactly like .animate-invoiced-pulse above.
    The class is repeated to outweigh the later `.card-shadow` (see above); the
    rule stays here, beside the animation it replaces, rather than being exiled
    below `.card-shadow` where nobody would find it. */
 @media (prefers-reduced-motion: reduce) {
-  .animate-urgent-halo.animate-urgent-halo {
+  .animate-flag-halo.animate-flag-halo {
     animation: none;
-    box-shadow: 0 0 9px -2px rgb(251 191 36 / .42), var(--card-shadow);
+    box-shadow: 0 0 9px -2px rgb(var(--flag-halo) / .42), var(--card-shadow);
   }
 }
 

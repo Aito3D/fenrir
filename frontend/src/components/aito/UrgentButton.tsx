@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { AlertTriangle } from 'lucide-react';
 import { HoldButton } from './HoldButton';
 import { headerPillRadiusCls, headerPillTypeCls } from './panelTypography';
-import { useUrgentMutation } from '../../hooks/useUrgentMutation';
+import { useFlagMutation } from '../../hooks/useFlagMutation';
 import { type AitoProject } from '../../api/client';
 
 /** Hold-to-toggle urgency, for the panel header's pill row.
@@ -37,12 +37,12 @@ import { type AitoProject } from '../../api/client';
  *  belongs where you have the project open in front of you. */
 export function UrgentButton({ project }: { project: AitoProject }) {
   const { t } = useTranslation();
-  const mutation = useUrgentMutation(project);
-  const on = project.urgent;
+  const mutation = useFlagMutation(project);
+  const on = project.flag === 'urgent';
 
   return (
     <HoldButton
-      onHold={() => mutation.mutate(!on)}
+      onHold={() => mutation.mutate(on ? null : 'urgent')}
       durationMs={500}
       progress="bar"
       barClassName="bg-amber-400/25"
