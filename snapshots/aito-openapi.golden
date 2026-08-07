@@ -1,0 +1,1448 @@
+### exit: 0
+### stdout:
+{
+ "/api/v1/aito/": {
+  "get": {
+   "operationId": "list_projects_api_v1_aito__get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/AitoProjectResponse"
+        },
+        "title": "Response List Projects Api V1 Aito  Get",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "List Projects",
+   "tags": [
+    "aito"
+   ]
+  },
+  "post": {
+   "operationId": "create_project_api_v1_aito__post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/AitoProjectCreate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "201": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AitoProjectResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Create Project",
+   "tags": [
+    "aito"
+   ]
+  }
+ },
+ "/api/v1/aito/import": {
+  "post": {
+   "description": "One-time localStorage migration. Guard counts ALL rows (incl. soft-deleted)\nso a double-fire can never duplicate the board.",
+   "operationId": "import_legacy_projects_api_v1_aito_import_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/AitoProjectImport"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "201": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/AitoProjectResponse"
+        },
+        "title": "Response Import Legacy Projects Api V1 Aito Import Post",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Import Legacy Projects",
+   "tags": [
+    "aito"
+   ]
+  }
+ },
+ "/api/v1/aito/shipping/services": {
+  "get": {
+   "description": "The five air-freight services, their islands and their Books rates.\n\nRegistered before the /{project_id} routes on purpose \u2014 a literal segment\nafter a parametric route would 422 instead of matching (FastAPI would try\nto parse \"shipping\" as a project_id). Same reason /summarize sits where it\ndoes.\n\nThe island list is app data and is always served; only the rates need\nZoho.",
+   "operationId": "list_shipping_services_api_v1_aito_shipping_services_get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AitoShippingServicesResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "List Shipping Services",
+   "tags": [
+    "aito"
+   ]
+  }
+ },
+ "/api/v1/aito/summarize": {
+  "post": {
+   "description": "French project summary for the create drawer. Registered before the\n/{project_id} routes on purpose \u2014 a literal segment after a parametric\nroute would 422 instead of matching.",
+   "operationId": "summarize_project_api_v1_aito_summarize_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/AitoSummarizeRequest"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AitoSummarizeResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Summarize Project",
+   "tags": [
+    "aito"
+   ]
+  }
+ },
+ "/api/v1/aito/tasks/{task_id}": {
+  "delete": {
+   "description": "Hard delete, unlike projects: tasks need no stable visible number, and\nhold-to-remove is already a deliberate gesture.",
+   "operationId": "delete_task_api_v1_aito_tasks__task_id__delete",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "task_id",
+     "required": true,
+     "schema": {
+      "title": "Task Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "204": {
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Delete Task",
+   "tags": [
+    "aito"
+   ]
+  },
+  "patch": {
+   "description": "Only fields present in the body are written, so an omitted key is left\nalone and an explicit null disables that service.\n\nThree invariants hold across the write:\n\n- A done flag may not be set unless the project's quote is accepted.\n  Acceptance is what authorises the work; clearing a flag stays legal\n  regardless, so a tick stranded by a status flip can always be undone.\n- Clearing a cost to NULL clears its done flag. The step no longer exists,\n  and leaving the flag set would bring the service back pre-ticked if it\n  were ever re-enabled.\n- A done flag may not be set for a service with no cost. Checked against\n  the MERGED row rather than the stored one, so enabling a service and\n  ticking it in the same PATCH is legal while ticking a service that stays\n  absent is a 422.",
+   "operationId": "update_task_api_v1_aito_tasks__task_id__patch",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "task_id",
+     "required": true,
+     "schema": {
+      "title": "Task Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/AitoTaskUpdate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AitoTaskResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Update Task",
+   "tags": [
+    "aito"
+   ]
+  }
+ },
+ "/api/v1/aito/trash": {
+  "get": {
+   "description": "Deleted projects, newest deletions first. Rows are never removed.",
+   "operationId": "list_trash_api_v1_aito_trash_get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/AitoProjectResponse"
+        },
+        "title": "Response List Trash Api V1 Aito Trash Get",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "List Trash",
+   "tags": [
+    "aito"
+   ]
+  }
+ },
+ "/api/v1/aito/{project_id}": {
+  "delete": {
+   "description": "Soft delete: the row is kept forever, only hidden from the board.",
+   "operationId": "delete_project_api_v1_aito__project_id__delete",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "project_id",
+     "required": true,
+     "schema": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "204": {
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Delete Project",
+   "tags": [
+    "aito"
+   ]
+  },
+  "patch": {
+   "description": "Edit a card's content. Only fields present in the body are written, so a\nnull client_phone clears it while an omitted one is left alone.",
+   "operationId": "update_project_api_v1_aito__project_id__patch",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "project_id",
+     "required": true,
+     "schema": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/AitoProjectUpdate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AitoProjectResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Update Project",
+   "tags": [
+    "aito"
+   ]
+  }
+ },
+ "/api/v1/aito/{project_id}/events": {
+  "get": {
+   "description": "This project's timeline, newest first.\n\nOrdered by occurred_at then id, so the cursor must be the PAIR\n(occurred_at, id), not id alone. An id-only cursor is only equivalent to\nthe compound sort while id order and occurred_at order agree, and the\nbackfill breaks that: it inserts each project's synthesised\n'project.created' row with a freshly-assigned HIGH id but an OLD\noccurred_at (the project's own created_at, possibly years earlier than\nevery organic event). Filtering on `id < before` alone makes that row's\nid un-crossable \u2014 the cursor only ever shrinks past it \u2014 so it would never\nappear on any page, not merely be mis-ordered. Keying on both halves keeps\nthe cursor stable when several events share a timestamp (also routine\nafter a backfill) while still reaching rows whose id and occurred_at\ndisagree.",
+   "operationId": "list_events_api_v1_aito__project_id__events_get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "project_id",
+     "required": true,
+     "schema": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "query",
+     "name": "depth",
+     "required": false,
+     "schema": {
+      "default": "detail",
+      "enum": [
+       "story",
+       "detail",
+       "everything"
+      ],
+      "title": "Depth",
+      "type": "string"
+     }
+    },
+    {
+     "in": "query",
+     "name": "before",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Before"
+     }
+    },
+    {
+     "in": "query",
+     "name": "before_at",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Before At"
+     }
+    },
+    {
+     "in": "query",
+     "name": "limit",
+     "required": false,
+     "schema": {
+      "default": 50,
+      "title": "Limit",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AitoEventPage"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "List Events",
+   "tags": [
+    "aito"
+   ]
+  },
+  "post": {
+   "description": "Append a note to the timeline.\n\nLocal only \u2014 notes are never pushed to Zoho. The kind and actor_class are\nfixed here rather than taken from the body: this is the one client-writable\nevent, and a caller able to name its own kind could fabricate an acceptance.",
+   "operationId": "add_note_api_v1_aito__project_id__events_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "project_id",
+     "required": true,
+     "schema": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/AitoNoteCreate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "201": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AitoEventResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Add Note",
+   "tags": [
+    "aito"
+   ]
+  }
+ },
+ "/api/v1/aito/{project_id}/flag": {
+  "patch": {
+   "description": "Set a project's board flag \u2014 'urgent', 'sav', 'pause' \u2014 or clear it.\n\nIts own route rather than a field on `AitoProjectUpdate`, and the reason is\nthe last thing `update_project` does: `_mark_pending_if_ours` runs\nunconditionally there, queueing a Zoho quote push on every edit. That is\nright for description and client fields, which Zoho mirrors. It is wrong\nfor `flag` \u2014 Zoho has no field for any of them, so the push would carry\nnothing; it would churn `quote_sync_state` on `locked` quotes, where writes\nare already known to be unsafe; and it would fill the timeline with\n`sync.queued` noise generated by a purely local toggle. So this route\ndeliberately does NOT call it, and a test asserts the sync state survives.\n\nReuses `Permission.AITO_UPDATE` rather than introducing a permission: a new\none would need adding to the API-key classification lists and the role\ndefaults, and \"may edit an Aito card\" is exactly the right authority here.",
+   "operationId": "set_project_flag_api_v1_aito__project_id__flag_patch",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "project_id",
+     "required": true,
+     "schema": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/AitoFlagUpdate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AitoProjectResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Set Project Flag",
+   "tags": [
+    "aito"
+   ]
+  }
+ },
+ "/api/v1/aito/{project_id}/move": {
+  "patch": {
+   "operationId": "move_project_api_v1_aito__project_id__move_patch",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "project_id",
+     "required": true,
+     "schema": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/AitoProjectMove"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AitoProjectResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Move Project",
+   "tags": [
+    "aito"
+   ]
+  }
+ },
+ "/api/v1/aito/{project_id}/quote-email": {
+  "get": {
+   "description": "What Books would send if this quote were emailed right now.\n\nPreview only. The send path deliberately re-reads all of this rather than\ntrusting whatever the client echoes back \u2014 see ``send_quote_email``.",
+   "operationId": "get_quote_email_api_v1_aito__project_id__quote_email_get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "project_id",
+     "required": true,
+     "schema": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AitoQuoteEmailContent"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Quote Email",
+   "tags": [
+    "aito"
+   ]
+  },
+  "post": {
+   "description": "Email this project's quote through Books, then move the card.\n\nZOHO-FIRST, deliberately against the local-first rule the rest of this\nfile follows. In ``set_quote_status`` the board records a decision a human\nalready made, so it must survive Books being unreachable. Here the email\nIS the act: a card parked in Waiting after a failed send is a lie about a\nmessage the client never received. So nothing is written locally until\nBooks confirms.\n\nThe card only moves when it is in the Quote column. Re-sending a quote\nthat is already out \u2014 or already accepted \u2014 is a real thing to want, and\nit must never demote the card. Gated on ``board_column`` rather than\n``quote_status`` because that is the rule as specified; ``evaluate()``\nderives one from the other, so they cannot disagree.",
+   "operationId": "send_quote_email_api_v1_aito__project_id__quote_email_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "project_id",
+     "required": true,
+     "schema": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/AitoQuoteEmailRequest"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AitoQuoteEmailResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Send Quote Email",
+   "tags": [
+    "aito"
+   ]
+  }
+ },
+ "/api/v1/aito/{project_id}/quote-status": {
+  "post": {
+   "description": "Move a project's quote to sent, accepted or declined.\n\n`sent` sends the card to Waiting, acceptance is the gate that releases it\nonto the work columns, and a decline sends it straight to Done. `sent` is\naccepted here because nothing else in the app produces that status \u2014 it\nwould otherwise only ever arrive by importing an already-sent Zoho quote,\nleaving Waiting unreachable for a hand-made card.\n\nThe local write happens FIRST and\nalways: the board has to be correct with Zoho unreachable, which is the\nrule the rest of the Aito code follows. The Zoho push is best-effort and\nreported as ``zoho_synced`` \u2014 never a non-200, or a Books outage would\nblock the shop from recording a decision the client already made.",
+   "operationId": "set_quote_status_api_v1_aito__project_id__quote_status_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "project_id",
+     "required": true,
+     "schema": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/AitoQuoteStatusUpdate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AitoQuoteStatusResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Set Quote Status",
+   "tags": [
+    "aito"
+   ]
+  }
+ },
+ "/api/v1/aito/{project_id}/quote.pdf": {
+  "get": {
+   "description": "This project's Zoho estimate, rendered as a PDF for printing.\n\nA proxy rather than a redirect: the Books OAuth token is server-side only,\nand the browser has no way to authenticate against Zoho directly.\n\nReturned whole rather than streamed. A quote is a few pages, ``httpx`` has\nalready buffered the whole body inside ``get_estimate_pdf`` by the time we\nsee it, and a StreamingResponse over an in-memory ``bytes`` buys nothing\nbut a harder failure mode: a mid-stream Zoho error becomes a truncated\nPDF the browser renders as a blank print dialog, instead of the 502 below.",
+   "operationId": "get_quote_pdf_api_v1_aito__project_id__quote_pdf_get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "project_id",
+     "required": true,
+     "schema": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Quote Pdf",
+   "tags": [
+    "aito"
+   ]
+  }
+ },
+ "/api/v1/aito/{project_id}/restore": {
+  "post": {
+   "description": "Un-delete: back onto the board at the end of its original column.",
+   "operationId": "restore_project_api_v1_aito__project_id__restore_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "project_id",
+     "required": true,
+     "schema": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AitoProjectResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Restore Project",
+   "tags": [
+    "aito"
+   ]
+  }
+ },
+ "/api/v1/aito/{project_id}/tasks": {
+  "get": {
+   "operationId": "list_tasks_api_v1_aito__project_id__tasks_get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "project_id",
+     "required": true,
+     "schema": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/AitoTaskResponse"
+        },
+        "title": "Response List Tasks Api V1 Aito  Project Id  Tasks Get",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "List Tasks",
+   "tags": [
+    "aito"
+   ]
+  },
+  "post": {
+   "operationId": "add_task_api_v1_aito__project_id__tasks_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "project_id",
+     "required": true,
+     "schema": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/AitoTaskCreate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "201": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AitoTaskResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Add Task",
+   "tags": [
+    "aito"
+   ]
+  }
+ }
+}
+
+### stderr:
+
