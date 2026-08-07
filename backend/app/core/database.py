@@ -4383,7 +4383,19 @@ async def run_migrations(conn):
     # this file only ever adds. Nothing reads or writes it: the attribute is
     # gone from the AitoProject model, and its NOT NULL DEFAULT 0 keeps inserts
     # legal without it. Do not revive it; `flag` is the flag.
-    await _safe_execute(conn, "UPDATE aito_projects SET flag = 'urgent' WHERE urgent = 1 AND flag IS NULL")
+    #
+    # DML, not DDL — conn.execute() inside a savepoint per _safe_execute's own
+    # docstring, not _safe_execute itself: that helper only swallows DDL
+    # idempotency errors, and a failed backfill must never be silently eaten.
+    # `urgent IS TRUE`, not `urgent = 1`: `urgent` is a real BOOLEAN on
+    # PostgreSQL, where `= 1` raises "operator does not exist: boolean =
+    # integer" (aborting every PostgreSQL deployment's startup); `IS TRUE`
+    # reads correctly against a BOOLEAN column on both PostgreSQL and SQLite
+    # (>=3.23). `AND flag IS NULL` keeps re-running this migration idempotent.
+    from sqlalchemy import text
+
+    async with conn.begin_nested():
+        await conn.execute(text("UPDATE aito_projects SET flag = 'urgent' WHERE urgent IS TRUE AND flag IS NULL"))
 
     await _safe_execute(
         conn,
