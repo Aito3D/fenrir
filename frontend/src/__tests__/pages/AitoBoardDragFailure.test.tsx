@@ -86,6 +86,7 @@ const firstProject = {
   shipping_phone: null,
   shipping_price: null,
   shipping_service_name: null,
+  version: 1,
   created_at: '2026-07-01T10:00:00Z',
   updated_at: '2026-07-02T10:00:00Z',
 };
@@ -114,6 +115,7 @@ const secondProject = {
   shipping_phone: null,
   shipping_price: null,
   shipping_service_name: null,
+  version: 1,
   created_at: '2026-07-01T10:00:00Z',
   updated_at: '2026-07-02T10:00:00Z',
 };
@@ -142,6 +144,7 @@ const thirdProject = {
   shipping_phone: null,
   shipping_price: null,
   shipping_service_name: null,
+  version: 1,
   created_at: '2026-07-01T10:00:00Z',
   updated_at: '2026-07-02T10:00:00Z',
 };
