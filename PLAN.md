@@ -134,7 +134,7 @@ evidence: aito_zoho_comments.py:203 one SELECT per comment plus _is_our_echo que
 
 ## T-013
 priority: P3
-status: IN_PROGRESS
+status: DONE
 attempts: 1
 round: 1
 first_seen_iteration: 0

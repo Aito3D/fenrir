@@ -892,6 +892,16 @@ async def _terminal_error(
     project.quote_sync_state = "error"
     project.quote_sync_error = message
     project.quote_sync_failures = 0
+    # This project just left the pending/swept flow for a state a retry
+    # cannot climb out of on its own. Any deferral memory from before this
+    # error is for a disposition that no longer holds, so drop it here too —
+    # same hygiene as the pop on the normal-return path below, and safe for
+    # the same reason: _deferred_reasons only ever gates the log line above,
+    # never a DB write or recorded event, so forgetting it early just means
+    # the next ShippingCatalogueUnavailable (if this project ever gets back
+    # to pending) logs once fresh instead of staying suppressed by a reason
+    # that belongs to a different attempt.
+    _deferred_reasons.pop(project_id, None)
     if not already_in_error or previous_sync_error != project.quote_sync_error:
         await record(
             db,
@@ -1094,6 +1104,17 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
                 # project going 'idle' under the OLD, inferred-ownership
                 # guard), reproduced under a new name instead of fixed.
                 project.quote_sync_state = "idle"
+                # Same hygiene as the pop below on the normal-return path:
+                # this tick never reached _create_quote/_update_quote, so
+                # that pop never ran, and a stale deferral reason from before
+                # the project was trashed would otherwise sit in the dict
+                # forever. Safe for the same reason as everywhere else this
+                # dict is touched -- it only gates the log line in the
+                # ShippingCatalogueUnavailable handler below, never a DB
+                # write -- so if this project is later restored and defers
+                # again, it just logs once fresh instead of staying
+                # suppressed by a reason that belongs to before the trash.
+                _deferred_reasons.pop(project_id, None)
                 return
             await _create_quote(db, project)
         else:
