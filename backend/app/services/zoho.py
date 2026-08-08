@@ -159,6 +159,25 @@ def _map_estimate_summary(estimate: dict) -> dict:
     }
 
 
+def _map_invoice(invoice: dict) -> dict:
+    """Zoho invoice -> the flat row the Aito Invoice card renders.
+
+    Deliberately the same shape as ``_map_estimate_summary`` above plus the
+    two fields only an invoice has: ``balance`` (what is still owed, which is
+    what separates a part-paid invoice from a paid one) and ``due_date``.
+    """
+    return {
+        "id": invoice.get("invoice_id", ""),
+        "number": invoice.get("invoice_number", ""),
+        "date": invoice.get("date", ""),
+        "due_date": invoice.get("due_date", ""),
+        "total": float(invoice.get("total") or 0),
+        "balance": float(invoice.get("balance") or 0),
+        "currency_code": invoice.get("currency_code", ""),
+        "status": invoice.get("status", ""),
+    }
+
+
 class ZohoService:
     def __init__(self) -> None:
         self._access_token: str | None = None
@@ -639,22 +658,104 @@ class ZohoService:
     async def get_contact(self, db: AsyncSession, contact_id: str) -> dict:
         return _map_contact((await self._request(db, "GET", f"/contacts/{_seg(contact_id)}")).get("contact", {}))
 
-    async def books_app_url(self, db: AsyncSession, estimate_id: str) -> str:
-        """Deep link into the Books web app for this org's region.
+    async def _books_app_base(self, db: AsyncSession) -> str:
+        """`https://books.<region>/app/<org>` for this org, no fragment.
 
         The API host is not the app host, so the region is taken from the
         accounts URL: accounts.zoho.eu -> books.zoho.eu, and
         accounts.zoho.com.au -> books.zoho.com.au.
+
+        Split out of ``books_app_url`` so the invoice link can reuse the
+        region derivation without copying it — the two differ only in the
+        fragment, and a second hand-written copy of this is a second place
+        for a new Zoho region to be wrong.
+        """
+        config = await self._load_config(db)
+        host = urlparse(config["zoho_accounts_url"]).hostname or "accounts.zoho.eu"
+        suffix = host[len("accounts.") :] if host.startswith("accounts.") else host
+        return f"https://books.{suffix}/app/{config['zoho_organization_id']}"
+
+    async def books_app_url(self, db: AsyncSession, estimate_id: str) -> str:
+        """Deep link to an estimate in the Books web app.
 
         The fragment is `#/quotes/`, not `#/estimates/`: the REST API still
         calls these estimates (every endpoint in this service does), but the
         Books web app routes them under quotes, and an `#/estimates/` link
         does not resolve. The two names are the same object.
         """
-        config = await self._load_config(db)
-        host = urlparse(config["zoho_accounts_url"]).hostname or "accounts.zoho.eu"
-        suffix = host[len("accounts.") :] if host.startswith("accounts.") else host
-        return f"https://books.{suffix}/app/{config['zoho_organization_id']}#/quotes/{estimate_id}"
+        return f"{await self._books_app_base(db)}#/quotes/{estimate_id}"
+
+    async def books_invoice_url(self, db: AsyncSession, invoice_id: str) -> str:
+        """Deep link to an invoice in the Books web app.
+
+        Unlike ``books_app_url`` above, the REST name and the app route agree
+        here — both are `invoices`, so no renaming is needed.
+        """
+        return f"{await self._books_app_base(db)}#/invoices/{invoice_id}"
+
+    async def list_project_invoices(self, db: AsyncSession, estimate_id: str, customer_id: str) -> list[dict]:
+        """Every invoice Books has raised from this estimate, newest first.
+
+        A list, not one invoice: Books allows an estimate to be invoiced in
+        parts, and collapsing that to a single row in here would hide from
+        the caller that there was ever a choice to make. The Aito card shows
+        the newest and reports the count.
+
+        ``estimate_id`` MUST be non-empty and is refused when it is not. This
+        is not defensive habit: Books treats `estimate_id=` (empty) as "no
+        filter" and answers with the org's ENTIRE invoice list, so passing a
+        project's unset ``quote_id`` straight through would render a stranger's
+        invoice — with their name, total and number — on this project's card.
+        Verified against the live org; the empty query returned 200 unrelated
+        invoices.
+
+        Survivors are further required to belong to ``customer_id``, mirroring
+        ``find_estimate_by_reference`` above: Books resolved the join itself
+        here, so a mismatch should be impossible — which is exactly why one
+        occurring is worth a warning rather than a silent render. Invoices
+        that fail the check are dropped, not raised on: this feeds a read-only
+        card, and hiding a suspect row degrades better than 502-ing a panel
+        whose every other card is fine.
+
+        Returns [] when there is no invoice — the common case for a quoted
+        project, not an error.
+        """
+        if not estimate_id:
+            return []
+        payload = await self._request(db, "GET", "/invoices", params={"estimate_id": estimate_id})
+        invoices = payload.get("invoices") or []
+        if customer_id:
+            kept = [i for i in invoices if not i.get("customer_id") or i.get("customer_id") == customer_id]
+            if len(kept) != len(invoices):
+                logger.warning(
+                    "Zoho returned %d invoice(s) for estimate %s belonging to another customer; dropped",
+                    len(invoices) - len(kept),
+                    estimate_id,
+                )
+            invoices = kept
+        # Newest first. Books' `date` is ISO `YYYY-MM-DD`, so a string sort is
+        # a date sort; a missing date sorts last rather than crashing the sort.
+        invoices.sort(key=lambda i: i.get("date") or "", reverse=True)
+        return [_map_invoice(i) for i in invoices]
+
+    async def get_invoice_pdf(self, db: AsyncSession, invoice_id: str) -> bytes:
+        """The invoice rendered as a PDF, for printing.
+
+        Same shape and same reasoning as ``get_estimate_pdf`` above: not
+        routed through ``_request`` because that parses every response as
+        JSON, and a 200 that is not a PDF is treated as an upstream failure
+        rather than streamed to the browser as a blank print dialog.
+        """
+        response = await self._send(db, "GET", f"/invoices/{_seg(invoice_id)}", params={"accept": "pdf"})
+        if response.status_code >= 400:
+            try:
+                payload = response.json() if response.content else {}
+            except ValueError:
+                payload = {}
+            self._raise_for_status(response, payload)
+        if not response.content.startswith(b"%PDF-"):
+            raise ZohoUpstreamError("Zoho Books did not return a PDF")
+        return response.content
 
     async def create_contact(
         self,

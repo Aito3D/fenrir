@@ -3656,6 +3656,29 @@ export interface AitoQuoteEmailContent {
   default_email: string | null;
 }
 
+/** The Invoice card's contents, read live from Books rather than snapshotted
+ *  onto the project like the quote fields are — an invoice's interesting
+ *  field is whether it has been PAID, and a stored copy of that is wrong the
+ *  moment the client pays. See schemas/aito.py:AitoInvoiceResponse. */
+export interface AitoInvoice {
+  id: string;
+  number: string;
+  date: string;
+  due_date: string;
+  total: number;
+  /** What is still owed. `status` alone does not separate a part-paid
+   *  invoice from an unpaid one. */
+  balance: number;
+  currency_code: string;
+  /** Books' own vocabulary — paid / unpaid / overdue / partially_paid /
+   *  void / draft / sent. NOT the quote status vocabulary. */
+  status: string;
+  url: string;
+  /** Books allows an estimate to be invoiced in parts. The card renders the
+   *  newest and says so when this is greater than 1. */
+  invoice_count: number;
+}
+
 export interface AitoShippingIsland {
   key: string;
   label: string;
@@ -6688,6 +6711,23 @@ export const api = {
     const headers: Record<string, string> = {};
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
     const response = await fetch(`${API_BASE}/aito/${projectId}/quote.pdf`, { headers });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.blob();
+  },
+  /** The invoice Books raised from this project's quote, or null when there
+   *  is none — which is the ordinary state of a job that has not been billed
+   *  yet, not an error. Hits Zoho on every call, so callers should cache. */
+  getAitoInvoice: (projectId: number) => request<AitoInvoice | null>(`/aito/${projectId}/invoice`),
+  /** The project's Zoho invoice as a PDF blob. Same manual-fetch reasoning as
+   *  `getAitoQuotePdf` above: `request()` parses JSON, and the endpoint needs
+   *  an Authorization header that no <iframe src> can carry. */
+  getAitoInvoicePdf: async (projectId: number): Promise<Blob> => {
+    const headers: Record<string, string> = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const response = await fetch(`${API_BASE}/aito/${projectId}/invoice.pdf`, { headers });
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.detail || `HTTP ${response.status}`);

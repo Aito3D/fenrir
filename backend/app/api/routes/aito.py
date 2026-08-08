@@ -22,6 +22,7 @@ from backend.app.schemas.aito import (
     AitoEventPage,
     AitoEventResponse,
     AitoFlagUpdate,
+    AitoInvoiceResponse,
     AitoNoteCreate,
     AitoProjectCreate,
     AitoProjectImport,
@@ -977,6 +978,88 @@ async def add_note(
     await _broadcast_changed("comment", project_id, _actor(current_user))
     await db.refresh(event)
     return AitoEventResponse.model_validate(event)
+
+
+@router.get("/{project_id}/invoice")
+async def get_invoice(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+) -> AitoInvoiceResponse | None:
+    """The invoice Books raised from this project's quote, if there is one.
+
+    Read live rather than from a stored snapshot — see ``AitoInvoiceResponse``
+    for why. That makes this the one Aito card that needs Zoho reachable.
+
+    Returns ``null``, not a 404, when the project simply has no invoice: that
+    is the ordinary state of every quoted job that has not been billed yet,
+    and a 404 would have the client treat the commonest case as an error. A
+    404 here means the PROJECT does not exist, which is a different fact.
+
+    A project with no ``quote_id`` short-circuits without touching Zoho. That
+    is not just an optimisation: see ``list_project_invoices`` for what Books
+    does with an empty ``estimate_id``.
+    """
+    project = await db.get(AitoProject, project_id)
+    if project is None or project.status == "deleted":
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.quote_id:
+        return None
+    try:
+        invoices = await zoho_service.list_project_invoices(db, project.quote_id, project.client_id or "")
+        if not invoices:
+            return None
+        newest = invoices[0]
+        url = await zoho_service.books_invoice_url(db, newest["id"])
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        # 502 for the same reason get_quote_pdf below uses it: the failure is
+        # upstream, and that is what tells the operator to check Zoho rather
+        # than this app's logs.
+        logger.warning("Aito invoice lookup failed for project %s: %s", project_id, e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return AitoInvoiceResponse(**newest, url=url, invoice_count=len(invoices))
+
+
+@router.get("/{project_id}/invoice.pdf")
+async def get_invoice_pdf(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+) -> Response:
+    """This project's Zoho invoice, rendered as a PDF for printing.
+
+    A proxy rather than a redirect, and returned whole rather than streamed,
+    for the reasons spelled out on ``get_quote_pdf`` below.
+
+    The invoice id is resolved here rather than accepted from the client: an
+    id in the URL would let any caller with ``aito:read`` print any invoice in
+    the org by walking ids, including invoices belonging to customers this
+    project has nothing to do with.
+    """
+    project = await db.get(AitoProject, project_id)
+    if project is None or project.status == "deleted":
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.quote_id:
+        raise HTTPException(status_code=404, detail="This project has no Zoho quote")
+    try:
+        invoices = await zoho_service.list_project_invoices(db, project.quote_id, project.client_id or "")
+        if not invoices:
+            raise HTTPException(status_code=404, detail="This project has no Zoho invoice")
+        invoice = invoices[0]
+        pdf = await zoho_service.get_invoice_pdf(db, invoice["id"])
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito invoice PDF failed for project %s: %s", project_id, e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    filename = f"{invoice['number'] or invoice['id']}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        # inline + the shared header helper, for the reasons on get_quote_pdf:
+        # the browser prints this from a blob, and invoice_number is upstream
+        # text that Starlette would fail to latin-1 encode if it contained an
+        # em dash or a curly quote.
+        headers={"Content-Disposition": build_content_disposition(filename, disposition="inline")},
+    )
 
 
 @router.get("/{project_id}/quote.pdf")

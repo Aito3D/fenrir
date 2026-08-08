@@ -485,6 +485,37 @@ class AitoQuoteEmailResponse(BaseModel):
     marked_sent: bool
 
 
+class AitoInvoiceResponse(BaseModel):
+    """The Invoice card's contents, read live from Books on panel open.
+
+    Not snapshotted onto the project like the quote fields are: an invoice's
+    interesting field is whether it has been PAID, and a stored copy of that
+    is wrong the moment the client pays. The trade is that this card needs
+    Zoho reachable, where the Quote card renders from the database.
+
+    ``balance`` rides along with ``total`` because "paid" is the one thing
+    the operator opening this card wants to know, and Books' ``status`` alone
+    does not distinguish a part-paid invoice from an unpaid one.
+    """
+
+    id: str
+    number: str
+    date: str
+    due_date: str
+    total: float
+    balance: float
+    currency_code: str
+    status: str
+    # Deep link into the Books web app. Built per-request rather than stored,
+    # for the same reason the rest of this model is: nothing here is snapshot.
+    url: str
+    # How many invoices this estimate has in total. Books allows an estimate
+    # to be invoiced in parts; the card renders the newest one and uses this
+    # to say so when there are others, rather than silently implying it is
+    # the only one.
+    invoice_count: int
+
+
 class AitoEventResponse(BaseModel):
     id: int
     occurred_at: datetime

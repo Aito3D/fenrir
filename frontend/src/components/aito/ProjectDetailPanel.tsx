@@ -9,6 +9,7 @@ import { PanelAgeStat } from './PanelAgeStat';
 import { eyebrowCls, headerPillCls } from './panelTypography';
 import { ProjectDoneAction } from './ProjectDoneAction';
 import { ProjectProgress } from './ProjectProgress';
+import { InvoiceCard } from './InvoiceCard';
 import { QuotePrintButton } from './QuotePrintButton';
 import { QuoteStatusActions } from './QuoteStatusActions';
 import { SendQuoteButton } from './SendQuoteButton';
@@ -547,7 +548,7 @@ function PanelHeader({
  *  shadow: only the task cards cast one, so the column the operator works in
  *  stays the front plane. Spreading the shadow over every group is what makes
  *  the task list stop being the focus. */
-function PanelCard({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+export function PanelCard({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
     <section className="rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3">
       <div className="flex items-center justify-between gap-2 mb-2">
@@ -1163,6 +1164,12 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               </dl>
                 </PanelCard>
               )}
+
+              {/* Directly under the Quote card: the invoice is the quote's
+                  next chapter, and the two read as one story in that order.
+                  Renders itself away when there is no invoice — see
+                  InvoiceCard, which is why there is no gate here. */}
+              <InvoiceCard project={project} />
 
               <RecordCard project={project} latestEvent={latestEvent} />
 
