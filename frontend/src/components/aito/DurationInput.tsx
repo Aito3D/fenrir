@@ -40,7 +40,7 @@ export function DurationInput({ minutes, onChange, id }: DurationInputProps) {
             inputMode="numeric"
             value={minutes === null ? '' : parts[key]}
             onChange={(e) => set(key, e.target.value)}
-            className={`${inputCls} w-16 text-right`}
+            className={`${inputCls} text-right`}
           />
           {/* Reuses the calculator's existing per-locale duration suffixes
               rather than duplicating them under aito.* — they are already

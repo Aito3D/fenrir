@@ -211,7 +211,7 @@ evidence: ProjectDetailPanel.tsx:691-717,724-741 and ShippingCard.tsx:118-130 sh
 
 ## T-020
 priority: P2
-status: IN_PROGRESS
+status: DONE
 attempts: 1
 round: 1
 first_seen_iteration: 0
