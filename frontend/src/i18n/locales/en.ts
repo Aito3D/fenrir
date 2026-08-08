@@ -393,6 +393,7 @@ export default {
 
   // Common
   common: {
+    plusNMore: '+{{count}} more',
     save: 'Save',
     saving: 'Saving...',
     cancel: 'Cancel',
@@ -991,6 +992,10 @@ export default {
     },
     // Filaments section
     filaments: 'Filaments',
+    externalSpool: {
+      hide: 'Hide external spool',
+      show: 'Show external spool',
+    },
     // Camera
     openCameraOverlay: 'Open camera overlay',
     openCameraWindow: 'Open camera in new window',
@@ -1408,6 +1413,13 @@ export default {
       status: 'Status',
       duration: 'Duration',
       filament: 'Filament',
+      filamentUsed: 'Filament Used',
+      cost: 'Cost',
+      energy: 'Energy',
+      energyCost: 'Energy Cost',
+      completedAt: 'Finished',
+      columns: 'Columns',
+      sortBy: 'Sort by {{column}}',
       allPrinters: 'All Printers',
       allUsers: 'All Users',
       allStatuses: 'All Statuses',
@@ -1575,6 +1587,38 @@ export default {
     // Batch / quantity
     quantity: 'Quantity',
     quantityHint: 'Creates {{count}} queue items',
+    plateQuantityLabel: 'Runs of {{plate}}',
+    plateQuantityTotal_one: '{{count}} run in total',
+    plateQuantityTotal_other: '{{count}} runs in total',
+    batchOrders: {
+      title: 'Batch Orders',
+      emptyTitle: 'No batch orders',
+      emptyDescription: 'Queue a multi-plate file, or more than one copy of a plate, and the order shows up here with its progress.',
+      filter: {
+        active: 'Active',
+        completed: 'Completed',
+        cancelled: 'Cancelled',
+        all: 'All',
+      },
+      status: {
+        active: 'Active',
+        completed: 'Completed',
+        cancelled: 'Cancelled',
+      },
+      noTargets: 'Grouping only',
+      noTargetsHint: 'Created before per-plate targets existed, so it tracks the runs it queued rather than a target.',
+      dispatchRemaining: 'Queue {{count}} remaining',
+      dispatchPlate: 'Queue remaining',
+      dispatched: 'Queued the remaining runs for {{name}}',
+      plateProgress: '{{completed}} of {{target}} done',
+      remaining: '{{count}} still owed',
+      failed: '{{count}} failed',
+      printing: '{{count}} printing',
+      wholeFile: 'Whole file',
+      due: 'Due {{date}}',
+      costSoFar: '{{amount}} so far',
+      costRemaining: '({{amount}} to go)',
+    },
     activeBatches: 'Active Batches',
     batchProgress: '{{completed}} of {{total}} completed',
     cancelBatch: 'Cancel Remaining',
@@ -1601,6 +1645,7 @@ export default {
     },
     // Tabs
     tabs: {
+      batches: 'Batches',
       queue: 'Queue',
       history: 'History',
       timeline: 'Timeline',
@@ -2951,6 +2996,9 @@ export default {
     updateAvailableVersion: 'Update available: v{{version}}',
     releaseNotes: 'Release Notes',
     updateViaDocker: 'Update via Docker Compose:',
+    composeDirectory: 'Compose directory',
+    composeDirectoryHint: 'Directory containing your docker-compose.yml. Leave blank to omit the cd.',
+    copyUpdateCommand: 'Copy update command',
     updateViaHomeAssistant: 'Updates are managed by the Home Assistant Supervisor. Open Settings → Add-ons → Bambuddy in Home Assistant to install the new version.',
     updateViaWindowsInstaller: 'Windows installations are updated by re-running the installer. Download the new version below — your data, settings and printers are preserved.',
     downloadWindowsInstaller: 'Download installer for v{{version}}',
@@ -3758,6 +3806,34 @@ export default {
     eta: 'ETA',
     printerIdle: 'Printer is idle',
     printerOffline: 'Printer offline',
+    builder: {
+      title: 'Streaming Overlay',
+      description: 'Build the URL for a streaming overlay — a full-screen camera view with live print data drawn over it, for OBS, a wall display, or any browser source. Pick the fields you want and copy the URL.',
+      printer: 'Printer',
+      size: 'Text size',
+      sizeSmall: 'Small',
+      sizeMedium: 'Medium',
+      sizeLarge: 'Large',
+      fps: 'Frame rate',
+      fpsHint: 'A1 and P1 cameras top out around 5 fps whatever you ask for.',
+      token: 'Streaming Overlay token (optional)',
+      tokenHint: 'Only needed when login is enabled: OBS has no session of its own. Create one above with the Streaming Overlay scope.',
+      tokenWarning: 'This URL contains a token — anyone who can read it can watch the stream and see the file name. Revoke the token to cut it off.',
+      fields: 'Fields to show',
+      fieldPrinter: 'Printer name',
+      fieldFilename: 'File name',
+      fieldStatus: 'Status',
+      fieldProgress: 'Progress bar',
+      fieldLayers: 'Layer count',
+      fieldEta: 'Time remaining and ETA',
+      fieldCamera: 'Camera feed',
+      chamberHint: 'Chamber temperature only appears on models with a real chamber sensor — P1 and A1 printers report a meaningless value, so it is left out there.',
+      urlTitle: 'Overlay URL',
+      open: 'Open',
+      showPreview: 'Show preview',
+      hidePreview: 'Hide preview',
+      previewTitle: 'Overlay preview',
+    },
     status: {
       printing: 'Printing',
       paused: 'Paused',
@@ -4035,6 +4111,13 @@ export default {
 
   // File manager
   fileManager: {
+    variants: {
+      badge: '{{count}} versions',
+      groupAction: 'Group as versions',
+      groupTooltip: 'Mark these files as the same job sliced for different printers',
+      grouped: 'Grouped {{count}} files as versions',
+      printAlternatives: 'Print ({{count}} alternatives)',
+    },
     title: 'File Manager',
     subtitle: 'Organize and manage your print files',
     uploadFiles: 'Upload Files',
@@ -4242,6 +4325,7 @@ export default {
     scanFolder: 'Scan',
     toast: {
       folderCreated: 'Folder created',
+      openInSlicerFailed: 'Could not open in slicer',
       folderDeleted: 'Folder deleted',
       fileDeleted: 'File deleted',
       filesDeleted: 'Deleted {{count}} files',
@@ -4266,6 +4350,12 @@ export default {
 
   // Projects
   projects: {
+    parentLabel: 'Parent project',
+    parentNone: 'None (top-level project)',
+    parentHint: 'Nest this project under another one so its figures roll up into a master project',
+    partOf: 'Part of {{name}}',
+    subProjectCount: '{{count}} sub-projects',
+    subProjectsOf: 'Sub-projects of {{name}}',
     title: 'Projects',
     subtitle: 'Organize and track your 3D printing projects',
     newProject: 'New Project',
@@ -4413,6 +4503,12 @@ export default {
     },
     subProjects: {
       title: 'Sub-projects ({{count}})',
+      jobs: '{{count}} jobs',
+    },
+    rollup: {
+      title: 'Including {{count}} sub-projects',
+      progress: 'Overall progress',
+      percentComplete: '{{percent}}% complete',
     },
     notes: {
       title: 'Notes',
@@ -4600,6 +4696,10 @@ export default {
     allPresetsRequired: 'All presets must be selected',
     useEmbedded: "Use the file's built-in settings",
     useEmbeddedHint: "Slice it the way the designer set it up (walls, infill, filament) instead of the profiles above. Offered because your printer matches the file's.",
+    autoOrient: 'Auto-orient objects',
+    autoOrientHint: 'Let the slicer turn each object onto its best printing side first. Overrides the way the model was laid down in the file.',
+    autoArrange: 'Auto-arrange on the plate',
+    autoArrangeHint: 'Let the slicer position the objects so they no longer overlap. Replaces the layout the file came with.',
     designSettings: 'Keep the designer\'s settings',
     designSettingsHint: 'This file changes {{count}} print setting(s) from the stock profile.',
     designSettingsSelected: '{{selected}} of {{total}} selected',
@@ -5147,6 +5247,16 @@ export default {
 
   // Print modal
   printModal: {
+    variants: {
+      editNote: 'These alternatives were set when the job was queued. Cancel and re-queue to change them.',
+      title: 'Printer alternatives',
+      help: 'One job, one queue slot. The first matching printer to free up runs its file.',
+      unknownModel: 'Unknown model',
+      plateFor: 'Plate for {{filename}}',
+      moveUp: 'Move up',
+      moveDown: 'Move down',
+      queued: 'Queued with {{count}} alternatives',
+    },
     selectPrinter: 'Select Printer',
     selectPlate: 'Select Plate',
     filamentMapping: 'Filament Mapping',
@@ -5271,7 +5381,10 @@ export default {
     personalAccessToken: 'Personal Access Token',
     tokenSaved: '(saved)',
     enterNewToken: 'Enter new token to update',
-    tokenHint: 'Fine-grained token with Contents read/write permission',
+    tokenHintGitHub: 'Fine-grained token with Contents read and write access, or a classic token with the repo scope.',
+    tokenHintGitLab: 'Token with the api scope, or read_repository and write_repository together.',
+    tokenHintGitea: 'Token with the write:repository scope.',
+    tokenHintForgejo: 'Token with the write:repository scope. A token limited to this one repository is enough.',
     branch: 'Branch',
     provider: 'Git Provider',
     providerGitHub: 'GitHub',
@@ -5317,11 +5430,85 @@ export default {
     clearedLogs: 'Cleared {{count}} logs',
     failedToClearLogs: 'Failed to clear logs: {{message}}',
 
+    // Restore from Git backup (#2656)
+    restoreFromGit: {
+      button: 'Restore from Git',
+      title: 'Restore from Git Backup',
+      subtitle: 'Pick a commit and choose what to restore',
+      commitLabel: 'Backup commit',
+      latestCommit: 'Latest backup (branch tip)',
+      categoriesLabel: 'What to restore',
+      inspecting: 'Reading backup contents...',
+      itemCount: '{{count}} in backup',
+      overwriteLabel: 'Overwrite existing entries',
+      overwriteOn: 'Existing entries will be updated from the backup.',
+      overwriteOff: 'Only missing entries are added; existing ones are left untouched.',
+      selectedCount: '{{count}} selected',
+      restoring: 'Restoring...',
+      confirmTitle: 'Restore from backup?',
+      confirmMessage: 'The selected categories will be restored from this commit. Missing entries are added; existing entries stay as they are.',
+      confirmMessageOverwrite: 'The selected categories will be restored from this commit, overwriting entries that already exist locally. This cannot be undone.',
+      kprofilesOverwriteCaveat: 'K-profiles are the exception: writing a slot always replaces the calibration on the printer.',
+      tally: '{{restored}} restored, {{skipped}} skipped, {{failed}} failed',
+      reloadHint: 'Reload Bambuddy so the restored data appears everywhere.',
+      partialHint: 'The categories listed above finished and are on disk. Any that are missing did not run.',
+      failed: 'Restore failed.',
+      loadFailed: 'Could not read the backup repository.',
+      // Preview caveats. The server sends detail_code + detail_params and the
+      // English detail as defaultValue, same contract as backup.pathCheck.
+      details: {
+        notPresent: 'Not present in this backup commit',
+        unreadableJson: 'Unreadable JSON: {{paths}}',
+        settingsNoPayload: 'No settings in payload',
+        settingsCredentialsWillSkip: '{{count}} credential-like key(s) will be skipped',
+        settingsCompanionWillSkip: '{{count}} credential-like key(s) will be skipped, and {{companion}} switch(es) that depend on them will be left off',
+        settingsCompanionOnlyWillSkip: '{{companion}} switch(es) will be left off - the credential each one needs cannot be restored from a backup',
+        spoolsUsageCount: 'including {{count}} usage record(s)',
+        archivesMetadataOnly: 'Metadata only - 3MF files and thumbnails are not in a Git backup',
+        kprofilesPrinterCount: 'across {{count}} printer(s)',
+      },
+      // Tally notes, same contract. noData is shared by all four categories:
+      // the category heading renders beside it, so naming the category again
+      // would be redundant.
+      notes: {
+        noData: 'No data of this kind in this backup',
+        archivesPrinterMissing: 'Some archives referenced printers that no longer exist - link cleared',
+        archivesProjectMissing: 'Some archives referenced projects that no longer exist - link cleared',
+        archivesOwnerCleared: 'Some archives referenced users that no longer exist - owner cleared, so they are visible only to users with the archives:read_all permission until an admin reassigns them',
+        archivesOwnerUnmatched: 'Some archives name an owner this instance does not have - owner cleared rather than guessed from the backup\'s user id, so they are visible only to users with the archives:read_all permission until an admin reassigns them',
+        archivesOwnerUnknown: 'Some archives were restored without an owner - this backup does not record one, so they are visible only to users with the archives:read_all permission until an admin reassigns them',
+        archivesUndeleted: 'Archive(s) deleted since the backup are visible again - overwrite was on',
+        archivesMetadataOnly: 'Restored archives carry metadata only - the 3MF and thumbnail files are not in a Git backup',
+        spoolUsageUnresolved: '{{count}} usage record(s) skipped - their spool is not in this backup\'s spool list, so there is nothing to attach them to.',
+        spoolUsageUnlinked: '{{count}} usage record(s) restored without their print-history link - select Print archives alongside Spool inventory to keep it.',
+        spoolTagKept: '{{count}} spool tag(s) left as they are - the backup would have cleared a tag that has since been scanned, or moved one onto a second spool.',
+        settingsCredentialsSkipped: '{{count}} credential-like key(s) skipped - re-enter secrets manually',
+        settingsAuthSkipped: '{{count}} authentication setting(s) skipped - change those in Settings > Authentication so the lockout checks still run',
+        settingsCompanionSkipped: '{{keys}} left switched off - the credential each one needs cannot be restored from a backup and this instance has none stored, so switching them on would leave the integration unauthenticated',
+        settingsMqttRelayFailed: 'MQTT settings restored, but the relay could not be reconnected - restart Bambuddy',
+        kprofilesAlwaysOverwrite: 'K-profiles always overwrite the matching slot on the printer',
+        kprofilesAckUnreliable: 'A printer that does not answer still counts as restored - verify the profiles on the printer',
+        kprofilesPrinterMissing: 'No printer with serial {{serial}} - skipped',
+        kprofilesPrinterOffline: '{{printer}} ({{serial}}) is not connected - skipped',
+        kprofilesUnknownNozzle: 'Unexpected nozzle diameter {{nozzle}} for {{serial}} - sent as-is',
+        kprofilesUnmatched: '{{count}} profile(s) for {{nozzle}} had no counterpart on {{printer}} - added as new profiles',
+        kprofilesSendFailed: 'Failed to send {{nozzle}} profiles to {{printer}} ({{serial}})',
+        kprofilesRefused: '{{printer}} ({{serial}}) refused the {{nozzle}} profiles: {{reason}}',
+        kprofilesStepFailed: 'The K-profile step could not be completed - {{reason}}. Anything restored before it is still saved.',
+      },
+    },
+
     // History
     history: 'History',
     clear: 'Clear',
     date: 'Date',
     status: 'Status',
+    trigger: 'Type',
+    triggers: {
+      manual: 'Backup (manual)',
+      scheduled: 'Backup (scheduled)',
+      restore: 'Restore',
+    },
     commit: 'Commit',
 
     // Local Backup
@@ -5802,6 +5989,9 @@ export default {
   // Model Viewer
   modelViewer: {
     openInSlicer: 'Open in Slicer',
+    openInSlicerWith: 'Open in {{slicer}}',
+    moreSlicerOptions: 'More slicer options',
+    openInSlicerFailed: 'Could not open in slicer',
     tabs: {
       model: '3D Model',
       gcode: 'G-code Preview',
@@ -5852,6 +6042,61 @@ export default {
   },
 
   // Smart Plugs
+  haSensors: {
+    label: 'Sensors',
+    unavailable: 'Unavailable',
+    blocksPrints: '{{entity}} — holds prints while alerting',
+    states: {
+      open: 'Open',
+      closed: 'Closed',
+      unlocked: 'Unlocked',
+      locked: 'Locked',
+      detected: 'Detected',
+      clear: 'Clear',
+      wet: 'Wet',
+      dry: 'Dry',
+      problem: 'Problem',
+      ok: 'OK',
+      running: 'Running',
+      stopped: 'Stopped',
+      on: 'On',
+      off: 'Off',
+    },
+    sectionTitle: 'Home Assistant Sensors',
+    add: 'Add Sensor',
+    addTitle: 'Add Home Assistant Sensor',
+    editTitle: 'Edit Home Assistant Sensor',
+    empty: 'No sensors yet. Bind a door contact or a thermometer from Home Assistant to show it on a printer card.',
+    unknownPrinter: 'Unknown printer',
+    badgeBlocks: 'Holds prints',
+    badgeNotifies: 'Notifies',
+    badgeHidden: 'Hidden on card',
+    printer: 'Printer',
+    entity: 'Entity',
+    searchPlaceholder: 'Search entities...',
+    noEntities: 'No matching entities',
+    name: 'Display name',
+    alertWhen: 'Alert when',
+    alertNever: 'Never — display only',
+    alertAbove: 'Above',
+    alertBelow: 'Below',
+    alertHint: 'The alert state highlights the sensor on the printer card and enables the options below.',
+    showOnCard: 'Show on printer card',
+    notifyOnAlert: 'Send a notification when it starts alerting',
+    blockPrint: 'Hold queued prints while alerting',
+    blockPrintHint: 'Jobs stay queued and start on their own once the sensor clears. Ignored while Home Assistant is unreachable.',
+    toast: {
+      created: 'Sensor added',
+      updated: 'Sensor saved',
+      deleted: 'Sensor removed',
+    },
+    error: {
+      pickEntity: 'Pick a Home Assistant entity',
+      nameRequired: 'Enter a display name',
+      printerRequired: 'Pick a printer',
+      alertRequired: 'Set an alert condition first',
+    },
+  },
   smartPlugs: {
     offline: 'Offline',
     admin: 'Admin',
@@ -6164,6 +6409,8 @@ export default {
     notificationEvents: 'Notification Events',
     progressPercent: '(25%, 50%, 75%)',
     bedCooledAfterPrint: '(after print completes)',
+    haSensorAlert: 'Sensor Alert',
+    haSensorAlertDescription: '(a bound Home Assistant sensor needs attention)',
     // Per-event ntfy priority (#990)
     eventPriority: {
       sectionTitle: 'ntfy Priority',
@@ -7054,6 +7301,10 @@ export default {
       port_bind: {
         title: 'Discovery service (port {{port}})',
         fail: 'Nothing is listening on port {{port}} of the bind IP, so the slicer\'s discovery handshake fails.',
+      },
+      privileged_ports: {
+        title: 'Privileged port binding',
+        fail: 'Port {{port}} is below 1024, and this service is not permitted to bind it — which is why nothing is listening above. Add AmbientCapabilities=CAP_NET_BIND_SERVICE to /etc/systemd/system/bambuddy.service and restart, or run "sudo setcap cap_net_bind_service=+ep $(readlink -f $(which python3))". On Docker, add cap_add: [NET_BIND_SERVICE].',
       },
       certificate: {
         title: 'TLS certificate',

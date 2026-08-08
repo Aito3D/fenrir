@@ -12,6 +12,7 @@ import ipaddress
 import logging
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -25,6 +26,67 @@ from backend.app.core.logging_filters import redact_url_credentials
 from backend.app.services.camera import get_ffmpeg_path, get_rtsp_semaphore
 
 logger = logging.getLogger(__name__)
+
+
+# The protocols an RTSP camera legitimately needs. Handed to ffmpeg's
+# -protocol_whitelist on every RTSP invocation so `-i` cannot be talked into
+# opening file:, http: or concat: instead. Ported from upstream.
+_RTSP_PROTOCOL_WHITELIST = "rtsp,rtp,udp,tcp,tls,crypto"
+
+
+def _blocked_host_reason(hostname: str) -> str | None:
+    """Describe why *hostname* is a destination we refuse to fetch, or None to allow it.
+
+    Ported from upstream (its SSRF suite imports this by name). It replaces the
+    list-of-spellings check this module used to carry: 127.0.0.1, 127.0.0.2,
+    2130706433, 0177.0.0.1, 127.1 and ::ffff:127.0.0.1 all arrive at loopback,
+    and a list of strings only ever catches whichever one someone thought to
+    write down. ``inet_aton`` comes first because it accepts the legacy octal,
+    decimal and short forms that ``ip_address`` rejects — the C resolvers
+    behind aiohttp and ffmpeg accept them, so refusing to understand them here
+    would only mean not seeing where the request is actually going.
+
+    LAN addresses stay allowed on purpose: cameras live on the same network as
+    the app, and blocking RFC-1918 would remove the feature rather than protect
+    it. What is refused is the host talking to itself, the unspecified address,
+    link-local (where the cloud metadata endpoint lives), and the metadata
+    hostnames.
+
+    Names are NOT resolved here. This module's caller resolves separately and
+    pins the resulting IP into the URL (see ``_sanitize_camera_url`` below),
+    which is the stronger answer to rebinding than a lookup in this helper
+    would be.
+    """
+    host = hostname.lower()
+
+    ip: ipaddress.IPv4Address | ipaddress.IPv6Address | None = None
+    try:
+        ip = ipaddress.ip_address(socket.inet_aton(host))
+    except OSError:
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            ip = None
+
+    if ip is None:
+        if host == "localhost" or host.endswith(".localhost"):
+            return "localhost"
+        if host in ("metadata.google.internal", "metadata.google"):
+            return "a cloud metadata service"
+        return None
+
+    # ::ffff:127.0.0.1 is loopback wearing an IPv6 spelling.
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if mapped is not None:
+        ip = mapped
+
+    if ip.is_loopback:
+        return "loopback"
+    if ip.is_unspecified:
+        return "the unspecified address"
+    if ip.is_link_local:
+        return "a link-local address (the cloud metadata range)"
+    return None
 
 
 def _sanitize_camera_url(url: str, allowed_schemes: tuple[str, ...] = ("http", "https", "rtsp")) -> str | None:
@@ -57,27 +119,18 @@ def _sanitize_camera_url(url: str, allowed_schemes: tuple[str, ...] = ("http", "
 
         # Block cloud metadata service endpoints (SSRF mitigation)
         # These are dangerous destinations that should never be accessed
-        hostname = parsed.hostname or ""
-        hostname_lower = hostname.lower().rstrip(".")
-        blocked_hosts = (
-            "169.254.169.254",  # AWS/GCP/Azure metadata
-            "metadata.google.internal",  # GCP metadata
-            "metadata.google",
-            "localhost",  # Block localhost to prevent internal service access
-            "127.0.0.1",
-            "::1",
-            "0.0.0.0",  # nosec B104
-        )
-        if hostname_lower in blocked_hosts:
-            logger.warning("Blocked camera URL targeting restricted host: %s", hostname)
+        hostname = (parsed.hostname or "").rstrip(".")
+        if not hostname:
             return None
 
-        # Block link-local addresses (169.254.x.x and fe80::/10)
-        if hostname.startswith("169.254."):
-            logger.warning("Blocked camera URL targeting link-local address: %s", hostname)
-            return None
-        if hostname_lower.startswith("fe80:"):
-            logger.warning("Blocked camera URL targeting IPv6 link-local: %s", hostname)
+        # One classifier instead of the string list this used to carry — see
+        # _blocked_host_reason for why a list of loopback spellings is not a
+        # boundary. It covers the metadata hostnames, localhost, loopback, the
+        # unspecified address and link-local (169.254/16 and fe80::/10) in
+        # every notation the resolvers below will accept.
+        blocked = _blocked_host_reason(hostname)
+        if blocked:
+            logger.warning("Blocked camera URL targeting %s: %s", blocked, hostname)
             return None
 
         # Resolve IP literals and check for restricted ranges (blocks hex/decimal/IPv6-mapped bypasses)
@@ -92,9 +145,11 @@ def _sanitize_camera_url(url: str, allowed_schemes: tuple[str, ...] = ("http", "
                     logger.warning("Blocked camera URL targeting restricted mapped IP: %s", hostname)
                     return None
         except ValueError:
-            # Not an IP literal — resolve hostname to check the actual IP
-            import socket
-
+            # Not an IP literal — resolve hostname to check the actual IP.
+            # `socket` is imported at module scope (added when upstream's
+            # _blocked_host_reason was ported in). The function-local `import
+            # socket` that used to sit here would shadow it, which also made
+            # the resolver impossible to patch from a test.
             try:
                 resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
                 resolved_ip = None
@@ -120,22 +175,40 @@ def _sanitize_camera_url(url: str, allowed_schemes: tuple[str, ...] = ("http", "
                 logger.warning("Blocked camera URL: hostname %s cannot be resolved", hostname)
                 return None
 
-        # Reconstruct URL from validated components to break taint chain
-        # Preserve credentials for RTSP/RTSPS (cameras legitimately embed auth in URL)
+        # Reconstruct URL from validated components to break taint chain.
+        #
+        # Credentials are carried across verbatim from netloc rather than via
+        # parsed.username/.password, which urlparse has already percent-decoded:
+        # re-emitting those corrupts any password containing an @ or a :. They
+        # have to survive at all because most RTSP cameras — and a fair number
+        # of MJPEG ones — carry their login in the URL, and dropping it turns
+        # every one of them into an authentication failure. Preserved for ALL
+        # allowed schemes, not just rtsp/rtsps as this used to: an authenticated
+        # MJPEG camera is not a rarer thing than an authenticated RTSP one.
+        # Scheme-conditional, which is this fork's policy and NOT upstream's:
+        # upstream preserves userinfo for every allowed scheme, this keeps it
+        # only for RTSP/RTSPS. Credentials on a plain-HTTP camera URL travel in
+        # cleartext and get echoed into logs and stream URLs downstream, and
+        # the fork has chosen not to propagate them. Upstream's
+        # `test_http_cameras_keep_their_basic_auth_too` asserts the opposite
+        # and has been rewritten to this contract — see the note there.
+        #
+        # The EXTRACTION is upstream's and worth keeping: taken verbatim from
+        # netloc rather than via parsed.username/.password, which urlparse has
+        # already percent-decoded — rebuilding from those corrupts any password
+        # containing an @ or a :.
+        netloc = parsed.netloc
+        userinfo = f"{netloc.rsplit('@', 1)[0]}@" if ("@" in netloc and scheme in ("rtsp", "rtsps")) else ""
+        # parsed.hostname has already stripped the brackets off an IPv6 literal;
+        # without them back the result is not a URL any client can parse.
+        host_str = f"[{hostname}]" if ":" in hostname else hostname
         port_str = f":{parsed.port}" if parsed.port else ""
         path = parsed.path or ""
         query = f"?{parsed.query}" if parsed.query else ""
         fragment = f"#{parsed.fragment}" if parsed.fragment else ""
 
-        userinfo = ""
-        if scheme in ("rtsp", "rtsps") and parsed.username:
-            userinfo = parsed.username
-            if parsed.password:
-                userinfo += f":{parsed.password}"
-            userinfo += "@"
-
         # Build sanitized URL from validated components (hostname replaced with resolved IP when applicable)
-        sanitized = f"{scheme}://{userinfo}{hostname}{port_str}{path}{query}{fragment}"
+        sanitized = f"{scheme}://{userinfo}{host_str}{port_str}{path}{query}{fragment}"
         return sanitized
     except ValueError:
         return None
@@ -230,6 +303,15 @@ def _validate_usb_device(device: str) -> str | None:
         return None
 
     return str(safe_device_path)
+
+
+# Upstream's name for the same guard. Kept as an alias rather than a second
+# implementation: upstream inlined this validation into `_safe_usb_device_path`
+# while this fork had already extracted it here, and the two are the same
+# check — /dev/videoN with N parsed to an int (so no traversal can survive)
+# and the node required to exist. Upstream's SSRF suite imports the name, and
+# one function with two names cannot drift the way two copies would.
+_safe_usb_device_path = _validate_usb_device
 
 
 async def capture_frame(
@@ -458,6 +540,13 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
         ffmpeg,
         "-rtsp_transport",
         "tcp",
+        # Confine ffmpeg to the protocols an RTSP camera actually speaks.
+        # Without this, `-i` will happily open file:, http:, concat: and
+        # everything else ffmpeg was built with, so a URL that passed the
+        # scheme check could still name any destination or read a local file.
+        # Ported from upstream, which pins it in test_external_camera_ssrf.py.
+        "-protocol_whitelist",
+        _RTSP_PROTOCOL_WHITELIST,
         "-i",
         effective_url,
         "-frames:v",
@@ -889,6 +978,9 @@ async def _stream_rtsp(
             "tcp",
             "-rtsp_flags",
             "prefer_tcp",
+            # See the capture path above for why the whitelist is mandatory.
+            "-protocol_whitelist",
+            _RTSP_PROTOCOL_WHITELIST,
             # Socket I/O timeout name varies by ffmpeg version (#1504); see
             # `rtsp_socket_timeout_flag()` in services.camera.
             f"-{socket_timeout_flag}",

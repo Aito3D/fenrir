@@ -238,6 +238,86 @@ def drying_screen_only(model: str | None) -> bool:
     return model.strip().upper() in _DRYING_SCREEN_ONLY_MODELS
 
 
+# Temperature keys the UI actually draws. `state.temperatures` is also working
+# memory: it carries private bookkeeping (`_nozzle_target_set_time`) and derived
+# flags (`nozzle_heating`) that no consumer outside this module should see. The
+# full-status path hands out the whole dict to logged-in callers; the streaming
+# overlay gets only this list, because an overlay token is a narrower grant than
+# a login and should not pick up fields by accident as the dict grows.
+DISPLAY_TEMPERATURE_KEYS = (
+    "nozzle",
+    "nozzle_target",
+    "nozzle_2",
+    "nozzle_2_target",
+    "bed",
+    "bed_target",
+    "chamber",
+    "chamber_target",
+)
+
+
+def display_temperatures(temperatures: dict | None, model: str | None) -> dict[str, float]:
+    """Filter `state.temperatures` down to the readings a viewer is shown.
+
+    Drops chamber readings on models without a real chamber sensor — P1P, P1S,
+    A1 and A1 mini all report a meaningless `chamber_temper` — matching what
+    ``printer_state_to_dict`` already does for the full status payload.
+    """
+    if not temperatures:
+        return {}
+    allow_chamber = supports_chamber_temp(model)
+    out: dict[str, float] = {}
+    for key in DISPLAY_TEMPERATURE_KEYS:
+        if key.startswith("chamber") and not allow_chamber:
+            continue
+        value = temperatures.get(key)
+        if value is None:
+            continue
+        try:
+            out[key] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def uniform_tray_filament_hint(loaded_types: list[str]) -> str | None:
+    """Guess an active cycle's filament from the loaded trays.
+
+    Bambu never echoes back which filament or temperature a drying cycle is
+    running, so the badge normally reads the target we cached when we sent the
+    command. This is the fallback for when we have no record — drying started in
+    a previous backend lifetime, or from the printer's own screen.
+
+    It answers only when every loaded tray holds the same filament type. On a
+    mixed unit the first tray is evidence of nothing: an AMS holding two PETG
+    and two PLA spools, drying PLA at the 45°C the user picked, was labelled
+    "PETG @ 65°C" purely because slot 1 happened to be PETG (#2759).
+
+    Deliberately no temperature. The RFID-recommended ``drying_temp`` used to be
+    returned alongside a uniform filament, which narrowed #2759 to units whose
+    spools disagree but left the uniform case stating a temperature just as
+    invented: a unit loaded entirely with PLA, drying at the 45°C the user
+    picked, read "PLA @ 55°C" the moment the cached target went missing. The
+    filament type is real evidence — every spool in the unit agrees on it, and
+    the dryer heats all of them — but the temperature is a free choice in the
+    popover, so a recommendation is never evidence of what is running. The badge
+    shows the filament and the countdown, and names a temperature only when we
+    actually sent it.
+
+    Args:
+        loaded_types: ``tray_type`` for each tray, in slot order. Empty slots
+            (falsy) are ignored.
+
+    Returns:
+        The shared filament type, or None if the loaded trays disagree or the
+        unit is empty.
+    """
+    types = {str(tray_type) for tray_type in loaded_types if tray_type}
+    if len(types) != 1:
+        return None
+    return next(iter(types))
+
+
 def supports_drying(model: str | None, firmware: str | None) -> bool:
     """Check if a printer model accepts remote AMS drying commands.
 
@@ -1254,9 +1334,9 @@ def printer_state_to_dict(
             # per-tick AMS push, so prefer the cached target from the last
             # ``send_drying_command``. When we have no record (drying
             # started in a previous backend lifetime, or the cache was
-            # never seeded), fall back to the first loaded tray's
-            # tray_type + RFID-recommended drying_temp — the same heuristic
-            # the popover already uses to seed defaults.
+            # never seeded), the loaded trays can still name the filament
+            # if they agree — but never the temperature, which only the
+            # cache knows. See uniform_tray_filament_hint.
             ams_id_int = int(ams_data.get("id", 0))
             target = (drying_targets or {}).get(ams_id_int)
             dry_target_temp: int | None = None
@@ -1271,17 +1351,8 @@ def printer_state_to_dict(
                         dry_target_temp = None
                 if fil_val:
                     dry_filament = str(fil_val)
-            if dry_target_temp is None or not dry_filament:
-                for tray in trays:
-                    if tray.get("tray_type"):
-                        if not dry_filament:
-                            dry_filament = str(tray["tray_type"])
-                        if dry_target_temp is None and tray.get("drying_temp"):
-                            try:
-                                dry_target_temp = int(tray["drying_temp"])
-                            except (TypeError, ValueError):
-                                pass
-                        break
+            if not dry_filament:
+                dry_filament = uniform_tray_filament_hint([tray.get("tray_type") or "" for tray in trays])
 
             ams_units.append(
                 {

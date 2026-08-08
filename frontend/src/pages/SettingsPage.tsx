@@ -1,5 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Briefcase, Workflow, Cable, UploadCloud } from 'lucide-react';
+// Union of both icon sets: `Cable` is the fork's and `MonitorPlay` upstream's,
+// and each is referenced twice in the merged body — dropping either side's
+// icon breaks the build, not just the look.
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Briefcase, Workflow, Cable, UploadCloud, MonitorPlay } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -11,15 +14,18 @@ import { fleetAudience, sponsorHref } from '../utils/fleetAudience';
 import { PRESET_CATEGORIES, parsePresetTriple } from '../utils/temperatureFanPresets';
 import { CALIBRATION_MODES, CALIBRATION_MODE_ACTIVE, CALIBRATION_MODE_INACTIVE } from '../utils/calibrationMode';
 import { PreheatFilamentTargetsEditor } from '../components/PreheatFilamentTargetsEditor';
-import type { APIKey, AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse, CalibrationMode } from '../api/client';
+import type { APIKey, AppSettings, AppSettingsUpdate, PrinterHASensor, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse, CalibrationMode } from '../api/client';
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
 import { SlicerBundlesPanel } from '../components/SlicerBundlesPanel';
 import { SlicerPipelinesPanel } from '../components/SlicerPipelinesPanel';
 import { CameraTokensSection } from './CameraTokensPage';
+import { StreamOverlayBuilder } from '../components/StreamOverlayBuilder';
 import { Collapsible } from '../components/Collapsible';
+import { CopyButton } from '../components/CopyButton';
 import { Button } from '../components/Button';
 import { SmartPlugCard } from '../components/SmartPlugCard';
 import { AddSmartPlugModal } from '../components/AddSmartPlugModal';
+import { HASensorModal } from '../components/HASensorModal';
 import { NotificationProviderCard } from '../components/NotificationProviderCard';
 import { AddNotificationModal } from '../components/AddNotificationModal';
 import { NotificationTemplateEditor } from '../components/NotificationTemplateEditor';
@@ -50,7 +56,7 @@ import { availableLanguages } from '../i18n';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, type ThemeStyle, type DarkBackground, type LightBackground, type ThemeAccent } from '../contexts/ThemeContext';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Palette } from 'lucide-react';
+import { Gauge, Palette } from 'lucide-react';
 import { registerSettingsSearch, getSettingsSearchEntries } from '../lib/settingsSearch';
 import type { UsersSubTab } from '../lib/settingsSearch';
 
@@ -186,6 +192,8 @@ export function SettingsPage() {
   const [humidityDrafts, setHumidityDrafts] = useState<Record<string, string>>({});
   const [showPlugModal, setShowPlugModal] = useState(false);
   const [editingPlug, setEditingPlug] = useState<SmartPlug | null>(null);
+  const [showHASensorModal, setShowHASensorModal] = useState(false);
+  const [editingHASensor, setEditingHASensor] = useState<PrinterHASensor | null>(null);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [editingProvider, setEditingProvider] = useState<NotificationProvider | null>(null);
   const [editingTemplate, setEditingTemplate] = useState<NotificationTemplate | null>(null);
@@ -434,6 +442,12 @@ export function SettingsPage() {
   const { data: printers } = useQuery({
     queryKey: ['printers'],
     queryFn: api.getPrinters,
+  });
+
+  const { data: haSensors } = useQuery({
+    queryKey: ['haSensors'],
+    queryFn: () => api.getHASensors(),
+    enabled: activeTab === 'plugs',
   });
 
   // A business-sized fleet gets the commercial ask instead of the donation ask.
@@ -1364,6 +1378,21 @@ export function SettingsPage() {
       }
     }, 50);
   };
+
+  // #2664 (reporter pchulpjoost): `docker compose pull` only works from the
+  // directory holding the compose file, so the bare command the update box
+  // printed could not be pasted anywhere useful. The saved setting wins; when
+  // it is blank we fall back to whatever the backend could infer, and when
+  // that is blank too we print the command without a `cd` rather than a made-up
+  // path that would fail on paste.
+  const composeDir =
+    (localSettings?.docker_compose_dir ?? '').trim() || (updateCheck?.compose_dir_detected ?? '');
+  // Quoted only when it has to be. The backend restricts this field to path
+  // characters, so quotes, $ and backticks cannot be in it and double-quoting
+  // a path with a space is safe.
+  const composeUpdateCommand = composeDir
+    ? `cd ${/\s/.test(composeDir) ? `"${composeDir}"` : composeDir} && docker compose pull && docker compose up -d`
+    : 'docker compose pull && docker compose up -d';
 
   return (
     <CardDensityProvider density="dense">
@@ -2830,9 +2859,33 @@ export function SettingsPage() {
                         <p className="text-sm text-bambu-gray mb-2">
                           {t('settings.updateViaDocker')}
                         </p>
-                        <code className="block text-xs bg-bambu-dark p-2 rounded text-bambu-green font-mono">
-                          docker compose pull && docker compose up -d
-                        </code>
+                        <div className="flex items-start gap-1">
+                          <code className="flex-1 block text-xs bg-bambu-dark p-2 rounded text-bambu-green font-mono break-all select-all">
+                            {composeUpdateCommand}
+                          </code>
+                          <CopyButton
+                            value={composeUpdateCommand}
+                            titleKey="settings.copyUpdateCommand"
+                            copiedTitleKey="printers.copied"
+                            className="ml-0 p-2 rounded hover:bg-bambu-dark text-bambu-gray hover:text-white transition-colors flex-shrink-0"
+                            iconClassName="w-4 h-4"
+                          />
+                        </div>
+                        <label className="block mt-3">
+                          <span className="block text-xs text-bambu-gray mb-1">
+                            {t('settings.composeDirectory')}
+                          </span>
+                          <input
+                            type="text"
+                            value={localSettings?.docker_compose_dir ?? ''}
+                            onChange={(e) => updateSetting('docker_compose_dir', e.target.value)}
+                            placeholder={updateCheck?.compose_dir_detected || '/opt/bambuddy'}
+                            className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded text-sm text-white font-mono placeholder:text-bambu-gray/60 focus:outline-none focus:border-bambu-green"
+                          />
+                          <span className="block text-xs text-bambu-gray mt-1">
+                            {t('settings.composeDirectoryHint')}
+                          </span>
+                        </label>
                       </div>
                     ) : updateCheck?.update_method === 'windows_installer' ? (
                       <div className="mt-3 p-3 bg-bambu-dark-tertiary rounded-lg">
@@ -3606,6 +3659,88 @@ export function SettingsPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Home Assistant sensors (#1148, #448). Sits under the plugs on the
+              same tab: same integration, same credentials, but read-only —
+              these are contacts and thermometers, not switches. */}
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Gauge className="w-5 h-5 text-bambu-green" />
+                {t('haSensors.sectionTitle')}
+              </h2>
+              <Button
+                className="whitespace-nowrap"
+                disabled={!printers?.length}
+                onClick={() => {
+                  setEditingHASensor(null);
+                  setShowHASensorModal(true);
+                }}
+              >
+                <Plus className="w-4 h-4" />
+                {t('haSensors.add')}
+              </Button>
+            </div>
+
+            {haSensors && haSensors.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {haSensors.map((sensor) => {
+                  const printer = printers?.find((p) => p.id === sensor.printer_id);
+                  return (
+                    <Card key={sensor.id}>
+                      <CardContent className="py-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-white font-medium truncate">{sensor.name}</div>
+                            <div className="text-xs text-bambu-gray truncate">{sensor.entity_id}</div>
+                            <div className="text-xs text-bambu-gray mt-1">
+                              {printer?.name ?? t('haSensors.unknownPrinter')}
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => {
+                              setEditingHASensor(sensor);
+                              setShowHASensorModal(true);
+                            }}
+                          >
+                            {t('common.edit')}
+                          </Button>
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-3">
+                          {sensor.block_print && (
+                            <span className="px-2 py-0.5 text-xs rounded bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400">
+                              {t('haSensors.badgeBlocks')}
+                            </span>
+                          )}
+                          {sensor.notify_on_alert && (
+                            <span className="px-2 py-0.5 text-xs rounded bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400">
+                              {t('haSensors.badgeNotifies')}
+                            </span>
+                          )}
+                          {!sensor.show_on_printer_card && (
+                            <span className="px-2 py-0.5 text-xs rounded bg-bambu-dark-tertiary text-bambu-gray">
+                              {t('haSensors.badgeHidden')}
+                            </span>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            ) : (
+              <Card>
+                <CardContent className="py-8">
+                  <div className="text-center text-bambu-gray">
+                    <Gauge className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                    <p className="text-sm">{t('haSensors.empty')}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </div>
       )}
 
@@ -4333,6 +4468,21 @@ export function SettingsPage() {
               </CardHeader>
               <CardContent>
                 <CameraTokensSection />
+              </CardContent>
+            </Card>
+
+            {/* Streaming-overlay URL builder (#1422). Sits under the camera
+                tokens it usually needs — an overlay for a login-enabled
+                deployment is a token plus a URL, and both are made here. */}
+            <Card className="mt-6">
+              <CardHeader>
+                <h3 className="text-base font-semibold text-white flex items-center gap-2" id="card-stream-overlay">
+                  <MonitorPlay className="w-4 h-4 text-bambu-green" />
+                  {t('streamOverlay.builder.title', 'Streaming Overlay')}
+                </h3>
+              </CardHeader>
+              <CardContent>
+                <StreamOverlayBuilder />
               </CardContent>
             </Card>
           </div>
@@ -5638,6 +5788,18 @@ export function SettingsPage() {
           onClose={() => {
             setShowPlugModal(false);
             setEditingPlug(null);
+          }}
+        />
+      )}
+
+      {/* Home Assistant Sensor Modal (#1148) */}
+      {showHASensorModal && (
+        <HASensorModal
+          sensor={editingHASensor}
+          printers={printers ?? []}
+          onClose={() => {
+            setShowHASensorModal(false);
+            setEditingHASensor(null);
           }}
         />
       )}
