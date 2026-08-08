@@ -28,3 +28,8 @@ SNAPSHOTS 7/7 · SURFACE unchanged · aito missed 235 exact / fe missed 358->351
 Batching differential-tested vs loop-5 over 14 scenarios: identical rows. Hook extraction: mutate-time version derivation preserved. CSS removal: rebuild byte-identical.
 REMAINING_ISSUES: 2x low (widened-but-not-new race window in mirror_comments, call site already handles; same-batch-dup invariant untested -> new P3 task) + 1 info (hook placement precedented)
 
+=== 2026-08-07 14:53 · ITERATION 7 · VERDICT: PASS ===
+SNAPSHOTS 7/7 · SURFACE unchanged (all 5 sections regen-diffed) · 60%/235/349 all within ratchets (349 drop verified: servicesOf if/push collapse) · REGRESSIONS none
+T-021 byte-compared + Tailwind emission confirmed post-move; T-022 memo deps complete, board never mutated in place; T-023 adapter field-mapped line-by-line, numerically identical incl. null/0/discount edges
+REMAINING_ISSUES: 2x INFO (taskTotal now NaN on impossible undefined cost — wire shape always number|null; summariseTasks alloc per preview row — negligible)
+
