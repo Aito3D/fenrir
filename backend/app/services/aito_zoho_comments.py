@@ -196,12 +196,25 @@ async def mirror_comments(db: AsyncSession, project: AitoProject, comments: list
     """Write any comment we have not already seen. Returns how many were new."""
     written = 0
     utc_offset_hours = await _comment_utc_offset_hours(db)
+
+    # One IN(...) query for the whole batch instead of one SELECT per comment.
+    # Safe because zoho_comment_id is UNIQUE (models/aito_event.py) -- a row
+    # already in the DB for one of these ids can only be an exact match -- and
+    # because `seen` is grown below as each comment is written, so a repeat of
+    # the same comment_id later in *this* batch (e.g. Books listing it twice)
+    # is still caught exactly as it was when this was a query per comment.
+    incoming_ids = {str(comment["comment_id"]) for comment in comments if comment.get("comment_id")}
+    seen: set[str] = set()
+    if incoming_ids:
+        rows = await db.execute(select(AitoEvent.zoho_comment_id).where(AitoEvent.zoho_comment_id.in_(incoming_ids)))
+        seen = {row[0] for row in rows}
+
     for comment in comments:
         comment_id = comment.get("comment_id")
         if not comment_id:
             continue
-        seen = (await db.execute(select(AitoEvent.id).where(AitoEvent.zoho_comment_id == str(comment_id)))).first()
-        if seen is not None:
+        comment_id = str(comment_id)
+        if comment_id in seen:
             continue
 
         mapped = map_comment(comment)
@@ -219,9 +232,10 @@ async def mirror_comments(db: AsyncSession, project: AitoProject, comments: list
             subject_id=project.id,
             detail=mapped["detail"],
             occurred_at=when,
-            zoho_comment_id=str(comment_id),
+            zoho_comment_id=comment_id,
         )
         written += 1
+        seen.add(comment_id)
     return written
 
 

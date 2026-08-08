@@ -123,11 +123,11 @@ evidence: aito.py:988-997 and 1028-1041 duplicate lookup->no-quote-404->_quote_e
 
 ## T-012
 priority: P2
-status: OPEN
-attempts: 0
+status: DONE
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 6
 title: zoho_comments: batch seen-check instead of per-comment SELECT
 files: backend/app/services/aito_zoho_comments.py
 evidence: aito_zoho_comments.py:203 one SELECT per comment plus _is_our_echo query per survivor (181-192); one IN() pre-query is behaviour-identical (ids unique, models/aito_event.py:61)
@@ -200,22 +200,22 @@ evidence: 212-222 saves summarySignatureRef.current under deps [tasks,draft,summ
 
 ## T-019
 priority: P2
-status: OPEN
-attempts: 0
+status: IN_PROGRESS
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 6
 title: Extract useProjectPatchMutation (3 identical mutation configs)
 files: frontend/src/components/aito/ProjectDetailPanel.tsx, frontend/src/components/aito/ShippingCard.tsx
 evidence: ProjectDetailPanel.tsx:691-717,724-741 and ShippingCard.tsx:118-130 share identical mutationFn/flashId/onSuccess/onError, only transform differs; extract helper hook with zero behavior change
 
 ## T-020
 priority: P2
-status: OPEN
-attempts: 0
+status: IN_PROGRESS
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 6
 title: DurationInput: delete dead w-16 class (silently loses to inputCls w-full)
 files: frontend/src/components/aito/DurationInput.tsx
 evidence: DurationInput.tsx:43 ${inputCls} w-16: formStyles.ts:4-5 starts with w-full; verified in shipped CSS (.w-16 @26377 before .w-full @27210, same specificity, w-full wins) so w-16 renders nothing; delete it. Do NOT wrap in w-16 div (would CHANGE rendered width)
