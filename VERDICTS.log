@@ -23,3 +23,8 @@ SNAPSHOTS 7/7 · SURFACE unchanged · aito missed 249->235, -12 PROVEN legitimat
 All 8 _project_response sites order-preserved; set_quote_status build-before-Zoho intact; exclusions genuinely differ. REGRESSIONS none.
 REMAINING_ISSUES: 2x low + 1 info (refresh asymmetry _shipping_names(refresh=False) vs _shipping_rates(default) — needs guard comment, fold into T-027; project+project_id redundancy defensible; flag-arg smell documented)
 
+=== 2026-08-07 14:35 · ITERATION 6 · VERDICT: PASS ===
+SNAPSHOTS 7/7 · SURFACE unchanged · aito missed 235 exact / fe missed 358->351 (verified genuine dedup, no scope dodge) · REGRESSIONS none
+Batching differential-tested vs loop-5 over 14 scenarios: identical rows. Hook extraction: mutate-time version derivation preserved. CSS removal: rebuild byte-identical.
+REMAINING_ISSUES: 2x low (widened-but-not-new race window in mirror_comments, call site already handles; same-batch-dup invariant untested -> new P3 task) + 1 info (hook placement precedented)
+

@@ -297,3 +297,14 @@ title: Fix misleading wording from verifier round 1 (test docstring + fail-open 
 files: backend/tests/unit/test_aito_quote_sync.py, backend/app/api/routes/aito.py
 evidence: verifier iter-1: test docstring at test_aito_quote_sync.py:1450,1497 claims swept branch reaches _update_quote non-pending — control flow contradicts (returns at 887); reword to defensive-parity-with-366/654/865. Also note SQLite-message dependence as precondition in _is_duplicate_active_quote_error docstring (aito.py:414-424). Comment/docstring only, zero code change
 
+## T-028
+priority: P3
+status: OPEN
+attempts: 0
+round: 1
+first_seen_iteration: 0
+last_touched_iteration: 0
+title: zoho_comments: regression test for same-batch duplicate comment_id
+files: backend/tests/unit/test_aito_zoho_comments.py
+evidence: verifier iter-6: the seen.add() invariant (same comment_id twice in ONE batch mirrors once) has no test; existing test only covers repetition across separate calls; a regression would ship silently. Test-only task, no source change
+
