@@ -2978,10 +2978,16 @@ async def run_migrations(conn):
         conn,
         "CREATE INDEX IF NOT EXISTS ix_wallet_transactions_is_voided ON wallet_transactions (is_voided)",
     )
-    await _safe_execute(
-        conn,
-        "ALTER TABLE notification_providers ADD COLUMN on_billing_charge_failed BOOLEAN DEFAULT 1",
-    )
+    if is_sqlite():
+        await _safe_execute(
+            conn,
+            "ALTER TABLE notification_providers ADD COLUMN on_billing_charge_failed BOOLEAN DEFAULT 1",
+        )
+    else:
+        await _safe_execute(
+            conn,
+            "ALTER TABLE notification_providers ADD COLUMN on_billing_charge_failed BOOLEAN DEFAULT TRUE",
+        )
 
     # Reprints reuse their source archive, so archive uniqueness must only be
     # the legacy fallback for rows without a per-run UUID. The globally unique
