@@ -509,10 +509,15 @@ class AitoInvoiceResponse(BaseModel):
     # Deep link into the Books web app. Built per-request rather than stored,
     # for the same reason the rest of this model is: nothing here is snapshot.
     url: str
-    # How many invoices this estimate has in total. Books allows an estimate
-    # to be invoiced in parts; the card renders the newest one and uses this
-    # to say so when there are others, rather than silently implying it is
-    # the only one.
+    # How many invoices this estimate has THAT BELONG TO THIS PROJECT'S
+    # CUSTOMER — counted after that filter, not before. Advertising invoices
+    # the guard deliberately excluded would be worse than undercounting: it
+    # would send the operator looking for a document this app will refuse to
+    # show them.
+    #
+    # Books allows an estimate to be invoiced in parts; the card renders the
+    # newest and uses this to say so when there are others, rather than
+    # silently implying it is the only one.
     invoice_count: int
 
 

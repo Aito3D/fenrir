@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { ExternalLink } from 'lucide-react';
 import { api, type AitoProject } from '../../api/client';
-import { PanelCard } from './ProjectDetailPanel';
+import { PanelCard } from './PanelCard';
 import { InvoicePrintButton } from './InvoicePrintButton';
 import { INVOICE_STATUS_TEXT_TONE_CLASSES, invoiceStatusLabelKey, invoiceStatusTone } from './invoiceStatus';
 import { Money } from '../calculator/shared';
@@ -52,6 +52,12 @@ export function InvoiceCard({ project }: { project: AitoProject }) {
     queryFn: () => api.getAitoInvoice(project.id),
     enabled: mayHaveInvoice,
     staleTime: INVOICE_STALE_MS,
+    // The app default is `retry: 1` (App.tsx). Overridden because the failure
+    // this endpoint actually produces is a 502 — Zoho unreachable or
+    // unconfigured — and neither self-heals within one retry. All a retry buys
+    // is a second request against a failing upstream and another wait on its
+    // 10s timeout, for a card that hides itself either way.
+    retry: false,
   });
 
   const invoice = invoiceQuery.data;
@@ -76,7 +82,11 @@ export function InvoiceCard({ project }: { project: AitoProject }) {
             title={t('aito.invoiceOpenInZoho')}
             className="text-white hover:text-bambu-green inline-flex items-center gap-1 min-w-0 truncate"
           >
-            {invoice.number}
+            {/* Falls back to the id: Books has returned an invoice with no
+                number before it is finalised, and a link whose only visible
+                content is an external-link icon is unclickable-looking and
+                says nothing about where it goes. */}
+            {invoice.number || invoice.id}
             <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
           </a>
         </dd>
@@ -133,7 +143,7 @@ export function InvoiceCard({ project }: { project: AitoProject }) {
           is the only action here. "Open in Zoho" is absent for the same
           reason it is there — the number above already goes there. */}
       <div className="flex gap-2 mt-3">
-        <InvoicePrintButton projectId={project.id} className="flex-1 justify-center" />
+        <InvoicePrintButton projectId={project.id} invoiceId={invoice.id} className="flex-1 justify-center" />
       </div>
     </PanelCard>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Building2, Check, Copy, ExternalLink, Eye, Loader2, Mail, Pencil, Phone, Plane, Plus, RefreshCw, User } from 'lucide-react';
@@ -10,6 +10,7 @@ import { eyebrowCls, headerPillCls } from './panelTypography';
 import { ProjectDoneAction } from './ProjectDoneAction';
 import { ProjectProgress } from './ProjectProgress';
 import { InvoiceCard } from './InvoiceCard';
+import { PanelCard } from './PanelCard';
 import { QuotePrintButton } from './QuotePrintButton';
 import { QuoteStatusActions } from './QuoteStatusActions';
 import { SendQuoteButton } from './SendQuoteButton';
@@ -541,24 +542,6 @@ function PanelHeader({
         </div>
       </div>
     </div>
-  );
-}
-
-/** One group of the left rail. `bg-bambu-dark-secondary` with a border and NO
- *  shadow: only the task cards cast one, so the column the operator works in
- *  stays the front plane. Spreading the shadow over every group is what makes
- *  the task list stop being the focus. */
-export function PanelCard({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
-  return (
-    <section className="rounded-[.6rem] border border-bambu-dark-tertiary bg-bambu-dark-secondary p-3">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <p data-testid="panel-card-heading" className="text-xs uppercase tracking-wide text-bambu-gray">
-          {title}
-        </p>
-        {action}
-      </div>
-      {children}
-    </section>
   );
 }
 

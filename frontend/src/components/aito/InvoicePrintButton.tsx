@@ -10,12 +10,25 @@ import { PdfPrintButton } from './PdfPrintButton';
  *  only known once the card's query has answered, so `InvoiceCard` does not
  *  render this until it holds one.
  */
-export function InvoicePrintButton({ projectId, className = '' }: { projectId: number; className?: string }) {
+export function InvoicePrintButton({
+  projectId,
+  /** The invoice the card is displaying — not a lookup this button performs.
+   *  The card reads from a cache while the endpoint resolves live, so
+   *  printing "whatever is newest" could hand over a document whose number
+   *  the operator never saw. The server still owns the candidate set; this
+   *  only says which of them. */
+  invoiceId,
+  className = '',
+}: {
+  projectId: number;
+  invoiceId: string;
+  className?: string;
+}) {
   const { t } = useTranslation();
 
   return (
     <PdfPrintButton
-      fetchPdf={() => api.getAitoInvoicePdf(projectId)}
+      fetchPdf={() => api.getAitoInvoicePdf(projectId, invoiceId)}
       label={t('aito.printInvoice')}
       failureMessage={t('aito.invoicePrintFailed')}
       withLabel

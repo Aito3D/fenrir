@@ -7028,11 +7028,17 @@ export const api = {
   getAitoInvoice: (projectId: number) => request<AitoInvoice | null>(`/aito/${projectId}/invoice`),
   /** The project's Zoho invoice as a PDF blob. Same manual-fetch reasoning as
    *  `getAitoQuotePdf` above: `request()` parses JSON, and the endpoint needs
-   *  an Authorization header that no <iframe src> can carry. */
-  getAitoInvoicePdf: async (projectId: number): Promise<Blob> => {
+   *  an Authorization header that no <iframe src> can carry.
+   *
+   *  `invoiceId` pins the print to the invoice the card is actually showing.
+   *  The server resolves this project's invoices itself and only checks the
+   *  id for membership, so this narrows the choice and never widens it —
+   *  omitting it prints the newest. */
+  getAitoInvoicePdf: async (projectId: number, invoiceId?: string): Promise<Blob> => {
     const headers: Record<string, string> = {};
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-    const response = await fetch(`${API_BASE}/aito/${projectId}/invoice.pdf`, { headers });
+    const query = invoiceId ? `?invoice_id=${encodeURIComponent(invoiceId)}` : '';
+    const response = await fetch(`${API_BASE}/aito/${projectId}/invoice.pdf${query}`, { headers });
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.detail || `HTTP ${response.status}`);

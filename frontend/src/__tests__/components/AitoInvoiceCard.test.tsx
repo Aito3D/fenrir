@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { InvoiceCard } from '../../components/aito/InvoiceCard';
 import { api } from '../../api/client';
@@ -146,5 +147,31 @@ describe('InvoiceCard', () => {
     render(<InvoiceCard project={project} />);
 
     expect(await screen.findByRole('button', { name: /print invoice/i })).toBeInTheDocument();
+  });
+
+  it('prints the invoice it is displaying, not whatever is newest', async () => {
+    // The card is served from a 5-minute cache while the endpoint resolves
+    // live, and Books can invoice one estimate in parts. Without passing the
+    // id, Print could emit a document whose number the operator never saw.
+    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
+    const pdf = vi.spyOn(api, 'getAitoInvoicePdf').mockResolvedValue(new Blob(['%PDF-']));
+    globalThis.URL.createObjectURL = vi.fn(() => 'blob:fake');
+    globalThis.URL.revokeObjectURL = vi.fn();
+    const user = userEvent.setup();
+
+    render(<InvoiceCard project={project} />);
+    await user.click(await screen.findByRole('button', { name: /print invoice/i }));
+
+    await waitFor(() => expect(pdf).toHaveBeenCalledWith(12, 'inv-1'));
+  });
+
+  it('falls back to the id when Books gives the invoice no number', async () => {
+    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue({ ...INVOICE, number: '' });
+
+    render(<InvoiceCard project={project} />);
+
+    // The link must carry readable text, not just an external-link icon.
+    const link = await screen.findByRole('link', { name: /inv-1/ });
+    expect(link).toHaveAttribute('href', INVOICE.url);
   });
 });

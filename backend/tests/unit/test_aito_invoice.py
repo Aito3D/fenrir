@@ -205,6 +205,75 @@ async def test_invoice_pdf_is_served_inline(async_client, books_invoices, monkey
 
 
 @pytest.mark.asyncio
+async def test_invoice_pdf_prints_the_invoice_the_card_asked_for(async_client, books_invoices, monkeypatch):
+    """The card renders from a cached read while this endpoint resolves live,
+    and Books can invoice an estimate in parts — so "newest" is not necessarily
+    the one on screen. Passing the id pins the two together."""
+    printed: list[str] = []
+
+    async def pdf(db, invoice_id):
+        printed.append(invoice_id)
+        return b"%PDF-1.4 fake"
+
+    monkeypatch.setattr(zoho_service, "get_invoice_pdf", pdf)
+    books_invoices["rows"][:] = [
+        {**INVOICE, "invoice_id": "inv-new", "invoice_number": "FA-26-0002", "date": "2026-08-05"},
+        {**INVOICE, "invoice_id": "inv-old", "invoice_number": "FA-26-0001", "date": "2026-08-03"},
+    ]
+    project = await _create(async_client)
+
+    response = await async_client.get(f"/api/v1/aito/{project['id']}/invoice.pdf?invoice_id=inv-old")
+
+    assert response.status_code == 200
+    # The older one, NOT invoices[0] — that is the whole point.
+    assert printed == ["inv-old"]
+    assert "FA-26-0001.pdf" in response.headers["content-disposition"]
+
+
+@pytest.mark.asyncio
+async def test_invoice_pdf_refuses_an_id_that_is_not_this_projects(async_client, books_invoices, monkeypatch):
+    """The id narrows within the server-resolved set and is never trusted on
+    its own — otherwise anyone with aito:read could print any invoice in the
+    org by walking ids."""
+    called: list[str] = []
+
+    async def pdf(db, invoice_id):
+        called.append(invoice_id)
+        return b"%PDF-1.4 fake"
+
+    monkeypatch.setattr(zoho_service, "get_invoice_pdf", pdf)
+    project = await _create(async_client)
+
+    response = await async_client.get(f"/api/v1/aito/{project['id']}/invoice.pdf?invoice_id=someone-elses")
+
+    assert response.status_code == 404
+    # Never reached Zoho for the PDF at all.
+    assert called == []
+
+
+@pytest.mark.asyncio
+async def test_invoice_pdf_without_an_id_still_prints_the_newest(async_client, books_invoices, monkeypatch):
+    """The parameter is optional; omitting it keeps the original behaviour."""
+    printed: list[str] = []
+
+    async def pdf(db, invoice_id):
+        printed.append(invoice_id)
+        return b"%PDF-1.4 fake"
+
+    monkeypatch.setattr(zoho_service, "get_invoice_pdf", pdf)
+    books_invoices["rows"][:] = [
+        {**INVOICE, "invoice_id": "inv-old", "date": "2026-08-03"},
+        {**INVOICE, "invoice_id": "inv-new", "date": "2026-08-05"},
+    ]
+    project = await _create(async_client)
+
+    response = await async_client.get(f"/api/v1/aito/{project['id']}/invoice.pdf")
+
+    assert response.status_code == 200
+    assert printed == ["inv-new"]
+
+
+@pytest.mark.asyncio
 async def test_invoice_pdf_is_404_when_there_is_no_invoice(async_client, books_invoices):
     books_invoices["rows"][:] = []
     project = await _create(async_client)

@@ -1023,6 +1023,7 @@ async def get_invoice(
 @router.get("/{project_id}/invoice.pdf")
 async def get_invoice_pdf(
     project_id: int,
+    invoice_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ) -> Response:
@@ -1031,10 +1032,17 @@ async def get_invoice_pdf(
     A proxy rather than a redirect, and returned whole rather than streamed,
     for the reasons spelled out on ``get_quote_pdf`` below.
 
-    The invoice id is resolved here rather than accepted from the client: an
-    id in the URL would let any caller with ``aito:read`` print any invoice in
-    the org by walking ids, including invoices belonging to customers this
-    project has nothing to do with.
+    The candidate invoices are always resolved server-side from the project's
+    own estimate. ``invoice_id`` may only NARROW that set — it is checked for
+    membership, never trusted — so it cannot be used to print an invoice this
+    project has no claim to by walking ids.
+
+    Why it exists: the card renders from a cached read (see InvoiceCard's
+    staleTime) while this endpoint resolves live, and Books allows an estimate
+    to be invoiced in parts. Without pinning, a second invoice raised while
+    the panel sat open would make Print emit a document whose number the
+    operator never saw. Omitting it keeps the previous behaviour — newest
+    invoice — so existing callers are unaffected.
     """
     project = await db.get(AitoProject, project_id)
     if project is None or project.status == "deleted":
@@ -1045,7 +1053,16 @@ async def get_invoice_pdf(
         invoices = await zoho_service.list_project_invoices(db, project.quote_id, project.client_id or "")
         if not invoices:
             raise HTTPException(status_code=404, detail="This project has no Zoho invoice")
-        invoice = invoices[0]
+        if invoice_id:
+            invoice = next((i for i in invoices if i["id"] == invoice_id), None)
+            if invoice is None:
+                # 404, not 403: from here "belongs to another customer" and
+                # "was this project's until Books voided it a minute ago" are
+                # indistinguishable, and they mean the same thing to the
+                # caller — reopen the card and print from a fresh read.
+                raise HTTPException(status_code=404, detail="That invoice is not one of this project's")
+        else:
+            invoice = invoices[0]
         pdf = await zoho_service.get_invoice_pdf(db, invoice["id"])
     except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
         logger.warning("Aito invoice PDF failed for project %s: %s", project_id, e)
