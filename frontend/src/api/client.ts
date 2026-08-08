@@ -334,6 +334,10 @@ export interface OverlayStatus {
   layer_num: number | null;
   total_layers: number | null;
   stg_cur_name: string | null;
+  // Nozzle / bed / chamber readings for the overlay's temperature fields
+  // (#1422). Only the keys a viewer is shown; chamber is absent on models
+  // without a real sensor.
+  temperatures: Record<string, number>;
   time_format: 'system' | '12h' | '24h';
 }
 
@@ -901,12 +905,21 @@ export interface ProjectStats {
   bom_cost: number;
 }
 
+// A sub-project as listed on its parent's page. The figures cover the child's
+// own subtree, so the listed rows add up to the parent's roll-up minus the
+// parent's own prints (#1264).
 export interface ProjectChildPreview {
   id: number;
   name: string;
   color: string | null;
   status: string;
   progress_percent: number | null;
+  descendant_count: number;
+  total_archives: number;
+  completed_prints: number;
+  total_print_time_hours: number;
+  total_filament_grams: number;
+  total_cost: number;  // Filament + energy + BOM, matching the parent's cost card
 }
 
 export interface Project {
@@ -929,9 +942,13 @@ export interface Project {
   parent_id: number | null;
   parent_name: string | null;
   children: ProjectChildPreview[];
+  descendant_count: number;  // Sub-projects at any depth beneath this one (#1264)
   created_at: string;
   updated_at: string;
   stats?: ProjectStats;
+  // This project's numbers combined with every sub-project's. Null when there
+  // are none, since it would only repeat `stats` (#1264).
+  rollup_stats?: ProjectStats | null;
   url: string | null;  // External link rendered next to project name on the card (#1155)
   cover_image_filename: string | null;  // Filename within project attachments dir (#1155)
 }
@@ -978,6 +995,8 @@ export interface ProjectListItem {
   failed_count: number;  // Sum of quantities for failed prints
   queue_count: number;
   progress_percent: number | null;  // Plates progress
+  parent_id: number | null;  // #1264 — set when this is a sub-project
+  child_count: number;  // #1264 — direct sub-projects only
   archives: ArchivePreview[];
   url: string | null;  // #1155
   cover_image_filename: string | null;  // #1155
@@ -1262,6 +1281,8 @@ export interface AppSettings {
   mqtt_use_tls: boolean;
   // External URL for notifications
   external_url: string;
+  // Directory holding docker-compose.yml, shown in the update instructions (#2664)
+  docker_compose_dir: string;
   // Home Assistant integration
   ha_enabled: boolean;
   ha_url: string;
@@ -1621,6 +1642,12 @@ export interface SliceRequest {
   // instead of the picked profile triplet. The preset refs above are still
   // required by the backend validator but go unused on this path.
   use_embedded_settings?: boolean;
+  // Layout passes the slicer runs before slicing (#2548), both off by
+  // default because they move or rotate the objects the user laid out.
+  // Unlike the fields above these are CLI actions rather than profile
+  // values, so they apply on the embedded-settings path too.
+  auto_orient?: boolean;
+  auto_arrange?: boolean;
 }
 
 // GET /api/v1/slicer/presets — unified listing across cloud / local / standard.
@@ -2172,6 +2199,75 @@ export interface HATestConnectionResult {
   error: string | null;
 }
 
+// A Home Assistant entity bound to a printer for display on its card (#1148, #448).
+// Read-only: unlike a SmartPlug there is nothing here to switch.
+export interface PrinterHASensor {
+  id: number;
+  printer_id: number;
+  name: string;
+  entity_id: string;
+  kind: 'binary' | 'numeric';
+  device_class: string | null;  // HA's own class: "door", "temperature", ...
+  unit: string | null;  // numeric sensors only
+  // What counts as needing attention. Binary sensors use alert_state, numeric
+  // ones the thresholds; all null means the sensor is display-only.
+  alert_state: 'on' | 'off' | null;
+  alert_above: number | null;
+  alert_below: number | null;
+  block_print: boolean;  // hold the printer's queue while alerting
+  notify_on_alert: boolean;
+  show_on_printer_card: boolean;
+  sort_order: number;
+  last_state: string | null;
+  last_changed: string | null;
+  last_checked: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PrinterHASensorReading {
+  id: number;
+  name: string;
+  entity_id: string;
+  kind: 'binary' | 'numeric';
+  device_class: string | null;
+  unit: string | null;
+  state: string | null;  // null when unreadable or not yet polled
+  value: number | null;  // numeric sensors only
+  alerting: boolean;
+  block_print: boolean;
+  reachable: boolean;
+  last_changed: string | null;
+}
+
+export interface PrinterHASensorCreate {
+  printer_id: number;
+  name: string;
+  entity_id: string;
+  kind: 'binary' | 'numeric';
+  device_class?: string | null;
+  unit?: string | null;
+  alert_state?: 'on' | 'off' | null;
+  alert_above?: number | null;
+  alert_below?: number | null;
+  block_print?: boolean;
+  notify_on_alert?: boolean;
+  show_on_printer_card?: boolean;
+  sort_order?: number;
+}
+
+export type PrinterHASensorUpdate = Partial<Omit<PrinterHASensorCreate, 'printer_id'>>;
+
+// An entity offered by the binding picker.
+export interface HADisplayEntity {
+  entity_id: string;
+  friendly_name: string;
+  state: string | null;
+  domain: string;  // "binary_sensor" | "sensor"
+  device_class: string | null;
+  unit_of_measurement: string | null;
+}
+
 export interface SmartPlugEnergy {
   power: number | null;  // Current watts
   voltage: number | null;  // Volts
@@ -2247,6 +2343,15 @@ export interface PrintQueueItem {
   target_location: string | null;  // Target location filter for model-based assignment
   required_filament_types: string[] | null;  // Required filament types for model-based assignment
   waiting_reason: string | null;  // Why a model-based job hasn't started yet
+  // Cross-model alternatives (#671), in priority order. Empty for ordinary
+  // items. Present until dispatch resolves one, after which library_file_id and
+  // target_model name the candidate that actually ran.
+  variants?: Array<{
+    library_file_id: number;
+    filename: string;
+    target_model: string;
+    position: number;
+  }>;
   // Either archive_id OR library_file_id must be set (archive created at print start)
   archive_id: number | null;
   library_file_id: number | null;
@@ -2313,6 +2418,32 @@ export interface PrintQueueItem {
   cleanup_library_after_dispatch?: boolean;
 }
 
+export interface PrintBatchPlateTarget {
+  plate_id: number | null;
+  plate_name?: string | null;
+  quantity_target: number;
+  sort_order?: number;
+}
+
+export interface PrintBatchPlateProgress {
+  plate_id: number | null;
+  plate_name: string | null;
+  quantity_target: number;
+  dispatched: number;
+  remaining: number;
+  pending_count: number;
+  printing_count: number;
+  completed_count: number;
+  failed_count: number;
+  cancelled_count: number;
+  skipped_count: number;
+  /** Measured from finished runs; null until one has produced a cost. */
+  actual_cost: number | null;
+  estimated_remaining_cost: number | null;
+  filament_used_grams: number | null;
+  print_time_seconds: number;
+}
+
 export interface PrintBatch {
   id: number;
   name: string;
@@ -2321,13 +2452,28 @@ export interface PrintBatch {
   quantity: number;
   status: string;
   created_at: string;
+  completed_at: string | null;
   created_by_id: number | null;
   created_by_username: string | null;
+  project_id: number | null;
+  due_date: string | null;
+  notes: string | null;
   pending_count: number;
   printing_count: number;
   completed_count: number;
   failed_count: number;
   cancelled_count: number;
+  skipped_count: number;
+  /** False for batches created before per-plate targets existed (#342):
+   *  they report progress but owe nothing and cannot be dispatched from. */
+  has_targets: boolean;
+  target_count: number;
+  remaining_count: number;
+  actual_cost: number | null;
+  estimated_remaining_cost: number | null;
+  filament_used_grams: number | null;
+  print_time_seconds: number;
+  plates: PrintBatchPlateProgress[];
 }
 
 export interface PrintQueueItemCreate {
@@ -2368,6 +2514,22 @@ export interface PrintQueueItemCreate {
   project_id?: number;
   // Delete transient uploaded library file after scheduler creates the archive
   cleanup_library_after_dispatch?: boolean;
+  // Cross-model alternatives (#671): several sliced files, one job, whichever
+  // printer frees up first. Mutually exclusive with printer_id (a named printer
+  // defeats the point) and with archive_id/library_file_id (these ARE the files).
+  // Order is priority — index 0 wins when several printers are idle at once.
+  variants?: QueueVariantCreate[];
+}
+
+/** One candidate file for a cross-model queue item (#671). */
+export interface QueueVariantCreate {
+  library_file_id: number;
+  /** Read from the file's own sliced_for_model unless it declares none. */
+  target_model?: string | null;
+  plate_id?: number | null;
+  ams_mapping?: number[] | null;
+  nozzle_mapping?: number[] | null;
+  filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; force_color_match?: boolean }> | null;
 }
 
 export interface PrintBatchCreate {
@@ -2378,6 +2540,28 @@ export interface PrintBatchCreate {
    *  (manual "Group as batch"). When omitted/empty, an empty batch is
    *  returned so the client can pass batch_id on subsequent addToQueue calls. */
   item_ids?: number[];
+  /** Per-plate targets. Omitting them creates a plain grouping batch. */
+  plates?: PrintBatchPlateTarget[];
+  project_id?: number | null;
+  due_date?: string | null;
+  notes?: string | null;
+}
+
+export interface PrintBatchUpdate {
+  name?: string;
+  status?: 'active' | 'cancelled';
+  /** Replaces the full target set — a plate omitted here is removed. */
+  plates?: PrintBatchPlateTarget[];
+  project_id?: number | null;
+  due_date?: string | null;
+  notes?: string | null;
+}
+
+export interface PrintBatchDispatchRequest {
+  plate_id?: number | null;
+  only_plate?: boolean;
+  /** Cap on items created across all plates; omit to queue everything owed. */
+  limit?: number;
 }
 
 export interface PrintQueueItemUpdate {
@@ -2559,6 +2743,7 @@ export interface NotificationProvider {
   on_plate_clear_required: boolean;
   // Bed cooled
   on_bed_cooled: boolean;
+  on_ha_sensor_alert: boolean;
   // First layer complete
   on_first_layer_complete: boolean;
   // Inventory stock alerts
@@ -2619,6 +2804,7 @@ export interface NotificationProviderCreate {
   on_plate_clear_required?: boolean;
   // Bed cooled
   on_bed_cooled?: boolean;
+  on_ha_sensor_alert?: boolean;
   // First layer complete
   on_first_layer_complete?: boolean;
   // Inventory stock alerts
@@ -2672,6 +2858,7 @@ export interface NotificationProviderUpdate {
   on_plate_clear_required?: boolean;
   // Bed cooled
   on_bed_cooled?: boolean;
+  on_ha_sensor_alert?: boolean;
   // First layer complete
   on_first_layer_complete?: boolean;
   // Inventory stock alerts
@@ -2764,10 +2951,92 @@ export interface GitHubBackupStatus {
   configured: boolean;
   enabled: boolean;
   is_running: boolean;
+  restore_running: boolean;
   progress: string | null;
   last_backup_at: string | null;
   last_backup_status: string | null;
   next_scheduled_run: string | null;
+}
+
+// Restore from a Git backup (#2656). Cloud profiles are absent deliberately —
+// the backup collector never writes them, so there is nothing to restore.
+export type RestoreCategory = 'kprofiles' | 'settings' | 'spools' | 'archives';
+
+export interface GitHubCommitInfo {
+  sha: string;
+  message: string;
+  author: string;
+  date: string;
+}
+
+export interface GitHubCommitListResponse {
+  success: boolean;
+  message: string;
+  branch: string;
+  commits: GitHubCommitInfo[];
+}
+
+/**
+ * Values the server interpolates into a translated note or preview detail.
+ * Kept to strings and numbers on purpose — anything richer would have to be
+ * formatted server-side and could not be translated.
+ */
+export type GitHubRestoreParams = Record<string, string | number>;
+
+export interface GitHubRestorePreviewCategory {
+  category: RestoreCategory;
+  available: boolean;
+  item_count: number;
+  /** English rendering. Used as i18next's defaultValue, never shown on its own. */
+  detail: string | null;
+  /** Key under backup.restoreFromGit.details, or null when there is no caveat. */
+  detail_code: string | null;
+  detail_params: GitHubRestoreParams;
+}
+
+export interface GitHubRestorePreview {
+  success: boolean;
+  message: string;
+  ref: string;
+  commit: GitHubCommitInfo | null;
+  metadata_version: string | null;
+  categories: GitHubRestorePreviewCategory[];
+}
+
+export interface GitHubRestoreRequest {
+  ref?: string;
+  categories: RestoreCategory[];
+  overwrite_existing?: boolean;
+}
+
+/**
+ * One tally note, as a translation code plus its parameters (#2656).
+ *
+ * Same contract as {@link LocalBackupPathCheck} one card down: the server picks
+ * the code and supplies typed params, and the client renders
+ * ``t(`backup.restoreFromGit.notes.${code}`, { ...params, defaultValue: message })``.
+ * A code the client does not know yet falls back to the English `message`
+ * rather than showing the raw key.
+ */
+export interface GitHubRestoreNote {
+  code: string;
+  params: GitHubRestoreParams;
+  message: string;
+}
+
+export interface GitHubRestoreCategoryResult {
+  restored: number;
+  skipped: number;
+  failed: number;
+  notes: GitHubRestoreNote[];
+}
+
+export interface GitHubRestoreResponse {
+  success: boolean;
+  message: string;
+  log_id: number | null;
+  ref: string | null;
+  results: Record<string, GitHubRestoreCategoryResult>;
 }
 
 export interface LocalBackupStatus {
@@ -3242,6 +3511,10 @@ export interface UpdateCheckResult {
   is_windows_installer?: boolean;
   update_method?: 'docker' | 'git' | 'ha_addon' | 'windows_installer';
   installer_download_url?: string | null;
+  // Best-effort guess at the compose directory (#2664). Prefill only — the
+  // value the user saved lives on AppSettings.docker_compose_dir, so clearing
+  // that field falls back to this guess instead of resurrecting the old value.
+  compose_dir_detected?: string | null;
 }
 
 export interface UpdateStatus {
@@ -5377,6 +5650,10 @@ export const api = {
     dateTo?: string;
     limit?: number;
     offset?: number;
+    // Sorting is server-side because paging is: ordering only the rows the
+    // client holds would sort one page, not the log (#2636).
+    sortBy?: string;
+    sortDir?: 'asc' | 'desc';
   }) => {
     const searchParams = new URLSearchParams();
     if (params?.search) searchParams.set('search', params.search);
@@ -5387,6 +5664,8 @@ export const api = {
     if (params?.dateTo) searchParams.set('date_to', params.dateTo);
     if (params?.limit) searchParams.set('limit', String(params.limit));
     if (params?.offset !== undefined) searchParams.set('offset', String(params.offset));
+    if (params?.sortBy) searchParams.set('sort_by', params.sortBy);
+    if (params?.sortDir) searchParams.set('sort_dir', params.sortDir);
     return request<PrintLogResponse>(`/print-log/?${searchParams}`);
   },
   getPrintLogThumbnail: (id: number) => withStreamToken(`${API_BASE}/print-log/${id}/thumbnail`),
@@ -5674,6 +5953,22 @@ export const api = {
   getHASensorEntities: () =>
     request<HASensorEntity[]>('/smart-plugs/ha/sensors'),
 
+  // Home Assistant sensors bound to a printer (#1148, #448)
+  getHASensors: (printerId?: number) =>
+    request<PrinterHASensor[]>(`/ha-sensors/${printerId ? `?printer_id=${printerId}` : ''}`),
+  getHASensorReadings: (printerId: number) =>
+    request<PrinterHASensorReading[]>(`/ha-sensors/by-printer/${printerId}/readings`),
+  getBindableHAEntities: (search?: string) => {
+    const params = search ? `?search=${encodeURIComponent(search)}` : '';
+    return request<HADisplayEntity[]>(`/ha-sensors/entities${params}`);
+  },
+  createHASensor: (data: PrinterHASensorCreate) =>
+    request<PrinterHASensor>('/ha-sensors/', { method: 'POST', body: JSON.stringify(data) }),
+  updateHASensor: (id: number, data: PrinterHASensorUpdate) =>
+    request<PrinterHASensor>(`/ha-sensors/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteHASensor: (id: number) =>
+    request<{ message: string }>(`/ha-sensors/${id}`, { method: 'DELETE' }),
+
   // REST smart plug
   testRESTConnection: (url: string, method: string = 'GET', headers?: string | null) =>
     request<{ success: boolean; error: string | null }>('/smart-plugs/rest/test-connection', {
@@ -5747,6 +6042,16 @@ export const api = {
     request<{ message: string }>(`/queue/batches/${id}`, { method: 'DELETE' }),
   createBatch: (data: PrintBatchCreate) =>
     request<PrintBatch>('/queue/batches', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateBatch: (id: number, data: PrintBatchUpdate) =>
+    request<PrintBatch>(`/queue/batches/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  dispatchBatch: (id: number, data: PrintBatchDispatchRequest = {}) =>
+    request<PrintBatch>(`/queue/batches/${id}/dispatch`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -7084,6 +7389,50 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ file_ids: fileIds, tag_ids: tagIds, action }),
     }),
+  // ============ Variant groups (#671 / #2570) ============
+  // "These files are the same job sliced for different printers." Consumed from
+  // both ends: the queue picks a printer and needs the matching file, the File
+  // Manager's print action has the printer and needs the same match.
+  createVariantGroup: (
+    members: { library_file_id: number; target_model?: string }[],
+    name?: string,
+  ) =>
+    request<VariantGroup>('/library/variant-groups', {
+      method: 'POST',
+      body: JSON.stringify({ members, ...(name ? { name } : {}) }),
+    }),
+  getVariantGroup: (groupId: number) =>
+    request<VariantGroup>(`/library/variant-groups/${groupId}`),
+  /** Returns null when the file is not grouped, rather than throwing on the 404. */
+  getVariantGroupForFile: async (fileId: number): Promise<VariantGroup | null> => {
+    try {
+      return await request<VariantGroup>(`/library/variant-groups/by-file/${fileId}`);
+    } catch {
+      return null;
+    }
+  },
+  updateVariantGroup: (groupId: number, body: { name?: string; member_file_ids?: number[] }) =>
+    request<VariantGroup>(`/library/variant-groups/${groupId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  addVariantGroupMember: (
+    groupId: number,
+    libraryFileId: number,
+    targetModel?: string,
+  ) =>
+    request<VariantGroup>(`/library/variant-groups/${groupId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({
+        library_file_id: libraryFileId,
+        ...(targetModel ? { target_model: targetModel } : {}),
+      }),
+    }),
+  removeVariantGroupMember: (groupId: number, fileId: number) =>
+    request<void>(`/library/variant-groups/${groupId}/members/${fileId}`, { method: 'DELETE' }),
+  deleteVariantGroup: (groupId: number) =>
+    request<void>(`/library/variant-groups/${groupId}`, { method: 'DELETE' }),
+
   getLibraryFile: (id: number) => request<LibraryFile>(`/library/files/${id}`),
   getLibraryFileHistory: (id: number) => request<LibraryFileHistory>(`/library/files/${id}/history`),
   uploadLibraryFile: async (
@@ -7320,6 +7669,19 @@ export const api = {
 
   clearGitHubBackupLogs: (keepLast: number = 10) =>
     request<{ deleted: number; message: string }>(`/github-backup/logs?keep_last=${keepLast}`, { method: 'DELETE' }),
+
+  // Restore from a Git backup (#2656)
+  getGitHubBackupCommits: (limit: number = 20) =>
+    request<GitHubCommitListResponse>(`/github-backup/commits?limit=${limit}`),
+
+  getGitHubRestorePreview: (ref: string = 'HEAD') =>
+    request<GitHubRestorePreview>(`/github-backup/restore/preview?ref=${encodeURIComponent(ref)}`),
+
+  restoreFromGitHub: (payload: GitHubRestoreRequest) =>
+    request<GitHubRestoreResponse>('/github-backup/restore', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 
   // Scheduled local backups
   getLocalBackupStatus: () =>
@@ -7791,6 +8153,26 @@ export interface LibraryFileListItem {
   // legacy code path (or mock) that constructs a LibraryFileListItem without
   // it doesn't crash the renderer. Read sites use `file.tags ?? []`.
   tags?: LibraryTagSummary[];
+  // Variant grouping (#671 / #2570). `variant_count` is the size of the whole
+  // group, which may include files in other folders — never the number of
+  // matching rows on screen. 0 when the file is not grouped.
+  variant_group_id?: number | null;
+  variant_count?: number;
+}
+
+// Variant groups (#671 / #2570): the same job sliced for different printers.
+export interface VariantGroupMember {
+  library_file_id: number;
+  filename: string;
+  target_model: string;
+  position: number;
+}
+
+export interface VariantGroup {
+  id: number;
+  name: string;
+  /** In priority order — index 0 wins when several printers are free at once. */
+  members: VariantGroupMember[];
 }
 
 // File history timeline (library file provenance + print runs)
