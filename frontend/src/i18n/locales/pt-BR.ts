@@ -3585,6 +3585,8 @@ export default {
       verifyButton: 'Verificar',
       setTokenButton: 'Definir Token',
       useToken: 'Usar token de acesso em vez disso',
+      captchaTitle: 'O Bambu Cloud está pedindo um CAPTCHA',
+      captchaBody: 'O Bambu está exigindo um CAPTCHA da sua rede antes de aceitar um login, e esse desafio não pode ser respondido pelo Bambuddy. Seu e-mail e sua senha não são o problema. O bloqueio está ligado ao seu endereço IP público e costuma passar sozinho em algumas horas; tentar de novo repetidamente prolonga o bloqueio. Para entrar agora, use um token de acesso obtido em uma sessão do navegador.',
       useEmail: 'Entrar com email em vez disso',
       toast: {
         loggedIn: 'Conectado com sucesso',
@@ -6712,6 +6714,7 @@ export default {
         title: 'Porta de transferência de arquivos (FTPS 990)',
         pass: 'Acessível — o envio de arquivos de impressão funcionará.',
         warn: 'A porta 990 está inacessível. O monitoramento ainda pode funcionar, mas o envio de impressões para a impressora falhará. Verifique se a porta 990 não está bloqueada.',
+        warn_no_tls: 'A porta 990 está aberta, mas o serviço de arquivos da impressora não conclui o handshake TLS. Os arquivos de impressão, as capas e os timelapses não podem ser obtidos, então os arquivos ficam vazios. Reinicie a impressora — desbloquear a porta não resolve.',
       },
       external_storage: {
         title: 'Armazenar arquivos enviados no armazenamento externo (passo 4 da instalação)',
@@ -6786,8 +6789,13 @@ export default {
       },
       'ftp-ssl-error': {
         name: 'Falha no handshake seguro de transferência de arquivos',
-        cause: 'O handshake TLS com o servidor de transferência de arquivos da impressora falhou. Geralmente é causado por um firewall ou firmware desatualizado da impressora.',
-        fix: 'Atualize o firmware da impressora e verifique se nenhum firewall ou proxy intercepta a conexão na porta 990.',
+        cause: 'O serviço de arquivos da impressora respondeu na porta 990 sem TLS. O servidor de arquivos dela travou: é uma falha da impressora, não do firewall nem do firmware.',
+        fix: 'Reinicie a impressora. Até lá, arquivos de impressão, capas e timelapses não podem ser baixados; a impressão em si não é afetada.',
+      },
+      'bambu-cloud-captcha': {
+        name: 'O Bambu Cloud está pedindo um CAPTCHA',
+        cause: 'A proteção antiabuso do Bambu está verificando esta rede, então nenhum login no Bambu Cloud consegue ser concluído. Isso depende do endereço IP público, não da sua conta nem desta instalação.',
+        fix: 'Aguarde: costuma passar em algumas horas e novas tentativas prolongam o bloqueio. Enquanto isso, conecte-se com um token de acesso obtido em uma sessão do navegador.',
       },
       'mqtt-connection-flapping': {
         name: 'A conexão com a impressora cai repetidamente',
@@ -6994,6 +7002,12 @@ export default {
     },
   },
   gcodeViewer: {
+    blockedTitle: 'Não foi possível incorporar a pré-visualização 3D',
+    blockedBody: 'O Bambuddy permite que esta página mostre o visualizador de G-code incorporado, mas algo entre o seu navegador e o Bambuddy está recusando — normalmente um proxy reverso ou um complemento de segurança que envia o próprio cabeçalho de quadro. Abrir o visualizador em uma aba própria não é afetado.',
+    unavailableTitle: 'A pré-visualização 3D está indisponível',
+    unavailableBody: 'O Bambuddy não conseguiu servir os arquivos do visualizador de G-code. Isso normalmente significa que o diretório gcode_viewer está ausente na instalação; o log de inicialização também informa isso.',
+    problemDetail: 'Informado pelo servidor: {{detail}}',
+    openInNewTab: 'Abrir o visualizador em uma nova aba',
     back: 'Voltar',
     backToArchives: 'Voltar para os arquivos de impressão',
     backToFiles: 'Voltar para o gerenciador de arquivos',

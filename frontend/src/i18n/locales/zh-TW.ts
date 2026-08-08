@@ -3585,6 +3585,8 @@ export default {
       verifyButton: '驗證',
       setTokenButton: '設定權杖',
       useToken: '改用存取權杖',
+      captchaTitle: 'Bambu Cloud 要求進行 CAPTCHA 驗證',
+      captchaBody: 'Bambu 在接受登入之前要求你的網路通過 CAPTCHA 驗證，而該驗證無法在 Bambuddy 中完成。這與你的電子郵件和密碼無關。限制與你的公開 IP 位址綁定，通常幾小時後會自動解除；反覆重試只會延長限制。若要立即登入，請改用從瀏覽器工作階段取得的存取權杖。',
       useEmail: '改用信箱登入',
       toast: {
         loggedIn: '登入成功',
@@ -6711,6 +6713,7 @@ export default {
         title: '檔案傳輸連接埠（FTPS 990）',
         pass: '可達 — 傳送列印檔案將正常運作。',
         warn: '連接埠 990 無法連線。監控可能仍然有效，但向印表機傳送列印工作將失敗。請確保連接埠 990 未被封鎖。',
+        warn_no_tls: '連接埠 990 已開放，但印表機的檔案服務未能完成 TLS 交握。無法取得列印檔案、封面圖與縮時影片，因此封存會維持空白。請重新啟動印表機 — 解除連接埠封鎖並無幫助。',
       },
       external_storage: {
         title: '將傳送的檔案儲存在外部儲存中（安裝步驟 4）',
@@ -6785,8 +6788,13 @@ export default {
       },
       'ftp-ssl-error': {
         name: '安全檔案傳輸交握失敗',
-        cause: '與印表機檔案傳輸伺服器的 TLS 交握失敗。通常是防火牆或印表機韌體過舊所致。',
-        fix: '請更新印表機韌體，並檢查沒有防火牆或代理伺服器攔截 990 連接埠上的連線。',
+        cause: '印表機的檔案服務在 990 連接埠上未使用 TLS 回應。其檔案伺服器已卡住，這是印表機端的故障，與防火牆或韌體無關。',
+        fix: '請重新啟動印表機。在此之前無法取得列印檔案、封面圖和縮時影片；列印本身不受影響。',
+      },
+      'bambu-cloud-captcha': {
+        name: 'Bambu Cloud 要求進行 CAPTCHA 驗證',
+        cause: 'Bambu 的防濫用機制正在驗證此網路，因此無法完成 Bambu Cloud 登入。這與公開 IP 位址有關，與你的帳號或此安裝無關。',
+        fix: '請等待：通常幾小時後會自動解除，反覆登入只會延長時間。在此期間，可使用從瀏覽器工作階段取得的存取權杖登入。',
       },
       'mqtt-connection-flapping': {
         name: '印表機連線反覆中斷',
@@ -6993,6 +7001,12 @@ export default {
     },
   },
   gcodeViewer: {
+    blockedTitle: '無法嵌入 3D 預覽',
+    blockedBody: 'Bambuddy 允許此頁面內嵌顯示 G-code 檢視器，但瀏覽器與 Bambuddy 之間的某個環節拒絕了它 — 通常是傳送自有框架標頭的反向代理或安全外掛。在獨立分頁中開啟檢視器不受影響。',
+    unavailableTitle: '3D 預覽無法使用',
+    unavailableBody: 'Bambuddy 無法提供 G-code 檢視器的檔案。這通常表示安裝中缺少 gcode_viewer 目錄；啟動記錄中也會有相應紀錄。',
+    problemDetail: '伺服器回報：{{detail}}',
+    openInNewTab: '在新分頁中開啟檢視器',
     back: '返回',
     backToArchives: '返回列印歸檔',
     backToFiles: '返回檔案管理器',

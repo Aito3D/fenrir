@@ -3586,6 +3586,8 @@ export default {
       verifyButton: 'Vérifier',
       setTokenButton: 'Définir Jeton',
       useToken: 'Utiliser jeton d\'accès',
+      captchaTitle: 'Bambu Cloud demande un CAPTCHA',
+      captchaBody: 'Bambu impose un CAPTCHA à votre réseau avant d\'accepter une connexion, et ce défi ne peut pas être résolu depuis Bambuddy. Votre e-mail et votre mot de passe ne sont pas en cause. Le blocage est lié à votre adresse IP publique et disparaît généralement de lui-même en quelques heures ; réessayer sans cesse le prolonge. Pour vous connecter maintenant, utilisez plutôt un jeton d\'accès issu d\'une session de navigateur.',
       useEmail: 'Connexion par email',
       toast: {
         loggedIn: 'Connecté avec succès',
@@ -6713,6 +6715,7 @@ export default {
         title: 'Port de transfert de fichiers (FTPS 990)',
         pass: 'Accessible — l\'envoi de fichiers d\'impression fonctionnera.',
         warn: 'Le port 990 est inaccessible. La surveillance peut toujours fonctionner, mais l\'envoi d\'impressions vers l\'imprimante échouera. Assurez-vous que le port 990 n\'est pas bloqué.',
+        warn_no_tls: 'Le port 990 est ouvert, mais le service de fichiers de l\'imprimante ne termine pas la négociation TLS. Les fichiers d\'impression, les aperçus et les timelapses ne peuvent pas être récupérés, les archives restent donc vides. Redémarrez l\'imprimante — débloquer le port n\'y changera rien.',
       },
       external_storage: {
         title: 'Stocker les fichiers envoyés sur stockage externe (étape 4 de l\'installation)',
@@ -6787,8 +6790,13 @@ export default {
       },
       'ftp-ssl-error': {
         name: 'Échec de la négociation sécurisée du transfert de fichiers',
-        cause: 'La négociation TLS avec le serveur de transfert de fichiers de l\'imprimante a échoué. C\'est souvent dû à un pare-feu ou à un micrologiciel d\'imprimante obsolète.',
-        fix: 'Mettez à jour le micrologiciel de l\'imprimante et vérifiez qu\'aucun pare-feu ou proxy n\'intercepte la connexion sur le port 990.',
+        cause: 'Le service de fichiers de l\'imprimante a répondu sur le port 990 sans TLS. Son serveur de fichiers est bloqué : c\'est une panne côté imprimante, pas un problème de pare-feu ou de micrologiciel.',
+        fix: 'Redémarrez l\'imprimante. D\'ici là, les fichiers d\'impression, les vignettes et les timelapses ne peuvent pas être récupérés ; l\'impression elle-même n\'est pas affectée.',
+      },
+      'bambu-cloud-captcha': {
+        name: 'Bambu Cloud demande un CAPTCHA',
+        cause: 'La protection anti-abus de Bambu contrôle ce réseau, aucune connexion à Bambu Cloud ne peut donc aboutir. Cela dépend de l\'adresse IP publique, pas de votre compte ni de cette installation.',
+        fix: 'Patientez : cela disparaît généralement en quelques heures, et les tentatives répétées le prolongent. En attendant, connectez-vous avec un jeton d\'accès issu d\'une session de navigateur.',
       },
       'mqtt-connection-flapping': {
         name: 'La connexion à l\'imprimante se coupe sans cesse',
@@ -6995,6 +7003,12 @@ export default {
     },
   },
   gcodeViewer: {
+    blockedTitle: 'L\'aperçu 3D n\'a pas pu être intégré',
+    blockedBody: 'Bambuddy autorise cette page à afficher la visionneuse G-code en ligne, mais quelque chose entre votre navigateur et Bambuddy le refuse — généralement un reverse proxy ou une extension de sécurité qui envoie son propre en-tête de cadre. L\'ouverture de la visionneuse dans un onglet dédié n\'est pas concernée.',
+    unavailableTitle: 'L\'aperçu 3D est indisponible',
+    unavailableBody: 'Bambuddy n\'a pas pu servir les fichiers de la visionneuse G-code. Cela signifie généralement que le répertoire gcode_viewer est absent de l\'installation ; le journal de démarrage l\'indique également.',
+    problemDetail: 'Signalé par le serveur : {{detail}}',
+    openInNewTab: 'Ouvrir la visionneuse dans un nouvel onglet',
     back: 'Retour',
     backToArchives: 'Retour aux archives d\'impression',
     backToFiles: 'Retour au gestionnaire de fichiers',

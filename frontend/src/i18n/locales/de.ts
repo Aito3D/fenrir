@@ -3597,6 +3597,8 @@ export default {
       verifyButton: 'Bestätigen',
       setTokenButton: 'Token setzen',
       useToken: 'Stattdessen Zugriffstoken verwenden',
+      captchaTitle: 'Bambu Cloud verlangt ein CAPTCHA',
+      captchaBody: 'Bambu fordert für dein Netzwerk eine CAPTCHA-Prüfung, bevor eine Anmeldung akzeptiert wird, und diese Prüfung lässt sich aus Bambuddy heraus nicht beantworten. E-Mail und Passwort sind nicht das Problem. Die Sperre hängt an deiner öffentlichen IP-Adresse und löst sich normalerweise innerhalb weniger Stunden von selbst — wiederholte Versuche verlängern sie. Um dich jetzt anzumelden, verwende stattdessen ein Zugriffstoken aus einer Browser-Sitzung.',
       useEmail: 'Stattdessen mit E-Mail anmelden',
       toast: {
         loggedIn: 'Erfolgreich angemeldet',
@@ -6723,6 +6725,7 @@ export default {
         title: 'Dateiübertragungsport (FTPS 990)',
         pass: 'Erreichbar — das Senden von Druckdateien funktioniert.',
         warn: 'Port 990 ist nicht erreichbar. Die Überwachung funktioniert möglicherweise weiterhin, aber das Senden von Drucken an den Drucker schlägt fehl. Stellen Sie sicher, dass Port 990 nicht blockiert ist.',
+        warn_no_tls: 'Port 990 ist offen, aber der Dateidienst des Druckers schließt den TLS-Handshake nicht ab. Druckdateien, Vorschaubilder und Zeitraffer können nicht abgerufen werden, daher bleiben Archive leer. Starten Sie den Drucker neu — den Port freizugeben hilft hier nicht.',
       },
       external_storage: {
         title: 'Gesendete Dateien auf externem Speicher speichern (Installationsschritt 4)',
@@ -6797,8 +6800,13 @@ export default {
       },
       'ftp-ssl-error': {
         name: 'Sicherer Dateiübertragungs-Handshake fehlgeschlagen',
-        cause: 'Der TLS-Handshake mit dem Dateiübertragungs-Server des Druckers ist fehlgeschlagen. Häufig liegt das an einer Firewall oder veralteter Drucker-Firmware.',
-        fix: 'Aktualisiere die Drucker-Firmware und prüfe, dass keine Firewall oder Proxy die Verbindung auf Port 990 abfängt.',
+        cause: 'Der Dateidienst des Druckers antwortet auf Port 990 ohne TLS. Sein Dateiserver hat sich aufgehängt — ein Fehler im Drucker, kein Firewall- oder Firmware-Problem.',
+        fix: 'Starte den Drucker neu. Bis dahin lassen sich Druckdateien, Vorschaubilder und Timelapses nicht abrufen; das Drucken selbst ist nicht betroffen.',
+      },
+      'bambu-cloud-captcha': {
+        name: 'Bambu Cloud verlangt ein CAPTCHA',
+        cause: 'Der Missbrauchsschutz von Bambu prüft dieses Netzwerk, daher kann keine Bambu-Cloud-Anmeldung abgeschlossen werden. Das hängt an der öffentlichen IP-Adresse, nicht an deinem Konto oder dieser Installation.',
+        fix: 'Warte ab — normalerweise löst es sich innerhalb weniger Stunden, wiederholte Anmeldeversuche verlängern es. Zwischenzeitlich kannst du dich mit einem Zugriffstoken aus einer Browser-Sitzung anmelden.',
       },
       'mqtt-connection-flapping': {
         name: 'Druckerverbindung bricht ständig ab',
@@ -7006,6 +7014,12 @@ export default {
     },
   },
   gcodeViewer: {
+    blockedTitle: '3D-Vorschau konnte nicht eingebettet werden',
+    blockedBody: 'Bambuddy erlaubt dieser Seite, den G-Code-Viewer eingebettet anzuzeigen, aber etwas zwischen Ihrem Browser und Bambuddy verweigert das — meist ein Reverse-Proxy oder eine Sicherheitserweiterung, die einen eigenen Frame-Header sendet. Das Öffnen des Viewers in einem eigenen Tab ist davon nicht betroffen.',
+    unavailableTitle: '3D-Vorschau nicht verfügbar',
+    unavailableBody: 'Bambuddy konnte die Dateien des G-Code-Viewers nicht ausliefern. Normalerweise fehlt dann das Verzeichnis gcode_viewer in der Installation; das Startprotokoll weist ebenfalls darauf hin.',
+    problemDetail: 'Meldung des Servers: {{detail}}',
+    openInNewTab: 'Viewer in neuem Tab öffnen',
     back: 'Zurück',
     backToArchives: 'Zurück zum Druckarchiv',
     backToFiles: 'Zurück zum Dateimanager',

@@ -3585,6 +3585,8 @@ export default {
       verifyButton: 'Verifica',
       setTokenButton: 'Imposta token',
       useToken: 'Usa access token invece',
+      captchaTitle: 'Bambu Cloud richiede un CAPTCHA',
+      captchaBody: 'Bambu sta richiedendo un CAPTCHA alla tua rete prima di accettare un accesso, e la verifica non può essere completata da Bambuddy. Email e password non sono il problema. Il blocco è legato al tuo indirizzo IP pubblico e di solito si risolve da solo entro qualche ora; riprovare di continuo lo prolunga. Per accedere subito, usa invece un token di accesso preso da una sessione del browser.',
       useEmail: 'Accedi con email invece',
       toast: {
         loggedIn: 'Accesso riuscito',
@@ -6712,6 +6714,7 @@ export default {
         title: 'Porta trasferimento file (FTPS 990)',
         pass: 'Raggiungibile — l\'invio dei file di stampa funzionerà.',
         warn: 'La porta 990 non è raggiungibile. Il monitoraggio potrebbe ancora funzionare, ma l\'invio delle stampe alla stampante fallirà. Assicurati che la porta 990 non sia bloccata.',
+        warn_no_tls: 'La porta 990 è aperta, ma il servizio file della stampante non completa l\'handshake TLS. I file di stampa, le anteprime e i timelapse non possono essere scaricati, quindi gli archivi restano vuoti. Riavvia la stampante — sbloccare la porta non serve.',
       },
       external_storage: {
         title: 'Memorizza file inviati su archiviazione esterna (passo 4 dell\'installazione)',
@@ -6786,8 +6789,13 @@ export default {
       },
       'ftp-ssl-error': {
         name: 'Handshake sicuro del trasferimento file non riuscito',
-        cause: 'L\'handshake TLS con il server di trasferimento file della stampante non è riuscito. Spesso è dovuto a un firewall o a un firmware della stampante obsoleto.',
-        fix: 'Aggiorna il firmware della stampante e verifica che nessun firewall o proxy intercetti la connessione sulla porta 990.',
+        cause: 'Il servizio file della stampante ha risposto sulla porta 990 senza TLS. Il suo server file si è bloccato: è un guasto della stampante, non un problema di firewall o firmware.',
+        fix: 'Riavvia la stampante. Fino ad allora non è possibile scaricare file di stampa, copertine e timelapse; la stampa in sé non è interessata.',
+      },
+      'bambu-cloud-captcha': {
+        name: 'Bambu Cloud richiede un CAPTCHA',
+        cause: 'Il sistema antiabuso di Bambu sta verificando questa rete, quindi nessun accesso a Bambu Cloud può andare a buon fine. Dipende dall\'indirizzo IP pubblico, non dal tuo account né da questa installazione.',
+        fix: 'Attendi: di solito si risolve entro qualche ora e i tentativi ripetuti lo prolungano. Nel frattempo accedi con un token di accesso preso da una sessione del browser.',
       },
       'mqtt-connection-flapping': {
         name: 'La connessione alla stampante cade di continuo',
@@ -6994,6 +7002,12 @@ export default {
     },
   },
   gcodeViewer: {
+    blockedTitle: 'Impossibile incorporare l\'anteprima 3D',
+    blockedBody: 'Bambuddy consente a questa pagina di mostrare il visualizzatore G-code incorporato, ma qualcosa tra il browser e Bambuddy lo rifiuta — di solito un reverse proxy o un\'estensione di sicurezza che invia una propria intestazione di frame. L\'apertura del visualizzatore in una scheda dedicata non è interessata.',
+    unavailableTitle: 'Anteprima 3D non disponibile',
+    unavailableBody: 'Bambuddy non è riuscito a servire i file del visualizzatore G-code. Di solito significa che la cartella gcode_viewer manca nell\'installazione; anche il log di avvio lo segnala.',
+    problemDetail: 'Segnalato dal server: {{detail}}',
+    openInNewTab: 'Apri il visualizzatore in una nuova scheda',
     back: 'Indietro',
     backToArchives: 'Torna agli archivi di stampa',
     backToFiles: 'Torna al gestore file',

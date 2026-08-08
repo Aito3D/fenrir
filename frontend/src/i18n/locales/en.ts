@@ -3626,6 +3626,8 @@ export default {
       verifyButton: 'Verify',
       setTokenButton: 'Set Token',
       useToken: 'Use access token instead',
+      captchaTitle: 'Bambu Cloud is asking for a CAPTCHA',
+      captchaBody: 'Bambu is challenging your network before it will accept a sign-in, and the challenge cannot be answered from Bambuddy. Your email and password are not the problem. The block is tied to your public IP address and normally clears by itself within a few hours — retrying repeatedly makes it last longer. To sign in now, use an access token from a browser session instead.',
       useEmail: 'Login with email instead',
       toast: {
         loggedIn: 'Logged in successfully',
@@ -6772,6 +6774,7 @@ export default {
         title: 'File transfer port (FTPS 990)',
         pass: 'Reachable — sending print files will work.',
         warn: 'Port 990 is unreachable. Monitoring may still work, but sending prints to the printer will fail. Make sure port 990 is not blocked.',
+        warn_no_tls: 'Port 990 is open but the printer\'s file service is not completing a TLS handshake. Print files, covers and timelapses cannot be fetched, so archives stay empty. Restart the printer — unblocking the port will not help.',
       },
       external_storage: {
         title: 'Store sent files on external storage (install step 4)',
@@ -6846,8 +6849,13 @@ export default {
       },
       'ftp-ssl-error': {
         name: 'Secure file-transfer handshake failed',
-        cause: 'The TLS handshake with the printer\'s file-transfer server failed. This is often a firewall or outdated printer firmware.',
-        fix: 'Update the printer firmware and check that no firewall or proxy intercepts the connection on port 990.',
+        cause: 'The printer\'s file service answered port 990 without TLS. Its file server has wedged — a printer-side fault, not a firewall or firmware problem.',
+        fix: 'Restart the printer. Until then print files, covers and timelapses cannot be fetched; printing itself is unaffected.',
+      },
+      'bambu-cloud-captcha': {
+        name: 'Bambu Cloud is asking for a CAPTCHA',
+        cause: 'Bambu\'s anti-abuse layer is challenging this network, so no Bambu Cloud sign-in can complete. It is tied to the public IP address, not to your account or this installation.',
+        fix: 'Wait — it normally clears within a few hours, and repeated sign-in attempts prolong it. To connect meanwhile, sign in with an access token taken from a browser session.',
       },
       'mqtt-connection-flapping': {
         name: 'Printer connection keeps dropping',
@@ -7055,6 +7063,12 @@ export default {
     },
   },
   gcodeViewer: {
+    blockedTitle: 'The 3D preview could not be embedded',
+    blockedBody: 'Bambuddy allows this page to show the G-code viewer inline, but something between your browser and Bambuddy is refusing it — usually a reverse proxy or a security add-on sending its own framing header. Opening the viewer in its own tab is not affected.',
+    unavailableTitle: 'The 3D preview is unavailable',
+    unavailableBody: 'Bambuddy could not serve the G-code viewer\'s files. This normally means the gcode_viewer directory is missing from the installation; the startup log says so too.',
+    problemDetail: 'Reported by the server: {{detail}}',
+    openInNewTab: 'Open the viewer in a new tab',
     back: 'Back',
     backToArchives: 'Back to Print Archives',
     backToFiles: 'Back to File Manager',
