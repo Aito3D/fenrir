@@ -4359,6 +4359,14 @@ async def run_migrations(conn):
     # is the one that actually applies on both.
     await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN on_ha_sensor_alert BOOLEAN DEFAULT FALSE")
 
+    # Migration: auto-drying-suspended notification opt-in (#2770). Defaults ON:
+    # it fires at most once per AMS unit, and only to say Bambuddy has STOPPED
+    # doing something it was doing before — silence there reads as "still
+    # drying" and is exactly how the reporter lost two days to a re-arm loop.
+    await _safe_execute(
+        conn, "ALTER TABLE notification_providers ADD COLUMN on_ams_drying_suspended BOOLEAN DEFAULT TRUE"
+    )
+
 
 async def _migrate_backfill_variant_groups(conn) -> None:
     """Build variant groups from the slice provenance already on disk (#671 / #2570).
