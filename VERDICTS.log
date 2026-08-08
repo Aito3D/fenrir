@@ -33,3 +33,8 @@ SNAPSHOTS 7/7 · SURFACE unchanged (all 5 sections regen-diffed) · 60%/235/349 
 T-021 byte-compared + Tailwind emission confirmed post-move; T-022 memo deps complete, board never mutated in place; T-023 adapter field-mapped line-by-line, numerically identical incl. null/0/discount edges
 REMAINING_ISSUES: 2x INFO (taskTotal now NaN on impossible undefined cost — wire shape always number|null; summariseTasks alloc per preview row — negligible)
 
+=== 2026-08-07 15:22 · ITERATION 8 (FINAL) · VERDICT: PASS ===
+SNAPSHOTS 7/7 · SURFACE unchanged · 60% / 235 missed / extended-gate 306=306 (amendment judged HONEST re-baseline, independently reproduced, strictly tightening 349->306)
+T-014 hoist output-identical incl. dup-key ordering; T-013 pops proven log-only, no same-tick clobber, no spam loop; T-024 prune keyed correctly, char tests pass on pre-change code
+REMAINING_ISSUES: 1x low (TaskEditor comment overclaims — deleteTask onError restore path returns a stepped row in read mode vs previously still-editing; observable UI delta on error path, no data loss, untested -> handover) + 1 nit (comment direction at quote_sync:899)
+
