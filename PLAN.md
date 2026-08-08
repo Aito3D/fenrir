@@ -222,33 +222,33 @@ evidence: DurationInput.tsx:43 ${inputCls} w-16: formStyles.ts:4-5 starts with w
 
 ## T-021
 priority: P2
-status: OPEN
-attempts: 0
+status: DONE
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 7
 title: Extract shared restore-button className between DoneGrid and TrashGrid
 files: frontend/src/components/aito/DoneGrid.tsx, frontend/src/components/aito/TrashGrid.tsx
 evidence: DoneGrid.tsx:42 and TrashGrid.tsx:69 verbatim-identical className + durationMs/hint/icon children; one shared const in a component file (NOT a surface-frozen util)
 
 ## T-022
 priority: P2
-status: OPEN
-attempts: 0
+status: IN_PROGRESS
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 7
 title: AitoPage: memoize done-column search filter beside visibleColumns
 files: frontend/src/pages/AitoPage.tsx
 evidence: 126-133 memoizes visibleColumns on [board,search]; 148 filters board.done unmemoized every render incl drag frames; fold into same memo. Do NOT touch inProduction at 149 (comment 136-147 forbids filtering it)
 
 ## T-023
 priority: P2
-status: OPEN
-attempts: 0
+status: IN_PROGRESS
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 7
 title: ImportQuoteDrawer: adapt AitoTaskCreate->TaskLike and reuse summariseTasks/taskCost
 files: frontend/src/components/aito/ImportQuoteDrawer.tsx
 evidence: 29-36 hand-enumerates services in SERVICES order; 48-51 re-implements impression-discount rule owned by aitoBoardRules.ts:185-191; own comment 44-47 says reason is snake_case shape — small adapter, not a rewrite; assert identical totals via existing tests

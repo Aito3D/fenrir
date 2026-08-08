@@ -11,6 +11,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { applyRestore } from '../../utils/aitoOptimistic';
 import { sortByRecencyDesc } from '../../utils/aitoSearch';
 import { formatElapsedTime } from '../../utils/date';
+import { restoreButtonCls, restoreHoldDurationMs } from './restoreButton';
 
 /** One deleted project, with the only action it has left.
  *
@@ -61,11 +62,11 @@ function TrashCard({ project, onExpand }: { project: AitoProject; onExpand: () =
             );
             restore.mutate(project);
           }}
-          durationMs={500}
+          durationMs={restoreHoldDurationMs}
           disabled={restore.isPending}
           label={t('aito.restore')}
           hint={t('aito.holdToConfirm')}
-          className="p-1 -m-1 text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary focus-visible:ring-bambu-green/40 data-[holding=true]:text-white"
+          className={restoreButtonCls}
         >
           <Undo2 className="relative w-3.5 h-3.5" />
         </HoldButton>

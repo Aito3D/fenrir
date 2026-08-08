@@ -7,6 +7,7 @@ import { useColumnMoveMutation } from '../../hooks/useColumnMoveMutation';
 import { useIsReverting } from '../../hooks/useRevertFlash';
 import { isPlaceholder } from '../../utils/aitoOptimistic';
 import { sortByRecencyDesc } from '../../utils/aitoSearch';
+import { restoreButtonCls, restoreHoldDurationMs } from './restoreButton';
 import type { AitoProject } from '../../api/client';
 
 /** One project in the grid.
@@ -34,11 +35,11 @@ function DoneCard({ project, onExpand }: { project: AitoProject; onExpand: () =>
           project.move_lock === null ? (
             <HoldButton
               onHold={() => restore.mutate()}
-              durationMs={500}
+              durationMs={restoreHoldDurationMs}
               disabled={restore.isPending}
               label={t('aito.restoreToFinish')}
               hint={t('aito.holdToConfirm')}
-              className="p-1 -m-1 text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary focus-visible:ring-bambu-green/40 data-[holding=true]:text-white"
+              className={restoreButtonCls}
             >
               <Undo2 className="relative w-3.5 h-3.5" />
             </HoldButton>
