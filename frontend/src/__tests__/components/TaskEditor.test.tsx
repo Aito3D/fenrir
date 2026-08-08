@@ -136,6 +136,26 @@ function ControlledTaskEditor({
   );
 }
 
+/** Same wiring as `ControlledTaskEditor`, but `onRemove` actually splices the
+ *  index out of the array instead of being a stub — the way `NewProjectDrawer`
+ *  and the detail panel both wire it. Needed for tests that check what
+ *  happens to `TaskEditor`'s own row-keyed state (`editingKeys`, `openKey`)
+ *  when a row disappears via removal, as opposed to `ControlledTaskEditor` +
+ *  a manual `onChange` swap (used by the "wipe draft" test) which never goes
+ *  through `onRemove` at all. */
+function RemovableTaskEditor({ initial, accordion = false }: { initial: TaskDraft[]; accordion?: boolean }) {
+  const [tasks, setTasks] = useState(initial);
+  return (
+    <TaskEditor
+      value={tasks}
+      onChange={setTasks}
+      onRemove={(index) => setTasks((current) => current.filter((_, i) => i !== index))}
+      canTick
+      accordion={accordion}
+    />
+  );
+}
+
 /** Switches a row into edit mode, revealing the raw
  *  title/description/cost/ImpressionFields form in place of the read-only
  *  step list. Only needed for a row that already has a step — a stepless row
@@ -357,6 +377,38 @@ describe('TaskEditor', () => {
 
     expect(onRemove).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+
+  it('removing a row does not disturb another row that is also being edited', async () => {
+    // Characterizes `editingKeys` before the removal-pruning change: the set
+    // can hold more than one row's key at once (edit is per-row, not
+    // exclusive outside accordion mode), and removing one row must drop only
+    // that row's own key, leaving a sibling's edit state alone. This is the
+    // regression guard for Task T-024's prune — a prune that targeted the
+    // wrong key (e.g. an off-by-one against the pre-removal index) would
+    // surface here as Deux silently losing its edit form.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const tasks = [
+      { ...emptyTaskDraft(), title: 'Un', scanCost: 10 },
+      { ...emptyTaskDraft(), title: 'Deux', scanCost: 20 },
+    ];
+    render(<RemovableTaskEditor initial={tasks} />);
+
+    await editTask(0);
+    await editTask(1);
+    expect(screen.getAllByLabelText('Optional title')).toHaveLength(2);
+
+    const removeButtons = screen.getAllByLabelText('Remove task');
+    await act(async () => {
+      fireEvent.pointerDown(removeButtons[0]);
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    vi.useRealTimers();
+
+    // Un is gone, Deux (now at index 0) is still mid-edit.
+    expect(screen.getByRole('heading', { name: /^Deux/ })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /^Un/ })).not.toBeInTheDocument();
+    expect(screen.getAllByLabelText('Optional title')).toHaveLength(1);
   });
 
   it('shows its own "Tasks / Project total" header by default, so NewProjectModal is unaffected', () => {
@@ -778,6 +830,34 @@ describe('TaskEditor accordion (create drawer)', () => {
     render(<ResettableEditor />);
     await userEvent.click(screen.getByRole('button', { name: 'wipe draft' }));
     expect(screen.getByRole('button', { name: 'Add Scan' })).toBeInTheDocument();
+  });
+
+  it('when the open row is removed outright, the remaining row opens', async () => {
+    // Same `effectiveOpenKey` fallback as the "wipe draft" test above, but
+    // reached through an actual removal (`onRemove`, wired for real by
+    // `RemovableTaskEditor`) rather than a full-array swap via `onChange`.
+    // This is the path Task T-024's prune touches, and it must keep landing
+    // on the same row the unpruned code already opens: `effectiveOpenKey`
+    // derives its fallback from `openKey` and `value` alone, never from
+    // `editingKeys`, so pruning the latter has nothing to do with which row
+    // this resolves to — characterizing it here pins that down before the
+    // change, not just after.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<RemovableTaskEditor initial={[priced('Alpha'), priced('Beta')]} accordion />);
+
+    // Alpha (index 0) starts open (accordion seeds `openKey` to the first
+    // row). Remove it.
+    const removeButtons = screen.getAllByLabelText('Remove task');
+    await act(async () => {
+      fireEvent.pointerDown(removeButtons[0]);
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    vi.useRealTimers();
+
+    // Only Beta remains. The stored `openKey` (Alpha's) now matches no row,
+    // so the dangling-key fallback opens the sole survivor.
+    expect(screen.getByRole('button', { name: /Beta/, expanded: true })).toBeInTheDocument();
+    expect(screen.getByTestId('task-progress-0')).toBeInTheDocument();
   });
 
   it('without accordion, headers are not disclosure buttons — the detail panel is untouched', () => {

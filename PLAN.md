@@ -134,22 +134,22 @@ evidence: aito_zoho_comments.py:203 one SELECT per comment plus _is_our_echo que
 
 ## T-013
 priority: P3
-status: OPEN
-attempts: 0
+status: IN_PROGRESS
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 8
 title: quote_sync: prune _deferred_reasons on terminal/deleted paths
 files: backend/app/services/aito_quote_sync.py
 evidence: entries added at 1049 removed only on normal return (1013); trashed/unresolvable projects leave module-dict entries (86) for process lifetime; bounded hygiene fix
 
 ## T-014
 priority: P3
-status: OPEN
-attempts: 0
+status: IN_PROGRESS
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 8
 title: quote_import: hoist per-line set/map rebuilds out of hot loop
 files: backend/app/services/aito_quote_import.py
 evidence: aito_quote_import.py:353 rebuilds set((shipping_ids or {}).values()) per line in loop at 345; parse_shipping_line rebuilds inverted map per call at 295; hoist both, identical output
@@ -255,11 +255,11 @@ evidence: 29-36 hand-enumerates services in SERVICES order; 48-51 re-implements 
 
 ## T-024
 priority: P2
-status: OPEN
-attempts: 0
+status: DONE
+attempts: 1
 round: 1
 first_seen_iteration: 0
-last_touched_iteration: 0
+last_touched_iteration: 8
 title: TaskEditor: prune editingKeys on row removal (char test first)
 files: frontend/src/components/aito/TaskEditor.tsx
 evidence: keys added at 85/128/175, only removal is toggle at 85; onRemove (167) drops row without pruning; uid-based keys never collide so prune is behavior-neutral; 58% cov — add characterization test on accordion/effectiveOpenKey path (103-106) first

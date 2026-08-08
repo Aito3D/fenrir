@@ -86,6 +86,24 @@ export function TaskEditor({
       return next;
     });
 
+  // Removing a row never freed its key from here — `toggleEdit` above is the
+  // only place that deletes one, and only in response to a click on that
+  // exact row, which a removed row can no longer receive. Since `rowKey` is
+  // uid-based (persisted rows keyed by their DB id, drafts by a fresh
+  // client-side uid — see `taskDraft.ts`), a stale key can never collide
+  // with a future row's, so the leak was inert: `isEditing`'s `.has()` check
+  // simply never matched it again. Still worth dropping on removal so the
+  // set doesn't grow for the life of the drawer/panel. Deliberately separate
+  // from `openKey`/`effectiveOpenKey` below: those derive their own
+  // dangling-key fallback independently and are untouched here.
+  const pruneEditingKey = (key: string) =>
+    setEditingKeys((current) => {
+      if (!current.has(key)) return current;
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+
   // Accordion mode's single open row, by the same key as everything else.
   // Seeded to the first row so the drawer's initial task starts open. null
   // is a legal state meaning "the user closed the open row on purpose" —
@@ -164,7 +182,14 @@ export function TaskEditor({
               // Absent (not merely disabled) while pending too, same rule as
               // `minRows` below it: the row's create hasn't landed, so there
               // is no id yet to send a DELETE for — see TaskRow's own prop doc.
-              onRemove={value.length > minRows && !pending ? () => onRemove(index) : undefined}
+              onRemove={
+                value.length > minRows && !pending
+                  ? () => {
+                      pruneEditingKey(key);
+                      onRemove(index);
+                    }
+                  : undefined
+              }
               editing={isEditing(task)}
               onToggleEdit={() => {
                 if (collapsed) {
