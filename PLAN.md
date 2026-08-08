@@ -145,7 +145,7 @@ evidence: entries added at 1049 removed only on normal return (1013); trashed/un
 
 ## T-014
 priority: P3
-status: IN_PROGRESS
+status: DONE
 attempts: 1
 round: 1
 first_seen_iteration: 0

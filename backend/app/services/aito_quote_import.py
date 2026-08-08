@@ -283,16 +283,20 @@ def _split_recipient(name: str) -> tuple[str, str]:
 _SHIPPING_LABELS: dict[str, str] = {"nom": "Nom", "telephone": "Téléphone", "ile": "Île"}
 
 
-def parse_shipping_line(line: dict, shipping_ids: dict[str, str]) -> ParsedShipping | None:
-    """A shipping line, read back into project fields, or None.
+def _shipping_id_map(shipping_ids: dict[str, str]) -> dict[str, str]:
+    """Invert ``service -> item_id`` into ``item_id -> service``.
 
-    None on any doubt — a line that is not one of ours, or whose island we
-    cannot resolve. The project then simply has no shipping, and
-    ``aito_quote_export.build_line_items`` echoes the untouched line back on
-    the next push rather than deleting it. Guessing here would put a wrong
-    island on a real quote; declining costs nothing.
+    Split out of ``parse_shipping_line`` so a caller that recognises many
+    lines against the same ``shipping_ids`` (``parse_lines``'s loop) can build
+    this once instead of on every line — the map's contents are identical
+    either way, including which service wins when two services share an
+    item_id (last one in iteration order, same as a fresh inversion per call).
     """
-    by_id = {item_id: service for service, item_id in (shipping_ids or {}).items()}
+    return {item_id: service for service, item_id in shipping_ids.items()}
+
+
+def _shipping_line_for_map(line: dict, by_id: dict[str, str]) -> ParsedShipping | None:
+    """Shared body of ``parse_shipping_line``, given an already-inverted id map."""
     service = by_id.get(line.get("item_id"))
     if service is None:
         return None
@@ -309,6 +313,18 @@ def parse_shipping_line(line: dict, shipping_ids: dict[str, str]) -> ParsedShipp
         phone=(labels.get("telephone") or "").strip(),
         price=float(line.get("rate") or 0),
     )
+
+
+def parse_shipping_line(line: dict, shipping_ids: dict[str, str]) -> ParsedShipping | None:
+    """A shipping line, read back into project fields, or None.
+
+    None on any doubt — a line that is not one of ours, or whose island we
+    cannot resolve. The project then simply has no shipping, and
+    ``aito_quote_export.build_line_items`` echoes the untouched line back on
+    the next push rather than deleting it. Guessing here would put a wrong
+    island on a real quote; declining costs nothing.
+    """
+    return _shipping_line_for_map(line, _shipping_id_map(shipping_ids or {}))
 
 
 def parse_lines(
@@ -342,15 +358,20 @@ def parse_lines(
     shipping: ParsedShipping | None = None
     pending_boundary = False
     previous_header = None
+    # Built once, not per line item: same content `parse_shipping_line` would
+    # rebuild on every call, and the same set every "is this ours?" check
+    # below would reconstruct from scratch.
+    shipping_id_map = _shipping_id_map(shipping_ids or {})
+    shipping_id_values = set(shipping_id_map)
     for line in sorted(estimate.get("line_items") or [], key=lambda item: item.get("item_order") or 0):
         if line.get("line_item_category") == "header":
             pending_boundary = True
             continue
-        shipment = parse_shipping_line(line, shipping_ids or {})
+        shipment = _shipping_line_for_map(line, shipping_id_map)
         if shipment is not None:
             shipping = shipment
             continue
-        if line.get("item_id") in set((shipping_ids or {}).values()):
+        if line.get("item_id") in shipping_id_values:
             # Ours, but unparseable (an island we do not know). Not a task and
             # not something to report as unimportable — the export step echoes
             # it back untouched.
