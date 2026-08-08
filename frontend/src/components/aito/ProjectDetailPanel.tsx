@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Building2, Check, Copy, ExternalLink, Eye, Loader2, Mail, Pencil, Phone, Plane, Plus, RefreshCw, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
@@ -29,7 +29,6 @@ import { sendAitoPresence, useAitoViewers } from '../../hooks/useAitoPresence';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useLatestProjectEvent } from '../../hooks/useLatestProjectEvent';
-import { latestProjectVersion, useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { useProjectTasks } from '../../hooks/useProjectTasks';
 import { api, ApiError, type AitoEvent, type AitoProject, type AitoProjectUpdate } from '../../api/client';
 import { Money } from '../calculator/shared';
@@ -45,7 +44,7 @@ import { taskDraftToTaskCreate } from '../../utils/taskDraft';
 import { focusRingCls, inputCls } from '../formStyles';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
-import { showVersionConflictToast } from './versionConflictToast';
+import { useProjectPatchMutation } from './useProjectPatchMutation';
 
 /** Explicit map rather than a template literal key: the i18n gate scans for
  *  literal `t('...')` calls, and a dynamic key is invisible to it. */
@@ -665,6 +664,7 @@ function SaveIndicator({ state }: { state: SaveState }) {
  *  browser morphs one into the other (see useCardMorph). */
 export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetailPanelProps) {
   const { t } = useTranslation();
+  const { showToast } = useToast();
 
   // A status rendered through the shared quote-status labels (see
   // `quoteStatusText` above), so the two sides of a block message are
@@ -685,35 +685,15 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
     Boolean(blockKey) ||
     project.quote_status === 'declined';
 
-  const queryClient = useQueryClient();
-  const { showToast } = useToast();
-
-  const updateMutation = useOptimisticBoardMutation<AitoProject, AitoProjectUpdate>({
-    // `latestProjectVersion`, not `project.version`: see its own doc — the
-    // description save fires on blur, so a fast second board write from the
-    // same operator (e.g. the shipping card's Save) can queue behind this
-    // one with a mutationFn closure bound to a render that predates this
-    // write's response landing.
-    mutationFn: (patch) =>
-      api.updateAitoProject(project.id, { ...patch, expected_version: latestProjectVersion(queryClient, project.id, project.version) }),
-    // A description edit shows immediately; the retry-sync button sends the
-    // description UNCHANGED (its only job is to re-mark the project pending
-    // for the worker), so it writes the sync state instead. One transform,
-    // branching on which of the two this is.
-    transform: (previous, patch) => {
-      if (patch.description !== undefined && patch.description !== project.description) {
-        return applyDescription(previous, project.id, patch.description);
-      }
-      return applySyncState(previous, project.id, 'pending');
-    },
-    flashId: () => project.id,
-    onSuccess: (updatedProject) => {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.map((p) => (p.id === updatedProject.id ? updatedProject : p)) ?? prev,
-      );
-      queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
-    },
-    onError: (error) => showVersionConflictToast(error, t, showToast),
+  // A description edit shows immediately; the retry-sync button sends the
+  // description UNCHANGED (its only job is to re-mark the project pending
+  // for the worker), so it writes the sync state instead. One transform,
+  // branching on which of the two this is.
+  const updateMutation = useProjectPatchMutation(project, (previous, patch: AitoProjectUpdate) => {
+    if (patch.description !== undefined && patch.description !== project.description) {
+      return applyDescription(previous, project.id, patch.description);
+    }
+    return applySyncState(previous, project.id, 'pending');
   });
 
   // Its own mutation rather than a third branch of `updateMutation.transform`:
@@ -721,24 +701,9 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   // and a social edit is neither. Same shape as ShippingCard's — optimistic
   // transform, PATCH response into the cache, events invalidated because the
   // server records a project.updated for this write like any other.
-  const socialMutation = useOptimisticBoardMutation<AitoProject, AitoProjectUpdate>({
-    // `latestProjectVersion`, not `project.version`: see its own doc — the
-    // description save fires on blur, so a fast second board write from the
-    // same operator (e.g. the shipping card's Save) can queue behind this
-    // one with a mutationFn closure bound to a render that predates this
-    // write's response landing.
-    mutationFn: (patch) =>
-      api.updateAitoProject(project.id, { ...patch, expected_version: latestProjectVersion(queryClient, project.id, project.version) }),
-    transform: (previous, patch) => applyClientSocial(previous, project.id, patch),
-    flashId: () => project.id,
-    onSuccess: (updatedProject) => {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.map((p) => (p.id === updatedProject.id ? updatedProject : p)) ?? prev,
-      );
-      queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
-    },
-    onError: (error) => showVersionConflictToast(error, t, showToast),
-  });
+  const socialMutation = useProjectPatchMutation(project, (previous, patch: AitoProjectUpdate) =>
+    applyClientSocial(previous, project.id, patch),
+  );
 
   const [editingSocial, setEditingSocial] = useState(false);
   const [socialDraft, setSocialDraft] = useState<{ network: SocialNetwork | null; handle: string }>({

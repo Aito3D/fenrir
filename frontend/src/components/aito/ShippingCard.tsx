@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Phone, Plane } from 'lucide-react';
 import { ShippingFields } from './ShippingFields';
 import { HoldButton } from './HoldButton';
@@ -9,12 +9,10 @@ import { emptyShippingDraft, islandLabel, isShippingComplete, shippingPayload } 
 import type { ShippingDraft } from '../../utils/shippingDraft';
 import { formatPhoneDisplay, parsePhone } from '../../utils/clientDraft';
 import { applyShipping } from '../../utils/aitoOptimistic';
-import { latestProjectVersion, useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
-import { useToast } from '../../contexts/ToastContext';
 import { api, type AitoProject, type AitoProjectUpdate, type AitoShippingService } from '../../api/client';
 import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
-import { showVersionConflictToast } from './versionConflictToast';
+import { useProjectPatchMutation } from './useProjectPatchMutation';
 
 /** Every shipment field the project already carries, reshaped into the same
  *  draft `ShippingFields` drives in the create drawer.
@@ -64,8 +62,6 @@ function draftFromProject(project: AitoProject, services: AitoShippingService[])
  *  editing is to change what is already there, not to retype it. */
 export function ShippingCard({ project, currency }: { project: AitoProject; currency: string }) {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const { showToast } = useToast();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<ShippingDraft | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -100,7 +96,7 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
   });
 
   // Same SHAPE as `ProjectDetailPanel`'s description-save mutation — one
-  // `useOptimisticBoardMutation`, an optimistic transform mirroring the
+  // `useProjectPatchMutation`, an optimistic transform mirroring the
   // server's own write (`applyShipping` here, `applyDescription` there), and
   // the PATCH response written back into the `['aito-projects']` cache in
   // `onSuccess` — but not a byte-for-byte copy: a shipping PATCH also runs
@@ -110,24 +106,9 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
   // `ActivityRail` render immediately ABOVE this card in the same panel;
   // skipping the invalidation would leave their timeline stale after every
   // add/edit/remove until something else happened to refetch it.
-  const shippingMutation = useOptimisticBoardMutation<AitoProject, AitoProjectUpdate>({
-    // `latestProjectVersion`, not `project.version` — see its doc on
-    // `useOptimisticBoardMutation.ts`. A same-client back-to-back save
-    // (description blur, then this card's Save before the first PATCH
-    // resolves) would otherwise carry a version this mutationFn's own
-    // closure captured before the first write's response landed.
-    mutationFn: (patch) =>
-      api.updateAitoProject(project.id, { ...patch, expected_version: latestProjectVersion(queryClient, project.id, project.version) }),
-    transform: (previous, patch) => applyShipping(previous, project.id, patch),
-    flashId: () => project.id,
-    onSuccess: (updatedProject) => {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.map((p) => (p.id === updatedProject.id ? updatedProject : p)) ?? prev,
-      );
-      queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
-    },
-    onError: (error) => showVersionConflictToast(error, t, showToast),
-  });
+  const shippingMutation = useProjectPatchMutation(project, (previous, patch: AitoProjectUpdate) =>
+    applyShipping(previous, project.id, patch),
+  );
 
   // Seeded from the project's stored client, exactly as the create drawer
   // seeds itself from its live client draft (`ClientSection`): the recipient
