@@ -145,7 +145,10 @@ export function AitoPage() {
   // view, and filtering it would make the headline number flicker on every
   // keystroke while describing nothing anyone asked for. The inconsistency is
   // the intent — please do not "fix" it.
-  const doneCount = board.done.filter((project) => matchesSearch(project, search)).length;
+  const doneCount = useMemo(
+    () => board.done.filter((project) => matchesSearch(project, search)).length,
+    [board, search],
+  );
   const inProduction = ACTIVE_COLUMN_IDS.reduce((sum, id) => sum + board[id].length, 0);
 
   // Live, not read once into a `useMemo`: the CSS half of the motion system

@@ -233,7 +233,7 @@ evidence: DoneGrid.tsx:42 and TrashGrid.tsx:69 verbatim-identical className + du
 
 ## T-022
 priority: P2
-status: IN_PROGRESS
+status: DONE
 attempts: 1
 round: 1
 first_seen_iteration: 0
