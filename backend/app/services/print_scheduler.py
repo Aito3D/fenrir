@@ -641,6 +641,11 @@ class PrintScheduler:
         # started, so a failed upload / cancel / exception never leaves the
         # printer heating for a job that isn't happening.
         self._preheat_pin: dict[int, set[str]] = {}
+        # Bed target (°C) that the pinned "bed" entry above actually set, so the
+        # rollback can tell its own target from one someone else has since
+        # chosen — the same guard `_release_keep_warm` applies to a keep-warm
+        # hold. Written wherever `"bed"` joins the pin, evicted alongside it.
+        self._preheat_pin_bed: dict[int, int] = {}
         # Item ids whose in-flight dispatch has been cancelled or deleted while
         # its preheat was still holding at temperature. Set by
         # `notify_dispatch_cancelled` from the queue routes, consumed by
@@ -1383,7 +1388,17 @@ class PrintScheduler:
                         awaiting,
                     )
 
-            await self._apply_keep_warm(db, items, dispatch_ids, busy_printers, require_plate_clear)
+            # Keep-warm is a comfort feature; dispatch is not. It sits between
+            # selection and `_launch_uploads`, so anything raising here would
+            # discard this tick's selections — computed AMS mappings and all —
+            # and, on a persistent fault, stop the queue dispatching entirely.
+            # Same reasoning as the deficit check's guard below: never let an
+            # auxiliary check wedge the queue. The bed simply stays wherever it
+            # was, and the next tick tries again.
+            try:
+                await self._apply_keep_warm(db, items, dispatch_ids, busy_printers, require_plate_clear)
+            except Exception as e:
+                logger.warning("Keep-warm pass failed, continuing with dispatch: %s", e, exc_info=True)
 
             # Read the concurrency limit BEFORE the commit below, not inside
             # _dispatch_selected(). A SELECT on this session after the commit
@@ -1469,20 +1484,29 @@ class PrintScheduler:
         )
 
         for item_id in to_launch:
-            task = spawn_background_task(self._dispatch_one(item_id), name=f"queue-upload-{item_id}")
+            task = spawn_background_task(
+                self._dispatch_one(item_id, item_printers.get(item_id)),
+                name=f"queue-upload-{item_id}",
+            )
             self._inflight[item_id] = (task, item_printers.get(item_id))
             # Prune on completion so the freed slot is refillable next tick.
             # spawn_background_task already logs any uncaught exception; this
             # only reclaims the pool slot (fires on success, failure, or cancel).
             task.add_done_callback(lambda _t, iid=item_id: self._inflight.pop(iid, None))
 
-    async def _dispatch_one(self, item_id: int) -> None:
+    async def _dispatch_one(self, item_id: int, selected_printer_id: int | None = None) -> None:
         """Upload + start one queue item in its own session (pool worker, #2602).
 
         Its own session: pool workers run concurrently and an AsyncSession is
         not safe to share across tasks; it also keeps a slow upload from pinning
         the scheduler's session (and, on SQLite, its transaction) open for the
         transfer's duration.
+
+        ``selected_printer_id`` is the printer this item was selected for, taken
+        from the same snapshot the caller used. It exists so the preheat pin can
+        be unwound on the paths that never reach the ``finally`` below — see the
+        claim failure a few lines down. Optional so the direct-call tests keep
+        working; when it is absent those paths simply behave as they did before.
         """
         async with async_session() as item_db:
             # Claim the row for dispatch BEFORE reading the printer snapshot or
@@ -1496,8 +1520,23 @@ class PrintScheduler:
                     "Queue item %s not claimable for dispatch (cancelled, removed, or already claimed) — skipping",
                     item_id,
                 )
+                # This return is outside the try/finally below, so the rollback
+                # has to happen here. Selecting this item already handed any
+                # keep-warm hold on its printer over to the preheat pin
+                # (`_sweep_keep_warm`), on the promise that this dispatch would
+                # unwind it. Bailing without doing so leaves the bed hot with
+                # nothing tracking it: the keep-warm entry is gone, so the
+                # max-duration cap no longer applies, and if this was the
+                # printer's last pending item nothing else will ever turn it
+                # off. Reachable whenever a cancel or delete lands between
+                # selection and the claim.
+                if selected_printer_id is not None:
+                    self._rollback_preheat_pin(item_id, selected_printer_id)
                 return
-            item_printer_id: int | None = None
+            # Seeded from the caller's snapshot so the `item vanished` return
+            # below still unwinds the pin; overwritten with the row's own
+            # printer_id as soon as we have it.
+            item_printer_id: int | None = selected_printer_id
             try:
                 item = await item_db.get(PrintQueueItem, item_id)
                 if not item:
@@ -1594,6 +1633,26 @@ class PrintScheduler:
                         return
                     await asyncio.sleep(0.5 * attempt)
 
+    @staticmethod
+    def _reported_bed_target(printer_id: int) -> int | None:
+        """The bed target firmware currently reports, or None if it can't be read.
+
+        None means "no evidence", not "zero" — callers must not treat it as a
+        temperature. Deliberately total: this feeds cleanup paths that run in a
+        ``finally``, where a malformed status must not become the exception the
+        caller sees.
+        """
+        try:
+            state = printer_manager.get_status(printer_id)
+            if state is None:
+                return None
+            temps = state.temperatures
+            if not isinstance(temps, dict):
+                return None
+            return int(float(temps.get("bed_target", 0) or 0))
+        except (TypeError, ValueError, AttributeError):
+            return None
+
     def _rollback_preheat_pin(self, item_id: int, printer_id: int) -> None:
         """Unwind everything preheat set when dispatch did NOT hand off to a running print.
 
@@ -1603,9 +1662,17 @@ class PrintScheduler:
         `start_print()`; anything still present when `_dispatch_one` exits
         is by definition an aborted dispatch and gets rolled back here.
 
+        The bed is the one action that can be declined: if firmware has since
+        been given a target other than the one we pinned, it belongs to someone
+        else and is left alone. See the comment at that branch.
+
+        Also called directly from `_dispatch_one`'s claim-failure return, which
+        never reaches the ``finally``.
+
         Best-effort and never raises — this runs in the ``finally`` of dispatch.
         """
         pin = self._preheat_pin.pop(printer_id, set())
+        pinned_bed = self._preheat_pin_bed.pop(printer_id, None)
         if not pin:
             return
         client = printer_manager.get_client(printer_id)
@@ -1617,10 +1684,31 @@ class PrintScheduler:
             )
             return
         if "bed" in pin:
-            try:
-                client.set_bed_temperature(0)
-            except Exception as exc:
-                logger.warning("Dispatch item %s: rollback bed → 0 failed: %s", item_id, exc)
+            # Only undo our own target. If firmware reports something else, the
+            # user or another writer owns the bed now and zeroing it would
+            # clobber their choice -- the same guard `_release_keep_warm`
+            # applies to a keep-warm hold.
+            #
+            # Every uncertain case switches the bed off rather than leaving it:
+            # no recorded target (a pin written before this bookkeeping, or a
+            # setter that raised after pinning) and an unreadable status both
+            # fall through. A bed left hot with no owner is the worse failure,
+            # and this runs in a `finally` where raising would mask the real
+            # exception.
+            cur_bed_target = self._reported_bed_target(printer_id) if pinned_bed is not None else None
+            if cur_bed_target is not None and cur_bed_target != pinned_bed:
+                logger.info(
+                    "Dispatch item %s (printer %d): rollback skipped bed → 0 (firmware target %d != pinned %d)",
+                    item_id,
+                    printer_id,
+                    cur_bed_target,
+                    pinned_bed,
+                )
+            else:
+                try:
+                    client.set_bed_temperature(0)
+                except Exception as exc:
+                    logger.warning("Dispatch item %s: rollback bed → 0 failed: %s", item_id, exc)
         if "chamber" in pin:
             try:
                 client.set_chamber_temperature(0)
@@ -3911,8 +3999,10 @@ class PrintScheduler:
             if _pid in active_candidates:
                 continue
             if _pid in dispatched:
-                self._keep_warm.pop(_pid, None)
+                handed_over = self._keep_warm.pop(_pid, None)
                 self._preheat_pin.setdefault(_pid, set()).add("bed")
+                if handed_over is not None:
+                    self._preheat_pin_bed[_pid] = handed_over.held_target
                 continue
             self._release_keep_warm(_pid)
 
@@ -3984,6 +4074,16 @@ class PrintScheduler:
             # until the printer leaves the candidate set).
             if entry is not None and entry.expired:
                 continue
+            # These two guards sit ahead of the max-duration check below, so an
+            # engaged hold only ages out while its printer is still reachable
+            # and still in FINISH. That is deliberate rather than a hole: with
+            # no status or no client there is no M140 to send anyway, and the
+            # elapsed check runs off `entry.started` so it fires on the first
+            # tick after the printer comes back. Leaving FINISH means the plate
+            # was cleared, which drops the printer out of `warm_candidates` and
+            # hands it to `_release_keep_warm` instead. The invariant worth
+            # preserving if this is ever reordered: every path out of an
+            # engaged hold ends in a bed-off, whether by timeout or release.
             state = printer_manager.get_status(pid)
             if state is None or state.state != "FINISH":
                 continue
@@ -4109,6 +4209,7 @@ class PrintScheduler:
         for pid in list(self._preheat_pin):
             if pid not in known_pids:
                 self._preheat_pin.pop(pid, None)
+                self._preheat_pin_bed.pop(pid, None)
 
     def _chamber_soak_remaining(
         self,
@@ -4369,6 +4470,7 @@ class PrintScheduler:
                         try:
                             client.set_bed_temperature(bed_target)
                             pin.add("bed")
+                            self._preheat_pin_bed[printer.id] = bed_target
                         except Exception as exc:
                             logger.warning("Queue item %s: fast-path bed M140 failed: %s", item.id, exc)
                         if supports_airduct(model):
@@ -4420,6 +4522,7 @@ class PrintScheduler:
         try:
             client.set_bed_temperature(bed_target)
             pin.add("bed")
+            self._preheat_pin_bed[printer.id] = bed_target
         except Exception as exc:
             logger.warning("Queue item %s: preheat bed M140 failed: %s", item.id, exc)
             return True
@@ -5513,6 +5616,7 @@ class PrintScheduler:
             # heater/flap control from here. Clearing the pin prevents
             # `_dispatch_one`'s finally from unwinding a live print.
             self._preheat_pin.pop(item.printer_id, None)
+            self._preheat_pin_bed.pop(item.printer_id, None)
             logger.info("Queue item %s: Print started successfully - %s", item.id, filename)
             # No dispatch-toast event here: the legacy bg-dispatch path kept
             # status='processing' from upload start until the printer acked

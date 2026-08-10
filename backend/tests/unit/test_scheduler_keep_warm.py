@@ -733,3 +733,167 @@ async def test_keep_warm_holds_within_configured_window(scheduler):
 
     client.set_bed_temperature.assert_not_called()
     assert scheduler._keep_warm[PRINTER_ID].expired is False
+
+
+# ---------------------------------------------------------------------------
+# Handing the hold to the preheat pin, and getting it back when dispatch bails
+# ---------------------------------------------------------------------------
+#
+# `_sweep_keep_warm` gives up the keep-warm entry for a printer being dispatched
+# this tick and pins "bed" instead, on the promise that `_dispatch_one` unwinds
+# it on any non-success exit. Two of `_dispatch_one`'s exits used to break that
+# promise by returning before the `finally` could run, which left the bed hot
+# with the entry already gone -- so neither the max-duration cap nor
+# `_release_keep_warm` applied, and on the printer's last pending item nothing
+# would ever switch it off.
+
+
+def test_dispatch_handover_records_the_held_target(scheduler):
+    """The pin remembers what keep-warm was holding, not just that it held."""
+    scheduler._keep_warm[PRINTER_ID] = _KeepWarmEntry(started=NOW, held_target=HOLD_TEMP)
+
+    scheduler._sweep_keep_warm(active_candidates=set(), dispatched={PRINTER_ID})
+
+    assert PRINTER_ID not in scheduler._keep_warm
+    assert scheduler._preheat_pin[PRINTER_ID] == {"bed"}
+    assert scheduler._preheat_pin_bed[PRINTER_ID] == HOLD_TEMP
+
+
+@pytest.mark.asyncio
+async def test_unclaimable_item_releases_the_handed_over_bed(scheduler):
+    """A cancel landing between selection and the claim must not strand the bed.
+
+    `_claim_for_dispatch` returning False exits before the try/finally, so the
+    rollback has to fire on that path explicitly.
+    """
+    scheduler._preheat_pin[PRINTER_ID] = {"bed"}
+    scheduler._preheat_pin_bed[PRINTER_ID] = HOLD_TEMP
+    client = MagicMock()
+
+    with (
+        patch("backend.app.services.print_scheduler.async_session") as session_factory,
+        patch("backend.app.services.print_scheduler.printer_manager") as pm,
+        patch.object(scheduler, "_claim_for_dispatch", AsyncMock(return_value=False)),
+    ):
+        session_factory.return_value.__aenter__ = AsyncMock(return_value=MagicMock())
+        session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+        pm.get_client.return_value = client
+        pm.get_status.return_value = SimpleNamespace(temperatures={"bed_target": HOLD_TEMP})
+
+        await scheduler._dispatch_one(42, selected_printer_id=PRINTER_ID)
+
+    client.set_bed_temperature.assert_called_once_with(0)
+    assert PRINTER_ID not in scheduler._preheat_pin
+    assert PRINTER_ID not in scheduler._preheat_pin_bed
+
+
+@pytest.mark.asyncio
+async def test_unclaimable_item_without_a_known_printer_is_a_noop(scheduler):
+    """Direct callers that pass no printer keep the old behaviour."""
+    scheduler._preheat_pin[PRINTER_ID] = {"bed"}
+    client = MagicMock()
+
+    with (
+        patch("backend.app.services.print_scheduler.async_session") as session_factory,
+        patch("backend.app.services.print_scheduler.printer_manager") as pm,
+        patch.object(scheduler, "_claim_for_dispatch", AsyncMock(return_value=False)),
+    ):
+        session_factory.return_value.__aenter__ = AsyncMock(return_value=MagicMock())
+        session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+        pm.get_client.return_value = client
+
+        await scheduler._dispatch_one(42)
+
+    client.set_bed_temperature.assert_not_called()
+    assert scheduler._preheat_pin[PRINTER_ID] == {"bed"}
+
+
+@pytest.mark.asyncio
+async def test_vanished_item_releases_the_handed_over_bed(scheduler):
+    """The row disappearing after a successful claim takes the same exit.
+
+    That return is inside the try, but `item_printer_id` used to still be None
+    there, so the rollback was skipped by its own guard.
+    """
+    scheduler._preheat_pin[PRINTER_ID] = {"bed"}
+    scheduler._preheat_pin_bed[PRINTER_ID] = HOLD_TEMP
+    client = MagicMock()
+    item_db = MagicMock()
+    item_db.get = AsyncMock(return_value=None)
+
+    with (
+        patch("backend.app.services.print_scheduler.async_session") as session_factory,
+        patch("backend.app.services.print_scheduler.printer_manager") as pm,
+        patch.object(scheduler, "_claim_for_dispatch", AsyncMock(return_value=True)),
+        patch.object(scheduler, "_clear_dispatch_claim", AsyncMock()),
+        patch.object(scheduler, "_release_unconfirmed_budget_reservation", AsyncMock()),
+    ):
+        session_factory.return_value.__aenter__ = AsyncMock(return_value=item_db)
+        session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+        pm.get_client.return_value = client
+        pm.get_status.return_value = SimpleNamespace(temperatures={"bed_target": HOLD_TEMP})
+
+        await scheduler._dispatch_one(42, selected_printer_id=PRINTER_ID)
+
+    client.set_bed_temperature.assert_called_once_with(0)
+    assert PRINTER_ID not in scheduler._preheat_pin
+
+
+# ---------------------------------------------------------------------------
+# Rollback leaves a bed somebody else now owns alone
+# ---------------------------------------------------------------------------
+
+
+def test_rollback_leaves_a_reassigned_bed_alone(scheduler):
+    """Firmware reports a target we did not set → the bed belongs to someone else."""
+    scheduler._preheat_pin[PRINTER_ID] = {"bed"}
+    scheduler._preheat_pin_bed[PRINTER_ID] = HOLD_TEMP
+    client = MagicMock()
+
+    with patch("backend.app.services.print_scheduler.printer_manager") as pm:
+        pm.get_client.return_value = client
+        pm.get_status.return_value = SimpleNamespace(temperatures={"bed_target": 45})
+        scheduler._rollback_preheat_pin(item_id=42, printer_id=PRINTER_ID)
+
+    client.set_bed_temperature.assert_not_called()
+    assert PRINTER_ID not in scheduler._preheat_pin
+    assert PRINTER_ID not in scheduler._preheat_pin_bed
+
+
+def test_rollback_switches_off_when_the_target_still_matches(scheduler):
+    scheduler._preheat_pin[PRINTER_ID] = {"bed"}
+    scheduler._preheat_pin_bed[PRINTER_ID] = HOLD_TEMP
+    client = MagicMock()
+
+    with patch("backend.app.services.print_scheduler.printer_manager") as pm:
+        pm.get_client.return_value = client
+        pm.get_status.return_value = SimpleNamespace(temperatures={"bed_target": HOLD_TEMP})
+        scheduler._rollback_preheat_pin(item_id=42, printer_id=PRINTER_ID)
+
+    client.set_bed_temperature.assert_called_once_with(0)
+
+
+def test_rollback_switches_off_when_the_target_cannot_be_read(scheduler):
+    """No evidence is not evidence of reassignment -- err towards a cold bed."""
+    scheduler._preheat_pin[PRINTER_ID] = {"bed"}
+    scheduler._preheat_pin_bed[PRINTER_ID] = HOLD_TEMP
+    client = MagicMock()
+
+    with patch("backend.app.services.print_scheduler.printer_manager") as pm:
+        pm.get_client.return_value = client
+        pm.get_status.return_value = None
+        scheduler._rollback_preheat_pin(item_id=42, printer_id=PRINTER_ID)
+
+    client.set_bed_temperature.assert_called_once_with(0)
+
+
+def test_unregistered_printer_evicts_the_recorded_bed_target(scheduler):
+    scheduler._preheat_pin[PRINTER_ID] = {"bed"}
+    scheduler._preheat_pin_bed[PRINTER_ID] = HOLD_TEMP
+
+    with patch("backend.app.services.print_scheduler.printer_manager") as pm:
+        pm.get_all_statuses.return_value = {}
+        scheduler._sample_chamber_temps()
+
+    assert PRINTER_ID not in scheduler._preheat_pin
+    assert PRINTER_ID not in scheduler._preheat_pin_bed
