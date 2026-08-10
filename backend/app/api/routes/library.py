@@ -70,6 +70,7 @@ from backend.app.services.design_settings import (
     overrides_from_config,
 )
 from backend.app.services.plate_thumbnail import inject_plate_thumbnails_if_missing
+from backend.app.services.process_overrides import apply_process_overrides
 from backend.app.services.stl_thumbnail import MIN_USABLE_STL_BYTES, generate_stl_thumbnail
 from backend.app.utils.filename import InvalidFilenameError, validate_print_filename
 from backend.app.utils.threemf_tools import (
@@ -3734,6 +3735,14 @@ async def _run_slicer_with_fallback(
                 request.design_overrides,
             )
 
+    # The user's own edits from the slice modal's settings panel. Applied last
+    # and for every model type (not just 3MF): unlike the two patches above this
+    # doesn't read anything out of the source file, it is what the user typed.
+    # Last write wins, so an explicit choice beats both the carried support
+    # config (#1881) and the designer's tweaks (#2622).
+    if request.process_overrides:
+        presets["process"] = apply_process_overrides(presets["process"], request.process_overrides)
+
     used_embedded_settings = False
     # "Slice as designed" (#2611): honour the file's embedded
     # project_settings.config instead of the picked profile triplet. Only
@@ -4455,13 +4464,23 @@ async def slice_library_file(
     lib_file = _ensure_library_file_visible(lib_file, current_user, can_read_all)
 
     src_lower = (lib_file.filename or "").lower()
-    if not (
-        src_lower.endswith(".stl")
-        or src_lower.endswith(".3mf")
-        or src_lower.endswith(".step")
-        or src_lower.endswith(".stp")
-    ):
-        raise HTTPException(status_code=400, detail="Source file must be STL, 3MF, or STEP")
+    if src_lower.endswith(".step") or src_lower.endswith(".stp"):
+        # Neither slicer's CLI can load STEP: OrcaSlicer 2.4.2 and BambuStudio
+        # 02.07.01.62 both answer "Unknown file format. Input file must have
+        # .stl, .obj, .amf(.xml) extension." Accepting the job here meant
+        # reading the file, converting it and uploading it before the sidecar
+        # rejected it as unparseable -- which reads as a corrupt model rather
+        # than an unsupported format. Say so before any of that happens.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "STEP files cannot be sliced. The OrcaSlicer and Bambu Studio command-line "
+                "slicers load only STL and 3MF -- open the STEP in your slicer and export it "
+                "as one of those first."
+            ),
+        )
+    if not (src_lower.endswith(".stl") or src_lower.endswith(".3mf")):
+        raise HTTPException(status_code=400, detail="Source file must be STL or 3MF")
 
     src_path = Path(app_settings.base_dir) / lib_file.file_path
     if not src_path.exists():

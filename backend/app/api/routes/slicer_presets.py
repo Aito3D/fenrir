@@ -32,6 +32,7 @@ from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.local_preset import LocalPreset
 from backend.app.models.user import User
+from backend.app.schemas.slicer import PresetRef
 from backend.app.schemas.slicer_presets import (
     UnifiedPreset,
     UnifiedPresetsBySlot,
@@ -46,9 +47,11 @@ from backend.app.services.orca_cloud import (
     OrcaCloudAuthError,
     OrcaCloudError,
 )
+from backend.app.services.preset_resolver import resolve_preset_ref
 from backend.app.services.slicer_api import (
     SlicerApiError,
     SlicerApiService,
+    SlicerApiUnavailableError,
 )
 from backend.app.utils.printer_models import PRINTER_MODEL_MAP
 
@@ -537,6 +540,68 @@ def list_printer_models() -> dict[str, str]:
     user data.
     """
     return dict(PRINTER_MODEL_MAP)
+
+
+@router.get("/preset-values")
+async def get_preset_values(
+    source: str = Query(..., description="Preset tier: 'local', 'cloud', 'orca_cloud' or 'standard'."),
+    id: str = Query(..., description="Preset id within that tier."),
+    slot: str = Query("process", description="Preset slot. Only 'process' is supported today."),
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD),
+) -> dict:
+    """Effective values of a preset, with its ``inherits:`` chain flattened.
+
+    Drives the slice modal's process-settings panel: without this the panel can
+    only show the option schema's compiled-in defaults, so a preset that sets a
+    0.42mm line width appears as the C++ default of 0.
+
+    The flattening is done by the *sidecar*, deliberately. A "Standard" pick is
+    only a ``{inherits: "<name>"}`` stub on our side, and even local/cloud
+    presets are deltas — the values live in the profile tree bundled inside the
+    running sidecar image. Bambuddy's own ``orca_profiles`` resolver walks
+    OrcaSlicer's published tree instead, which can disagree with what actually
+    slices; showing numbers from it would be confidently wrong.
+
+    Returns ``{"resolved": false, "values": {}, "reason": "..."}`` rather than
+    an error whenever the values can't be obtained. ``reason`` is what makes
+    the fallback actionable: a Bambuddy install pulls its sidecar as
+    ``SIDECAR_TAG:-latest`` regardless of its own release channel, so the
+    overwhelmingly common cause is a sidecar older than the endpoint — which
+    the user fixes by pulling a newer image, if we tell them that instead of
+    "could not read the values".
+    """
+    if slot != "process":
+        raise HTTPException(status_code=400, detail="Only the 'process' slot is supported")
+
+    ref = PresetRef(source=source, id=id)
+
+    def unresolved(reason: str) -> dict:
+        return {"resolved": False, "values": {}, "reason": reason}
+
+    try:
+        profile_json = await resolve_preset_ref(db, current_user, ref, slot)
+    except HTTPException:
+        # A preset the caller can't resolve is not a reason to break the panel;
+        # the slice itself will report it properly if they go ahead.
+        logger.info("Could not resolve %s preset %s for value lookup", slot, id)
+        return unresolved("preset_unresolved")
+
+    api_url = await _resolve_slicer_api_url(db)
+    if not api_url:
+        return unresolved("not_configured")
+
+    service = SlicerApiService(api_url)
+    try:
+        resolved = await service.resolve_profile(profile_json, "process")
+    except SlicerApiUnavailableError:
+        return unresolved("sidecar_unavailable")
+    finally:
+        await service.close()
+
+    if resolved.values is None:
+        return unresolved(resolved.reason)
+    return {"resolved": True, "values": resolved.values, "reason": "ok"}
 
 
 @router.get("/presets", response_model=UnifiedPresetsResponse)
