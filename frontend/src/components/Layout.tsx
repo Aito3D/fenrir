@@ -24,7 +24,6 @@ import aito3dLogo from '../assets/aito3d_logo.png';
 // Required by upstream's root-level mount adopted in this merge. The fork had
 // dropped both the mount and this import; taking the mount back without it is
 // a TS2304 at build time.
-import { BugReportBubble } from './BugReportBubble';
 import {
   getHiddenSidebarSystemItemIds,
   getSidebarOrder,
@@ -89,17 +88,6 @@ export function Layout() {
   const { mode, toggleMode } = useTheme();
   const { t } = useTranslation();
   const isSidebarCompact = useIsSidebarCompact();
-
-  // Bug-report panel state lives here because the trigger moves (#2750,
-  // reporter @goodjaltman). Below the sidebar-compact breakpoint the floating
-  // disc is replaced by a button in the compact header: the bottom-right corner
-  // is the most contended region in the app — the Profiles scroll-to-top FAB,
-  // the floating camera window and its resize handle, the Group Edit save bar,
-  // the bulk-selection toolbars, and the File Manager / Archives per-card
-  // action buttons all live there — and a fixed 48px disc sits on top of
-  // whichever of them happens to be underneath. Moving out of the corner is
-  // the only fix that covers in-flow content as well as fixed overlays.
-  const [bugReportOpen, setBugReportOpen] = useState(false);
 
   // Theme toggle: mode → icon and tooltip
   const ThemeIcon = { dark: Sun, light: Monitor, system: Moon }[mode];
@@ -542,18 +530,6 @@ export function Layout() {
               This is the fork's branding and stays — upstream's Bambuddy logo
               is deliberately not taken here. */}
           <img src={aito3dLogo} alt="AITO3D" className="ml-3 h-6 w-auto dark:invert dark:hue-rotate-180" />
-          {/* Bug report — the compact-layout home of the floating bubble.
-              Upstream's, and required: BugReportBubble now hides its own
-              floating disc below this breakpoint (showTrigger), so without
-              this button the bug report is unreachable on a compact layout. */}
-          <button
-            onClick={() => setBugReportOpen(true)}
-            className="ml-auto p-2 -mr-2 rounded-lg text-red-500 hover:bg-bambu-dark-tertiary transition-colors"
-            title={t('bugReport.title')}
-            aria-label={t('bugReport.title')}
-          >
-            <Bug className="w-5 h-5" />
-          </button>
         </header>
       )}
 
@@ -1190,16 +1166,6 @@ export function Layout() {
           </Card>
         </div>
       )}
-      {/* The panel always mounts here, at the Layout root. It must not move
-          into the header alongside its compact-layout trigger: the header is
-          `fixed z-40` and so its own stacking context, which would cap the
-          z-50 panel at the header's level and bury it under every ordinary
-          modal in the app. */}
-      <BugReportBubble
-        showTrigger={!isSidebarCompact}
-        open={bugReportOpen}
-        onOpenChange={setBugReportOpen}
-      />
     </div>
   );
 }

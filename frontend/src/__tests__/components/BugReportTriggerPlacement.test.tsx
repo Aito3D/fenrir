@@ -1,18 +1,14 @@
 /**
- * Where the bug-report trigger lives, and what shape its panel takes (#2750,
- * reporter @goodjaltman).
+ * The bug-report trigger is gone from the app shell — Layout mounts neither the
+ * floating disc nor a header button, at any width (originally #2750, reporter
+ * @goodjaltman, which moved the trigger between those two homes).
  *
- * The floating disc is pinned to the bottom-right corner, which is the most
- * contended region in the app — the Profiles scroll-to-top FAB, the floating
- * camera window, the Group Edit save bar, the bulk-selection toolbars and the
- * per-card action buttons on File Manager and Archives all sit there, and a
- * `fixed` disc covers whichever happens to be underneath at the time. Below the
- * sidebar-compact breakpoint the trigger moves into the compact header instead,
- * which frees the corner outright.
+ * BugReportBubble itself is still here and still covered, so the panel's
+ * geometry and reset behaviour stay pinned should it ever be re-hosted.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { waitFor, fireEvent, within } from '@testing-library/react';
+import { waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { Layout } from '../../components/Layout';
@@ -93,34 +89,25 @@ describe('bug-report trigger placement', () => {
     });
   });
 
-  it('puts the trigger in the compact header and frees the corner below 1144px', async () => {
+  // The trigger was removed from the app shell: Layout no longer mounts the
+  // bubble at all, at any width. The component itself is kept (and still
+  // covered below) so the panel can be re-hosted later.
+  it('renders no trigger in the compact header', async () => {
     stubViewport(390);
     render(<Layout />);
 
     await waitFor(() => expect(document.querySelector('header')).toBeInTheDocument());
     const header = document.querySelector('header')!;
-    expect(within(header).getByRole('button', { name: /report a bug|bug/i })).toBeInTheDocument();
+    expect(within(header).queryByRole('button', { name: /report a bug|bug/i })).toBeNull();
     expect(floatingDisc()).toBeUndefined();
   });
 
-  it('keeps the floating disc when the sidebar is not compact', async () => {
+  it('renders no floating disc when the sidebar is not compact', async () => {
     stubViewport(1440);
     render(<Layout />);
 
-    await waitFor(() => expect(floatingDisc()).toBeDefined());
-    // No compact header exists at this width, so there is nowhere else for it.
-    expect(document.querySelector('header')).toBeNull();
-  });
-
-  it('opens the same panel from the header trigger', async () => {
-    stubViewport(390);
-    render(<Layout />);
-
-    await waitFor(() => expect(document.querySelector('header')).toBeInTheDocument());
-    const header = document.querySelector('header')!;
-    fireEvent.click(within(header).getByRole('button', { name: /report a bug|bug/i }));
-
-    await waitFor(() => expect(document.getElementById('bug-report-modal')).toBeInTheDocument());
+    await waitFor(() => expect(document.querySelector('nav, aside')).toBeInTheDocument());
+    expect(floatingDisc()).toBeUndefined();
   });
 });
 
