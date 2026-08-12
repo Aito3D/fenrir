@@ -1,0 +1,1549 @@
+### exit: 0
+### stdout:
+{
+ "build_line_items": {
+  "air-priced/all-none-only": [
+   {
+    "description": "Nom: Jean Dupont\nT\u00e9l\u00e9phone: 87123456\n\u00cele: Raiatea",
+    "item_id": "ITEM-SHIP-AIR",
+    "item_order": 1,
+    "quantity": 1,
+    "rate": 1500.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   }
+  ],
+  "air-priced/empty": [
+   {
+    "description": "Nom: Jean Dupont\nT\u00e9l\u00e9phone: 87123456\n\u00cele: Raiatea",
+    "item_id": "ITEM-SHIP-AIR",
+    "item_order": 1,
+    "quantity": 1,
+    "rate": 1500.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   }
+  ],
+  "air-priced/multi": [
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "Scan only",
+    "item_id": "ITEM-SCAN",
+    "item_order": 1,
+    "quantity": 1,
+    "rate": 1234.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "header_name": "Imp q7",
+    "item_id": "ITEM-IMP",
+    "item_order": 2,
+    "quantity": 7,
+    "rate": 100,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "discount": "50%",
+    "header_name": "Imp disc",
+    "item_id": "ITEM-IMP",
+    "item_order": 3,
+    "quantity": 2,
+    "rate": 500,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "Nom: Jean Dupont\nT\u00e9l\u00e9phone: 87123456\n\u00cele: Raiatea",
+    "item_id": "ITEM-SHIP-AIR",
+    "item_order": 4,
+    "quantity": 1,
+    "rate": 1500.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   }
+  ],
+  "air-priced/single-all-services": [
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "All",
+    "item_id": "ITEM-SCAN",
+    "item_order": 1,
+    "quantity": 1,
+    "rate": 100.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "All",
+    "item_id": "ITEM-MODEL",
+    "item_order": 2,
+    "quantity": 1,
+    "rate": 200.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "Mat\u00e9riau: PETG\nPoids: 50 gr\nTemps: 1h30\nCouleur: Noir",
+    "header_name": "All",
+    "item_id": "ITEM-IMP",
+    "item_order": 3,
+    "quantity": 2,
+    "rate": 150,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "header_name": "All",
+    "item_id": "ITEM-USI",
+    "item_order": 4,
+    "quantity": 1,
+    "rate": 400.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "Nom: Jean Dupont\nT\u00e9l\u00e9phone: 87123456\n\u00cele: Raiatea",
+    "item_id": "ITEM-SHIP-AIR",
+    "item_order": 5,
+    "quantity": 1,
+    "rate": 1500.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   }
+  ],
+  "air-priced/zero-costs-only": [
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "Zero",
+    "item_id": "ITEM-SCAN",
+    "item_order": 1,
+    "quantity": 1,
+    "rate": 0.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "Zero",
+    "item_id": "ITEM-MODEL",
+    "item_order": 2,
+    "quantity": 1,
+    "rate": 0.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "header_name": "Zero",
+    "item_id": "ITEM-IMP",
+    "item_order": 3,
+    "quantity": 1,
+    "rate": 0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "header_name": "Zero",
+    "item_id": "ITEM-USI",
+    "item_order": 4,
+    "quantity": 1,
+    "rate": 0.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "Nom: Jean Dupont\nT\u00e9l\u00e9phone: 87123456\n\u00cele: Raiatea",
+    "item_id": "ITEM-SHIP-AIR",
+    "item_order": 5,
+    "quantity": 1,
+    "rate": 1500.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   }
+  ],
+  "air-zero/all-none-only": [
+   {
+    "description": "Nom: A B\nT\u00e9l\u00e9phone: 87000000\n\u00cele: Tahiti",
+    "item_id": "ITEM-SHIP-AIR",
+    "item_order": 1,
+    "quantity": 1,
+    "rate": 0.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   }
+  ],
+  "air-zero/empty": [
+   {
+    "description": "Nom: A B\nT\u00e9l\u00e9phone: 87000000\n\u00cele: Tahiti",
+    "item_id": "ITEM-SHIP-AIR",
+    "item_order": 1,
+    "quantity": 1,
+    "rate": 0.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   }
+  ],
+  "air-zero/multi": [
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "Scan only",
+    "item_id": "ITEM-SCAN",
+    "item_order": 1,
+    "quantity": 1,
+    "rate": 1234.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "header_name": "Imp q7",
+    "item_id": "ITEM-IMP",
+    "item_order": 2,
+    "quantity": 7,
+    "rate": 100,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "discount": "50%",
+    "header_name": "Imp disc",
+    "item_id": "ITEM-IMP",
+    "item_order": 3,
+    "quantity": 2,
+    "rate": 500,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "Nom: A B\nT\u00e9l\u00e9phone: 87000000\n\u00cele: Tahiti",
+    "item_id": "ITEM-SHIP-AIR",
+    "item_order": 4,
+    "quantity": 1,
+    "rate": 0.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   }
+  ],
+  "air-zero/single-all-services": [
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "All",
+    "item_id": "ITEM-SCAN",
+    "item_order": 1,
+    "quantity": 1,
+    "rate": 100.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "All",
+    "item_id": "ITEM-MODEL",
+    "item_order": 2,
+    "quantity": 1,
+    "rate": 200.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "Mat\u00e9riau: PETG\nPoids: 50 gr\nTemps: 1h30\nCouleur: Noir",
+    "header_name": "All",
+    "item_id": "ITEM-IMP",
+    "item_order": 3,
+    "quantity": 2,
+    "rate": 150,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "header_name": "All",
+    "item_id": "ITEM-USI",
+    "item_order": 4,
+    "quantity": 1,
+    "rate": 400.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "Nom: A B\nT\u00e9l\u00e9phone: 87000000\n\u00cele: Tahiti",
+    "item_id": "ITEM-SHIP-AIR",
+    "item_order": 5,
+    "quantity": 1,
+    "rate": 0.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   }
+  ],
+  "air-zero/zero-costs-only": [
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "Zero",
+    "item_id": "ITEM-SCAN",
+    "item_order": 1,
+    "quantity": 1,
+    "rate": 0.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "Zero",
+    "item_id": "ITEM-MODEL",
+    "item_order": 2,
+    "quantity": 1,
+    "rate": 0.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "header_name": "Zero",
+    "item_id": "ITEM-IMP",
+    "item_order": 3,
+    "quantity": 1,
+    "rate": 0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "header_name": "Zero",
+    "item_id": "ITEM-USI",
+    "item_order": 4,
+    "quantity": 1,
+    "rate": 0.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "Nom: A B\nT\u00e9l\u00e9phone: 87000000\n\u00cele: Tahiti",
+    "item_id": "ITEM-SHIP-AIR",
+    "item_order": 5,
+    "quantity": 1,
+    "rate": 0.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   }
+  ],
+  "none/all-none-only": [],
+  "none/empty": [],
+  "none/multi": [
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "Scan only",
+    "item_id": "ITEM-SCAN",
+    "item_order": 1,
+    "quantity": 1,
+    "rate": 1234.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "header_name": "Imp q7",
+    "item_id": "ITEM-IMP",
+    "item_order": 2,
+    "quantity": 7,
+    "rate": 100,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "discount": "50%",
+    "header_name": "Imp disc",
+    "item_id": "ITEM-IMP",
+    "item_order": 3,
+    "quantity": 2,
+    "rate": 500,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   }
+  ],
+  "none/single-all-services": [
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "All",
+    "item_id": "ITEM-SCAN",
+    "item_order": 1,
+    "quantity": 1,
+    "rate": 100.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "All",
+    "item_id": "ITEM-MODEL",
+    "item_order": 2,
+    "quantity": 1,
+    "rate": 200.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "Mat\u00e9riau: PETG\nPoids: 50 gr\nTemps: 1h30\nCouleur: Noir",
+    "header_name": "All",
+    "item_id": "ITEM-IMP",
+    "item_order": 3,
+    "quantity": 2,
+    "rate": 150,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "header_name": "All",
+    "item_id": "ITEM-USI",
+    "item_order": 4,
+    "quantity": 1,
+    "rate": 400.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   }
+  ],
+  "none/zero-costs-only": [
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "Zero",
+    "item_id": "ITEM-SCAN",
+    "item_order": 1,
+    "quantity": 1,
+    "rate": 0.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "Zero",
+    "item_id": "ITEM-MODEL",
+    "item_order": 2,
+    "quantity": 1,
+    "rate": 0.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "header_name": "Zero",
+    "item_id": "ITEM-IMP",
+    "item_order": 3,
+    "quantity": 1,
+    "rate": 0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "header_name": "Zero",
+    "item_id": "ITEM-USI",
+    "item_order": 4,
+    "quantity": 1,
+    "rate": 0.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   }
+  ],
+  "sea-priced/all-none-only": [
+   {
+    "description": "Nom: Ana T\nT\u00e9l\u00e9phone: 40123456\n\u00cele: Nuku Hiva",
+    "item_id": "ITEM-SHIP-SEA",
+    "item_order": 1,
+    "quantity": 1,
+    "rate": 2750.5,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   }
+  ],
+  "sea-priced/empty": [
+   {
+    "description": "Nom: Ana T\nT\u00e9l\u00e9phone: 40123456\n\u00cele: Nuku Hiva",
+    "item_id": "ITEM-SHIP-SEA",
+    "item_order": 1,
+    "quantity": 1,
+    "rate": 2750.5,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   }
+  ],
+  "sea-priced/multi": [
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "Scan only",
+    "item_id": "ITEM-SCAN",
+    "item_order": 1,
+    "quantity": 1,
+    "rate": 1234.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "header_name": "Imp q7",
+    "item_id": "ITEM-IMP",
+    "item_order": 2,
+    "quantity": 7,
+    "rate": 100,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "discount": "50%",
+    "header_name": "Imp disc",
+    "item_id": "ITEM-IMP",
+    "item_order": 3,
+    "quantity": 2,
+    "rate": 500,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "Nom: Ana T\nT\u00e9l\u00e9phone: 40123456\n\u00cele: Nuku Hiva",
+    "item_id": "ITEM-SHIP-SEA",
+    "item_order": 4,
+    "quantity": 1,
+    "rate": 2750.5,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   }
+  ],
+  "sea-priced/single-all-services": [
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "All",
+    "item_id": "ITEM-SCAN",
+    "item_order": 1,
+    "quantity": 1,
+    "rate": 100.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "All",
+    "item_id": "ITEM-MODEL",
+    "item_order": 2,
+    "quantity": 1,
+    "rate": 200.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "Mat\u00e9riau: PETG\nPoids: 50 gr\nTemps: 1h30\nCouleur: Noir",
+    "header_name": "All",
+    "item_id": "ITEM-IMP",
+    "item_order": 3,
+    "quantity": 2,
+    "rate": 150,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "header_name": "All",
+    "item_id": "ITEM-USI",
+    "item_order": 4,
+    "quantity": 1,
+    "rate": 400.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "Nom: Ana T\nT\u00e9l\u00e9phone: 40123456\n\u00cele: Nuku Hiva",
+    "item_id": "ITEM-SHIP-SEA",
+    "item_order": 5,
+    "quantity": 1,
+    "rate": 2750.5,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   }
+  ],
+  "sea-priced/zero-costs-only": [
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "Zero",
+    "item_id": "ITEM-SCAN",
+    "item_order": 1,
+    "quantity": 1,
+    "rate": 0.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "*Fichier non c\u00e9d\u00e9*",
+    "header_name": "Zero",
+    "item_id": "ITEM-MODEL",
+    "item_order": 2,
+    "quantity": 1,
+    "rate": 0.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "header_name": "Zero",
+    "item_id": "ITEM-IMP",
+    "item_order": 3,
+    "quantity": 1,
+    "rate": 0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "",
+    "header_name": "Zero",
+    "item_id": "ITEM-USI",
+    "item_order": 4,
+    "quantity": 1,
+    "rate": 0.0,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   },
+   {
+    "description": "Nom: Ana T\nT\u00e9l\u00e9phone: 40123456\n\u00cele: Nuku Hiva",
+    "item_id": "ITEM-SHIP-SEA",
+    "item_order": 5,
+    "quantity": 1,
+    "rate": 2750.5,
+    "tax_id": "TAX-1",
+    "unit": "Projet"
+   }
+  ]
+ },
+ "build_line_items_existing": [
+  {
+   "description": "*Fichier non c\u00e9d\u00e9*",
+   "header_name": "All",
+   "item_id": "ITEM-SCAN",
+   "item_order": 1,
+   "quantity": 1,
+   "rate": 100.0,
+   "tax_id": "TAX-1",
+   "unit": "Projet"
+  },
+  {
+   "description": "*Fichier non c\u00e9d\u00e9*",
+   "header_name": "All",
+   "item_id": "ITEM-MODEL",
+   "item_order": 2,
+   "quantity": 1,
+   "rate": 200.0,
+   "tax_id": "TAX-1",
+   "unit": "Projet"
+  },
+  {
+   "description": "Mat\u00e9riau: PETG\nPoids: 50 gr\nTemps: 1h30\nCouleur: Noir",
+   "header_name": "All",
+   "item_id": "ITEM-IMP",
+   "item_order": 3,
+   "quantity": 2,
+   "rate": 150,
+   "tax_id": "TAX-1",
+   "unit": "Projet"
+  },
+  {
+   "description": "",
+   "header_name": "All",
+   "item_id": "ITEM-USI",
+   "item_order": 4,
+   "quantity": 1,
+   "rate": 400.0,
+   "tax_id": "TAX-1",
+   "unit": "Projet"
+  },
+  {
+   "description": "Nom: Jean Dupont\nT\u00e9l\u00e9phone: 87123456\n\u00cele: Raiatea",
+   "item_id": "ITEM-SHIP-AIR",
+   "item_order": 5,
+   "quantity": 1,
+   "rate": 1500.0,
+   "tax_id": "TAX-1",
+   "unit": "Projet"
+  }
+ ],
+ "build_shipping_description": {
+  "air-priced": "Nom: Jean Dupont\nT\u00e9l\u00e9phone: 87123456\n\u00cele: Raiatea",
+  "air-zero": "Nom: A B\nT\u00e9l\u00e9phone: 87000000\n\u00cele: Tahiti",
+  "sea-priced": "Nom: Ana T\nT\u00e9l\u00e9phone: 40123456\n\u00cele: Nuku Hiva"
+ },
+ "diff_fields": {
+  "empty-patch": [],
+  "no-change": [],
+  "none-to-value": [
+   {
+    "field": "a",
+    "from": null,
+    "to": 5
+   }
+  ],
+  "one-change": [
+   {
+    "field": "a",
+    "from": 1,
+    "to": 2
+   }
+  ],
+  "unknown-field": [
+   {
+    "field": "zzz",
+    "from": null,
+    "to": 9
+   }
+  ],
+  "value-to-none": [
+   {
+    "field": "a",
+    "from": 5,
+    "to": null
+   }
+  ]
+ },
+ "format_time": {
+  "-30": "-30min",
+  "0": "0min",
+  "1": "1min",
+  "10080": "168h",
+  "119": "1h59",
+  "120": "2h",
+  "1440": "24h",
+  "59": "59min",
+  "60": "1h",
+  "605": "10h05",
+  "61": "1h01",
+  "90": "1h30",
+  "None": null
+ },
+ "format_weight": {
+  "-5": "-5 gr",
+  "0": "0 gr",
+  "0.0": "0 gr",
+  "0.4": "0.4 gr",
+  "1": "1 gr",
+  "1000": "1000 gr",
+  "1000000": "1000000 gr",
+  "1234.56": "1234.56 gr",
+  "999": "999 gr",
+  "999.5": "999.5 gr",
+  "None": null
+ },
+ "grouped_islands": [
+  [
+   "societe",
+   [
+    [
+     "moorea",
+     "Moorea"
+    ],
+    [
+     "huahine",
+     "Huahine"
+    ],
+    [
+     "raiatea",
+     "Raiatea"
+    ],
+    [
+     "bora-bora",
+     "Bora Bora"
+    ],
+    [
+     "maupiti",
+     "Maupiti"
+    ]
+   ]
+  ],
+  [
+   "tuamotu",
+   [
+    [
+     "ahe",
+     "Ahe"
+    ],
+    [
+     "anaa",
+     "Anaa"
+    ],
+    [
+     "apataki",
+     "Apataki"
+    ],
+    [
+     "aratika",
+     "Aratika"
+    ],
+    [
+     "arutua",
+     "Arutua"
+    ],
+    [
+     "faaite",
+     "Faaite"
+    ],
+    [
+     "fakahina",
+     "Fakahina"
+    ],
+    [
+     "fakarava",
+     "Fakarava"
+    ],
+    [
+     "fangatau",
+     "Fangatau"
+    ],
+    [
+     "hao",
+     "Hao"
+    ],
+    [
+     "hikueru",
+     "Hikueru"
+    ],
+    [
+     "katiu",
+     "Katiu"
+    ],
+    [
+     "kauehi",
+     "Kauehi"
+    ],
+    [
+     "kaukura",
+     "Kaukura"
+    ],
+    [
+     "makemo",
+     "Makemo"
+    ],
+    [
+     "manihi",
+     "Manihi"
+    ],
+    [
+     "mataiva",
+     "Mataiva"
+    ],
+    [
+     "napuka",
+     "Napuka"
+    ],
+    [
+     "niau",
+     "Niau"
+    ],
+    [
+     "nukutavake",
+     "Nukutavake"
+    ],
+    [
+     "puka-puka",
+     "Puka Puka"
+    ],
+    [
+     "rangiroa",
+     "Rangiroa"
+    ],
+    [
+     "raroia",
+     "Raroia"
+    ],
+    [
+     "reao",
+     "Reao"
+    ],
+    [
+     "takapoto",
+     "Takapoto"
+    ],
+    [
+     "takaroa",
+     "Takaroa"
+    ],
+    [
+     "takume",
+     "Takume"
+    ],
+    [
+     "tatakoto",
+     "Tatakoto"
+    ],
+    [
+     "tikehau",
+     "Tikehau"
+    ],
+    [
+     "tureia",
+     "Tureia"
+    ],
+    [
+     "vahitahi",
+     "Vahitahi"
+    ]
+   ]
+  ],
+  [
+   "marquises",
+   [
+    [
+     "nuku-hiva",
+     "Nuku Hiva"
+    ],
+    [
+     "hiva-oa",
+     "Hiva Oa"
+    ],
+    [
+     "ua-pou",
+     "Ua Pou"
+    ],
+    [
+     "ua-huka",
+     "Ua Huka"
+    ]
+   ]
+  ],
+  [
+   "australes",
+   [
+    [
+     "rurutu",
+     "Rurutu"
+    ],
+    [
+     "tubuai",
+     "Tubuai"
+    ],
+    [
+     "rimatara",
+     "Rimatara"
+    ],
+    [
+     "raivavae",
+     "Raivavae"
+    ]
+   ]
+  ],
+  [
+   "gambier",
+   [
+    [
+     "mangareva",
+     "Mangareva (Rikitea)"
+    ]
+   ]
+  ]
+ ],
+ "is_foreign": {
+  "{'item_id': ''}": true,
+  "{'item_id': 'ITEM-IMP'}": false,
+  "{'item_id': 'ITEM-SCAN'}": false,
+  "{'item_id': 'ITEM-SHIP-AIR'}": false,
+  "{'item_id': 'ITEM-SHIP-SEA'}": false,
+  "{'item_id': 'SOMETHING-ELSE'}": true,
+  "{'item_id': None}": true,
+  "{}": true
+ },
+ "island_for_label": {
+  "''": null,
+  "'Bora Bora'": "bora-bora",
+  "'Tahiti'": null,
+  "'bora-bora'": null,
+  "'nuku-hiva'": null,
+  "'tahiti'": null,
+  "'unknown-island'": null,
+  "None": null
+ },
+ "island_label": {
+  "''": null,
+  "'Bora Bora'": null,
+  "'Tahiti'": null,
+  "'bora-bora'": "Bora Bora",
+  "'nuku-hiva'": "Nuku Hiva",
+  "'tahiti'": null,
+  "'unknown-island'": null,
+  "None": null
+ },
+ "merge_shipping_catalogue": {
+  "cached+empty": {
+   "S1": {
+    "item_id": "S1",
+    "name": "Keep"
+   }
+  },
+  "cached+overlap": {
+   "S1": {
+    "item_id": "S1",
+    "name": "Old"
+   }
+  },
+  "empty+empty": {},
+  "empty+items": {}
+ },
+ "parse_description": {
+  "''": [
+   {},
+   []
+  ],
+  "'Couleur: Rouge'": [
+   {
+    "couleur": "Rouge"
+   },
+   []
+  ],
+  "'Couleur: Rouge\\nMatiere: PLA'": [
+   {
+    "couleur": "Rouge"
+   },
+   [
+    "Matiere: PLA"
+   ]
+  ],
+  "'Poids: 12 g\\nTemps: 1h30'": [
+   {
+    "poids": "12 g",
+    "temps": "1h30"
+   },
+   []
+  ],
+  "'no markers'": [
+   {},
+   [
+    "no markers"
+   ]
+  ],
+  "None": [
+   {},
+   []
+  ]
+ },
+ "parse_lines": {
+  "empty": {
+   "grouped": [],
+   "leftovers": [],
+   "lines": [],
+   "shipping": null
+  },
+  "mixed": {
+   "grouped": [],
+   "leftovers": [
+    {
+     "amount": 0.0,
+     "name": "",
+     "sku": ""
+    },
+    {
+     "amount": 0.0,
+     "name": "",
+     "sku": ""
+    },
+    {
+     "amount": 0.0,
+     "name": "",
+     "sku": ""
+    },
+    {
+     "amount": 0.0,
+     "name": "",
+     "sku": ""
+    }
+   ],
+   "lines": [],
+   "shipping": null
+  },
+  "no-lines": {
+   "grouped": [],
+   "leftovers": [],
+   "lines": [],
+   "shipping": null
+  }
+ },
+ "parse_shipping_line": {
+  "{'item_id': 'ITEM-SCAN', 'rate': 100}": null,
+  "{'item_id': 'ITEM-SHIP-AIR', 'rate': 1500, 'description': 'Tahiti'}": null,
+  "{'item_id': 'ITEM-SHIP-SEA', 'rate': 0, 'description': ''}": null,
+  "{}": null
+ },
+ "parse_time_min": {
+  "' '": null,
+  "''": null,
+  "'-5min'": 5,
+  "'0'": 0,
+  "'1 min'": 1,
+  "'1h'": 60,
+  "'1h0'": 60,
+  "'1h30'": 90,
+  "'1min'": 1,
+  "'2 h 05'": 125,
+  "'90'": 90,
+  "'abc'": null,
+  "None": null
+ },
+ "parse_weight_g": {
+  "' '": null,
+  "''": null,
+  "'-3g'": 3.0,
+  "'0'": 0.0,
+  "'1 g'": 1.0,
+  "'1,5 kg'": 1500.0,
+  "'1.5 kg'": 1500.0,
+  "'12'": 12.0,
+  "'1e3g'": 1.0,
+  "'1g'": 1.0,
+  "'1kg'": 1000.0,
+  "'abc'": null,
+  "None": null
+ },
+ "per_task": {
+  "all-none": {
+   "build_description": {
+    "impression": "",
+    "modelisation": "*Fichier non c\u00e9d\u00e9*",
+    "scan": "*Fichier non c\u00e9d\u00e9*",
+    "usinage": ""
+   },
+   "cost_of": {
+    "impression": null,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "description_of": {
+    "impression": null,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "enabled_services": [],
+   "impression_rate_quantity": [
+    0,
+    1
+   ]
+  },
+  "all-services": {
+   "build_description": {
+    "impression": "Mat\u00e9riau: PETG\nPoids: 50 gr\nTemps: 1h30\nCouleur: Noir",
+    "modelisation": "*Fichier non c\u00e9d\u00e9*",
+    "scan": "*Fichier non c\u00e9d\u00e9*",
+    "usinage": ""
+   },
+   "cost_of": {
+    "impression": 300.0,
+    "modelisation": 200.0,
+    "scan": 100.0,
+    "usinage": 400.0
+   },
+   "description_of": {
+    "impression": null,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "enabled_services": [
+    "scan",
+    "modelisation",
+    "impression",
+    "usinage"
+   ],
+   "impression_rate_quantity": [
+    150,
+    2
+   ]
+  },
+  "fractional": {
+   "build_description": {
+    "impression": "Poids: 0.4 gr",
+    "modelisation": "*Fichier non c\u00e9d\u00e9*",
+    "scan": "*Fichier non c\u00e9d\u00e9*",
+    "usinage": ""
+   },
+   "cost_of": {
+    "impression": 0.005,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "description_of": {
+    "impression": null,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "enabled_services": [
+    "impression"
+   ],
+   "impression_rate_quantity": [
+    0,
+    3
+   ]
+  },
+  "impression-discount-0": {
+   "build_description": {
+    "impression": "",
+    "modelisation": "*Fichier non c\u00e9d\u00e9*",
+    "scan": "*Fichier non c\u00e9d\u00e9*",
+    "usinage": ""
+   },
+   "cost_of": {
+    "impression": 1000.0,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "description_of": {
+    "impression": null,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "enabled_services": [
+    "impression"
+   ],
+   "impression_rate_quantity": [
+    1000,
+    1
+   ]
+  },
+  "impression-discount-100": {
+   "build_description": {
+    "impression": "",
+    "modelisation": "*Fichier non c\u00e9d\u00e9*",
+    "scan": "*Fichier non c\u00e9d\u00e9*",
+    "usinage": ""
+   },
+   "cost_of": {
+    "impression": 1000.0,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "description_of": {
+    "impression": null,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "enabled_services": [
+    "impression"
+   ],
+   "impression_rate_quantity": [
+    1000,
+    1
+   ]
+  },
+  "impression-discount-50": {
+   "build_description": {
+    "impression": "",
+    "modelisation": "*Fichier non c\u00e9d\u00e9*",
+    "scan": "*Fichier non c\u00e9d\u00e9*",
+    "usinage": ""
+   },
+   "cost_of": {
+    "impression": 1000.0,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "description_of": {
+    "impression": null,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "enabled_services": [
+    "impression"
+   ],
+   "impression_rate_quantity": [
+    500,
+    2
+   ]
+  },
+  "impression-full-meta": {
+   "build_description": {
+    "impression": "Mat\u00e9riau: PLA\nPoids: 1234.56 gr\nTemps: 10h05\nCouleur: Rouge",
+    "modelisation": "*Fichier non c\u00e9d\u00e9*",
+    "scan": "*Fichier non c\u00e9d\u00e9*",
+    "usinage": ""
+   },
+   "cost_of": {
+    "impression": 999.5,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "description_of": {
+    "impression": null,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "enabled_services": [
+    "impression"
+   ],
+   "impression_rate_quantity": [
+    333,
+    3
+   ]
+  },
+  "impression-qty-none": {
+   "build_description": {
+    "impression": "",
+    "modelisation": "*Fichier non c\u00e9d\u00e9*",
+    "scan": "*Fichier non c\u00e9d\u00e9*",
+    "usinage": ""
+   },
+   "cost_of": {
+    "impression": 700.0,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "description_of": {
+    "impression": null,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "enabled_services": [
+    "impression"
+   ],
+   "impression_rate_quantity": [
+    700,
+    1
+   ]
+  },
+  "impression-qty0": {
+   "build_description": {
+    "impression": "",
+    "modelisation": "*Fichier non c\u00e9d\u00e9*",
+    "scan": "*Fichier non c\u00e9d\u00e9*",
+    "usinage": ""
+   },
+   "cost_of": {
+    "impression": 700.0,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "description_of": {
+    "impression": null,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "enabled_services": [
+    "impression"
+   ],
+   "impression_rate_quantity": [
+    700,
+    1
+   ]
+  },
+  "impression-qty1": {
+   "build_description": {
+    "impression": "",
+    "modelisation": "*Fichier non c\u00e9d\u00e9*",
+    "scan": "*Fichier non c\u00e9d\u00e9*",
+    "usinage": ""
+   },
+   "cost_of": {
+    "impression": 500.0,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "description_of": {
+    "impression": null,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "enabled_services": [
+    "impression"
+   ],
+   "impression_rate_quantity": [
+    500,
+    1
+   ]
+  },
+  "impression-qty7": {
+   "build_description": {
+    "impression": "",
+    "modelisation": "*Fichier non c\u00e9d\u00e9*",
+    "scan": "*Fichier non c\u00e9d\u00e9*",
+    "usinage": ""
+   },
+   "cost_of": {
+    "impression": 700.0,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "description_of": {
+    "impression": null,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "enabled_services": [
+    "impression"
+   ],
+   "impression_rate_quantity": [
+    100,
+    7
+   ]
+  },
+  "negative": {
+   "build_description": {
+    "impression": "",
+    "modelisation": "*Fichier non c\u00e9d\u00e9*",
+    "scan": "*Fichier non c\u00e9d\u00e9*",
+    "usinage": ""
+   },
+   "cost_of": {
+    "impression": -10.0,
+    "modelisation": null,
+    "scan": -50.0,
+    "usinage": null
+   },
+   "description_of": {
+    "impression": null,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "enabled_services": [
+    "scan",
+    "impression"
+   ],
+   "impression_rate_quantity": [
+    -5,
+    2
+   ]
+  },
+  "scan-only": {
+   "build_description": {
+    "impression": "",
+    "modelisation": "*Fichier non c\u00e9d\u00e9*",
+    "scan": "*Fichier non c\u00e9d\u00e9*",
+    "usinage": ""
+   },
+   "cost_of": {
+    "impression": null,
+    "modelisation": null,
+    "scan": 1234.0,
+    "usinage": null
+   },
+   "description_of": {
+    "impression": null,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "enabled_services": [
+    "scan"
+   ],
+   "impression_rate_quantity": [
+    0,
+    1
+   ]
+  },
+  "with-descriptions": {
+   "build_description": {
+    "impression": "Info: imp desc",
+    "modelisation": "Info: mod desc\n*Fichier non c\u00e9d\u00e9*",
+    "scan": "Info: scan desc\n*Fichier non c\u00e9d\u00e9*",
+    "usinage": "Info: usi desc"
+   },
+   "cost_of": {
+    "impression": 20.0,
+    "modelisation": null,
+    "scan": 10.0,
+    "usinage": null
+   },
+   "description_of": {
+    "impression": "imp desc",
+    "modelisation": "mod desc",
+    "scan": "scan desc",
+    "usinage": "usi desc"
+   },
+   "enabled_services": [
+    "scan",
+    "impression"
+   ],
+   "impression_rate_quantity": [
+    20,
+    1
+   ]
+  },
+  "zero-costs": {
+   "build_description": {
+    "impression": "",
+    "modelisation": "*Fichier non c\u00e9d\u00e9*",
+    "scan": "*Fichier non c\u00e9d\u00e9*",
+    "usinage": ""
+   },
+   "cost_of": {
+    "impression": 0.0,
+    "modelisation": 0.0,
+    "scan": 0.0,
+    "usinage": 0.0
+   },
+   "description_of": {
+    "impression": null,
+    "modelisation": null,
+    "scan": null,
+    "usinage": null
+   },
+   "enabled_services": [
+    "scan",
+    "modelisation",
+    "impression",
+    "usinage"
+   ],
+   "impression_rate_quantity": [
+    0,
+    1
+   ]
+  }
+ },
+ "service_for_island": {
+  "''": null,
+  "'Bora Bora'": null,
+  "'Tahiti'": null,
+  "'bora-bora'": "societe",
+  "'nuku-hiva'": "marquises",
+  "'tahiti'": null,
+  "'unknown-island'": null,
+  "None": null
+ },
+ "service_for_sku": {
+  "'  scan  '": null,
+  "''": null,
+  "'IMP'": null,
+  "'MODEL'": null,
+  "'SCAN'": null,
+  "'USI'": null,
+  "'scan'": null,
+  "'unknown'": null,
+  "None": null
+ },
+ "summarise": {
+  "empty": "TaskSummary(count=0, total=0.0, services=(), pending=(), steps_total=0, steps_done=0, steps_by_task=())",
+  "mixed": "__raised__ AttributeError: '_T' object has no attribute 'scan_cost'",
+  "one-done": "__raised__ AttributeError: '_T' object has no attribute 'scan_cost'",
+  "one-open": "__raised__ AttributeError: '_T' object has no attribute 'scan_cost'"
+ }
+}
+
+### stderr:
+

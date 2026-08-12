@@ -47,5 +47,19 @@
     "timeout": 60,
     "scrub": [],
     "files": []
+  },
+  {
+    "id": "aito-quote-money",
+    "cmd": "./venv/bin/python3 tools/probe_quote_money.py",
+    "timeout": 120,
+    "scrub": ["\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"],
+    "files": []
+  },
+  {
+    "id": "aito-frontend-pure",
+    "cmd": "mkdir -p /tmp/bambuddy-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_aito_frontend_entry.ts --format cjs --file /tmp/bambuddy-refactor-probe/aitoFrontend.cjs >/dev/null 2>&1 && node tools/probe_aito_frontend.cjs",
+    "timeout": 120,
+    "scrub": [],
+    "files": []
   }
 ]

@@ -895,6 +895,156 @@
    ]
   }
  },
+ "/api/v1/aito/{project_id}/invoice": {
+  "get": {
+   "description": "The invoice Books raised from this project's quote, if there is one.\n\nRead live rather than from a stored snapshot \u2014 see ``AitoInvoiceResponse``\nfor why. That makes this the one Aito card that needs Zoho reachable.\n\nReturns ``null``, not a 404, when the project simply has no invoice: that\nis the ordinary state of every quoted job that has not been billed yet,\nand a 404 would have the client treat the commonest case as an error. A\n404 here means the PROJECT does not exist, which is a different fact.\n\nA project with no ``quote_id`` short-circuits without touching Zoho. That\nis not just an optimisation: see ``list_project_invoices`` for what Books\ndoes with an empty ``estimate_id``.",
+   "operationId": "get_invoice_api_v1_aito__project_id__invoice_get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "project_id",
+     "required": true,
+     "schema": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/AitoInvoiceResponse"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Response Get Invoice Api V1 Aito  Project Id  Invoice Get"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Invoice",
+   "tags": [
+    "aito"
+   ]
+  }
+ },
+ "/api/v1/aito/{project_id}/invoice.pdf": {
+  "get": {
+   "description": "This project's Zoho invoice, rendered as a PDF for printing.\n\nA proxy rather than a redirect, and returned whole rather than streamed,\nfor the reasons spelled out on ``get_quote_pdf`` below.\n\nThe candidate invoices are always resolved server-side from the project's\nown estimate. ``invoice_id`` may only NARROW that set \u2014 it is checked for\nmembership, never trusted \u2014 so it cannot be used to print an invoice this\nproject has no claim to by walking ids.\n\nWhy it exists: the card renders from a cached read (see InvoiceCard's\nstaleTime) while this endpoint resolves live, and Books allows an estimate\nto be invoiced in parts. Without pinning, a second invoice raised while\nthe panel sat open would make Print emit a document whose number the\noperator never saw. Omitting it keeps the previous behaviour \u2014 newest\ninvoice \u2014 so existing callers are unaffected.",
+   "operationId": "get_invoice_pdf_api_v1_aito__project_id__invoice_pdf_get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "project_id",
+     "required": true,
+     "schema": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "query",
+     "name": "invoice_id",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Invoice Id"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Invoice Pdf",
+   "tags": [
+    "aito"
+   ]
+  }
+ },
  "/api/v1/aito/{project_id}/move": {
   "patch": {
    "operationId": "move_project_api_v1_aito__project_id__move_patch",
