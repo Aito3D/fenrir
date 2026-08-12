@@ -1543,6 +1543,30 @@ describe('ProjectDetailPanel left column cards', () => {
     show();
     await waitFor(() => expect(screen.getByTestId('record-activity')).toHaveTextContent(`· ${expected}`));
   });
+
+  // `actor_class` is typed as a closed union, but that's a compile-time
+  // promise about what the backend is SUPPOSED to send — the value actually
+  // comes off the wire with no runtime validation, so a name colliding with
+  // an inherited Object.prototype member must not resolve to that member.
+  // Before ACTOR_FALLBACK_KEY was guarded with Object.hasOwn, this crashed
+  // the panel: `ACTOR_FALLBACK_KEY['toString']` resolved to the inherited
+  // `Object.prototype.toString` function, and `t(thatFunction)` threw inside
+  // i18next rather than rendering anything.
+  it('falls back to the unknown-actor label, rather than crashing, when actor_class collides with an Object.prototype member', async () => {
+    server.use(
+      http.get('/api/v1/aito/12/events', () =>
+        HttpResponse.json({
+          // Cast needed because `actor_class` is a closed union in the type —
+          // this deliberately sends a value outside it, the same way an
+          // untyped fetch response could.
+          events: [{ ...mockEvent, actor_class: 'toString' as unknown as AitoEvent['actor_class'], actor_name: null }],
+          has_more: false,
+        }),
+      ),
+    );
+    show();
+    await waitFor(() => expect(screen.getByTestId('record-activity')).toHaveTextContent('· unknown'));
+  });
 });
 
 describe('ProjectDetailPanel sync row', () => {
@@ -1624,6 +1648,34 @@ describe('ProjectDetailPanel sync row', () => {
 
   it('renders no block row when nothing is blocked', async () => {
     show({ quote_sync_state: 'idle' });
+    expect(await screen.findByText('ACME SARL')).toBeInTheDocument();
+    expect(screen.queryByText(/resolve it in Books/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Books refused/)).not.toBeInTheDocument();
+  });
+
+  // `quote_sync_state` is a closed union in the type, but that describes what
+  // the backend is SUPPOSED to send, not a runtime check on the value that
+  // actually arrives — so a state colliding with an inherited
+  // Object.prototype member must not resolve to that member. Before
+  // SYNC_LABEL_KEY was guarded with Object.hasOwn, this crashed the panel:
+  // `SYNC_LABEL_KEY['toString']` resolved to the inherited
+  // `Object.prototype.toString` function, and `t(thatFunction)` threw inside
+  // i18next instead of the row simply not rendering, the same as any other
+  // unrecognised state.
+  it('renders no sync row, rather than crashing, when quote_sync_state collides with an Object.prototype member', async () => {
+    show({ quote_sync_state: 'toString' as unknown as AitoProject['quote_sync_state'] });
+    expect(await screen.findByText('ACME SARL')).toBeInTheDocument();
+    expect(screen.queryByText('Sync:')).not.toBeInTheDocument();
+  });
+
+  // Same guard, same reason, for BLOCK_MESSAGE_KEY.
+  it('renders no block row, rather than crashing, when quote_status_block collides with an Object.prototype member', async () => {
+    show({
+      quote_sync_state: 'idle',
+      quote_status: 'accepted',
+      quote_status_block: 'toString' as unknown as AitoProject['quote_status_block'],
+      quote_status_remote: 'declined',
+    });
     expect(await screen.findByText('ACME SARL')).toBeInTheDocument();
     expect(screen.queryByText(/resolve it in Books/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Books refused/)).not.toBeInTheDocument();

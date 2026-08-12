@@ -561,8 +561,18 @@ function RecordCard({ project, latestEvent }: { project: AitoProject; latestEven
   // apart from created_at — so pairing updated_at with this actor's name would
   // produce a line whose time and name describe different things.
   const activityAt = latestEvent ? parseUTCDate(latestEvent.occurred_at) : parseUTCDate(project.updated_at);
+  // Object.hasOwn-guarded, same reason as SYNC_LABEL_KEY/BLOCK_MESSAGE_KEY
+  // above: `actor_class`'s union type describes what the backend is supposed
+  // to send, not a runtime check on what actually arrives, so an unguarded
+  // `ACTOR_FALLBACK_KEY[latestEvent.actor_class]` could resolve an inherited
+  // Object.prototype member instead of falling through to the `?? '...'`.
   const actor = latestEvent
-    ? (latestEvent.actor_name ?? t(ACTOR_FALLBACK_KEY[latestEvent.actor_class] ?? 'aito.actorUnknown'))
+    ? (latestEvent.actor_name ??
+        t(
+          Object.hasOwn(ACTOR_FALLBACK_KEY, latestEvent.actor_class)
+            ? ACTOR_FALLBACK_KEY[latestEvent.actor_class]
+            : 'aito.actorUnknown',
+        ))
     : null;
 
   // Date only, no time: "{when} · {who}" has to fit one line of the rail, and
@@ -654,7 +664,22 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   // `quoteStatusText` above), so the two sides of a block message are
   // localised too rather than raw Zoho English.
   const statusLabel = (status: string | null): string => quoteStatusText(t, status);
-  const blockKey = project.quote_status_block ? BLOCK_MESSAGE_KEY[project.quote_status_block] : null;
+  // Object.hasOwn-guarded, same reason as quoteStatus.ts's own lookups: the
+  // union types on these fields describe what the backend is SUPPOSED to
+  // send, not a runtime check on what actually arrives over the wire, so an
+  // unguarded `BLOCK_MESSAGE_KEY[project.quote_status_block]` could resolve
+  // an inherited Object.prototype member (e.g. 'toString') instead of
+  // falling through to the intended `null`.
+  const blockKey = project.quote_status_block
+    ? Object.hasOwn(BLOCK_MESSAGE_KEY, project.quote_status_block)
+      ? BLOCK_MESSAGE_KEY[project.quote_status_block]
+      : null
+    : null;
+  // Same guard, same reason, computed once and shared by hasQuoteMessage
+  // and the sync row below rather than three separate unguarded lookups.
+  const syncLabelKey = Object.hasOwn(SYNC_LABEL_KEY, project.quote_sync_state)
+    ? SYNC_LABEL_KEY[project.quote_sync_state]
+    : undefined;
 
   /** Whether the Quote card has anything to say beyond the number itself.
    *
@@ -665,7 +690,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
    *  and a conflict that reaches nobody is exactly how the previous design
    *  lost them. So the card opens for either reason. */
   const hasQuoteMessage =
-    Boolean(SYNC_LABEL_KEY[project.quote_sync_state]) ||
+    Boolean(syncLabelKey) ||
     Boolean(blockKey) ||
     project.quote_status === 'declined';
 
@@ -1129,11 +1154,11 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                 {/* Only when there is something to say. An idle project is the
                     normal case and a row reading "up to date" on every card
                     would be noise. */}
-                {SYNC_LABEL_KEY[project.quote_sync_state] && (
+                {syncLabelKey && (
                   <div className="flex items-baseline justify-between gap-2">
                     <dt className="text-bambu-gray flex-shrink-0">{t('aito.sync')}:</dt>
                     <dd className="text-white min-w-0 text-right">
-                      {t(SYNC_LABEL_KEY[project.quote_sync_state])}
+                      {t(syncLabelKey)}
                       {project.quote_sync_error && (
                         <span className="block text-xs text-bambu-gray">{project.quote_sync_error}</span>
                       )}

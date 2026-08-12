@@ -1250,6 +1250,19 @@ async def send_quote_email(
     it must never demote the card. Gated on ``board_column`` rather than
     ``quote_status`` because that is the rule as specified; ``evaluate()``
     derives one from the other, so they cannot disagree.
+
+    The ``quote.emailed`` event is committed on its own, immediately after
+    Books confirms the send and before the card-move work below. Once the
+    email has gone out, that fact must survive even if moving the card hits
+    a locked database (this app's single SQLite file is also written by the
+    aito_quote_sync worker): losing the event AND 500ing the request would
+    both erase the send from the timeline and invite a real second send on
+    retry, which is the one thing this handler exists to prevent. The
+    card-move half is left to fail independently and best-effort — it is
+    idempotent and recoverable through the existing "already out" flows
+    (``set_quote_status``, the sync worker's own reconciliation) without
+    re-sending anything, so a failure there degrades to ``marked_sent=False``
+    rather than a 500.
     """
     project = await _get_active_project_or_404(db, project_id)
     content, _ = await _load_quote_email_content(db, project, project_id, rollback_on_error=True)
@@ -1296,29 +1309,53 @@ async def send_quote_email(
         subject_id=project.id,
         detail={"email": recipient},
     )
+    # Committed here, on its own — see the docstring above. Everything past
+    # this point is the card-move half, which is allowed to fail without
+    # taking this event down with it.
+    await db.commit()
 
     summary = await _summary_for(db, project.id)
-    marked_sent = project.board_column == "devis"
-    if marked_sent:
-        adopt_quote_status(project, "sent")
-        # Our side just moved, so any recorded block describes an attempt that
-        # no longer exists — same reasoning as set_quote_status.
-        project.quote_status_block = None
-        project.quote_status_remote = None
-        await _apply_rules(db, project, summary, actor=_actor(current_user))
-        await record(
-            db,
-            project.id,
-            "quote.sent",
-            actor_class="user",
-            actor_name=_actor(current_user),
-            subject_type="project",
-            subject_id=project.id,
-        )
+    should_move_card = project.board_column == "devis"
+    marked_sent = False
+    if should_move_card:
+        try:
+            adopt_quote_status(project, "sent")
+            # Our side just moved, so any recorded block describes an attempt
+            # that no longer exists — same reasoning as set_quote_status.
+            project.quote_status_block = None
+            project.quote_status_remote = None
+            await _apply_rules(db, project, summary, actor=_actor(current_user))
+            await record(
+                db,
+                project.id,
+                "quote.sent",
+                actor_class="user",
+                actor_name=_actor(current_user),
+                subject_type="project",
+                subject_id=project.id,
+            )
+            await db.commit()
+            marked_sent = True
+        except Exception:
+            logger.warning(
+                "Aito quote email for project %s was sent, but moving the card failed; "
+                "quote.emailed is already recorded and the card stays where it was",
+                project_id,
+                exc_info=True,
+            )
+            # Undo the half-applied move so the session (and the response
+            # built from it below) reflect what is actually committed, not
+            # an in-memory state that was never persisted. rollback() expires
+            # every object regardless of expire_on_commit, which is exactly
+            # why the explicit db.refresh(project) below is unconditional.
+            await db.rollback()
 
-    await db.commit()
-    await _broadcast_changed("quote-email", project.id, _actor(current_user))
+    # Refresh BEFORE broadcasting: the card-move rollback above (if it ran)
+    # expired every attribute on `project` — including `id` — regardless of
+    # expire_on_commit, and reading an expired attribute here would be a
+    # synchronous lazy-load attempt on an async session (MissingGreenlet).
     await db.refresh(project)
+    await _broadcast_changed("quote-email", project.id, _actor(current_user))
     return AitoQuoteEmailResponse(
         project=await _project_response(db, project, summary),
         marked_sent=marked_sent,

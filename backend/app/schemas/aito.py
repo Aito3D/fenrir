@@ -2,11 +2,18 @@
 
 import re
 from datetime import datetime
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 AitoColumn = Literal["devis", "waiting", "scan", "model", "print", "finish", "done"]
+
+# The Zoho quote-status vocabulary. A named alias (rather than inlining the
+# Literal on the field below) so `_degrade_unknown_quote_status` can check
+# membership against the exact same set the type declares, via `get_args`,
+# instead of maintaining a second hand-written list that could drift.
+AitoQuoteStatus = Literal["draft", "sent", "viewed", "accepted", "declined", "expired"]
+_QUOTE_STATUS_VALUES = frozenset(get_args(AitoQuoteStatus))
 
 # Shape checks only, mirroring backend/app/api/routes/zoho.py's ZohoContactCreate's
 # email philosophy. Both fields are optional — only a non-empty malformed value is
@@ -225,13 +232,22 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     quote_total: float | None = Field(default=None, ge=0)
     quote_url: str | None = Field(default=None, max_length=300)
     quote_salesperson: str | None = Field(default=None, max_length=200)
-    # Restricted to the Zoho vocabulary — an import always carries one of these
-    # (it is read straight off the Books estimate), and a hand-made card only
-    # ever sends 'sent'/'accepted'/'declined' through the dedicated
+    # Restricted to the Zoho vocabulary — an import usually carries one of
+    # these (it is read straight off the Books estimate), and a hand-made
+    # card only ever sends 'sent'/'accepted'/'declined' through the dedicated
     # /quote-status route, never here. 'accepted'/'declined' are DECIDED
     # statuses: see _decided_status_needs_a_quote_id below for why they are
     # gated separately from the vocabulary check.
-    quote_status: Literal["draft", "sent", "viewed", "accepted", "declined", "expired"] | None = Field(default=None)
+    #
+    # A blank or out-of-vocabulary value (Books emits both —
+    # aito_quote_import.build_preview reads `estimate.get("status") or ""`,
+    # and a real org can carry a status this app has never catalogued, e.g.
+    # 'invoiced') is degraded to None by `_degrade_unknown_quote_status`
+    # below rather than rejected, the same call `_client_snapshot` in
+    # aito_quote_import.py already makes for `client_phone`: a field the
+    # import cannot get the user to fix is not worth failing the whole
+    # import over.
+    quote_status: AitoQuoteStatus | None = Field(default=None)
     tasks: list[AitoTaskCreate] = Field(default_factory=list)
 
     @field_validator("client_email")
@@ -243,6 +259,20 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     @classmethod
     def _validate_client_phone(cls, value: str | None) -> str | None:
         return value if value is None else _check_phone(value)
+
+    @field_validator("quote_status", mode="before")
+    @classmethod
+    def _degrade_unknown_quote_status(cls, value):
+        """Runs before the `Literal` check, so a blank or unrecognised STRING
+        (see the field comment above) becomes None instead of a 422 — the
+        request is still validated against the closed vocabulary, just with
+        the unusable value already swapped out. Only strings are degraded:
+        a value already in the vocabulary passes through untouched, and
+        anything that is not even a string (e.g. `quote_status: 42`) is left
+        for the `Literal` to reject as the genuinely malformed body it is."""
+        if isinstance(value, str) and value not in _QUOTE_STATUS_VALUES:
+            return None
+        return value
 
     @field_validator("quote_url")
     @classmethod

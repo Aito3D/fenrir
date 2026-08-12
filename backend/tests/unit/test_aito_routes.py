@@ -1023,12 +1023,29 @@ async def test_create_with_a_decided_status_and_no_quote_id_is_422(async_client,
 
 
 @pytest.mark.asyncio
-async def test_create_rejects_an_unknown_quote_status(async_client):
-    """T-009: quote_status is now restricted to the Zoho vocabulary, not free
-    text — a typo or a status Zoho has not sent us must 422, not sit on the
-    row silently."""
+async def test_create_degrades_an_unknown_quote_status_to_none(async_client):
+    """T-020: T-009 restricted quote_status to the Zoho vocabulary, but that
+    closed the vocabulary too, beyond what was approved — the schema now
+    degrades a status outside the six known values to None instead of
+    422ing the whole request. This corrects the previous version of this
+    test (from T-009), which asserted the 422 that T-020 removes; see
+    aito_quote_import.py's `estimate.get("status") or ""`, which can hand
+    POST /aito/ a blank status, and a real Books org can carry a status
+    (e.g. 'invoiced') this app has never catalogued — neither should fail
+    an otherwise-valid import."""
     r = await _create(async_client, quote_id="EST-1", quote_status="bogus")
-    assert r.status_code == 422
+    assert r.status_code == 201
+    assert r.json()["quote_status"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_degrades_a_blank_quote_status_to_none(async_client):
+    """T-020: the reachable half of the same defect — build_preview emits
+    `""` (never omits the key) when a Books estimate carries no status, and
+    that must degrade exactly like an unknown status, not 422."""
+    r = await _create(async_client, quote_id="EST-1", quote_status="")
+    assert r.status_code == 201
+    assert r.json()["quote_status"] is None
 
 
 @pytest.mark.asyncio

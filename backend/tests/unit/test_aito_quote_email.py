@@ -1,6 +1,7 @@
 """GET/POST /aito/{id}/quote-email — the Books send path and the card move."""
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from backend.app.services.zoho import ZohoRequestRejected, ZohoUpstreamError, zoho_service
 
@@ -270,6 +271,42 @@ async def test_allowlist_trims_and_case_folds_without_widening(async_client, boo
     else:
         assert response.status_code == 200
         assert books_email == [("EST-9", [expect_sent_to])]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_card_move_still_records_the_send(async_client, books_email, monkeypatch):
+    """Zoho has already emailed the client by the time the card-move half
+    (adopt_quote_status / _apply_rules / the second commit) runs. A failure
+    there — a locked SQLite database is the realistic cause, since the
+    aito_quote_sync worker commits through the same file — must not erase
+    the send from the timeline nor 500 the request: a 500 here reads to the
+    operator as "nothing happened", and one more click would email the
+    client a second time for real. The commit for `quote.emailed` happens
+    on its own, before this failure-injection point, so it must survive."""
+    import backend.app.api.routes.aito as aito_routes
+
+    project = await _create(async_client)
+    assert project["column"] == "devis"
+
+    # Patched only now: create_project's own _apply_rules call (moving the
+    # freshly-made card into "devis") must not be caught by this.
+    async def boom(db, project, summary, actor=None):
+        raise OperationalError("UPDATE aito_projects ...", {}, Exception("database is locked"))
+
+    monkeypatch.setattr(aito_routes, "_apply_rules", boom)
+
+    response = await async_client.post(f"/api/v1/aito/{project['id']}/quote-email", json={"to": "contact@example.pf"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["marked_sent"] is False
+    assert body["project"]["column"] == "devis"  # the card-move half failed and stayed put
+    assert body["project"]["quote_status"] is None
+    assert books_email == [("EST-9", ["contact@example.pf"])]  # the email really did go out
+
+    kinds = await _events(async_client, project["id"])
+    assert "quote.emailed" in kinds  # durable despite the failure below it
+    assert "quote.sent" not in kinds
 
 
 @pytest.mark.asyncio

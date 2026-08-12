@@ -341,6 +341,47 @@ def test_build_preview_drops_an_unparseable_contact_phone_to_none():
     assert project.client_phone is None
 
 
+def test_create_degrades_a_blank_preview_status_to_none():
+    """T-020: build_preview reads `estimate.get("status") or ""`, so a Books
+    estimate with no status hands POST /aito/ an empty string for
+    quote_status. AitoProjectCreate.quote_status is a closed Literal — the
+    schema's `_degrade_unknown_quote_status` validator must turn that blank
+    into None rather than 422 the whole import, mirroring
+    test_build_preview_drops_an_unparseable_contact_phone_to_none above."""
+    estimate = load_estimate("dev-2461-three-services")
+    estimate["status"] = ""
+    preview = build_preview(estimate, None, URL)
+    assert preview["quote"]["status"] == ""
+
+    project = AitoProjectCreate(
+        description=preview["suggested_description"],
+        client_id=preview["client"]["id"],
+        client_name=preview["client"]["name"],
+        quote_id=preview["quote"]["id"],
+        quote_status=preview["quote"]["status"],
+    )
+    assert project.quote_status is None
+
+
+def test_create_degrades_an_unrecognised_preview_status_to_none():
+    """T-020: a real Books org can carry a status this app has never
+    catalogued (e.g. 'invoiced') — same degrade as the blank case, not a
+    422."""
+    estimate = load_estimate("dev-2461-three-services")
+    estimate["status"] = "invoiced"
+    preview = build_preview(estimate, None, URL)
+    assert preview["quote"]["status"] == "invoiced"
+
+    project = AitoProjectCreate(
+        description=preview["suggested_description"],
+        client_id=preview["client"]["id"],
+        client_name=preview["client"]["name"],
+        quote_id=preview["quote"]["id"],
+        quote_status=preview["quote"]["status"],
+    )
+    assert project.quote_status is None
+
+
 def test_build_preview_truncates_a_long_title_and_keeps_the_full_text():
     estimate = load_estimate("dev-2461-three-services")
     long_title = "Tapis " + "très long " * 40  # > 200 characters
