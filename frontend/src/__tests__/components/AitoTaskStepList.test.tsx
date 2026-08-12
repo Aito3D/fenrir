@@ -1,10 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { render } from '../utils';
+import { server } from '../mocks/server';
 import { TaskStepList } from '../../components/aito/TaskStepList';
 import { emptyTaskDraft } from '../../utils/taskDraft';
-import type { TaskDraft } from '../../utils/taskDraft';
+import type { ImpressionDraft, TaskDraft } from '../../utils/taskDraft';
 
 const task = (overrides: Partial<TaskDraft> = {}): TaskDraft => ({
   ...emptyTaskDraft(),
@@ -108,5 +110,133 @@ describe('TaskStepList', () => {
     render(<TaskStepList task={task({ scanCost: 3500 })} onChange={vi.fn()} canTick={false} />);
     expect(screen.getByText('Scan')).toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  // The part's physical identity under the printing step. Quantity and colour
+  // live on the task; the material NAME has to be resolved from the
+  // calculator's filament list, which is the only reason this component
+  // fetches anything at all.
+  describe('printing meta line', () => {
+    const impression = (overrides: Partial<ImpressionDraft> = {}): ImpressionDraft => ({
+      ...emptyTaskDraft().impression,
+      ...overrides,
+    });
+
+    const mockFilaments = (hits?: { count: number }) =>
+      server.use(
+        http.get('*/api/v1/calculator/filaments/', () => {
+          if (hits) hits.count += 1;
+          return HttpResponse.json([
+            { id: 7, name: 'PLA Basique', brand: '', material: 'PLA', cost_per_kg: 3731, sale_price_per_kg: 5597, difficulty_pct: 100 },
+          ]);
+        }),
+      );
+
+    it('shows quantity, material and colour when all three are set', async () => {
+      mockFilaments();
+      render(
+        <TaskStepList
+          task={task({ impression: impression({ quantity: 3, filamentId: 7, color: 'Rouge' }) })}
+          onChange={vi.fn()}
+          canTick
+        />,
+      );
+
+      // The material arrives with the filament query; the other two are on the task.
+      expect(await screen.findByText('PLA Basique')).toBeInTheDocument();
+      const meta = screen.getByTestId('step-meta-impression');
+      expect(meta).toHaveTextContent('×3');
+      expect(meta).toHaveTextContent('Rouge');
+      // Icons are decoration — the field name is what a screen reader gets.
+      expect(meta).toHaveTextContent('Quantity');
+      expect(meta).toHaveTextContent('Material');
+      expect(meta).toHaveTextContent('Colour');
+    });
+
+    it('omits a quantity of 1, a blank colour and an unset material', async () => {
+      mockFilaments();
+      render(
+        <TaskStepList
+          task={task({ impression: impression({ quantity: 1, filamentId: null, color: '   ' }) })}
+          onChange={vi.fn()}
+          canTick
+        />,
+      );
+
+      await screen.findByText('Printing');
+      // Every draft carries a quantity defaulting to 1, so "×1" is noise, and
+      // an empty line is worse than no line.
+      expect(screen.queryByTestId('step-meta-impression')).not.toBeInTheDocument();
+    });
+
+    it('shows the values it has when only some are set', async () => {
+      mockFilaments();
+      render(
+        <TaskStepList
+          task={task({ impression: impression({ quantity: 1, filamentId: null, color: 'Noir mat' }) })}
+          onChange={vi.fn()}
+          canTick
+        />,
+      );
+
+      const meta = await screen.findByTestId('step-meta-impression');
+      expect(meta).toHaveTextContent('Noir mat');
+      expect(meta).not.toHaveTextContent('×');
+    });
+
+    it('never renders the line when the task has no printing step', async () => {
+      mockFilaments();
+      render(
+        <TaskStepList
+          task={task({
+            impressionCost: null,
+            scanCost: 3500,
+            impression: impression({ quantity: 4, filamentId: 7, color: 'Rouge' }),
+          })}
+          onChange={vi.fn()}
+          canTick
+        />,
+      );
+
+      await screen.findByText('Scan');
+      expect(screen.queryByTestId('step-meta-impression')).not.toBeInTheDocument();
+    });
+
+    it('renders above the step description rather than replacing it', async () => {
+      mockFilaments();
+      render(
+        <TaskStepList
+          task={task({
+            impression: impression({ quantity: 2, filamentId: 7, color: 'Blanc' }),
+            impressionDescription: 'Remplissage 40 %',
+          })}
+          onChange={vi.fn()}
+          canTick
+        />,
+      );
+
+      const meta = await screen.findByTestId('step-meta-impression');
+      const desc = screen.getByTestId('step-desc-impression');
+      expect(desc).toHaveTextContent('Remplissage 40 %');
+      // DOCUMENT_POSITION_FOLLOWING: the description comes after the meta line.
+      expect(meta.compareDocumentPosition(desc) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('does not fetch the filament list when no printing step names a filament', async () => {
+      const hits = { count: 0 };
+      mockFilaments(hits);
+      render(
+        <TaskStepList
+          task={task({ impression: impression({ quantity: 5, color: 'Rouge' }) })}
+          onChange={vi.fn()}
+          canTick
+        />,
+      );
+
+      // The line still renders — quantity and colour need no lookup.
+      const meta = await screen.findByTestId('step-meta-impression');
+      expect(meta).toHaveTextContent('×5');
+      await waitFor(() => expect(hits.count).toBe(0));
+    });
   });
 });

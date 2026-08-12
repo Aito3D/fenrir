@@ -1,9 +1,11 @@
 import { useTranslation } from 'react-i18next';
-import { Check } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Box, Check, Layers, Palette } from 'lucide-react';
 import { AITO_SERVICE_LABEL_KEYS, serviceDotCls, taskSteps } from './services';
 import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
 import { useCurrency } from '../../hooks/useCurrency';
+import { api } from '../../api/client';
 import type { TaskDraft } from '../../utils/taskDraft';
 
 const DESCRIPTION_FIELD = {
@@ -42,6 +44,43 @@ export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
   const { t } = useTranslation();
   const currency = useCurrency();
   const steps = taskSteps(task);
+
+  // The material's NAME is the one part of the printing meta that isn't on the
+  // task — the task stores `filamentId` and the name lives in the calculator's
+  // filament list. Same query key as ImpressionFields/CalculatorPage, so every
+  // task row on the panel shares one cached request rather than issuing its own.
+  //
+  // Gated so that read mode stays as query-free as TaskRow's doc claims for any
+  // task that couldn't use the answer: no printing step, or no filament picked.
+  // A user without `calculator:read` gets a 403, the list stays empty and the
+  // material simply doesn't render — the same degradation an install with no
+  // calculator configured already gets. Quantity and colour are unaffected.
+  const needsFilamentName = task.impressionCost !== null && task.impression.filamentId !== null;
+  const { data: filaments } = useQuery({
+    queryKey: ['calculatorFilaments'],
+    queryFn: api.getCalculatorFilaments,
+    enabled: needsFilamentName,
+    retry: false,
+    staleTime: 60_000,
+  });
+
+  // Each entry is [icon, accessible field name, value]. Absent values are left
+  // out entirely rather than rendered blank: quantity defaults to 1 on every
+  // draft, so "×1" is noise, not information.
+  const impressionMeta: { key: string; icon: typeof Layers; label: string; value: string }[] = [];
+  if (task.impression.quantity > 1) {
+    impressionMeta.push({ key: 'quantity', icon: Layers, label: t('aito.quantity'), value: `×${task.impression.quantity}` });
+  }
+  const material = needsFilamentName
+    ? (filaments?.find((f) => f.id === task.impression.filamentId)?.name ?? '')
+    : '';
+  if (material !== '') {
+    impressionMeta.push({ key: 'material', icon: Box, label: t('aito.material'), value: material });
+  }
+  const color = task.impression.color.trim();
+  if (color !== '') {
+    impressionMeta.push({ key: 'color', icon: Palette, label: t('aito.color'), value: color });
+  }
 
   if (steps.length === 0) {
     return <p className="text-sm text-bambu-gray">{t('aito.noSteps')}</p>;
@@ -112,6 +151,34 @@ export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
               // authorised work to tick, so an inert control would explain
               // nothing. The step and its price still render.
               <span className="w-full flex items-center gap-3 px-1.5 py-1 -mx-1.5">{row}</span>
+            )}
+            {/* The part's physical identity, on its own line under the printing
+                step: quantity, material, colour, each present only when set.
+                Icon + value rather than pills — the panel's whole visual
+                argument is restraint, and this line must never outweigh the
+                step it describes. Shares the description's gutter exactly (see
+                its comment below), so both sub-lines start under the step
+                label in either canTick state. */}
+            {service === 'impression' && impressionMeta.length > 0 && (
+              <p
+                data-testid="step-meta-impression"
+                className="flex items-start gap-3 pr-1.5 pb-1 text-xs text-bambu-gray-light"
+              >
+                {canTick && <span aria-hidden="true" className="w-4 flex-shrink-0" />}
+                <span aria-hidden="true" className="w-0.5 flex-shrink-0" />
+                <span className="min-w-0 flex-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                  {impressionMeta.map(({ key, icon: Icon, label, value }) => (
+                    // The icon is decoration; the field name is carried as
+                    // sr-only text so the line doesn't read as a bare string of
+                    // values, and as a title for pointer users.
+                    <span key={key} className="inline-flex min-w-0 items-center gap-1" title={label}>
+                      <Icon aria-hidden="true" className="w-3 h-3 flex-shrink-0 opacity-60" />
+                      <span className="sr-only">{label}: </span>
+                      <span className="truncate tabular-nums">{value}</span>
+                    </span>
+                  ))}
+                </span>
+              </p>
             )}
             {description !== '' && (
               <p
