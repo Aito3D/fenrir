@@ -695,7 +695,19 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
     handle: '',
   });
 
+  // The version this edit session is BASED ON, captured once when the editor
+  // opens rather than re-read at save time — see useProjectPatchMutation's
+  // doc for why. `project.version` at save time may already reflect a peer's
+  // concurrent write (the board refetches on their `aito_changed` WS event),
+  // and this session's draft was never rebased on that write. Cleared to
+  // `undefined` on a failed save (falls back to the pre-existing
+  // latestProjectVersion behaviour) so a retry within the same still-open
+  // session — the editor stays open on any error, not just a conflict — does
+  // not keep re-fighting this session's now-stale capture forever.
+  const socialEditVersionRef = useRef<number | undefined>(undefined);
+
   const openSocialEdit = () => {
+    socialEditVersionRef.current = project.version;
     setSocialDraft({
       network: isSocialNetwork(project.client_social_network) ? project.client_social_network : null,
       handle: project.client_social_handle ?? '',
@@ -717,8 +729,14 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
         // network pointing at nothing is not a state either side keeps.
         client_social_network: handle ? socialDraft.network : null,
         client_social_handle: handle || null,
+        expected_version: socialEditVersionRef.current,
       },
-      { onSuccess: () => setEditingSocial(false) },
+      {
+        onSuccess: () => setEditingSocial(false),
+        onError: () => {
+          socialEditVersionRef.current = undefined;
+        },
+      },
     );
   };
 
@@ -741,6 +759,25 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
   const [editingDesc, setEditingDesc] = useState(false);
   const [draft, setDraft] = useState(project.description);
   const [descState, setDescState] = useState<SaveState>('idle');
+
+  // The version this edit session is BASED ON, captured once when the
+  // textarea opens (see the two `setEditingDesc(true)` call sites below) —
+  // see useProjectPatchMutation's doc for why this beats re-reading
+  // `project.version` at save time. `undefined` means "no session-captured
+  // version" and falls back to the pre-existing latestProjectVersion
+  // behaviour — used for the regenerate action below (never opens the
+  // textarea) and for a retry after THIS session's own save already failed
+  // once (cleared in `saveDescription`'s `onError`, so a second attempt does
+  // not keep re-fighting the same now-stale capture forever).
+  const descEditVersionRef = useRef<number | undefined>(undefined);
+
+  // Shared by the paragraph's click and keyboard (Enter/Space) activation
+  // below — one place that captures the session's version, not two copies
+  // that could drift.
+  const beginEditDescription = () => {
+    descEditVersionRef.current = project.version;
+    setEditingDesc(true);
+  };
 
   // Follow the server value while idle; never clobber text being typed.
   useEffect(() => {
@@ -765,11 +802,15 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
     }
     setDescState('saving');
     updateMutation.mutate(
-      { description: next },
+      { description: next, expected_version: descEditVersionRef.current },
       {
         onSuccess: () => setDescState('saved'),
         onError: (error) => {
           setDescState('idle');
+          // A retry (of any failure, not just a conflict) should not keep
+          // resending this session's now-stale capture — see the ref's own
+          // doc.
+          descEditVersionRef.current = undefined;
           // The spec's error-handling table promises the operator's typed
           // text survives a version conflict (someone else saved first):
           // reopen the editor with exactly what they typed rather than the
@@ -992,11 +1033,11 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                       role="button"
                       tabIndex={0}
                       aria-label={t('aito.editDescription')}
-                      onClick={() => setEditingDesc(true)}
+                      onClick={beginEditDescription}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
-                          setEditingDesc(true);
+                          beginEditDescription();
                         }
                       }}
                       className="flex-1 text-sm text-white whitespace-pre-wrap break-words cursor-text rounded-md -m-1 p-1 hover:bg-bambu-dark-tertiary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"

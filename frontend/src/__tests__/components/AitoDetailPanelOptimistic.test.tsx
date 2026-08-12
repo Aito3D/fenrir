@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, waitFor, render as rtlRender } from '@testing-library/react';
+import { act, screen, waitFor, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { ProjectDetailPanel } from '../../components/aito/ProjectDetailPanel';
@@ -343,5 +343,73 @@ describe('F2 — self-conflict on back-to-back saves from one client (empirical)
     expect(calls[1].patch.expected_version).toBe(2);
 
     calls[1].resolve({ ...project, version: 3, shipping_price: 3200 });
+  });
+});
+
+describe('T-012 — cross-operator version guard on the description edit session', () => {
+  beforeEach(() => __resetBoardSync());
+  afterEach(() => vi.restoreAllMocks());
+
+  // T-012's exact repro: operator A opens the description editor at version 1
+  // and types over it. Before A saves, operator B's own edit lands and the
+  // board's WS-triggered refetch rewrites the `['aito-projects']` cache under
+  // A's still-open editor (mirrored here by pushing straight into the cache,
+  // the same effect `boardSync.resyncIfIdle` -> `invalidateQueries` has).
+  // `ProjectDetailPanel.tsx`'s `editingDesc` guard deliberately does not
+  // reseed the textarea, so A's draft still reads their own typed text. A
+  // then blurs. The bug this pins: computing `expected_version` by re-reading
+  // the (now B-owned) cache at save time makes A's PATCH carry B's version,
+  // which matches the server and silently overwrites B's edit with no 409.
+  it('rejects with 409 and reopens the editor on A\'s text, instead of silently overwriting B\'s save', async () => {
+    // A tiny stand-in server: the real guard this whole task is about
+    // (routes/aito.py:1637) is `expected_version != project.version -> 409`.
+    // Modelling it here — rather than a canned mock — is what lets this test
+    // tell the two behaviours apart: the bug sends whatever the client cache
+    // currently holds (which would happen to match `serverVersion` and pass);
+    // the fix sends what A's edit was actually based on (which must not).
+    let serverVersion = 2; // already bumped by B's own (untested-here) save
+    let serverDescription = 'B text';
+    vi.spyOn(api, 'updateAitoProject').mockImplementation((_id, patch) => {
+      if (patch.expected_version !== undefined && patch.expected_version !== serverVersion) {
+        return Promise.reject(new ApiError('stale', 409, 'version_conflict'));
+      }
+      serverVersion += 1;
+      if (patch.description !== undefined) serverDescription = patch.description;
+      return Promise.resolve({ ...project, description: serverDescription, version: serverVersion });
+    });
+
+    const project = makeProject({ id: 7, description: 'A description', version: 1 });
+    const client = renderPanelReactive(project);
+
+    // 1. Operator A opens the description editor at version 1 and types.
+    await userEvent.click(screen.getByRole('button', { name: /edit description/i }));
+    const box = getDescriptionTextarea();
+    await userEvent.clear(box);
+    await userEvent.type(box, 'A text');
+
+    // 2. Operator B's edit lands: the board cache is rewritten under A's
+    //    still-open editor, exactly as the WS-triggered refetch would.
+    act(() => {
+      client.setQueryData(['aito-projects'], [{ ...project, description: 'B text', version: 2 }]);
+    });
+
+    // A's draft must survive the refresh untouched — the guard this whole bug
+    // depends on.
+    expect(getDescriptionTextarea()).toHaveValue('A text');
+
+    // 3. A blurs, saving over what A last saw.
+    await userEvent.tab();
+
+    // The save must be rejected (409) rather than silently accepted, and the
+    // editor must reopen on A's own typed text per the spec's error-handling
+    // table — not the (now doubly stale) server description.
+    await waitFor(() => {
+      expect(getDescriptionTextarea()).toBeInTheDocument();
+    });
+    expect(getDescriptionTextarea()).toHaveValue('A text');
+
+    // B's save must not have been clobbered.
+    expect(client.getQueryData<AitoProject[]>(['aito-projects'])?.[0].description).toBe('B text');
+    expect(serverDescription).toBe('B text');
   });
 });

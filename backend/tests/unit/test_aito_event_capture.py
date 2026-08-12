@@ -105,7 +105,10 @@ async def test_clearing_a_cost_records_the_implicit_untick(async_client, db_sess
     flag when its cost is cleared to null. That flip never appears in the
     request body, but it can still move the board via _apply_rules, so it
     must leave a task.step.unticked event just like an explicit untick would."""
-    project_id = (await async_client.post("/api/v1/aito/", json=_project_payload(quote_status="accepted"))).json()["id"]
+    project_id = (await async_client.post("/api/v1/aito/", json=_project_payload())).json()["id"]
+    # A tick requires an accepted quote; quote_status="accepted" needs a
+    # quote_id at creation time, so go through the dedicated route instead.
+    await async_client.post(f"/api/v1/aito/{project_id}/quote-status", json={"status": "accepted"})
     task_id = (
         await async_client.post(f"/api/v1/aito/{project_id}/tasks", json={"title": "Socle", "scan_cost": 1200.0})
     ).json()["id"]

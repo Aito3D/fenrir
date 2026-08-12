@@ -11,7 +11,7 @@ from sqlalchemy import event, select
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.schemas.aito import AitoProjectImportItem
-from backend.app.services.aito_board_rules import summarise
+from backend.app.services.aito_board_rules import SERVICES, summarise
 from backend.app.services.zoho import ZohoUpstreamError, zoho_service
 
 
@@ -64,21 +64,27 @@ async def _seed_golden_board(client):
             "tasks": [{"title": "free scan", "scan_cost": 0}],
         },
     )
-    await client.post(
+    mixed = await client.post(
         "/api/v1/aito/",
         json={
             "description": "mixed",
             "client_id": "C3",
             "client_name": "Three",
             "client_phone": "+689 87 00 00 03",
-            # Accepted because ticked steps now require it — a mixed-done-flags
-            # card cannot exist in any other status.
-            "quote_status": "accepted",
-            "tasks": [
-                {"title": "a", "scan_cost": 5000, "scan_done": True, "impression_cost": 2400},
-                {"title": "b", "usinage_cost": 1000},
-            ],
         },
+    )
+    # Accepted because ticked steps now require it — a mixed-done-flags card
+    # cannot exist in any other status. quote_status="accepted" needs a
+    # quote_id at creation time now, so acceptance goes through the dedicated
+    # route and the (pre-ticked) tasks are added afterwards.
+    await client.post(f"/api/v1/aito/{mixed.json()['id']}/quote-status", json={"status": "accepted"})
+    await client.post(
+        f"/api/v1/aito/{mixed.json()['id']}/tasks",
+        json={"title": "a", "scan_cost": 5000, "scan_done": True, "impression_cost": 2400},
+    )
+    await client.post(
+        f"/api/v1/aito/{mixed.json()['id']}/tasks",
+        json={"title": "b", "usinage_cost": 1000},
     )
     accepted = await client.post(
         "/api/v1/aito/",
@@ -87,13 +93,15 @@ async def _seed_golden_board(client):
             "client_id": "C4",
             "client_name": "Four",
             "client_phone": "+689 87 00 00 04",
-            # Accepted for the same reason as "mixed": a pre-ticked step at
-            # creation now requires it.
-            "quote_status": "accepted",
-            "tasks": [{"title": "c", "modelisation_cost": 3000, "modelisation_done": True}],
         },
     )
+    # Accepted for the same reason as "mixed": a pre-ticked step needs the
+    # quote already accepted before it exists.
     await client.post(f"/api/v1/aito/{accepted.json()['id']}/quote-status", json={"status": "accepted"})
+    await client.post(
+        f"/api/v1/aito/{accepted.json()['id']}/tasks",
+        json={"title": "c", "modelisation_cost": 3000, "modelisation_done": True},
+    )
     zero_pending = await client.post(
         "/api/v1/aito/",
         json={
@@ -373,7 +381,7 @@ async def test_move_to_another_column_is_409_when_locked(async_client):
 
 @pytest.mark.asyncio
 async def test_finish_to_done_is_allowed_when_unlocked(async_client):
-    p = (await _create(async_client, quote_status="accepted")).json()
+    p = await _create_accepted(async_client)
     t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
     await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
 
@@ -390,8 +398,8 @@ async def test_finish_to_done_is_allowed_when_unlocked(async_client):
 async def test_move_renumbers_the_column_left_behind(async_client):
     """Two unlocked cards in finish; moving one to done must renumber the
     card left behind, not just append the mover to its new column."""
-    p1 = (await _create(async_client, description="p1", quote_status="accepted")).json()  # finish, position 0
-    p2 = (await _create(async_client, description="p2", quote_status="accepted")).json()  # finish, position 1
+    p1 = await _create_accepted(async_client, description="p1")  # finish, position 0
+    p2 = await _create_accepted(async_client, description="p2")  # finish, position 1
 
     r = await async_client.patch(f"/api/v1/aito/{p1['id']}/move", json={"column": "done", "position": 0})
     assert r.status_code == 200
@@ -403,7 +411,7 @@ async def test_move_renumbers_the_column_left_behind(async_client):
 
 @pytest.mark.asyncio
 async def test_an_unlocked_card_still_cannot_move_to_a_work_column(async_client):
-    p = (await _create(async_client, quote_status="accepted")).json()
+    p = await _create_accepted(async_client)
     t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
     await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
 
@@ -554,7 +562,7 @@ async def test_update_rejects_blank_description(async_client):
 async def test_update_never_touches_column_or_position(async_client):
     # quote_status="accepted" with no tasks lands the card in 'finish' unlocked,
     # so the Finish -> Done move below is legal under the cross-column guard.
-    a = (await _create(async_client, quote_status="accepted")).json()
+    a = await _create_accepted(async_client)
     await async_client.patch(f"/api/v1/aito/{a['id']}/move", json={"column": "done", "position": 0})
     r = await async_client.patch(
         f"/api/v1/aito/{a['id']}", json={"description": "moved then edited", "column": "devis", "position": 7}
@@ -991,10 +999,76 @@ async def test_create_project_without_quote_leaves_quote_fields_null(async_clien
 
 @pytest.mark.asyncio
 async def test_create_stores_the_quote_salesperson_and_status(async_client):
-    r = await _create(async_client, quote_salesperson="Marie VENDEUSE", quote_status="accepted")
+    # quote_id required alongside a decided status: this is a hand-made card
+    # in every other respect, but the schema's _decided_status_needs_a_quote_id
+    # validator treats a bare "accepted" as import-only. See test_aito_routes.py's
+    # sibling tests for the pure hand-made-card acceptance path via /quote-status.
+    r = await _create(async_client, quote_id="EST-42", quote_salesperson="Marie VENDEUSE", quote_status="accepted")
     assert r.status_code == 201
     assert r.json()["quote_salesperson"] == "Marie VENDEUSE"
     assert r.json()["quote_status"] == "accepted"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["accepted", "declined"])
+async def test_create_with_a_decided_status_and_no_quote_id_is_422(async_client, status):
+    """T-009: a client holding only aito:create must not be able to drive an
+    irreversible quote decision through the create body — that used to write
+    quote_status straight onto the row, land the card directly on a work
+    column (or Done, for a decline) and leave no actor on the timeline. The
+    only legitimate way to reach 'accepted'/'declined' with no quote_id is
+    the dedicated /quote-status route."""
+    r = await _create(async_client, quote_status=status)
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_an_unknown_quote_status(async_client):
+    """T-009: quote_status is now restricted to the Zoho vocabulary, not free
+    text — a typo or a status Zoho has not sent us must 422, not sit on the
+    row silently."""
+    r = await _create(async_client, quote_id="EST-1", quote_status="bogus")
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["draft", "sent", "viewed", "expired"])
+async def test_create_with_a_non_decided_status_and_no_quote_id_still_works(async_client, status):
+    """T-009's gate only applies to DECIDED statuses ('accepted'/'declined').
+    A card that has merely gone out, been opened or expired is not a
+    decision, and the create endpoint has always been able to seed those
+    directly (see test_accepting_derives_the_first_stage_with_work and
+    friends, which rely on exactly this)."""
+    r = await _create(async_client, quote_status=status)
+    assert r.status_code == 201
+    assert r.json()["quote_status"] == status
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["accepted", "declined"])
+async def test_importing_a_decided_quote_still_works_and_records_an_actor(async_client, status):
+    """T-009: the genuine import path — a decided status arriving WITH a
+    quote_id, because Books already decided it — must keep working, and must
+    now leave a quote.{status} event with an actor, matching what the
+    dedicated /quote-status route has always recorded for a hand-made card."""
+    from backend.app.main import app
+    from backend.app.models.user import User
+
+    route = next(r for r in app.routes if getattr(r, "name", "") == "create_project")
+    dep = next(d.call for d in route.dependant.dependencies if d.name == "current_user")
+    app.dependency_overrides[dep] = lambda: User(id=1, username="paul")
+    try:
+        r = await _create(async_client, quote_id="EST-9", quote_status=status)
+        assert r.status_code == 201
+        assert r.json()["quote_status"] == status
+        project_id = r.json()["id"]
+
+        events = (await async_client.get(f"/api/v1/aito/{project_id}/events?depth=detail")).json()["events"]
+        matches = [e for e in events if e["kind"] == f"quote.{status}"]
+        assert len(matches) == 1
+        assert matches[0]["actor_name"] == "paul"
+    finally:
+        app.dependency_overrides.pop(dep, None)
 
 
 @pytest.mark.asyncio
@@ -1098,7 +1172,7 @@ async def test_moving_a_project_does_not_mark_it_pending(async_client, db_sessio
     Uses a real cross-column move (Finish -> Done), not a same-column reorder:
     a same-column move never enters the branch that could regress and start
     marking the project pending on move."""
-    p = (await _create(async_client, quote_status="accepted")).json()  # lands unlocked in 'finish', no tasks
+    p = await _create_accepted(async_client)  # lands unlocked in 'finish', no tasks
     project = (await db_session.execute(select(AitoProject).where(AitoProject.id == p["id"]))).scalar_one()
     project.quote_sync_state = "idle"
     project.quote_sync_failures = 3
@@ -1186,6 +1260,18 @@ async def _add_task(client, project_id, **fields):
     return await client.post(f"/api/v1/aito/{project_id}/tasks", json=fields)
 
 
+async def _create_accepted(client, **overrides):
+    """Create a hand-made card, then accept it through the dedicated
+    /quote-status route — the schema's _decided_status_needs_a_quote_id
+    validator now rejects quote_status="accepted" at creation for a card
+    with no quote_id, so tests that need an already-accepted card (to drive
+    the board rules, not to test import) build one this way instead. Returns
+    the accepted project's JSON, same shape as `(await _create(...)).json()`."""
+    created = (await _create(client, **overrides)).json()
+    accepted = await client.post(f"/api/v1/aito/{created['id']}/quote-status", json={"status": "accepted"})
+    return accepted.json()["project"]
+
+
 @pytest.mark.asyncio
 async def test_a_new_card_is_locked_in_devis_by_its_quote(async_client):
     p = (await _create(async_client)).json()
@@ -1206,7 +1292,7 @@ async def test_accepting_derives_the_first_stage_with_work(async_client):
 
 @pytest.mark.asyncio
 async def test_ticking_the_last_step_of_a_stage_advances_the_card(async_client):
-    p = (await _create(async_client, quote_status="accepted")).json()
+    p = await _create_accepted(async_client)
     t = (await _add_task(async_client, p["id"], scan_cost=1200.0, impression_cost=2400.0)).json()
 
     r = await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
@@ -1218,7 +1304,7 @@ async def test_ticking_the_last_step_of_a_stage_advances_the_card(async_client):
 
 @pytest.mark.asyncio
 async def test_all_steps_ticked_lands_on_finish_and_unlocks(async_client):
-    p = (await _create(async_client, quote_status="accepted")).json()
+    p = await _create_accepted(async_client)
     t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
     await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
 
@@ -1230,7 +1316,7 @@ async def test_all_steps_ticked_lands_on_finish_and_unlocks(async_client):
 @pytest.mark.asyncio
 async def test_a_zero_cost_step_still_holds_the_card(async_client):
     """0 is quoted-free, not absent."""
-    p = (await _create(async_client, quote_status="accepted")).json()
+    p = await _create_accepted(async_client)
     await _add_task(async_client, p["id"], scan_cost=0.0)
 
     board = {row["id"]: row for row in (await async_client.get("/api/v1/aito/")).json()}
@@ -1239,7 +1325,7 @@ async def test_a_zero_cost_step_still_holds_the_card(async_client):
 
 @pytest.mark.asyncio
 async def test_deleting_the_last_blocking_task_advances_the_card(async_client):
-    p = (await _create(async_client, quote_status="accepted")).json()
+    p = await _create_accepted(async_client)
     t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
     await async_client.delete(f"/api/v1/aito/tasks/{t['id']}")
 
@@ -1250,10 +1336,10 @@ async def test_deleting_the_last_blocking_task_advances_the_card(async_client):
 @pytest.mark.asyncio
 async def test_an_advancing_card_lands_at_the_end_of_its_new_column(async_client):
     """Work arriving at a stage joins the back of that stage's queue."""
-    sitting = (await _create(async_client, description="already printing", quote_status="accepted")).json()
+    sitting = await _create_accepted(async_client, description="already printing")
     await _add_task(async_client, sitting["id"], impression_cost=1.0)
 
-    arriving = (await _create(async_client, description="arriving", quote_status="accepted")).json()
+    arriving = await _create_accepted(async_client, description="arriving")
     t = (await _add_task(async_client, arriving["id"], scan_cost=1.0, impression_cost=1.0)).json()
     await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
 
@@ -1265,7 +1351,7 @@ async def test_an_advancing_card_lands_at_the_end_of_its_new_column(async_client
 @pytest.mark.asyncio
 async def test_clearing_a_cost_also_clears_its_done_flag(async_client):
     """Otherwise re-enabling the service later would bring it back pre-ticked."""
-    p = (await _create(async_client, quote_status="accepted")).json()
+    p = await _create_accepted(async_client)
     t = (await _add_task(async_client, p["id"], scan_cost=1200.0, scan_done=True)).json()
 
     r = await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_cost": None})
@@ -1275,7 +1361,7 @@ async def test_clearing_a_cost_also_clears_its_done_flag(async_client):
 
 @pytest.mark.asyncio
 async def test_ticking_a_step_that_does_not_exist_is_422(async_client):
-    p = (await _create(async_client, quote_status="accepted")).json()
+    p = await _create_accepted(async_client)
     t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
 
     r = await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"usinage_done": True})
@@ -1285,7 +1371,7 @@ async def test_ticking_a_step_that_does_not_exist_is_422(async_client):
 @pytest.mark.asyncio
 async def test_enabling_a_service_and_ticking_it_in_one_patch_is_allowed(async_client):
     """The check runs against the MERGED row, not the stored one."""
-    p = (await _create(async_client, quote_status="accepted")).json()
+    p = await _create_accepted(async_client)
     t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
 
     r = await async_client.patch(
@@ -1321,7 +1407,7 @@ async def test_ticking_a_step_with_no_quote_at_all_is_422(async_client):
 async def test_unticking_survives_the_quote_leaving_accepted(async_client):
     """A tick stranded by a status flip must always be undoable — otherwise a
     mis-declined project keeps work marked done with no way back."""
-    p = (await _create(async_client, quote_status="accepted")).json()
+    p = await _create_accepted(async_client)
     t = (await _add_task(async_client, p["id"], scan_cost=1200.0, scan_done=True)).json()
     await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "declined"})
 
@@ -1344,6 +1430,81 @@ async def test_creating_with_pre_ticked_tasks_needs_an_accepted_quote(async_clie
 
 
 @pytest.mark.asyncio
+async def test_update_rejection_names_the_service_and_the_gate(async_client):
+    """Pins _reject_ticks_without_acceptance's wording, not just its status
+    code, so a message rewrite (or a swap for the wrong 422, e.g. the "no
+    cost" guard) is caught here rather than passing silently."""
+    p = (await _create(async_client, quote_status="sent")).json()
+    t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
+
+    r = await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
+    assert r.status_code == 422
+    assert r.json()["detail"] == "scan cannot be marked done until the quote is accepted"
+
+
+@pytest.mark.asyncio
+async def test_add_task_rejection_names_the_service_and_the_gate(async_client):
+    p = (await _create(async_client, quote_status="draft")).json()
+
+    r = await _add_task(async_client, p["id"], scan_cost=1200.0, scan_done=True)
+    assert r.status_code == 422
+    assert r.json()["detail"] == "scan cannot be marked done until the quote is accepted"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("service", SERVICES)
+@pytest.mark.parametrize("quote_status", [None, "draft", "sent"])
+async def test_every_service_is_gated_on_update_regardless_of_status(async_client, service, quote_status):
+    """Sweeps all four services against every non-accepted status the create
+    endpoint can seed directly, to pin that the guard treats them uniformly
+    rather than special-casing one service or one unaccepted status."""
+    overrides = {} if quote_status is None else {"quote_status": quote_status}
+    p = (await _create(async_client, **overrides)).json()
+    t = (await _add_task(async_client, p["id"], **{f"{service}_cost": 1200.0})).json()
+
+    r = await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={f"{service}_done": True})
+    assert r.status_code == 422
+    assert r.json()["detail"] == f"{service} cannot be marked done until the quote is accepted"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("service", SERVICES)
+async def test_every_service_is_gated_on_add_task(async_client, service):
+    p = (await _create(async_client, quote_status="draft")).json()
+
+    r = await _add_task(async_client, p["id"], **{f"{service}_cost": 1200.0, f"{service}_done": True})
+    assert r.status_code == 422
+    assert r.json()["detail"] == f"{service} cannot be marked done until the quote is accepted"
+
+
+@pytest.mark.asyncio
+async def test_ticking_a_new_step_after_a_decline_is_still_422(async_client):
+    """Complements test_unticking_survives_the_quote_leaving_accepted: a
+    decline unblocks undoing an existing tick, but must not reopen the gate
+    for ticking a step that was never done."""
+    p = (await _create(async_client, quote_status="draft")).json()
+    t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
+    await async_client.post(f"/api/v1/aito/{p['id']}/quote-status", json={"status": "declined"})
+
+    r = await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
+    assert r.status_code == 422
+    assert r.json()["detail"] == "scan cannot be marked done until the quote is accepted"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("service", SERVICES)
+async def test_every_service_may_be_ticked_once_the_quote_is_accepted(async_client, service):
+    """The guard's positive invariant: acceptance is sufficient, for every
+    service, not just the ones exercised by the column-movement tests above."""
+    p = await _create_accepted(async_client)
+    t = (await _add_task(async_client, p["id"], **{f"{service}_cost": 1200.0})).json()
+
+    r = await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={f"{service}_done": True})
+    assert r.status_code == 200
+    assert r.json()[f"{service}_done"] is True
+
+
+@pytest.mark.asyncio
 async def test_importing_an_accepted_quote_may_carry_ticked_steps(async_client):
     """An import that legitimately arrives already-accepted is not blocked."""
     r = await _create(
@@ -1357,7 +1518,7 @@ async def test_importing_an_accepted_quote_may_carry_ticked_steps(async_client):
 
 @pytest.mark.asyncio
 async def test_unticking_a_step_pulls_the_card_back(async_client):
-    p = (await _create(async_client, quote_status="accepted")).json()
+    p = await _create_accepted(async_client)
     t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
     await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
 
@@ -1810,19 +1971,28 @@ async def test_board_ships_a_step_row_per_task(async_client, db_session):
     the counters: canonical order regardless of the order the costs were
     given, a free (0) step present, and a done flag on an unpriced service
     absent from both lists."""
+    created = (
+        await async_client.post(
+            "/api/v1/aito/",
+            json={
+                "description": "steps per task",
+                "client_id": "S1",
+                "client_name": "Steps",
+                "client_phone": "+689 87 00 00 07",
+            },
+        )
+    ).json()
+    # A tick requires acceptance (see _reject_ticks_without_acceptance), and
+    # quote_status="accepted" needs a quote_id at creation time — go through
+    # the dedicated route instead, then add the (pre-ticked) tasks.
+    await async_client.post(f"/api/v1/aito/{created['id']}/quote-status", json={"status": "accepted"})
     await async_client.post(
-        "/api/v1/aito/",
-        json={
-            "description": "steps per task",
-            "client_id": "S1",
-            "client_name": "Steps",
-            "client_phone": "+689 87 00 00 07",
-            "quote_status": "accepted",
-            "tasks": [
-                {"title": "t1", "impression_cost": 2000, "scan_cost": 1000, "scan_done": True},
-                {"title": "t2", "usinage_cost": 0, "modelisation_done": True},
-            ],
-        },
+        f"/api/v1/aito/{created['id']}/tasks",
+        json={"title": "t1", "impression_cost": 2000, "scan_cost": 1000, "scan_done": True},
+    )
+    await async_client.post(
+        f"/api/v1/aito/{created['id']}/tasks",
+        json={"title": "t2", "usinage_cost": 0, "modelisation_done": True},
     )
 
     board = (await async_client.get("/api/v1/aito/")).json()

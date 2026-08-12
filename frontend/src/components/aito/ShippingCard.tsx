@@ -127,6 +127,15 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
   // sitting in an editable field in front of them before anything is saved,
   // whereas an empty field on a legacy project just reads as the feature
   // being broken.
+  // The version this edit session is BASED ON, captured once when the editor
+  // opens (Add or Edit — both feed the same `save()`) rather than re-read at
+  // save time — see useProjectPatchMutation's doc for why. Cleared to
+  // `undefined` on a failed save (falls back to the pre-existing
+  // latestProjectVersion behaviour) so a retry within the same still-open
+  // editor does not keep re-fighting this session's now-stale capture
+  // forever.
+  const editVersionRef = useRef<number | undefined>(undefined);
+
   const openAdd = () => {
     const { countryCode, nationalNumber } = parsePhone(project.client_phone ?? '');
     setDraft(
@@ -137,10 +146,12 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
         nationalNumber,
       }),
     );
+    editVersionRef.current = project.version;
     setEditing(true);
   };
   const openEdit = () => {
     setDraft(draftFromProject(project, servicesQuery.data?.services ?? []));
+    editVersionRef.current = project.version;
     setEditing(true);
   };
   const cancel = () => {
@@ -156,12 +167,18 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
       setDraft({ ...draft, blurred: { island: true, firstName: true, lastName: true, phone: true } });
       return;
     }
-    shippingMutation.mutate(shippingPayload(draft), {
-      onSuccess: () => {
-        setEditing(false);
-        setDraft(null);
+    shippingMutation.mutate(
+      { ...shippingPayload(draft), expected_version: editVersionRef.current },
+      {
+        onSuccess: () => {
+          setEditing(false);
+          setDraft(null);
+        },
+        onError: () => {
+          editVersionRef.current = undefined;
+        },
       },
-    });
+    );
   };
   const remove = () => {
     shippingMutation.mutate({ shipping_island: null });

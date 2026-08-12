@@ -813,6 +813,27 @@ async def create_project(
             subject_id=project.id,
             detail={"imported_from": project.quote_number} if project.quote_number else None,
         )
+        if payload.quote_status in ("accepted", "declined"):
+            # Only reachable with a quote_id (the schema's
+            # _decided_status_needs_a_quote_id validator gates the other
+            # case), i.e. a genuine import of an already-decided Books quote.
+            # Not routed through adopt_quote_status: that helper also stamps
+            # quote_accepted_at, which must stay NULL for an import (see the
+            # column comment on AitoProject.quote_accepted_at — the decision
+            # already happened at some past, unknown moment in Books, so a
+            # fresh "now" stamp would misdate it and desync the card's age
+            # from its real history). This call exists only so the decision
+            # has an actor on the timeline, same as the dedicated
+            # /quote-status route records for a hand-made card.
+            await record(
+                db,
+                project.id,
+                f"quote.{payload.quote_status}",
+                actor_class="user",
+                actor_name=_actor(current_user),
+                subject_type="project",
+                subject_id=project.id,
+            )
         new_tasks = [
             AitoTask(project_id=project.id, position=position, **task_payload.model_dump())
             for position, task_payload in enumerate(payload.tasks)

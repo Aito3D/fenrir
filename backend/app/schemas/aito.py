@@ -225,7 +225,13 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     quote_total: float | None = Field(default=None, ge=0)
     quote_url: str | None = Field(default=None, max_length=300)
     quote_salesperson: str | None = Field(default=None, max_length=200)
-    quote_status: str | None = Field(default=None, max_length=30)
+    # Restricted to the Zoho vocabulary — an import always carries one of these
+    # (it is read straight off the Books estimate), and a hand-made card only
+    # ever sends 'sent'/'accepted'/'declined' through the dedicated
+    # /quote-status route, never here. 'accepted'/'declined' are DECIDED
+    # statuses: see _decided_status_needs_a_quote_id below for why they are
+    # gated separately from the vocabulary check.
+    quote_status: Literal["draft", "sent", "viewed", "accepted", "declined", "expired"] | None = Field(default=None)
     tasks: list[AitoTaskCreate] = Field(default_factory=list)
 
     @field_validator("client_email")
@@ -251,6 +257,21 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
         if not value.startswith("https://"):
             raise ValueError("quote_url must use the https scheme")
         return value
+
+    @model_validator(mode="after")
+    def _decided_status_needs_a_quote_id(self):
+        """'accepted'/'declined' are DECISIONS, not free text — the only
+        legitimate way one can arrive on a brand-new card is a Books quote
+        that was already decided before it was imported, which always carries
+        a quote_id. A hand-made card reaches those statuses exclusively
+        through POST /{id}/quote-status (Permission.AITO_UPDATE, the 409
+        terminal-transition guards, a recorded actor). Accepting one here too
+        would let anyone holding only aito:create drive an irreversible
+        acceptance straight through to the live Zoho estimate on the next
+        sync tick, with no actor on the timeline and none of those guards."""
+        if self.quote_status in ("accepted", "declined") and self.quote_id is None:
+            raise ValueError("quote_status 'accepted'/'declined' requires a quote_id (import only)")
+        return self
 
 
 class AitoProjectImportItem(BaseModel):
