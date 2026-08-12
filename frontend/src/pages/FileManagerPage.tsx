@@ -47,8 +47,10 @@ import {
   FolderSymlink,
   Tag as TagIcon,
   History,
+  Calculator,
 } from 'lucide-react';
 import { api } from '../api/client';
+import { calculatorPrefillUrl, type CalcConfig } from '../utils/archivePricing';
 import type {
   LibraryFolderTree,
   LibraryFileListItem,
@@ -764,6 +766,7 @@ interface FileCardProps {
   useSlicerApi?: boolean;
   canSlice?: boolean;
   onPreview3d?: (file: LibraryFileListItem) => void;
+  onOpenInCalculator?: (file: LibraryFileListItem) => void;
   onRename?: (file: LibraryFileListItem) => void;
   onGenerateThumbnail?: (file: LibraryFileListItem) => void;
   onManageTags?: (file: LibraryFileListItem) => void;
@@ -781,8 +784,14 @@ interface FileCardProps {
 // unioned: upstream's onOpenInSlicer/canSlice and the fork's
 // onManageTags/onHistory all belong here. Taking either side's list alone
 // leaves the other's buttons wired to undefined.
-function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onPrint, onSlice, onOpenInSlicer, onRunPipeline, useSlicerApi, canSlice, onPreview3d, onRename, onGenerateThumbnail, onManageTags, onTagClick, onHistory, thumbnailVersion, hasPermission, canModify, authEnabled, showModified, t }: FileCardProps) {
+function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onPrint, onSlice, onOpenInSlicer, onRunPipeline, useSlicerApi, canSlice, onPreview3d, onOpenInCalculator, onRename, onGenerateThumbnail, onManageTags, onTagClick, onHistory, thumbnailVersion, hasPermission, canModify, authEnabled, showModified, t }: FileCardProps) {
   const [showActions, setShowActions] = useState(false);
+
+  // Same rule the archive card's menu uses: the calculator needs both a weight
+  // and a duration to prefill, so a file the slicer left without either can't
+  // open it. Shown greyed out rather than hidden, like every sibling entry.
+  const canOpenInCalculator =
+    hasPermission('calculator:read') && !!file.filament_used_grams && !!file.print_time_seconds;
 
   return (
     <div
@@ -980,6 +989,18 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
                 >
                   <Box className="w-3.5 h-3.5" />
                   3D Preview
+                </button>
+              )}
+              {onOpenInCalculator && (
+                <button
+                  className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
+                    canOpenInCalculator ? 'text-white hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
+                  }`}
+                  onClick={() => { if (canOpenInCalculator) { onOpenInCalculator(file); setShowActions(false); } }}
+                  disabled={!canOpenInCalculator}
+                >
+                  <Calculator className="w-3.5 h-3.5" />
+                  {t('archives.menu.openInCalculator')}
                 </button>
               )}
               {onHistory && (
@@ -1402,6 +1423,40 @@ export function FileManagerPage() {
     queryKey: ['users'],
     queryFn: () => api.getUsers(),
   });
+
+  // Calculator configuration for the card menu's "Open in calculator" entry.
+  // Shares query keys (and cache) with CalculatorPage and ArchivesPage; stays
+  // null when the user lacks calculator access or nothing is configured yet, in
+  // which case the prefill URL simply carries weight/time and no ID matches.
+  const canUseCalculator = hasPermission('calculator:read');
+  const { data: calcFilaments } = useQuery({
+    queryKey: ['calculatorFilaments'],
+    queryFn: api.getCalculatorFilaments,
+    enabled: canUseCalculator,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const { data: calcPrinters } = useQuery({
+    queryKey: ['calculatorPrinters'],
+    queryFn: api.getCalculatorPrinters,
+    enabled: canUseCalculator,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const { data: calcDefaults } = useQuery({
+    queryKey: ['calculatorDefaults'],
+    queryFn: api.getCalculatorDefaults,
+    enabled: canUseCalculator,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const calcConfig = useMemo<CalcConfig | null>(
+    () =>
+      calcFilaments?.length && calcPrinters?.length && calcDefaults
+        ? { filaments: calcFilaments, printers: calcPrinters, defaults: calcDefaults }
+        : null,
+    [calcFilaments, calcPrinters, calcDefaults],
+  );
 
   // Get unique file types for filter dropdown
   const fileTypes = useMemo(() => {
@@ -2546,6 +2601,7 @@ export function FileManagerPage() {
                         setViewerFile(f);
                       }
                     }}
+                    onOpenInCalculator={(f) => navigate(calculatorPrefillUrl(f, calcConfig, [f.sliced_for_model]))}
                     onRename={(f) => setRenameItem({ type: 'file', id: f.id, name: f.filename })}
                     onGenerateThumbnail={(f) => singleThumbnailMutation.mutate(f.id)}
                     onManageTags={(f) => setSingleTagFile(f)}

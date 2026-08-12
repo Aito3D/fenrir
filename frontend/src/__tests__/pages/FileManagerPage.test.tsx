@@ -1394,4 +1394,131 @@ describe('FileManagerPage', () => {
       expect(openInSlicer).not.toHaveBeenCalled();
     });
   });
+
+  // Mirrors the archive card's menu entry: the file's weight and duration
+  // prefill the calculator, and the filament/printer profiles are only pinned
+  // when a real name match was found.
+  describe('open in calculator', () => {
+    const calcFilaments = [
+      { id: 1, name: 'PLA basique', brand: '', material: 'PLA', cost_per_kg: 3731, sale_price_per_kg: 5597, difficulty_pct: 150 },
+    ];
+    const calcPrinters = [
+      { id: 1, name: 'H2S', purchase_price: 347000, lifetime_years: 2, daily_usage_hours: 5, power_watts: 400, repair_rate_pct: 30 },
+    ];
+    const calcDefaults = {
+      id: 1,
+      electricity_tariff: 120,
+      labor_rate_per_hour: 3000,
+      consumables_packaging_flat: 30,
+      failure_rate_pct: 30,
+      prototype_rate_pct: 30,
+      ads_rate_pct: 5,
+      filament_markup_pct: 5,
+      global_markup_pct: 50,
+      tax_pct: 13,
+      default_difficulty_pct: 100,
+      default_margin_over_cost_pct: 50,
+      stuff_markup_pct: 20,
+    };
+
+    const mockCalculator = () => {
+      server.use(
+        http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(calcFilaments)),
+        http.get('/api/v1/calculator/printers/', () => HttpResponse.json(calcPrinters)),
+        http.get('/api/v1/calculator/defaults', () => HttpResponse.json(calcDefaults)),
+      );
+    };
+
+    const openMenu = async (user: ReturnType<typeof userEvent.setup>, filename: string) => {
+      const card = screen.getByText(filename).closest('.group') as HTMLElement;
+      const kebab = card.querySelector('.lucide-ellipsis-vertical')?.closest('button') as HTMLButtonElement;
+      await user.click(kebab);
+      return card;
+    };
+
+    afterEach(() => {
+      // The tree renders under a BrowserRouter, so navigate() mutates the jsdom
+      // URL for every test that follows.
+      window.history.replaceState({}, '', '/');
+    });
+
+    it('navigates to the calculator prefilled with the file weight and duration', async () => {
+      mockCalculator();
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => expect(screen.getByText('Benchy')).toBeInTheDocument());
+
+      const card = await openMenu(user, 'Benchy');
+      await user.click(within(card).getByText('Open in calculator'));
+
+      await waitFor(() => expect(window.location.pathname).toBe('/calculator'));
+      const params = new URLSearchParams(window.location.search);
+      expect(params.get('weight')).toBe('12.3');
+      expect(params.get('time')).toBe('1.00');
+      expect(params.get('quantity')).toBe('1');
+      // A library file's duration is always a slicer estimate, so the
+      // calculator's time-accuracy correction must apply.
+      expect(params.get('timeSource')).toBe('est');
+      expect(params.get('energyKwh')).toBeNull();
+    });
+
+    it('pins the filament profile matching the file, but no printer without a hint', async () => {
+      mockCalculator();
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => expect(screen.getByText('Benchy')).toBeInTheDocument());
+      // Let the three calculator queries settle before opening the menu;
+      // without them calcConfig is null and no IDs are emitted at all.
+      await waitFor(() => expect(screen.getByText('PLA, PETG')).toBeInTheDocument());
+
+      const card = await openMenu(user, 'Benchy');
+      await user.click(within(card).getByText('Open in calculator'));
+
+      await waitFor(() => {
+        // "PLA, PETG" matches the PLA profile's material.
+        expect(new URLSearchParams(window.location.search).get('filamentId')).toBe('1');
+      });
+      // The mock file has no sliced_for_model, so there is no printer hint —
+      // a fallback pick must not override the user's saved printer choice.
+      expect(new URLSearchParams(window.location.search).get('printerId')).toBeNull();
+    });
+
+    it('pins the printer profile matching the file sliced_for_model', async () => {
+      mockCalculator();
+      server.use(
+        http.get('/api/v1/library/files', () =>
+          HttpResponse.json([{ ...mockFiles[0], sliced_for_model: 'H2S' }]),
+        ),
+      );
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => expect(screen.getByText('Benchy')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('H2S')).toBeInTheDocument());
+
+      const card = await openMenu(user, 'Benchy');
+      await user.click(within(card).getByText('Open in calculator'));
+
+      await waitFor(() => {
+        expect(new URLSearchParams(window.location.search).get('printerId')).toBe('1');
+      });
+    });
+
+    it('disables the entry for a file with no weight or duration', async () => {
+      mockCalculator();
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => expect(screen.getByText('bracket.stl')).toBeInTheDocument());
+
+      const card = await openMenu(user, 'bracket.stl');
+      const item = within(card).getByText('Open in calculator').closest('button');
+      expect(item).toBeDisabled();
+
+      await user.click(item!);
+      expect(window.location.pathname).toBe('/');
+    });
+  });
 });

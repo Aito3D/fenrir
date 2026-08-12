@@ -179,3 +179,43 @@ export function estimateArchiveSalePrice(
     timeH,
   };
 }
+
+/** Calculator configuration loaded once at page level; null when the user
+ *  lacks calculator access or the calculator isn't configured yet. */
+export interface CalcConfig {
+  filaments: NamedCalculatorFilament[];
+  printers: NamedCalculatorPrinter[];
+  defaults: PricingDefaults;
+}
+
+/** Query-param URL that opens the calculator prefilled from a finished print or
+ *  a library file. Only passes filamentId/printerId when a real name-match was
+ *  found — a fallback pick shouldn't silently override the user's saved choice.
+ *  `printerHints` are tried in order by the printer matcher; callers pass what
+ *  they have (an archive knows its printer, a library file only its
+ *  sliced_for_model). */
+export function calculatorPrefillUrl(
+  source: ArchivePricingSource,
+  calcConfig: CalcConfig | null,
+  printerHints: Array<string | null | undefined> = [],
+): string {
+  const timeH = (source.actual_time_seconds || source.print_time_seconds || 0) / 3600;
+  const params = new URLSearchParams({
+    weight: (source.filament_used_grams ?? 0).toFixed(1),
+    time: timeH.toFixed(2),
+    quantity: '1',
+    // Slicer estimates can be corrected by the calculator's time-accuracy
+    // chip; measured durations need no correction.
+    timeSource: source.actual_time_seconds ? 'actual' : 'est',
+  });
+  // Real measured energy beats the calculator's watts × hours estimate.
+  if (source.energy_kwh != null && source.energy_kwh > 0) {
+    params.set('energyKwh', String(source.energy_kwh));
+  }
+  const estimate = calcConfig
+    ? estimateArchiveSalePrice(source, calcConfig.filaments, calcConfig.printers, calcConfig.defaults, printerHints)
+    : null;
+  if (estimate?.filamentMatched) params.set('filamentId', String(estimate.filamentId));
+  if (estimate?.printerMatched) params.set('printerId', String(estimate.printerId));
+  return `/calculator?${params.toString()}`;
+}

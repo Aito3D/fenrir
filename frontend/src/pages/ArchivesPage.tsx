@@ -73,8 +73,8 @@ import { invalidateArchiveAndProjectViews } from '../utils/projectQueries';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { usePageFileDrop } from '../hooks/usePageFileDrop';
 import { useFlipReorder } from '../hooks/useFlipReorder';
-import type { Archive, CalculatorDefaults, CalculatorFilament, CalculatorPrinter, PrintLogEntry, ProjectListItem } from '../api/client';
-import { estimateArchiveSalePrice } from '../utils/archivePricing';
+import type { Archive, PrintLogEntry, ProjectListItem } from '../api/client';
+import { calculatorPrefillUrl, estimateArchiveSalePrice, type CalcConfig } from '../utils/archivePricing';
 import { formatMoney } from '../utils/pricing';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
@@ -272,42 +272,6 @@ async function openInSlicerWithToken(
       : api.getArchiveForSlicer(archiveId, filename);
     openInSlicer(`${window.location.origin}${path}`, slicer);
   }
-}
-
-/** Calculator configuration loaded once at page level; null when the user
- *  lacks calculator access or the calculator isn't configured yet. */
-interface CalcConfig {
-  filaments: CalculatorFilament[];
-  printers: CalculatorPrinter[];
-  defaults: CalculatorDefaults;
-}
-
-/** Query-param URL that opens the calculator prefilled from an archive.
- *  Only passes filamentId/printerId when a real name-match was found — a
- *  fallback pick shouldn't silently override the user's saved choice. */
-function calculatorPrefillUrl(archive: Archive, calcConfig: CalcConfig | null, printerName?: string): string {
-  const timeH = (archive.actual_time_seconds || archive.print_time_seconds || 0) / 3600;
-  const params = new URLSearchParams({
-    weight: (archive.filament_used_grams ?? 0).toFixed(1),
-    time: timeH.toFixed(2),
-    quantity: '1',
-    // Slicer estimates can be corrected by the calculator's time-accuracy
-    // chip; measured durations need no correction.
-    timeSource: archive.actual_time_seconds ? 'actual' : 'est',
-  });
-  // Real measured energy beats the calculator's watts × hours estimate.
-  if (archive.energy_kwh != null && archive.energy_kwh > 0) {
-    params.set('energyKwh', String(archive.energy_kwh));
-  }
-  const estimate = calcConfig
-    ? estimateArchiveSalePrice(archive, calcConfig.filaments, calcConfig.printers, calcConfig.defaults, [
-        printerName,
-        archive.sliced_for_model,
-      ])
-    : null;
-  if (estimate?.filamentMatched) params.set('filamentId', String(estimate.filamentId));
-  if (estimate?.printerMatched) params.set('printerId', String(estimate.printerId));
-  return `/calculator?${params.toString()}`;
 }
 
 function ArchiveCard({
@@ -879,7 +843,7 @@ function ArchiveCard({
     {
       label: t('archives.menu.openInCalculator'),
       icon: <Calculator className="w-4 h-4" />,
-      onClick: () => navigate(calculatorPrefillUrl(archive, calcConfig ?? null, printerName)),
+      onClick: () => navigate(calculatorPrefillUrl(archive, calcConfig ?? null, [printerName, archive.sliced_for_model])),
       disabled:
         !hasPermission('calculator:read') ||
         !archive.filament_used_grams ||
@@ -2325,7 +2289,7 @@ function ArchiveListRow({
     {
       label: t('archives.menu.openInCalculator'),
       icon: <Calculator className="w-4 h-4" />,
-      onClick: () => navigate(calculatorPrefillUrl(archive, calcConfig ?? null, printerName)),
+      onClick: () => navigate(calculatorPrefillUrl(archive, calcConfig ?? null, [printerName, archive.sliced_for_model])),
       disabled:
         !hasPermission('calculator:read') ||
         !archive.filament_used_grams ||
