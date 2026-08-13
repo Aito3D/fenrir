@@ -8,6 +8,7 @@ from datetime import datetime
 import httpx
 import pytest
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.app.api.routes.settings import set_setting
 from backend.app.models.aito_event import AitoEvent
@@ -19,6 +20,7 @@ from backend.app.services.aito_quote_sync import (
     ShippingCatalogueUnavailable,
     _bump_requeue_marker,
     _deferred_reasons,
+    _requeue_marker,
     _update_quote,
     load_export_shipping,
     run_sync_once,
@@ -760,6 +762,239 @@ async def test_an_edit_committed_during_the_books_round_trip_leaves_the_project_
     # But the edit that landed mid-round-trip was never in the line_items
     # just sent, so the project must stay 'pending' for the next tick to
     # pick it up -- not 'idle', which would tell the card it is in sync.
+    assert project.quote_sync_state == "pending"
+
+
+@pytest.mark.asyncio
+async def test_settling_to_idle_prunes_the_requeue_marker_entry(db_session):
+    """T-050. ``_requeue_marker``'s sibling ``_deferred_reasons``, in the same
+    module and used for the same kind of process-local bookkeeping, is popped
+    on every settle path in ``sync_project``; the marker never was, growing
+    by one entry per project id for the process lifetime. Fixed by popping on
+    the MATCHING branch of ``_apply_estimate`` -- exactly where the marker
+    has just been confirmed unchanged since the snapshot this push captured,
+    i.e. the one moment this entry's job is provably done.
+
+    A project bumped once before its push starts is what makes this
+    observable: a project whose marker was never touched would trivially
+    read as "absent" whether or not the pop ran at all.
+    """
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    _bump_requeue_marker(project.id)
+    assert project.id in _requeue_marker
+
+    await _configure_zoho(db_session)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "status": "sent",
+                        "total": 5000,
+                        "last_modified_time": "2026-07-29T11:00:00-1000",
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "idle"
+    assert project.id not in _requeue_marker
+
+
+@pytest.mark.asyncio
+async def test_a_raced_projects_marker_entry_survives_the_settle_it_prevented(db_session, monkeypatch):
+    """T-050's other direction: the pop must NOT run on the non-matching
+    branch. That branch leaves the project 'pending' precisely because a
+    newer edit bumped the marker while the push was in flight, and discarding
+    the entry there would throw away the very signal the next tick needs to
+    notice the edit -- reintroducing Critical 1's bug in a new shape (see
+    ``_apply_estimate``'s own comment on the pop). Same interleaving shape as
+    ``test_an_edit_committed_during_the_books_round_trip_leaves_the_project_pending``
+    above, with the one assertion that test cannot make: that the entry the
+    interleaved edit bumped is still there afterwards.
+    """
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    await _configure_zoho(db_session)
+
+    real_update_estimate_lines = zoho_service.update_estimate_lines
+
+    async def interleaved_update_estimate_lines(db, quote_id, line_items):
+        project.quote_sync_state = "pending"
+        project.quote_sync_failures = 0
+        _bump_requeue_marker(project.id)
+        return await real_update_estimate_lines(db, quote_id, line_items)
+
+    monkeypatch.setattr(zoho_service, "update_estimate_lines", interleaved_update_estimate_lines)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "status": "sent",
+                        "total": 5000,
+                        "last_modified_time": "2026-07-29T11:00:00-1000",
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "pending"
+    assert project.id in _requeue_marker
+
+
+@pytest.mark.asyncio
+async def test_a_mark_pending_call_that_rolls_back_before_commit_does_not_bump_the_marker(db_session, test_engine):
+    """T-051, direction 2 of one root cause. The bump used to live inside
+    routes/aito.py's ``_mark_pending`` itself, which runs BEFORE that
+    handler's own commit -- so a handler that called
+    ``_mark_pending_if_ours`` and then hit a DB error before ever reaching
+    ``_commit_and_wake`` (get_db's own exception handling always rolls back;
+    see core/database.py) left a bumped marker behind for an edit that never
+    became visible to any other session. That phantom bump costs the next
+    tick an extra Books PUT and a misleading ``sync.pushed`` event for a
+    project that never actually changed.
+
+    Fixed by moving the bump into ``_commit_and_wake`` (and the equivalent
+    post-commit site in ``restore_project``), so it only ever fires once the
+    commit it is reporting has actually happened. A rollback before that
+    point now leaves no trace in the marker at all -- driven here with a real
+    second session so the rollback is the genuine SQLAlchemy operation a
+    request's exception handling would perform, not a stand-in for it.
+    """
+    from backend.app.api.routes import aito as aito_routes
+
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    baseline = _requeue_marker.get(project.id)
+
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with maker() as edit_db:
+        edit_project = await edit_db.get(AitoProject, project.id)
+        aito_routes._mark_pending_if_ours(edit_project)
+        assert edit_project.quote_sync_state == "pending"
+        # The DB error a real handler would have hit before reaching
+        # _commit_and_wake -- simulated directly, since what matters here is
+        # that this session's changes never commit.
+        await edit_db.rollback()
+
+    assert _requeue_marker.get(project.id) == baseline
+
+
+@pytest.mark.asyncio
+async def test_an_edit_marked_pending_before_the_workers_capture_but_committed_only_after_its_read_leaves_the_project_pending(
+    db_session, test_engine, monkeypatch
+):
+    """T-051, direction 1 of the same root cause. With the marker bumped
+    inside ``_mark_pending`` (before that handler's own commit), an edit
+    whose ``_mark_pending`` call ran BEFORE the sync worker captured its own
+    snapshot -- but whose COMMIT landed only after the worker's own row read
+    -- still slipped through the equal-marker check: the worker's snapshot
+    already included a bump for row changes that were not yet visible to it
+    when it read them, so the push it built never contained this edit, yet
+    the marker still matched at the end and the project settled 'idle'
+    anyway.
+
+    Fixed by moving the bump to fire only once the edit's own commit has
+    actually returned (see ``_commit_and_wake``): a ``_mark_pending_if_ours``
+    call on its own -- with no commit behind it yet -- cannot move the
+    marker any more, so the worker's snapshot cannot include an edit whose
+    row changes it has not yet been able to see.
+
+    Driven deterministically: the "edit already marked pending" step runs, in
+    memory, before ``run_sync_once`` is even called (so it can never race the
+    worker's own snapshot by timing), and the edit's actual commit -- via the
+    real ``routes/aito.py._commit_and_wake``, on its own DB session -- is
+    performed from inside the mocked ``update_estimate_lines`` PUT, the same
+    point ``_update_quote``'s own read of the project's task rows
+    (``load_export_tasks``) has already completed and the push it built is
+    already on the wire.
+    """
+    from backend.app.api.routes import aito as aito_routes
+
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    await _configure_zoho(db_session)
+
+    # The "edit's _mark_pending call", performed before the worker ever
+    # starts. Under the OLD (pre-T-051) code this alone bumped the marker;
+    # under the fix it must not, since nothing has committed yet.
+    aito_routes._mark_pending_if_ours(project)
+    assert _requeue_marker.get(project.id) is None
+
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    real_update_estimate_lines = zoho_service.update_estimate_lines
+
+    async def interleaved_update_estimate_lines(db, quote_id, line_items):
+        # The edit's own commit, on its own session, landing only now --
+        # strictly after _update_quote's requeue_marker snapshot (captured as
+        # the very first line of that function) and after its own read of
+        # the project's task rows (load_export_tasks, which line_items above
+        # already proves ran).
+        async with maker() as edit_db:
+            edit_project = await edit_db.get(AitoProject, project.id)
+            await aito_routes._commit_and_wake(edit_db, True, edit_project.id)
+        return await real_update_estimate_lines(db, quote_id, line_items)
+
+    monkeypatch.setattr(zoho_service, "update_estimate_lines", interleaved_update_estimate_lines)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "status": "sent",
+                        "total": 5000,
+                        "last_modified_time": "2026-07-29T11:00:00-1000",
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
     assert project.quote_sync_state == "pending"
 
 

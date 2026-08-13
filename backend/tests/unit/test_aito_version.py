@@ -227,4 +227,4 @@ async def test_guarded_real_edit_still_bumps_updated_at(async_client, db_session
     assert response.status_code == 200
     assert response.json()["version"] == 1
 
-    assert await _updated_at(db_session, project_id) != sentinel
+    assert await _updated_at(db_session, project_id) > sentinel

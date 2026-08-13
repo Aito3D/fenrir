@@ -540,24 +540,18 @@ def _mark_pending(project: AitoProject) -> None:
     legacy quote-less card from ever being marked. See that function's
     docstring for why the two must not be merged.
 
-    ``_bump_requeue_marker`` fires on every call, even one that leaves
-    ``quote_sync_state`` at the value it already held (re-marking an
-    already-'pending' project). That "no-op" case is exactly what
-    ``aito_quote_sync``'s own marker exists to make visible: SQLAlchemy
-    never emits an UPDATE for a column reassigned to its own value, so
-    without this, an edit landing while the sync worker is mid-round-trip to
-    Books would leave no trace at all for ``_apply_estimate`` to notice
-    before it writes 'idle' over the top. See that module's own comment on
-    ``_requeue_marker`` for the full race.
-
-    Guarded on ``project.id is not None``: ``create_project`` calls this
-    before its own flush has assigned the new row an id (see there), and a
-    project nothing else can reference yet by id cannot be racing anything.
+    Deliberately does NOT bump ``aito_quote_sync``'s ``_requeue_marker``
+    itself — see ``_commit_and_wake``'s own comment for why that has to
+    happen after this call's caller commits, not here. A handler that marks
+    a project pending and then never reaches a commit (a DB error, an
+    IntegrityError rollback) must leave no trace in that marker at all, and
+    bumping it here — before the commit that makes this call's effect
+    visible to any other session — is exactly the timing that let a
+    concurrent edit's own bump be captured by the sync worker's snapshot
+    before that edit's row changes were actually visible to it.
     """
     project.quote_sync_state = "pending"
     project.quote_sync_failures = 0
-    if project.id is not None:
-        _bump_requeue_marker(project.id)
 
 
 def _mark_pending_if_ours(project: AitoProject) -> None:
@@ -617,21 +611,45 @@ def _wake_worker(queued: bool) -> None:
         request_debounced_sync()
 
 
-async def _commit_and_wake(db: AsyncSession, queued: bool) -> None:
-    """Commit the session, then wake the sync worker if this call left a
-    project pending.
+async def _commit_and_wake(db: AsyncSession, queued: bool, project_id: int | None = None) -> None:
+    """Commit the session, bump the sync worker's requeue marker if this call
+    left a project pending, then wake the worker.
 
     ``queued`` must already reflect the pre-commit state — see
     ``_wake_worker``'s docstring for why that capture has to happen before
-    the commit performed here, not after.
+    the commit performed here, not after. ``project_id`` must be the id of
+    the SAME project ``queued`` was computed from; a couple of callers (the
+    task endpoints, whose parent project can be missing) may have no project
+    at all, in which case ``queued`` is already False and no bump is due
+    regardless.
+
+    The bump happens HERE, immediately after ``db.commit()`` returns and with
+    no ``await`` in between — never inside ``_mark_pending``/
+    ``_mark_pending_if_ours`` themselves, which run before this commit. Two
+    bugs come from getting that ordering wrong, in opposite directions: bump
+    before commit, and a caller that marks a project pending and then rolls
+    back instead of reaching here leaves a phantom bump — the marker no
+    longer matches what the sync worker last saw, so the next tick re-pushes
+    a project that never actually changed. Bump before commit, and a bump
+    that lands before ITS OWN commit can be captured by the sync worker's
+    ``_requeue_marker_for`` snapshot before this call's row changes are
+    actually visible to that worker's session — narrowing the race
+    ``aito_quote_sync._requeue_marker`` exists to catch instead of closing
+    it. Bumping only once this call's own commit has actually returned ties
+    the marker to an edit being VISIBLE, not merely intended. See that
+    module's own comment on ``_requeue_marker`` for the full shape of the
+    race this protects.
 
     Not used by every commit-then-wake site: any handler where the commit is
     itself wrapped in error handling (see ``restore_project``'s
     ``IntegrityError`` branch) keeps its commit and wake calls separate,
     since folding them together here would pull the wake call inside that
-    handler's try/except.
+    handler's try/except — those sites bump the marker themselves,
+    immediately after their own commit, for the same reason as here.
     """
     await db.commit()
+    if queued and project_id is not None:
+        _bump_requeue_marker(project_id)
     _wake_worker(queued)
 
 
@@ -1511,7 +1529,7 @@ async def add_task(
         await record(db, project.id, "sync.queued", actor_class="system")
     await _apply_rules(db, project, await _summary_for(db, project_id), actor=_actor(current_user))
     queued = project.quote_sync_state == "pending"
-    await _commit_and_wake(db, queued)
+    await _commit_and_wake(db, queued, project.id)
     await _broadcast_changed("task", task.project_id, _actor(current_user))
     await db.refresh(task)
     return _task_to_response(task)
@@ -1605,7 +1623,7 @@ async def update_task(
     if project:
         await _apply_rules(db, project, await _summary_for(db, task.project_id), actor=_actor(current_user))
     queued = project is not None and project.quote_sync_state == "pending"
-    await _commit_and_wake(db, queued)
+    await _commit_and_wake(db, queued, project.id if project is not None else None)
     await _broadcast_changed("task", task.project_id, _actor(current_user))
     await db.refresh(task)
     return _task_to_response(task)
@@ -1637,7 +1655,7 @@ async def delete_task(
     if project:
         await _apply_rules(db, project, await _summary_for(db, task_project_id), actor=_actor(current_user))
     queued = project is not None and project.quote_sync_state == "pending"
-    await _commit_and_wake(db, queued)
+    await _commit_and_wake(db, queued, project.id if project is not None else None)
     await _broadcast_changed("task", task_project_id, _actor(current_user))
 
 
@@ -1904,7 +1922,7 @@ async def update_project(
     if not was_pending and project.quote_sync_state == "pending":
         await record(db, project.id, "sync.queued", actor_class="system")
     queued = project.quote_sync_state == "pending"
-    await _commit_and_wake(db, queued)
+    await _commit_and_wake(db, queued, project.id)
     # Same no-op silence `set_project_flag` and `set_quote_status` already
     # give a repeated/empty write — see their own comments. `changes` alone
     # is not enough here: a shipping PATCH sends its six columns through
@@ -2131,6 +2149,14 @@ async def restore_project(
         )
         queued = project.quote_sync_state == "pending"
         await db.commit()
+        # Not routed through `_commit_and_wake`: this commit is inside its
+        # own try/except (see the comment above), so the bump lives here
+        # instead, at the same point relative to the commit -- immediately
+        # after it returns, with no `await` in between -- and for the same
+        # reason: see `_commit_and_wake`'s own comment on why the marker must
+        # never be bumped before the commit it is reporting.
+        if queued:
+            _bump_requeue_marker(project.id)
     except IntegrityError as exc:
         await db.rollback()
         if _is_duplicate_active_quote_error(exc):
@@ -2162,5 +2188,5 @@ async def delete_project(
         subject_id=project.id,
     )
     queued = project.quote_sync_state == "pending"
-    await _commit_and_wake(db, queued)
+    await _commit_and_wake(db, queued, project.id)
     await _broadcast_changed("delete", project_id, _actor(current_user))

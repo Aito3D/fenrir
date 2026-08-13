@@ -876,7 +876,7 @@ version): a peer's write moves the server to 4, a brand-new session captured
 at 4 must send 4 (not the unmoved ack's 3) and succeed. The pre-existing F2
 (same-client burst), T-012 (cross-operator guard on the description session)
 and T-021 (map does not leak across tests) suites all pass unmodified — 10/10
-in the file (8 pre-existing + the original T-047 case + S1 + S3), run both
+in the file (8 pre-existing + S1 + S3), run both
 in isolation and inside the full suite.
 
 `tools/snapshot.py verify`: 9/9, both before and after this change (and its
@@ -943,10 +943,16 @@ the board card (`CardView.tsx:397`, `{!project.quote_number &&
 project.quote_sync_state === 'pending' && (...)}`) and the pending-poll hook
 (`useQuotePendingPoll.ts:76`, `.filter((p) => !p.quote_number &&
 p.quote_sync_state === 'pending')`) are both additionally gated on
-`!quote_number`, and `quote_id`/`quote_number` are already set by the time
-`_apply_estimate` runs (lines 321-323, unconditional) — so neither the board
-card nor the pending-poll ever shows or polls for this race window; only the
-detail panel's sync row does. In every NON-raced path — no concurrent edit,
+`!quote_number`, and by the time `_apply_estimate` runs `quote_id` is set
+unconditionally but `quote_number` only when Books actually returned an
+`estimate_number` (`if estimate.get("estimate_number") is not None:` guards
+that one assignment) — so the board card and pending-poll exclusion above
+holds whenever `estimate_number` is present, which is the case for every
+real Books response seen in practice; a response that omitted it would leave
+`quote_number` unset and widen this task's race window to those two surfaces
+as well, a scenario judged unreachable against a real Books API rather than
+a live risk. Only the detail panel's sync row is affected in the reachable
+case. In every NON-raced path — no concurrent edit,
 an edit landing before the marker is captured, a stale/never-bumped marker,
 a simulated process restart mid-round-trip — `quote_synced_at`, `quote_total`,
 status adoption, event ordering and board position are written identically
@@ -994,10 +1000,13 @@ never happened, and re-send for real.
 chosen over a second `move_failed` boolean: it maps each of the three
 possible histories to exactly one value with no invalid or redundant
 combination to guard against (`true` = moved, `None` = no move attempted —
-not a failure, `false` = move attempted and failed), it is additive to the
-wire contract (existing consumers reading it as a plain boolean still get a
-boolean in the two cases that were `bool` before; only the newly
-distinguished case introduces `null`), and it is the smaller change to the
+not a failure, `false` = move attempted and failed); the field stays always
+present and always required, so no consumer needs to start checking for a
+missing key — but this is not a purely additive wire-contract change: all
+three histories returned a plain `bool` before, and the no-move-attempted
+history's value moves from `false` to `null`, so a strictly-typed consumer
+doing a boolean check on that pre-existing, already-exercised path would
+need updating; and it is the smaller change to the
 response contract — one field's type widens rather than a second field
 appearing alongside it. In `send_quote_email` the initial value moved from
 `False` to `None`; the `except SQLAlchemyError` branch now sets

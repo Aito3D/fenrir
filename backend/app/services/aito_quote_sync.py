@@ -85,13 +85,25 @@ _DECIDED = frozenset({"accepted", "declined"})
 # was before this handler ran.
 _deferred_reasons: dict[int, str] = {}
 
-# Project id -> how many times routes/aito.py has (re)armed this project for
-# a push, in THIS process. Bumped by ``_bump_requeue_marker`` below, called
-# from routes/aito.py's ``_mark_pending`` on EVERY call -- including a call
-# that leaves ``quote_sync_state`` at the value it already held. That
-# "already held" case is not a hypothetical: it is the exact shape of the
-# race this marker exists to catch. ``_update_quote``/``_create_quote`` read
-# the project's own rows (``load_export_tasks``, ``load_export_shipping``)
+# Project id -> how many times an edit in routes/aito.py has actually landed
+# (committed) for this project, in THIS process. Bumped by
+# ``_bump_requeue_marker`` below, called from routes/aito.py's
+# ``_commit_and_wake`` (and the equivalent post-commit site in
+# ``restore_project``, which cannot use that helper -- see its own comment)
+# immediately AFTER ``db.commit()`` returns, with no ``await`` in between --
+# so the bump and the commit are atomic from every other coroutine's point of
+# view. Deliberately NOT bumped from inside ``_mark_pending``/
+# ``_mark_pending_if_ours`` themselves, which run BEFORE that commit: a
+# handler that marks a project pending and then rolls back (a DB error before
+# ``_commit_and_wake``) must leave no trace here, and a marker bumped at
+# mark-time rather than commit-time can be captured by this module's own
+# snapshot below before the edit it describes is actually visible to this
+# session -- narrowing the race this marker exists to catch instead of
+# closing it. Firing on every commit that left the project pending --
+# including one that leaves ``quote_sync_state`` at the value it already
+# held -- is still required, and not a hypothetical: it is the exact shape of
+# the race this marker exists to catch. ``_update_quote``/``_create_quote``
+# read the project's own rows (``load_export_tasks``, ``load_export_shipping``)
 # BEFORE the network write to Books, and an edit whose commit lands anywhere
 # in that window is a same-value no-op on an ALREADY-'pending' project's
 # ``quote_sync_state`` column -- SQLAlchemy does not even emit an UPDATE for
@@ -108,14 +120,19 @@ _deferred_reasons: dict[int, str] = {}
 # mid-round-trip already leaves the project 'pending' in the DB (this module
 # never reached the write that would have cleared it), so the next tick
 # re-syncs it correctly with no marker at all. Process-local for the same
-# reason and at the same cost as ``_deferred_reasons`` above.
+# reason and at the same cost as ``_deferred_reasons`` above -- and, like
+# that dict, popped once its job for one push is done (see the pop inside
+# ``_apply_estimate``'s matching branch below) rather than left to grow for
+# the process lifetime.
 _requeue_marker: dict[int, int] = {}
 
 
 def _bump_requeue_marker(project_id: int) -> None:
-    """Record that ``project_id`` has been (re)armed for a push. See
-    ``_requeue_marker``'s own comment for why this has to fire on every call,
-    not only on a genuine state transition."""
+    """Record that an edit to ``project_id`` has actually landed. See
+    ``_requeue_marker``'s own comment for why this has to fire on every
+    commit that leaves the project pending, not only a genuine state
+    transition, and why it must be called only AFTER that commit, never
+    before."""
     _requeue_marker[project_id] = _requeue_marker.get(project_id, 0) + 1
 
 
@@ -373,6 +390,23 @@ def _apply_estimate(project: AitoProject, estimate: dict, *, requeue_marker: int
     # above.
     if _requeue_marker_for(project.id) == requeue_marker:
         project.quote_sync_state = "idle"
+        # This branch is the ONLY place this entry is ever removed, and that
+        # is deliberate: reaching here means nothing bumped the marker
+        # between the snapshot the caller captured and this comparison, i.e.
+        # this push's job is done and there is nothing left for a future
+        # comparison to need this value for. Mirrors the `_deferred_reasons`
+        # pop on every settle path in `sync_project` below -- the same
+        # process-local-bookkeeping convention this dict never followed
+        # before. Never pop in the `else` (non-matching) case: that branch
+        # means a newer edit bumped the marker while this push was in
+        # flight, so the project is being left 'pending' ON PURPOSE for the
+        # next tick to retry, and that next tick's own comparison needs
+        # exactly this value to know what "unchanged since then" means.
+        # Discarding it there would make every future comparison spuriously
+        # match (a missing key reads as 0, same as a project that was never
+        # bumped at all), reintroducing Critical 1's bug in a new shape: an
+        # outstanding edit going 'idle' unnoticed.
+        _requeue_marker.pop(project.id, None)
     project.quote_sync_error = None
     project.quote_sync_failures = 0
 
