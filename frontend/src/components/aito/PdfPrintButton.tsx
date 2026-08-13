@@ -59,6 +59,11 @@ export function PdfPrintButton({
   const [busy, setBusy] = useState(false);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const timeoutRef = useRef<number | null>(null);
+  // The 60s revoke backstop (see REVOKE_DELAY_MS) and the object URL it is
+  // waiting to revoke, tracked so an unmount before it fires can cancel the
+  // timer and revoke immediately instead — exactly once either way.
+  const revokeTimeoutRef = useRef<number | null>(null);
+  const revokeUrlRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
 
   // The fallback timer (and the iframe it may act on) must not outlive the
@@ -74,6 +79,14 @@ export function PdfPrintButton({
         window.clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
       }
+      if (revokeTimeoutRef.current !== null) {
+        window.clearTimeout(revokeTimeoutRef.current);
+        revokeTimeoutRef.current = null;
+      }
+      if (revokeUrlRef.current) {
+        URL.revokeObjectURL(revokeUrlRef.current);
+        revokeUrlRef.current = null;
+      }
       if (frameRef.current) {
         frameRef.current.remove();
         frameRef.current = null;
@@ -82,9 +95,13 @@ export function PdfPrintButton({
   }, []);
 
   const cleanup = (frame: HTMLIFrameElement, url: string) => {
-    window.setTimeout(() => {
+    revokeUrlRef.current = url;
+    revokeTimeoutRef.current = window.setTimeout(() => {
+      revokeTimeoutRef.current = null;
+      revokeUrlRef.current = null;
       frame.remove();
       URL.revokeObjectURL(url);
+      if (frameRef.current === frame) frameRef.current = null;
     }, REVOKE_DELAY_MS);
   };
 

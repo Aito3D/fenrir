@@ -310,6 +310,44 @@ async def test_a_failed_card_move_still_records_the_send(async_client, books_ema
 
 
 @pytest.mark.asyncio
+async def test_a_non_database_bug_in_the_card_move_still_500s(async_client, books_email, monkeypatch):
+    """Only database contention degrades to a 200 with marked_sent=False (see
+    the previous test). A genuine programming error in the card-move half —
+    an AttributeError here, standing in for any bug that is not a locked
+    database — must propagate as a 500, not be reported as a quiet success.
+    Otherwise a real logic bug in adopt_quote_status/_apply_rules/record
+    would silently look like "the send worked, only the card move failed"
+    forever, since nothing distinguishes it from the DB-contention case in
+    the response body."""
+    import backend.app.api.routes.aito as aito_routes
+
+    project = await _create(async_client)
+    assert project["column"] == "devis"
+
+    # Patched only now: create_project's own _apply_rules call (moving the
+    # freshly-made card into "devis") must not be caught by this.
+    async def boom(db, project, summary, actor=None):
+        raise AttributeError("boom")
+
+    monkeypatch.setattr(aito_routes, "_apply_rules", boom)
+
+    response = await async_client.post(f"/api/v1/aito/{project['id']}/quote-email", json={"to": "contact@example.pf"})
+
+    # It must NOT look like the previous test: a non-database bug is not
+    # allowed to reach the client as a 200 with marked_sent=False, unlike
+    # OperationalError above. (What it becomes instead — 500 vs the outer
+    # auth-probe middleware's own 503 fail-closed handling of an unexpected
+    # exception, see main.py's auth_middleware — is incidental to this
+    # handler and not this test's concern.)
+    assert response.status_code != 200
+    assert books_email == [("EST-9", ["contact@example.pf"])]  # the email really did go out
+
+    kinds = await _events(async_client, project["id"])
+    assert "quote.emailed" in kinds  # durable despite the failure below it
+    assert "quote.sent" not in kinds
+
+
+@pytest.mark.asyncio
 async def test_no_recipients_and_no_client_email_refuses_any_address(async_client, books_email, monkeypatch):
     # Books offers nobody, and the card carries no client_email to fall back
     # on (see _quote_email_content) — the allowlist is empty, so every

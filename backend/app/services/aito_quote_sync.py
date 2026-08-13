@@ -896,11 +896,12 @@ async def _terminal_error(
     # cannot climb out of on its own. Any deferral memory from before this
     # error is for a disposition that no longer holds, so drop it here too —
     # same hygiene as the pop on the normal-return path below, and safe for
-    # the same reason: _deferred_reasons only ever gates the log line above,
-    # never a DB write or recorded event, so forgetting it early just means
-    # the next ShippingCatalogueUnavailable (if this project ever gets back
-    # to pending) logs once fresh instead of staying suppressed by a reason
-    # that belongs to a different attempt.
+    # the same reason: _deferred_reasons only ever gates the log line below
+    # (sync_project's own ShippingCatalogueUnavailable handler, further down
+    # this file), never a DB write or recorded event, so forgetting it early
+    # just means the next ShippingCatalogueUnavailable (if this project ever
+    # gets back to pending) logs once fresh instead of staying suppressed by
+    # a reason that belongs to a different attempt.
     _deferred_reasons.pop(project_id, None)
     if not already_in_error or previous_sync_error != project.quote_sync_error:
         await record(
@@ -983,6 +984,14 @@ async def sync_project(db: AsyncSession, project: AitoProject) -> None:
                 # "Books refused to change this quote to ..." beside "Quote
                 # invoiced" forever, describing a push this module will never
                 # attempt again.
+                #
+                # (The state flip described above is unconditional inside
+                # `_lock_project` itself; the invoiced stamp, block clear and
+                # failure reset described above are its invoiced=/clear_block=/
+                # reset_failures= kwargs below -- each used to be its own
+                # assignment here before `_lock_project` consolidated all four
+                # lock sites into one helper. The rationale above still applies
+                # unchanged to each of them.)
                 await _lock_project(db, project, project_id, invoiced=True, clear_block=True, reset_failures=True)
                 return
             await reconcile_quote_status(db, project, estimate)

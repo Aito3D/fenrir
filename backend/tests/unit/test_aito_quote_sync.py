@@ -1444,12 +1444,17 @@ async def test_tax_exclusive_estimate_is_locked_and_never_written(db_session):
 async def test_tax_exclusive_relock_does_not_duplicate_sync_locked_event(db_session):
     """T-002: the tax-exclusive branch of _update_quote (aito_quote_sync.py)
     must debounce its own 'sync.locked' event exactly like the sibling lock
-    sites (the invoiced branch above, _create_quote, and the swept branch),
-    each of which captures `was_already_locked` before mutating
-    quote_sync_state and skips record() when it was already True. Calling
-    _update_quote directly (as the swept branch's sibling call already does
-    from a non-'pending' entry state, see sync_project) exercises that guard
-    without depending on how the project got into 'locked' beforehand.
+    sites (the invoiced branch above, _create_quote, and the swept branch's
+    own `_lock_project` call), all four of which share the same
+    `_lock_project` helper, which captures `was_already_locked` before
+    mutating quote_sync_state and skips record() when it was already True.
+    Calling _update_quote directly, and re-entering it a second time with
+    quote_sync_state already 'locked', exercises that shared guard in
+    isolation: in production, sync_project only ever reaches _update_quote
+    from the 'pending' branch (its swept branch returns before it, see
+    sync_project), so no real call path re-enters _update_quote already
+    locked -- this test constructs that state directly rather than depending
+    on how the project got into 'locked'.
 
     First call: project is not yet locked, so exactly one sync.locked event
     must land. Second call, entered with quote_sync_state already 'locked'
@@ -1493,9 +1498,11 @@ async def test_tax_exclusive_relock_does_not_duplicate_sync_locked_event(db_sess
     events = await _locked_events()
     assert len(events) == 1, "first lock must record exactly one sync.locked event"
 
-    # Re-entering with quote_sync_state already 'locked' (mirrors how the
-    # swept branch in sync_project can call _update_quote from a non-pending
-    # state) must not write a second sync.locked row.
+    # Re-entering with quote_sync_state already 'locked' -- a state no real
+    # call path re-enters through, since sync_project only ever calls
+    # _update_quote from 'pending'; constructed directly here to exercise
+    # _lock_project's own debounce guard in isolation -- must not write a
+    # second sync.locked row.
     await _update_quote(db_session, project)
     await db_session.commit()
     assert project.quote_sync_state == "locked"

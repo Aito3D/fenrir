@@ -7,7 +7,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import and_, case, func, or_, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
@@ -269,7 +269,14 @@ async def _shipping_names(db: AsyncSession) -> dict[str, str]:
 async def _shipping_rates(db: AsyncSession) -> dict[str, float]:
     """Service key -> Books rate, for the two mutation paths that validate a
     shipping payload (create and update) and only need it once
-    `_mentions_shipping` has already confirmed the request touches shipping."""
+    `_mentions_shipping` has already confirmed the request touches shipping.
+
+    Deliberately NOT `refresh=False` like `_shipping_names` above: that one
+    only needs a display name against an id already learned, but this one
+    feeds `_validated_shipping`'s `shipping_price`, which gets frozen onto
+    the row at attach time — a stale display name is harmless, a stale RATE
+    quoted to a client is real money. Do not "unify" the two calls; the
+    asymmetry is the point."""
     return {service: item.rate for service, item in (await zoho_service.get_shipping_catalogue(db)).items()}
 
 
@@ -447,6 +454,13 @@ def _is_duplicate_active_quote_error(exc: IntegrityError) -> bool:
     only unique constraint that can ever produce it — which safely tells this
     race apart from unrelated IntegrityErrors that can surface from the same
     commit (e.g. `aito_events.zoho_comment_id`).
+
+    This match is SQLite error-text specific by construction, not a generic
+    constraint-name check: a different backend, or a future SQLite message
+    format, simply would not match. That is deliberate and fails CLOSED — a
+    non-match returns False, so both call sites `raise` the original
+    IntegrityError unchanged instead of mis-reporting an unrelated failure as
+    this 409.
     """
     return "aito_projects.quote_id" in str(exc.orig)
 
@@ -1336,7 +1350,15 @@ async def send_quote_email(
             )
             await db.commit()
             marked_sent = True
-        except Exception:
+        except SQLAlchemyError:
+            # Narrowed to database errors only ("database is locked" from the
+            # aito_quote_sync worker sharing this SQLite file is the realistic
+            # case this branch exists for — see the docstring above). A
+            # genuine programming error (AttributeError, TypeError, or an
+            # HTTPException raised from a helper) must propagate as a 500
+            # rather than being reported to the client as a 200 with
+            # marked_sent=False, which would hide a real bug behind a
+            # "the send worked, only the card move failed" story.
             logger.warning(
                 "Aito quote email for project %s was sent, but moving the card failed; "
                 "quote.emailed is already recorded and the card stays where it was",

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { QuotePrintButton } from '../../components/aito/QuotePrintButton';
@@ -105,6 +105,47 @@ describe('QuotePrintButton', () => {
       await vi.advanceTimersByTimeAsync(3100);
 
       expect(open).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels the pending 60s revoke timer on unmount and still revokes the URL exactly once', async () => {
+    // The revoke backstop scheduled after a successful print used to be a
+    // bare window.setTimeout with nothing tracking it: unmounting within 60s
+    // left it dangling, touching an already-removed iframe and revoking the
+    // URL well after the component was gone instead of right away.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.spyOn(api, 'getAitoQuotePdf').mockResolvedValue(new Blob(['%PDF-']));
+      vi.spyOn(HTMLIFrameElement.prototype, 'contentWindow', 'get').mockReturnValue({
+        focus: () => {},
+        print: () => {},
+      } as unknown as Window);
+      const revoke = globalThis.URL.revokeObjectURL as unknown as ReturnType<typeof vi.fn>;
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+
+      const { unmount } = render(<QuotePrintButton project={project} />);
+      await user.click(screen.getByRole('button', { name: /print quote/i }));
+
+      let iframe: HTMLIFrameElement | null = null;
+      await waitFor(() => {
+        iframe = document.querySelector('iframe');
+        expect(iframe).not.toBeNull();
+      });
+      // jsdom never fires `load` on its own; simulate the browser having
+      // rendered the PDF so the component schedules the 60s revoke backstop.
+      fireEvent.load(iframe as HTMLIFrameElement);
+      expect(revoke).not.toHaveBeenCalled();
+
+      unmount();
+      // Unmounting must revoke immediately rather than leaving the URL held
+      // until the original 60s deadline.
+      expect(revoke).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      // The cancelled timer must not also fire and revoke a second time.
+      expect(revoke).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
