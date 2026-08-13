@@ -466,3 +466,263 @@ describe('T-012 — cross-operator version guard on the description edit session
     expect(serverDescription).toBe('B text');
   });
 });
+
+// T-047: `ownAckedVersion`'s old `Math.max(patch.expected_version,
+// ownAckedVersion.get(id))` raised a session's captured version to whatever
+// this client had most recently acked, with no regard for what happened in
+// between. The F2 suite above proves that raise is needed for a same-client
+// back-to-back save (both sessions captured off the SAME pre-burst version,
+// so the ack legitimately covers the second one too). This suite proves the
+// old unconditional `Math.max` went further than that: it also raised a
+// session that was captured BEFORE a peer's write, using an ack this client
+// earned AFTER that peer's write (from an unrelated save, opened fresh post
+// -refresh) — letting the stale session's PATCH sail past the version guard
+// and silently overwrite the peer's edit with no 409. The fix only trusts an
+// ack whose own `from` (what it was sent with) is `<=` the stale session's
+// capture — i.e. the ack must descend from the SAME base — which this
+// sequence's ack (`from: 6`) does not (the stale session captured `5`).
+describe('T-047 — a stale session left open across a peer\'s write does not inherit a later, unrelated ack', () => {
+  beforeEach(() => {
+    __resetBoardSync();
+    __resetOwnAckedVersion();
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('409s the stale shipping save instead of overwriting the peer\'s phone correction', async () => {
+    const calls: { patch: AitoProjectUpdate }[] = [];
+    // Same stand-in server shape as the T-012 suite above: reject with 409
+    // unless the sent expected_version matches the server's current version.
+    // `serverProject` accumulates every accepted write (including B's, done
+    // directly against server state below rather than through this client's
+    // own mutation) so a later success response reflects the real row, not a
+    // stale fixture snapshot.
+    let serverProject: AitoProject;
+    vi.spyOn(api, 'updateAitoProject').mockImplementation((_id, patch) => {
+      calls.push({ patch: patch as AitoProjectUpdate });
+      if (patch.expected_version !== undefined && patch.expected_version !== serverProject.version) {
+        return Promise.reject(new ApiError('stale', 409, 'version_conflict'));
+      }
+      serverProject = { ...serverProject, ...patch, version: serverProject.version + 1 };
+      return Promise.resolve(serverProject);
+    });
+
+    const project = makeProject({
+      id: 9,
+      version: 5,
+      description: 'old text',
+      shipping_island: 'rangiroa',
+      shipping_service: 'tuamotu',
+      shipping_service_name: 'Livraison Avion Tuamotu',
+      shipping_first_name: 'Jean',
+      shipping_last_name: 'Pierre',
+      shipping_phone: '+689-89645864',
+      shipping_price: 3200,
+    });
+    serverProject = project;
+    const client = renderPanelReactive(project);
+
+    // 1. Operator A opens the shipping editor — `editVersionRef.current`
+    //    captures `project.version` = 5 right now, and stays 5 no matter what
+    //    happens on the board while the editor stays open.
+    await userEvent.click(screen.getByRole('button', { name: /edit shipping/i }));
+
+    // 2. Operator B corrects the phone number elsewhere: server -> 6. A's
+    //    board refetches on the `aito_changed` WS event exactly as
+    //    `boardSync.resyncIfIdle` -> `invalidateQueries` would, rewriting the
+    //    cache under A's still-open (and un-reseeded) shipping draft.
+    serverProject = { ...serverProject, shipping_phone: '+689-00000000', version: 6 };
+    act(() => {
+      client.setQueryData(['aito-projects'], [serverProject]);
+    });
+
+    // 3. A saves something unrelated — the description — from a session
+    //    opened just now, AFTER the refresh, so it correctly captures 6.
+    await userEvent.click(screen.getByRole('button', { name: /edit description/i }));
+    const box = getDescriptionTextarea();
+    await userEvent.clear(box);
+    await userEvent.type(box, 'A note');
+    await userEvent.tab();
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0].patch.expected_version).toBe(6);
+    await waitFor(() => {
+      expect(client.getQueryData<AitoProject[]>(['aito-projects'])?.[0].description).toBe('A note');
+    });
+    // This client's own ack is now {from: 6, to: 7} — a real, newer version,
+    // but one that does not descend from the shipping session's base of 5.
+    expect(serverProject.version).toBe(7);
+
+    // 4. A finally clicks Save on the shipping editor that has been open
+    //    since step 1. Its session capture is still 5.
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(calls).toHaveLength(2));
+    // The value actually put on the wire is what this whole mechanism turns
+    // on: it must stay 5 (the session's own capture), NOT be raised to 7 by
+    // the unrelated ack from step 3.
+    expect(calls[1].patch.expected_version).toBe(5);
+    // 5 != the server's actual 7 -> the stand-in server 409s, same as the
+    // real guard (routes/aito.py:1637) would.
+    expect(serverProject.version).toBe(7);
+
+    // The shipping editor must still be open (ShippingCard only closes it in
+    // `onSuccess`) rather than having quietly saved.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^save$/i })).toBeInTheDocument();
+    });
+    // B's phone correction must not have been clobbered by A's stale draft.
+    expect(client.getQueryData<AitoProject[]>(['aito-projects'])?.[0].shipping_phone).toBe('+689-00000000');
+  });
+
+  // S1: the mirror image of the case above, and the exact gap a first
+  // revision of this fix left open (caught by the blind verifier, not by
+  // this suite): substituting `acked.to` outright instead of
+  // `Math.max(patch.expected_version, acked.to)` behind the descent check.
+  // This client's OWN save moves the server ahead (3 -> 4); a peer then
+  // moves it further (-> 5); a session that opens FRESH, after that peer
+  // write, correctly captures the already-current 5 — newer than this
+  // client's own ack. The descent check (`acked.from` 3 `<=` 5) passes, so
+  // outright substitution would send the ack's `to` (4) — OLDER than the
+  // session's own fresh capture — and draw a false 409 against a save that
+  // was never stale. `Math.max` is what keeps the capture from ever being
+  // lowered.
+  it('sends the freshly-captured version, not an older unrelated ack, for a session opened after a peer write', async () => {
+    const calls: { patch: AitoProjectUpdate }[] = [];
+    let serverProject: AitoProject;
+    vi.spyOn(api, 'updateAitoProject').mockImplementation((_id, patch) => {
+      calls.push({ patch: patch as AitoProjectUpdate });
+      if (patch.expected_version !== undefined && patch.expected_version !== serverProject.version) {
+        return Promise.reject(new ApiError('stale', 409, 'version_conflict'));
+      }
+      serverProject = { ...serverProject, ...patch, version: serverProject.version + 1 };
+      return Promise.resolve(serverProject);
+    });
+
+    const project = makeProject({ id: 12, version: 3, description: 'd0' });
+    serverProject = project;
+    const client = renderPanelReactive(project);
+
+    // 1. This client's OWN save: description session captured at 3, saved,
+    //    succeeds -> server 4. `ownAckedVersion` now holds {from: 3, to: 4}.
+    await userEvent.click(screen.getByRole('button', { name: /edit description/i }));
+    let box = getDescriptionTextarea();
+    await userEvent.clear(box);
+    await userEvent.type(box, 'd1');
+    await userEvent.tab();
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0].patch.expected_version).toBe(3);
+    await waitFor(() => {
+      expect(client.getQueryData<AitoProject[]>(['aito-projects'])?.[0].description).toBe('d1');
+    });
+    expect(serverProject.version).toBe(4);
+
+    // 2. A peer's write lands, moving the server further ahead than this
+    //    client's own ack: server -> 5. The board refetches.
+    serverProject = { ...serverProject, version: 5 };
+    act(() => {
+      client.setQueryData(['aito-projects'], [serverProject]);
+    });
+
+    // 3. A brand-new editor session opens AFTER that refresh, so it
+    //    correctly captures the current version, 5.
+    await userEvent.click(screen.getByRole('button', { name: /edit description/i }));
+    box = getDescriptionTextarea();
+    await userEvent.clear(box);
+    await userEvent.type(box, 'd2');
+    await userEvent.tab();
+
+    await waitFor(() => expect(calls).toHaveLength(2));
+    // The value actually put on the wire is what this whole mechanism turns
+    // on: it must be 5 (this session's own fresh capture), not 4 (the older,
+    // unrelated ack from step 1).
+    expect(calls[1].patch.expected_version).toBe(5);
+
+    // 5 matches the server's actual version -> succeeds, no false conflict.
+    await waitFor(() => {
+      expect(client.getQueryData<AitoProject[]>(['aito-projects'])?.[0].description).toBe('d2');
+    });
+    expect(serverProject.version).toBe(6);
+    // The editor must have closed on success, not reopened on a 409.
+    expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument();
+  });
+
+  // S3: the same hazard as S1, reached by a different route — a no-op save
+  // (unchanged shipping fields, still a real PATCH: `ShippingCard.save`
+  // never skips a resend the way the description session's no-op guard
+  // does) whose own ack happens to have `from === to` (the server did not
+  // need to move the version for it). A fresh session opened after a peer's
+  // write must still send ITS OWN captured version, not that unmoved ack.
+  it('sends the freshly-captured version after a peer write even when this client\'s own last ack did not move the server', async () => {
+    const calls: { patch: AitoProjectUpdate }[] = [];
+    let serverProject: AitoProject;
+    let noOpConsumed = false;
+    vi.spyOn(api, 'updateAitoProject').mockImplementation((_id, patch) => {
+      calls.push({ patch: patch as AitoProjectUpdate });
+      if (patch.expected_version !== undefined && patch.expected_version !== serverProject.version) {
+        return Promise.reject(new ApiError('stale', 409, 'version_conflict'));
+      }
+      if (!noOpConsumed) {
+        // The first accepted write is a genuine no-op (unchanged shipping
+        // fields) — models a server that does not bump the version when
+        // nothing actually changed, so this client's own ack is
+        // {from: 3, to: 3}.
+        noOpConsumed = true;
+        serverProject = { ...serverProject, ...patch };
+        return Promise.resolve(serverProject);
+      }
+      serverProject = { ...serverProject, ...patch, version: serverProject.version + 1 };
+      return Promise.resolve(serverProject);
+    });
+
+    const project = makeProject({
+      id: 13,
+      version: 3,
+      shipping_island: 'rangiroa',
+      shipping_service: 'tuamotu',
+      shipping_service_name: 'Livraison Avion Tuamotu',
+      shipping_first_name: 'Jean',
+      shipping_last_name: 'Pierre',
+      shipping_phone: '+689-89645864',
+      shipping_price: 3200,
+    });
+    serverProject = project;
+    const client = renderPanelReactive(project);
+
+    // 1. This client saves the shipping editor unchanged, captured at 3 —
+    //    a genuine no-op that the stand-in server accepts without moving
+    //    the version. `ownAckedVersion` now holds {from: 3, to: 3}.
+    await userEvent.click(screen.getByRole('button', { name: /edit shipping/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0].patch.expected_version).toBe(3);
+    expect(serverProject.version).toBe(3);
+    // The editor closes on success.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /edit shipping/i })).toBeInTheDocument();
+    });
+
+    // 2. A peer's write lands: server -> 4. The board refetches.
+    serverProject = { ...serverProject, shipping_phone: '+689-11111111', version: 4 };
+    act(() => {
+      client.setQueryData(['aito-projects'], [serverProject]);
+    });
+
+    // 3. A brand-new shipping session opens AFTER that refresh, correctly
+    //    capturing 4.
+    await userEvent.click(screen.getByRole('button', { name: /edit shipping/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(calls).toHaveLength(2));
+    // Must be 4 (this session's own fresh capture), not 3 (the unmoved,
+    // unrelated ack from step 1).
+    expect(calls[1].patch.expected_version).toBe(4);
+
+    // 4 matches the server's actual version -> succeeds, no false conflict.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /edit shipping/i })).toBeInTheDocument();
+    });
+    expect(serverProject.version).toBe(5);
+  });
+});

@@ -427,3 +427,390 @@ byte-identical file (no new `def`/`class`, export, or route dependency was
 added — only field-level constraints changed). Backend sysmon coverage for
 the Aito subset held at 38 missed statements (the ratchet), with all three
 new bounds fully exercised by the tests above.
+
+## T-038 — 2026-08-12 — user-approved behavior change
+
+`_broadcast_changed` (routes/aito.py) fanned every `aito_changed` message —
+action, project id, and the acting operator's username — out to *every*
+WebSocket connection via `ws_manager.broadcast()`, which walks
+`active_connections` with no filtering at all. The same is true of
+`aito_presence_state` (`core/websocket.py`), the full `{project_id:
+[usernames...]}` viewer map, sent unconditionally to every newly-connected
+socket at connect time and rebroadcast to everyone on every presence change
+or disconnect. Admission to `active_connections` requires only
+`Permission.WEBSOCKET_CONNECT`, and the default Viewers group holds that
+permission but zero `aito:*` permissions — so an account that gets 403 from
+`GET /api/v1/aito/` nonetheless received a live stream of every board
+mutation and the full presence map, a permission boundary the product
+defines explicitly elsewhere.
+
+This task's fix genuinely required editing `core/websocket.py` and
+`routes/websocket.py` — both outside this campaign's Aito file fence — to
+reach the connect handler and the `ConnectionManager` that owns
+`active_connections`. The user widened the fence for T-038 only (round 2
+approval sweep), after this worker's scope assessment identified exactly
+those two files and confirmed no correct fix could be built from
+`routes/aito.py` alone: the presence-state fan-out in particular has no
+code path through `routes/aito.py` at all, so a workaround confined to
+that file was not just inferior but structurally impossible for half the
+task.
+
+`routes/websocket.py`'s connect handler now stamps
+`websocket.state.aito_read: bool` once, alongside the existing
+`bambuddy_principal` / `bambuddy_principal_user_id` stamps, via a new
+private helper `_resolve_principal_and_aito_read(principal, db)`. The
+value is `not auth_required` by default (True on an auth-disabled
+install — no principal is ever verified there, so there is nothing to
+check, and every connection keeps seeing everything unchanged) and,
+for a non-empty `principal`, becomes that resolved user's
+`Permission.AITO_READ` (`User.has_permission` short-circuits True for
+admins already, so admins are unaffected). An API-key connection's
+`principal` is `""` (never `None` on a valid token — `verify_websocket_token`'s
+own contract), which is falsy and skips resolution entirely, leaving the
+fail-closed default; the same fail-closed default applies to a username
+that no longer resolves to a user row (e.g. deleted after the token was
+minted) and to a DB error during resolution. `core/websocket.py` gained
+`ConnectionManager.broadcast_aito()`, structurally identical to the
+existing unfiltered `broadcast()` except it skips any connection where
+`getattr(connection.state, "aito_read", True)` is falsy — the `True`
+default only protects a connection that was somehow never stamped
+(should not happen; `connect()` always stamps it) from being silently
+dropped, it is not how the auth-disabled path passes (that is the stamp
+itself being `True`). `_broadcast_changed` (routes/aito.py) and both
+internal `aito_presence_state()` broadcasts in `core/websocket.py`
+(`set_aito_presence` and `disconnect`) now go through `broadcast_aito()`
+instead of `broadcast()`. The initial per-connection presence send in
+`routes/websocket.py` (previously unconditional) is now gated on
+`websocket.state.aito_read`. No other broadcast call site (printer
+status, print start/complete, archive events, queue toasts, spool
+warnings, `broadcast_to_user`) was touched — they all still call the
+original unfiltered `broadcast()` / `broadcast_to_user()`.
+
+Observable change, quoting the approved description verbatim: "a
+logged-in user in a group without aito:read (e.g. the default Viewers
+group) would stop receiving aito_changed and aito_presence_state
+messages, so any UI they have that reacts to those would go quiet; users
+holding aito:read see no change." Principals affected: any WebSocket
+connection whose resolved user does not hold `aito:read` and is not an
+admin (the default Viewers group, and any custom group omitting
+`aito:read`) — for those connections, `aito_changed` broadcasts and both
+the initial and subsequent `aito_presence_state` broadcasts are silently
+skipped; nothing else about the connection changes. Principals NOT
+affected: any user holding `aito:read` (including the default Operators
+group and any custom group granting it), any admin (group- or
+legacy-role-based), any connection on an auth-disabled instance, and API
+keys are also filtered (fail-closed, since an API key's granted scope
+flags only cover `WEBSOCKET_CONNECT` itself, not `Permission.AITO_READ`
+specifically, so there was no positive evidence to admit them on — this
+is a new restriction for API-key WebSocket connections specifically,
+called out here because it was not explicitly named in the approved
+description, which spoke to "a logged-in user in a group"). No other
+message type, payload shape, or broadcast timing changed for any
+principal.
+
+Confirmed via 12 new tests in
+`backend/tests/unit/test_ws_aito_read_filter.py`: `broadcast_aito` skips a
+connection stamped `aito_read=False` and delivers to one stamped
+`aito_read=True`, defaults to `True` for a never-stamped connection, and
+does not affect an unrelated `broadcast()` call (`send_printer_status`)
+reaching a connection with `aito_read=False`; `_resolve_principal_and_aito_read`
+denies a plain user, allows a user granted `aito:read`, allows an admin
+with no explicit Aito grant, and fails closed for an unresolvable
+principal; and four tests drive the real `websocket_endpoint` end-to-end
+(against a throwaway `ConnectionManager` instance, never the global
+singleton — matching every other test in this file) proving the initial
+presence-state send is withheld without `aito:read`, sent with it, sent
+for an admin, and sent unconditionally with auth disabled (asserting
+`verify_websocket_token` is never even called in that path). The existing
+`test_aito_broadcasts.py` fixture was updated to patch
+`ws_manager.broadcast_aito` instead of `ws_manager.broadcast` (the call
+site it now targets); its assertions on which actions broadcast, and
+when, are unchanged.
+
+`tools/snapshot.py verify` shows 9/9 probes matching — none of the nine
+goldens touch WebSocket wiring. `SURFACE.md` is unaffected: `bash
+tools/gen_surface.sh` produces a byte-identical file — the generator does
+not scrape `core/websocket.py` or `routes/websocket.py` at all (verified,
+not assumed), and no `def`/`class` was added to `routes/aito.py` (the only
+in-scope file the generator does scrape) — `_broadcast_changed`'s body
+changed but its signature and name did not. Backend sysmon coverage for
+the Aito subset (`--include='*aito*'`) held at 38 missed statements, exactly
+at the ratchet — `core/websocket.py` and `routes/websocket.py` are outside
+that include glob, so the two changed/added files there are deliberately
+covered by the new test file above rather than by the ratchet. (An earlier
+revision of this entry misreported this as 36, from a coverage pass that
+also hit two unrelated known flakes; corrected after a clean re-measurement
+and cross-checked by the T-046 worker and the blind verifier, both of whom
+independently got 38.)
+
+## T-046 — 2026-08-12 — user-approved behavior change
+
+`update_project`'s (`routes/aito.py`, `PATCH /api/v1/aito/{project_id}`)
+`expected_version` guard was check-then-act: `if payload.expected_version
+!= (project.version or 0): raise 409` ran against a plain SELECT near the
+top of the handler, but the actual write happened much later — after
+`rates = await _shipping_rates(db)`, which calls
+`zoho_service.get_shipping_catalogue(db)` with its default `refresh=True`
+and can be a live Books HTTP call on a cold or expired (>24h) cache.
+Two operators saving the same card inside that window both read the same
+version, both passed the guard, and both wrote: the second `UPDATE`
+landed on top of the first with neither operator seeing the 409 the guard
+exists to produce, silently dropping one of their edits.
+
+Confirmed before changing anything: the guard genuinely ran before
+`_shipping_rates` (not after); `get_shipping_catalogue`'s own docstring
+confirms the default is a real network call, contrasted explicitly with
+the cache-only `refresh=False` used by the adjacent `_shipping_names`;
+and `version` is bumped by an ORM `before_update` event listener
+(`_bump_version_on_content_change` in `models/aito_project.py`) keyed off
+SQLAlchemy's own dirty-attribute tracking for a fixed `VERSIONED_FIELDS`
+set — not by any SQL this handler constructs directly, and not
+unconditionally (background writers such as quote sync, rule moves, and
+flag toggles must not bump it).
+
+**Deployment reality, checked in `core/database.py` before judging
+severity**: this app is not SQLite-only. `settings.database_url` prefers
+`DATABASE_URL` from the environment (PostgreSQL support) and only falls
+back to a local `sqlite+aiosqlite` file. On PostgreSQL the race is exactly
+as the audit describes — READ COMMITTED, no row lock, no conditional
+UPDATE, the second writer simply overwrites the first. On SQLite it is
+**not** meaningfully less reachable than advertised: the pool is
+`pool_size=20 + max_overflow=200` in WAL mode (`_resolve_pool_kwargs`),
+i.e. genuinely concurrent connections, and WAL's writer serialization
+only orders the two `COMMIT`s — it does not make either write conditional
+on the other, so a second, later-committing writer still blindly
+overwrites the first's changes. The bug is really an application-level
+check-then-act race reachable by any two requests interleaved on the same
+async event loop; the database engine mostly affects how many physical
+writers can pile up, not whether the race exists.
+
+**Fix.** Two guards now exist rather than one, and only the second closes
+the race:
+1. The original top-of-function compare is unchanged, preserved verbatim
+   for its fast-fail behaviour — a request that is already stale when it
+   arrives still gets an immediate 409 with no wasted `_shipping_rates`
+   call and no other validation performed, exactly as before.
+2. A new atomic re-check, `_claim_expected_version`, runs immediately
+   after `_shipping_rates` and before any `setattr` on the project — with
+   no network call between the compare and the write that follows. It
+   issues `UPDATE aito_projects SET version = version WHERE id = :id AND
+   version = :expected` (a deliberate no-op `SET`, purely to claim the
+   row) via SQLAlchemy Core with `synchronize_session=False`, and 409s on
+   `rowcount == 0`. This is evaluated by the database against the LIVE
+   row, not a Python-side snapshot, and the `UPDATE` takes the row's write
+   lock for the remainder of the transaction — a concurrent claim on the
+   same row either wins outright or blocks until this transaction resolves
+   and then sees the version has already moved. This is shape (i) from the
+   audit (atomic conditional UPDATE, 409 on rowcount 0), not shape (ii)
+   (re-read-and-compare): a raw UPDATE was chosen over reproducing the
+   ORM's own field-write flow because the guard only ever self-assigns the
+   `version` column, so it cannot race the ORM's `before_update` listener,
+   double-bump the version, or disturb `_mark_pending_if_ours` / event
+   recording, all of which still run exactly as before, in the same
+   transaction, immediately afterward.
+
+**Correction (2026-08-13), caught by the blind verifier — the first cut of
+this fix was not actually inert.** `.values(version=AitoProject.version)`
+was meant to be a total no-op, but `AitoProject.updated_at` carries
+`onupdate=func.now()` (`models/aito_project.py`), and SQLAlchemy Core
+auto-appends a column's `onupdate` default to a statement's SET clause for
+any column absent from `.values()` — confirmed by inspecting the compiled
+SQL directly rather than assuming: the claim's emitted statement was
+`UPDATE aito_projects SET updated_at=CURRENT_TIMESTAMP, version =
+aito_projects.version WHERE …`. So the claim was quietly bumping
+`updated_at` on **every** guarded PATCH, including a genuine no-op one
+that touches no `VERSIONED_FIELDS` and for which `version` correctly does
+NOT move — exactly the case the versioning system exists to treat as a
+non-edit. `updated_at` is not internal bookkeeping: it orders the Done and
+Trash grids (`routes/aito.py`, `order_by(AitoProject.updated_at.desc())`)
+and feeds `AitoProjectResponse.updated_at`, which drives CardView's
+elapsed-time badge and `ProjectDetailPanel`'s activity-timestamp fallback.
+`ShippingCard.save` and `saveSocial` have no unchanged-value suppression
+(unlike `saveDescription`), so an operator opening the shipping or social
+editor and clicking Save with nothing changed was silently reordering that
+card in Done/Trash and resetting its displayed age. Fixed by pinning
+`updated_at` explicitly in the claim's own `.values()`:
+`.values(version=AitoProject.version, updated_at=AitoProject.updated_at)`
+— re-inspecting the compiled SQL confirms this suppresses the `onupdate`
+default (`SET updated_at=aito_projects.updated_at, version =
+aito_projects.version …`, no `CURRENT_TIMESTAMP` anywhere), and an
+end-to-end probe against the real route (real second-resolution
+timestamps, `create` → guarded no-op PATCH → unguarded control PATCH →
+guarded real edit) shows `updated_at` held constant across the first two
+and moved only on the third, matching `version`'s own 0 / 0 / 1
+progression. The real ORM flush that follows a successful claim — the one
+`_bump_version_on_content_change` drives for a genuine `VERSIONED_FIELDS`
+change — was never affected either way: it still sets `updated_at` via
+its own normal `onupdate` firing, since that write is a separate,
+subsequent statement the claim's pinned SET has no bearing on.
+
+The guard remains opt-in: `payload.expected_version is None` skips both
+checks entirely, unchanged for the several one-shot actions that
+deliberately never send it. A matching `expected_version` still succeeds.
+The existing 409's shape — status 409, `{"code": "version_conflict",
+"message": "Project was updated by someone else"}` — is byte-identical
+whichever of the two checks raises it, so the frontend's existing
+conflict-toast handling (T-047's half of this fix) needs no changes here.
+
+**Observable consequence, in user terms:** two operators who open the
+same card and save inside the (now much narrower, but on Postgres never
+fully absent even before this fix) window between one save's shipping
+catalogue fetch and its commit will no longer silently have one edit
+vanish — the second save now gets a 409 "Project was updated by someone
+else" and must refresh and reapply, same as the fast-fail path already
+behaved for a save that started stale. **When it actually bites:** almost
+never in a single-worker SQLite deployment doing ordinary detail-panel
+edits (an operator would have to save a *shipping* field, forcing a
+possibly-uncached Zoho fetch, in the same few-hundred-millisecond window
+another operator commits a save to the identical card) — but it is a real
+and previously-silent data-loss path on any multi-connection deployment,
+which includes this app's own default SQLite configuration once more than
+one request is genuinely in flight, and is most reachable on the
+PostgreSQL configuration this app explicitly supports via `DATABASE_URL`.
+
+Tested in `backend/tests/unit/test_aito_version.py`:
+`test_racing_writers_only_the_loser_gets_409` drives the race
+deterministically (not by timing), per the brief, by monkeypatching
+`zoho_service.get_shipping_catalogue` to commit a competing edit — through
+the exact `db` session `update_project` already holds — before returning
+rates to the stalled request, then asserts the stalled request gets 409
+`version_conflict` and the competing edit's data (description and
+version) survive untouched, including that the loser's shipping payload
+never landed. (A genuinely separate second connection could not be driven
+deterministically over this test harness's single in-memory SQLite
+connection without reproducing exactly the flakiness this fix targets;
+committing through the same session still exercises the real guard
+mechanism — a live, database-evaluated compare-and-claim rather than a
+stale Python-side snapshot.) The three pre-existing tests in the same
+file — stale-version-conflicts, matching-version-passes,
+omitted-version-skips-the-check — all still pass unmodified, confirming
+the non-race paths are byte-identical to before. Added for the
+`updated_at` correction above, and pinning the distinction in both
+directions: `test_guarded_noop_patch_does_not_bump_updated_at` stamps a
+sentinel `updated_at`, sends a guarded PATCH that repeats the stored
+description (no `VERSIONED_FIELDS` change), and asserts `updated_at` is
+still the sentinel; its companion,
+`test_guarded_real_edit_still_bumps_updated_at`, does the same setup but
+sends a genuinely new description and asserts `updated_at` has moved —
+proving the pin suppresses `onupdate` for the claim's own no-op statement
+without suppressing it for the real write that follows.
+
+`tools/snapshot.py verify`: 9/9. `SURFACE.md` unaffected (`bash
+tools/gen_surface.sh` byte-identical) — the new helper
+`_claim_expected_version` is underscore-prefixed. Backend sysmon coverage
+for the Aito subset (`--include='*aito*'`): this worker measured 38 missed
+statements consistently across the original change, unmodified HEAD (three
+separate clean full-suite runs), and again after the `updated_at`
+correction above — never anything else. The blind verifier separately
+measured unmodified HEAD twice, one run completely clean (10145 passed, 0
+failed), and got 38 both times too. The 36-vs-38 discrepancy this entry
+originally flagged for reconciliation is now SETTLED at 38: `BASELINE.md`'s
+documented "≤38 … RATCHET IN FORCE" figure was right, and T-038's
+changelog entry's "36" above should be read as superseded by this note.
+
+## T-047 — 2026-08-12 — user-approved behavior change
+
+`useProjectPatchMutation`'s `ownAckedVersion` map (added by T-012, above) let
+a same-client back-to-back save skip re-fighting a conflict against itself by
+raising a session's captured `expected_version` to
+`Math.max(patch.expected_version, ownAckedVersion.get(project.id))` — i.e. to
+this client's own freshest acked version for the project, unconditionally.
+That was too broad: it raised the captured version whenever this client had
+acked ANY newer version for the project, regardless of whether that ack
+actually descended from the same base the (possibly long-since-stale) open
+editor was built on. Repro: operator A opens the Shipping editor
+(`expected_version` captured at server version 5); operator B corrects the
+shipping phone number elsewhere, moving the server to 6; A's board refetches
+on the `aito_changed` WS event, but A's already-open shipping draft does not;
+A then saves something unrelated (the description panel), captured fresh at
+6, which succeeds and moves the server to 7, updating A's own
+`ownAckedVersion` entry to 7; A finally clicks Save on the still-open,
+now-doubly-stale Shipping editor — under the old `Math.max`,
+`expected_version` was raised from 5 to `max(5, 7) = 7`, which matched the
+server's actual version and let A's v5 shipping values silently overwrite
+B's correction with no 409, no conflict toast, and the wrong phone number
+went out on the Books quote line.
+
+Fixed by storing the ack as the pair it came from —
+`{from: expectedVersionSent, to: responseVersion}` — instead of just the
+resulting version, and only raising a session's captured version — NEVER
+lowering it — when the ack's own `from` is `<=` that captured version, i.e.
+only when the ack genuinely descends from the same base the open editor
+session was built on:
+`acked && acked.from <= patch.expected_version ? Math.max(patch.expected_version, acked.to) : patch.expected_version`.
+In the repro above, the description save's ack is `{from: 6, to: 7}`; the
+stale Shipping session's captured version is 5; since `6 <= 5` is false, the
+raise no longer applies and the Shipping save now sends its own unraised
+`expected_version: 5`, which the server rejects with 409 `version_conflict`
+(the same guard T-046, above, made atomic).
+
+**The same-client back-to-back-save case T-012 introduced this map to fix is
+preserved.** Walked with numbers: both the description and the immediately-
+following shipping save in that burst capture the SAME pre-burst version
+(say 1, before either PATCH has resolved); when the first PATCH resolves
+(server -> 2), its own ack is recorded as `{from: 1, to: 2}`; the second,
+already-queued session's captured version is also 1, and `1 <= 1` is true, so
+it correctly inherits `Math.max(1, 2) = 2` and does not re-fight a conflict
+against itself. This is exactly `AitoDetailPanelOptimistic.test.tsx`'s F2
+suite, which is unchanged and still passes.
+
+**CORRECTION (same task, follow-up commit, same day):** the first revision
+of this fix substituted `acked.to` outright behind the descent check instead
+of `Math.max(patch.expected_version, acked.to)`. The blind verifier caught
+that this could LOWER a session's captured version below what it had
+genuinely, freshly captured — the exact mirror image of the bug this task
+set out to fix, reached via a different sequence: this client's OWN save
+moves the server ahead (e.g. 3 -> 4, ack `{from: 3, to: 4}`); a peer's write
+then moves it further (-> 5); a session opened FRESH, after that peer write,
+correctly captures the already-current 5. The descent check (`acked.from`
+3 `<=` 5) passes, so outright substitution sent the ack's `to` (4) — OLDER
+than the session's own fresh capture — drawing a false 409 against a save
+that was never stale, recoverable only because `onError` clears the session
+ref so a retry falls back to `latestProjectVersion`. `Math.max` closes this:
+it still raises the capture when the ack is newer (the F2 and original-repro
+cases above), but never lowers it below what the session already captured.
+
+Observable change, quoting the approved description verbatim: "A save from
+an editor left open across someone else's write would start failing with
+the version-conflict toast instead of silently overwriting them." The
+corrected mechanism additionally guarantees a session that captures a
+version at least as fresh as this client's last unrelated ack is never
+penalized for that ack being older — it always sends its own capture (or
+higher), never lower.
+
+Tested in `AitoDetailPanelOptimistic.test.tsx`: a suite (`T-047 — a stale
+session left open across a peer's write does not inherit a later, unrelated
+ack`) with three cases. (1) The original cross-operator repro above drives a
+stand-in server that 409s on a mismatched `expected_version`, and asserts on
+the `expected_version` actually sent on the wire for both the intervening
+description save (6) and the stale shipping save (5, not raised to 7) — not
+just on the resulting 409, since the wire value is what the whole mechanism
+turns on; it also asserts the shipping editor stays open and that B's phone
+correction survives untouched in the board cache. (2) An S1 case pins the
+correction above: this client's own save (3 -> 4), a peer's write (-> 5), a
+brand-new session captured at 5 — asserts the sent value is 5 (not the older
+ack's 4) and that the save succeeds with no conflict. (3) An S3 case pins
+the same hazard reached through a no-op ack (`{from: 3, to: 3}`, a real
+shipping-card PATCH that the stand-in server accepts without moving the
+version): a peer's write moves the server to 4, a brand-new session captured
+at 4 must send 4 (not the unmoved ack's 3) and succeed. The pre-existing F2
+(same-client burst), T-012 (cross-operator guard on the description session)
+and T-021 (map does not leak across tests) suites all pass unmodified — 10/10
+in the file (8 pre-existing + the original T-047 case + S1 + S3), run both
+in isolation and inside the full suite.
+
+`tools/snapshot.py verify`: 9/9, both before and after this change (and its
+follow-up correction), byte-identical (`aito-frontend-pure`'s probe
+exercises `aitoOptimistic` / `aitoBoard` / `aitoAging` / `aitoSearch` /
+`aitoSummary` / `aitoBoardRules` only — it does not import
+`useProjectPatchMutation.ts` — so this change was never expected to move it,
+and `git status --porcelain snapshots/` was empty after verifying). `bash
+tools/gen_surface.sh` diff against `SURFACE.md`: empty both before and
+after — the map's value type changed from `number` to
+`{from: number; to: number}` but no export was added, renamed or removed.
+Frontend Aito coverage gate, unchanged by the follow-up correction:
+statements 1787/1918 (131 missed), branches 1765/1979 (214 missed),
+functions 603/647 (44 missed), lines 1574/1649 (75 missed) — all four
+exactly at the existing ratchet ceiling, no regression. `npm run lint` and
+`npm run build` both clean; `static/` reverted via `git checkout -- static/`
+after building, nothing under it committed.

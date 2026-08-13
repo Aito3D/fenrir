@@ -37,7 +37,7 @@ class ConnectionManager:
         broadcast() takes the same lock and would deadlock inside it."""
         async with self._lock:
             websocket.state.aito_project_id = project_id
-        await self.broadcast(self.aito_presence_state())
+        await self.broadcast_aito(self.aito_presence_state())
 
     async def disconnect(self, websocket: WebSocket):
         """Remove a WebSocket connection."""
@@ -47,7 +47,7 @@ class ConnectionManager:
             if websocket in self.active_connections:
                 self.active_connections.remove(websocket)
         if had_presence:
-            await self.broadcast(self.aito_presence_state())
+            await self.broadcast_aito(self.aito_presence_state())
 
     async def broadcast(self, message: dict[str, Any]):
         """Broadcast a message to all connected clients."""
@@ -64,6 +64,55 @@ class ConnectionManager:
                     disconnected.append(connection)
 
             # Clean up disconnected clients
+            for conn in disconnected:
+                if conn in self.active_connections:
+                    self.active_connections.remove(conn)
+
+    async def broadcast_aito(self, message: dict[str, Any]):
+        """Broadcast an Aito board message (``aito_changed`` /
+        ``aito_presence_state``) only to connections whose stamped Aito
+        authority allows it (T-038 / GHSA follow-up).
+
+        ``routes/websocket.py`` stamps ``websocket.state.aito_read`` — True
+        on auth-disabled installs and for any resolved principal holding
+        ``Permission.AITO_READ`` (admins included, via
+        ``User.has_permission``'s short-circuit), False otherwise — a short
+        while *after* ``connect()`` (this class's own method) admits the
+        socket into ``active_connections``: ``connect()`` only accepts and
+        registers the connection, the stamp itself happens roughly thirty
+        lines later in the route handler, once the auth token has been
+        resolved to a principal and (for a non-empty principal) that
+        principal's permissions have been looked up. So there is a brief,
+        real window, between those two points, where a connection is
+        already reachable by ``broadcast_aito`` but has not been stamped
+        yet. The ``getattr(..., True)`` default is what that window relies
+        on: an unstamped connection is treated exactly like a permitted
+        one, matching the same fail-open shape the pre-existing
+        ``bambuddy_principal_user_id`` stamp already has for
+        ``broadcast_to_user``. Defaulting True here is the safe direction —
+        it costs nothing for any non-Aito feature (this method is used ONLY
+        for the two Aito fan-outs, so the window can only ever affect
+        whether an about-to-be-stamped connection catches one extra Aito
+        message, never any other broadcast), and it guarantees that a
+        connection is never silently muted by a stamp that has not run yet.
+        Every other broadcast (printer status, print start/complete,
+        archive events, queue toasts, spool warnings) keeps calling the
+        unfiltered ``broadcast()`` above and is untouched by this filter.
+        """
+        if not self.active_connections:
+            return
+
+        data = json.dumps(message)
+        async with self._lock:
+            disconnected = []
+            for connection in self.active_connections:
+                if not getattr(connection.state, "aito_read", True):
+                    continue
+                try:
+                    await connection.send_text(data)
+                except Exception:
+                    disconnected.append(connection)
+
             for conn in disconnected:
                 if conn in self.active_connections:
                     self.active_connections.remove(conn)

@@ -23,6 +23,7 @@ from sqlalchemy import select
 
 from backend.app.core.auth import is_auth_enabled, verify_websocket_token
 from backend.app.core.database import async_session
+from backend.app.core.permissions import Permission
 from backend.app.core.websocket import ws_manager
 from backend.app.models.user import User
 from backend.app.services.printer_manager import printer_manager, printer_state_to_dict
@@ -35,6 +36,32 @@ router = APIRouter()
 # is 4000-4999 per RFC 6455). The SPA distinguishes 4401 from network
 # drops and refetches a token instead of retrying with the old one.
 _WS_CLOSE_UNAUTHORIZED = 4401
+
+
+async def _resolve_principal_and_aito_read(principal: str, db) -> tuple[int | None, bool]:
+    """Resolve ``(principal_user_id, aito_read)`` for a non-empty ``principal``.
+
+    Only called when ``principal`` is truthy — the caller keeps the
+    auth-disabled (``None``) and API-key (``""``, never ``None`` on a valid
+    token — see ``verify_websocket_token``) cases out of this function
+    entirely, defaulting both to ``not auth_required`` instead. An API
+    key's scope flags only gate ``WEBSOCKET_CONNECT`` itself (the standard
+    allowlist), not ``Permission.AITO_READ`` specifically, so there is no
+    evidence here to act on for that case.
+
+    ``principal_user_id`` feeds ``ws_manager.broadcast_to_user()``
+    (unchanged by T-038). ``aito_read`` feeds ``ws_manager.broadcast_aito()``
+    (T-038 / GHSA follow-up) and gates the initial presence-state send —
+    it is the resolved user's ``Permission.AITO_READ``
+    (``User.has_permission`` short-circuits True for admins already), or
+    False when the username no longer resolves to a user (e.g. deleted
+    after the token was minted) — fail closed, not guessed at.
+    """
+    row = await db.execute(select(User).where(User.username == principal))
+    principal_user = row.scalar_one_or_none()
+    principal_user_id = principal_user.id if principal_user is not None else None
+    aito_read = principal_user is not None and principal_user.has_permission(Permission.AITO_READ)
+    return principal_user_id, aito_read
 
 
 @router.websocket("/ws")
@@ -93,15 +120,25 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
     # per message. Auth-disabled path keeps None (broadcast_to_user fans
     # out to all when target is None — matches the legacy single-user
     # toast behaviour). API-keyed principal is empty string → None.
+    #
+    # T-038 / GHSA follow-up: while resolving the user, also stamp the
+    # connection's Aito board authority (``aito_read``) so
+    # ``ws_manager.broadcast_aito()`` can filter ``aito_changed`` /
+    # ``aito_presence_state`` fan-out without a per-message permission
+    # query. Defaults to ``not auth_required`` (see
+    # ``_resolve_principal_and_aito_read`` for why) and is only refined by
+    # that helper when ``principal`` is non-empty. Same fail-closed default
+    # on a DB error here.
     principal_user_id: int | None = None
+    aito_read = not auth_required
     if principal:
         try:
             async with async_session() as db:
-                row = await db.execute(select(User.id).where(User.username == principal))
-                principal_user_id = row.scalar_one_or_none()
+                principal_user_id, aito_read = await _resolve_principal_and_aito_read(principal, db)
         except Exception:  # SEC-AUTH-EXC: resolution failure is non-fatal — degrades to no per-user routing
             logger.warning("WebSocket principal resolve failed for %s", principal, exc_info=True)
     websocket.state.bambuddy_principal_user_id = principal_user_id
+    websocket.state.aito_read = aito_read
     logger.info("WebSocket client connected")
 
     try:
@@ -123,8 +160,11 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
 
         logger.info("Sent initial status for %s printers", len(statuses))
 
-        # Send initial Aito presence state (who is viewing which project).
-        await websocket.send_json(ws_manager.aito_presence_state())
+        # Send initial Aito presence state (who is viewing which project) —
+        # gated on the connection's stamped Aito authority (T-038): a
+        # principal without AITO_READ never sees who is viewing what.
+        if websocket.state.aito_read:
+            await websocket.send_json(ws_manager.aito_presence_state())
 
         # Keep connection alive and handle incoming messages.
         while True:

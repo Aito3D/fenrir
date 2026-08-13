@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -655,7 +655,9 @@ async def _broadcast_changed(action: str, project_id: int | None, actor: str | N
     twelve mutations.
     """
     try:
-        await ws_manager.broadcast({"type": "aito_changed", "action": action, "project_id": project_id, "actor": actor})
+        await ws_manager.broadcast_aito(
+            {"type": "aito_changed", "action": action, "project_id": project_id, "actor": actor}
+        )
     except Exception:
         logger.warning("aito_changed broadcast failed for %s on project %s", action, project_id, exc_info=True)
 
@@ -1746,6 +1748,54 @@ async def move_project(
     return await _project_response(db, project, summary)
 
 
+async def _claim_expected_version(db: AsyncSession, project: AitoProject, expected: int) -> bool:
+    """Atomically claim the right to write `project`, for `update_project`'s
+    `expected_version` guard (T-046).
+
+    A plain ``if expected != project.version`` compares against a SELECT that
+    may be arbitrarily stale by the time the row is actually written — this
+    handler can sit behind a live Zoho catalogue fetch (`_shipping_rates`) in
+    between. Two operators who both read version 5 both pass that compare,
+    and the second write lands on top of the first with neither seeing a
+    conflict.
+
+    This closes the window instead of narrowing it: `UPDATE ... WHERE id =
+    :id AND version = :expected` is evaluated by the database against the
+    LIVE row, not a Python-side snapshot, and taking the row's write lock is
+    what makes it atomic — a concurrent caller racing the same claim either
+    sees the pre-update version (and wins, if it gets there first) or blocks
+    until this transaction resolves and then evaluates the WHERE clause
+    against the now-changed row (and loses). `SET version = version` is a
+    deliberate no-op: this claims the row, it does not bump it — the real
+    bump is still `_bump_version_on_content_change`'s job, unconditionally
+    triggered by the ORM writes that follow in the same transaction.
+
+    Returns True if the caller may proceed, False if the version has already
+    moved and the caller should 409.
+    """
+    result = await db.execute(
+        update(AitoProject)
+        .where(AitoProject.id == project.id, AitoProject.version == expected)
+        # `updated_at` must be pinned explicitly, or it is NOT a no-op: the
+        # column is `onupdate=func.now()`, and Core auto-appends a column's
+        # `onupdate` default to the SET clause for any column absent from
+        # `.values()` — self-assigning `version` alone left `updated_at`
+        # silently getting `CURRENT_TIMESTAMP` here, on every guarded PATCH,
+        # even a no-op one that touches no VERSIONED_FIELDS and so must NOT
+        # move `updated_at` (verified emitted SQL both ways — see T-046's
+        # changelog entry). Naming `updated_at` here with its own current
+        # value suppresses that default, same as `version` above.
+        .values(version=AitoProject.version, updated_at=AitoProject.updated_at)
+        # `project` is already loaded and neither `version` nor `updated_at`
+        # is actually changing (see the no-op SET above), so there is
+        # nothing for the ORM to reconcile against the identity map here —
+        # and the default "evaluate" sync strategy cannot evaluate a
+        # column-valued SET expression client-side anyway.
+        .execution_options(synchronize_session=False)
+    )
+    return result.rowcount > 0
+
+
 @router.patch("/{project_id}", response_model=AitoProjectResponse)
 async def update_project(
     project_id: int,
@@ -1785,6 +1835,21 @@ async def update_project(
     rates = {}
     if _mentions_shipping(fields):
         rates = await _shipping_rates(db)
+
+    # Re-assert the guard here, ATOMICALLY, immediately before any field is
+    # written and with no network call between this compare and the write
+    # that follows — the top-of-function compare above is a plain SELECT and
+    # only fast-fails the common case; `_shipping_rates` just above can be a
+    # live Zoho HTTP call, and two operators who both passed that first
+    # compare can both still be here. See `_claim_expected_version`.
+    if payload.expected_version is not None and not await _claim_expected_version(
+        db, project, payload.expected_version
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "version_conflict", "message": "Project was updated by someone else"},
+        )
+
     # `current=project` so correcting ONE field of an existing shipment works
     # without resending the other three — the merged row is what has to be
     # consistent, not the payload.

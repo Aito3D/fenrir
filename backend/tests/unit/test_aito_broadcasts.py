@@ -20,7 +20,7 @@ async def _create(client, **overrides):
 @pytest.fixture
 def broadcast(monkeypatch):
     spy = AsyncMock()
-    monkeypatch.setattr("backend.app.api.routes.aito.ws_manager.broadcast", spy)
+    monkeypatch.setattr("backend.app.api.routes.aito.ws_manager.broadcast_aito", spy)
     return spy
 
 
@@ -69,7 +69,7 @@ async def test_no_op_quote_status_does_not_broadcast(async_client, broadcast, mo
 @pytest.mark.asyncio
 async def test_broadcast_failure_never_fails_the_request(async_client, monkeypatch):
     monkeypatch.setattr(
-        "backend.app.api.routes.aito.ws_manager.broadcast", AsyncMock(side_effect=RuntimeError("ws down"))
+        "backend.app.api.routes.aito.ws_manager.broadcast_aito", AsyncMock(side_effect=RuntimeError("ws down"))
     )
     response = await _create(async_client)
     assert response.status_code == 201
