@@ -284,8 +284,17 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
         the unusable value already swapped out. Only strings are degraded:
         a value already in the vocabulary passes through untouched, and
         anything that is not even a string (e.g. `quote_status: 42`) is left
-        for the `Literal` to reject as the genuinely malformed body it is."""
-        if isinstance(value, str) and value not in _QUOTE_STATUS_VALUES:
+        for the `Literal` to reject as the genuinely malformed body it is.
+
+        Also left for the `Literal` to reject: any string longer than 30
+        characters. Pre-T-009, this field carried `max_length=30`; that
+        constraint was dropped when the field became a `Literal` (any
+        over-length value was rejected by the vocabulary check anyway, so
+        the length cap was unobservable), but degrading unknown SHORT
+        statuses here made the gap observable again — without this check, a
+        >30-char status would silently become None instead of 422ing as it
+        did at BASE. Bounding the degrade path at 30 restores that parity."""
+        if isinstance(value, str) and len(value) <= 30 and value not in _QUOTE_STATUS_VALUES:
             return None
         return value
 

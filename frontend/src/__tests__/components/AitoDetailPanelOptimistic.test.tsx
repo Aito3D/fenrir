@@ -6,6 +6,7 @@ import { ProjectDetailPanel } from '../../components/aito/ProjectDetailPanel';
 import { AuthProvider } from '../../contexts/AuthContext';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { __resetBoardSync } from '../../hooks/useBoardSync';
+import { __resetOwnAckedVersion } from '../../components/aito/useProjectPatchMutation';
 import { api, ApiError } from '../../api/client';
 import type { AitoProject, AitoProjectUpdate } from '../../api/client';
 import { flashRevert } from '../../hooks/useRevertFlash';
@@ -119,6 +120,7 @@ function getDescriptionTextarea(): HTMLTextAreaElement {
 describe('ProjectDetailPanel optimistic writes', () => {
   beforeEach(() => {
     __resetBoardSync();
+    __resetOwnAckedVersion();
     vi.mocked(flashRevert).mockClear();
   });
   afterEach(() => vi.restoreAllMocks());
@@ -265,7 +267,10 @@ function renderPanelReactive(project: AitoProject) {
 }
 
 describe('F2 — self-conflict on back-to-back saves from one client (empirical)', () => {
-  beforeEach(() => __resetBoardSync());
+  beforeEach(() => {
+    __resetBoardSync();
+    __resetOwnAckedVersion();
+  });
   afterEach(() => vi.restoreAllMocks());
 
   // All three panel mutations build `expected_version: project.version` from
@@ -346,8 +351,56 @@ describe('F2 — self-conflict on back-to-back saves from one client (empirical)
   });
 });
 
+// T-021: `ownAckedVersion` (useProjectPatchMutation.ts) is a module-level map,
+// never pruned. The F2 suite above reuses project id 1 and — by design —
+// leaves that map holding `1 -> 3` when it finishes (the last `resolve()`
+// acks version 3). Without a per-test reset, THIS suite (also id 1) would
+// silently inherit that leftover entry: its typed edit session captures
+// `expected_version: 1`, but `useProjectPatchMutation`'s
+// `Math.max(patch.expected_version, ownAckedVersion.get(1))` would send `3`
+// instead — a wrong value on the wire, entirely dependent on F2 having run
+// first in this file. `__resetOwnAckedVersion()` in `beforeEach` is what
+// makes this test's outcome independent of file order.
+describe('T-021 — ownAckedVersion does not leak across tests reusing project id 1', () => {
+  beforeEach(() => {
+    __resetBoardSync();
+    __resetOwnAckedVersion();
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('sends the session-captured version, not a leftover acked version from an earlier test at the same id', async () => {
+    const calls: { patch: AitoProjectUpdate; resolve: (v: AitoProject) => void }[] = [];
+    vi.spyOn(api, 'updateAitoProject').mockImplementation(
+      (_id, patch) =>
+        new Promise<AitoProject>((resolve) => {
+          calls.push({ patch: patch as AitoProjectUpdate, resolve });
+        }),
+    );
+
+    // Same project id (1) and starting version (1) the F2 suite above used —
+    // if the reset above were missing, F2's leftover `1 -> 3` entry would
+    // corrupt this session's expected_version.
+    const project = makeProject({ id: 1, version: 1, description: 'old text' });
+    renderPanelReactive(project);
+
+    await userEvent.click(screen.getByRole('button', { name: /edit description/i }));
+    const box = getDescriptionTextarea();
+    await userEvent.clear(box);
+    await userEvent.type(box, 'new text');
+    await userEvent.tab();
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0].patch.expected_version).toBe(1);
+
+    calls[0].resolve({ ...project, description: 'new text', version: 2 });
+  });
+});
+
 describe('T-012 — cross-operator version guard on the description edit session', () => {
-  beforeEach(() => __resetBoardSync());
+  beforeEach(() => {
+    __resetBoardSync();
+    __resetOwnAckedVersion();
+  });
   afterEach(() => vi.restoreAllMocks());
 
   // T-012's exact repro: operator A opens the description editor at version 1

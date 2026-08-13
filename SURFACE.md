@@ -110,6 +110,7 @@ export type ServiceId
 1 export const restoreHoldDurationMs
 1 export const SOCIAL_ICONS
 1 export const SOCIAL_LABEL_KEYS
+1 export function __resetOwnAckedVersion
 1 export function AiSummaryPanel
 1 export function AitoPage
 1 export function BoardColumn

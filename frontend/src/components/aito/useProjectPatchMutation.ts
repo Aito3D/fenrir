@@ -20,6 +20,15 @@ import { showVersionConflictToast } from './versionConflictToast';
  *  on what "our own last save" saw. */
 const ownAckedVersion = new Map<number, number>();
 
+/** Test-only: module state survives between tests in one file (same pattern
+ *  as `__resetBoardSync` in `useBoardSync.ts`). Without this, a test that
+ *  reuses a project id another test in the same file already patched would
+ *  inherit that earlier test's acked version and could pass or fail
+ *  depending on execution order. */
+export function __resetOwnAckedVersion() {
+  ownAckedVersion.clear();
+}
+
 /** The `useOptimisticBoardMutation` wiring every project-PATCH mutation on
  *  the board shares — `ProjectDetailPanel`'s description save, its social
  *  save, and `ShippingCard`'s shipping save were three copies of this exact

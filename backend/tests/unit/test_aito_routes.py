@@ -1109,6 +1109,31 @@ async def test_create_degrades_a_blank_quote_status_to_none(async_client):
 
 
 @pytest.mark.asyncio
+async def test_create_degrades_an_unknown_status_at_exactly_thirty_chars(async_client):
+    """T-022: pins the degrade path's upper boundary. Pre-T-009 this field
+    carried `max_length=30`; a 30-char unknown status is still short enough
+    to be degraded to None like any other unrecognised value, matching
+    test_create_degrades_an_unknown_quote_status_to_none above."""
+    r = await _create(async_client, quote_id="EST-1", quote_status="x" * 30)
+    assert r.status_code == 201
+    assert r.json()["quote_status"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_with_an_over_length_quote_status_is_422(async_client):
+    """T-022: restores BASE parity. At BASE, `quote_status` carried
+    `max_length=30`, so anything longer 422'd; that cap was dropped when the
+    field became a `Literal` (T-009), and was unobservable at the time
+    because the Literal already rejected any such value. T-020 then added a
+    before-validator that degrades unrecognised strings to None — without a
+    length bound, that degrade path silently swallowed a >30-char status
+    into a 201 instead of the 422 it produced at BASE. This pins that the
+    31-char case still 422s, unlike the 30-char case above."""
+    r = await _create(async_client, quote_id="EST-1", quote_status="x" * 31)
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("status", ["draft", "sent", "viewed", "expired"])
 async def test_create_with_a_non_decided_status_and_no_quote_id_still_works(async_client, status):
     """T-009's gate only applies to DECIDED statuses ('accepted'/'declined').

@@ -212,3 +212,37 @@ unrelated pre-existing capped models `AitoProjectCreate` and
 `AitoSummarizeRequest`, are unchanged), and nothing else; re-recorded and
 re-verified 9/9. `aito-openapi` (paths-only) and `SURFACE.md` are both
 unaffected — confirmed byte-identical.
+
+## T-021 — 2026-08-12 — user-approved behavior change
+
+T-021 added `__resetOwnAckedVersion`, exported from
+`frontend/src/components/aito/useProjectPatchMutation.ts` alongside the
+pre-existing module-level `ownAckedVersion` map. It exists to close a
+test-isolation hazard: `ownAckedVersion` is never pruned, so a test that
+patches a given project id leaves an acked version behind for any later
+test in the same file that reuses that id. Every existing test in
+`AitoDetailPanelOptimistic.test.tsx` uses project id 1, and the F2 suite
+in that file (pinning T-012's same-client back-to-back-save race fix)
+resolves its second PATCH at version 3, so a later id-1 test's freshly
+captured `expected_version` could silently come back wrong depending on
+file/suite execution order. Demonstrated empirically, not just asserted:
+with the reset call temporarily removed from a new id-1 test's setup, that
+test's `expected_version` assertion failed with `expected 3 to be 1`
+(F2's leftover acked version leaking in); with the reset restored, the
+same test — and the whole file, run 3 times and twice more under
+`--sequence.shuffle.tests` with different seeds — passed consistently.
+
+The export is test-only and is never called from production code (grepped
+the codebase — its only callers are the new test's `beforeEach` hooks); the
+`ownAckedVersion` map's production semantics (never pruned, never reset at
+runtime, monotonic per project id) are unchanged. Nothing an end user, an
+API client, or the running app can observe changes.
+
+The only DECLARED-SURFACE effect is one added line in `SURFACE.md`'s
+frontend-components section — `export function __resetOwnAckedVersion` —
+because the surface generator scrapes every `export function` out of
+`frontend/src/components/aito/*.ts`. This mirrors existing precedent
+already on the surface at BASE: `export function __resetAitoPresence`,
+the same test-only reset-export pattern for a different module-level map.
+`tools/snapshot.py verify` shows 9/9 probes matching, unaffected by this
+change (none of the 9 probes touch this file or this export).
