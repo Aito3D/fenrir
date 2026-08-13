@@ -623,6 +623,18 @@ also hit two unrelated known flakes; corrected after a clean re-measurement
 and cross-checked by the T-046 worker and the blind verifier, both of whom
 independently got 38.)
 
+FOLLOW-UP (T-067, 2026-08-13, no new approval — this completes the change
+approved above, it does not start a new one): this entry's claim that
+`_broadcast_changed` was the only unfiltered emitter of `aito_changed` was
+incomplete. `aito_quote_sync.py`'s `run_sync_once` has its own,
+independent `aito_changed` broadcast (action `"quote-sync"`, sent after
+every background sync tick that commits a project) which T-038 never
+touched and which kept calling the unfiltered `ws_manager.broadcast()`.
+That is now routed through `ws_manager.broadcast_aito()` too, so the
+AITO_READ filter now covers both `aito_changed` emission sites, matching
+what this entry already described as the intended behavior. See T-067's
+own changelog entry for the fix and its regression test.
+
 ## T-046 — 2026-08-12 — user-approved behavior change
 
 `update_project`'s (`routes/aito.py`, `PATCH /api/v1/aito/{project_id}`)

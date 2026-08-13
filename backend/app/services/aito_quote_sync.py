@@ -484,6 +484,15 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         },
     )
     await _write_back_rounded_impression(db, project.id)
+    # `project.quote_status` may have been decided by a completely different
+    # session (routes/aito.py's set_quote_status) while create_estimate's
+    # network call above was in flight; this session never sees that commit
+    # on its own. Re-read it right before _apply_estimate's _DECIDED guard
+    # reads it -- a sync function cannot await mid-body, so the refresh has
+    # to happen here, at the one call site, rather than inside the guard
+    # itself. See _update_quote's identical refresh for the fuller story and
+    # this fix's own regression test.
+    await db.refresh(project, ["quote_status"])
     _apply_estimate(project, estimate, requeue_marker=requeue_marker)
     await record(
         db,
@@ -583,6 +592,21 @@ async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimat
     evidence about status in either direction, so neither is consulted and
     neither is written.
     """
+    # `project` was loaded by run_sync_once's db.get() before the caller's own
+    # get_estimate round trip (sync_project's sweep branch, the one call
+    # site), and this session never refreshes it on its own
+    # (expire_on_commit=False). A decision committed by a different session
+    # (routes/aito.py's set_quote_status, which bumps no _requeue_marker) while
+    # that network call was in flight would otherwise be invisible here, and
+    # this function would adopt Books' still-stale remote status straight over
+    # it. Full refresh, not just quote_status: the guards below also read
+    # quote_status_block/quote_status_remote, and set_quote_status writes all
+    # three together, so refreshing quote_status alone could leave this
+    # function comparing a fresh decision against a stale block record. Safe
+    # to refresh unconditionally: nothing on `project` has been mutated in
+    # this session between the db.get() that loaded it and this call. See
+    # this fix's own regression test for the interleaving.
+    await db.refresh(project)
     zoho_status = estimate.get("status") or ""
     local = project.quote_status
 
@@ -737,6 +761,18 @@ async def _reconcile_status(db: AsyncSession, project: AitoProject, estimate: di
     Returns True when the project is trashed, meaning the caller must not go on
     to rewrite the line items of a quote for a job that no longer exists.
     """
+    # `project` was loaded before the caller's `get_estimate` round trip
+    # (`_update_quote`, just above the one call site) and this session never
+    # refreshes it on its own (`expire_on_commit=False`, no eager reload
+    # elsewhere in this tick). Re-read `status` here, right before branching
+    # on it, so a trash/restore committed by another session WHILE that
+    # network call was in flight is not missed: acting on the stale cached
+    # value here is exactly what can decline a card someone just restored,
+    # against the live Books estimate, with nothing downstream able to
+    # repair it (see this fix's own regression test for the interleaving).
+    # Safe to refresh unconditionally: nothing on `project` has been mutated
+    # in this session between the `db.get()` that loaded it and this call.
+    await db.refresh(project)
     status = estimate.get("status") if estimate.get("status") is not None else ""
     if project.status == "deleted":
         if status != "declined":
@@ -888,6 +924,20 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
     )
     updated = await zoho_service.update_estimate_lines(db, project.quote_id, line_items)
     await _write_back_rounded_impression(db, project.id)
+    # `project.quote_status` was loaded before this call's own get_estimate,
+    # let alone this update_estimate_lines round trip -- and nothing in
+    # between refreshes it (expire_on_commit=False). An Accept/Decline
+    # committed by a different session (routes/aito.py's set_quote_status,
+    # which does not mark the project pending and so bumps no
+    # _requeue_marker either -- that machinery cannot see this) while either
+    # network call was in flight would otherwise be invisible to the
+    # _DECIDED guard inside _apply_estimate below, which would then adopt
+    # Books' still-stale remote status straight over the fresh local
+    # decision. Re-read it right before that guard runs; _apply_estimate
+    # itself is synchronous and cannot await, so the refresh has to happen
+    # here, at the call site. See this fix's own regression test for the
+    # interleaving.
+    await db.refresh(project, ["quote_status"])
     _apply_estimate(project, updated, requeue_marker=requeue_marker)
     await record(
         db,
@@ -1522,7 +1572,7 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
             await _apply_rules(db, project, await _summary_for(db, project.id))
             await db.commit()
             try:
-                await ws_manager.broadcast(
+                await ws_manager.broadcast_aito(
                     {"type": "aito_changed", "action": "quote-sync", "project_id": project_id, "actor": None}
                 )
             except Exception:

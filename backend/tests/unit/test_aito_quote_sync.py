@@ -173,6 +173,75 @@ async def test_pending_project_without_a_quote_gets_one_created(db_session):
 
 
 @pytest.mark.asyncio
+async def test_quote_sync_aito_changed_goes_out_through_the_filtered_fan_out(db_session, monkeypatch):
+    """T-067: run_sync_once's own ``aito_changed`` broadcast (action
+    "quote-sync") must be routed through ``ws_manager.broadcast_aito`` — the
+    AITO_READ-filtered fan-out routes/aito.py's ``_broadcast_changed`` uses —
+    and never through the unfiltered ``ws_manager.broadcast``. Regression
+    test for a second, unfiltered emitter of ``aito_changed`` that T-038
+    missed."""
+    from unittest.mock import AsyncMock
+
+    from backend.app.services import aito_quote_sync
+
+    broadcast_spy = AsyncMock()
+    broadcast_aito_spy = AsyncMock()
+    monkeypatch.setattr(aito_quote_sync.ws_manager, "broadcast", broadcast_spy)
+    monkeypatch.setattr(aito_quote_sync.ws_manager, "broadcast_aito", broadcast_aito_spy)
+
+    project = AitoProject(
+        description="Helice",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client de passage",
+        quote_sync_state="pending",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Helice grise", scan_cost=5000))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {"estimates": []},
+                ("POST", "/estimates"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "date": "2026-07-29",
+                        "status": "draft",
+                        "total": 5000,
+                        "last_modified_time": "2026-07-29T10:00:00-1000",
+                        "is_inclusive_tax": True,
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+
+    quote_sync_calls = [
+        call
+        for call in broadcast_aito_spy.await_args_list
+        if call.args[0]["type"] == "aito_changed" and call.args[0]["action"] == "quote-sync"
+    ]
+    assert len(quote_sync_calls) == 1
+    assert quote_sync_calls[0].args[0]["project_id"] == project.id
+
+    unfiltered_quote_sync_calls = [
+        call
+        for call in broadcast_spy.await_args_list
+        if call.args and call.args[0].get("type") == "aito_changed" and call.args[0].get("action") == "quote-sync"
+    ]
+    assert unfiltered_quote_sync_calls == []
+
+
+@pytest.mark.asyncio
 async def test_idle_project_is_never_touched(db_session):
     """An old quote-less card. The migration default excludes it from sync."""
     db_session.add(AitoProject(description="Vieux", board_column="devis", position=0, quote_sync_state="idle"))
@@ -1297,6 +1366,83 @@ async def test_trashing_a_project_declines_its_quote_and_snapshots_the_status(db
 
 
 @pytest.mark.asyncio
+async def test_a_restore_committed_during_the_get_estimate_round_trip_is_not_declined(
+    db_session, test_engine, monkeypatch
+):
+    """T-068. ``_reconcile_status`` branched on ``project.status`` as loaded
+    by ``run_sync_once``'s ``db.get()``, BEFORE ``_update_quote``'s own
+    ``get_estimate`` round trip -- and nothing refreshed it in between. A
+    card trashed and then restored while that Books call was still in
+    flight got declined anyway: the worker resumed on its stale 'deleted'
+    snapshot, took the decline branch, and POSTed
+    ``advance_estimate_status(..., 'declined', ...)`` against the live
+    estimate for a card the operator had already put back on the board.
+
+    Driven deterministically: the "operator hits Restore" step runs, on a
+    real second session, from inside a patched ``get_estimate`` -- the exact
+    point in real life a slow GET to Books would still be in flight.
+    """
+    project = await _project_with_quote(db_session, scan_cost=1)
+    await _configure_zoho(db_session)
+    project.status = "deleted"
+    await db_session.commit()
+
+    real_get_estimate = zoho_service.get_estimate
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def interleaved_get_estimate(db, quote_id):
+        # The "operator hits Restore" -- a real commit from a real second
+        # session, landing while the worker's own get_estimate call is still
+        # in flight.
+        async with maker() as edit_db:
+            edit_project = await edit_db.get(AitoProject, project.id)
+            edit_project.status = "active"
+            await edit_db.commit()
+        return await real_get_estimate(db, quote_id)
+
+    monkeypatch.setattr(zoho_service, "get_estimate", interleaved_get_estimate)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("POST", "/status/declined"): {"message": "ok"},
+                ("PUT", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "total": 1,
+                        "last_modified_time": "2026-07-29T11:00:00-1000",
+                    }
+                },
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+
+    # The restore survives (it always did -- `status` was never overwritten
+    # by the worker's own session). What must ALSO be true: the worker never
+    # declines the live estimate the operator just restored, and never
+    # writes a 'declined' quote_status onto a card that is back on the board.
+    assert project.status == "active"
+    assert project.quote_status != "declined"
+    assert not any(entry[1].endswith("/status/declined") for entry in seen)
+
+
+@pytest.mark.asyncio
 async def test_restoring_reapplies_the_snapshotted_status(db_session):
     project = await _project_with_quote(db_session, scan_cost=1)
     await _configure_zoho(db_session)
@@ -1428,6 +1574,81 @@ async def test_a_local_acceptance_survives_a_task_edit_while_books_still_says_se
     # because its impression is ticked — rather than being sent back to
     # 'waiting' by a status the shop never left.
     assert project.board_column == "finish"
+
+
+@pytest.mark.asyncio
+async def test_an_accept_committed_during_the_push_round_trip_is_not_overwritten_by_a_stale_remote_status(
+    db_session, test_engine, monkeypatch
+):
+    """T-069. ``_apply_estimate``'s ``_DECIDED`` guard read
+    ``project.quote_status`` as loaded before ``_update_quote``'s own
+    ``get_estimate``/``update_estimate_lines`` round trip, and nothing
+    refreshed it in between. An Accept committed by a DIFFERENT session
+    (``routes/aito.py``'s ``set_quote_status``, which does not mark the
+    project pending and so bumps no ``_requeue_marker`` either -- that
+    machinery cannot see this) while either network call was in flight was
+    therefore invisible to the guard: it read the stale, still-undecided
+    local status, the guard passed, and Books' still-stale 'sent' was copied
+    straight back over the fresh acceptance.
+
+    Driven deterministically: the "operator clicks Accept" step runs, on a
+    real second session, from inside a patched ``update_estimate_lines`` --
+    the exact point in real life a slow PUT to Books would still be in
+    flight.
+    """
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    project.quote_status = "sent"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    real_update_estimate_lines = zoho_service.update_estimate_lines
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def interleaved_update_estimate_lines(db, quote_id, line_items):
+        async with maker() as edit_db:
+            edit_project = await edit_db.get(AitoProject, project.id)
+            edit_project.quote_status = "accepted"
+            edit_project.quote_accepted_at = datetime(2026, 7, 29, 12, 0, 0)
+            await edit_db.commit()
+        return await real_update_estimate_lines(db, quote_id, line_items)
+
+    monkeypatch.setattr(zoho_service, "update_estimate_lines", interleaved_update_estimate_lines)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        # Deliberately DIFFERENT from the project's pre-race
+                        # 'sent' status, not merely undecided: adopting this
+                        # over a stale 'sent' local snapshot is a genuine
+                        # write, so a broken guard is caught even if
+                        # SQLAlchemy would otherwise treat a same-value
+                        # reassignment as nothing to flush.
+                        "status": "viewed",
+                        "total": 5000,
+                        "last_modified_time": "2026-07-29T11:00:00-1000",
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_status == "accepted"
 
 
 @pytest.mark.asyncio
@@ -2576,6 +2797,63 @@ async def test_an_undecided_board_adopts_books_status(db_session):
     await db_session.refresh(project)
     assert project.quote_status == "viewed"
     assert not any(entry[0] == "POST" for entry in seen)
+
+
+@pytest.mark.asyncio
+async def test_an_accept_committed_during_the_sweeps_get_estimate_is_pushed_not_overwritten(
+    db_session, test_engine, monkeypatch
+):
+    """T-069 (the ``reconcile_quote_status`` half of the same finding, called
+    out explicitly in its evidence). ``reconcile_quote_status`` read
+    ``project.quote_status`` right after the SAME ``get_estimate`` round trip
+    ``sync_project``'s sweep branch performs -- and that project row was
+    loaded by ``run_sync_once``'s own ``db.get()`` *before* even that call,
+    with nothing refreshing it in between. An Accept committed by a
+    different session while the sweep's ``get_estimate`` call was still in
+    flight was therefore invisible: the stale, still-undecided local status
+    lost to Books' own still-stale status, and the acceptance was silently
+    overwritten instead of being pushed.
+
+    Driven deterministically: the "operator clicks Accept" step runs, on a
+    real second session, from inside a patched ``get_estimate`` -- the exact
+    point in real life a slow GET to Books would still be in flight.
+    """
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "sent"
+    project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+
+    real_get_estimate = zoho_service.get_estimate
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def interleaved_get_estimate(db, quote_id):
+        async with maker() as edit_db:
+            edit_project = await edit_db.get(AitoProject, project.id)
+            edit_project.quote_status = "accepted"
+            edit_project.quote_accepted_at = datetime(2026, 7, 29, 12, 0, 0)
+            await edit_db.commit()
+        return await real_get_estimate(db, quote_id)
+
+    monkeypatch.setattr(zoho_service, "get_estimate", interleaved_get_estimate)
+
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {"estimate": {"estimate_id": "E1", "status": "viewed"}},
+                ("POST", "/status/accepted"): {"message": "ok"},
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+
+    assert project.quote_status == "accepted"
+    assert any(entry[1].endswith("/status/accepted") for entry in seen)
 
 
 @pytest.mark.asyncio
