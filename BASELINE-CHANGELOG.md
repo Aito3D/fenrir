@@ -276,3 +276,154 @@ already on the surface at BASE: `export function __resetAitoPresence`,
 the same test-only reset-export pattern for a different module-level map.
 `tools/snapshot.py verify` shows 9/9 probes matching, unaffected by this
 change (none of the 9 probes touch this file or this export).
+
+## T-036 — 2026-08-12 — user-approved behavior change
+
+T-009 restricted `POST /aito/`'s `quote_status` to a decided value
+(`accepted`/`declined`) only alongside a `quote_id`, i.e. a genuine import of
+an already-decided Books quote — but the only gate was the presence of
+`quote_id`, never a check against who is making the request. A principal
+holding only `aito:create` (a real, supportable custom-group configuration;
+the default Operators group bundles all four `aito:*` permissions, so this
+was never reachable through it) could POST a real `quote_id` obtained from
+`GET /zoho/estimates` (also gated on `AITO_CREATE`) with
+`quote_status: "accepted"` and drive that decision straight through: the
+created row lands at `quote_sync_state='idle'`, is picked up by the next
+sync sweep, and `reconcile_quote_status` pushes `/status/sent` then
+`/status/accepted` onto the live Zoho estimate — none of the dedicated
+`POST /{id}/quote-status` route's `aito:update` requirement, its 409
+terminal-transition guards, or its actor-recording apply.
+
+`create_project` now rejects the request with 403 when `payload.quote_status`
+is `'accepted'` or `'declined'` and the caller's `current_user` does not hold
+`aito:update` (checked via `current_user.has_permission(Permission.AITO_UPDATE
+.value)`, the same idiom already used elsewhere in the route layer — e.g.
+`archives.py`'s `current_user.has_permission(Permission.ARCHIVES_READ_ALL
+.value)` — for a permission check that has to happen inside the route body
+rather than as a static `RequirePermissionIfAuthEnabled` dependency, because
+it depends on a parsed request-body field). The check is skipped when
+`current_user is None`, which is the auth-disabled case (the dependency
+returns `None` for both auth-disabled and a valid API key, and API keys
+cannot hold `AITO_CREATE` at all — it is denylisted in
+`core/auth.py`'s `_APIKEY_SCOPE_BY_PERMISSION`, so a decided-status create
+can only reach the route body as a real JWT-authenticated user or with auth
+off) — an auth-disabled instance is unaffected by this change, matching how
+every other permission gate in this file already behaves.
+
+Observable change, quoting the approved description verbatim: "POST /aito/
+carrying quote_status 'accepted' or 'declined' starts returning 403 (or 422)
+for a caller holding only aito:create." Callers affected: a caller
+authenticated with a JWT whose group(s) grant `aito:create` but not
+`aito:update`, sending a decided `quote_status`. Callers NOT affected: any
+caller who also holds `aito:update` (including the default Operators group,
+unchanged); any caller sending an undecided status (`draft`/`sent`/`viewed`
+/`expired`), no status, or an unrecognised status that degrades to `None`
+(T-020's degrade path); any caller when auth is disabled; the dedicated
+`POST /{id}/quote-status` route, `_reject_ticks_without_acceptance`,
+`reconcile_quote_status` and `advance_estimate_status`, none of which were
+touched.
+
+`tools/snapshot.py verify` shows 9/9 probes matching — `aito-route-perms`
+only greps `RequirePermissionIfAuthEnabled(...)` call sites, and this check
+is an inline `current_user.has_permission(...)` in the route body, not a new
+dependency, so that probe (and the rest) is correctly unaffected.
+`SURFACE.md` is also unaffected: `bash tools/gen_surface.sh` produces a
+byte-identical file (no new `def`/`class`, export, or route dependency was
+added).
+
+## T-037 + T-049 — 2026-08-12 — user-approved behavior change
+
+The T-011 cap pass bounded the four per-task description fields at 10_000
+but left two request-body collections and one description in
+`backend/app/schemas/aito.py` open: `AitoProjectCreate.tasks` (`POST
+/aito/`) had no `max_length` at all, even though the identical element type
+is already bounded at `max_length=50` on the sibling `AitoSummarizeRequest
+.tasks` (`POST /aito/summarize`) — the same contradiction both auditors
+independently flagged. `AitoProjectImport.projects` (`POST /aito/import`)
+had no bound either, and `AitoProjectImportItem.description` was the one
+description left in the file without `max_length=10_000`, unlike
+`AitoProjectCreate.description` and `AitoProjectUpdate.description`. There
+is no request-body-size middleware anywhere in the app
+(`grep -E 'add_middleware|middleware' backend/app/main.py` returns only
+`security_headers`/`auth`/`trace_id`), so these Pydantic field constraints
+were the only trust-boundary guard against a caller holding `aito:create`
+posting an unbounded body that gets fully deserialised, validated, and (for
+`/aito/`) inserted as one `AitoProject` plus N `AitoTask` rows in a single
+transaction before any handler code runs — the `/import` route's `if total:
+409` guard does not help either, since FastAPI validates the body before
+the handler is entered.
+
+Three bounds added, each declared directly on the request model that owns
+the field — none reaches a response model by inheritance, and neither
+`AitoProjectCreate` nor `AitoProjectImport`/`AitoProjectImportItem` is
+embedded via `$defs` in any other schema in this file (confirmed by grep:
+each is referenced only as the body type of its own single route —
+`POST /aito/` and `POST /aito/import` respectively — unlike T-011's
+`AitoTaskCreate`, which is genuinely shared). So, unlike T-011, no bound
+here reaches a second endpoint through a shared type:
+
+- `AitoProjectCreate.tasks: list[AitoTaskCreate] = Field(default_factory=list, max_length=50)`
+  — 50 mirrors `AitoSummarizeRequest.tasks`' existing cap for the identical
+  element type, chosen (not just copied) after checking it against the real
+  create-drawer workflow: `AiSummaryPanel.tsx` already calls
+  `POST /aito/summarize` with this exact same task array on every drawer
+  open/regenerate, so an operator building more than 50 tasks in the drawer
+  today already loses the AI-generated summary past that point (the
+  request 422s and `AiSummaryPanel` falls back to `buildFallbackSummary`
+  silently — it does not block submission). A single `AitoTaskCreate` also
+  carries its own `impression_quantity`, so a large batch of *identical*
+  prints is one task with a quantity, not many task rows — 50 *distinct*
+  tasks, each up to four priced services, comfortably covers a real order.
+  50 was judged safe for legitimate operators on that basis, not chosen by
+  analogy alone.
+- `AitoProjectImport.projects: list[AitoProjectImportItem] = Field(max_length=1000)`
+  — `/aito/import` is a one-time localStorage-board migration (guarded by
+  the empty-board 409 above), not a per-request UI flow: no current
+  frontend code calls it at all (`api.importAitoProjects` is defined in
+  `client.ts` but has zero call sites in `frontend/src`), so there is no
+  live operator workflow to check against directly. 50 (the tasks precedent)
+  would be an implausibly tight bound for a full legacy board, so instead
+  this mirrors the codebase's own precedent for a one-shot bulk-import
+  batch: `backend/app/schemas/library.py`'s
+  `BulkFileOperation.file_ids: list[int] = Field(..., min_length=1,
+  max_length=1000)`. 1000 comfortably exceeds any plausible size for what
+  was, in practice, always an actively-curated Kanban board rather than an
+  archive, while still closing the unbounded-batch-insert vector.
+- `AitoProjectImportItem.description: str = Field(min_length=1,
+  max_length=10_000)` — matches every other description cap already in this
+  module (`AitoProjectCreate.description`, `AitoProjectUpdate.description`,
+  the four `AitoTaskCreate`/`AitoTaskUpdate` fields from T-011). No new
+  named constant introduced; this is a fourth literal `10_000`, which the
+  campaign's triage separately flags as a naming cleanup — a different,
+  unworked task, not done here.
+
+Observable change, quoting the approved description verbatim: "a POST
+/aito/ or POST /aito/import carrying more tasks/projects than the new cap,
+or an import description over the cap, would start returning 422 instead
+of 201." Endpoints affected, named in full: `POST /aito/` (`tasks` capped
+at 50) and `POST /aito/import` (`projects` capped at 1000, each item's
+`description` capped at 10_000). No other endpoint is reachable through
+either bound — `AitoTaskCreate` itself (and therefore `POST
+/aito/{project_id}/tasks`, `PATCH /aito/tasks/{task_id}` and `POST
+/aito/summarize`) is unchanged; the new `AitoProjectCreate.tasks` bound is
+on the outer list field, not on `AitoTaskCreate`'s own schema.
+
+Confirmed via six new tests in `backend/tests/unit/test_aito_routes.py`:
+`test_create_project_accepts_fifty_tasks` / `_rejects_more_than_fifty_tasks`,
+`test_import_accepts_a_thousand_projects` /
+`_rejects_more_than_a_thousand_projects`, and
+`test_import_accepts_a_project_description_at_the_cap` /
+`_rejects_an_over_cap_project_description` — each pair accepts exactly at
+the cap (201, value round-trips) and rejects one past it (422).
+`tools/snapshot.py verify` shows exactly one probe moving,
+`aito-pydantic-schemas`, with exactly four new leaves and nothing else in
+the golden diff: `"maxItems": 50` on `AitoProjectCreate.tasks`,
+`"maxLength": 10000` on `AitoProjectImportItem.description` (appearing
+twice — once as the item's own top-level schema entry, once in its `$defs`
+copy embedded by `AitoProjectImport`, both from the same single field
+declaration), and `"maxItems": 1000` on `AitoProjectImport.projects`.
+`SURFACE.md` is unaffected: `bash tools/gen_surface.sh` produces a
+byte-identical file (no new `def`/`class`, export, or route dependency was
+added — only field-level constraints changed). Backend sysmon coverage for
+the Aito subset held at 38 missed statements (the ratchet), with all three
+new bounds fully exercised by the tests above.

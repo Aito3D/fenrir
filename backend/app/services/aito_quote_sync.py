@@ -85,6 +85,45 @@ _DECIDED = frozenset({"accepted", "declined"})
 # was before this handler ran.
 _deferred_reasons: dict[int, str] = {}
 
+# Project id -> how many times routes/aito.py has (re)armed this project for
+# a push, in THIS process. Bumped by ``_bump_requeue_marker`` below, called
+# from routes/aito.py's ``_mark_pending`` on EVERY call -- including a call
+# that leaves ``quote_sync_state`` at the value it already held. That
+# "already held" case is not a hypothetical: it is the exact shape of the
+# race this marker exists to catch. ``_update_quote``/``_create_quote`` read
+# the project's own rows (``load_export_tasks``, ``load_export_shipping``)
+# BEFORE the network write to Books, and an edit whose commit lands anywhere
+# in that window is a same-value no-op on an ALREADY-'pending' project's
+# ``quote_sync_state`` column -- SQLAlchemy does not even emit an UPDATE for
+# a column reassigned to the value it already holds, so the row carries no
+# trace that a requeue happened. Nothing else re-queues that edit: it is not
+# in the line_items just pushed, and unconditionally writing 'idle' once the
+# push returns (the bug this marker fixes) would tell the card it is in sync
+# while Books is missing it.
+#
+# A DB column would say the same thing more durably, but every column this
+# feature ever adds is an ALTER TABLE in core/database.py's run_migrations —
+# out of scope for this fix, and not needed here: the marker only has to
+# survive the one in-flight round trip it is guarding, and a process restart
+# mid-round-trip already leaves the project 'pending' in the DB (this module
+# never reached the write that would have cleared it), so the next tick
+# re-syncs it correctly with no marker at all. Process-local for the same
+# reason and at the same cost as ``_deferred_reasons`` above.
+_requeue_marker: dict[int, int] = {}
+
+
+def _bump_requeue_marker(project_id: int) -> None:
+    """Record that ``project_id`` has been (re)armed for a push. See
+    ``_requeue_marker``'s own comment for why this has to fire on every call,
+    not only on a genuine state transition."""
+    _requeue_marker[project_id] = _requeue_marker.get(project_id, 0) + 1
+
+
+def _requeue_marker_for(project_id: int) -> int:
+    """The current marker value, for a caller to snapshot before its own read
+    and compare against after its own write."""
+    return _requeue_marker.get(project_id, 0)
+
 
 def _clear_block(project: AitoProject) -> None:
     """No reason to be blocked any more. Unconditional and always safe: these
@@ -249,13 +288,22 @@ async def load_export_tasks(db: AsyncSession, project_id: int) -> list[ExportTas
     ]
 
 
-def _apply_estimate(project: AitoProject, estimate: dict) -> None:
+def _apply_estimate(project: AitoProject, estimate: dict, *, requeue_marker: int) -> None:
     """Copy back what Books now says, so the card stops guessing.
 
     quote_status in particular: it used to be a snapshot frozen at import that
     went stale the moment a quote was accepted. Every push refreshes it — but
     only in the direction reconcile_quote_status allows, never over a decision
     of ours Books has not caught up with yet. See the guard below.
+
+    ``requeue_marker`` is the ``_requeue_marker_for(project.id)`` value the
+    caller captured BEFORE its own read of the project's rows — i.e. before
+    anything that decided what just got pushed. If it no longer matches the
+    live value, an edit committed somewhere in the window between that read
+    and this call, and nothing in it reached Books: the project must stay
+    'pending' for the next tick to pick up, not go 'idle' and read as
+    in sync. See ``_requeue_marker``'s own comment for the full shape of the
+    race this guards.
 
     A missing ``estimate_id`` is refused rather than silently marked 'idle':
     ``create_estimate``/``update_estimate_lines`` return
@@ -318,12 +366,23 @@ def _apply_estimate(project: AitoProject, estimate: dict) -> None:
     _clear_block(project)
     if estimate.get("last_modified_time") is not None:
         project.quote_synced_at = estimate["last_modified_time"]
-    project.quote_sync_state = "idle"
+    # The push that just landed in Books succeeded either way, so the failure
+    # accounting always resets — an edit racing the round trip is not a
+    # reason to keep reporting a stale error or a nonzero failure count.
+    # Only the terminal 'idle' is conditional: see the marker comparison
+    # above.
+    if _requeue_marker_for(project.id) == requeue_marker:
+        project.quote_sync_state = "idle"
     project.quote_sync_error = None
     project.quote_sync_failures = 0
 
 
 async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
+    # Captured before the first read that decides what gets pushed (see
+    # _requeue_marker's own comment), so _apply_estimate below can tell
+    # whether an edit landed anywhere in the window this function is about to
+    # open with its own network calls.
+    requeue_marker = _requeue_marker_for(project.id)
     catalogue = await zoho_service.get_catalogue(db)
     tasks = await load_export_tasks(db, project.id)
     if not any(enabled_services(task) for task in tasks):
@@ -390,7 +449,7 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         },
     )
     await _write_back_rounded_impression(db, project.id)
-    _apply_estimate(project, estimate)
+    _apply_estimate(project, estimate, requeue_marker=requeue_marker)
     await record(
         db,
         project.id,
@@ -697,6 +756,12 @@ async def _reconcile_status(db: AsyncSession, project: AitoProject, estimate: di
 
 
 async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
+    # Captured before anything below reads the project's own rows or talks to
+    # Books (see _requeue_marker's own comment) -- earlier than strictly
+    # necessary is deliberately safe here: the only cost of a marker that is
+    # "too early" is one extra tick spent re-pushing a project that turns out
+    # not to have actually changed, never a lost edit.
+    requeue_marker = _requeue_marker_for(project.id)
     estimate = await zoho_service.get_estimate(db, project.quote_id)
     if _is_locked(estimate):
         # Sticky: Books does not practically un-invoice. Set only here, never
@@ -788,7 +853,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
     )
     updated = await zoho_service.update_estimate_lines(db, project.quote_id, line_items)
     await _write_back_rounded_impression(db, project.id)
-    _apply_estimate(project, updated)
+    _apply_estimate(project, updated, requeue_marker=requeue_marker)
     await record(
         db,
         project.id,

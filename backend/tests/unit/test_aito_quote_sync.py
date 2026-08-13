@@ -17,6 +17,7 @@ from backend.app.services.aito_quote_export import Catalogue
 from backend.app.services.aito_quote_sync import (
     SYNC_FAILURE_LIMIT,
     ShippingCatalogueUnavailable,
+    _bump_requeue_marker,
     _deferred_reasons,
     _update_quote,
     load_export_shipping,
@@ -69,6 +70,17 @@ def reset_deferred_reasons():
     _deferred_reasons.clear()
     yield
     _deferred_reasons.clear()
+
+
+@pytest.fixture(autouse=True)
+def reset_requeue_marker():
+    """_requeue_marker is process-local, module-level state too (see its own
+    comment), and needs the same per-test reset as _deferred_reasons above."""
+    from backend.app.services.aito_quote_sync import _requeue_marker
+
+    _requeue_marker.clear()
+    yield
+    _requeue_marker.clear()
 
 
 async def _configure_zoho(db) -> None:
@@ -630,6 +642,125 @@ async def test_update_preserves_foreign_lines_and_refreshes_status(db_session):
     put = next(entry for entry in seen if entry[0] == "PUT")
     assert set(put[2]) == {"line_items"}  # partial PUT: nothing else is sent
     assert put[2]["line_items"][-1] == {"line_item_id": "FOREIGN", "item_order": 2}
+
+
+@pytest.mark.asyncio
+async def test_a_successful_push_with_no_concurrent_edit_still_settles_idle(db_session):
+    """The ordinary path the race guard below must not disturb: with nothing
+    bumping the requeue marker mid-round-trip, a successful push still lands
+    'idle' and resets the failure accounting, exactly as before that guard
+    existed."""
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    project.quote_sync_failures = 3
+    project.quote_sync_error = "a stale message from a past outage"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "status": "sent",
+                        "total": 5000,
+                        "last_modified_time": "2026-07-29T11:00:00-1000",
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "idle"
+    assert project.quote_sync_failures == 0
+    assert project.quote_sync_error is None
+
+
+@pytest.mark.asyncio
+async def test_an_edit_committed_during_the_books_round_trip_leaves_the_project_pending(db_session, monkeypatch):
+    """_update_quote reads the project's own rows (load_export_tasks,
+    load_export_shipping) BEFORE the network write to Books, and
+    _apply_estimate used to write 'idle' unconditionally once that write
+    returned. An edit whose commit lands anywhere in that window is never in
+    the line_items just pushed, and routes/aito.py's own _mark_pending is a
+    same-value no-op on an already-'pending' row -- nothing else ever
+    re-queues it (see aito_quote_sync._requeue_marker's own comment for the
+    full shape of the race). The fix: _update_quote snapshots the
+    process-local requeue marker before its own read, and _apply_estimate
+    only writes 'idle' when nothing bumped it in between.
+
+    Driven deterministically by performing the "concurrent edit" INSIDE the
+    patched update_estimate_lines call -- the same point in real life a slow
+    PUT to Books would still be in flight -- rather than by racing real
+    timing.
+    """
+    project = await _project_with_quote(db_session, scan_cost=5000)
+    await _configure_zoho(db_session)
+
+    real_update_estimate_lines = zoho_service.update_estimate_lines
+
+    async def interleaved_update_estimate_lines(db, quote_id, line_items):
+        # Same shape as routes/aito.py:_mark_pending -- re-marks an
+        # ALREADY-pending project pending (a same-value no-op on the row
+        # itself) and bumps the process-local requeue marker, exactly as the
+        # real route handler does via _bump_requeue_marker.
+        project.quote_sync_state = "pending"
+        project.quote_sync_failures = 0
+        _bump_requeue_marker(project.id)
+        return await real_update_estimate_lines(db, quote_id, line_items)
+
+    monkeypatch.setattr(zoho_service, "update_estimate_lines", interleaved_update_estimate_lines)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "sent",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "line_items": [],
+                    }
+                },
+                ("PUT", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "estimate_number": "DEV26-9001",
+                        "status": "sent",
+                        "total": 5000,
+                        "last_modified_time": "2026-07-29T11:00:00-1000",
+                    }
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    # The push itself succeeded -- Books now holds the right total, and the
+    # failure accounting resets exactly as it does on any successful push.
+    assert project.quote_total == 5000
+    assert project.quote_sync_failures == 0
+    assert project.quote_sync_error is None
+    # But the edit that landed mid-round-trip was never in the line_items
+    # just sent, so the project must stay 'pending' for the next tick to
+    # pick it up -- not 'idle', which would tell the card it is in sync.
+    assert project.quote_sync_state == "pending"
 
 
 @pytest.mark.asyncio

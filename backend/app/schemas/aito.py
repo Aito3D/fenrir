@@ -263,7 +263,16 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     # import cannot get the user to fix is not worth failing the whole
     # import over.
     quote_status: AitoQuoteStatus | None = Field(default=None)
-    tasks: list[AitoTaskCreate] = Field(default_factory=list)
+    # 50 mirrors AitoSummarizeRequest.tasks below — the identical element type,
+    # already bounded there. The drawer that builds this list also builds
+    # AiSummarizeRequest's (AiSummaryPanel calls /aito/summarize with the same
+    # task array on every open), so a legitimate operator is already stopped
+    # from generating an AI summary past 50 tasks today; this just closes the
+    # same gap on the endpoint that actually persists the rows. A single task
+    # already carries its own `quantity` for the impression service, so a
+    # large batch of IDENTICAL prints is one task, not many — 50 DISTINCT
+    # tasks (each up to four priced services) comfortably covers a real order.
+    tasks: list[AitoTaskCreate] = Field(default_factory=list, max_length=50)
 
     @field_validator("client_email")
     @classmethod
@@ -329,13 +338,22 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
 
 
 class AitoProjectImportItem(BaseModel):
-    description: str = Field(min_length=1)
+    # 10_000 matches every other description in this module (see
+    # AitoProjectCreate.description) — this was the one left uncapped.
+    description: str = Field(min_length=1, max_length=10_000)
     column: AitoColumn
     position: int = Field(ge=0)
 
 
 class AitoProjectImport(BaseModel):
-    projects: list[AitoProjectImportItem]
+    # 1000 mirrors library.py's BulkFileOperation.file_ids cap — the
+    # codebase's existing precedent for a one-shot batch import, not the
+    # per-task-list 50 above (a different shape: this is a one-time
+    # localStorage-board migration, not a project a human builds row by row
+    # in a drawer). No current frontend code calls this route at all; 1000 is
+    # a generous ceiling on a legacy migration board that was, in practice,
+    # always a small, actively-curated Kanban rather than an archive.
+    projects: list[AitoProjectImportItem] = Field(max_length=1000)
 
 
 class AitoProjectMove(BaseModel):

@@ -454,6 +454,42 @@ async def test_import_only_on_empty_board(async_client):
 
 
 @pytest.mark.asyncio
+async def test_import_accepts_a_thousand_projects(async_client):
+    """1000 mirrors library.py's BulkFileOperation.file_ids cap (T-037/T-049)
+    — a payload sitting exactly on it must still be accepted, not just one
+    under."""
+    payload = {"projects": [{"description": f"legacy {i}", "column": "print", "position": i} for i in range(1000)]}
+    r = await async_client.post("/api/v1/aito/import", json=payload)
+    assert r.status_code == 201
+    assert len(r.json()) == 1000
+
+
+@pytest.mark.asyncio
+async def test_import_rejects_more_than_a_thousand_projects(async_client):
+    payload = {"projects": [{"description": f"legacy {i}", "column": "print", "position": i} for i in range(1001)]}
+    r = await async_client.post("/api/v1/aito/import", json=payload)
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_import_accepts_a_project_description_at_the_cap(async_client):
+    """10_000 matches every other description cap in the module (T-011) —
+    AitoProjectImportItem.description was the one left uncapped."""
+    capped = "D" * 10_000
+    payload = {"projects": [{"description": capped, "column": "print", "position": 0}]}
+    r = await async_client.post("/api/v1/aito/import", json=payload)
+    assert r.status_code == 201
+    assert (await async_client.get("/api/v1/aito/")).json()[0]["description"] == capped
+
+
+@pytest.mark.asyncio
+async def test_import_rejects_an_over_cap_project_description(async_client):
+    payload = {"projects": [{"description": "D" * 10_001, "column": "print", "position": 0}]}
+    r = await async_client.post("/api/v1/aito/import", json=payload)
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_trash_lists_deleted_newest_first(async_client):
     a = (await _create(async_client, description="a")).json()
     b = (await _create(async_client, description="b")).json()
@@ -714,6 +750,24 @@ async def test_create_project_accepts_client_fields_and_description_at_the_cap(a
 @pytest.mark.asyncio
 async def test_create_project_rejects_an_over_cap_description(async_client):
     r = await _create(async_client, description="D" * 10_001)
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_project_accepts_fifty_tasks(async_client):
+    """50 mirrors AitoSummarizeRequest.tasks' existing cap (T-037/T-049) — a
+    payload sitting exactly on it must still be accepted, not just one under."""
+    tasks = [_task(title=f"Tâche {i}") for i in range(50)]
+    r = await _create(async_client, tasks=tasks)
+    assert r.status_code == 201
+    fetched = (await async_client.get(f"/api/v1/aito/{r.json()['id']}/tasks")).json()
+    assert len(fetched) == 50
+
+
+@pytest.mark.asyncio
+async def test_create_project_rejects_more_than_fifty_tasks(async_client):
+    tasks = [_task(title=f"Tâche {i}") for i in range(51)]
+    r = await _create(async_client, tasks=tasks)
     assert r.status_code == 422
 
 
@@ -1152,13 +1206,21 @@ async def test_importing_a_decided_quote_still_works_and_records_an_actor(async_
     """T-009: the genuine import path — a decided status arriving WITH a
     quote_id, because Books already decided it — must keep working, and must
     now leave a quote.{status} event with an actor, matching what the
-    dedicated /quote-status route has always recorded for a hand-made card."""
+    dedicated /quote-status route has always recorded for a hand-made card.
+
+    Granted aito:update alongside aito:create (T-036): the default Operators
+    group bundles all four aito permissions, and this pins that the common
+    case — a real operator, not a narrowly-scoped one — is unaffected by the
+    new gate below."""
     from backend.app.main import app
+    from backend.app.models.group import Group
     from backend.app.models.user import User
 
     route = next(r for r in app.routes if getattr(r, "name", "") == "create_project")
     dep = next(d.call for d in route.dependant.dependencies if d.name == "current_user")
-    app.dependency_overrides[dep] = lambda: User(id=1, username="paul")
+    app.dependency_overrides[dep] = lambda: User(
+        id=1, username="paul", groups=[Group(name="t", permissions=["aito:create", "aito:update"])]
+    )
     try:
         r = await _create(async_client, quote_id="EST-9", quote_status=status)
         assert r.status_code == 201
@@ -1171,6 +1233,75 @@ async def test_importing_a_decided_quote_still_works_and_records_an_actor(async_
         assert matches[0]["actor_name"] == "paul"
     finally:
         app.dependency_overrides.pop(dep, None)
+
+
+async def _create_as(async_client, permissions, **overrides):
+    """Create a project as a user whose ONLY permissions are `permissions`
+    (via a throwaway in-memory group, never persisted). Mirrors the
+    dependency-override technique `test_importing_a_decided_quote_still_works
+    _and_records_an_actor` above uses to attach a real permission set to
+    `current_user`, since `async_client`'s default (auth disabled) makes
+    `current_user` None and would skip the permission check entirely."""
+    from backend.app.main import app
+    from backend.app.models.group import Group
+    from backend.app.models.user import User
+
+    route = next(r for r in app.routes if getattr(r, "name", "") == "create_project")
+    dep = next(d.call for d in route.dependant.dependencies if d.name == "current_user")
+    app.dependency_overrides[dep] = lambda: User(
+        id=1, username="paul", groups=[Group(name="t", permissions=list(permissions))]
+    )
+    try:
+        return await _create(async_client, **overrides)
+    finally:
+        app.dependency_overrides.pop(dep, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["accepted", "declined"])
+async def test_create_with_a_decided_status_and_only_aito_create_is_403(async_client, status):
+    """T-036: aito:create alone must not be able to stamp a decided status on
+    an imported quote — that used to sail through unaudited, skip
+    /quote-status's actor recording and 409 terminal-transition guards, and
+    let the sync worker push the acceptance straight onto the live Zoho
+    estimate. A caller must also hold aito:update."""
+    r = await _create_as(async_client, ["aito:create"], quote_id="EST-9", quote_status=status)
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["accepted", "declined"])
+async def test_create_with_a_decided_status_and_aito_update_succeeds(async_client, status):
+    """T-036: the default Operators group (and any custom group granting
+    both) is unaffected — a caller holding aito:update alongside aito:create
+    can still import an already-decided quote."""
+    r = await _create_as(async_client, ["aito:create", "aito:update"], quote_id="EST-9", quote_status=status)
+    assert r.status_code == 201
+    assert r.json()["quote_status"] == status
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["draft", "sent", "viewed", "expired", None])
+async def test_create_with_an_undecided_status_and_only_aito_create_still_works(async_client, status):
+    """T-036: the new gate only fires for 'accepted'/'declined' — every other
+    status (and the absence of one) is unaffected for an aito:create-only
+    caller, exactly as before this task."""
+    overrides = {} if status is None else {"quote_status": status}
+    r = await _create_as(async_client, ["aito:create"], **overrides)
+    assert r.status_code == 201
+    assert r.json()["quote_status"] == status
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["accepted", "declined"])
+async def test_create_with_a_decided_status_is_unaffected_when_auth_is_disabled(async_client, status):
+    """T-036: RequirePermissionIfAuthEnabled returns None (not a User) when
+    auth is off, and the new gate only applies when there IS a current_user
+    — an auth-disabled instance must keep working exactly as it did before
+    this task, same as test_create_stores_the_quote_salesperson_and_status."""
+    r = await _create(async_client, quote_id="EST-9", quote_status=status)
+    assert r.status_code == 201
+    assert r.json()["quote_status"] == status
 
 
 @pytest.mark.asyncio

@@ -48,7 +48,11 @@ from backend.app.schemas.aito import (
 from backend.app.services.aito_board_rules import SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.aito_events import diff_fields, kinds_for_depth, record
 from backend.app.services.aito_quote_status import adopt_quote_status
-from backend.app.services.aito_quote_sync import request_debounced_sync, request_immediate_sync
+from backend.app.services.aito_quote_sync import (
+    _bump_requeue_marker,
+    request_debounced_sync,
+    request_immediate_sync,
+)
 from backend.app.services.aito_shipping import (
     SERVICE_LABELS,
     grouped_islands,
@@ -535,9 +539,25 @@ def _mark_pending(project: AitoProject) -> None:
     ``_mark_pending_if_ours`` instead, which adds the guard that keeps a
     legacy quote-less card from ever being marked. See that function's
     docstring for why the two must not be merged.
+
+    ``_bump_requeue_marker`` fires on every call, even one that leaves
+    ``quote_sync_state`` at the value it already held (re-marking an
+    already-'pending' project). That "no-op" case is exactly what
+    ``aito_quote_sync``'s own marker exists to make visible: SQLAlchemy
+    never emits an UPDATE for a column reassigned to its own value, so
+    without this, an edit landing while the sync worker is mid-round-trip to
+    Books would leave no trace at all for ``_apply_estimate`` to notice
+    before it writes 'idle' over the top. See that module's own comment on
+    ``_requeue_marker`` for the full race.
+
+    Guarded on ``project.id is not None``: ``create_project`` calls this
+    before its own flush has assigned the new row an id (see there), and a
+    project nothing else can reference yet by id cannot be racing anything.
     """
     project.quote_sync_state = "pending"
     project.quote_sync_failures = 0
+    if project.id is not None:
+        _bump_requeue_marker(project.id)
 
 
 def _mark_pending_if_ours(project: AitoProject) -> None:
@@ -738,6 +758,29 @@ async def create_project(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
+    if (
+        payload.quote_status in ("accepted", "declined")
+        and current_user is not None
+        and not current_user.has_permission(Permission.AITO_UPDATE.value)
+    ):
+        # 'accepted'/'declined' are DECISIONS: the same trust boundary
+        # `POST /{id}/quote-status` enforces with Permission.AITO_UPDATE.
+        # Without this, aito:create alone (a real, supportable group
+        # configuration — see the denylist comment on Permission.AITO_CREATE
+        # in core/auth.py) could stamp a decided status on an imported quote
+        # here and let the sync worker push it straight onto a live Zoho
+        # estimate, bypassing set_quote_status's actor recording and 409
+        # terminal-transition guards entirely.
+        # `current_user is None` means auth is disabled (the only way an
+        # AITO_CREATE-gated request reaches this body with no user — API
+        # keys are denylisted for AITO_CREATE, see core/auth.py) and the
+        # dependency above already granted unconditional access, so this
+        # check stays silent for that case too, same as everywhere else in
+        # this file.
+        raise HTTPException(
+            status_code=403,
+            detail="quote_status 'accepted'/'declined' requires the aito:update permission",
+        )
     await _reject_duplicate_quote(db, payload.quote_id)
     if payload.quote_id is None and not (
         (payload.client_phone or "").strip()
