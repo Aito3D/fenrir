@@ -81,6 +81,16 @@ is not itself a new user-visible behavior change beyond what T-009 already intro
 T-009's unapproved side effect back toward the pre-campaign baseline (a blank/unrecognised status no
 longer blocks an otherwise-valid import), so it needs no separate approval.
 
+The degrade is a discard, not a store, and that is visible on the card: an import that carries a
+status outside the six-value vocabulary (e.g. Books' `invoiced`) now round-trips as
+`quote_status: null` — where BASE persisted and returned the raw string verbatim — so the resulting
+card shows no status pill (`ProjectDetailPanel.tsx` only renders the pill when `quote_status` is
+truthy) and offers "mark sent" exactly as a fresh `draft` card would (`QuoteStatusActions.tsx`'s
+`canMarkSent` treats `null` the same as `draft`), instead of displaying the raw Zoho status BASE
+would have shown and withholding that action. This is the same approved trade the paragraph above
+describes — an import the user cannot fix from the modal is not worth failing over a status field —
+stated here in terms of what the card looks like rather than what the schema does.
+
 ## T-013 — 2026-08-11 — user-approved behavior change
 
 `POST /aito/{project_id}/quote-email` (`send_quote_email`) called `zoho_service.email_estimate(...)`
@@ -163,7 +173,11 @@ on `POST /aito/`, `POST /aito/{project_id}/tasks` and `PATCH
 /aito/tasks/{task_id}`, stored in `Text` columns, and pushed verbatim into
 the Books line-item description on the next sync, an oversized value could
 only surface later as a `ZohoRequestRejected` that parks the project in the
-terminal `error` state.
+terminal `error` state. The same bound also reaches `POST /aito/summarize`,
+which validates the same `AitoTaskCreate` shape: `AitoSummarizeRequest.tasks`
+is typed `list[AitoTaskCreate]`, so the create drawer's "generate
+description" button, which posts its local drafts to this endpoint before
+the project exists, is capped identically.
 
 The bound is declared on `AitoTaskCreate` and `AitoTaskUpdate` only (the two
 request models), each redeclaring the four fields with `Field(default=None,

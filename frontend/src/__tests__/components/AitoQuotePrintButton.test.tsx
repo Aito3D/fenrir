@@ -110,11 +110,13 @@ describe('QuotePrintButton', () => {
     }
   });
 
-  it('cancels the pending 60s revoke timer on unmount and still revokes the URL exactly once', async () => {
-    // The revoke backstop scheduled after a successful print used to be a
-    // bare window.setTimeout with nothing tracking it: unmounting within 60s
-    // left it dangling, touching an already-removed iframe and revoking the
-    // URL well after the component was gone instead of right away.
+  it('leaves the pending 60s revoke timer running on unmount and still revokes the URL exactly once', async () => {
+    // The revoke backstop scheduled after a successful print is a bare
+    // window.setTimeout with no lifecycle tie to the component: unmounting
+    // within 60s must not touch it, because the print dialog reads the URL
+    // lazily (see REVOKE_DELAY_MS) and may still be open after the detail
+    // panel is closed. This matches BASE, where cleanup() was exactly this
+    // — an untracked setTimeout — for every print path.
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       vi.spyOn(api, 'getAitoQuotePdf').mockResolvedValue(new Blob(['%PDF-']));
@@ -139,26 +141,27 @@ describe('QuotePrintButton', () => {
       expect(revoke).not.toHaveBeenCalled();
 
       unmount();
-      // Unmounting must revoke immediately rather than leaving the URL held
-      // until the original 60s deadline.
-      expect(revoke).toHaveBeenCalledTimes(1);
+      // Unmounting must NOT force-revoke: the dialog may still be reading
+      // the URL after the panel is closed.
+      expect(revoke).not.toHaveBeenCalled();
 
       await vi.advanceTimersByTimeAsync(60_000);
-      // The cancelled timer must not also fire and revoke a second time.
+      // The backstop still runs to completion on its own and revokes the
+      // URL exactly once.
       expect(revoke).toHaveBeenCalledTimes(1);
+      expect(revoke).toHaveBeenCalledWith('blob:fake');
     } finally {
       vi.useRealTimers();
     }
   });
 
   it('does not revoke a URL handed to window.open on unmount, but still revokes it exactly once when its own 60s backstop elapses', async () => {
-    // The unmount cleanup above force-revokes immediately, which is correct
-    // for the iframe path (nothing else can still be reading that URL once
-    // this document's iframe is gone). It is NOT correct for the
-    // window.open fallback: the operator may have kept that spawned tab
-    // open — or reloaded it — after closing this panel, and revoking the
-    // URL out from under it breaks a reload that would otherwise have kept
-    // working for the rest of the original 60s window.
+    // The window.open fallback must not be force-revoked on unmount: the
+    // operator may have kept that spawned tab open — or reloaded it — after
+    // closing this panel, and revoking the URL out from under it breaks a
+    // reload that would otherwise have kept working for the rest of the
+    // original 60s window. (See the sibling test above: the iframe path
+    // gets the same treatment, for the same reason.)
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       vi.spyOn(api, 'getAitoQuotePdf').mockResolvedValue(new Blob(['%PDF-']));
@@ -202,11 +205,10 @@ describe('QuotePrintButton', () => {
 
   it('leaks no URL when a second print starts inside the first print\'s pending 60s window', async () => {
     // Two prints in flight at once means two pending revoke entries. This
-    // covers both the plain "second overwrites the first" leak and the
-    // interaction with the window.open carve-out above: the first print
-    // succeeds via the iframe (force-revoked on unmount), the second is
-    // escalated to window.open (left for its own timer) — every URL must
-    // still end up revoked exactly once.
+    // covers the "second overwrites the first" leak: neither entry is
+    // touched by unmount (the first went through the iframe path, the
+    // second through window.open), both are left for their own timer, and
+    // every URL must still end up revoked exactly once.
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       let call = 0;
@@ -253,14 +255,13 @@ describe('QuotePrintButton', () => {
       expect(revoke).not.toHaveBeenCalled();
 
       unmount();
-      // The first (iframe-path) URL is force-revoked; the second
-      // (window.open path) URL is left alone for its own timer.
-      expect(revoke).toHaveBeenCalledTimes(1);
-      expect(revoke).toHaveBeenCalledWith('blob:fake-1');
+      // Neither the iframe-path nor the window.open-path URL is
+      // force-revoked on unmount; both are left alone for their own timer.
+      expect(revoke).not.toHaveBeenCalled();
 
       await vi.advanceTimersByTimeAsync(60_000);
-      // The second URL's own backstop has now elapsed: both URLs end up
-      // revoked, each exactly once — no leak, no double revoke.
+      // Both URLs' own backstops have now elapsed: both end up revoked,
+      // each exactly once — no leak, no double revoke.
       expect(revoke).toHaveBeenCalledTimes(2);
       expect(revoke.mock.calls.filter((c) => c[0] === 'blob:fake-1')).toHaveLength(1);
       expect(revoke.mock.calls.filter((c) => c[0] === 'blob:fake-2')).toHaveLength(1);

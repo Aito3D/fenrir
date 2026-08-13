@@ -61,12 +61,10 @@ export function PdfPrintButton({
   const timeoutRef = useRef<number | null>(null);
   // Every in-flight 60s revoke backstop (see REVOKE_DELAY_MS). An array of
   // entries rather than a single pair: printing twice inside one 60s window
-  // must not lose track of the first URL when the second starts. Each entry
-  // also remembers whether its URL was handed to a spawned `window.open`
-  // tab — that path must NOT be force-revoked on unmount (see handedToTab
-  // below), only the iframe path is. Entries are matched by object identity
-  // rather than by URL string so two entries can never collide.
-  const pendingRevokesRef = useRef<{ url: string; timerId: number; handedToTab: boolean }[]>([]);
+  // must not lose track of the first URL when the second starts. Entries are
+  // matched by object identity rather than by URL string so two entries can
+  // never collide. Unmounting does not touch this array at all — see below.
+  const pendingRevokesRef = useRef<{ url: string; timerId: number }[]>([]);
   const mountedRef = useRef(true);
 
   // The fallback timer (and the iframe it may act on) must not outlive the
@@ -82,24 +80,16 @@ export function PdfPrintButton({
         window.clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
       }
-      // Force-revoke every pending iframe-path URL now instead of waiting
-      // out its 60s backstop — safe because that URL's only reader was an
-      // iframe in this document, and it is gone once we unmount. A URL
-      // handed to `window.open`, though, may still be showing in a tab the
-      // operator kept open (or reloaded) after closing this panel: revoking
-      // it here would break that tab within its otherwise-normal 60s
-      // window, so it is left alone and its own timer is left running to
-      // revoke it (exactly once) when the 60s backstop naturally elapses.
-      const stillPending: typeof pendingRevokesRef.current = [];
-      for (const entry of pendingRevokesRef.current) {
-        if (entry.handedToTab) {
-          stillPending.push(entry);
-          continue;
-        }
-        window.clearTimeout(entry.timerId);
-        URL.revokeObjectURL(entry.url);
-      }
-      pendingRevokesRef.current = stillPending;
+      // Every pending revoke (iframe path or window.open path alike) is left
+      // running rather than force-revoked here: REVOKE_DELAY_MS's own reason
+      // for existing — the print dialog reads the URL lazily, so revoking
+      // immediately can cancel the job — applies just as much to a dialog
+      // still open after this panel is closed as to one still open while it
+      // is visible. This matches BASE, where the revoke was a bare
+      // `window.setTimeout` with no lifecycle tie to the component at all.
+      // Each entry's own 60s backstop (scheduled in `cleanup` below) is what
+      // revokes it, exactly once, whether or not this component is still
+      // mounted when that happens.
       if (frameRef.current) {
         frameRef.current.remove();
         frameRef.current = null;
@@ -107,8 +97,8 @@ export function PdfPrintButton({
     };
   }, []);
 
-  const cleanup = (frame: HTMLIFrameElement, url: string, handedToTab: boolean) => {
-    const entry = { url, timerId: 0, handedToTab };
+  const cleanup = (frame: HTMLIFrameElement, url: string) => {
+    const entry = { url, timerId: 0 };
     entry.timerId = window.setTimeout(() => {
       pendingRevokesRef.current = pendingRevokesRef.current.filter((e) => e !== entry);
       frame.remove();
@@ -121,7 +111,7 @@ export function PdfPrintButton({
   const openInTab = (url: string, frame: HTMLIFrameElement) => {
     window.open(url, '_blank');
     showToast(t('aito.printOpenedInTab'), 'info');
-    cleanup(frame, url, true);
+    cleanup(frame, url);
     setBusy(false);
   };
 
@@ -161,7 +151,7 @@ export function PdfPrintButton({
         try {
           element.contentWindow?.focus();
           element.contentWindow?.print();
-          cleanup(element, objectUrl, false);
+          cleanup(element, objectUrl);
           setBusy(false);
         } catch {
           openInTab(objectUrl, element);
