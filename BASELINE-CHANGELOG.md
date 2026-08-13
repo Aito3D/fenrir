@@ -119,3 +119,96 @@ timeline. `tools/snapshot.py verify` shows only `aito-openapi` moving, confined 
 `send_quote_email` docstring text (now documenting this behavior) that FastAPI surfaces as the
 route's OpenAPI `description` — no field, schema, or route-shape change; re-recorded and re-verified
 9/9. `SURFACE.md` is unchanged (route list identical).
+
+## T-007 — 2026-08-12 — user-approved behavior change
+
+`ShippingFields.tsx` formatted the Zoho shipping rate with a bare
+`zohoRate.toLocaleString()` — no locale argument, so it always used the
+browser/runtime's default locale — while every other formatted number or date
+in the same Aito feature (`CardView.tsx`, `PanelAgeStat.tsx`,
+`ProjectDetailPanel.tsx`, `ImportQuoteDrawer.tsx`) explicitly passes
+`i18n.language`, the app's own selected UI language.
+
+Fixed by destructuring `i18n` from `useTranslation()` (alongside the existing
+`t`) and changing the call to `zohoRate.toLocaleString(i18n.language)`,
+matching the sibling components exactly.
+
+Observable change: a shipping card or drawer showing a Zoho rate (the "Zoho
+rate: <rate> <currency>" line next to the picked island's service) will now
+format that number's thousands grouping and decimal separator according to
+the operator's chosen Bambuddy UI language rather than the browser's own
+locale/language setting. Concretely, an operator whose Bambuddy UI language
+is French (`fr`) but whose browser/OS locale is English will now see, e.g.,
+`3 200 XPF` (French grouping, narrow no-break space) instead of `3,200 XPF`
+(English grouping) — matching every other number already shown on the same
+panel. An operator whose browser locale already matched their chosen UI
+language sees no change.
+
+Confirmed via a new test in `AitoShippingFields.test.tsx` that switches
+`i18n` to `fr`, renders the component with a service whose rate is 3200, and
+asserts the rendered text uses French thousands grouping (which differs from
+English grouping for this value), then restores the language to `en`.
+`tools/snapshot.py verify` shows no probe moving (9/9 match) — this is a pure
+display-formatting change with no probe coverage — and `SURFACE.md` is
+unchanged.
+
+## T-011 — 2026-08-12 — user-approved behavior change
+
+`AitoTaskBase`'s four per-service free-text fields (`scan_description`,
+`modelisation_description`, `impression_description`, `usinage_description`)
+carried no `max_length`, unlike every other free-text field on the same
+trust boundary — `AitoProjectCreate.description` is capped at 10_000 with an
+explicit rationale comment, and `title` is capped at 200. Accepted unbounded
+on `POST /aito/`, `POST /aito/{project_id}/tasks` and `PATCH
+/aito/tasks/{task_id}`, stored in `Text` columns, and pushed verbatim into
+the Books line-item description on the next sync, an oversized value could
+only surface later as a `ZohoRequestRejected` that parks the project in the
+terminal `error` state.
+
+The bound is declared on `AitoTaskCreate` and `AitoTaskUpdate` only (the two
+request models), each redeclaring the four fields with `Field(default=None,
+max_length=10_000)` and the same rationale comment as the project
+description. It is deliberately NOT declared on `AitoTaskBase` (nor
+therefore inherited by `AitoTaskResponse`): `AitoTaskResponse` also inherits
+from `AitoTaskBase` and is constructed directly from DB rows by
+`_task_to_response` on every read (`GET .../tasks`) and every write response
+(`POST`/`PATCH`), so a bound there would re-validate on read — a row already
+stored above the cap (there is no migration to trim or grandfather existing
+data) would make the *entire* task list 500, and would make an unrelated
+`PATCH` of that same task (one that never touches a description field) 500
+during response construction. An earlier revision of this fix put the bound
+on `AitoTaskBase` and had exactly that defect; it is corrected here. No
+column, migration, optionality, or default changed on any field — this is a
+request-boundary validation bound only, and the read path is intentionally
+left unbounded so a pre-existing over-cap row keeps reading back exactly as
+it did before this change.
+
+Observable change, both halves of the approved delta, no more: (a) a task
+`scan_description`/`modelisation_description`/`impression_description`/
+`usinage_description` longer than 10_000 characters now gets rejected with
+422 on create or patch, instead of being saved; (b) any row that was already
+stored above the cap will now fail a `PATCH` that resends that same
+over-cap field unchanged. Reading such a row back (`GET .../tasks`) and
+patching an *unrelated* field on it are both unaffected and continue to
+succeed exactly as before this change.
+
+Confirmed via sixteen new parametrized tests in `backend/tests/unit/test_aito_routes.py`
+(over the four fields): `test_create_task_accepts_a_description_at_the_cap` (201,
+value round-trips at exactly 10_000 chars), `test_create_task_rejects_an_over_cap_description`
+(422 at 10_001 chars on `POST /aito/{project_id}/tasks`),
+`test_patch_task_rejects_an_over_cap_description` (422 at 10_001 chars on
+`PATCH /aito/tasks/{task_id}`), and
+`test_reading_a_task_already_over_the_cap_still_succeeds` (a task row written
+directly to the DB with a 10_001-char field still returns 200 on
+`GET .../tasks` with the value intact, and a `PATCH` of an unrelated field on
+that same task still returns 200 with the over-cap value untouched — this
+last test pins the read-path fix and fails if the bound is ever moved back
+onto `AitoTaskBase`/`AitoTaskResponse`). `tools/snapshot.py verify` shows
+exactly one probe moving, `aito-pydantic-schemas`: 8 `"maxLength": 10000,`
+lines removed, one per field on `AitoTaskBase` and one per field on
+`AitoTaskResponse` (confirmed by walking both golden and current schema
+trees per top-level model — `AitoTaskCreate`, `AitoTaskUpdate`, and the two
+unrelated pre-existing capped models `AitoProjectCreate` and
+`AitoSummarizeRequest`, are unchanged), and nothing else; re-recorded and
+re-verified 9/9. `aito-openapi` (paths-only) and `SURFACE.md` are both
+unaffected — confirmed byte-identical.

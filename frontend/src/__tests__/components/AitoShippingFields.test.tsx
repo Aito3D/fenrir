@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { ShippingFields } from '../../components/aito/ShippingFields';
 import { emptyShippingDraft } from '../../utils/shippingDraft';
 import type { ShippingDraft } from '../../utils/shippingDraft';
 import type { AitoShippingService } from '../../api/client';
+import i18n from '../../i18n';
 
 // Two services, mirroring AitoIslandCombobox.test.tsx's fixture, are load-
 // bearing here: with only one service in the table, an island pick can never
@@ -125,6 +126,36 @@ describe('ShippingFields', () => {
     setup({ island: 'rangiroa', service: 'tuamotu', price: 3200 });
     expect(screen.getByText('Livraison Avion Tuamotu')).toBeInTheDocument();
     expect(getRateInput()).toHaveValue(3200);
+  });
+
+  // The Zoho rate line must follow the app's own language, like every other
+  // formatted number in the feature (CardView, PanelAgeStat, ProjectDetailPanel,
+  // ImportQuoteDrawer all pass `i18n.language`) — not the browser/JSDOM default.
+  // `en` and `fr` group thousands differently (comma vs. a narrow no-break
+  // space), so switching to `fr` and asserting the French grouping is what
+  // actually catches a regression back to a bare, argument-less `toLocaleString()`.
+  describe('formats the Zoho rate with the current i18n language', () => {
+    afterEach(async () => {
+      await act(async () => {
+        await i18n.changeLanguage('en');
+      });
+    });
+
+    it('renders the French thousands grouping once the language is switched to fr', async () => {
+      await act(async () => {
+        await i18n.changeLanguage('fr');
+      });
+      setup({ island: 'rangiroa', service: 'tuamotu', price: 3200 });
+      const expectedRate = (3200).toLocaleString('fr');
+      expect(expectedRate).not.toBe((3200).toLocaleString('en'));
+      // testing-library's default text matcher collapses runs of Unicode
+      // whitespace (French grouping uses a narrow no-break space) down to a
+      // plain ASCII space before comparing, so the separator itself must be
+      // matched with `\s+` rather than the literal codepoint `toLocaleString`
+      // produced.
+      const rateAsFlexiblePattern = expectedRate.replace(/\s+/gu, '\\s+');
+      expect(screen.getByText(new RegExp(`${rateAsFlexiblePattern}\\s*XPF`))).toBeInTheDocument();
+    });
   });
 
   it('offers a reset once the price is edited, and no reset before', async () => {

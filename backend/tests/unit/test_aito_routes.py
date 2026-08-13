@@ -785,6 +785,66 @@ async def test_delete_task_removes_only_that_task(async_client):
     assert [t["title"] for t in remaining] == ["Deux"]
 
 
+_TASK_DESCRIPTION_FIELDS = [
+    "scan_description",
+    "modelisation_description",
+    "impression_description",
+    "usinage_description",
+]
+
+
+@pytest.mark.parametrize("field", _TASK_DESCRIPTION_FIELDS)
+@pytest.mark.asyncio
+async def test_create_task_accepts_a_description_at_the_cap(async_client, field):
+    """Same 10_000 cap as the project description (T-011) — a value sitting
+    exactly on it must still be accepted, not just one under."""
+    project_id = (await _create(async_client)).json()["id"]
+    capped = "D" * 10_000
+    r = await async_client.post(f"/api/v1/aito/{project_id}/tasks", json=_task(**{field: capped}))
+    assert r.status_code == 201
+    assert r.json()[field] == capped
+
+
+@pytest.mark.parametrize("field", _TASK_DESCRIPTION_FIELDS)
+@pytest.mark.asyncio
+async def test_create_task_rejects_an_over_cap_description(async_client, field):
+    project_id = (await _create(async_client)).json()["id"]
+    r = await async_client.post(f"/api/v1/aito/{project_id}/tasks", json=_task(**{field: "D" * 10_001}))
+    assert r.status_code == 422
+
+
+@pytest.mark.parametrize("field", _TASK_DESCRIPTION_FIELDS)
+@pytest.mark.asyncio
+async def test_patch_task_rejects_an_over_cap_description(async_client, field):
+    project_id = (await _create(async_client, tasks=[_task()])).json()["id"]
+    task_id = (await async_client.get(f"/api/v1/aito/{project_id}/tasks")).json()[0]["id"]
+    r = await async_client.patch(f"/api/v1/aito/tasks/{task_id}", json={field: "D" * 10_001})
+    assert r.status_code == 422
+
+
+@pytest.mark.parametrize("field", _TASK_DESCRIPTION_FIELDS)
+@pytest.mark.asyncio
+async def test_reading_a_task_already_over_the_cap_still_succeeds(async_client, db_session, field):
+    """The 10_000 cap (T-011) is declared on AitoTaskCreate/AitoTaskUpdate only, never on
+    AitoTaskBase/AitoTaskResponse. A row already stored above the cap (there is no migration
+    to trim existing data) must still read back in full through GET, and an unrelated PATCH
+    of the same task must still succeed — response construction must not re-validate a bound
+    that only ever applied to the write path."""
+    project_id = (await _create(async_client)).json()["id"]
+    over_cap = "D" * 10_001
+    db_session.add(AitoTask(project_id=project_id, position=0, **{field: over_cap}))
+    await db_session.commit()
+
+    r = await async_client.get(f"/api/v1/aito/{project_id}/tasks")
+    assert r.status_code == 200
+    assert r.json()[0][field] == over_cap
+
+    task_id = r.json()[0]["id"]
+    r = await async_client.patch(f"/api/v1/aito/tasks/{task_id}", json={"scan_cost": 42})
+    assert r.status_code == 200
+    assert r.json()[field] == over_cap
+
+
 @pytest.mark.asyncio
 async def test_task_endpoints_404_on_unknown_ids(async_client):
     assert (await async_client.patch("/api/v1/aito/tasks/9999", json={"title": "x"})).status_code == 404

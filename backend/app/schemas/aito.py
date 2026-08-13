@@ -193,13 +193,28 @@ class AitoTaskBase(BaseModel):
 
 
 class AitoTaskCreate(AitoTaskBase):
-    pass
+    # 10_000 is generous headroom over anything a human types — it exists to keep a
+    # pathological payload from ballooning the row or the AI summarizer's prompt.
+    # Bounded here (and on AitoTaskUpdate) rather than on AitoTaskBase: AitoTaskResponse
+    # also inherits from AitoTaskBase, and a bound there would make reading back a row
+    # already stored above the cap raise instead of just refusing to write a new one.
+    scan_description: str | None = Field(default=None, max_length=10_000)
+    modelisation_description: str | None = Field(default=None, max_length=10_000)
+    impression_description: str | None = Field(default=None, max_length=10_000)
+    usinage_description: str | None = Field(default=None, max_length=10_000)
 
 
 class AitoTaskUpdate(AitoTaskBase):
     """Only keys present in the body are written — an omitted key is left alone,
     an explicit null clears the field. That is what lets one service be
     disabled without disturbing its siblings."""
+
+    # See AitoTaskCreate for why this is redeclared per-request-model instead of on
+    # AitoTaskBase.
+    scan_description: str | None = Field(default=None, max_length=10_000)
+    modelisation_description: str | None = Field(default=None, max_length=10_000)
+    impression_description: str | None = Field(default=None, max_length=10_000)
+    usinage_description: str | None = Field(default=None, max_length=10_000)
 
 
 class AitoTaskResponse(AitoTaskBase):

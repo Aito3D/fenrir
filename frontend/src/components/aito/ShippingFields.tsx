@@ -29,7 +29,7 @@ export interface ShippingFieldsProps {
  *  price has NOT been hand-edited, or changing island would silently discard a
  *  figure the operator typed on purpose. */
 export function ShippingFields({ value, onChange, services, catalogueResolved, currency }: ShippingFieldsProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const errors = visibleShippingDraftErrors(value);
   const service = services.find((s) => s.key === value.service);
   const zohoRate = service?.rate ?? null;
@@ -70,7 +70,7 @@ export function ShippingFields({ value, onChange, services, catalogueResolved, c
             <p className="truncate text-sm font-semibold text-white">{service.name}</p>
             {zohoRate !== null ? (
               <p className="text-xs text-bambu-gray">
-                {t('aito.shippingRateFromZoho', { rate: `${zohoRate.toLocaleString()} ${currency}` })}
+                {t('aito.shippingRateFromZoho', { rate: `${zohoRate.toLocaleString(i18n.language)} ${currency}` })}
               </p>
             ) : (
               <p className="text-xs text-amber-400">{t('aito.shippingNoRate')}</p>

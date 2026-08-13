@@ -109,6 +109,34 @@ async def test_the_same_comment_is_never_mirrored_twice(db_session):
 
 
 @pytest.mark.asyncio
+async def test_a_same_batch_duplicate_comment_id_writes_only_one_row(db_session):
+    """The seen-check is one IN() query issued before the loop starts, so a
+    comment_id repeated twice within a single incoming batch (e.g. Books
+    listing it twice on the same page) must still write exactly one row --
+    not just a repeat across two separate mirror_comments calls, which
+    test_the_same_comment_is_never_mirrored_twice above already covers."""
+    project = AitoProject(description="Trophy", board_column="devis", quote_id="EST-1")
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+
+    duplicated_comment = {
+        "comment_id": "c-dup",
+        "description": "Estimate viewed by the customer",
+        "comment_type": "system",
+        "date": "2026-07-28",
+        "time": "17:20",
+    }
+
+    written = await mirror_comments(db_session, project, [duplicated_comment, duplicated_comment])
+    assert written == 1
+
+    rows = (await db_session.execute(select(AitoEvent).where(AitoEvent.project_id == project.id))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].zoho_comment_id == "c-dup"
+
+
+@pytest.mark.asyncio
 async def test_our_own_status_push_does_not_come_back_as_the_clients(db_session):
     """We mark a quote sent; Books writes its own comment for that change. Left
     alone the mirror would import it and the timeline would show the quote
