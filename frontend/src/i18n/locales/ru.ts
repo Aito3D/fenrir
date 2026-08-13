@@ -27,6 +27,7 @@ export default {
     sendQuoteNoRecipients: 'У этого клиента нет адреса электронной почты в Zoho.',
     sendQuoteLoadFailed: 'Не удалось загрузить данные письма',
     quoteEmailed: 'Смета отправлена на {{email}}',
+    quoteEmailedCardMoveFailed: 'Смета отправлена на {{email}} — не удалось автоматически переместить карточку. Переместите её вручную.',
     quoteEmailFailed: 'Не удалось отправить смету',
     acceptQuote: 'Принять смету',
     declineQuote: 'Отклонить смету',

@@ -6998,10 +6998,13 @@ export const api = {
    *  The POST re-reads it server-side rather than trusting anything sent
    *  back, so this is safe to treat as display data. */
   getAitoQuoteEmail: (id: number) => request<AitoQuoteEmailContent>(`/aito/${id}/quote-email`),
-  /** Email the quote through Books. `marked_sent` is true when the card was
-   *  in the Quote column and has therefore moved to Waiting. */
+  /** Email the quote through Books. `marked_sent` is tri-state: `true` when
+   *  the card was in the Quote column and moved to Waiting; `null` when no
+   *  move was attempted (already past the Quote column — a legitimate
+   *  re-send, not a failure); `false` when the move was attempted and
+   *  failed after the email had already gone out. */
   sendAitoQuoteEmail: (id: number, data: { to: string }) =>
-    request<{ project: AitoProject; marked_sent: boolean }>(`/aito/${id}/quote-email`, {
+    request<{ project: AitoProject; marked_sent: boolean | null }>(`/aito/${id}/quote-email`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),

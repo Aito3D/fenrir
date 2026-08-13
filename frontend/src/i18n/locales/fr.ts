@@ -27,6 +27,7 @@ export default {
     sendQuoteNoRecipients: "Ce client n'a aucune adresse e-mail dans Zoho.",
     sendQuoteLoadFailed: "Impossible de charger les détails de l'e-mail",
     quoteEmailed: 'Devis envoyé à {{email}}',
+    quoteEmailedCardMoveFailed: "Devis envoyé à {{email}} — impossible de déplacer la carte automatiquement. Déplacez-la manuellement.",
     quoteEmailFailed: "Impossible d'envoyer le devis",
     acceptQuote: 'Accepter le devis',
     declineQuote: 'Refuser le devis',

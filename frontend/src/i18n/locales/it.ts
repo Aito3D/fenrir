@@ -27,6 +27,7 @@ export default {
     sendQuoteNoRecipients: 'Questo cliente non ha un indirizzo e-mail in Zoho.',
     sendQuoteLoadFailed: "Impossibile caricare i dettagli dell'e-mail",
     quoteEmailed: 'Preventivo inviato a {{email}}',
+    quoteEmailedCardMoveFailed: 'Preventivo inviato a {{email}} — non è stato possibile spostare la scheda automaticamente. Spostala manualmente.',
     quoteEmailFailed: 'Impossibile inviare il preventivo',
     acceptQuote: 'Accetta preventivo',
     declineQuote: 'Rifiuta preventivo',

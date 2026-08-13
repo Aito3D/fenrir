@@ -43,6 +43,59 @@ describe('SendQuoteModal', () => {
     );
   });
 
+  it('shows the plain success toast when the card moved', async () => {
+    vi.spyOn(api, 'getAitoQuoteEmail').mockResolvedValue(CONTENT);
+    vi.spyOn(api, 'sendAitoQuoteEmail').mockResolvedValue({ project, marked_sent: true });
+    const user = userEvent.setup();
+    render(<SendQuoteModal project={project} onClose={() => {}} />);
+
+    await screen.findByLabelText(/recipient/i);
+    await user.click(screen.getByRole('button', { name: /^send$/i }));
+
+    expect(await screen.findByText('Quote sent to contact@example.pf')).toBeInTheDocument();
+    expect(
+      screen.queryByText(/could not be moved automatically/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows the plain success toast — not a warning — for a re-send that needed no move', async () => {
+    // marked_sent: null is what the server returns when the card was
+    // already past the Quote column (e.g. a re-send from Waiting). That is
+    // not a failure, so this must still be the ordinary success toast.
+    vi.spyOn(api, 'getAitoQuoteEmail').mockResolvedValue(CONTENT);
+    vi.spyOn(api, 'sendAitoQuoteEmail').mockResolvedValue({ project, marked_sent: null });
+    const user = userEvent.setup();
+    render(<SendQuoteModal project={project} onClose={() => {}} />);
+
+    await screen.findByLabelText(/recipient/i);
+    await user.click(screen.getByRole('button', { name: /^send$/i }));
+
+    expect(await screen.findByText('Quote sent to contact@example.pf')).toBeInTheDocument();
+    expect(
+      screen.queryByText(/could not be moved automatically/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it('warns, rather than showing plain success, when the card move failed after sending', async () => {
+    // marked_sent: false is the genuine-failure case: the email already
+    // went out (this is the user-approved T-013 degrade-to-200 behavior,
+    // unchanged here) but the card-move half hit a DB error server-side.
+    vi.spyOn(api, 'getAitoQuoteEmail').mockResolvedValue(CONTENT);
+    vi.spyOn(api, 'sendAitoQuoteEmail').mockResolvedValue({ project, marked_sent: false });
+    const user = userEvent.setup();
+    render(<SendQuoteModal project={project} onClose={() => {}} />);
+
+    await screen.findByLabelText(/recipient/i);
+    await user.click(screen.getByRole('button', { name: /^send$/i }));
+
+    expect(
+      await screen.findByText(
+        'Quote sent to contact@example.pf — the card could not be moved automatically. Move it manually.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Quote sent to contact@example.pf')).not.toBeInTheDocument();
+  });
+
   it('sends whichever address the user picks', async () => {
     vi.spyOn(api, 'getAitoQuoteEmail').mockResolvedValue(CONTENT);
     const send = vi

@@ -235,13 +235,24 @@ plus their two `$defs` copies embedded where they are nested by reference:
 `AitoProjectCreate.tasks` (also `list[AitoTaskCreate]`, since project
 creation accepts inline tasks). `AitoTaskBase` and `AitoTaskResponse` are
 confirmed byte-identical to BASE — no leaf added on either, consistent with
-the bound being declared on `AitoTaskCreate`/`AitoTaskUpdate` only. (A
-one-line drop elsewhere in `AitoProjectCreate`, on `quote_status`, is also
-present versus BASE but is unrelated to this change — it is a different
-field, not one of the four description fields, and traces to T-009's
-`quote_status` validation, not to this fix.) Re-recorded and re-verified
-9/9. `aito-openapi` (paths-only) and `SURFACE.md` are both unaffected —
-confirmed byte-identical.
+the bound being declared on `AitoTaskCreate`/`AitoTaskUpdate` only. (Also
+present versus BASE at the point this task landed, on
+`AitoProjectCreate.quote_status`, and unrelated to this change — it is a
+different field, not one of the four description fields — is a one-line
+`maxLength: 30` drop AND a six-value enum addition, both from T-009's
+`quote_status` validation, not this fix: T-011's own contribution to the
+golden's delta from BASE is exactly the 16 `maxLength` leaves above; T-009's
+own contribution on that same field is 6 `enum` values gained and 1
+`maxLength: 30` lost; together, at the point T-011 landed, that was the
+golden's entire delta from BASE — 22 leaves added, 1 removed, 0 changed. Do
+not read this total as the golden's CURRENT delta from BASE: later entries
+in this file — T-037+T-049 (as amended by T-053) and T-048 — each add
+further leaves of their own to `aito-pydantic-schemas`, on fields this task
+never touched; see those entries for their own deltas, verified the same
+way, against the golden as it stood when each of them landed.) Re-recorded
+and re-verified 9/9.
+`aito-openapi` (paths-only) and `SURFACE.md` are both unaffected — confirmed
+byte-identical.
 
 ## T-021 — 2026-08-12 — user-approved behavior change
 
@@ -362,20 +373,32 @@ each is referenced only as the body type of its own single route —
 `AitoTaskCreate`, which is genuinely shared). So, unlike T-011, no bound
 here reaches a second endpoint through a shared type:
 
-- `AitoProjectCreate.tasks: list[AitoTaskCreate] = Field(default_factory=list, max_length=50)`
-  — 50 mirrors `AitoSummarizeRequest.tasks`' existing cap for the identical
-  element type, chosen (not just copied) after checking it against the real
-  create-drawer workflow: `AiSummaryPanel.tsx` already calls
+- `AitoProjectCreate.tasks: list[AitoTaskCreate] = Field(default_factory=list, max_length=300)`
+  (raised from an original `max_length=50` — see the **T-053 correction**
+  below for why) — bounded against BOTH of this field's live callers, not
+  just one. Caller 1, the create drawer: `AiSummaryPanel.tsx` already calls
   `POST /aito/summarize` with this exact same task array on every drawer
-  open/regenerate, so an operator building more than 50 tasks in the drawer
-  today already loses the AI-generated summary past that point (the
-  request 422s and `AiSummaryPanel` falls back to `buildFallbackSummary`
-  silently — it does not block submission). A single `AitoTaskCreate` also
-  carries its own `impression_quantity`, so a large batch of *identical*
-  prints is one task with a quantity, not many task rows — 50 *distinct*
-  tasks, each up to four priced services, comfortably covers a real order.
-  50 was judged safe for legitimate operators on that basis, not chosen by
-  analogy alone.
+  open/regenerate, and that sibling endpoint's own cap
+  (`AitoSummarizeRequest.tasks`, still `max_length=50`, untouched by this
+  change) means an operator building more than 50 tasks in the drawer today
+  already loses the AI-generated summary past that point (the request 422s
+  and `AiSummaryPanel` falls back to `buildFallbackSummary` silently — it
+  does not block submission). A single `AitoTaskCreate` also carries its own
+  `impression_quantity`, so a large batch of *identical* prints is one task
+  with a quantity, not many task rows — 50 *distinct* tasks, each up to four
+  priced services, comfortably covers a real order built by hand in the
+  drawer. Caller 2, found only after this cap shipped at 50 and 422'd a real
+  workflow: the Zoho quote-import preview
+  (`aito_quote_import.build_preview`) builds exactly one `AitoTaskCreate` per
+  HEADER GROUP of the imported Books estimate (`_build_task(group) for group
+  in group_lines(lines)`) and posts the whole list to this same field — an
+  estimate with more than the cap's header groups had its WHOLE IMPORT
+  rejected, not just its summary. A header group is at most one recognised
+  line per service in `SERVICE_RANK` (scan, modelisation, impression,
+  usinage — 4 total; a repeated or lower-ranked service opens a new group),
+  so 300 tolerates a Books estimate with up to 1200 recognised service line
+  items — headroom no real imported estimate has come close to, not a
+  realistic ceiling. Chosen inside the user-approved 200-500 range.
 - `AitoProjectImport.projects: list[AitoProjectImportItem] = Field(max_length=1000)`
   — `/aito/import` is a one-time localStorage-board migration (guarded by
   the empty-board 409 above), not a per-request UI flow: no current
@@ -401,15 +424,18 @@ Observable change, quoting the approved description verbatim: "a POST
 /aito/ or POST /aito/import carrying more tasks/projects than the new cap,
 or an import description over the cap, would start returning 422 instead
 of 201." Endpoints affected, named in full: `POST /aito/` (`tasks` capped
-at 50) and `POST /aito/import` (`projects` capped at 1000, each item's
-`description` capped at 10_000). No other endpoint is reachable through
-either bound — `AitoTaskCreate` itself (and therefore `POST
-/aito/{project_id}/tasks`, `PATCH /aito/tasks/{task_id}` and `POST
-/aito/summarize`) is unchanged; the new `AitoProjectCreate.tasks` bound is
-on the outer list field, not on `AitoTaskCreate`'s own schema.
+at 300, raised from an original 50 — see the **T-053 correction** below) and
+`POST /aito/import` (`projects` capped at 1000, each item's `description`
+capped at 10_000). No other endpoint is reachable through either bound —
+`AitoTaskCreate` itself (and therefore `POST /aito/{project_id}/tasks`,
+`PATCH /aito/tasks/{task_id}` and `POST /aito/summarize`) is unchanged; the
+`AitoProjectCreate.tasks` bound is on the outer list field, not on
+`AitoTaskCreate`'s own schema.
 
 Confirmed via six new tests in `backend/tests/unit/test_aito_routes.py`:
-`test_create_project_accepts_fifty_tasks` / `_rejects_more_than_fifty_tasks`,
+`test_create_project_accepts_three_hundred_tasks` /
+`_rejects_more_than_three_hundred_tasks` (renamed and re-numbered by T-053,
+below — originally `..._fifty_tasks` / `_rejects_more_than_fifty_tasks`),
 `test_import_accepts_a_thousand_projects` /
 `_rejects_more_than_a_thousand_projects`, and
 `test_import_accepts_a_project_description_at_the_cap` /
@@ -417,16 +443,70 @@ Confirmed via six new tests in `backend/tests/unit/test_aito_routes.py`:
 the cap (201, value round-trips) and rejects one past it (422).
 `tools/snapshot.py verify` shows exactly one probe moving,
 `aito-pydantic-schemas`, with exactly four new leaves and nothing else in
-the golden diff: `"maxItems": 50` on `AitoProjectCreate.tasks`,
-`"maxLength": 10000` on `AitoProjectImportItem.description` (appearing
-twice — once as the item's own top-level schema entry, once in its `$defs`
-copy embedded by `AitoProjectImport`, both from the same single field
-declaration), and `"maxItems": 1000` on `AitoProjectImport.projects`.
-`SURFACE.md` is unaffected: `bash tools/gen_surface.sh` produces a
-byte-identical file (no new `def`/`class`, export, or route dependency was
-added — only field-level constraints changed). Backend sysmon coverage for
-the Aito subset held at 38 missed statements (the ratchet), with all three
-new bounds fully exercised by the tests above.
+the golden diff, AS ORIGINALLY LANDED (T-053, below, later moved one of
+these four): `"maxItems": 50` on `AitoProjectCreate.tasks` (now `300`, see
+the correction below), `"maxLength": 10000` on
+`AitoProjectImportItem.description` (appearing twice — once as the item's
+own top-level schema entry, once in its `$defs` copy embedded by
+`AitoProjectImport`, both from the same single field declaration, and
+UNCHANGED by T-053), and `"maxItems": 1000` on `AitoProjectImport.projects`
+(also unchanged by T-053). `SURFACE.md` is unaffected: `bash
+tools/gen_surface.sh` produces a byte-identical file (no new `def`/`class`,
+export, or route dependency was added — only field-level constraints
+changed). Backend sysmon coverage for the Aito subset held at 38 missed
+statements (the ratchet), with all three new bounds fully exercised by the
+tests above.
+
+**Correction (2026-08-13), T-053, caught by the blind verifier — the 50 cap
+above missed a second live caller and broke it.** `AitoProjectCreate.tasks`
+was bounded to 50 by analogy with the create drawer's own workflow (via
+`AitoSummarizeRequest.tasks`' identical, unrelated cap) without checking
+every caller of the field it was actually placed on. A second caller existed
+and was missed: the Zoho quote-import flow builds one `AitoTaskCreate` per
+header group of the imported Books estimate
+(`aito_quote_import.py:646`, `tasks = [_build_task(group) for group in
+group_lines(lines)]`) and posts that whole preview to this same field. A
+Books estimate with more than 50 header groups started 422ing its ENTIRE
+IMPORT — a workflow that worked before this campaign and is unrelated to the
+summary-generation limitation the original 50 was reasoned against. This did
+not fail this task's own gate at the time: the approved delta ("over-cap
+creates return 422") covered this caller correctly, and the entry's endpoint
+list was complete — only the workflow analysis behind the *chosen number*
+was incomplete.
+
+The user chose to raise the cap for safety rather than special-case either
+caller, and indicated 200-500 as the sensible range; 300 was chosen and
+justified against both callers — see the tasks bullet above, now amended in
+place rather than left to drift from what actually ships. Consequence,
+written down per the user's request even though it predates this fix and is
+not introduced by it: with the cap now above 50, an import of a Books
+estimate with more than 50 header groups succeeds at `POST /aito/` while its
+AI summary silently falls back — `POST /aito/summarize` (still capped at 50,
+untouched) 422s for that same task list and `buildFallbackSummary` takes
+over client-side. That was already true for any task list past 50 before
+this correction (the create drawer could already hit it by hand); this
+change only stops it from also blocking the import itself.
+
+The two `AitoProjectCreate.tasks` cap tests were renumbered in place rather
+than left describing a limit that no longer exists:
+`test_create_project_accepts_three_hundred_tasks` (was `..._fifty_tasks`)
+and `test_create_project_rejects_more_than_three_hundred_tasks` (was
+`..._rejects_more_than_fifty_tasks`) — same shape, same assertions (accepts
+exactly at the cap with a 201 and a round-tripped count, rejects one past it
+with a 422), new number. `AitoProjectImport.projects` (1000) and
+`AitoProjectImportItem.description` (10_000) were confirmed unchanged by
+reading the schema directly, not just by not touching them.
+`tools/snapshot.py record` then re-recorded the goldens; parsing both the
+previous and current `aito-pydantic-schemas` JSON and diffing leaf-by-leaf
+(not the raw text) shows exactly one changed leaf and nothing added or
+removed: `AitoProjectCreate.properties.tasks.maxItems: 50 -> 300`.
+`git status --porcelain snapshots/` after recording showed only
+`snapshots/aito-pydantic-schemas.golden` modified. Re-verified 9/9.
+`SURFACE.md` unaffected (no export/def/route dependency touched — a
+`Field(...)` bound is not scraped by the generator). Backend sysmon coverage
+for the Aito subset, full suite: 38 missed statements, unchanged from the
+ratchet — the new cap value is exercised by the same two renamed tests the
+old one was.
 
 ## T-038 — 2026-08-12 — user-approved behavior change
 
@@ -814,3 +894,213 @@ functions 603/647 (44 missed), lines 1574/1649 (75 missed) — all four
 exactly at the existing ratchet ceiling, no regression. `npm run lint` and
 `npm run build` both clean; `static/` reverted via `git checkout -- static/`
 after building, nothing under it committed.
+
+## T-044 — 2026-08-13 — user-approved behavior change
+
+T-044 (implemented earlier this campaign) closed a race in
+`aito_quote_sync.py`'s push path: `_create_quote`/`_update_quote` read the
+project's own rows (`load_export_tasks`, `load_export_shipping`) before the
+network write to Books, and an edit whose commit landed anywhere in that
+window was a same-value no-op on an already-`'pending'` project's
+`quote_sync_state` column — SQLAlchemy does not emit an `UPDATE` for a column
+reassigned to the value it already holds, so the row carried no trace that a
+requeue had happened. Before the fix, `_apply_estimate` unconditionally wrote
+`quote_sync_state = "idle"` once the push returned, telling the card it was
+in sync while the edit that raced the round trip was missing from Books —
+silently dropped, with no record anywhere that it happened.
+
+The fix is a process-local counter, `_requeue_marker: dict[int, int]`. Every
+call to `routes/aito.py`'s `_mark_pending` — including one that leaves
+`quote_sync_state` at the value it already held, which is the exact shape of
+the race — bumps the project's entry via `_bump_requeue_marker`.
+`_create_quote`/`_update_quote` capture `_requeue_marker_for(project.id)`
+before their own read of the project's rows; `_apply_estimate` compares that
+captured value against the live one after the push returns, and only writes
+the terminal `quote_sync_state = "idle"` when they still match. If they
+differ, an edit committed inside the window and the project stays `pending`
+for the next sync tick to pick up and push for real. Every other part of
+`_apply_estimate`'s write (`quote_id`, `quote_number`, `quote_date`,
+`quote_total`, `quote_synced_at`, the status copy-back, clearing
+`quote_sync_error`/`quote_sync_failures`) is unconditional and still runs
+exactly as before — only the terminal `'idle'` transition is gated on the
+marker comparison.
+
+This is not, quite, behavior-preserving, and the user was shown why before
+approving it. `ProjectDetailPanel.tsx:53-57` maps `quote_sync_state ===
+'pending'` to a visible sync row (`aito.syncPendingLabel`, rendered at
+`ProjectDetailPanel.tsx:680-681`). So, **inside the race window only**: a
+card whose edit committed during the Books round trip now keeps showing that
+"pending" sync row for one more interval, and gets pushed to Books again on
+the next sync tick (a second Books PUT, and — once that second push lands —
+a `sync.pushed` timeline event), where BASE showed no sync row at all and
+silently settled to `'idle'` with the edit permanently missing from the
+customer's Books estimate. The new behavior is strictly more truthful than
+BASE's silent data loss, but it is observably different, which is why this
+entry exists.
+
+**What is NOT affected, confirmed by reading the exact gates, not assumed:**
+the board card (`CardView.tsx:397`, `{!project.quote_number &&
+project.quote_sync_state === 'pending' && (...)}`) and the pending-poll hook
+(`useQuotePendingPoll.ts:76`, `.filter((p) => !p.quote_number &&
+p.quote_sync_state === 'pending')`) are both additionally gated on
+`!quote_number`, and `quote_id`/`quote_number` are already set by the time
+`_apply_estimate` runs (lines 321-323, unconditional) — so neither the board
+card nor the pending-poll ever shows or polls for this race window; only the
+detail panel's sync row does. In every NON-raced path — no concurrent edit,
+an edit landing before the marker is captured, a stale/never-bumped marker,
+a simulated process restart mid-round-trip — `quote_synced_at`, `quote_total`,
+status adoption, event ordering and board position are written identically
+to BASE; the restart case in particular self-heals with no marker at all,
+because a mid-round-trip crash never reaches the write that would have
+cleared `'pending'`, so the DB row is already correctly `'pending'` for the
+next tick regardless of process memory.
+
+**Deployment constraint:** `_requeue_marker` is a plain process-local dict,
+not a DB column (deliberately — the comment on the dict itself explains the
+marker only has to survive the one in-flight round trip it is guarding). On
+a multi-worker deployment, a requeue recorded by one worker process is
+invisible to another, so the comparison can spuriously match across
+processes and the fix silently reverts to BASE behavior — it can never
+produce a false "stuck pending" hold, only a missed catch, which is the same
+failure mode BASE always had. This is not reachable in this app's own
+shipped configuration: the `Dockerfile`'s `CMD` runs `exec uvicorn
+backend.app.main:app ...` with no `--workers` flag, i.e. a single process.
+
+Documentation only — no code change accompanies this entry; T-044's
+implementation is unmodified. `tools/snapshot.py verify` and `SURFACE.md`
+are unaffected (nothing here touches a probed surface).
+
+## T-048 — 2026-08-13 — user-approved behavior change
+
+`send_quote_email` (`POST /aito/{project_id}/quote-email`) initialized
+`marked_sent = False` and left it there for two structurally different
+outcomes: (a) `should_move_card == False` — the card was already past the
+Quote column, so no move was ever attempted (a legitimate re-send from
+Waiting, or a re-send of an already-accepted/declined quote — see
+`test_resending_an_accepted_quote_never_demotes_it`); and (b) the
+`except SQLAlchemyError` degrade — a move WAS attempted, after the email
+had already gone out, and failed (realistically "database is locked" from
+the `aito_quote_sync` worker sharing the same SQLite file; this degrade
+itself is the user-approved T-013 behavior and is unchanged here). The only
+client that read the field, `useSendQuoteMutation.onSuccess`, ignored it
+entirely and always fired the plain success toast, so case (b) — the one
+where the card is stuck in Devis with an already-sent email and needs a
+human to move it — was indistinguishable from an ordinary successful send,
+inviting an operator to see the card still parked in Quote, assume the send
+never happened, and re-send for real.
+
+**Fix.** `AitoQuoteEmailResponse.marked_sent` is now `bool | None`
+(nullable), not a plain `bool`. A nullable field on the existing field was
+chosen over a second `move_failed` boolean: it maps each of the three
+possible histories to exactly one value with no invalid or redundant
+combination to guard against (`true` = moved, `None` = no move attempted —
+not a failure, `false` = move attempted and failed), it is additive to the
+wire contract (existing consumers reading it as a plain boolean still get a
+boolean in the two cases that were `bool` before; only the newly
+distinguished case introduces `null`), and it is the smaller change to the
+response contract — one field's type widens rather than a second field
+appearing alongside it. In `send_quote_email` the initial value moved from
+`False` to `None`; the `except SQLAlchemyError` branch now sets
+`marked_sent = False` explicitly rather than relying on a pre-set `False`
+default, so `False` is only ever reached by the branch that actually
+attempted and failed a move. `useSendQuoteMutation.onSuccess` now branches
+on `result.marked_sent === false` specifically: that case shows a new
+`aito.quoteEmailedCardMoveFailed` warning toast ("Quote sent to {{email}} —
+the card could not be moved automatically. Move it manually."); every other
+case (`true` or `null`) shows the unchanged `aito.quoteEmailed` plain
+success toast. `frontend/src/api/client.ts`'s `sendAitoQuoteEmail` return
+type was widened to match (`marked_sent: boolean | null`) — touched because
+the fix requires it, not because it is Aito-scoped; it is the shared typed
+API client used across the whole app, and this is a one-line type
+annotation with no other change. `useSendQuoteMutation.ts` itself was also
+touched despite living outside the `hooks/useAito*.ts` glob in the assigned
+fence — flagged here per the SCOPE exception process: its sole consumer is
+`components/aito/SendQuoteModal.tsx`, it is Aito-exclusive code that simply
+predates the naming convention the fence pattern assumes (the same shape as
+the frontend coverage gate's "14 real Aito tests not named `Aito*`" note
+elsewhere in this run), and the task's own evidence names
+`useSendQuoteMutation.onSuccess` as the exact fix location.
+
+**Explicitly preserved, not changed:** the server still returns 200 in the
+degrade case — this narrows what the client is TOLD, not what the server
+DOES. The email is still sent exactly once on every path. A legitimate
+re-send from Waiting (or from any later column) still shows the ordinary
+plain success toast, `aito.quoteEmailed` — it is not a failure and must not
+read as one; this is the entire reason `None` and `False` are now separate
+values instead of both being `False`. The success path (card moved,
+`marked_sent: true`) is unchanged end to end: same toast, same response
+shape aside from the field's now-nullable type.
+
+Thirteen locale files (`en`, `de`, `fr`, `es`, `it`, `pt-BR`, `ru`, `uk`,
+`tr`, `ko`, `ja`, `zh-CN`, `zh-TW`) each gained one real,
+non-English-identical translation for `aito.quoteEmailedCardMoveFailed`,
+following the exact style of the adjacent `aito.quoteEmailed` /
+`aito.clientSyncFailed` keys in each file. `node scripts/check-i18n-parity.mjs`
+passes clean (all 13 locales at parity, 6615 leaves each, no
+identical-to-English leak flagged for the new key in any locale).
+
+Tested in `backend/tests/unit/test_aito_quote_email.py` (three existing
+tests updated, one already-passing test left as the failure-case pin) and
+`frontend/src/__tests__/components/AitoSendQuoteModal.test.tsx` (three new
+cases added), covering exactly the three histories:
+- card moved successfully: `test_send_from_devis_marks_sent_and_moves_to_waiting`
+  still asserts `marked_sent is True`, response shape and success path
+  unchanged; the new frontend case `'shows the plain success toast when the
+  card moved'` asserts the `aito.quoteEmailed` text and asserts the warning
+  text is absent.
+- re-send from Waiting / already-decided (no move needed):
+  `test_send_from_waiting_leaves_the_card_alone` and
+  `test_resending_an_accepted_quote_never_demotes_it` were updated from
+  `assert body["marked_sent"] is False` to `is None`, with a comment
+  explaining why; the new frontend case `'shows the plain success toast —
+  not a warning — for a re-send that needed no move'` drives the mutation
+  with `marked_sent: null` and asserts the ordinary success toast, not the
+  warning.
+- card-move half fails with a DB error after the email is already sent:
+  `test_a_failed_card_move_still_records_the_send` (pre-existing, unchanged
+  assertions — already pinned `marked_sent is False`, `quote.emailed` in the
+  event timeline, the email actually sent) continues to pass, confirming the
+  T-013 degrade-to-200 behavior this task must preserve; the new frontend
+  case `'warns, rather than showing plain success, when the card move failed
+  after sending'` drives the mutation with `marked_sent: false` and asserts
+  the exact warning text is shown and the plain success text is not.
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9 before manual golden
+inspection turned up exactly one mismatch, `aito-pydantic-schemas` — expected,
+since this task widens a Pydantic field's type and docstring. Parsed both the
+golden and current JSON and diffed model-by-model rather than trusting the
+single-line text diff: every model except `AitoQuoteEmailResponse` (including
+`AitoProjectResponse` and `AitoTaskStepsResponse`, both `$ref`-nested inside
+it) was byte-identical; the only change was `marked_sent`'s schema moving
+from `{"type": "boolean"}` to `{"anyOf": [{"type": "boolean"}, {"type":
+"null"}]}` and the model's `description` gaining the tri-state explanation
+now in its docstring. Re-ran `snapshot.py record`, then
+`git status --porcelain snapshots/` showed only
+`snapshots/aito-pydantic-schemas.golden` modified — every other probe is
+deterministic and reproduced byte-for-byte, so `record` did not silently
+touch anything else. `aito-openapi` matched throughout, unaffected because it
+only captures each path's shape (which references schemas by `$ref` name,
+not inlined), not the referenced component schemas themselves. Re-verified
+9/9 after re-recording. `bash tools/gen_surface.sh` diff against `SURFACE.md`:
+empty both before and after — no new/renamed/removed top-level export in any
+fenced file; the new toast logic lives inside an existing exported function's
+body.
+
+Backend: `ruff check` / `ruff format --check` both clean. Full suite
+(`-n 30`, ignoring `test_bambu_ftp.py`): 10147 passed, 1 skipped, 0 failed.
+Sysmon Aito coverage (`--include='*aito*'`): 38 missed statements — exactly
+the ratchet ceiling, no regression (`routes/aito.py` 606/11, `schemas/aito.py`
+298/3, `aito_quote_sync.py` 372/17, `aito_zoho_comments.py` 76/6; the file's
+statement total moved with the added lines/comments, the missed count did
+not).
+
+Frontend: `npm run lint` clean. `npm run build` clean;
+`git checkout -- static/` after, nothing under it committed. `npm run
+test:run` (vitest + i18n parity): all Aito-related files pass; the only
+failures were the six known `PrintModal.test.tsx` flakes under full-suite
+parallel load (out of Aito scope, zero lines of this diff touch it),
+confirmed not a regression by an isolated re-run (75/75 pass alone) per the
+FLAKE PROTOCOL. Frontend Aito coverage gate: statements 1787/1918 (131
+missed), branches 1765/1979 (214 missed), functions 603/647 (44 missed),
+lines 1574/1649 (75 missed) — all four exactly at the existing ratchet
+ceiling, no regression.

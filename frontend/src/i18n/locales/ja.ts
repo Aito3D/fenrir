@@ -27,6 +27,7 @@ export default {
     sendQuoteNoRecipients: 'この顧客には Zoho にメールアドレスが登録されていません。',
     sendQuoteLoadFailed: 'メールの詳細を読み込めませんでした',
     quoteEmailed: '{{email}} に見積書を送信しました',
+    quoteEmailedCardMoveFailed: '{{email}} に見積書を送信しましたが、カードを自動的に移動できませんでした。手動で移動してください。',
     quoteEmailFailed: '見積書を送信できませんでした',
     acceptQuote: '見積書を承認',
     declineQuote: '見積書を却下',

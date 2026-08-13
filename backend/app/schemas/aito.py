@@ -263,16 +263,29 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     # import cannot get the user to fix is not worth failing the whole
     # import over.
     quote_status: AitoQuoteStatus | None = Field(default=None)
-    # 50 mirrors AitoSummarizeRequest.tasks below — the identical element type,
-    # already bounded there. The drawer that builds this list also builds
-    # AiSummarizeRequest's (AiSummaryPanel calls /aito/summarize with the same
-    # task array on every open), so a legitimate operator is already stopped
-    # from generating an AI summary past 50 tasks today; this just closes the
-    # same gap on the endpoint that actually persists the rows. A single task
-    # already carries its own `quantity` for the impression service, so a
-    # large batch of IDENTICAL prints is one task, not many — 50 DISTINCT
-    # tasks (each up to four priced services) comfortably covers a real order.
-    tasks: list[AitoTaskCreate] = Field(default_factory=list, max_length=50)
+    # 300, not AitoSummarizeRequest.tasks' 50 below, because THIS field has two
+    # live callers with very different shapes, and the tighter of the two is
+    # not the binding one. Caller 1: the create drawer (AiSummaryPanel calls
+    # /aito/summarize with the same task array on every open, and that
+    # endpoint's own 50 is untouched — see its field below — so a drawer
+    # operator already loses the AI summary past 50 tasks; that is pre-existing
+    # and unrelated to this cap). Caller 2, found after 50 shipped: the Zoho
+    # quote-import preview (aito_quote_import.build_preview) builds exactly one
+    # task per HEADER GROUP of the imported Books estimate
+    # (`_build_task(group) for group in group_lines(lines)`), and posts that
+    # whole list here — an estimate with more than the cap's header groups
+    # would have its WHOLE IMPORT rejected, not just lose a summary. A header
+    # group is at most one recognised line per service in SERVICE_RANK (scan,
+    # modelisation, impression, usinage — 4 total; a repeated or
+    # lower-ranked service opens a new group), so 300 tasks tolerates a Books
+    # estimate with up to 1200 recognised service line items — a workshop
+    # quote with 300 distinct physical parts, each individually scanned,
+    # modelled, printed and machined, in one estimate. No real Zoho estimate
+    # this app has imported has come close; this is headroom, not a realistic
+    # ceiling. A single task also carries its own `quantity` for the
+    # impression service, so a large batch of IDENTICAL prints is one task,
+    # not many. Chosen inside the user-approved 200-500 range.
+    tasks: list[AitoTaskCreate] = Field(default_factory=list, max_length=300)
 
     @field_validator("client_email")
     @classmethod
@@ -572,10 +585,22 @@ class AitoQuoteEmailRequest(BaseModel):
 class AitoQuoteEmailResponse(BaseModel):
     """``marked_sent`` is a transport detail, exactly like
     ``AitoQuoteStatusResponse.zoho_synced``: ``project`` goes straight into
-    the board cache and has no business carrying one request's outcome."""
+    the board cache and has no business carrying one request's outcome.
+
+    Tri-state, not a plain bool: ``True`` means the card moved to Waiting as
+    part of this send; ``None`` means the move was never attempted because
+    the card was not in the Quote column (a legitimate re-send from Waiting
+    or later — not a failure); ``False`` means the move was attempted and
+    the ``except SQLAlchemyError`` degrade in ``send_quote_email`` kicked in
+    — the email went out (see that handler's docstring) but the card did
+    not move and needs a manual nudge. Collapsing the last two into one
+    ``False`` used to make a genuine failure indistinguishable from "not
+    applicable", and the only client that read this field ignored it
+    either way; see ``useSendQuoteMutation`` for how it now reacts to
+    ``False`` specifically."""
 
     project: AitoProjectResponse
-    marked_sent: bool
+    marked_sent: bool | None
 
 
 class AitoInvoiceResponse(BaseModel):

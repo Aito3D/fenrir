@@ -27,6 +27,7 @@ export default {
     sendQuoteNoRecipients: 'Bu müşterinin Zoho’da e-posta adresi yok.',
     sendQuoteLoadFailed: 'E-posta ayrıntıları yüklenemedi',
     quoteEmailed: 'Teklif {{email}} adresine gönderildi',
+    quoteEmailedCardMoveFailed: 'Teklif {{email}} adresine gönderildi — kart otomatik olarak taşınamadı. Lütfen manuel olarak taşıyın.',
     quoteEmailFailed: 'Teklif gönderilemedi',
     acceptQuote: 'Teklifi kabul et',
     declineQuote: 'Teklifi reddet',

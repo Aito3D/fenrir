@@ -28,6 +28,7 @@ export default {
     sendQuoteNoRecipients: "У цього клієнта немає адреси електронної пошти в Zoho.",
     sendQuoteLoadFailed: "Не вдалося завантажити дані листа",
     quoteEmailed: "Кошторис надіслано на {{email}}",
+    quoteEmailedCardMoveFailed: "Кошторис надіслано на {{email}} — не вдалося автоматично перемістити картку. Перемістіть її вручну.",
     quoteEmailFailed: "Не вдалося надіслати кошторис",
     acceptQuote: "Прийняти пропозицію",
     declineQuote: "Відхилити пропозицію",

@@ -1375,7 +1375,11 @@ async def send_quote_email(
 
     summary = await _summary_for(db, project.id)
     should_move_card = project.board_column == "devis"
-    marked_sent = False
+    # None (not False): "no move was attempted" and "the move was attempted
+    # and failed" are different stories for the client — see
+    # AitoQuoteEmailResponse.marked_sent. Only the except branch below sets
+    # this back to False, deliberately, once a move was actually attempted.
+    marked_sent: bool | None = None
     if should_move_card:
         try:
             adopt_quote_status(project, "sent")
@@ -1410,6 +1414,12 @@ async def send_quote_email(
                 project_id,
                 exc_info=True,
             )
+            # Explicit, not a fallthrough from the None default above: this is
+            # the one branch where a move was actually attempted and failed,
+            # which the client (see useSendQuoteMutation) surfaces as a
+            # warning rather than the plain success toast the None/True
+            # cases get.
+            marked_sent = False
             # Undo the half-applied move so the session (and the response
             # built from it below) reflect what is actually committed, not
             # an in-memory state that was never persisted. rollback() expires

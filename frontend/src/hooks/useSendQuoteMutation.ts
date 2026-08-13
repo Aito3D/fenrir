@@ -24,7 +24,16 @@ export function useSendQuoteMutation(project: AitoProject, onDone: () => void) {
         prev?.map((p) => (p.id === result.project.id ? result.project : p)) ?? prev,
       );
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
-      showToast(t('aito.quoteEmailed', { email: to }), 'success');
+      // `marked_sent === false` (not `null`, not `true`) is the one case
+      // where the move was actually attempted and failed after the email
+      // had already gone out — see AitoQuoteEmailResponse.marked_sent. That
+      // is worth a warning; `null` (no move needed, e.g. a re-send from
+      // Waiting) is not a failure and still gets the plain success toast.
+      if (result.marked_sent === false) {
+        showToast(t('aito.quoteEmailedCardMoveFailed', { email: to }), 'warning');
+      } else {
+        showToast(t('aito.quoteEmailed', { email: to }), 'success');
+      }
       onDone();
     },
     // No rollback to undo — nothing was written. The modal stays open so the

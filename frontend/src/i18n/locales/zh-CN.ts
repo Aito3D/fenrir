@@ -27,6 +27,7 @@ export default {
     sendQuoteNoRecipients: '该客户在 Zoho 中没有电子邮件地址。',
     sendQuoteLoadFailed: '无法加载邮件详情',
     quoteEmailed: '报价单已发送至 {{email}}',
+    quoteEmailedCardMoveFailed: '报价单已发送至 {{email}} — 未能自动移动卡片，请手动移动。',
     quoteEmailFailed: '无法发送报价单',
     acceptQuote: '接受报价单',
     declineQuote: '拒绝报价单',

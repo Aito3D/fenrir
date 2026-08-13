@@ -167,7 +167,9 @@ async def test_send_from_waiting_leaves_the_card_alone(async_client, books_email
         await async_client.post(f"/api/v1/aito/{project['id']}/quote-email", json={"to": "contact@example.pf"})
     ).json()
 
-    assert body["marked_sent"] is False
+    # None, not False: no move was attempted (the card was already past the
+    # Quote column), which is not a failure — see AitoQuoteEmailResponse.
+    assert body["marked_sent"] is None
     assert body["project"]["column"] == "waiting"
     assert books_email == [("EST-9", ["contact@example.pf"])]
 
@@ -185,7 +187,9 @@ async def test_resending_an_accepted_quote_never_demotes_it(async_client, books_
         await async_client.post(f"/api/v1/aito/{project['id']}/quote-email", json={"to": "contact@example.pf"})
     ).json()
 
-    assert body["marked_sent"] is False
+    # None, not False: no move was attempted (the card was already past the
+    # Quote column), which is not a failure — see AitoQuoteEmailResponse.
+    assert body["marked_sent"] is None
     assert body["project"]["quote_status"] == "accepted"
     assert body["project"]["column"] == accepted["column"]
     assert body["project"]["quote_accepted_at"] == accepted["quote_accepted_at"]

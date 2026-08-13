@@ -27,6 +27,7 @@ export default {
     sendQuoteNoRecipients: '이 고객은 Zoho에 이메일 주소가 없습니다.',
     sendQuoteLoadFailed: '이메일 정보를 불러오지 못했습니다',
     quoteEmailed: '{{email}} 주소로 견적서를 보냈습니다',
+    quoteEmailedCardMoveFailed: '{{email}} 주소로 견적서를 보냈지만 카드를 자동으로 이동하지 못했습니다. 수동으로 이동해 주세요.',
     quoteEmailFailed: '견적서를 보내지 못했습니다',
     acceptQuote: '견적서 수락',
     declineQuote: '견적서 거절',

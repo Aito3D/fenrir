@@ -754,19 +754,21 @@ async def test_create_project_rejects_an_over_cap_description(async_client):
 
 
 @pytest.mark.asyncio
-async def test_create_project_accepts_fifty_tasks(async_client):
-    """50 mirrors AitoSummarizeRequest.tasks' existing cap (T-037/T-049) — a
-    payload sitting exactly on it must still be accepted, not just one under."""
-    tasks = [_task(title=f"Tâche {i}") for i in range(50)]
+async def test_create_project_accepts_three_hundred_tasks(async_client):
+    """300 (T-053, raised from T-037/T-049's original 50) is the cap that
+    tolerates the Zoho quote-import preview's one-task-per-header-group
+    payload, not just the create drawer's. A payload sitting exactly on it
+    must still be accepted, not just one under."""
+    tasks = [_task(title=f"Tâche {i}") for i in range(300)]
     r = await _create(async_client, tasks=tasks)
     assert r.status_code == 201
     fetched = (await async_client.get(f"/api/v1/aito/{r.json()['id']}/tasks")).json()
-    assert len(fetched) == 50
+    assert len(fetched) == 300
 
 
 @pytest.mark.asyncio
-async def test_create_project_rejects_more_than_fifty_tasks(async_client):
-    tasks = [_task(title=f"Tâche {i}") for i in range(51)]
+async def test_create_project_rejects_more_than_three_hundred_tasks(async_client):
+    tasks = [_task(title=f"Tâche {i}") for i in range(301)]
     r = await _create(async_client, tasks=tasks)
     assert r.status_code == 422
 

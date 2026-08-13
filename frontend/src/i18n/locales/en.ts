@@ -27,6 +27,7 @@ export default {
     sendQuoteNoRecipients: 'This client has no email address in Zoho.',
     sendQuoteLoadFailed: 'Could not load the email details',
     quoteEmailed: 'Quote sent to {{email}}',
+    quoteEmailedCardMoveFailed: 'Quote sent to {{email}} — the card could not be moved automatically. Move it manually.',
     quoteEmailFailed: 'Could not send the quote',
     acceptQuote: 'Accept quote',
     declineQuote: 'Decline quote',

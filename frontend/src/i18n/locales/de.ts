@@ -27,6 +27,7 @@ export default {
     sendQuoteNoRecipients: 'Dieser Kunde hat keine E-Mail-Adresse in Zoho.',
     sendQuoteLoadFailed: 'E-Mail-Details konnten nicht geladen werden',
     quoteEmailed: 'Angebot an {{email}} gesendet',
+    quoteEmailedCardMoveFailed: 'Angebot an {{email}} gesendet — die Karte konnte nicht automatisch verschoben werden. Bitte manuell verschieben.',
     quoteEmailFailed: 'Angebot konnte nicht gesendet werden',
     acceptQuote: 'Angebot annehmen',
     declineQuote: 'Angebot ablehnen',

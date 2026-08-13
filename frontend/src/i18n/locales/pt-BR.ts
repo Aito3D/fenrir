@@ -27,6 +27,7 @@ export default {
     sendQuoteNoRecipients: 'Este cliente não tem endereço de e-mail no Zoho.',
     sendQuoteLoadFailed: 'Não foi possível carregar os detalhes do e-mail',
     quoteEmailed: 'Orçamento enviado para {{email}}',
+    quoteEmailedCardMoveFailed: 'Orçamento enviado para {{email}} — não foi possível mover o cartão automaticamente. Mova-o manualmente.',
     quoteEmailFailed: 'Não foi possível enviar o orçamento',
     acceptQuote: 'Aceitar orçamento',
     declineQuote: 'Recusar orçamento',
