@@ -191,7 +191,7 @@ async def test_guarded_noop_patch_does_not_bump_updated_at(async_client, db_sess
     `version` was silently also writing `updated_at = now()` on every
     guarded PATCH, including a no-op one that changes no VERSIONED_FIELDS
     and so must NOT move `updated_at` (`updated_at` orders Done/Trash and
-    drives the card's displayed age — see routes/aito.py:749 and
+    drives the card's displayed age — see routes/aito.py:767 and
     schemas/aito.py's AitoProjectResponse). Pinning `updated_at` in the
     claim's own `.values()` closes that.
     """

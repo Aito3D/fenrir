@@ -909,21 +909,45 @@ requeue had happened. Before the fix, `_apply_estimate` unconditionally wrote
 in sync while the edit that raced the round trip was missing from Books —
 silently dropped, with no record anywhere that it happened.
 
-The fix is a process-local counter, `_requeue_marker: dict[int, int]`. Every
-call to `routes/aito.py`'s `_mark_pending` — including one that leaves
-`quote_sync_state` at the value it already held, which is the exact shape of
-the race — bumps the project's entry via `_bump_requeue_marker`.
+The fix is a process-local counter, `_requeue_marker: dict[int, int]`. The
+bump happens in `_commit_and_wake`, immediately after `db.commit()` returns
+and with no `await` in between — never inside `_mark_pending`/
+`_mark_pending_if_ours` themselves, which run before that commit — plus a
+hand-rolled post-commit site inside `restore_project`, whose own commit is
+wrapped in its own `try`/`except` and so cannot be routed through
+`_commit_and_wake`. Either way the bump is CONDITIONED ON THE COMMIT
+SUCCEEDING: a handler that marks a project pending and then rolls back (an
+`IntegrityError`, for instance) leaves no bump at all — bumping ahead of a
+commit that never lands would let the sync worker's own snapshot capture an
+edit whose row changes are not yet visible to it, narrowing the very race
+this marker exists to catch instead of closing it.
 `_create_quote`/`_update_quote` capture `_requeue_marker_for(project.id)`
 before their own read of the project's rows; `_apply_estimate` compares that
 captured value against the live one after the push returns, and only writes
-the terminal `quote_sync_state = "idle"` when they still match. If they
-differ, an edit committed inside the window and the project stays `pending`
-for the next sync tick to pick up and push for real. Every other part of
+the terminal `quote_sync_state = "idle"` when they still match — popping the
+marker entry at the same time, since nothing else will ever need it once the
+project has settled to idle. If they differ, an edit committed inside the
+window and the project stays `pending` for the next sync tick to pick up and
+push for real; the entry is deliberately left in place on that branch,
+because the next tick's own comparison still needs it. Every other part of
 `_apply_estimate`'s write (`quote_id`, `quote_number`, `quote_date`,
 `quote_total`, `quote_synced_at`, the status copy-back, clearing
 `quote_sync_error`/`quote_sync_failures`) is unconditional and still runs
 exactly as before — only the terminal `'idle'` transition is gated on the
 marker comparison.
+
+A later iteration (T-051) moved the bump out of `_mark_pending` — which used
+to call `_bump_requeue_marker` directly, ahead of its own caller's eventual
+commit — to the post-commit sites described above. Both directions of that
+change move the implementation TOWARD this entry's approved wording, not
+past it: bumping only after a successful commit newly holds a card
+`pending` for an edit whose commit lands during the Books round trip, which
+is literally what the paragraph above describes; and no longer bumping on a
+rollback removes a hold for an edit that never actually committed, which
+this entry never approved in the first place. This is a refinement of
+T-044's mechanism, not a new approved behavior — the observable envelope
+described in the rest of this entry is unchanged, and no fresh approval was
+needed or sought.
 
 This is not, quite, behavior-preserving, and the user was shown why before
 approving it. `ProjectDetailPanel.tsx:53-57` maps `quote_sync_state ===

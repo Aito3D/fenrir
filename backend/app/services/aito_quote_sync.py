@@ -402,10 +402,11 @@ def _apply_estimate(project: AitoProject, estimate: dict, *, requeue_marker: int
         # flight, so the project is being left 'pending' ON PURPOSE for the
         # next tick to retry, and that next tick's own comparison needs
         # exactly this value to know what "unchanged since then" means.
-        # Discarding it there would make every future comparison spuriously
-        # match (a missing key reads as 0, same as a project that was never
-        # bumped at all), reintroducing Critical 1's bug in a new shape: an
-        # outstanding edit going 'idle' unnoticed.
+        # Discarding it there would throw away the signal that comparison is
+        # based on and narrow the guard's margin for no benefit — a missing
+        # key reads as 0, same as a project that was never bumped at all, so
+        # popping early would erase the record of the edit this push already
+        # caught, one tick before anything needs it gone.
         _requeue_marker.pop(project.id, None)
     project.quote_sync_error = None
     project.quote_sync_failures = 0
