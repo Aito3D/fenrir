@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
@@ -134,14 +134,21 @@ describe('ShippingFields', () => {
   // `en` and `fr` group thousands differently (comma vs. a narrow no-break
   // space), so switching to `fr` and asserting the French grouping is what
   // actually catches a regression back to a bare, argument-less `toLocaleString()`.
-  describe('formats the Zoho rate with the current i18n language', () => {
-    afterEach(async () => {
-      await act(async () => {
-        await i18n.changeLanguage('en');
-      });
-    });
-
-    it('renders the French thousands grouping once the language is switched to fr', async () => {
+  //
+  // The language switch is scoped to this single test via try/finally rather
+  // than a separate `afterEach`: an `afterEach` only restores 'en' once
+  // control reaches it, which a throw in a `beforeEach`, or a future edit
+  // that moves `changeLanguage` outside this test's own try/finally, could
+  // skip — leaking 'fr' into every sibling test that shares this file or
+  // worker. Capturing and restoring the previous language locally, in the
+  // one test that needs it, survives that failure mode. (No other
+  // locale-sensitive Aito test — CardView, PanelAgeStat, ProjectDetailPanel,
+  // ImportQuoteDrawer — actually switches `i18n.language`; they only format
+  // with whatever it already is, so there is no existing switch-and-restore
+  // convention to match here.)
+  it('renders the French thousands grouping once the language is switched to fr, and restores it afterwards', async () => {
+    const previousLanguage = i18n.language;
+    try {
       await act(async () => {
         await i18n.changeLanguage('fr');
       });
@@ -155,7 +162,21 @@ describe('ShippingFields', () => {
       // produced.
       const rateAsFlexiblePattern = expectedRate.replace(/\s+/gu, '\\s+');
       expect(screen.getByText(new RegExp(`${rateAsFlexiblePattern}\\s*XPF`))).toBeInTheDocument();
-    });
+    } finally {
+      await act(async () => {
+        await i18n.changeLanguage(previousLanguage);
+      });
+    }
+  });
+
+  it('does not leak the French language switch into a sibling test', () => {
+    // Proves the restore above is real rather than merely asserted: if the
+    // previous test's `finally` had not run (or a future edit dropped it),
+    // this component would still be rendering with French thousands
+    // grouping (a narrow no-break space) and this English-grouping
+    // assertion would fail.
+    setup({ island: 'rangiroa', service: 'tuamotu', price: 3200 });
+    expect(screen.getByText(/3,200\s*XPF/)).toBeInTheDocument();
   });
 
   it('offers a reset once the price is edited, and no reset before', async () => {

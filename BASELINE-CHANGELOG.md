@@ -175,9 +175,13 @@ the Books line-item description on the next sync, an oversized value could
 only surface later as a `ZohoRequestRejected` that parks the project in the
 terminal `error` state. The same bound also reaches `POST /aito/summarize`,
 which validates the same `AitoTaskCreate` shape: `AitoSummarizeRequest.tasks`
-is typed `list[AitoTaskCreate]`, so the create drawer's "generate
-description" button, which posts its local drafts to this endpoint before
-the project exists, is capped identically.
+is typed `list[AitoTaskCreate]`, so both callers of that endpoint are capped
+identically: the create drawer's "generate description" button
+(`AiSummaryPanel.tsx`), which posts its local drafts to this endpoint before
+the project exists, and `ProjectDetailPanel`'s "regenerate description"
+button (`regenerateMutation`, `ProjectDetailPanel.tsx:865`), which posts the
+project's live, already-persisted task rows through the same endpoint on
+every regenerate.
 
 The bound is declared on `AitoTaskCreate` and `AitoTaskUpdate` only (the two
 request models), each redeclaring the four fields with `Field(default=None,
@@ -218,14 +222,26 @@ directly to the DB with a 10_001-char field still returns 200 on
 that same task still returns 200 with the over-cap value untouched — this
 last test pins the read-path fix and fails if the bound is ever moved back
 onto `AitoTaskBase`/`AitoTaskResponse`). `tools/snapshot.py verify` shows
-exactly one probe moving, `aito-pydantic-schemas`: 8 `"maxLength": 10000,`
-lines removed, one per field on `AitoTaskBase` and one per field on
-`AitoTaskResponse` (confirmed by walking both golden and current schema
-trees per top-level model — `AitoTaskCreate`, `AitoTaskUpdate`, and the two
-unrelated pre-existing capped models `AitoProjectCreate` and
-`AitoSummarizeRequest`, are unchanged), and nothing else; re-recorded and
-re-verified 9/9. `aito-openapi` (paths-only) and `SURFACE.md` are both
-unaffected — confirmed byte-identical.
+exactly one probe moving, `aito-pydantic-schemas`. Measured against BASE
+(the only revision a later reader can diff against — an earlier, defective
+attempt within this same iteration briefly put the bound on `AitoTaskBase`
+instead and was corrected before anything was tagged, so it is not a usable
+reference point): the golden gains 16 `"maxLength": 10000,` leaves, four per
+field (`scan_description`, `modelisation_description`,
+`impression_description`, `usinage_description`) in each of four places —
+the two request models themselves, `AitoTaskCreate` and `AitoTaskUpdate`,
+plus their two `$defs` copies embedded where they are nested by reference:
+`AitoSummarizeRequest.tasks` (`list[AitoTaskCreate]`) and
+`AitoProjectCreate.tasks` (also `list[AitoTaskCreate]`, since project
+creation accepts inline tasks). `AitoTaskBase` and `AitoTaskResponse` are
+confirmed byte-identical to BASE — no leaf added on either, consistent with
+the bound being declared on `AitoTaskCreate`/`AitoTaskUpdate` only. (A
+one-line drop elsewhere in `AitoProjectCreate`, on `quote_status`, is also
+present versus BASE but is unrelated to this change — it is a different
+field, not one of the four description fields, and traces to T-009's
+`quote_status` validation, not to this fix.) Re-recorded and re-verified
+9/9. `aito-openapi` (paths-only) and `SURFACE.md` are both unaffected —
+confirmed byte-identical.
 
 ## T-021 — 2026-08-12 — user-approved behavior change
 

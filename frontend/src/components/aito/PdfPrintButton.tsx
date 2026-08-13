@@ -59,12 +59,6 @@ export function PdfPrintButton({
   const [busy, setBusy] = useState(false);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const timeoutRef = useRef<number | null>(null);
-  // Every in-flight 60s revoke backstop (see REVOKE_DELAY_MS). An array of
-  // entries rather than a single pair: printing twice inside one 60s window
-  // must not lose track of the first URL when the second starts. Entries are
-  // matched by object identity rather than by URL string so two entries can
-  // never collide. Unmounting does not touch this array at all — see below.
-  const pendingRevokesRef = useRef<{ url: string; timerId: number }[]>([]);
   const mountedRef = useRef(true);
 
   // The fallback timer (and the iframe it may act on) must not outlive the
@@ -80,16 +74,16 @@ export function PdfPrintButton({
         window.clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
       }
-      // Every pending revoke (iframe path or window.open path alike) is left
+      // Any pending revoke (iframe path or window.open path alike) is left
       // running rather than force-revoked here: REVOKE_DELAY_MS's own reason
       // for existing — the print dialog reads the URL lazily, so revoking
       // immediately can cancel the job — applies just as much to a dialog
       // still open after this panel is closed as to one still open while it
       // is visible. This matches BASE, where the revoke was a bare
       // `window.setTimeout` with no lifecycle tie to the component at all.
-      // Each entry's own 60s backstop (scheduled in `cleanup` below) is what
-      // revokes it, exactly once, whether or not this component is still
-      // mounted when that happens.
+      // Its own 60s backstop (scheduled in `cleanup` below) is what revokes
+      // it, exactly once, whether or not this component is still mounted
+      // when that happens.
       if (frameRef.current) {
         frameRef.current.remove();
         frameRef.current = null;
@@ -98,14 +92,11 @@ export function PdfPrintButton({
   }, []);
 
   const cleanup = (frame: HTMLIFrameElement, url: string) => {
-    const entry = { url, timerId: 0 };
-    entry.timerId = window.setTimeout(() => {
-      pendingRevokesRef.current = pendingRevokesRef.current.filter((e) => e !== entry);
+    window.setTimeout(() => {
       frame.remove();
       URL.revokeObjectURL(url);
       if (frameRef.current === frame) frameRef.current = null;
     }, REVOKE_DELAY_MS);
-    pendingRevokesRef.current.push(entry);
   };
 
   const openInTab = (url: string, frame: HTMLIFrameElement) => {
