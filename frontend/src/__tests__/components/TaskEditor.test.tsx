@@ -728,6 +728,46 @@ describe('TaskRow', () => {
     grid.getByRole('combobox', { name: /material/i });
     grid.getByLabelText('Colour');
   });
+
+  it('printing: the band shows the line total and the cost split when a price can be computed', async () => {
+    const task = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 2, color: 'Noir' },
+      impressionCost: 1000,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
+
+    const band = within(await screen.findByTestId('impression-band'));
+    // The band renders unconditionally, before printers/filaments/defaults
+    // resolve — its testid appears immediately, in the "not configured"
+    // pre-load state. Wait for the cost split itself (async, so it retries)
+    // rather than for the testid, or the assertions below race the fetch.
+    await band.findByRole('img', { name: 'Where the money goes' });
+    // The charged figure, not the computed one: unit × quantity, less any
+    // discount. This is what the quote line will say. The test harness's
+    // settings mock (and useCurrency's fallback) both resolve to USD.
+    // getByText's default normalizer collapses all whitespace (including the
+    // thin space formatMoney uses as a thousands separator) to a single
+    // ASCII space before matching — do the same to the expected string, or
+    // an exact-looking match still misses (see the taskTotal test above).
+    band.getByText(formatMoney(1000, 'USD').replace(/\s+/g, ' '));
+    // The exact seven figures stay one disclosure away.
+    band.getByText('Cost detail');
+  });
+
+  it('printing: the band still carries the total when nothing can be computed', async () => {
+    // A hand-typed cost and no printer — an imported quote looks exactly like
+    // this. The old layout left half the block empty here.
+    const task = { ...emptyTaskDraft(), impressionCost: 9000 };
+    render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
+
+    const band = within(await screen.findByTestId('impression-band'));
+    // Same pre-load race as above: wait for the "not configured" fallback to
+    // resolve into the real missing-params message before asserting.
+    await band.findByText(/fill in printer, weight and print time/i);
+    band.getByText(formatMoney(9000, 'USD').replace(/\s+/g, ' '));
+    expect(band.queryByRole('img', { name: 'Where the money goes' })).not.toBeInTheDocument();
+  });
 });
 
 describe('TaskEditor accordion (create drawer)', () => {

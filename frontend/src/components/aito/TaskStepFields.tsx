@@ -292,6 +292,11 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
                 />
               </>
             }
+            lineTotal={
+              task.impressionCost === null
+                ? null
+                : round2(task.impressionCost * (1 - (task.impressionDiscountPct ?? 0) / 100))
+            }
             discountField={
               <>
                 <label htmlFor={`${reactId}-impression-discount`} className="text-sm text-bambu-gray text-right">
@@ -320,20 +325,6 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
               </>
             }
           />
-          {task.impressionCost !== null && (
-            // What the quote's line will actually say: unit x quantity,
-            // minus the discount. The unit input above shows the per-piece
-            // figure, so without this line the multiplied reality lives
-            // nowhere on screen.
-            <div className="flex items-center justify-between border-t border-bambu-dark-tertiary pt-2">
-              <span className="text-sm text-bambu-gray">{t('aito.printingTotal')}</span>
-              <Money
-                currency={currency}
-                value={round2(task.impressionCost * (1 - (task.impressionDiscountPct ?? 0) / 100))}
-                className="text-white font-medium"
-              />
-            </div>
-          )}
           <StepDescriptionInput
             label={t('aito.serviceImpression3D')}
             value={task.impressionDescription}

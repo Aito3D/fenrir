@@ -1,11 +1,14 @@
-import { useId } from 'react';
+import { useId, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
 import { SearchableSelect } from '../SearchableSelect';
 import { DurationInput } from './DurationInput';
+import { CostSplitBar, SegmentLegend, Money } from '../calculator/shared';
+import type { Segment } from '../calculator/shared';
 import { inputCls } from '../formStyles';
+import { useCurrency } from '../../hooks/useCurrency';
 import { computeImpressionCost, roundUpTo50 } from '../../utils/taskDraft';
 import type { ImpressionDraft } from '../../utils/taskDraft';
 
@@ -83,6 +86,13 @@ export interface ImpressionFieldsProps {
    *  the discount lives on the TASK beside `impressionCost` — it modifies the
    *  price, not the print parameters this component edits. */
   discountField: React.ReactNode;
+  /** The figure the quote line will carry — unit × quantity, less the
+   *  discount — computed by TaskStepFields, which owns `impressionCost` and
+   *  the discount. `null` renders no amount: an absent cost is not a zero
+   *  cost (see CostInput). The standalone "Printing total" row TaskStepFields
+   *  used to render below this component is GONE — the band replaced it, and
+   *  the total must not appear twice. */
+  lineTotal: number | null;
 }
 
 /** filament/printer + weight/time/color/quantity for one task's Impression3D
@@ -90,9 +100,10 @@ export interface ImpressionFieldsProps {
  *  `computeImpressionCost` (taskDraft.ts) — this component only collects
  *  inputs and renders the result, the same split the calculator page keeps
  *  between `pricing.ts` and its cards. */
-export function ImpressionFields({ value, onChange, costField, discountField }: ImpressionFieldsProps) {
+export function ImpressionFields({ value, onChange, costField, discountField, lineTotal }: ImpressionFieldsProps) {
   const { t } = useTranslation();
   const reactId = useId();
+  const currency = useCurrency();
 
   const filamentsQuery = useQuery({
     queryKey: ['calculatorFilaments'],
@@ -113,6 +124,48 @@ export function ImpressionFields({ value, onChange, costField, discountField }: 
   const printers = printersQuery.data ?? [];
   const defaults = defaultsQuery.data;
   const referenceDataLoading = filamentsQuery.isLoading || printersQuery.isLoading || defaultsQuery.isLoading;
+
+  const filament = filaments.find((f) => f.id === value.filamentId) ?? null;
+  const printer = printers.find((p) => p.id === value.printerId) ?? null;
+
+  // CalculatorFilament/CalculatorPrinter are supersets of PricingFilament/
+  // PricingPrinter, so they pass straight through — no mapping layer.
+  const result = useMemo(
+    () => (defaults ? computeImpressionCost(value, filament, printer, defaults) : null),
+    [value, filament, printer, defaults],
+  );
+
+  // The bar splits the PRICE, margin included: in a quoting context the
+  // useful reading is "of the 8 750 F charged, 1 200 is filament and 6 400 is
+  // margin". Deliberately not CalculatorPage's segment list, which splits
+  // `total_cost` and carries labor and base-fee segments that
+  // `computeImpressionCost` forces to zero.
+  //
+  // These six sum to EXACTLY `total_ht`, which is why the bar always fills:
+  // cost_subtotal here is machine + prototype + failures (labor, base fee,
+  // consumables and stuff are all zeroed for an impression), plus ads, plus
+  // marge. If that ever stops holding the bar will grow a gap.
+  const segments: Segment[] = useMemo(() => {
+    if (!result) return [];
+    return [
+      { key: 'filament', label: t('calculator.costFilament'), value: result.filament_cost, color: 'var(--viz-1)' },
+      {
+        key: 'printer',
+        label: t('calculator.splitPrinter'),
+        value: result.depreciation_cost + result.repairs_cost,
+        color: 'var(--viz-2)',
+      },
+      { key: 'energy', label: t('calculator.costEnergy'), value: result.energy_cost, color: 'var(--viz-3)' },
+      {
+        key: 'provisions',
+        label: t('calculator.groupProvisions'),
+        value: result.prototype_cost + result.failures_cost,
+        color: 'var(--viz-4)',
+      },
+      { key: 'ads', label: t('calculator.costAds'), value: result.ads_cost, color: 'var(--viz-5)' },
+      { key: 'marge', label: t('calculator.marge'), value: result.marge, color: 'var(--viz-6)' },
+    ].filter((s) => s.value > 0.005);
+  }, [result, t]);
 
   // Pricing is a side effect on the parent, so it happens here — at the moment
   // a print input actually changes — rather than in an effect. An effect
@@ -239,17 +292,62 @@ export function ImpressionFields({ value, onChange, costField, discountField }: 
           {discountField}
         </div>
 
-        {/* The band's only content in this task is the unconfigured-install
-            message, which used to hang off the calculator toggle. Task 3
-            fills it. */}
-        <div className="impression-band">
-          {notConfigured && (
-            <p className="text-sm text-bambu-gray">
-              {t(printers.length === 0 ? 'aito.noPrintersConfigured' : 'aito.noFilamentsConfigured')}{' '}
-              <Link to="/calculator" className="text-bambu-green hover:underline">
-                {t('calculator.title')}
-              </Link>
-            </p>
+        <div
+          className="impression-band flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-t border-bambu-dark-tertiary pt-2"
+          data-testid="impression-band"
+        >
+          {/* Left half always has content — this is the half that used to go
+              blank whenever no price could be computed. */}
+          <div className="min-w-36 flex-1 space-y-1">
+            {notConfigured ? (
+              <p className="text-sm text-bambu-gray">
+                {t(printers.length === 0 ? 'aito.noPrintersConfigured' : 'aito.noFilamentsConfigured')}{' '}
+                <Link to="/calculator" className="text-bambu-green hover:underline">
+                  {t('calculator.title')}
+                </Link>
+              </p>
+            ) : result ? (
+              <>
+                <CostSplitBar segments={segments} total={result.total_ht} currency={currency} />
+                <SegmentLegend segments={segments} total={result.total_ht} />
+                <details className="pt-1">
+                  <summary className="cursor-pointer text-xs text-bambu-gray marker:text-bambu-gray">
+                    {t('aito.costDetail')}
+                  </summary>
+                  <div className="mt-1 space-y-1">
+                    {(
+                      [
+                        ['calculator.costFilament', result.filament_cost],
+                        ['calculator.costDepreciation', result.depreciation_cost],
+                        ['calculator.costEnergy', result.energy_cost],
+                        ['calculator.costRepairs', result.repairs_cost],
+                        ['calculator.groupProvisions', result.prototype_cost + result.failures_cost],
+                        ['calculator.costAds', result.ads_cost],
+                        ['calculator.marge', result.marge],
+                      ] as const
+                    ).map(([labelKey, lineValue]) => (
+                      <div key={labelKey} className="flex justify-between gap-2 text-sm">
+                        <span className="text-bambu-gray-light">{t(labelKey)}</span>
+                        <Money currency={currency} value={lineValue} className="text-white" />
+                      </div>
+                    ))}
+                    <div className="flex justify-between gap-2 pt-1 text-sm font-medium">
+                      <span className="text-white">{t('calculator.totalTTC')}</span>
+                      <Money currency={currency} value={result.total_ttc} className="text-bambu-green" />
+                    </div>
+                  </div>
+                </details>
+              </>
+            ) : (
+              <p className="text-sm text-bambu-gray">{t('aito.missingPrintParams')}</p>
+            )}
+          </div>
+
+          {lineTotal !== null && (
+            <div className="text-right">
+              <Money currency={currency} value={lineTotal} className="text-lg font-semibold text-bambu-green" />
+              <div className="text-[0.7rem] uppercase tracking-wide text-bambu-gray">{t('aito.printingTotal')}</div>
+            </div>
           )}
         </div>
 
