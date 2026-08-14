@@ -252,11 +252,20 @@ html {
    column between them carries the rule.
 
    The breakpoint is a CONTAINER query on the block, not a `lg:` viewport
-   variant. This block sits in ProjectDetailPanel's ~780px tasks column
-   (`20rem | 1fr | 26rem`), where a viewport breakpoint splits it into two
-   ~370px halves at every desktop width — and leaves the right one empty
-   whenever no price can be computed. Same reasoning, and same mechanism, as
-   `.printer-control-buttons-container` above. */
+   variant. In ProjectDetailPanel the block's own inline size is
+   `min(100vw - 32px, 1600px) - 876px` (overlay padding, the panel's
+   `max-w-[100rem]` cap, the middle column's `20rem | 1fr | 26rem` +
+   `lg:gap-6` tracks, and the column/row/fieldset padding all subtracted) —
+   about 532px at a 1440px viewport, ~604px at 1512px, ~692px at 1600px and
+   ~724px at 1920px. On the 1440/1512px laptops this block is actually used
+   on day to day, that is BELOW a 640px threshold, so the two-column layout
+   never appeared there and the block fell back to one stacked column — taller
+   than the layout it replaced. In NewProjectDrawer, which has a shallower
+   ancestor chain, the same block is ~698px wide. A viewport breakpoint would
+   key off none of this: it would split the block into two halves at every
+   desktop width regardless of the block's real size, and leave the right one
+   empty whenever no price can be computed. Same reasoning, and same
+   mechanism, as `.printer-control-buttons-container` above. */
 .impression-block {
   container: impression-block / inline-size;
 }
@@ -280,9 +289,16 @@ html {
 .impression-rule { display: none; }
 .impression-band { grid-column: 1 / -1; }
 
-@container impression-block (min-width: 640px) {
+/* 520px is the smallest honest threshold: two `label | field` pairs need
+   roughly 2 × (label ~75px + field ~150px) + the 1px rule + gaps ≈ 471px, so
+   this clears real content plus headroom rather than a guessed column width. */
+@container impression-block (min-width: 520px) {
   .impression-grid {
     grid-template-columns: minmax(0, auto) minmax(0, 1fr) 1px minmax(0, auto) minmax(0, 1fr);
+    /* One source of truth for the row count: the rule's `grid-row: 1 / -1`
+       below spans to the last line of this EXPLICIT grid, so adding a part
+       row here is the only change a sixth row requires. */
+    grid-template-rows: repeat(5, auto);
     column-gap: 0.7rem;
   }
   /* `--ip-row` is set inline, per row, by ImpressionFields. The assignment
@@ -295,8 +311,15 @@ html {
   }
   .impression-rule {
     display: block;
+    /* The grid's `align-items: center` gives every direct item
+       `align-self: center` by default — fine for a row with real content,
+       but this is an empty div whose only visual is `background-color`, so
+       centering it sizes it to its content height: 0px. `stretch` is what
+       makes the rule actually paint instead of silently reserving its
+       column with nothing in it. */
+    align-self: stretch;
     grid-column: 3;
-    grid-row: 1 / 6;
+    grid-row: 1 / -1;
     background-color: var(--color-bambu-dark-tertiary);
   }
 }

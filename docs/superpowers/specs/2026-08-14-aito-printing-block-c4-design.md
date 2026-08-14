@@ -10,12 +10,16 @@ the tallest block in the form. Three separate causes:
 
 1. **A viewport-driven split inside a narrow column.** The calculator area
    uses `lg:grid-cols-2`, which keys off the *viewport*, not the block. In
-   `ProjectDetailPanel` the tasks column is ~780px wide (three-column grid:
-   `20rem | 1fr | 26rem`), so at any desktop width the block splits itself
-   into two ~370px halves. The right half holds the cost breakdown — and is
-   **empty whenever a price cannot be computed** (no printer selected, or an
-   imported task that carries a cost but no print parameters). That empty half
-   is the hole in the reported screenshot.
+   `ProjectDetailPanel` the block's own width is `min(100vw - 32px, 1600px) -
+   876px` — about 532px on a 1440px viewport, ~604px at 1512px — once the
+   overlay padding, the panel's `max-w-[100rem]` cap, the middle column's
+   `20rem | 1fr | 26rem` + `lg:gap-6` tracks, and the column/row/fieldset
+   padding are all subtracted (an earlier draft of this spec measured this at
+   "~780px"; that number was wrong). At any desktop width the block splits
+   itself into two halves narrower than that. The right half holds the cost
+   breakdown — and is **empty whenever a price cannot be computed** (no
+   printer selected, or an imported task that carries a cost but no print
+   parameters). That empty half is the hole in the reported screenshot.
 2. **A gutter for one button.** The calculator toggle occupies a fixed
    `w-6 + px-3` cell on the first row, and an `aria-hidden` spacer mirrors its
    metrics on the second — ~54px of width lost on two rows to align two rows
@@ -49,14 +53,20 @@ full-width price band in the footer.
 A single CSS grid holds both label/field pairs, so rows align across the
 whole block:
 
-- Wide (block ≥ 640px): `minmax(0,auto) minmax(0,1fr) 1px minmax(0,auto) minmax(0,1fr)`.
-  Column 3 is a 1px divider element spanning all five rows.
-- Narrow (< 640px): `minmax(0,auto) minmax(0,1fr)`; the divider is hidden and
+- Wide (block ≥ 520px): `minmax(0,auto) minmax(0,1fr) 1px minmax(0,auto) minmax(0,1fr)`.
+  Column 3 is a 1px divider element spanning all five rows. 520px is the
+  smallest honest threshold: two `label | field` pairs need roughly
+  2 × (label ~75px + field ~150px) + the 1px rule + gaps ≈ 471px, and the
+  block is only ~532–604px wide on the 1440–1512px laptops this is actually
+  used on — a 640px threshold (an earlier draft's number) never clears on
+  those, so the "wide" layout would never appear where it matters most.
+- Narrow (< 520px): `minmax(0,auto) minmax(0,1fr)`; the divider is hidden and
   the right-column rows fall below the left ones. Labels stay *beside* their
   field at every width.
 
 Breakpoints are **container queries on the block**, not `lg:` — the whole
-point is to respond to the ~780px column rather than the window. Right-column
+point is to respond to the block's own width (≈532–724px across real desktop
+viewports, see above) rather than the browser window. Right-column
 rows are `grid-column: span 2` + `grid-cols-subgrid`, so their label and field
 land in the parent's columns 4 and 5 (and in columns 1 and 2 when narrow).
 
