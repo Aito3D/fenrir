@@ -556,7 +556,7 @@ describe('TaskRow', () => {
     await user.click(screen.getByRole('combobox', { name: /material/i }));
     await user.click(await screen.findByRole('option', { name: 'Sunlu PA6-CF' }));
     await user.type(screen.getByLabelText(/weight/i), '40');
-    await user.type(screen.getByLabelText(/print time/i), '1');
+    await user.type(screen.getByRole('spinbutton', { name: /days/i }), '1');
 
     await waitFor(() => {
       const tasks = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft[] | undefined;
@@ -599,10 +599,10 @@ describe('TaskRow', () => {
     await user.click(await screen.findByRole('option', { name: 'Sunlu PA6-CF' }));
 
     await user.type(screen.getByLabelText(/weight/i), '40');
-    // DurationInput only gives its `id` (and therefore an accessible name) to
-    // the days field — see the note against querying hours/minutes by name.
-    // One day is far more than enough to make `timeMin` non-null.
-    await user.type(screen.getByLabelText(/print time/i), '1');
+    // Every segment now carries its own aria-label, so target days directly
+    // rather than the group's "Print time" label. One day is far more than
+    // enough to make `timeMin` non-null.
+    await user.type(screen.getByRole('spinbutton', { name: /days/i }), '1');
 
     await waitFor(() => {
       const lastTasks = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft[] | undefined;
@@ -698,7 +698,7 @@ describe('TaskRow', () => {
     await user.click(screen.getByRole('combobox', { name: /material/i }));
     await user.click(await screen.findByRole('option', { name: 'Sunlu PA6-CF' }));
     await user.type(screen.getByLabelText(/weight/i), '40');
-    await user.type(screen.getByLabelText(/print time/i), '1');
+    await user.type(screen.getByRole('spinbutton', { name: /days/i }), '1');
 
     await waitFor(() => {
       const lastTasks = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft[] | undefined;

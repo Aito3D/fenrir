@@ -268,12 +268,16 @@ export function ImpressionFields({ value, onChange, costField, discountField }: 
             className={inputCls}
           />
         </div>
-        <div>
-          <label htmlFor={`${reactId}-time`} className={labelCls}>
+        {/* Full row, not one half-width cell: this is one value in three
+            parts, so it needs the width its three segments divide — and
+            spanning the grid puts its left edge under Printer's. */}
+        <div className="sm:col-span-2">
+          <label id={`${reactId}-time-label`} htmlFor={`${reactId}-time`} className={labelCls}>
             {t('aito.printTime')}
           </label>
           <DurationInput
             id={`${reactId}-time`}
+            labelId={`${reactId}-time-label`}
             minutes={value.timeMin}
             onChange={(timeMin) => handleChange({ ...value, timeMin })}
           />
