@@ -1,16 +1,58 @@
-import { useId, useMemo, useState } from 'react';
+import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Calculator } from 'lucide-react';
 import { api } from '../../api/client';
 import { SearchableSelect } from '../SearchableSelect';
 import { DurationInput } from './DurationInput';
-import { Money } from '../calculator/shared';
-import { focusRingCls, inputCls, labelCls } from '../formStyles';
-import { useCurrency } from '../../hooks/useCurrency';
+import { inputCls } from '../formStyles';
 import { computeImpressionCost, roundUpTo50 } from '../../utils/taskDraft';
 import type { ImpressionDraft } from '../../utils/taskDraft';
+
+/** Inline label for a grid row. Not `labelCls`: that one is `block` with a
+ *  bottom margin, for a label STACKED above its field. Here the label sits
+ *  beside its field, in the grid's own label column — which is what buys the
+ *  block ~24px per field. */
+const rowLabelCls = 'text-sm text-bambu-gray text-right';
+
+/** One `label | control` pair in the block's shared grid.
+ *
+ *  `side` decides which column pair it lands in, and `row` is the 1-based
+ *  row a PRICE pair occupies while the block is wide (see the `--ip-row`
+ *  comment in index.css). Part pairs are auto-placed in DOM order and ignore
+ *  `row`. */
+function GridRow({
+  side,
+  row,
+  htmlFor,
+  label,
+  children,
+}: {
+  side: 'part' | 'price';
+  row?: number;
+  htmlFor?: string;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={side === 'part' ? 'impression-part-row' : 'impression-price-row'}
+      style={row === undefined ? undefined : ({ '--ip-row': row } as React.CSSProperties)}
+    >
+      {/* A `<label>` only when it labels a control. A row whose content is a
+          readout (the computed price) gets a `<span>`: a label pointing at
+          nothing is a dangling label, which is worse than no label. */}
+      {htmlFor === undefined ? (
+        <span className={rowLabelCls}>{label}</span>
+      ) : (
+        <label htmlFor={htmlFor} className={rowLabelCls}>
+          {label}
+        </label>
+      )}
+      {children}
+    </div>
+  );
+}
 
 export interface ImpressionFieldsProps {
   value: ImpressionDraft;
@@ -27,24 +69,19 @@ export interface ImpressionFieldsProps {
    *  Reporting a `null` there would not blank the cost, it would DISABLE the
    *  service. Clearing a cost is the Cost input's job. */
   onChange: (next: ImpressionDraft, computedCost?: number) => void;
-  /** The Impression3D cost field, rendered by the parent — TaskStepFields
-   *  owns it and its null-vs-0 rule — but SEATED here, as the left cell of
-   *  the top row, so quantity (which multiplies straight into that cost)
-   *  sits beside it. Passing it through is also what keeps it alive in the
-   *  no-printers / no-filaments early returns below: an imported cost must
-   *  stay editable on an installation with no calculator configured.
+  /** The Impression3D cost control, owned by TaskStepFields (it owns the
+   *  null-vs-0 rule) but seated HERE, as a row of this block's grid.
    *
-   *  The node IS the flex cell: it lands directly in the top row, so it must
-   *  carry its own `min-w-0 flex-1` (see TaskStepFields) rather than being
-   *  wrapped here — an extra wrapper would break the "cost and quantity are
-   *  sibling cells" layout the tests pin. */
+   *  A slot is a FRAGMENT of exactly two nodes — its `<label>` then its
+   *  control — not a wrapped cell. This component wraps them in the subgrid
+   *  row itself, which is what lets it own row placement (see `GridRow`)
+   *  without the parent having to know the grid at all. Do not wrap the pair
+   *  in a `<div>` on the parent's side: that would put one element where the
+   *  subgrid expects two, and the label would swallow the field's column. */
   costField: React.ReactNode;
-  /** The discount selector, same slot contract as `costField` (the node is
-   *  the cell, `min-w-0 flex-1`). Owned by TaskStepFields because the
-   *  discount lives on the TASK beside `impressionCost` — it modifies the
-   *  price, not the print parameters this component edits. Seated here, in
-   *  the top row right after quantity, so the commercial trio (price,
-   *  count, discount) reads as one line. */
+  /** Same fragment contract as `costField`. Owned by TaskStepFields because
+   *  the discount lives on the TASK beside `impressionCost` — it modifies the
+   *  price, not the print parameters this component edits. */
   discountField: React.ReactNode;
 }
 
@@ -56,10 +93,6 @@ export interface ImpressionFieldsProps {
 export function ImpressionFields({ value, onChange, costField, discountField }: ImpressionFieldsProps) {
   const { t } = useTranslation();
   const reactId = useId();
-  // Closed by default, deliberately even for a task whose parameters are
-  // already filled: the collapsed row still shows the two figures that
-  // matter (unit price, quantity), and the button lights up when open.
-  const [calculatorOpen, setCalculatorOpen] = useState(false);
 
   const filamentsQuery = useQuery({
     queryKey: ['calculatorFilaments'],
@@ -80,17 +113,6 @@ export function ImpressionFields({ value, onChange, costField, discountField }: 
   const printers = printersQuery.data ?? [];
   const defaults = defaultsQuery.data;
   const referenceDataLoading = filamentsQuery.isLoading || printersQuery.isLoading || defaultsQuery.isLoading;
-  const currency = useCurrency();
-
-  const filament = filaments.find((f) => f.id === value.filamentId) ?? null;
-  const printer = printers.find((p) => p.id === value.printerId) ?? null;
-
-  // CalculatorFilament/CalculatorPrinter are supersets of PricingFilament/
-  // PricingPrinter, so they pass straight through — no mapping layer.
-  const result = useMemo(
-    () => (defaults ? computeImpressionCost(value, filament, printer, defaults) : null),
-    [value, filament, printer, defaults],
-  );
 
   // Pricing is a side effect on the parent, so it happens here — at the moment
   // a print input actually changes — rather than in an effect. An effect
@@ -119,128 +141,32 @@ export function ImpressionFields({ value, onChange, costField, discountField }: 
     );
   };
 
-  // Calculator toggle | cost | quantity | discount, one row: the whole
-  // commercial fact (what a piece costs, how many, what gesture applies)
-  // reads left to right, and the calculator hides behind its button — most
-  // edits are a price and a count, and the six-field pricing form under them
-  // was the bulk of the block's height. Rendered ahead of every branch below
-  // — the row must survive the unconfigured-install early returns too.
-  const costRow = (
-    // The testid is the row's layout contract for the tests: "these fields
-    // are co-located in the top row" — pinned via within() queries rather
-    // than DOM-nesting-depth assertions that break on any wrapper change.
-    <div className="flex gap-3" data-testid="impression-top-row">
-      <button
-        type="button"
-        aria-expanded={calculatorOpen}
-        aria-label={t('calculator.title')}
-        title={t('calculator.title')}
-        onClick={() => setCalculatorOpen((v) => !v)}
-        // box-content + h-6 content box + py-2 adds up to the exact height of
-        // the inputs beside it (24px line + 16px padding + borders).
-        className={`box-content inline-flex h-6 w-6 flex-shrink-0 items-center justify-center self-end rounded-lg border px-3 py-2 transition-colors motion-reduce:transition-none ${focusRingCls} ${
-          calculatorOpen
-            ? 'border-bambu-green/60 bg-bambu-green/10 text-bambu-green'
-            : 'border-bambu-dark-tertiary text-bambu-gray hover:border-bambu-green/40 hover:text-bambu-green-light'
-        }`}
-      >
-        <Calculator className="h-4 w-4" />
-      </button>
-      {costField}
-      {/* Fixed-width, not flex-1: a count is 1-3 digits and the discount is
-          two digits and a sign — the unit cost is the field that earns the
-          rest of the line. */}
-      <div className="w-20 flex-shrink-0">
-        <label htmlFor={`${reactId}-quantity`} className={labelCls}>
-          {t('aito.quantity')}
-        </label>
-        <input
-          id={`${reactId}-quantity`}
-          type="number"
-          min={1}
-          step={1}
-          inputMode="numeric"
-          value={value.quantity}
-          onChange={(e) =>
-            handleChange({
-              ...value,
-              quantity: e.target.value === '' ? 1 : Math.max(1, Math.floor(Number(e.target.value) || 1)),
-            })
-          }
-          className={inputCls}
-        />
-      </div>
-      {discountField}
-    </div>
-  );
-
-  // Material | color, the piece's physical identity on its own row under the
-  // commercial one. The empty spacer mirrors the toggle button's metrics so
-  // the rows' left edges line up. Both are ImpressionDraft fields priced
-  // through handleChange like the rest; material is the same filament select
-  // the calculator grid used to hold — moved out because the quote's
-  // "Matériau" line needs it far more often than the pricing form does. On
-  // an unconfigured install its option list is simply empty.
-  const detailRow = (
-    <div className="flex gap-3">
-      <div aria-hidden="true" className="box-content w-6 flex-shrink-0 px-3" />
-      <div className="min-w-0 flex-1">
-        <label htmlFor={`${reactId}-material`} className={labelCls}>
-          {t('aito.material')}
-        </label>
-        <SearchableSelect
-          id={`${reactId}-material`}
-          value={value.filamentId === null ? '' : String(value.filamentId)}
-          onChange={(v) => handleChange({ ...value, filamentId: v === '' ? null : Number(v) })}
-          options={filaments.map((f) => ({ value: String(f.id), label: f.name }))}
-          allowCustom={false}
-        />
-      </div>
-      <div className="min-w-0 flex-1">
-        <label htmlFor={`${reactId}-color`} className={labelCls}>
-          {t('aito.color')}
-        </label>
-        <input
-          id={`${reactId}-color`}
-          type="text"
-          value={value.color}
-          onChange={(e) => handleChange({ ...value, color: e.target.value })}
-          className={inputCls}
-        />
-      </div>
-    </div>
-  );
-
-  if (printers.length === 0 || filaments.length === 0) {
-    return (
-      <div className="space-y-3">
-        {costRow}
-        {detailRow}
-        {calculatorOpen && (
-          <p className="text-sm text-bambu-gray">
-            {t(printers.length === 0 ? 'aito.noPrintersConfigured' : 'aito.noFilamentsConfigured')}{' '}
-            <Link to="/calculator" className="text-bambu-green hover:underline">
-              {t('calculator.title')}
-            </Link>
-          </p>
-        )}
-      </div>
-    );
-  }
+  const notConfigured = printers.length === 0 || filaments.length === 0;
 
   return (
-    <div className="space-y-3">
-      {costRow}
-      {detailRow}
-      {calculatorOpen && (
-        <>
-      <div data-testid="impression-divider" aria-hidden="true" className="border-t border-bambu-dark-tertiary" />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label htmlFor={`${reactId}-printer`} className={labelCls}>
-            {t('aito.printer')}
-          </label>
+    <div className="impression-block">
+      <div className="impression-grid" data-testid="impression-grid">
+        <GridRow side="part" htmlFor={`${reactId}-material`} label={t('aito.material')}>
+          <SearchableSelect
+            id={`${reactId}-material`}
+            value={value.filamentId === null ? '' : String(value.filamentId)}
+            onChange={(v) => handleChange({ ...value, filamentId: v === '' ? null : Number(v) })}
+            options={filaments.map((f) => ({ value: String(f.id), label: f.name }))}
+            allowCustom={false}
+          />
+        </GridRow>
+
+        <GridRow side="part" htmlFor={`${reactId}-color`} label={t('aito.color')}>
+          <input
+            id={`${reactId}-color`}
+            type="text"
+            value={value.color}
+            onChange={(e) => handleChange({ ...value, color: e.target.value })}
+            className={inputCls}
+          />
+        </GridRow>
+
+        <GridRow side="part" htmlFor={`${reactId}-printer`} label={t('aito.printer')}>
           <SearchableSelect
             id={`${reactId}-printer`}
             value={value.printerId === null ? '' : String(value.printerId)}
@@ -248,11 +174,9 @@ export function ImpressionFields({ value, onChange, costField, discountField }: 
             options={printers.map((p) => ({ value: String(p.id), label: p.name }))}
             allowCustom={false}
           />
-        </div>
-        <div>
-          <label htmlFor={`${reactId}-weight`} className={labelCls}>
-            {t('aito.weightG')}
-          </label>
+        </GridRow>
+
+        <GridRow side="part" htmlFor={`${reactId}-weight`} label={t('aito.weightG')}>
           <input
             id={`${reactId}-weight`}
             type="number"
@@ -267,60 +191,70 @@ export function ImpressionFields({ value, onChange, costField, discountField }: 
             }
             className={inputCls}
           />
-        </div>
-        {/* Full row, not one half-width cell: this is one value in three
-            parts, so it needs the width its three segments divide — and
-            spanning the grid puts its left edge under Printer's. */}
-        <div className="sm:col-span-2">
-          {/* This label does double duty: its `id` is the segment group's
-              `aria-labelledby` target, and its `htmlFor` also points at the
-              days input directly. A query by this label's text therefore
-              matches both the label and the days input — target the days
-              spinbutton by its own aria-label instead. */}
-          <label id={`${reactId}-time-label`} htmlFor={`${reactId}-time`} className={labelCls}>
+        </GridRow>
+
+        {/* The label's `id` names the segment group and its `htmlFor` points
+            at the days input, so a query by this label's text matches both —
+            target a segment by its own aria-label instead. `max-w-60` stops
+            the three segments stretching across a column they do not need. */}
+        <div className="impression-part-row">
+          <label id={`${reactId}-time-label`} htmlFor={`${reactId}-time`} className={rowLabelCls}>
             {t('aito.printTime')}
           </label>
-          <DurationInput
-            id={`${reactId}-time`}
-            labelId={`${reactId}-time-label`}
-            minutes={value.timeMin}
-            onChange={(timeMin) => handleChange({ ...value, timeMin })}
-          />
-        </div>
-      </div>
-      {result && (
-        <div className="space-y-1 pt-2 border-t border-bambu-dark-tertiary lg:border-t-0 lg:pt-0 lg:border-l lg:border-bambu-dark-tertiary lg:pl-4">
-          {(
-            [
-              ['calculator.costFilament', result.filament_cost],
-              ['calculator.costDepreciation', result.depreciation_cost],
-              ['calculator.costEnergy', result.energy_cost],
-              ['calculator.costRepairs', result.repairs_cost],
-              ['calculator.groupProvisions', result.prototype_cost + result.failures_cost],
-              ['calculator.costAds', result.ads_cost],
-              ['calculator.marge', result.marge],
-            ] as const
-          ).map(([labelKey, lineValue]) => (
-            <div key={labelKey} className="flex justify-between gap-2 text-sm">
-              <span className="text-bambu-gray-light">{t(labelKey)}</span>
-              <Money currency={currency} value={lineValue} className="text-white" />
-            </div>
-          ))}
-          <div className="flex justify-between gap-2 text-sm font-medium pt-1">
-            <span className="text-white">{t('calculator.totalTTC')}</span>
-            <Money currency={currency} value={result.total_ttc} className="text-bambu-green" />
+          <div className="max-w-60">
+            <DurationInput
+              id={`${reactId}-time`}
+              labelId={`${reactId}-time-label`}
+              minutes={value.timeMin}
+              onChange={(timeMin) => handleChange({ ...value, timeMin })}
+            />
           </div>
-          {value.quantity > 1 && (
-            <div className="flex justify-between gap-2 text-sm font-medium">
-              <span className="text-white">{t('calculator.forQuantity', { count: value.quantity })}</span>
-              <Money currency={currency} value={result.total_ttc_qty} className="text-bambu-green" />
-            </div>
+        </div>
+
+        {/* Price column. Row 1 and 3 are slots; quantity is ours because the
+            draft owns it. */}
+        <div className="impression-price-row" style={{ '--ip-row': 1 } as React.CSSProperties}>
+          {costField}
+        </div>
+
+        <GridRow side="price" row={2} htmlFor={`${reactId}-quantity`} label={t('aito.quantity')}>
+          <input
+            id={`${reactId}-quantity`}
+            type="number"
+            min={1}
+            step={1}
+            inputMode="numeric"
+            value={value.quantity}
+            onChange={(e) =>
+              handleChange({
+                ...value,
+                quantity: e.target.value === '' ? 1 : Math.max(1, Math.floor(Number(e.target.value) || 1)),
+              })
+            }
+            className={inputCls}
+          />
+        </GridRow>
+
+        <div className="impression-price-row" style={{ '--ip-row': 3 } as React.CSSProperties}>
+          {discountField}
+        </div>
+
+        {/* The band's only content in this task is the unconfigured-install
+            message, which used to hang off the calculator toggle. Task 3
+            fills it. */}
+        <div className="impression-band">
+          {notConfigured && (
+            <p className="text-sm text-bambu-gray">
+              {t(printers.length === 0 ? 'aito.noPrintersConfigured' : 'aito.noFilamentsConfigured')}{' '}
+              <Link to="/calculator" className="text-bambu-green hover:underline">
+                {t('calculator.title')}
+              </Link>
+            </p>
           )}
         </div>
-      )}
+
+        <div className="impression-rule" aria-hidden="true" />
       </div>
-        </>
-      )}
     </div>
   );
 }

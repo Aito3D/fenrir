@@ -80,10 +80,11 @@ describe('TaskStepFields', () => {
 
   it('printing: cost and quantity stay editable side by side on an unconfigured install', () => {
     // No calculator queries are mocked in this file, so ImpressionFields
-    // takes its "no printers configured" early return — the cost/quantity
-    // row must survive that branch (an imported cost has to stay editable).
+    // renders with an empty printer/filament list — there is only one render
+    // path now, so the cost/quantity fields still land in the block's grid
+    // (an imported cost has to stay editable).
     render(<TaskStepFields task={{ ...emptyTaskDraft(), impressionCost: 500 }} onChange={vi.fn()} />);
-    const topRow = within(screen.getByTestId('impression-top-row'));
+    const topRow = within(screen.getByTestId('impression-grid'));
     expect(topRow.getByLabelText(/printing cost/i)).toBeInTheDocument();
     expect(topRow.getByLabelText('Quantity')).toBeInTheDocument();
   });
@@ -124,14 +125,14 @@ describe('TaskStepFields', () => {
     expect(next.impressionCost).toBe(1500);
   });
 
-  it('printing: discount sits in the top row beside quantity; material and color under it', async () => {
+  it('printing: discount sits in the block\'s grid beside quantity; material and color under it', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(<TaskStepFields task={{ ...emptyTaskDraft(), impressionCost: 500 }} onChange={onChange} />);
 
-    // All four are reachable without opening the calculator (nothing is
-    // mocked here, and the toggle stays closed).
-    const topRow = within(screen.getByTestId('impression-top-row'));
+    // All four are reachable straight away (nothing is mocked here, and
+    // there is no disclosure to open).
+    const topRow = within(screen.getByTestId('impression-grid'));
     topRow.getByLabelText('Quantity');
     const discount = topRow.getByLabelText('Discount');
     // Material (the filament select, moved out of the calculator) and color

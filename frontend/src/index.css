@@ -246,6 +246,61 @@ html {
   }
 }
 
+/* ── Aito Impression 3D block (ImpressionFields) ───────────────────────────
+   Both `label | field` column pairs live in ONE grid, so the two halves of
+   the block align row for row and the labels share a column width. A 1px
+   column between them carries the rule.
+
+   The breakpoint is a CONTAINER query on the block, not a `lg:` viewport
+   variant. This block sits in ProjectDetailPanel's ~780px tasks column
+   (`20rem | 1fr | 26rem`), where a viewport breakpoint splits it into two
+   ~370px halves at every desktop width — and leaves the right one empty
+   whenever no price can be computed. Same reasoning, and same mechanism, as
+   `.printer-control-buttons-container` above. */
+.impression-block {
+  container: impression-block / inline-size;
+}
+
+.impression-grid {
+  display: grid;
+  align-items: center;
+  gap: 0.4rem 0.55rem;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+}
+
+/* A row is a subgrid so its label and control land in the PARENT's columns. */
+.impression-part-row,
+.impression-price-row {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: span 2;
+  align-items: center;
+}
+
+.impression-rule { display: none; }
+.impression-band { grid-column: 1 / -1; }
+
+@container impression-block (min-width: 640px) {
+  .impression-grid {
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr) 1px minmax(0, auto) minmax(0, 1fr);
+    column-gap: 0.7rem;
+  }
+  /* `--ip-row` is set inline, per row, by ImpressionFields. The assignment
+     must NOT apply while the block is narrow — there the rows stack in DOM
+     order, part fields first, then price fields — and a container query
+     cannot be expressed in an inline style, so the variable is read here. */
+  .impression-price-row {
+    grid-column: 4 / span 2;
+    grid-row: var(--ip-row);
+  }
+  .impression-rule {
+    display: block;
+    grid-column: 3;
+    grid-row: 1 / 6;
+    background-color: var(--color-bambu-dark-tertiary);
+  }
+}
+
 /* ============================================
    LAYER 2: STYLE EFFECTS
    ============================================ */

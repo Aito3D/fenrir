@@ -167,13 +167,6 @@ async function editTask(index = 0) {
   fireEvent.click(buttons[index]);
 }
 
-/** Opens ImpressionFields' calculator, hidden by default behind its toggle so
- *  the printing block opens compact — the six pricing fields and the cost
- *  breakdown only render behind this click. */
-async function openCalculator() {
-  fireEvent.click(await screen.findByRole('button', { name: 'Calculator' }));
-}
-
 /** Mounts TaskEditor uncontrolled with the given draft tasks, all of which
  *  start in edit mode (a stepless task IS the form — see TaskEditor's
  *  `isEditing`). For tests that only need to observe DOM after a click, not
@@ -528,7 +521,6 @@ describe('TaskRow', () => {
       impressionCost: 2400,
     };
     render(<ControlledTaskRow initial={imported} onChangeSpy={onChangeSpy} />);
-    await openCalculator();
 
     fireEvent.change(await screen.findByLabelText(/colou?r/i), { target: { value: 'Rouge' } });
 
@@ -549,7 +541,6 @@ describe('TaskRow', () => {
     // Printing is still a chip on an empty draft: enable it to reveal
     // ImpressionFields.
     await user.click(screen.getByRole('button', { name: 'Add Printing' }));
-    await openCalculator();
 
     await user.click(await screen.findByRole('combobox', { name: /printer/i }));
     await user.click(await screen.findByRole('option', { name: 'H2S' }));
@@ -590,7 +581,6 @@ describe('TaskRow', () => {
     // Printing is still a chip on an empty draft: enable it to reveal
     // ImpressionFields.
     await user.click(screen.getByRole('button', { name: 'Add Printing' }));
-    await openCalculator();
 
     await user.click(await screen.findByRole('combobox', { name: /printer/i }));
     await user.click(await screen.findByRole('option', { name: 'H2S' }));
@@ -637,9 +627,6 @@ describe('TaskRow', () => {
       impressionCost: 12345,
     };
     render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
-    // Opening the calculator is a disclosure click, not an edit — it must not
-    // produce an onChange either.
-    await openCalculator();
 
     // Give every query (filaments, printers, defaults, settings) every chance
     // to resolve. Pricing only happens inside ImpressionFields' change
@@ -667,7 +654,6 @@ describe('TaskRow', () => {
       impressionCost: 12345,
     };
     render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
-    await openCalculator();
 
     await screen.findByRole('combobox', { name: /material/i });
     await act(async () => {
@@ -691,7 +677,6 @@ describe('TaskRow', () => {
     // Printing is still a chip on an empty draft: enable it to reveal
     // ImpressionFields.
     await user.click(screen.getByRole('button', { name: 'Add Printing' }));
-    await openCalculator();
 
     await user.click(await screen.findByRole('combobox', { name: /printer/i }));
     await user.click(await screen.findByRole('option', { name: 'H2S' }));
@@ -717,7 +702,7 @@ describe('TaskRow', () => {
     });
   });
 
-  it('printing: quantity sits beside the cost; the calculator hides behind its toggle, divider included', async () => {
+  it('printing: every print parameter is on screen, with no disclosure to open', async () => {
     const task = {
       ...emptyTaskDraft(),
       impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
@@ -725,21 +710,23 @@ describe('TaskRow', () => {
     };
     render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
 
-    // Closed by default — even with every parameter filled: the block opens
-    // compact. Printer/weight/time stay behind the toggle (material moved to
-    // the always-visible detail row, so it is deliberately NOT checked here).
-    expect(screen.queryByRole('combobox', { name: /printer/i })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/weight/i)).not.toBeInTheDocument();
-    expect(screen.queryByTestId('impression-divider')).not.toBeInTheDocument();
-    // Both fields are co-located in the top row — quantity is no longer
-    // buried in the calculator's parameter grid.
-    const topRow = within(screen.getByTestId('impression-top-row'));
-    topRow.getByLabelText(/printing cost/i);
-    topRow.getByLabelText('Quantity');
-
-    await openCalculator();
+    // The toggle is gone entirely: roughly half of printing tasks are priced
+    // by the calculator and half by hand, so neither path may sit behind a
+    // disclosure. C4 absorbs the three parameters into rows the block needs
+    // anyway, so they cost no height.
+    expect(screen.queryByRole('button', { name: 'Calculator' })).not.toBeInTheDocument();
     await screen.findByRole('combobox', { name: /printer/i });
-    expect(screen.getByTestId('impression-divider')).toBeInTheDocument();
+    screen.getByLabelText(/weight/i);
+    // The duration segments name only their own unit (see DurationInput).
+    screen.getByRole('spinbutton', { name: 'Hours' });
+
+    // One grid holds both halves: the part's identity and its price.
+    const grid = within(screen.getByTestId('impression-grid'));
+    grid.getByLabelText(/printing cost/i);
+    grid.getByLabelText('Quantity');
+    grid.getByLabelText('Discount');
+    grid.getByRole('combobox', { name: /material/i });
+    grid.getByLabelText('Colour');
   });
 });
 

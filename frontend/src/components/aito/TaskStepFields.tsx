@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import { ImpressionFields } from './ImpressionFields';
 import { Money } from '../calculator/shared';
-import { inputCls, labelCls, focusRingCls } from '../formStyles';
+import { inputCls, focusRingCls } from '../formStyles';
 import { useCurrency } from '../../hooks/useCurrency';
 import { taskTotal } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
@@ -266,11 +266,12 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
               onChange({ ...task, impression: next, impressionCost });
             }}
             costField={
-              // `min-w-0 flex-1`: this node is dropped straight into
-              // ImpressionFields' top flex row as the cost CELL — see its
-              // `costField` prop doc.
-              <div className="min-w-0 flex-1">
-                <label htmlFor={`${reactId}-impression`} className={labelCls}>
+              // A fragment, not a cell: ImpressionFields wraps this pair in
+              // its own subgrid row (see its `costField` doc). The unit price
+              // is what is EDITED here; the stored `impressionCost` stays the
+              // multiplied total the rest of the stack speaks.
+              <>
+                <label htmlFor={`${reactId}-impression`} className="text-sm text-bambu-gray text-right">
                   {t('aito.serviceUnitCost')}
                 </label>
                 <CostInput
@@ -289,14 +290,11 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
                   }
                   autoFocus={autoFocusService === 'impression'}
                 />
-              </div>
+              </>
             }
             discountField={
-              // Fixed-width like the quantity beside it — the slot contract
-              // (the node IS the row cell) still holds, it is just a narrow
-              // cell: two digits and a % sign.
-              <div className="w-24 flex-shrink-0">
-                <label htmlFor={`${reactId}-impression-discount`} className={labelCls}>
+              <>
+                <label htmlFor={`${reactId}-impression-discount`} className="text-sm text-bambu-gray text-right">
                   {t('aito.discount')}
                 </label>
                 <select
@@ -319,7 +317,7 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
                     </option>
                   ))}
                 </select>
-              </div>
+              </>
             }
           />
           {task.impressionCost !== null && (
