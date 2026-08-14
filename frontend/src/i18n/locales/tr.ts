@@ -202,6 +202,7 @@ export default {
     missingPrintParams: 'Maliyet dağılımını görmek için yazıcı, ağırlık ve baskı süresini girin.',
     costDetail: 'Maliyet ayrıntısı',
     addNote: 'Teklif için not',
+    note: 'Not',
     quoteStatus: {
       draft: 'Taslak',
       sent: 'Gönderildi',

@@ -202,6 +202,7 @@ export default {
     missingPrintParams: "Renseignez imprimante, poids et temps d'impression pour voir la répartition du coût.",
     costDetail: 'Détail du coût',
     addNote: 'Note pour le devis',
+    note: 'Note',
     quoteStatus: {
       draft: 'Brouillon',
       sent: 'Envoyé',

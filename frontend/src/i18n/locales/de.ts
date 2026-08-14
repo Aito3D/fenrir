@@ -202,6 +202,7 @@ export default {
     missingPrintParams: 'Drucker, Gewicht und Druckzeit angeben, um die Kostenaufteilung zu sehen.',
     costDetail: 'Kostendetails',
     addNote: 'Notiz für das Angebot',
+    note: 'Notiz',
     quoteStatus: {
       draft: 'Entwurf',
       sent: 'Gesendet',

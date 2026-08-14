@@ -202,6 +202,7 @@ export default {
     missingPrintParams: 'コスト内訳を表示するには、プリンター・重量・印刷時間を入力してください。',
     costDetail: 'コスト内訳',
     addNote: '見積書用メモ',
+    note: 'メモ',
     quoteStatus: {
       draft: '下書き',
       sent: '送信済み',

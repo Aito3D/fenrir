@@ -202,6 +202,7 @@ export default {
     missingPrintParams: '비용 구성을 보려면 프린터, 무게, 출력 시간을 입력하세요.',
     costDetail: '비용 상세',
     addNote: '견적서 메모',
+    note: '메모',
     quoteStatus: {
       draft: '초안',
       sent: '발송됨',

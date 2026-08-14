@@ -202,6 +202,7 @@ export default {
     missingPrintParams: 'Indica impresora, peso y tiempo de impresión para ver el reparto de costes.',
     costDetail: 'Detalle del coste',
     addNote: 'Nota para el presupuesto',
+    note: 'Nota',
     quoteStatus: {
       draft: 'Borrador',
       sent: 'Enviado',

@@ -206,6 +206,7 @@ export default {
     missingPrintParams: 'Fill in printer, weight and print time to see the cost split.',
     costDetail: 'Cost detail',
     addNote: 'Note for the quote',
+    note: 'Note',
     quoteStatus: {
       draft: 'Draft',
       sent: 'Sent',

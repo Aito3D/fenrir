@@ -202,6 +202,7 @@ export default {
     missingPrintParams: 'Укажите принтер, вес и время печати, чтобы увидеть структуру затрат.',
     costDetail: 'Детализация затрат',
     addNote: 'Примечание к смете',
+    note: 'Примечание',
     quoteStatus: {
       draft: 'Черновик',
       sent: 'Отправлено',

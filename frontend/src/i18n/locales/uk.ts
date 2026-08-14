@@ -203,6 +203,7 @@ export default {
     missingPrintParams: "Вкажіть принтер, вагу та час друку, щоб побачити структуру витрат.",
     costDetail: "Деталізація витрат",
     addNote: "Примітка до кошторису",
+    note: "Примітка",
     quoteStatus: {
       draft: "Чернетка",
       sent: "Надіслано",

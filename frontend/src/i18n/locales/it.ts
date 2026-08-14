@@ -202,6 +202,7 @@ export default {
     missingPrintParams: 'Inserisci stampante, peso e tempo di stampa per vedere la ripartizione dei costi.',
     costDetail: 'Dettaglio dei costi',
     addNote: 'Nota per il preventivo',
+    note: 'Nota',
     quoteStatus: {
       draft: 'Bozza',
       sent: 'Inviato',

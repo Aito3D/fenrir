@@ -202,6 +202,7 @@ export default {
     missingPrintParams: '填寫印表機、重量與列印時間即可查看成本組成。',
     costDetail: '成本明細',
     addNote: '報價備註',
+    note: '備註',
     quoteStatus: {
       draft: '草稿',
       sent: '已傳送',
