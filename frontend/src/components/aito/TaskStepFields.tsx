@@ -1,7 +1,7 @@
 import { useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
-import { ImpressionFields } from './ImpressionFields';
+import { ImpressionFields, rowLabelCls } from './ImpressionFields';
 import { Money } from '../calculator/shared';
 import { inputCls, focusRingCls } from '../formStyles';
 import { useCurrency } from '../../hooks/useCurrency';
@@ -276,7 +276,7 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
               // is what is EDITED here; the stored `impressionCost` stays the
               // multiplied total the rest of the stack speaks.
               <>
-                <label htmlFor={`${reactId}-impression`} className="text-sm text-bambu-gray text-right">
+                <label htmlFor={`${reactId}-impression`} className={rowLabelCls}>
                   {t('aito.serviceUnitCost')}
                 </label>
                 <CostInput
@@ -309,34 +309,48 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
             }
             discountField={
               <>
-                <label htmlFor={`${reactId}-impression-discount`} className="text-sm text-bambu-gray text-right">
+                <label htmlFor={`${reactId}-impression-discount`} className={rowLabelCls}>
                   {t('aito.discount')}
                 </label>
-                <select
-                  id={`${reactId}-impression-discount`}
-                  value={task.impressionDiscountPct ?? ''}
-                  onChange={(e) =>
-                    onChange({
-                      ...task,
-                      impressionDiscountPct: e.target.value === '' ? null : Number(e.target.value),
-                    })
-                  }
-                  className={inputCls}
-                >
-                  {/* An em dash, not "0%": no discount means no discount
-                      column on the quote's PDF at all. */}
-                  <option value="">—</option>
-                  {[5, 10, 15, 20, 25, 30].map((pct) => (
-                    <option key={pct} value={pct}>
-                      {pct}%
-                    </option>
-                  ))}
-                </select>
+                {/* Fixed-width, not flex-1: a discount is two digits and a
+                    sign at most — same reasoning as the quantity input above
+                    (a little wider, `w-24` not `w-20`, to fit "30%" plus the
+                    select's own disclosure arrow). Bare `inputCls` (`w-full`)
+                    would otherwise fill the whole field column for "—" or
+                    "30%". */}
+                <div className="max-w-24">
+                  <select
+                    id={`${reactId}-impression-discount`}
+                    value={task.impressionDiscountPct ?? ''}
+                    onChange={(e) =>
+                      onChange({
+                        ...task,
+                        impressionDiscountPct: e.target.value === '' ? null : Number(e.target.value),
+                      })
+                    }
+                    className={inputCls}
+                  >
+                    {/* An em dash, not "0%": no discount means no discount
+                        column on the quote's PDF at all. */}
+                    <option value="">—</option>
+                    {[5, 10, 15, 20, 25, 30].map((pct) => (
+                      <option key={pct} value={pct}>
+                        {pct}%
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </>
             }
             noteField={
               <>
-                <span className="text-sm text-bambu-gray text-right">{t('aito.addNote')}</span>
+                {/* Short row label (`aito.note`), distinct from the button's
+                    full-phrase text (`aito.addNote`): the two used to share
+                    one key, which not only rendered "Note for the quote
+                    [+ Note for the quote]" but made that full phrase — not
+                    Unit cost/Quantity/Discount/Computed — size the shared
+                    price-column label track in every locale. */}
+                <span className={rowLabelCls}>{t('aito.note')}</span>
                 {noteOpen ? (
                   <span className="text-sm text-bambu-gray">—</span>
                 ) : (

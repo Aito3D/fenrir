@@ -739,9 +739,11 @@ describe('TaskRow', () => {
 
     const band = within(await screen.findByTestId('impression-band'));
     // The band renders unconditionally, before printers/filaments/defaults
-    // resolve — its testid appears immediately, in the "not configured"
-    // pre-load state. Wait for the cost split itself (async, so it retries)
-    // rather than for the testid, or the assertions below race the fetch.
+    // resolve — its testid appears immediately, but (since the loading-state
+    // fix above) showing the neutral `missingPrintParams` fallback rather
+    // than the "not configured" message. Wait for the cost split itself
+    // (async, so it retries) rather than for the testid, or the assertions
+    // below race the fetch.
     await band.findByRole('img', { name: 'Where the money goes' });
     // The charged figure, not the computed one: unit × quantity, less any
     // discount. This is what the quote line will say. The test harness's
@@ -755,6 +757,58 @@ describe('TaskRow', () => {
     band.getByText('Cost detail');
   });
 
+  it('printing: does not show the false "not configured" message while printers/filaments are still loading', async () => {
+    // Both queries are held open deliberately, then resolved by hand, so the
+    // assertions below land inside the loading window on purpose. Before this
+    // fix, `notConfigured` read straight off `printers`/`filaments`' `?? []`
+    // fallback — indistinguishable from a genuinely empty calculator until the
+    // fetch actually resolves — so every printing task asserted "No printers
+    // configured" plus a `/calculator` link for the whole cold-cache window.
+    let resolveFilaments: (v: unknown) => void = () => {};
+    let resolvePrinters: (v: unknown) => void = () => {};
+    const filamentsPromise = new Promise((resolve) => {
+      resolveFilaments = resolve;
+    });
+    const printersPromise = new Promise((resolve) => {
+      resolvePrinters = resolve;
+    });
+    server.use(
+      http.get('/api/v1/calculator/filaments/', async () => {
+        await filamentsPromise;
+        return HttpResponse.json(mockFilaments);
+      }),
+      http.get('/api/v1/calculator/printers/', async () => {
+        await printersPromise;
+        return HttpResponse.json(mockPrinters);
+      }),
+    );
+
+    const task = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: 500,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
+
+    const band = within(await screen.findByTestId('impression-band'));
+    // Give the still-pending queries (and any render they would trigger) a
+    // real chance to settle before asserting on the loading-window content —
+    // if the guard regresses, this is where the false message would show up.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(band.queryByText(/no printers configured/i)).not.toBeInTheDocument();
+    expect(band.queryByText(/no filaments configured/i)).not.toBeInTheDocument();
+    expect(band.queryByRole('link', { name: 'Calculator' })).not.toBeInTheDocument();
+
+    resolveFilaments(undefined);
+    resolvePrinters(undefined);
+
+    // Once the queries land, the band settles into the real cost split — the
+    // same end state as the "shows the line total and the cost split" test.
+    await band.findByRole('img', { name: 'Where the money goes' });
+  });
+
   it('printing: the band still carries the total when nothing can be computed', async () => {
     // A hand-typed cost and no printer — an imported quote looks exactly like
     // this. The old layout left half the block empty here.
@@ -762,8 +816,10 @@ describe('TaskRow', () => {
     render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
 
     const band = within(await screen.findByTestId('impression-band'));
-    // Same pre-load race as above: wait for the "not configured" fallback to
-    // resolve into the real missing-params message before asserting.
+    // `findByText` (not `getByText`): the missing-params message is also
+    // what shows during the brief loading window before the queries resolve,
+    // so this assertion is correct whether it catches that window or the
+    // settled state — either way this task has no printer/filament selected.
     await band.findByText(/fill in printer, weight and print time/i);
     band.getByText(formatMoney(9000, 'USD').replace(/\s+/g, ' '));
     expect(band.queryByRole('img', { name: 'Where the money goes' })).not.toBeInTheDocument();

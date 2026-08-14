@@ -15,8 +15,10 @@ import type { ImpressionDraft } from '../../utils/taskDraft';
 /** Inline label for a grid row. Not `labelCls`: that one is `block` with a
  *  bottom margin, for a label STACKED above its field. Here the label sits
  *  beside its field, in the grid's own label column — which is what buys the
- *  block ~24px per field. */
-const rowLabelCls = 'text-sm text-bambu-gray text-right';
+ *  block ~24px per field. Exported: TaskStepFields' slot fragments (costField,
+ *  discountField, noteField) render their own `<label>`/`<span>` for the same
+ *  grid, and must match this class rather than re-typing the literal. */
+export const rowLabelCls = 'text-sm text-bambu-gray text-right';
 
 /** One `label | control` pair in the block's shared grid.
  *
@@ -225,7 +227,15 @@ export function ImpressionFields({
     );
   };
 
-  const notConfigured = printers.length === 0 || filaments.length === 0;
+  // Gated on `referenceDataLoading`: printers/filaments both start as `[]`
+  // before their query resolves, which is indistinguishable from a genuinely
+  // empty calculator unless the loading flag is checked too. Without this
+  // gate every printing task asserts "No printers configured" — a false
+  // statement plus a `/calculator` navigation trap — for the entire cold-cache
+  // fetch window. While loading, the band falls through to the
+  // `missingPrintParams` branch below instead: neutral, and already the
+  // fallback for "no result yet" for any other reason.
+  const notConfigured = !referenceDataLoading && (printers.length === 0 || filaments.length === 0);
 
   return (
     <div className="impression-block">
@@ -302,21 +312,29 @@ export function ImpressionFields({
         </div>
 
         <GridRow side="price" row={2} htmlFor={`${reactId}-quantity`} label={t('aito.quantity')}>
-          <input
-            id={`${reactId}-quantity`}
-            type="number"
-            min={1}
-            step={1}
-            inputMode="numeric"
-            value={value.quantity}
-            onChange={(e) =>
-              handleChange({
-                ...value,
-                quantity: e.target.value === '' ? 1 : Math.max(1, Math.floor(Number(e.target.value) || 1)),
-              })
-            }
-            className={inputCls}
-          />
+          {/* Fixed-width (`w-20`), not flex-1: a count is 1-3 digits — the
+              unit cost (`costField`, above) is the field that earns the rest
+              of the line. Without a cap, bare `inputCls` (`w-full`) stretches
+              this across the whole ~230px field column for three digits'
+              worth of content. Same reasoning covers the discount select in
+              TaskStepFields (`w-24`, wide enough for "30%"). */}
+          <div className="max-w-20">
+            <input
+              id={`${reactId}-quantity`}
+              type="number"
+              min={1}
+              step={1}
+              inputMode="numeric"
+              value={value.quantity}
+              onChange={(e) =>
+                handleChange({
+                  ...value,
+                  quantity: e.target.value === '' ? 1 : Math.max(1, Math.floor(Number(e.target.value) || 1)),
+                })
+              }
+              className={inputCls}
+            />
+          </div>
         </GridRow>
 
         <div className="impression-price-row" style={{ '--ip-row': 3 } as React.CSSProperties}>
