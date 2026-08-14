@@ -196,6 +196,12 @@ export default {
     projectTotal: '프로젝트 합계',
     noPrintersConfigured: '계산기에 아직 설정된 프린터가 없습니다.',
     noFilamentsConfigured: '계산기에 아직 설정된 필라멘트가 없습니다.',
+    computedPrice: '계산값',
+    applyPrice: '적용',
+    priceNotComputable: '계산 불가',
+    missingPrintParams: '비용 구성을 보려면 프린터, 무게, 출력 시간을 입력하세요.',
+    costDetail: '비용 상세',
+    addNote: '견적서 메모',
     quoteStatus: {
       draft: '초안',
       sent: '발송됨',

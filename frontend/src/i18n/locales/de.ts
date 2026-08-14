@@ -196,6 +196,12 @@ export default {
     projectTotal: 'Projektsumme',
     noPrintersConfigured: 'Noch keine Drucker im Rechner konfiguriert.',
     noFilamentsConfigured: 'Noch keine Filamente im Rechner konfiguriert.',
+    computedPrice: 'Berechnet',
+    applyPrice: 'Übernehmen',
+    priceNotComputable: 'Nicht berechenbar',
+    missingPrintParams: 'Drucker, Gewicht und Druckzeit angeben, um die Kostenaufteilung zu sehen.',
+    costDetail: 'Kostendetails',
+    addNote: 'Notiz für das Angebot',
     quoteStatus: {
       draft: 'Entwurf',
       sent: 'Gesendet',

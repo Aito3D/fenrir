@@ -196,6 +196,12 @@ export default {
     projectTotal: '專案總計',
     noPrintersConfigured: '計算器中尚未設定印表機。',
     noFilamentsConfigured: '計算器中尚未設定耗材。',
+    computedPrice: '計算價',
+    applyPrice: '套用',
+    priceNotComputable: '無法計算',
+    missingPrintParams: '填寫印表機、重量與列印時間即可查看成本組成。',
+    costDetail: '成本明細',
+    addNote: '報價備註',
     quoteStatus: {
       draft: '草稿',
       sent: '已傳送',

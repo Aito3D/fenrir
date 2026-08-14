@@ -196,6 +196,12 @@ export default {
     projectTotal: 'Totale progetto',
     noPrintersConfigured: 'Nessuna stampante configurata nella calcolatrice.',
     noFilamentsConfigured: 'Nessun filamento configurato nella calcolatrice.',
+    computedPrice: 'Calcolato',
+    applyPrice: 'Applica',
+    priceNotComputable: 'Non calcolabile',
+    missingPrintParams: 'Inserisci stampante, peso e tempo di stampa per vedere la ripartizione dei costi.',
+    costDetail: 'Dettaglio dei costi',
+    addNote: 'Nota per il preventivo',
     quoteStatus: {
       draft: 'Bozza',
       sent: 'Inviato',

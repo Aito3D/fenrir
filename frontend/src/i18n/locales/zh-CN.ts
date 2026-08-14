@@ -196,6 +196,12 @@ export default {
     projectTotal: '项目总计',
     noPrintersConfigured: '计算器中尚未配置打印机。',
     noFilamentsConfigured: '计算器中尚未配置耗材。',
+    computedPrice: '计算价',
+    applyPrice: '应用',
+    priceNotComputable: '无法计算',
+    missingPrintParams: '填写打印机、重量和打印时间即可查看成本构成。',
+    costDetail: '成本明细',
+    addNote: '报价备注',
     quoteStatus: {
       draft: '草稿',
       sent: '已发送',

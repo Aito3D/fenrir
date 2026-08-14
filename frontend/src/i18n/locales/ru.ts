@@ -196,6 +196,12 @@ export default {
     projectTotal: 'Итого по проекту',
     noPrintersConfigured: 'Принтеры в калькуляторе пока не настроены.',
     noFilamentsConfigured: 'Филаменты в калькуляторе пока не настроены.',
+    computedPrice: 'Расчётная',
+    applyPrice: 'Применить',
+    priceNotComputable: 'Не рассчитывается',
+    missingPrintParams: 'Укажите принтер, вес и время печати, чтобы увидеть структуру затрат.',
+    costDetail: 'Детализация затрат',
+    addNote: 'Примечание к смете',
     quoteStatus: {
       draft: 'Черновик',
       sent: 'Отправлено',

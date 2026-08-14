@@ -200,6 +200,12 @@ export default {
     projectTotal: 'Project total',
     noPrintersConfigured: 'No printers configured in the calculator yet.',
     noFilamentsConfigured: 'No filaments configured in the calculator yet.',
+    computedPrice: 'Computed',
+    applyPrice: 'Apply',
+    priceNotComputable: 'Not computable',
+    missingPrintParams: 'Fill in printer, weight and print time to see the cost split.',
+    costDetail: 'Cost detail',
+    addNote: 'Note for the quote',
     quoteStatus: {
       draft: 'Draft',
       sent: 'Sent',

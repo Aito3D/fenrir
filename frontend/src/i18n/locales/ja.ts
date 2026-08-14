@@ -196,6 +196,12 @@ export default {
     projectTotal: 'プロジェクト合計',
     noPrintersConfigured: '計算機にはまだプリンターが設定されていません。',
     noFilamentsConfigured: '計算機にはまだフィラメントが設定されていません。',
+    computedPrice: '計算値',
+    applyPrice: '適用',
+    priceNotComputable: '計算できません',
+    missingPrintParams: 'コスト内訳を表示するには、プリンター・重量・印刷時間を入力してください。',
+    costDetail: 'コスト内訳',
+    addNote: '見積書用メモ',
     quoteStatus: {
       draft: '下書き',
       sent: '送信済み',

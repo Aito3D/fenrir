@@ -196,6 +196,12 @@ export default {
     projectTotal: 'Proje toplamı',
     noPrintersConfigured: 'Hesaplayıcıda henüz yapılandırılmış yazıcı yok.',
     noFilamentsConfigured: 'Hesaplayıcıda henüz yapılandırılmış filament yok.',
+    computedPrice: 'Hesaplanan',
+    applyPrice: 'Uygula',
+    priceNotComputable: 'Hesaplanamıyor',
+    missingPrintParams: 'Maliyet dağılımını görmek için yazıcı, ağırlık ve baskı süresini girin.',
+    costDetail: 'Maliyet ayrıntısı',
+    addNote: 'Teklif için not',
     quoteStatus: {
       draft: 'Taslak',
       sent: 'Gönderildi',

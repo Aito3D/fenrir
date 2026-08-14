@@ -197,6 +197,12 @@ export default {
     projectTotal: "Разом за проєкт",
     noPrintersConfigured: "У калькуляторі ще не налаштовано жодного принтера.",
     noFilamentsConfigured: "У калькуляторі ще не налаштовано жодного філаменту.",
+    computedPrice: "Розрахована",
+    applyPrice: "Застосувати",
+    priceNotComputable: "Не обчислюється",
+    missingPrintParams: "Вкажіть принтер, вагу та час друку, щоб побачити структуру витрат.",
+    costDetail: "Деталізація витрат",
+    addNote: "Примітка до кошторису",
     quoteStatus: {
       draft: "Чернетка",
       sent: "Надіслано",
