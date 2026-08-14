@@ -297,6 +297,11 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
                 ? null
                 : round2(task.impressionCost * (1 - (task.impressionDiscountPct ?? 0) / 100))
             }
+            unitCost={
+              task.impressionCost === null
+                ? null
+                : round2(task.impressionCost / Math.max(1, task.impression.quantity))
+            }
             discountField={
               <>
                 <label htmlFor={`${reactId}-impression-discount`} className="text-sm text-bambu-gray text-right">

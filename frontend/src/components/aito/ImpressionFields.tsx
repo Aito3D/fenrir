@@ -7,7 +7,7 @@ import { SearchableSelect } from '../SearchableSelect';
 import { DurationInput } from './DurationInput';
 import { CostSplitBar, SegmentLegend, Money } from '../calculator/shared';
 import type { Segment } from '../calculator/shared';
-import { inputCls } from '../formStyles';
+import { inputCls, focusRingCls } from '../formStyles';
 import { useCurrency } from '../../hooks/useCurrency';
 import { computeImpressionCost, roundUpTo50 } from '../../utils/taskDraft';
 import type { ImpressionDraft } from '../../utils/taskDraft';
@@ -93,6 +93,10 @@ export interface ImpressionFieldsProps {
    *  used to render below this component is GONE — the band replaced it, and
    *  the total must not appear twice. */
   lineTotal: number | null;
+  /** The unit price currently stored on the task (`impressionCost` divided by
+   *  quantity), so this block can tell whether the calculator's figure and
+   *  the stored one have parted ways. Read only for that comparison. */
+  unitCost: number | null;
 }
 
 /** filament/printer + weight/time/color/quantity for one task's Impression3D
@@ -100,7 +104,14 @@ export interface ImpressionFieldsProps {
  *  `computeImpressionCost` (taskDraft.ts) — this component only collects
  *  inputs and renders the result, the same split the calculator page keeps
  *  between `pricing.ts` and its cards. */
-export function ImpressionFields({ value, onChange, costField, discountField, lineTotal }: ImpressionFieldsProps) {
+export function ImpressionFields({
+  value,
+  onChange,
+  costField,
+  discountField,
+  lineTotal,
+  unitCost,
+}: ImpressionFieldsProps) {
   const { t } = useTranslation();
   const reactId = useId();
   const currency = useCurrency();
@@ -166,6 +177,18 @@ export function ImpressionFields({ value, onChange, costField, discountField, li
       { key: 'marge', label: t('calculator.marge'), value: result.marge, color: 'var(--viz-6)' },
     ].filter((s) => s.value > 0.005);
   }, [result, t]);
+
+  // The commercial per-piece figure the calculator would charge: rounded UP
+  // to the shop's 50-multiple tier, exactly as `handleChange` stores it.
+  // Comparing against the raw total instead would offer to "apply" a price
+  // equal to what is already stored.
+  const computedUnit = result ? roundUpTo50(result.total_ttc) : null;
+  // Divergence IS the provenance signal. After any calculator edit the two
+  // agree (handleChange just wrote it), so the button appears only once a
+  // cost has been typed by hand — which is the one case the old UI dropped
+  // the computed alternative on the floor. This is why the `hasEdited` flag
+  // that used to live here is not coming back.
+  const canApplyComputed = computedUnit !== null && unitCost !== computedUnit;
 
   // Pricing is a side effect on the parent, so it happens here — at the moment
   // a print input actually changes — rather than in an effect. An effect
@@ -291,6 +314,31 @@ export function ImpressionFields({ value, onChange, costField, discountField, li
         <div className="impression-price-row" style={{ '--ip-row': 3 } as React.CSSProperties}>
           {discountField}
         </div>
+
+        <GridRow side="price" row={5} label={t('aito.computedPrice')}>
+          {computedUnit === null ? (
+            <span className="text-sm text-bambu-gray">{t('aito.priceNotComputable')}</span>
+          ) : (
+            <span className="flex items-center gap-2">
+              <Money currency={currency} value={computedUnit} className="text-sm text-white" />
+              {canApplyComputed && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    // The existing channel: the second argument has always
+                    // meant "the calculator's cost, in stored (already
+                    // multiplied) form". Adopting a price therefore takes the
+                    // same path a calculator edit does.
+                    onChange(value, computedUnit * Math.max(1, Math.floor(value.quantity || 1)))
+                  }
+                  className={`rounded-md bg-bambu-green px-2 py-0.5 text-xs font-semibold text-bambu-dark transition-colors hover:bg-bambu-green-light ${focusRingCls}`}
+                >
+                  {t('aito.applyPrice')}
+                </button>
+              )}
+            </span>
+          )}
+        </GridRow>
 
         <div
           className="impression-band flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-t border-bambu-dark-tertiary pt-2"

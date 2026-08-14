@@ -15,7 +15,7 @@ import { server } from '../mocks/server';
 import { render } from '../utils';
 import { TaskRow } from '../../components/aito/TaskRow';
 import { TaskEditor } from '../../components/aito/TaskEditor';
-import { emptyTaskDraft, taskTotal } from '../../utils/taskDraft';
+import { computeImpressionCost, emptyTaskDraft, roundUpTo50, taskTotal } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
 import { formatMoney } from '../../utils/pricing';
 
@@ -767,6 +767,73 @@ describe('TaskRow', () => {
     await band.findByText(/fill in printer, weight and print time/i);
     band.getByText(formatMoney(9000, 'USD').replace(/\s+/g, ' '));
     expect(band.queryByRole('img', { name: 'Where the money goes' })).not.toBeInTheDocument();
+  });
+
+  it('printing: no apply button while the stored price already is the computed one', async () => {
+    const task = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: null,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
+
+    // impressionCost is null, so the Printing chip starts off (see
+    // TaskStepFields: chips are seeded from costKey !== null, not from
+    // whether `impression` itself is populated) — enable it to reach the
+    // weight field, same as the other tests here that start from an unpriced
+    // draft.
+    fireEvent.click(screen.getByRole('button', { name: 'Add Printing' }));
+
+    // The weight field renders immediately, before the filaments/printers/
+    // defaults queries resolve — firing the edit before they land would hit
+    // ImpressionFields' `referenceDataLoading` guard, which reports the edit
+    // with no computed cost at all (`computedCost` stays `undefined`),
+    // leaving the stored cost null forever and making Apply appear for the
+    // wrong reason. Wait for the row to leave its not-yet-computable state
+    // first.
+    await waitFor(() => expect(screen.queryByText('Not computable')).not.toBeInTheDocument());
+
+    // Typing a weight reprices as it always has, so stored and computed agree
+    // and there is nothing to offer. The value must actually differ from the
+    // field's current 40 — `fireEvent.change` to an identical value does not
+    // trigger React's onChange at all, which would leave the stored cost null
+    // and make Apply appear for the same wrong reason as above.
+    fireEvent.change(await screen.findByLabelText(/weight/i), { target: { value: '45' } });
+    await waitFor(() => expect(screen.getByText('Computed')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument();
+  });
+
+  it('printing: a hand-typed price offers the computed one, and applying it stores unit × quantity', async () => {
+    const onChange = vi.fn();
+    const task = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 2, color: 'Noir' },
+      impressionCost: 40_000,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={onChange} />);
+
+    // 20 000 apiece by hand is not what the calculator makes of 40 g on the
+    // H2S, so the alternative becomes offerable — this is the case the old UI
+    // silently lost.
+    const apply = await screen.findByRole('button', { name: 'Apply' });
+    fireEvent.click(apply);
+
+    const next = onChange.mock.calls.at(-1)?.[0];
+    // The computed UNIT price is rounded up to the shop's 50-multiple tier,
+    // then multiplied — the stored total is always an exact multiple of the
+    // advertised per-piece price. Derived here with the same helpers the
+    // component uses: this test is about the wiring, and roundUpTo50 and
+    // computeImpressionCost each have their own tests in taskDraft.test.ts.
+    const priced = computeImpressionCost(task.impression, mockFilaments[0], mockPrinters[0], mockDefaults);
+    expect(next.impressionCost).toBe(roundUpTo50(priced!.total_ttc) * 2);
+    expect(next.impressionCost).not.toBe(40_000);
+  });
+
+  it('printing: the computed row says so when no price can be computed', async () => {
+    render(<ControlledTaskRow initial={{ ...emptyTaskDraft(), impressionCost: 9000 }} onChangeSpy={vi.fn()} />);
+
+    expect(await screen.findByText('Not computable')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument();
   });
 });
 
