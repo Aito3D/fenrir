@@ -1182,6 +1182,52 @@ async def test_invoiced_lock_stamps_quote_invoiced(db_session):
 
 
 @pytest.mark.asyncio
+async def test_invoicing_a_quote_never_unmakes_the_local_acceptance(db_session):
+    """Books reporting 'invoiced' is not evidence against our 'accepted'.
+
+    Every other invoiced-lock test above has Books still reporting 'accepted'
+    on the estimate it has already billed, which is why none of them caught
+    this: once Books flips the estimate's own status to 'invoiced', the lock
+    used to adopt that string straight over the local decision. 'invoiced' is
+    not a board status — `evaluate` reads anything that is not 'accepted' as
+    "not authorised yet" — so the card fell back to Devis, and `_apply_rules`
+    then PERSISTED that, destroying the stored Finish/Done choice for good.
+
+    Observed in production: project 21 was dragged to Done at 13:19:44 and the
+    very next tick's `sync.locked` moved it done -> devis at 13:20:27.
+    """
+    project = await _project_with_quote(db_session, scan_cost=5000, scan_done=True)
+    project.quote_status = "accepted"
+    project.board_column = "done"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "invoiced",
+                        "is_transaction_created": True,
+                        "invoiced_amount": 8500,
+                    }
+                }
+            },
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await run_sync_once(db_session)
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "locked"
+    assert project.quote_invoiced is True
+    # The acceptance survives the invoice...
+    assert project.quote_status == "accepted"
+    # ...and so does the operator's manual Done.
+    assert project.board_column == "done"
+
+
+@pytest.mark.asyncio
 async def test_tax_exclusive_lock_does_not_stamp_quote_invoiced(db_session):
     """Task 10: a tax-exclusive estimate locks for a reason that has nothing
     to do with Books invoicing it — the glow must not claim it was invoiced

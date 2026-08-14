@@ -12,8 +12,15 @@ AitoColumn = Literal["devis", "waiting", "scan", "model", "print", "finish", "do
 # Literal on the field below) so `_degrade_unknown_quote_status` can check
 # membership against the exact same set the type declares, via `get_args`,
 # instead of maintaining a second hand-written list that could drift.
+#
+# Public, not underscored, because the import path is no longer its only
+# consumer: services/aito_quote_status.py's `adopt_quote_status` checks the
+# same set before writing a status onto a project, so the sync worker cannot
+# store one the board's rules do not understand either. Books' own set is
+# WIDER than this one — 'invoiced' is the value that caused the bug that guard
+# exists for — so this list is the board's vocabulary, not Books'.
 AitoQuoteStatus = Literal["draft", "sent", "viewed", "accepted", "declined", "expired"]
-_QUOTE_STATUS_VALUES = frozenset(get_args(AitoQuoteStatus))
+QUOTE_STATUS_VALUES = frozenset(get_args(AitoQuoteStatus))
 
 # Shape checks only, mirroring backend/app/api/routes/zoho.py's ZohoContactCreate's
 # email philosophy. Both fields are optional — only a non-empty malformed value is
@@ -316,7 +323,7 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
         statuses here made the gap observable again — without this check, a
         >30-char status would silently become None instead of 422ing as it
         did at BASE. Bounding the degrade path at 30 restores that parity."""
-        if isinstance(value, str) and len(value) <= 30 and value not in _QUOTE_STATUS_VALUES:
+        if isinstance(value, str) and len(value) <= 30 and value not in QUOTE_STATUS_VALUES:
             return None
         return value
 

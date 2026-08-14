@@ -56,3 +56,31 @@ def test_none_to_accepted_stamps():
     adopt_quote_status(project, "accepted")
     assert project.quote_status == "accepted"
     assert isinstance(project.quote_accepted_at, datetime)
+
+
+def test_a_status_outside_the_board_vocabulary_is_refused():
+    """Books' status set is wider than the board's. 'invoiced' is the one that
+    actually reached here (from the sync worker's lock path) and it means
+    nothing to `aito_board_rules.evaluate`, which reads any non-'accepted'
+    value as "not authorised yet" — so storing it dropped a finished card back
+    into Devis and, via `_apply_rules`, overwrote the stored Finish/Done
+    choice for good."""
+    project = _project(quote_status="accepted")
+    adopt_quote_status(project, "invoiced")
+    assert project.quote_status == "accepted"
+
+
+def test_refusing_an_unknown_status_does_not_clear_the_stamp():
+    old = datetime(2020, 3, 15, 8, 30, 0)
+    project = _project(quote_status="accepted", quote_accepted_at=old)
+    adopt_quote_status(project, "partially_invoiced")
+    assert project.quote_status == "accepted"
+    assert project.quote_accepted_at == old
+
+
+def test_none_is_still_adoptable():
+    """None is not an unknown status — it is the legitimate "no quote status
+    yet" of a hand-made card, and the guard must not swallow it."""
+    project = _project(quote_status="sent")
+    adopt_quote_status(project, None)
+    assert project.quote_status is None

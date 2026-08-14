@@ -1166,6 +1166,83 @@ async def _migrate_aito_board_columns(conn) -> None:
             )
 
 
+async def _heal_invoiced_quote_status(conn) -> None:
+    """One-shot: undo the 'invoiced' statuses the sync worker used to store.
+
+    Books' status vocabulary is wider than the board's, and until the guards in
+    ``aito_quote_sync._lock_project`` / ``aito_quote_status.adopt_quote_status``
+    landed, locking an estimate Books had billed copied its literal 'invoiced'
+    status over the project's own 'accepted'. ``aito_board_rules.evaluate``
+    knows no such status and reads anything that is not 'accepted' as "not
+    authorised yet", so those cards fell into Devis — and because
+    ``_apply_rules`` PERSISTS the derived column, that write also destroyed the
+    operator's manual Finish/Done choice, the stored column being its only
+    record.
+
+    'accepted' is the correct repair, not a guess: Books does not invoice an
+    estimate the client refused, and every affected row reached 'invoiced' by
+    having a genuine local acceptance overwritten.
+
+    The lost Finish/Done choice cannot be recovered — nothing recorded it but
+    the column this bug overwrote — so those cards re-derive to Finish and have
+    to be dragged to Done once by hand. Everything else lands back where its
+    quote and steps say it belongs.
+
+    ``quote_accepted_at`` is deliberately left as it is: a card whose stamp was
+    never written has no true acceptance instant to restore, and inventing one
+    would date the card's age from the repair rather than from the job.
+    """
+    from sqlalchemy import text
+
+    from backend.app.services.aito_board_rules import evaluate
+
+    rows = (
+        await conn.execute(text("SELECT id, board_column, status FROM aito_projects WHERE quote_status = 'invoiced'"))
+    ).all()
+    if not rows:
+        return
+    await conn.execute(text("UPDATE aito_projects SET quote_status = 'accepted' WHERE quote_status = 'invoiced'"))
+
+    # Re-derive only the healed rows, and only their column: their neighbours'
+    # positions are none of this migration's business, so each lands at the end
+    # of its destination column rather than renumbering the whole board the way
+    # `_migrate_aito_board_columns` does.
+    pending_rows = (
+        await conn.execute(
+            text(
+                "SELECT project_id, "
+                "MAX(CASE WHEN scan_cost IS NOT NULL AND scan_done = FALSE THEN 1 ELSE 0 END), "
+                "MAX(CASE WHEN modelisation_cost IS NOT NULL AND modelisation_done = FALSE THEN 1 ELSE 0 END), "
+                "MAX(CASE WHEN impression_cost IS NOT NULL AND impression_done = FALSE THEN 1 ELSE 0 END), "
+                "MAX(CASE WHEN usinage_cost IS NOT NULL AND usinage_done = FALSE THEN 1 ELSE 0 END) "
+                "FROM aito_tasks GROUP BY project_id"
+            )
+        )
+    ).all()
+    names = ("scan", "modelisation", "impression", "usinage")
+    pending_by_project = {row[0]: {name for index, name in enumerate(names) if row[index + 1]} for row in pending_rows}
+
+    for project_id, board_column, status in rows:
+        column, _ = evaluate("accepted", board_column, pending_by_project.get(project_id, set()))
+        if column == board_column:
+            continue
+        position = 0
+        if status == "active":
+            position = (
+                await conn.execute(
+                    text(
+                        "SELECT COUNT(*) FROM aito_projects "
+                        "WHERE status = 'active' AND board_column = :col AND id != :id"
+                    ),
+                    {"col": column, "id": project_id},
+                )
+            ).scalar_one()
+        await conn.execute(
+            text("UPDATE aito_projects SET board_column = :col, position = :pos WHERE id = :id"),
+            {"col": column, "pos": position, "id": project_id},
+        )
+
+
 async def _backfill_aito_events(conn) -> None:
     """Seed one project.created event per project that predates the event table.
 
@@ -4532,6 +4609,22 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN client_social_handle VARCHAR(100)")
 
     await _backfill_aito_events(conn)
+
+    # Migration: heal the 'invoiced' quote statuses the sync worker stored
+    # before it was taught that Books' vocabulary is wider than the board's
+    # (2026-08-13). See `_heal_invoiced_quote_status` for what went wrong and
+    # why 'accepted' is the repair.
+    #
+    # Marker-gated rather than left naturally idempotent (it is — after one
+    # pass no row carries 'invoiced', and nothing can write one any more): if
+    # 'invoiced' is ever made a first-class board status, an ungated version
+    # would silently rewrite it away on every boot. This runs once, on the
+    # boot that carries the fix, and never again.
+    marker_row = await conn.execute(text("SELECT value FROM settings WHERE key = 'aito_invoiced_status_healed'"))
+    if marker_row.scalar_one_or_none() is None:
+        async with conn.begin_nested():
+            await _heal_invoiced_quote_status(conn)
+            await conn.execute(text(marker_sql), {"key": "aito_invoiced_status_healed", "value": "1"})
 
     # Migration: per-file print progress inside a project (#1897).
     # - print_archives.library_file_id: which library file a queued run was

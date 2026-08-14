@@ -201,8 +201,32 @@ async def _lock_project(
     project.quote_sync_state = "locked"
     if invoiced:
         project.quote_invoiced = True
-    if estimate is not None and estimate.get("status") is not None:
-        adopt_quote_status(project, estimate["status"])
+    if estimate is not None:
+        remote_status = estimate.get("status")
+        if remote_status is not None and not (
+            project.quote_status in _DECIDED and remote_status != project.quote_status
+        ):
+            # The same guard `_apply_estimate` applies to its own copy-back,
+            # and for the same reason: a snapshot of Books' status is not a
+            # licence to unmake a decision of ours. It was missing here, and
+            # locking is the ONE path where the remote status is guaranteed to
+            # disagree — Books flips an estimate it has billed to 'invoiced',
+            # which is not a board status at all. `evaluate` reads anything
+            # that is not 'accepted' as "not authorised yet", so adopting it
+            # dropped the card to Devis, and `_apply_rules` then persisted
+            # that over `board_column` — destroying the operator's manual
+            # Finish/Done choice irrecoverably, since the stored column is the
+            # only record that choice has. Seen in production on the tick
+            # right after a card was dragged to Done.
+            #
+            # Nothing is lost by declining the adoption: 'locked' leaves the
+            # sweep for good, so there is no ongoing status to keep in sync —
+            # the same argument the sweep's own lock branch already makes for
+            # passing no `estimate` here at all. What IS still adopted is the
+            # undecided case (a 'draft'/'sent' estimate locked for being
+            # tax-exclusive), which is the one-time snapshot this parameter
+            # was added for.
+            adopt_quote_status(project, remote_status)
     if not isinstance(reason, _Unset):
         project.quote_sync_error = reason
     if clear_block:
