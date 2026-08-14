@@ -10,12 +10,17 @@ the tallest block in the form. Three separate causes:
 
 1. **A viewport-driven split inside a narrow column.** The calculator area
    uses `lg:grid-cols-2`, which keys off the *viewport*, not the block. In
-   `ProjectDetailPanel` the block's own width is `min(100vw - 32px, 1600px) -
-   876px` — about 532px on a 1440px viewport, ~604px at 1512px — once the
-   overlay padding, the panel's `max-w-[100rem]` cap, the middle column's
-   `20rem | 1fr | 26rem` + `lg:gap-6` tracks, and the column/row/fieldset
-   padding are all subtracted (an earlier draft of this spec measured this at
-   "~780px"; that number was wrong). At any desktop width the block splits
+   `ProjectDetailPanel` the block's own width is `min(100vw - 28.8px, 1440px)
+   - 788px` — **measured in the running app**, not derived: ~623px on a 1440px
+   viewport, ~652px at 1512px (where the panel cap binds), ~549px at 1366px.
+   Two earlier drafts of this spec computed this by hand and got it wrong
+   twice ("~780px", then "~532px at 1440"). Both made the same mistake:
+   `index.css` sets `font-size: 14.4px` on `:root`, so **1rem is 14.4px, not
+   16px**, and every Tailwind rem size in the chain — the `max-w-[100rem]` cap
+   (1440px, not 1600), the `20rem | 1fr | 26rem` tracks, `lg:gap-6`, the
+   column's `px-5`, the card and fieldset padding — is 10% smaller than the
+   default scale. Measure this chain in the browser; do not recompute it.
+   At any desktop width the block splits
    itself into two halves narrower than that. The right half holds the cost
    breakdown — and is **empty whenever a price cannot be computed** (no
    printer selected, or an imported task that carries a cost but no print
@@ -56,17 +61,20 @@ whole block:
 - Wide (block ≥ 520px): `minmax(0,auto) minmax(0,1fr) 1px minmax(0,auto) minmax(0,1fr)`.
   Column 3 is a 1px divider element spanning all five rows. 520px is the
   smallest honest threshold: two `label | field` pairs need roughly
-  2 × (label ~75px + field ~150px) + the 1px rule + gaps ≈ 471px, and the
-  block is only ~532–604px wide on the 1440–1512px laptops this is actually
-  used on — a 640px threshold (an earlier draft's number) never clears on
-  those, so the "wide" layout would never appear where it matters most.
+  2 × (label ~75px + field ~150px) + the 1px rule + gaps ≈ 471px. Measured
+  against real viewports it clears on every laptop this ships to — 1366px →
+  549, 1440px → 623, 1512px and up → 652 (capped) — and falls back to the
+  stacked layout below a ~1337px viewport (1280px → 463). A 640px threshold
+  (an earlier draft's number) would have stacked the block on all of them.
 - Narrow (< 520px): `minmax(0,auto) minmax(0,1fr)`; the divider is hidden and
   the right-column rows fall below the left ones. Labels stay *beside* their
   field at every width.
 
 Breakpoints are **container queries on the block**, not `lg:` — the whole
-point is to respond to the block's own width (≈532–724px across real desktop
-viewports, see above) rather than the browser window. Right-column
+point is to respond to the block's own width (≈463–652px across real desktop
+viewports, see above) rather than the browser window. This also covers the
+`NewProjectDrawer` mount, where the same block sits in a different chain
+entirely. Right-column
 rows are `grid-column: span 2` + `grid-cols-subgrid`, so their label and field
 land in the parent's columns 4 and 5 (and in columns 1 and 2 when narrow).
 
@@ -243,3 +251,19 @@ root. Visual check of both mount points — `ProjectDetailPanel`'s tasks column
 and `NewProjectDrawer` — at the panel width, the drawer width and a narrow
 window, in each case with a computable price and with a hand-typed price and
 no printer.
+
+**Done, 2026-08-14**, against the running app. Wide layout confirmed at block
+widths 546–652px and stacked at 460px (panel pinned to the widths a 1280–1512px
+viewport produces); the 1px rule paints and spans all five rows; the band
+carries guidance + total with a hand-typed cost and no printer, and bar +
+legend (segments summing to 100%) + total when priced; `Apply` is absent while
+stored and computed agree, appears once the unit cost is typed by hand, and on
+click writes the computed unit price back; the note button reveals the textarea
+full-width below the band, and a task with an existing description renders it
+already expanded.
+
+One reading hazard this design did not anticipate: with a hand-typed price the
+split bar still decomposes the *computed* price while the total beside it shows
+the *typed* one, so the bar appears to break down a number it does not. The
+`Apply` row is the only cue that the two differ. Left as-is; if it needs
+fixing, the cheap version is to caption the bar with the computed total.
