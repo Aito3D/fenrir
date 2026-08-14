@@ -28,33 +28,52 @@ const UNIT_KEYS = {
 
 type PartKey = keyof typeof UNIT_KEYS;
 
+type Draft = Record<PartKey, string>;
+
 export function DurationInput({ minutes, onChange, id, labelId }: DurationInputProps) {
   const { t } = useTranslation();
   const parts = splitMinutes(minutes ?? 0);
+  const fallback: Draft = {
+    days: minutes === null ? '' : String(parts.days),
+    hours: minutes === null ? '' : String(parts.hours),
+    minutes: minutes === null ? '' : String(parts.minutes),
+  };
 
-  // The raw string for the segment currently being edited, held only until
-  // focus leaves the group. Without it `set` would fold 90 min into the total
-  // immediately and `splitMinutes` would echo back 1 h 30 mid-keystroke,
-  // rewriting the field under the operator's fingers.
-  const [draft, setDraft] = useState<{ key: PartKey; raw: string } | null>(null);
+  // The whole displayed triple, held only until focus leaves the group.
+  // Without it, editing one segment would re-derive ALL three from
+  // `splitMinutes` of the freshly emitted total — so typing "90" into
+  // minutes would echo back "1 h 30" while the operator is still mid-edit,
+  // making a sibling segment (hours) visibly tick over under their fingers
+  // even though they never touched it.
+  const [draft, setDraft] = useState<Draft | null>(null);
 
   // Reuses the calculator's existing per-locale duration strings rather than
   // duplicating them under aito.* — they are already translated in all 13
   // files and already used for this exact purpose by CalculatorInputsCard.
+  const displayed = draft ?? fallback;
   const segments: DurationSegment[] = (Object.keys(UNIT_KEYS) as PartKey[]).map((key) => ({
     key,
-    value: draft?.key === key ? draft.raw : minutes === null ? '' : String(parts[key]),
+    value: displayed[key],
     unitLabel: t(UNIT_KEYS[key][0]),
     ariaLabel: t(UNIT_KEYS[key][1]),
   }));
 
   const set = (key: string, raw: string) => {
     const partKey = key as PartKey;
-    setDraft({ key: partKey, raw });
-    const next = { ...parts, [partKey]: raw === '' ? 0 : Math.max(0, Math.floor(Number(raw) || 0)) };
+    // Build the next triple from what is CURRENTLY on screen, not from
+    // `splitMinutes` of the stored total — the other two segments must stay
+    // exactly as displayed while this one is edited.
+    const nextDraft: Draft = { ...displayed, [partKey]: raw };
+    setDraft(nextDraft);
+    const next = {
+      days: Math.max(0, Math.floor(Number(nextDraft.days) || 0)),
+      hours: Math.max(0, Math.floor(Number(nextDraft.hours) || 0)),
+      minutes: Math.max(0, Math.floor(Number(nextDraft.minutes) || 0)),
+    };
     const total = joinMinutes(next);
-    // All-empty means "not set", which keeps the service disabled rather than
-    // pinning it to zero minutes.
+    // Clearing a segment down to zero total means "not set", which keeps the
+    // service disabled rather than pinning it to zero minutes. An explicit
+    // "0" typed into every segment is a real (if odd) zero, not a clear.
     onChange(raw === '' && total === 0 ? null : total);
   };
 

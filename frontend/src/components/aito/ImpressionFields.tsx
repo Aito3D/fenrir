@@ -272,6 +272,11 @@ export function ImpressionFields({ value, onChange, costField, discountField }: 
             parts, so it needs the width its three segments divide — and
             spanning the grid puts its left edge under Printer's. */}
         <div className="sm:col-span-2">
+          {/* This label does double duty: its `id` is the segment group's
+              `aria-labelledby` target, and its `htmlFor` also points at the
+              days input directly. A query by this label's text therefore
+              matches both the label and the days input — target the days
+              spinbutton by its own aria-label instead. */}
           <label id={`${reactId}-time-label`} htmlFor={`${reactId}-time`} className={labelCls}>
             {t('aito.printTime')}
           </label>

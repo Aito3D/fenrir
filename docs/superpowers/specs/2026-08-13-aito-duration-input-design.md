@@ -81,6 +81,9 @@ interface SegmentedDurationProps {
   firstId?: string;
   /** id of the visible field label; becomes the group's aria-labelledby. */
   groupLabelId?: string;
+  /** `lg` is the calculator page's display size; `md` (the default) matches
+   *  `inputCls`, so the field lines up with ordinary inputs beside it. */
+  size?: 'md' | 'lg';
 }
 ```
 
@@ -92,7 +95,8 @@ Visual contract, lifted from `CalculatorInputsCard.DurationField`:
   cursor-text">` wrapping the input and its unit `<span>`, so `flex-1` gives every
   segment an equal share of the row and clicking the unit focuses the input
 - input: `w-full min-w-0 bg-transparent text-right tabular-nums no-spinner
-  focus:outline-none`, `type="number"`, `inputMode="numeric"`, `min="0"`,
+  focus:outline-none placeholder:text-bambu-gray/40`, plus `text-lg` when
+  `size="lg"`; `type="number"`, `inputMode="numeric"`, `min="0"`,
   `placeholder="0"`
 - group blur: `onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget))
   onGroupBlur?.() }}`
@@ -105,9 +109,12 @@ from the field label); hours and minutes announce as bare spinbuttons.
 
 Keeps its own value contract — three free-typed strings (`timeD` / `timeH` /
 `timeM`) so the operator can type past a boundary — and keeps `splitDecimalHours`
-normalization wired to `onGroupBlur`. It loses roughly thirty lines of markup and
-gains nothing else. Rendered DOM stays equivalent, so the calculator page's tests
-do not change.
+normalization wired to `onGroupBlur`. It loses roughly thirty lines of markup.
+Two things about the rendered DOM are genuinely new and intended: the group now
+exposes `role="group"` with `aria-labelledby` (previously there was no group
+semantics at all), and the container picks up `motion-reduce:transition-none`
+on its color transition. Neither changes what the calculator page's own tests
+assert, so those tests do not change.
 
 ### Adapter 2: `frontend/src/components/aito/DurationInput.tsx`
 
@@ -117,9 +124,15 @@ null time rather than pricing it at zero. `splitMinutes` / `joinMinutes` stay wh
 they are in `utils/taskDraft.ts`.
 
 It **gains** normalize-on-blur, which it does not have today: typing `90` into
-minutes and tabbing away yields `1 h 30`. Normalization runs through the existing
-`joinMinutes` → `splitMinutes` round trip and emits a single `onChange` only when
-the split actually differs, so it cannot loop.
+minutes and tabbing away yields `1 h 30`. It works by drafting the whole
+displayed triple (all three segment strings, not just the one being edited) in
+local state whenever any segment changes, so the other two segments keep
+showing exactly what was last typed rather than being re-derived from
+`splitMinutes` of the freshly emitted total. `onGroupBlur` simply drops that
+draft, which lets the segments fall back to `splitMinutes` of the stored
+total — that fallback IS the normalization. Because the total itself never
+changes on blur, this emits no `onChange` at all; there is no conditional
+comparison to short-circuit a loop with.
 
 Null handling is unchanged: when `minutes === null` every segment renders `''` and
 shows its placeholder, and an edit that leaves the total at zero with an emptied
@@ -151,11 +164,13 @@ names, and the matching `*Short` keys for the visible suffixes.
   unchanged split emits no `onChange`.
 - **Calculator page**: existing tests must pass untouched. That is the regression
   signal for the extraction.
-- **One existing test changes.** `frontend/src/__tests__/components/TaskEditor.test.tsx:606`
-  queries `getByLabelText(/print time/i)` and relies on the days input inheriting
-  the field label's name. Per-segment `aria-label` outranks a `<label htmlFor>`, so
-  that query must target the days segment instead. Its comment above, which
-  documents the current name-inheritance quirk, is rewritten rather than left
+- **Three query sites in one existing test file change**, not one.
+  `frontend/src/__tests__/components/TaskEditor.test.tsx` has three places that
+  queried `getByLabelText(/print time/i)` and relied on the days input
+  inheriting the field label's name. Per-segment `aria-label` outranks a
+  `<label htmlFor>`, so all three now target the days segment directly via
+  `getByRole('spinbutton', { name: /days/i })`. Their comments, which
+  documented the old name-inheritance quirk, are rewritten rather than left
   stale.
 
 ## Out of scope

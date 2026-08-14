@@ -53,6 +53,9 @@ describe('aito DurationInput', () => {
     await user.click(screen.getByRole('button', { name: 'outside' }));
     expect(screen.getByRole('spinbutton', { name: 'Hours' })).toHaveValue(1);
     expect(screen.getByRole('spinbutton', { name: 'Minutes' })).toHaveValue(30);
+    // Normalization is a display-only fallback to splitMinutes of the
+    // already-emitted total — it must not fire a second onChange.
+    expect(spy).toHaveBeenLastCalledWith(90);
   });
 
   it('does not normalize while tabbing between its own segments', async () => {
@@ -62,6 +65,27 @@ describe('aito DurationInput', () => {
     await user.clear(min);
     await user.type(min, '90');
     await user.tab({ shift: true });
+    // The sibling segments must stay self-consistent with what is still
+    // being drafted: hours must NOT tick up to 1 just because the stored
+    // total (90) would split that way — the group is still mid-edit.
+    expect(screen.getByRole('spinbutton', { name: 'Hours' })).toHaveValue(0);
+    expect(screen.getByRole('spinbutton', { name: 'Minutes' })).toHaveValue(90);
+  });
+
+  it('keeps sibling segments consistent while a single segment is mid-keystroke', async () => {
+    // Typing "9" then "0" into minutes passes through a stored total of 9,
+    // then 90. Neither intermediate render may let hours jump to 1 just
+    // because splitMinutes(90) would put it there — minutes is still being
+    // typed, not yet blurred.
+    const user = userEvent.setup();
+    render(<Controlled initial={0} spy={vi.fn()} />);
+    const min = screen.getByRole('spinbutton', { name: 'Minutes' });
+    await user.clear(min);
+    await user.type(min, '9');
+    expect(screen.getByRole('spinbutton', { name: 'Hours' })).toHaveValue(0);
+    expect(screen.getByRole('spinbutton', { name: 'Minutes' })).toHaveValue(9);
+    await user.type(min, '0');
+    expect(screen.getByRole('spinbutton', { name: 'Hours' })).toHaveValue(0);
     expect(screen.getByRole('spinbutton', { name: 'Minutes' })).toHaveValue(90);
   });
 
