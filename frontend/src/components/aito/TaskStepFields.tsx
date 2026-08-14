@@ -87,16 +87,29 @@ const round2 = (v: number) => Math.round(v * 100) / 100;
 
 type ServiceId = 'scan' | 'modelisation' | 'impression' | 'usinage';
 
-const SERVICE_DEFS: {
+interface ServiceDef {
   id: ServiceId;
   labelKey: string;
   costKey: 'scanCost' | 'modelisationCost' | 'usinageCost' | 'impressionCost';
-}[] = [
-  { id: 'scan', labelKey: 'aito.serviceScan3D', costKey: 'scanCost' },
-  { id: 'modelisation', labelKey: 'aito.serviceModelisation3D', costKey: 'modelisationCost' },
-  { id: 'impression', labelKey: 'aito.serviceImpression3D', costKey: 'impressionCost' },
-  { id: 'usinage', labelKey: 'aito.serviceUsinage', costKey: 'usinageCost' },
+  /** Every service also owns a free-text description field. Impression's is
+   *  the one behind the note reveal; the rest are always visible. */
+  descKey: 'scanDescription' | 'modelisationDescription' | 'usinageDescription' | 'impressionDescription';
+}
+
+/** Chip order, and the draft fields each service owns. */
+const SERVICE_DEFS: ServiceDef[] = [
+  { id: 'scan', labelKey: 'aito.serviceScan3D', costKey: 'scanCost', descKey: 'scanDescription' },
+  {
+    id: 'modelisation',
+    labelKey: 'aito.serviceModelisation3D',
+    costKey: 'modelisationCost',
+    descKey: 'modelisationDescription',
+  },
+  { id: 'impression', labelKey: 'aito.serviceImpression3D', costKey: 'impressionCost', descKey: 'impressionDescription' },
+  { id: 'usinage', labelKey: 'aito.serviceUsinage', costKey: 'usinageCost', descKey: 'usinageDescription' },
 ];
+
+const SERVICE_BY_ID = Object.fromEntries(SERVICE_DEFS.map((s) => [s.id, s])) as Record<ServiceId, ServiceDef>;
 
 export interface TaskStepFieldsProps {
   task: TaskDraft;
@@ -172,6 +185,44 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
     }
   };
 
+  /** Scan, Modélisation and Usinage: a cost and a description over the pair of
+   *  draft fields named in SERVICE_DEFS, and nothing else. Impression is not
+   *  one of these — it is spelled out below, because none of what it adds
+   *  (print parameters, the unit↔total conversion, a discount, the note
+   *  reveal) generalises. */
+  const renderPlainService = (svc: ServiceDef) => {
+    const label = t(svc.labelKey);
+    return (
+      <StepBlock title={label}>
+        <CostInput
+          id={`${reactId}-${svc.id}`}
+          label={label}
+          value={task[svc.costKey]}
+          onChange={(next) => onChange({ ...task, [svc.costKey]: next })}
+          autoFocus={autoFocusService === svc.id}
+        />
+        <StepDescriptionInput
+          label={label}
+          value={task[svc.descKey]}
+          onChange={(next) => onChange({ ...task, [svc.descKey]: next })}
+        />
+      </StepBlock>
+    );
+  };
+
+  // The printing cost is EDITED as a unit price — what one part costs, beside
+  // how many are made — while the STORED `impressionCost` stays the multiplied
+  // total the rest of the stack already speaks (the task total, the board
+  // rules, and the quote export, which divides by quantity to recover this
+  // same unit rate). These three are the only place that conversion is
+  // written; the block below reads them.
+  const quantity = Math.max(1, task.impression.quantity);
+  const unitCost = task.impressionCost === null ? null : round2(task.impressionCost / quantity);
+  const lineTotal =
+    task.impressionCost === null
+      ? null
+      : round2(task.impressionCost * (1 - (task.impressionDiscountPct ?? 0) / 100));
+
   return (
     <fieldset disabled={disabled} className="space-y-3">
       <input
@@ -206,39 +257,9 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
         })}
       </div>
 
-      {enabled.has('scan') && (
-        <StepBlock title={t('aito.serviceScan3D')}>
-          <CostInput
-            id={`${reactId}-scan`}
-            label={t('aito.serviceScan3D')}
-            value={task.scanCost}
-            onChange={(next) => onChange({ ...task, scanCost: next })}
-            autoFocus={autoFocusService === 'scan'}
-          />
-          <StepDescriptionInput
-            label={t('aito.serviceScan3D')}
-            value={task.scanDescription}
-            onChange={(next) => onChange({ ...task, scanDescription: next })}
-          />
-        </StepBlock>
-      )}
+      {enabled.has('scan') && renderPlainService(SERVICE_BY_ID.scan)}
 
-      {enabled.has('modelisation') && (
-        <StepBlock title={t('aito.serviceModelisation3D')}>
-          <CostInput
-            id={`${reactId}-modelisation`}
-            label={t('aito.serviceModelisation3D')}
-            value={task.modelisationCost}
-            onChange={(next) => onChange({ ...task, modelisationCost: next })}
-            autoFocus={autoFocusService === 'modelisation'}
-          />
-          <StepDescriptionInput
-            label={t('aito.serviceModelisation3D')}
-            value={task.modelisationDescription}
-            onChange={(next) => onChange({ ...task, modelisationDescription: next })}
-          />
-        </StepBlock>
-      )}
+      {enabled.has('modelisation') && renderPlainService(SERVICE_BY_ID.modelisation)}
 
       {/* The cost input is still OWNED here rather than by ImpressionFields —
           the null-vs-0 rule (see CostInput) must not leak into a component
@@ -246,12 +267,6 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
           so ImpressionFields can seat quantity beside it, in every branch,
           including the unconfigured-install early returns where an imported
           cost still has to be readable and editable. */}
-      {/* The printing cost is edited as a UNIT price — what one part costs,
-          beside how many are made — while the STORED `impressionCost` stays
-          the multiplied total the rest of the stack already speaks (the task
-          total, the board rules, and the quote export, which divides by
-          quantity to recover this same unit rate). Only this block converts,
-          in both directions. */}
       {enabled.has('impression') && (
         <StepBlock title={t('aito.serviceImpression3D')}>
           <div className="space-y-3">
@@ -266,15 +281,13 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
               if (computedCost !== undefined) {
                 impressionCost = computedCost;
               } else if (impressionCost !== null && next.quantity !== task.impression.quantity) {
-                impressionCost = round2((impressionCost / Math.max(1, task.impression.quantity)) * next.quantity);
+                impressionCost = round2((impressionCost / quantity) * next.quantity);
               }
               onChange({ ...task, impression: next, impressionCost });
             }}
             costField={
               // A fragment, not a cell: ImpressionFields wraps this pair in
-              // its own subgrid row (see its `costField` doc). The unit price
-              // is what is EDITED here; the stored `impressionCost` stays the
-              // multiplied total the rest of the stack speaks.
+              // its own subgrid row (see its `costField` doc).
               <>
                 <label htmlFor={`${reactId}-impression`} className={rowLabelCls}>
                   {t('aito.serviceUnitCost')}
@@ -282,31 +295,16 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
                 <CostInput
                   id={`${reactId}-impression`}
                   label={t('aito.serviceImpression3D')}
-                  value={
-                    task.impressionCost === null
-                      ? null
-                      : round2(task.impressionCost / Math.max(1, task.impression.quantity))
-                  }
+                  value={unitCost}
                   onChange={(unit) =>
-                    onChange({
-                      ...task,
-                      impressionCost: unit === null ? null : round2(unit * Math.max(1, task.impression.quantity)),
-                    })
+                    onChange({ ...task, impressionCost: unit === null ? null : round2(unit * quantity) })
                   }
                   autoFocus={autoFocusService === 'impression'}
                 />
               </>
             }
-            lineTotal={
-              task.impressionCost === null
-                ? null
-                : round2(task.impressionCost * (1 - (task.impressionDiscountPct ?? 0) / 100))
-            }
-            unitCost={
-              task.impressionCost === null
-                ? null
-                : round2(task.impressionCost / Math.max(1, task.impression.quantity))
-            }
+            lineTotal={lineTotal}
+            unitCost={unitCost}
             discountField={
               <>
                 <label htmlFor={`${reactId}-impression-discount`} className={rowLabelCls}>
@@ -377,22 +375,7 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
         </StepBlock>
       )}
 
-      {enabled.has('usinage') && (
-        <StepBlock title={t('aito.serviceUsinage')}>
-          <CostInput
-            id={`${reactId}-usinage`}
-            label={t('aito.serviceUsinage')}
-            value={task.usinageCost}
-            onChange={(next) => onChange({ ...task, usinageCost: next })}
-            autoFocus={autoFocusService === 'usinage'}
-          />
-          <StepDescriptionInput
-            label={t('aito.serviceUsinage')}
-            value={task.usinageDescription}
-            onChange={(next) => onChange({ ...task, usinageDescription: next })}
-          />
-        </StepBlock>
-      )}
+      {enabled.has('usinage') && renderPlainService(SERVICE_BY_ID.usinage)}
 
       <div className="flex items-center justify-between border-t border-bambu-dark-tertiary pt-2">
         <span className="text-sm text-bambu-gray">{t('aito.taskTotal')}</span>
