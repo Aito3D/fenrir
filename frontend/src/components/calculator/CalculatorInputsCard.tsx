@@ -3,6 +3,8 @@ import { Info, Minus, Package, Plus, Timer, X, Zap } from 'lucide-react';
 import type { CalculatorFilament, CalculatorPrinter } from '../../api/client';
 import { Card, CardContent, CardHeader } from '../Card';
 import { NumberField } from '../NumberField';
+import { SegmentedDuration } from '../SegmentedDuration';
+import type { DurationSegment } from '../SegmentedDuration';
 import { SearchableSelect } from '../SearchableSelect';
 import { Tooltip } from '../Tooltip';
 import { focusRingCls, labelCls } from '../formStyles';
@@ -71,9 +73,10 @@ function QuantityField({
   );
 }
 
-/** Single, clean day/hour/minute duration entry. Three segments share one
-    bordered box with a focus ring; leaving the field normalizes overflow
-    (90 min → 1 h 30 m, 25 h → 1 d 1 h) so the operator can type freely. */
+/** Single, clean day/hour/minute duration entry over the shared
+    `SegmentedDuration` box. Keeps three free-typed strings rather than one
+    number so the operator can type past a boundary; leaving the field
+    normalizes the overflow (90 min → 1 h 30, 25 h → 1 d 1 h). */
 function DurationField({
   days,
   hours,
@@ -88,10 +91,10 @@ function DurationField({
   error?: string;
 }) {
   const { t } = useTranslation();
-  const segments = [
-    { key: 'timeD' as const, value: days, unit: t('calculator.durationDaysShort'), aria: t('calculator.durationDays') },
-    { key: 'timeH' as const, value: hours, unit: t('calculator.durationHoursShort'), aria: t('calculator.durationHours') },
-    { key: 'timeM' as const, value: minutes, unit: t('calculator.durationMinutesShort'), aria: t('calculator.durationMinutes') },
+  const segments: DurationSegment[] = [
+    { key: 'timeD', value: days, unitLabel: t('calculator.durationDaysShort'), ariaLabel: t('calculator.durationDays') },
+    { key: 'timeH', value: hours, unitLabel: t('calculator.durationHoursShort'), ariaLabel: t('calculator.durationHours') },
+    { key: 'timeM', value: minutes, unitLabel: t('calculator.durationMinutesShort'), ariaLabel: t('calculator.durationMinutes') },
   ];
   const normalize = () => {
     const totalMin = Math.max(0, num(days)) * 1440 + Math.max(0, num(hours)) * 60 + Math.max(0, num(minutes));
@@ -100,44 +103,18 @@ function DurationField({
   };
   return (
     <div className="col-span-2">
-      <label htmlFor="calc-time-d" className={labelCls}>
+      <label id="calc-time-label" htmlFor="calc-time-d" className={labelCls}>
         {t('calculator.printingTimeLabel')}
       </label>
-      <div
-        // Normalize only once focus leaves the whole group, not when tabbing
-        // between its own segments.
-        onBlur={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) normalize();
-        }}
-        className={`flex items-stretch divide-x rounded-lg border bg-bambu-dark transition-colors focus-within:ring-2 ${
-          error
-            ? 'border-status-error/70 divide-status-error/30 focus-within:border-status-error focus-within:ring-status-error/20'
-            : 'border-bambu-dark-tertiary divide-bambu-dark-tertiary focus-within:border-bambu-green focus-within:ring-bambu-green/20'
-        }`}
-      >
-        {segments.map((seg) => (
-          <label
-            key={seg.key}
-            className="flex flex-1 items-baseline gap-1.5 px-3 py-2 cursor-text"
-          >
-            <input
-              id={seg.key === 'timeD' ? 'calc-time-d' : undefined}
-              type="number"
-              inputMode="numeric"
-              autoComplete="off"
-              min="0"
-              step="1"
-              aria-label={seg.aria}
-              aria-invalid={!!error}
-              placeholder="0"
-              className="w-full min-w-0 bg-transparent text-right text-lg text-white tabular-nums no-spinner focus:outline-none placeholder:text-bambu-gray/40"
-              value={seg.value}
-              onChange={(e) => onChange({ [seg.key]: e.target.value })}
-            />
-            <span className="select-none text-xs text-bambu-gray">{seg.unit}</span>
-          </label>
-        ))}
-      </div>
+      <SegmentedDuration
+        segments={segments}
+        onSegmentChange={(key, raw) => onChange({ [key]: raw })}
+        onGroupBlur={normalize}
+        error={!!error}
+        firstId="calc-time-d"
+        groupLabelId="calc-time-label"
+        size="lg"
+      />
       {error && <p className="text-xs text-status-error mt-1">{error}</p>}
     </div>
   );
