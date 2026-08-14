@@ -86,6 +86,13 @@ export interface ImpressionFieldsProps {
    *  the discount lives on the TASK beside `impressionCost` — it modifies the
    *  price, not the print parameters this component edits. */
   discountField: React.ReactNode;
+  /** The note affordance, same fragment contract as `costField`: a `<label>`
+   *  and the button that reveals the textarea. It takes the price column's
+   *  fourth row, which is what keeps both columns at five rows and leaves no
+   *  half-empty one. The revealed textarea is NOT here — TaskStepFields
+   *  renders it after this component, i.e. below the band, where a two-row
+   *  field has the width it needs. */
+  noteField: React.ReactNode;
   /** The figure the quote line will carry — unit × quantity, less the
    *  discount — computed by TaskStepFields, which owns `impressionCost` and
    *  the discount. `null` renders no amount: an absent cost is not a zero
@@ -109,6 +116,7 @@ export function ImpressionFields({
   onChange,
   costField,
   discountField,
+  noteField,
   lineTotal,
   unitCost,
 }: ImpressionFieldsProps) {
@@ -313,6 +321,10 @@ export function ImpressionFields({
 
         <div className="impression-price-row" style={{ '--ip-row': 3 } as React.CSSProperties}>
           {discountField}
+        </div>
+
+        <div className="impression-price-row" style={{ '--ip-row': 4 } as React.CSSProperties}>
+          {noteField}
         </div>
 
         <GridRow side="price" row={5} label={t('aito.computedPrice')}>

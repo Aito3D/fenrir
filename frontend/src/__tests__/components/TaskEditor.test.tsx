@@ -6,7 +6,7 @@
  * directly on the arguments passed to `onChange`.
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { screen, fireEvent, act, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -91,6 +91,15 @@ function ControlledTaskRow({
   // in edit mode — not about the read/edit split itself, which has its own
   // tests below.
   const [editing, setEditing] = useState(true);
+  // A `rerender()` with a structurally new `initial` (the "already carries a
+  // description" case) must replace the local copy, mirroring what a fresh
+  // mount with that task would look like — a normal re-render (unchanged
+  // `initial` reference) never matches here, so this never loops.
+  const lastInitialRef = useRef(initial);
+  if (lastInitialRef.current !== initial) {
+    lastInitialRef.current = initial;
+    setTask(initial);
+  }
   return (
     <TaskRow
       task={task}
@@ -834,6 +843,27 @@ describe('TaskRow', () => {
 
     expect(await screen.findByText('Not computable')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument();
+  });
+
+  it('printing: the note is one click away, and already open when the task has one', async () => {
+    const { rerender } = render(
+      <ControlledTaskRow initial={{ ...emptyTaskDraft(), impressionCost: 500 }} onChangeSpy={vi.fn()} />,
+    );
+
+    const textarea = /printing.*optional description/i;
+    expect(screen.queryByLabelText(textarea)).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Note for the quote' }));
+    expect(await screen.findByLabelText(textarea)).toBeInTheDocument();
+
+    // A task that already carries a description opens with it visible — it
+    // must never hide text the operator already wrote.
+    rerender(
+      <ControlledTaskRow
+        initial={{ ...emptyTaskDraft(), impressionCost: 500, impressionDescription: 'Bord poli' }}
+        onChangeSpy={vi.fn()}
+      />,
+    );
+    expect(screen.getByDisplayValue('Bord poli')).toBeInTheDocument();
   });
 });
 

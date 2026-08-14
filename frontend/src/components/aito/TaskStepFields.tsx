@@ -149,6 +149,11 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
   const autoFocusService = justEnabledRef.current;
   justEnabledRef.current = null;
 
+  // Impression only: this block is the dense one, and its note is empty on
+  // most tasks. Scan, Modélisation and Usinage keep their always-visible
+  // textarea. Seeded open — never hide a description the task already has.
+  const [noteOpen, setNoteOpen] = useState(task.impressionDescription !== '');
+
   const toggleService = (svc: (typeof SERVICE_DEFS)[number]) => {
     // Computed from the `enabled` state variable (not an updater callback):
     // StrictMode double-invokes updaters during render, which would run
@@ -329,12 +334,31 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
                 </select>
               </>
             }
+            noteField={
+              <>
+                <span className="text-sm text-bambu-gray text-right">{t('aito.addNote')}</span>
+                {noteOpen ? (
+                  <span className="text-sm text-bambu-gray">—</span>
+                ) : (
+                  <button
+                    type="button"
+                    aria-label={t('aito.addNote')}
+                    onClick={() => setNoteOpen(true)}
+                    className={`justify-self-start rounded-lg border border-dashed border-bambu-dark-tertiary px-2 py-1 text-xs text-bambu-gray transition-colors hover:border-bambu-green/50 hover:text-bambu-green-light ${focusRingCls}`}
+                  >
+                    + {t('aito.addNote')}
+                  </button>
+                )}
+              </>
+            }
           />
-          <StepDescriptionInput
-            label={t('aito.serviceImpression3D')}
-            value={task.impressionDescription}
-            onChange={(next) => onChange({ ...task, impressionDescription: next })}
-          />
+          {noteOpen && (
+            <StepDescriptionInput
+              label={t('aito.serviceImpression3D')}
+              value={task.impressionDescription}
+              onChange={(next) => onChange({ ...task, impressionDescription: next })}
+            />
+          )}
           </div>
         </StepBlock>
       )}
