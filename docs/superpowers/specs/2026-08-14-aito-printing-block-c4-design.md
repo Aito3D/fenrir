@@ -163,15 +163,18 @@ null-vs-0 rule, the unit↔total conversion, and the discount; `ImpressionFields
 keeps owning the print parameters and the pricing side effect.
 
 Only the **slot contract** changes. `costField` and `discountField` stop being
-flex cells and become grid rows: each node is a
-`col-span-2 grid grid-cols-subgrid items-center` wrapper holding its own label
-and control. `noteField` joins them under the same contract. The prop docs must
-be rewritten accordingly — they currently describe the flex-row contract in
-detail, including a warning against wrapping the node, which no longer applies
-in the same form (the wrapper *is* the subgrid row).
+flex cells and become *fragments* of exactly two nodes — a `<label>` and its
+control. `ImpressionFields` wraps each pair in the subgrid row itself, so it
+alone owns row placement and the parent never learns the grid exists.
+`noteField` joins them under the same contract. The prop docs must be rewritten
+accordingly — they currently describe the flex-row contract in detail,
+including a warning against wrapping the node, which inverts here: the parent
+must *not* wrap the pair, or one element lands where the subgrid expects two.
 
-New props on `ImpressionFields`: `noteField: React.ReactNode` and
-`lineTotal: number | null`.
+New props on `ImpressionFields`: `noteField: React.ReactNode`,
+`lineTotal: number | null` and `unitCost: number | null` — the last because the
+divergence check below needs the stored unit price, which lives in
+`TaskStepFields`.
 
 `ImpressionFields` is currently 326 lines and gains the band, the segments and
 the note reveal. If it passes ~400 lines, the band (bar + legend + total +
