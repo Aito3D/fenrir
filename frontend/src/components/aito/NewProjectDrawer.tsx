@@ -13,7 +13,7 @@ import { NewContactForm } from './NewContactForm';
 import { TaskEditor } from './TaskEditor';
 import { AITO_SERVICE_LABEL_KEYS } from './services';
 import { Money } from '../calculator/shared';
-import { focusRingCls } from '../formStyles';
+import { focusRingCls, labelCls } from '../formStyles';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useNewProjectDraft } from '../../hooks/useNewProjectDraft';
@@ -481,6 +481,21 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
                   {email !== '' && phone === '' && (
                     <p className="mt-2 text-xs text-amber-400">{t('aito.warnNoPhone')}</p>
                   )}
+                </div>
+              ) : statusQuery.isError ? (
+                // The default-contact effect above never seeds `draft` when the
+                // status request itself failed (as opposed to succeeding with
+                // `configured: false`, which still carries a fallback contact) —
+                // so without this branch the section body would render nothing
+                // at all, and Create would sit silently disabled with no clue
+                // why. `zohoUnreachable` (not `zohoNotConfigured`) is the point:
+                // this is a request that failed, not a link the operator needs
+                // to go configure.
+                <div>
+                  <label className={labelCls}>{t('aito.client')}</label>
+                  <div className="p-3 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-sm text-bambu-gray">
+                    {t('aito.zohoUnreachable')}
+                  </div>
                 </div>
               ) : null}
             </Section>

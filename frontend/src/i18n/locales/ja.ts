@@ -196,6 +196,7 @@ export default {
     projectTotal: 'プロジェクト合計',
     noPrintersConfigured: '計算機にはまだプリンターが設定されていません。',
     noFilamentsConfigured: '計算機にはまだフィラメントが設定されていません。',
+    pricingUnavailable: '計算機の価格を読み込めませんでした。もう一度お試しください。',
     computedPrice: '計算ツール価格',
     applyPrice: '適用',
     perPart: '1個あたり',

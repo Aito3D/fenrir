@@ -196,6 +196,7 @@ export default {
     projectTotal: '项目总计',
     noPrintersConfigured: '计算器中尚未配置打印机。',
     noFilamentsConfigured: '计算器中尚未配置耗材。',
+    pricingUnavailable: '无法加载计算器价格，请重试。',
     computedPrice: '计算器价格',
     applyPrice: '应用',
     perPart: '每件',

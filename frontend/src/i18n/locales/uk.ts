@@ -197,6 +197,7 @@ export default {
     projectTotal: "Разом за проєкт",
     noPrintersConfigured: "У калькуляторі ще не налаштовано жодного принтера.",
     noFilamentsConfigured: "У калькуляторі ще не налаштовано жодного філаменту.",
+    pricingUnavailable: "Не вдалося завантажити ціни калькулятора. Спробуйте ще раз.",
     computedPrice: "Ціна калькулятора",
     applyPrice: "Застосувати",
     perPart: "за деталь",

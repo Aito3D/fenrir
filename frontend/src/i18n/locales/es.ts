@@ -196,6 +196,7 @@ export default {
     projectTotal: 'Total proyecto',
     noPrintersConfigured: 'Aún no hay impresoras configuradas en la calculadora.',
     noFilamentsConfigured: 'Aún no hay filamentos configurados en la calculadora.',
+    pricingUnavailable: 'No se pudieron cargar los precios de la calculadora. Inténtalo de nuevo.',
     computedPrice: 'Precio calculadora',
     applyPrice: 'Aplicar',
     perPart: 'por pieza',

@@ -102,20 +102,6 @@ describe('QuoteResultList', () => {
     expect(onClear).toHaveBeenCalled();
   });
 
-  it('prefetches the preview when a row is hovered', async () => {
-    let prefetched = 0;
-    server.use(
-      http.get('/api/v1/zoho/estimates/:id/preview', () => {
-        prefetched += 1;
-        return HttpResponse.json({});
-      }),
-    );
-    const user = userEvent.setup();
-    render(<QuoteResultList selected={null} onSelect={vi.fn()} onClear={vi.fn()} />);
-    await user.hover(await screen.findByText('DEV26-2461'));
-    await waitFor(() => expect(prefetched).toBe(1));
-  });
-
   // The dwell gate (T-078): a hover/arrow-key sweep only warms the preview
   // cache for the row the pointer or cursor actually rests on. Fake timers
   // throughout — a wall-clock-dependent test here would just add a ninth
@@ -123,6 +109,25 @@ describe('QuoteResultList', () => {
   describe('prefetch dwell gate', () => {
     beforeEach(() => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
+    });
+
+    it('prefetches the preview when a row is hovered', async () => {
+      let prefetched = 0;
+      server.use(
+        http.get('/api/v1/zoho/estimates/:id/preview', () => {
+          prefetched += 1;
+          return HttpResponse.json({});
+        }),
+      );
+      render(<QuoteResultList selected={null} onSelect={vi.fn()} onClear={vi.fn()} />);
+      const row = await screen.findByText('DEV26-2461');
+      fireEvent.mouseEnter(row);
+
+      await act(async () => {
+        vi.advanceTimersByTime(500);
+      });
+
+      expect(prefetched).toBe(1);
     });
 
     it('sweeping across rows quickly fires at most one prefetch, for the row rested on', async () => {

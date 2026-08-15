@@ -11,6 +11,17 @@ import { useCurrency } from '../../hooks/useCurrency';
 import { computeImpressionCost, roundUpTo50 } from '../../utils/taskDraft';
 import type { ImpressionDraft } from '../../utils/taskDraft';
 
+/** A query counts as failed for THIS component's purposes only when it has
+ *  never produced anything usable — `isError` alone is not that: with
+ *  `staleTime`/`refetchOnWindowFocus`, a background refetch can fail while
+ *  the previously-fetched `data` is still sitting in the cache, and that
+ *  cached data prices exactly as well as a fresh fetch would. One shared
+ *  function rather than three inline checks so the three reference-data
+ *  queries below are read the same way. */
+function isFetchFailure(query: { isError: boolean; data: unknown }): boolean {
+  return query.isError && !query.data;
+}
+
 /** Inline label for a grid row. Not `labelCls`: that one is `block` with a
  *  bottom margin, for a label STACKED above its field. Here the label sits
  *  beside its field, in the grid's own label column — which is what buys the
@@ -149,6 +160,18 @@ export function ImpressionFields({
   const printers = printersQuery.data ?? [];
   const defaults = defaultsQuery.data;
   const referenceDataLoading = filamentsQuery.isLoading || printersQuery.isLoading || defaultsQuery.isLoading;
+  // `isLoading` (`isPending && isFetching`) goes FALSE the moment a query
+  // settles into its error state — it is not "still loading OR failed", just
+  // "loading". Without this separate check a failed fetch fell straight
+  // through to the `notConfigured` calc below with `referenceDataLoading`
+  // false and `printers`/`filaments` still their `?? []` fallback, so the
+  // band asserted "No printers configured" (and offered a `/calculator` trip)
+  // for a fetch failure that has nothing to do with configuration.
+  // `isFetchFailure` (not the bare `.isError`) so a background refetch that
+  // fails while the previously-fetched list is still cached does not read as
+  // a fetch failure at all — see the comment on `notConfigured` below.
+  const referenceDataError =
+    isFetchFailure(filamentsQuery) || isFetchFailure(printersQuery) || isFetchFailure(defaultsQuery);
 
   const filament = filaments.find((f) => f.id === value.filamentId) ?? null;
   const printer = printers.find((p) => p.id === value.printerId) ?? null;
@@ -208,8 +231,25 @@ export function ImpressionFields({
   // branch instead: it draws whatever it does have (the line total) and
   // nothing where the split would go, which is also the settled state for a
   // task that simply has no printer selected.
-  const notConfigured =
-    referenceDataLoading || (printers.length > 0 && filaments.length > 0)
+  //
+  // Checked FIRST, ahead of the loading/empty-list logic: a failed fetch also
+  // leaves `printers`/`filaments` at their `[]` fallback, which is otherwise
+  // indistinguishable from a genuinely empty calculator. "Not configured" is
+  // a false, actionable-looking claim in that case (it sends the operator to
+  // fix a calculator that isn't misconfigured) — the band gets its own
+  // "pricing unavailable" branch instead.
+  //
+  // `referenceDataError` itself is `isError && !data` PER QUERY, not the bare
+  // `isError` — with `staleTime`/`refetchOnWindowFocus` a background refetch
+  // can fail while the previously-fetched list is still sitting in the cache
+  // (`.data` survives a failed refetch, same as `useInfiniteQuery`'s `data`
+  // does — see ActivityRail). A stale-but-present list still prices exactly
+  // as well as a fresh one, so that case must fall through to the ordinary
+  // configured/not-configured checks below rather than announce a fetch
+  // failure that already stopped mattering.
+  const notConfigured = referenceDataError
+    ? 'unavailable'
+    : referenceDataLoading || (printers.length > 0 && filaments.length > 0)
       ? null
       : printers.length === 0
         ? 'printers'

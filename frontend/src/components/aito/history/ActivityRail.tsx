@@ -191,7 +191,15 @@ export function ActivityRail({ projectId }: { projectId: number }) {
 
       {isLoading ? (
         <Loader2 className="w-4 h-4 text-bambu-gray animate-spin" />
-      ) : isError ? (
+      ) : isError && !data ? (
+        // `!data` confines this to a first fetch that never landed a page —
+        // `useInfiniteQuery`'s `isError` is the parent observer's overall
+        // status (see infiniteQueryObserver.js), which also goes true for a
+        // failed `fetchNextPage`. In that case `data` (and therefore `events`
+        // below) is still the last-successful set of pages, and swallowing an
+        // already-rendered timeline behind this panel would be a bigger
+        // regression than the failed page itself. The Load-more button below
+        // stays live either way, so a failed next page can just be retried.
         <div className="text-center py-4 animate-rise">
           <AlertTriangle className="w-6 h-6 text-red-400 mx-auto mb-2" />
           <p className="text-sm text-white font-medium">{t('aito.loadFailed')}</p>

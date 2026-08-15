@@ -196,6 +196,7 @@ export default {
     projectTotal: 'Proje toplamı',
     noPrintersConfigured: 'Hesaplayıcıda henüz yapılandırılmış yazıcı yok.',
     noFilamentsConfigured: 'Hesaplayıcıda henüz yapılandırılmış filament yok.',
+    pricingUnavailable: 'Hesaplayıcı fiyatları yüklenemedi. Lütfen tekrar deneyin.',
     computedPrice: 'Hesaplayıcı fiyatı',
     applyPrice: 'Uygula',
     perPart: 'parça başına',

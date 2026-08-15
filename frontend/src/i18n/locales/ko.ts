@@ -196,6 +196,7 @@ export default {
     projectTotal: '프로젝트 합계',
     noPrintersConfigured: '계산기에 아직 설정된 프린터가 없습니다.',
     noFilamentsConfigured: '계산기에 아직 설정된 필라멘트가 없습니다.',
+    pricingUnavailable: '계산기 가격을 불러올 수 없습니다. 다시 시도해 주세요.',
     computedPrice: '계산기 가격',
     applyPrice: '적용',
     perPart: '개당',

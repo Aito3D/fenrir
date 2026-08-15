@@ -200,6 +200,7 @@ export default {
     projectTotal: 'Project total',
     noPrintersConfigured: 'No printers configured in the calculator yet.',
     noFilamentsConfigured: 'No filaments configured in the calculator yet.',
+    pricingUnavailable: 'Could not load calculator pricing. Please try again.',
     computedPrice: 'Calculator price',
     applyPrice: 'Apply',
     perPart: 'per part',

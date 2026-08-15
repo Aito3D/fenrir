@@ -470,6 +470,42 @@ describe('NewProjectDrawer', () => {
     await waitFor(() => expect(createButton()).toHaveAttribute('aria-disabled', 'false'));
   });
 
+  it('surfaces a failed Zoho status query, distinct from "not configured" and the happy path', async () => {
+    // 1. The status GET itself fails: `statusQuery.data` stays undefined, so
+    //    (unlike `configured: false`, which still ships a fallback contact)
+    //    the default-contact effect never seeds `draft` — without the fix,
+    //    the Client section body renders nothing at all and Create sits
+    //    silently disabled.
+    server.use(http.get('/api/v1/zoho/status', () => HttpResponse.error()));
+    const { unmount: unmountError } = render(<NewProjectDrawer onClose={vi.fn()} onCreate={vi.fn()} />);
+    expect(await screen.findByText(/could not reach zoho/i)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /connect zoho/i })).not.toBeInTheDocument();
+    expect(createButton()).toHaveAttribute('aria-disabled', 'true');
+    unmountError();
+
+    // 2. The request succeeds but reports `configured: false`: the existing
+    //    "not configured" settings-link panel shows — never the unreachable
+    //    message, which is reserved for a request that actually failed.
+    server.use(
+      http.get('/api/v1/zoho/status', () =>
+        HttpResponse.json({
+          configured: false, reachable: false,
+          default_contact_id: DEFAULT_ID, default_contact_name: 'Client de passage',
+        }),
+      ),
+    );
+    const { unmount: unmountNotConfigured } = render(<NewProjectDrawer onClose={vi.fn()} onCreate={vi.fn()} />);
+    expect(await screen.findByRole('link', { name: /connect zoho/i })).toBeInTheDocument();
+    expect(screen.queryByText(/could not reach zoho/i)).not.toBeInTheDocument();
+    unmountNotConfigured();
+
+    // 3. The happy path (shared `beforeEach` mock, `configured: true`):
+    //    neither failure message renders.
+    await renderDrawer();
+    expect(screen.queryByText(/could not reach zoho/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /connect zoho/i })).not.toBeInTheDocument();
+  });
+
   it('✕ plays the drawer exit, then calls onClose', async () => {
     const user = userEvent.setup();
     const { onClose } = await renderDrawer();

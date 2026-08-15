@@ -196,6 +196,7 @@ export default {
     projectTotal: '專案總計',
     noPrintersConfigured: '計算器中尚未設定印表機。',
     noFilamentsConfigured: '計算器中尚未設定耗材。',
+    pricingUnavailable: '無法載入計算器價格，請再試一次。',
     computedPrice: '計算機價格',
     applyPrice: '套用',
     perPart: '每件',

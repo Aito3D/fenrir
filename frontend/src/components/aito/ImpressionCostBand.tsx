@@ -14,8 +14,10 @@ export interface ImpressionCostBandProps {
    *  band carries this message because C4 removed the toggle it used to hang
    *  off. `null` while the queries are still in flight: printers and filaments
    *  both start as `[]`, so an ungated check asserts "not configured" for the
-   *  whole cold-cache window. */
-  notConfigured: 'printers' | 'filaments' | null;
+   *  whole cold-cache window. `'unavailable'` is a distinct state from either:
+   *  the printers/filaments/defaults fetch itself failed, which is not a
+   *  configuration problem and must not send the operator to `/calculator`. */
+  notConfigured: 'printers' | 'filaments' | 'unavailable' | null;
   /** The figure the quote line will carry — unit × quantity, less the
    *  discount. `null` renders no amount: an absent cost is not a zero cost. */
   lineTotal: number | null;
@@ -89,7 +91,11 @@ export function ImpressionCostBand({
       data-testid="impression-band"
     >
       <div className="min-w-36 flex-1 space-y-1">
-        {notConfigured !== null ? (
+        {notConfigured === 'unavailable' ? (
+          // No `/calculator` link here on purpose: the fetch failed, so
+          // there is nothing wrong at that destination to go fix.
+          <p className="text-sm text-bambu-gray">{t('aito.pricingUnavailable')}</p>
+        ) : notConfigured !== null ? (
           <p className="text-sm text-bambu-gray">
             {t(notConfigured === 'printers' ? 'aito.noPrintersConfigured' : 'aito.noFilamentsConfigured')}{' '}
             <Link to="/calculator" className="text-bambu-green hover:underline">

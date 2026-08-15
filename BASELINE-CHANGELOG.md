@@ -1241,6 +1241,40 @@ all four exactly at the existing ratchet ceiling, no regression (the new
 render branch is fully exercised by the new test, so the denominator grew
 without growing the missed count).
 
+### CORRECTION — 2026-08-15 — loop-5 verifier fix, narrowing
+
+A blind verifier caught that this fix went further than approved.
+`useProjectEvents` is a `useInfiniteQuery`; in TanStack Query v5 `isError` is
+the parent observer's OVERALL status, true for a failed `fetchNextPage` as
+much as for a failed first fetch (`infiniteQueryObserver.js`'s
+`isFetchNextPageError` is derived from it). The `isError` branch above ran
+ahead of the event list unconditionally, so a "Load more" click that failed
+replaced an ALREADY-RENDERED timeline with the load-failed panel — losing
+history that was on screen a moment before, which BASE never did and which
+the approved wording ("a project whose history fails to load...") never
+covered; it was scoped to the first fetch only.
+
+FIX: the error branch is now `isError && !data` rather than bare `isError`.
+`data` (TanStack's accumulated pages) survives a failed `fetchNextPage` the
+same way it survives on a regular `useQuery`, so this confines the panel to
+the case `data` is genuinely absent — the first-fetch failure — and a failed
+next page now leaves the rendered timeline up, with the pre-existing
+Load-more button (unchanged, still outside the ternary) available to retry
+it. Narrowing only: no case that showed the load-failed panel before still
+shows anything else, and the first-fetch-failure test above still passes
+unmodified.
+
+Added one test to `AitoActivityRail.test.tsx`: first page resolves and
+renders, `fetchNextPage` (via the Load More click) rejects, timeline and
+Load More stay up and the load-failed text does not appear, then clicking
+Load More again succeeds and appends the second page — pinning the failed-
+load-more state as distinct from both the first-fetch-failure and the
+plain-success paging states, which remain covered by the pre-existing tests.
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9. `bash tools/gen_surface.sh`
+diff against `SURFACE.md`: empty. See T-091's correction block below for the
+combined coverage-gate numbers (both fixes landed in the same pass).
+
 ## T-077 — 2026-08-14 — user-approved behavior change
 
 `ActivityRail`'s note `<input>` carried no `maxLength`, but the server's
@@ -1347,3 +1381,238 @@ Aito coverage gate at the time of the fix: statements 121 missed, branches
 worker's first attempt measured 122 missed statements because its guard
 introduced an unreachable early return; it restructured to an `if (quote)`
 block rather than accept the regression or add an uncoverable line.
+
+## T-090 — 2026-08-15 — user-approved behavior change
+
+`frontend/src/components/aito/NewProjectDrawer.tsx`: the drawer's own
+`statusQuery = useQuery({ queryKey: ['zoho-status', ...], ... })` feeds
+`configured` (`statusQuery.data?.configured === true`) and `defaultId`
+(`statusQuery.data?.default_contact_id ?? ''`). With the app's default
+`retry: 1`, one failed `GET /api/v1/zoho/status` leaves `statusQuery.data`
+`undefined` for up to 60s. Unlike a *successful* response reporting
+`configured: false` — which still ships a fallback `default_contact_id`,
+so the default-contact effect seeds `draft` and `ClientSection` mounts and
+shows its own "Zoho not configured" panel — an *errored* query leaves
+`defaultId` empty, the seeding effect never fires, `draft` stays `null`,
+and the Client section's body ternary (`creatingClient ? … : draft ? … :
+null`) rendered bare `null`. The operator saw an empty Client step and a
+Create button that, on every click, revealed no errors and did nothing.
+
+Verified each link of the audit chain before building on it: confirmed
+`statusQuery` had no `isError` consumer in this file; confirmed
+`ClientSection` gates its "not configured" panel on
+`statusQuery.data?.configured === false` only (`ClientSection.tsx:61`),
+which an errored query never satisfies; confirmed `CreateChecklist`'s
+client-account line is hard-coded `<Line state="ok" ...>`
+(`CreateChecklist.tsx:113`) with no Zoho-specific line at all; confirmed
+`draft` really stays `null` on an errored query (the seeding effect's
+`defaultId` guard) so the section body renders `null`. All four links
+held.
+
+FIX, confined to the assigned file: added a third arm to the Client
+section's body ternary — `statusQuery.isError ? <panel> : null` — showing
+a small "unavailable" panel (same shape as `ClientSection`'s own
+not-configured panel: a label plus a bordered text block) reusing the
+EXISTING i18n key `aito.zohoUnreachable` ("Could not reach Zoho Books.
+Please try again.", already present in all 15 locale files and already
+used by `ClientCombobox.tsx`/`QuoteResultList.tsx` for the same failed-
+Zoho-request condition). No new i18n key was added. `configured`,
+`canCreate` and the retry/staleTime settings are untouched — Create stays
+blocked exactly as before; only the reason is now visible.
+
+OBSERVABLE CHANGE, quoting the approved description verbatim: "when the
+Zoho status request fails, the new-project drawer will show an
+'unavailable/not configured' message where it currently shows an empty
+client section and a silently inert Create button."
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9, unaffected — no probe
+covers React render output. `bash tools/gen_surface.sh` diff against
+`SURFACE.md`: empty — no top-level export added, renamed or removed.
+
+Added one test to `NewProjectDrawer.test.tsx` asserting all three states
+are distinct: (1) the status GET rejects — the `zohoUnreachable` message
+renders, the "not configured" settings link does not, and Create stays
+`aria-disabled`; (2) the GET succeeds with `configured: false` — the
+settings link renders, the unreachable message does not; (3) the shared
+`beforeEach` happy path (`configured: true`) — neither renders.
+
+Aito coverage gate: statements 83 missed, branches 171, functions 28,
+lines 38 — all four exactly at the existing ratchet ceiling, no
+regression; the new branch is exercised by state (1) of the new test.
+
+## T-091 — 2026-08-15 — user-approved behavior change
+
+`ImpressionFields`' `notConfigured` calc gated only on `referenceDataLoading`
+(`filamentsQuery.isLoading || printersQuery.isLoading || defaultsQuery.isLoading`)
+before falling through to `printers.length === 0 ? 'printers' : 'filaments'`.
+In TanStack Query v5, `isLoading` is `isPending && isFetching`, which goes
+FALSE the instant a query settles into its error state — it is not "loading
+OR failed", just "loading". `printers`/`filaments` both default to `[]`
+(`?? []`) before their query resolves, which is what a failed fetch also
+leaves them at. So when GET /calculator/printers (or filaments, or defaults)
+failed, the gate did not catch it: the band rendered
+`t('aito.noPrintersConfigured')` plus a `/calculator` navigation link — a
+false, actionable-looking claim that sends the operator to fix a calculator
+that is not misconfigured, for a request that simply failed. Confirmed all
+three of the auditor's claims hold before fixing: `isLoading`'s v5 semantics,
+the `?? []` fallback on both query results, and that `handleChange` already
+stops repricing whenever `defaultsQuery` itself has failed (via its existing
+`!defaults` check) — that repricing short-circuit is pre-existing and out of
+this task's scope, left untouched.
+
+FIX, confined to `ImpressionFields.tsx` and `ImpressionCostBand.tsx`: added
+`referenceDataError` (`filamentsQuery.isError || printersQuery.isError ||
+defaultsQuery.isError`), checked FIRST in the `notConfigured` calc, ahead of
+the loading/empty-list branches — matching the shape of commit `f2ba215ed`,
+which added the equivalent loading-window gate. `notConfigured`'s type grew
+a third value, `'unavailable'`, alongside the existing `'printers'` /
+`'filaments'` / `null`. `ImpressionCostBand` renders it as its own line —
+`t('aito.pricingUnavailable')`, no `/calculator` link, since there is
+nothing misconfigured there to go fix — instead of falling into the
+`'printers'`/`'filaments'` branch. One new i18n key, `aito.pricingUnavailable`
+("Could not load calculator pricing. Please try again."), added to all 13
+locale files (checked `aito.zohoUnreachable` and `aito.loadFailed` first per
+the brief; both are worded for Zoho/board-specific failures and would
+misdirect here, so neither was reused — `frontend/scripts/check-i18n-parity.mjs`
+and the `src/__tests__/i18n` suite both pass with the new key).
+
+OBSERVABLE CHANGE, quoting the approved description verbatim: "with the
+calculator endpoints failing, the printing block will say pricing is
+unavailable instead of claiming no printers are configured."
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9, unaffected — no probe
+covers React render output. `bash tools/gen_surface.sh` diff against
+`SURFACE.md`: empty — no top-level export added, renamed or removed.
+
+Added three tests to `TaskEditor.test.tsx`, keeping all three `notConfigured`
+states distinguishable: (1) `GET /calculator/printers/` rejects — the new
+"Could not load calculator pricing" message renders, neither "not
+configured" message nor the `/calculator` link appears; (2) printers resolve
+to a genuinely empty list — "No printers configured" and the link still
+render, the unavailable message does not; (3) filaments resolve to a
+genuinely empty list — "No filaments configured" and the link still render,
+the unavailable message does not. (2) and (3) were previously untested
+gaps this task's brief asked to close without touching the printers-vs-
+filaments selection itself (T-098's territory) — the new `'unavailable'`
+branch sits ahead of that selection in the ternary and does not change it.
+
+Aito coverage gate: statements 83 missed, branches 165, functions 28, lines
+38 — statements/functions/lines unchanged at the ratchet ceiling, branches
+dropped from 171 to 165 (the new `referenceDataError` branch is fully
+covered by the three new tests), no regression.
+
+### CORRECTION — 2026-08-15 — loop-5 verifier fix, narrowing
+
+The verifier flagged (without failing the loop on) the same shape of
+overreach here as in T-076's correction above. `referenceDataError` was
+`filamentsQuery.isError || printersQuery.isError || defaultsQuery.isError` —
+the bare `isError`. With `retry: 1`, `staleTime: 60_000` and v5's default
+`refetchOnWindowFocus`, a query that already fetched successfully once can
+still fail on a later BACKGROUND refetch while its previous `data` stays in
+the cache. `isError` goes true in that case too, so the band would flip to
+"Could not load calculator pricing" over a price it could still compute
+perfectly well from the data it already had — a case the approved wording
+never covered (it was scoped to a fetch that "fails to load", i.e. never
+produces anything, not a fetch that succeeded and later degraded).
+
+FIX: added a module-level `isFetchFailure(query)` helper —
+`query.isError && !query.data`, mirroring the `isError && !data` shape used
+in `ActivityRail` (T-076's correction) — and built `referenceDataError` from
+it for all three reference-data queries instead of their bare `isError`
+flags. One shared helper rather than three inline `isError && !data` checks:
+istanbul counts branch hits at the SOURCE location, not per call site, so
+three separate inline checks would have needed a background-failure test for
+each of the three queries to keep the coverage ratchet from moving; routed
+through one function, any one of them exercising the `isError && !data` path
+covers the branch for all three. Narrowing only: a query that has never
+resolved still reports unavailable exactly as before (`!query.data` is true
+until the first success), so the original first-fetch-failure test and the
+two "genuinely not configured" tests are unaffected.
+
+Added one test to `TaskEditor.test.tsx`: renders with all three queries
+resolving successfully first (band shows the real "Where the money goes"
+split), then fails the next `GET /calculator/printers/` response and forces
+a refetch directly on an externally-held `QueryClient`
+(`client.refetchQueries`, since jsdom does not model `staleTime`/window-focus
+timing deterministically) — asserts the band keeps showing the computed
+price and never renders "Could not load calculator pricing", pinning this
+state as distinct from the cold-cache failure test above.
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9. `bash tools/gen_surface.sh`
+diff against `SURFACE.md`: empty — no top-level export changed in either
+fix's files.
+
+Combined (T-076 + T-091 corrections) Aito coverage gate, from `frontend/`:
+statements 1873/1956 (83 missed), branches 1875/2040 (165 missed), functions
+628/656 (28 missed), lines 1642/1680 (38 missed) — all four exactly at the
+ratchet ceiling carried over from T-091's own pass, no regression. Full
+Aito-scoped suite (56 files matching
+`components/aito|utils/aito|hooks/useAito|pages/AitoPage`): 868/868 passed.
+`npm run lint`: clean.
+
+### CORRECTION — 2026-08-15 — loop-5 verifier fix #2, assertion point and a
+### false coverage claim above
+
+The blind verifier caught two separate problems with the correction directly
+above this one.
+
+**The new test did not guard the fix.** It reverted `isFetchFailure`'s body
+to the bare `query.isError` — exactly the overreach this task's fix exists to
+remove — and ran the whole `TaskEditor.test.tsx` file 5 times: 47/47 passed,
+5/5 runs. Instrumenting `ImpressionFields`'s render sequence showed the error
+render DOES eventually land (`printersQuery` does settle into `status:
+"error"` with `data` retained, so the fix is genuinely needed), but
+`await act(async () => { await client.refetchQueries(...) })` does not
+reliably flush that propagation before the test's two synchronous assertions
+run. The test was checking a negative (`queryByText(...).not.toBeInTheDocument()`)
+with nothing forcing it to wait for the failed state to actually arrive first
+— a negative assertion that races the state it is supposed to observe passes
+whether or not the underlying narrowing exists.
+
+FIX, confined to the test: before the two existing assertions, added
+`await waitFor(() => expect(client.getQueryState(['calculatorPrinters'])?.status).toBe('error'))`
+— positive evidence that the refetch has actually landed in `error` (with
+`data` retained, since the query previously fetched successfully) before
+asserting the unavailable message is absent and the price still renders.
+Confirmed by direct measurement, not assumption: with `isFetchFailure`
+temporarily reverted to bare `query.isError`, the revised test fails on 5/5
+runs of the full file (1 failed, 46 passed each time); restoring the
+narrowing, it passes 5/5. Source files (`ImpressionFields.tsx`,
+`ActivityRail.tsx`) were not touched — the verifier confirmed both
+narrowings are correct and the `ActivityRail` test is already
+mutation-proven.
+
+**The "one shared helper instead of three inline checks" coverage rationale
+above, in this task's own text, is false.** It claimed three inline
+`isError && !data` checks "would have needed a background-failure test for
+each of the three queries to keep the coverage ratchet from moving." Istanbul
+records `&&` branches by whether the second operand was EVALUATED, not
+whether it was true — reaching `isError` with `data` still falsy already
+exercises both sides of `isError && !data`, regardless of which query it is
+attached to or whether that particular query ever undergoes a background
+refetch. The verifier measured branch coverage at `ImpressionFields.tsx:22`
+directly: `[274, 3]` (hit counts for the two operands) with the new test
+present, `[193, 2]` with it deleted — both already fully covered (every
+branch hit at least once) by the pre-existing cold-cache failure tests added
+earlier in this same task, which reach `isError` with `data` absent. The new
+background-refetch test contributes ZERO branch coverage; the coverage
+number never depended on it, with or without a shared helper.
+
+The shared `isFetchFailure` helper is NOT being undone by this correction —
+it remains a reasonable design on its own terms (one reader for three
+identically-treated queries, rather than three copies of the same
+condition, hides nothing and cannot drift out of sync). But the coverage
+argument for it was wrong and is struck; the actual reason to have the new
+background-refetch test is behavioral verification (pinning that a
+degraded-but-cached query still prices), not coverage — the coverage ratchet
+was never at risk either way.
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9. `bash tools/gen_surface.sh`
+diff against `SURFACE.md`: empty — this correction touches only test code and
+this changelog.
+
+Aito coverage gate, from `frontend/`, re-run after the test-only change:
+statements 1873/1956 (83 missed), branches 1875/2040 (165 missed), functions
+628/656 (28 missed), lines 1642/1680 (38 missed) — identical to the figures
+above, flat as expected: the assertion-timing fix changes when the test
+asserts, not what source lines/branches execute. `npm run lint`: clean.

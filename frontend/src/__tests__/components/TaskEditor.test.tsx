@@ -8,11 +8,14 @@
 
 import { useState } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { screen, fireEvent, act, waitFor, within } from '@testing-library/react';
+import { screen, fireEvent, act, waitFor, within, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BrowserRouter } from 'react-router-dom';
 import { server } from '../mocks/server';
 import { render } from '../utils';
+import { ToastProvider } from '../../contexts/ToastContext';
 import { TaskRow } from '../../components/aito/TaskRow';
 import { TaskEditor } from '../../components/aito/TaskEditor';
 import { computeImpressionCost, emptyTaskDraft, roundUpTo50, taskTotal } from '../../utils/taskDraft';
@@ -105,6 +108,27 @@ function ControlledTaskRow({
       canTick
     />
   );
+}
+
+/** Same wiring as `render(<ControlledTaskRow .../>)`, but with the
+ *  `QueryClient` mounted OUTSIDE the tree so a test can force a background
+ *  refetch on it directly (`client.refetchQueries`) rather than waiting on
+ *  `staleTime`/window-focus semantics neither jsdom nor fake timers model
+ *  cleanly. */
+function renderControlledTaskRowWithClient(initial: TaskDraft, onChangeSpy: (next: TaskDraft) => void) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  rtlRender(
+    <QueryClientProvider client={client}>
+      <BrowserRouter>
+        <ToastProvider>
+          <ControlledTaskRow initial={initial} onChangeSpy={onChangeSpy} />
+        </ToastProvider>
+      </BrowserRouter>
+    </QueryClientProvider>,
+  );
+  return client;
 }
 
 /** Same wiring, one level up: state lives outside `TaskEditor`, `onChange`
@@ -806,6 +830,106 @@ describe('TaskRow', () => {
     // Once the queries land, the band settles into the real cost split — the
     // same end state as the "shows the line total and the cost split" test.
     await band.findByRole('img', { name: 'Where the money goes' });
+  });
+
+  it('printing: reports a failed reference-data fetch as pricing unavailable, not as unconfigured', async () => {
+    // `isLoading` (`isPending && isFetching`) goes FALSE the instant a query
+    // settles into its error state, and `printers`/`filaments` still default
+    // to `[]` on error — so an ungated check reads a fetch failure exactly
+    // like a genuinely empty calculator and sends the operator to
+    // `/calculator` to "fix" a configuration problem that does not exist.
+    server.use(http.get('/api/v1/calculator/printers/', () => HttpResponse.error()));
+
+    const task = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: 500,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
+
+    const band = within(await screen.findByTestId('impression-band'));
+    await band.findByText('Could not load calculator pricing. Please try again.');
+    expect(band.queryByText(/no printers configured/i)).not.toBeInTheDocument();
+    expect(band.queryByText(/no filaments configured/i)).not.toBeInTheDocument();
+    // No trip to the calculator either: there is nothing misconfigured there.
+    expect(band.queryByRole('link', { name: 'Calculator' })).not.toBeInTheDocument();
+  });
+
+  it('printing: keeps the computed price when a background refetch fails after data has already loaded', async () => {
+    // With `staleTime: 60_000` and v5's default `refetchOnWindowFocus`, a
+    // reference-data query can fail on a REFETCH while the previously-fetched
+    // list is still sitting in its cache — `isError` goes true, but `data`
+    // (and everything `ImpressionFields` prices with) is untouched. That is a
+    // different, later state than the cold-cache failure above, and must not
+    // collapse into the same "pricing unavailable" message: the band still
+    // has everything it needs to show a real price.
+    const task = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: 500,
+    };
+    const client = renderControlledTaskRowWithClient(task, vi.fn());
+
+    // Let all three reference-data queries land successfully first — same
+    // settled state as the "shows the line total and the cost split" test.
+    const band = within(await screen.findByTestId('impression-band'));
+    await band.findByRole('img', { name: 'Where the money goes' });
+
+    // Fail the next fetch and force a refetch directly on the client. This
+    // reaches the real-world "background refetch failed" state (`isError`
+    // true, cached `data` retained) without depending on `staleTime` or
+    // window-focus timing, which jsdom does not model deterministically.
+    server.use(http.get('/api/v1/calculator/printers/', () => HttpResponse.error()));
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ['calculatorPrinters'] });
+    });
+
+    // Positive evidence FIRST: without this, the two assertions below can run
+    // before the failed-refetch state has actually propagated through
+    // `printersQuery` and into `referenceDataError`, and the negative
+    // assertion passes vacuously — it would pass whether or not the fix
+    // exists. Only once the query has genuinely settled into `error` (with
+    // `data` retained, since `retry: false` and the mocked response reject
+    // immediately) does checking for the absent error message actually prove
+    // anything.
+    await waitFor(() => {
+      expect(client.getQueryState(['calculatorPrinters'])?.status).toBe('error');
+    });
+
+    expect(band.queryByText('Could not load calculator pricing. Please try again.')).not.toBeInTheDocument();
+    band.getByRole('img', { name: 'Where the money goes' });
+  });
+
+  it('printing: still reports "No printers configured" when the calculator genuinely has none', async () => {
+    server.use(http.get('/api/v1/calculator/printers/', () => HttpResponse.json([])));
+
+    const task = {
+      ...emptyTaskDraft(),
+      impression: { printerId: null, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: 500,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
+
+    const band = within(await screen.findByTestId('impression-band'));
+    await band.findByText(/no printers configured/i);
+    band.getByRole('link', { name: 'Calculator' });
+    expect(band.queryByText('Could not load calculator pricing. Please try again.')).not.toBeInTheDocument();
+  });
+
+  it('printing: still reports "No filaments configured" when the calculator genuinely has none', async () => {
+    server.use(http.get('/api/v1/calculator/filaments/', () => HttpResponse.json([])));
+
+    const task = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: null, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: 500,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
+
+    const band = within(await screen.findByTestId('impression-band'));
+    await band.findByText(/no filaments configured/i);
+    band.getByRole('link', { name: 'Calculator' });
+    expect(band.queryByText('Could not load calculator pricing. Please try again.')).not.toBeInTheDocument();
   });
 
   it('printing: the band still carries the total when nothing can be computed', async () => {

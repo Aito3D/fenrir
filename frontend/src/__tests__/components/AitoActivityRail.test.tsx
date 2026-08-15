@@ -272,6 +272,41 @@ describe('ActivityRail', () => {
     );
   });
 
+  it('keeps the already-rendered timeline on screen, and Load more retryable, when fetchNextPage fails', async () => {
+    const spy = vi.spyOn(api, 'getAitoEvents');
+    spy.mockResolvedValueOnce({
+      events: [event({ id: 99, actor_name: 'first-event' })],
+      has_more: true,
+    });
+    spy.mockRejectedValueOnce(new Error('network down'));
+    spy.mockResolvedValueOnce({
+      events: [event({ id: 4, occurred_at: '2019-12-31T00:00:00', actor_name: 'second-page-event' })],
+      has_more: false,
+    });
+    const user = userEvent.setup();
+    render(<ActivityRail projectId={12} />);
+
+    await screen.findByText(/first-event/);
+
+    await user.click(screen.getByRole('button', { name: 'Load more' }));
+
+    // `useInfiniteQuery`'s `isError` covers a failed `fetchNextPage` too, but
+    // `data` (and so the already-rendered page) is retained — the timeline
+    // must stay up rather than being replaced by the load-failed panel.
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+    expect(screen.getByText(/first-event/)).toBeInTheDocument();
+    expect(screen.queryByText(/could not load the board/i)).not.toBeInTheDocument();
+
+    // The failed page is retryable from the same Load-more button.
+    const loadMore = screen.getByRole('button', { name: 'Load more' });
+    expect(loadMore).not.toBeDisabled();
+    await user.click(loadMore);
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(3));
+    expect(await screen.findByText(/second-page-event/)).toBeInTheDocument();
+    expect(screen.getByText(/first-event/)).toBeInTheDocument();
+  });
+
   it('appends the next page instead of replacing the first one', async () => {
     const spy = vi.spyOn(api, 'getAitoEvents');
     spy.mockResolvedValueOnce({

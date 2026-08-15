@@ -196,6 +196,7 @@ export default {
     projectTotal: 'Projektsumme',
     noPrintersConfigured: 'Noch keine Drucker im Rechner konfiguriert.',
     noFilamentsConfigured: 'Noch keine Filamente im Rechner konfiguriert.',
+    pricingUnavailable: 'Kalkulationspreise konnten nicht geladen werden. Bitte erneut versuchen.',
     computedPrice: 'Kalkulationspreis',
     applyPrice: 'Übernehmen',
     perPart: 'pro Teil',
