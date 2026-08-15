@@ -738,12 +738,11 @@ describe('TaskRow', () => {
     render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
 
     const band = within(await screen.findByTestId('impression-band'));
-    // The band renders unconditionally, before printers/filaments/defaults
-    // resolve — its testid appears immediately, but (since the loading-state
-    // fix above) showing the neutral `missingPrintParams` fallback rather
-    // than the "not configured" message. Wait for the cost split itself
-    // (async, so it retries) rather than for the testid, or the assertions
-    // below race the fetch.
+    // The band renders as soon as there is a line total, before printers/
+    // filaments/defaults resolve — its testid appears immediately, carrying
+    // the total and (since the loading-state fix above) no "not configured"
+    // message. Wait for the cost split itself (async, so it retries) rather
+    // than for the testid, or the assertions below race the fetch.
     await band.findByRole('img', { name: 'Where the money goes' });
     // The charged figure, not the computed one: unit × quantity, less any
     // discount. This is what the quote line will say. The test harness's
@@ -816,13 +815,12 @@ describe('TaskRow', () => {
     render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
 
     const band = within(await screen.findByTestId('impression-band'));
-    // `findByText` (not `getByText`): the missing-params message is also
-    // what shows during the brief loading window before the queries resolve,
-    // so this assertion is correct whether it catches that window or the
-    // settled state — either way this task has no printer/filament selected.
-    await band.findByText(/fill in printer, weight and print time/i);
     band.getByText(formatMoney(9000, 'USD').replace(/\s+/g, ' '));
     expect(band.queryByRole('img', { name: 'Where the money goes' })).not.toBeInTheDocument();
+    // No split, and no instructions in its place either: the band states what
+    // it knows and stays quiet about what it doesn't. The operator filling
+    // the form in does not need to be told to fill the form in.
+    expect(band.queryByText(/fill in printer/i)).not.toBeInTheDocument();
   });
 
   it('printing: no apply button while the stored price already is the computed one', async () => {
@@ -847,7 +845,7 @@ describe('TaskRow', () => {
     // leaving the stored cost null forever and making Apply appear for the
     // wrong reason. Wait for the row to leave its not-yet-computable state
     // first.
-    await waitFor(() => expect(screen.queryByText('Not computable')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('impression-computed')).not.toHaveTextContent('—'));
 
     // Typing a weight reprices as it always has, so stored and computed agree
     // and there is nothing to offer. The value must actually differ from the
@@ -855,7 +853,7 @@ describe('TaskRow', () => {
     // trigger React's onChange at all, which would leave the stored cost null
     // and make Apply appear for the same wrong reason as above.
     fireEvent.change(await screen.findByLabelText(/weight/i), { target: { value: '45' } });
-    await waitFor(() => expect(screen.getByText('Computed')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('impression-computed')).not.toHaveTextContent('—'));
     expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument();
   });
 
@@ -885,10 +883,14 @@ describe('TaskRow', () => {
     expect(next.impressionCost).not.toBe(40_000);
   });
 
-  it('printing: the computed row says so when no price can be computed', async () => {
+  it('printing: the calculator-price row falls back to a dash when no price can be computed', async () => {
     render(<ControlledTaskRow initial={{ ...emptyTaskDraft(), impressionCost: 9000 }} onChangeSpy={vi.fn()} />);
 
-    expect(await screen.findByText('Not computable')).toBeInTheDocument();
+    // The row keeps its label ("Calculator price", which is what names the
+    // figure) and shows a dash where the amount would be — no "Not
+    // computable" verdict for the operator to interpret.
+    expect(await screen.findByTestId('impression-computed')).toHaveTextContent('—');
+    expect(screen.getByText('Calculator price')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument();
   });
 

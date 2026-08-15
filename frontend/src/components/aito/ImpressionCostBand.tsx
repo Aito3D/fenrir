@@ -19,6 +19,12 @@ export interface ImpressionCostBandProps {
   /** The figure the quote line will carry — unit × quantity, less the
    *  discount. `null` renders no amount: an absent cost is not a zero cost. */
   lineTotal: number | null;
+  /** What ONE part costs once the discount is taken off, or `null` when no
+   *  discount is set. Undiscounted, the Cost input already states the unit
+   *  price and repeating it here would be noise — but a discount only ever
+   *  showed up in the total, leaving the operator to divide by the quantity
+   *  in their head to quote a per-piece rate. */
+  discountedUnit: number | null;
   currency: string;
 }
 
@@ -26,9 +32,18 @@ export interface ImpressionCostBandProps {
  *  line total on the right.
  *
  *  Stateless by construction — everything it draws is derived from `result`.
- *  Both halves always have content, which is the point of the band: the empty
- *  right column it replaced was the original bug. */
-export function ImpressionCostBand({ result, notConfigured, lineTotal, currency }: ImpressionCostBandProps) {
+ *  Either half may be empty (an imported task has a total and no split; a
+ *  half-filled one has neither), in which case the band draws only what it
+ *  has, or nothing at all — the rule it hangs off is not worth a stray line
+ *  across an empty row. It no longer explains what to fill in: the operator
+ *  filling the form in knows. */
+export function ImpressionCostBand({
+  result,
+  notConfigured,
+  lineTotal,
+  discountedUnit,
+  currency,
+}: ImpressionCostBandProps) {
   const { t } = useTranslation();
 
   // The bar splits the PRICE, margin included: in a quoting context the
@@ -63,13 +78,16 @@ export function ImpressionCostBand({ result, notConfigured, lineTotal, currency 
     ].filter((s) => s.value > 0.005);
   }, [result, t]);
 
+  // Nothing computed, nothing configured to complain about and no total to
+  // state: there is no band, only its border. Drawn, that reads as a rule
+  // under an empty row.
+  if (notConfigured === null && !result && lineTotal === null) return null;
+
   return (
     <div
       className="impression-band flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-t border-bambu-dark-tertiary pt-2"
       data-testid="impression-band"
     >
-      {/* Left half always has content — this is the half that used to go
-          blank whenever no price could be computed. */}
       <div className="min-w-36 flex-1 space-y-1">
         {notConfigured !== null ? (
           <p className="text-sm text-bambu-gray">
@@ -110,15 +128,21 @@ export function ImpressionCostBand({ result, notConfigured, lineTotal, currency 
               </div>
             </details>
           </>
-        ) : (
-          <p className="text-sm text-bambu-gray">{t('aito.missingPrintParams')}</p>
-        )}
+        ) : null}
       </div>
 
       {lineTotal !== null && (
-        <div className="text-right">
+        <div className="ml-auto text-right">
           <Money currency={currency} value={lineTotal} className="text-lg font-semibold text-bambu-green" />
           <div className="text-[0.7rem] uppercase tracking-wide text-bambu-gray">{t('aito.printingTotal')}</div>
+          {/* The per-piece rate the discount actually bought, spelled out so
+              nobody divides the total by the quantity by hand. */}
+          {discountedUnit !== null && (
+            <div className="text-xs text-bambu-gray">
+              <Money currency={currency} value={discountedUnit} className="text-bambu-gray-light" />{' '}
+              {t('aito.perPart')}
+            </div>
+          )}
         </div>
       )}
     </div>

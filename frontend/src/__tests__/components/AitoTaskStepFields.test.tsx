@@ -168,6 +168,40 @@ describe('TaskStepFields', () => {
     expect(totalRow).toHaveTextContent(formatMoney(900, 'USD'));
   });
 
+  it('printing: a discount also states what one part now costs', () => {
+    // 1000 stored over 4 parts is 250 apiece; less 20% the line is 800 and a
+    // part is 200. Only the 800 used to be on screen, leaving the operator to
+    // divide by the quantity to quote a per-piece rate.
+    render(
+      <TaskStepFields
+        task={{
+          ...emptyTaskDraft(),
+          impression: { ...emptyTaskDraft().impression, quantity: 4 },
+          impressionCost: 1000,
+          impressionDiscountPct: 20,
+        }}
+        onChange={vi.fn()}
+      />,
+    );
+    const totalRow = screen.getByText('Printing total').parentElement!;
+    expect(totalRow).toHaveTextContent(formatMoney(800, 'USD'));
+    expect(totalRow).toHaveTextContent(`${formatMoney(200, 'USD')} per part`);
+  });
+
+  it('printing: no per-part line without a discount — the cost field already says it', () => {
+    render(
+      <TaskStepFields
+        task={{
+          ...emptyTaskDraft(),
+          impression: { ...emptyTaskDraft().impression, quantity: 4 },
+          impressionCost: 1000,
+        }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Printing total').parentElement!).not.toHaveTextContent('per part');
+  });
+
   it('typing 0 emits 0, which is a real free step', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

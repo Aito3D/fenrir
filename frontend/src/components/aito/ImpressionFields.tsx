@@ -101,6 +101,10 @@ export interface ImpressionFieldsProps {
    *  used to render below this component is GONE — the band replaced it, and
    *  the total must not appear twice. */
   lineTotal: number | null;
+  /** What one part costs once the discount is taken off, or `null` when no
+   *  discount is set — computed by TaskStepFields for the same reason
+   *  `lineTotal` is. Passed straight to the band, which renders it. */
+  discountedUnit: number | null;
   /** The unit price currently stored on the task (`impressionCost` divided by
    *  quantity), so this block can tell whether the calculator's figure and
    *  the stored one have parted ways. Read only for that comparison. */
@@ -119,6 +123,7 @@ export function ImpressionFields({
   discountField,
   noteField,
   lineTotal,
+  discountedUnit,
   unitCost,
 }: ImpressionFieldsProps) {
   const { t } = useTranslation();
@@ -199,9 +204,10 @@ export function ImpressionFields({
   // empty calculator unless the loading flag is checked too. Without this
   // gate every printing task asserts "No printers configured" — a false
   // statement plus a `/calculator` navigation trap — for the entire cold-cache
-  // fetch window. While loading, the band falls through to the
-  // `missingPrintParams` branch instead: neutral, and already the fallback for
-  // "no result yet" for any other reason.
+  // fetch window. While loading, the band falls through to its no-split
+  // branch instead: it draws whatever it does have (the line total) and
+  // nothing where the split would go, which is also the settled state for a
+  // task that simply has no printer selected.
   const notConfigured =
     referenceDataLoading || (printers.length > 0 && filaments.length > 0)
       ? null
@@ -319,9 +325,18 @@ export function ImpressionFields({
 
         <GridRow side="price" row={5} label={t('aito.computedPrice')}>
           {computedUnit === null ? (
-            <span className="text-sm text-bambu-gray">{t('aito.priceNotComputable')}</span>
+            // An em dash, not a sentence: the row already says whose price
+            // this is, and "Not computable" only ever prompted "computable by
+            // what?". Same convention the note row uses for its empty state.
+            //
+            // The testid is on BOTH branches so a test can ask what this row
+            // currently says without matching on an em dash, which the
+            // discount select and the note row also render.
+            <span data-testid="impression-computed" className="text-sm text-bambu-gray">
+              —
+            </span>
           ) : (
-            <span className="flex items-center gap-2">
+            <span data-testid="impression-computed" className="flex items-center gap-2">
               <Money currency={currency} value={computedUnit} className="text-sm text-white" />
               {canApplyComputed && (
                 <button
@@ -346,6 +361,7 @@ export function ImpressionFields({
           result={result}
           notConfigured={notConfigured}
           lineTotal={lineTotal}
+          discountedUnit={discountedUnit}
           currency={currency}
         />
 
