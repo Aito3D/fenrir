@@ -180,9 +180,13 @@ export function TaskRow({
             <h4 className="flex-1 min-w-0 flex items-center gap-2">{headerContent}</h4>
           );
         })()}
-        {/* Hidden on a stepless row: that row is already showing the form, so
-            there is no other mode to switch to. */}
-        {steps.length > 0 && (
+        {/* Hidden only on a stepless row that is ALREADY showing its form:
+            there, the pencil would switch to a read mode consisting of the
+            words "No steps yet". A stepless row can also arrive here CLOSED
+            — `TaskEditor` opens one form at a time, so a second unpriced row
+            loses the slot to the newest one — and that row needs the pencil
+            or it is a dead header line with no way back into its own form. */}
+        {(steps.length > 0 || !editing) && (
           <button
             type="button"
             aria-label={t('aito.editTask')}

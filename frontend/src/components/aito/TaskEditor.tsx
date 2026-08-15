@@ -51,7 +51,13 @@ export interface TaskEditorProps {
    *  it is tickable yet, so compactness wins there. The detail panel keeps
    *  its always-open rows — collapsing would put a click between the user
    *  and the step Done ticks (see TaskRow's component doc). Defaults to
-   *  false so every existing caller is unaffected. */
+   *  false so every existing caller is unaffected.
+   *
+   *  Note this is the COLLAPSE accordion, and it is opt-in. EDIT mode is
+   *  accordion for everyone, prop or no prop (see `editingKey`): at most one
+   *  row shows its form anywhere. The two are separate keys answering
+   *  separate questions — a row can be expanded-and-read-only, and under this
+   *  prop it can also be collapsed while holding the edit slot. */
   accordion?: boolean;
 }
 
@@ -75,34 +81,29 @@ export function TaskEditor({
   const { t } = useTranslation();
   const currency = useCurrency();
 
-  // Which rows are open for editing (showing the form instead of the
-  // read-only step list), keyed by `rowKey` — same key `isEditing` below
-  // checks, or toggling one row's form would open another's.
-  const [editingKeys, setEditingKeys] = useState<Set<string>>(new Set());
-  const toggleEdit = (key: string) =>
-    setEditingKeys((current) => {
-      const next = new Set(current);
-      if (!next.delete(key)) next.add(key);
-      return next;
-    });
+  // The ONE row open for editing (showing the form instead of the read-only
+  // step list), keyed by `rowKey` — same key `isEditing` below checks, or
+  // toggling one row's form would open another's.
+  //
+  // A single key rather than a set of them: an open form is several times the
+  // height of the step list it replaces, so two at once push every other task
+  // out of the column's scroll view. Opening one row therefore closes
+  // whichever was open — the accordion rule, applied to edit mode. null means
+  // no row is explicitly open, which is a meaningful state: see `isEditing`.
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const toggleEdit = (key: string) => setEditingKey((current) => (current === key ? null : key));
 
-  // Removing a row never freed its key from here — `toggleEdit` above is the
-  // only place that deletes one, and only in response to a click on that
-  // exact row, which a removed row can no longer receive. Since `rowKey` is
-  // uid-based (persisted rows keyed by their DB id, drafts by a fresh
-  // client-side uid — see `taskDraft.ts`), a stale key can never collide
-  // with a future row's, so the leak was inert: `isEditing`'s `.has()` check
-  // simply never matched it again. Still worth dropping on removal so the
-  // set doesn't grow for the life of the drawer/panel. Deliberately separate
-  // from `openKey`/`effectiveOpenKey` below: those derive their own
-  // dangling-key fallback independently and are untouched here.
-  const pruneEditingKey = (key: string) =>
-    setEditingKeys((current) => {
-      if (!current.has(key)) return current;
-      const next = new Set(current);
-      next.delete(key);
-      return next;
-    });
+  // A key matching no current row is stale, not a choice: the edited row was
+  // removed, or the drawer's hold-to-reset swapped in fresh drafts whose uids
+  // can never equal the stored key. Resolving it to null here — rather than
+  // pruning the state on every path that can drop a row — covers both, and
+  // matters because `isEditing` treats null as "nothing explicitly open" and
+  // falls back to auto-opening a stepless row. Left un-resolved, a wiped
+  // drawer would show one bare "No steps yet" line with its form behind a
+  // click nothing invites. Same shape as `effectiveOpenKey` below, derived
+  // independently: the two answer different questions about the same row.
+  const effectiveEditingKey =
+    editingKey !== null && value.some((task) => rowKey(task) === editingKey) ? editingKey : null;
 
   // Accordion mode's single open row, by the same key as everything else.
   // Seeded to the first row so the drawer's initial task starts open. null
@@ -129,10 +130,18 @@ export function TaskEditor({
   // and fixes the create modal for free: its first task previously started
   // both collapsed and not editing, costing two clicks before the user could
   // type a price.
-  const isEditing = (task: TaskDraft) => editingKeys.has(rowKey(task)) || taskSteps(task).length === 0;
+  //
+  // That fallback is gated on nothing else being explicitly open, or the one-
+  // form rule would leak: two unpriced rows are two auto-opened forms, which
+  // is the wall of forms this whole mechanism exists to prevent. The newest
+  // wins, because "+ Add task" below names it as the explicit key. A stepless
+  // row that loses this way still has its pencil (see TaskRow's own gate), so
+  // it stays reachable rather than becoming a dead header line.
+  const isEditing = (task: TaskDraft) =>
+    effectiveEditingKey === rowKey(task) || (effectiveEditingKey === null && taskSteps(task).length === 0);
 
-  // A stepless row is auto-edited by `isEditing` above, not by an explicit
-  // `editingKeys` entry — so the instant its FIRST keystroke prices a
+  // A stepless row is auto-edited by `isEditing` above, not by holding
+  // `editingKey` itself — so the instant its FIRST keystroke prices a
   // service, `taskSteps` stops being empty and the OR's other half stops
   // being true. Without latching the key in here, that one keystroke would
   // flip the row to read mode mid-edit and drop focus out of the input the
@@ -143,7 +152,7 @@ export function TaskEditor({
   // and after in one place, no extra render needed.
   const graduateToEditing = (before: TaskDraft, after: TaskDraft) => {
     if (taskSteps(before).length === 0 && taskSteps(after).length > 0) {
-      setEditingKeys((current) => new Set([...current, rowKey(after)]));
+      setEditingKey(rowKey(after));
     }
   };
 
@@ -182,14 +191,7 @@ export function TaskEditor({
               // Absent (not merely disabled) while pending too, same rule as
               // `minRows` below it: the row's create hasn't landed, so there
               // is no id yet to send a DELETE for — see TaskRow's own prop doc.
-              onRemove={
-                value.length > minRows && !pending
-                  ? () => {
-                      pruneEditingKey(key);
-                      onRemove(index);
-                    }
-                  : undefined
-              }
+              onRemove={value.length > minRows && !pending ? () => onRemove(index) : undefined}
               editing={isEditing(task)}
               onToggleEdit={() => {
                 if (collapsed) {
@@ -197,7 +199,7 @@ export function TaskEditor({
                   // a plain toggle could flip an already-editing key OFF
                   // while the form it would close isn't even on screen.
                   setOpenKey(key);
-                  setEditingKeys((current) => new Set([...current, key]));
+                  setEditingKey(key);
                 } else {
                   toggleEdit(key);
                 }
@@ -223,6 +225,13 @@ export function TaskEditor({
           // The new task is the one being worked on: open it (collapsing the
           // rest). Its key is computable before the parent commits the new
           // array because a draft's identity is its own uid, not its index.
+          //
+          // Naming it the editing key is what closes whatever form was open.
+          // Without this the new row would auto-open as a SECOND form (it is
+          // stepless), which is the one thing the single key forbids —
+          // `isEditing`'s stepless fallback only fires when nothing is
+          // explicitly open, so the add has to claim the slot outright.
+          setEditingKey(rowKey(draft));
           if (accordion) setOpenKey(rowKey(draft));
         }}
         // A full-width row that echoes the task cards above it rather than a

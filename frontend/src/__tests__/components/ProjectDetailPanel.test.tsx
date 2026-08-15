@@ -229,10 +229,18 @@ beforeEach(() => {
  *  step list. Rows render open (Task 17 — no disclosure left to click first).
  *  Deliberately not used by tests that click a step's Done toggle: that
  *  button lives in the read-only `TaskStepList`, which edit mode hides. */
-async function editAllTasks() {
-  for (const button of await screen.findAllByRole('button', { name: /edit task/i })) {
-    fireEvent.click(button);
-  }
+/** Opens ONE task's edit form via its pencil. Edit is exclusive (see
+ *  `TaskEditor`'s `editingKey`): opening a row closes whichever was open, so
+ *  there is no "edit all" to be had — this used to click every pencil in turn
+ *  and now says what that actually left behind.
+ *
+ *  `index` defaults to the LAST row, which is where the click-them-all loop
+ *  ended up and what every caller here already expects: most tests mount a
+ *  single task, and the multi-task ones target the last. Tests that need a
+ *  specific earlier row pass its index. */
+async function editTask(index?: number) {
+  const buttons = await screen.findAllByRole('button', { name: /edit task/i });
+  fireEvent.click(buttons[index ?? buttons.length - 1]);
 }
 
 describe('ProjectDetailPanel client fields', () => {
@@ -522,7 +530,7 @@ describe('ProjectDetailPanel tasks', () => {
     // Read-only, the row shows its name as a heading; the title input only
     // exists once Edit is pressed.
     expect(await screen.findByRole('heading', { name: /^Bracket mount/ })).toBeInTheDocument();
-    await editAllTasks();
+    await editTask();
     expect(screen.getByDisplayValue('Bracket mount')).toBeInTheDocument();
     // Description is per-service now — mockTask's note lives on the scan
     // block (scan is its only priced step), not a task-level field.
@@ -542,7 +550,7 @@ describe('ProjectDetailPanel tasks', () => {
     );
 
     show();
-    await editAllTasks();
+    await editTask();
     const scanInput = await screen.findByLabelText('Scan Cost');
     fireEvent.change(scanInput, { target: { value: '700' } });
 
@@ -639,7 +647,7 @@ describe('ProjectDetailPanel tasks', () => {
       await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
       boardFetches.mockClear();
 
-      await editAllTasks();
+      await editTask();
       const scanInput = await screen.findByLabelText('Scan Cost');
 
       fireEvent.change(scanInput, { target: { value: '700' } });
@@ -750,7 +758,7 @@ describe('ProjectDetailPanel tasks', () => {
     );
 
     show();
-    await editAllTasks();
+    await editTask();
     const scanInput = await screen.findByLabelText('Scan Cost');
 
     fireEvent.change(scanInput, { target: { value: '700' } });
@@ -825,32 +833,41 @@ describe('ProjectDetailPanel tasks', () => {
     );
 
     show();
-    await editAllTasks();
-    const scanInputs = await screen.findAllByLabelText('Scan Cost');
-    expect(scanInputs).toHaveLength(2);
 
-    // Row 101: edit, PATCH fires but hangs (never resolved in this test).
-    fireEvent.change(scanInputs[0], { target: { value: '900' } });
-    expect(scanInputs[0]).toHaveValue(900);
+    // Only one row can show its form at a time (TaskEditor's `editingKey`),
+    // so the two edits are made in turn rather than side by side. The
+    // invariant is unchanged: row 101's value lives in the panel's task array,
+    // not in the mounted input, so row 102's PATCH settling must not overwrite
+    // it — reopening 101 at the end is what reads that array back.
+    await editTask(0);
+    const scan101 = await screen.findByLabelText('Scan Cost');
 
-    // Row 102: edit, PATCH fires and resolves immediately.
-    fireEvent.change(scanInputs[1], { target: { value: '700' } });
+    // Row 101: edit, PATCH fires but hangs (resolved at the end of the test).
+    fireEvent.change(scan101, { target: { value: '900' } });
+    expect(scan101).toHaveValue(900);
+
+    // Row 102: edit, PATCH fires and resolves immediately. Opening it closes
+    // row 101's form, leaving 101's edit in flight and unpersisted.
+    await editTask(1);
+    const scan102 = await screen.findByLabelText('Scan Cost');
+    fireEvent.change(scan102, { target: { value: '700' } });
 
     // Give row 102's PATCH (and any resulting cache write / resync effect)
     // time to fully settle.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
-    expect(scanInputs[1]).toHaveValue(700);
+    expect(scan102).toHaveValue(700);
 
-    // Row 101's typed-but-unsaved value must still be showing.
-    expect(scanInputs[0]).toHaveValue(900);
+    // Row 101's typed-but-unsaved value must have survived row 102's resync.
+    await editTask(0);
+    expect(await screen.findByLabelText('Scan Cost')).toHaveValue(900);
 
     resolvePatch101({ ...mockTask, scan_cost: 900 });
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
-    expect(scanInputs[0]).toHaveValue(900);
+    expect(await screen.findByLabelText('Scan Cost')).toHaveValue(900);
   });
 
   it('editing the title issues a PATCH with only title, sending null (not empty string) when blank', async () => {
@@ -863,7 +880,7 @@ describe('ProjectDetailPanel tasks', () => {
     );
 
     show();
-    await editAllTasks();
+    await editTask();
     const titleInput = await screen.findByDisplayValue('Bracket mount');
     fireEvent.change(titleInput, { target: { value: '' } });
 
@@ -951,7 +968,7 @@ describe('ProjectDetailPanel tasks', () => {
     );
 
     show();
-    await editAllTasks();
+    await editTask();
     const scanInput = await screen.findByLabelText('Scan Cost');
     fireEvent.change(scanInput, { target: { value: '700' } });
 
@@ -982,7 +999,7 @@ describe('ProjectDetailPanel tasks', () => {
     show();
     // Opening the row's edit form is the scenario under test: the user
     // presses Edit, sees the task's stored quote, and touches nothing.
-    await editAllTasks();
+    await editTask();
 
     // Give every query (filaments, printers, defaults, settings, tasks)
     // every chance to resolve. Pricing only happens inside ImpressionFields'
@@ -1008,7 +1025,7 @@ describe('ProjectDetailPanel tasks', () => {
 
     show();
     // Opening the row's edit form is the scenario under test.
-    await editAllTasks();
+    await editTask();
 
     await screen.findByRole('combobox', { name: /material/i });
     await act(async () => {
@@ -1050,14 +1067,14 @@ describe('ProjectDetailPanel tasks', () => {
 
     // Row A (task 101, index 0): edit a print input on the ImpressionFields
     // instance mounted at index 0. Row A's own impressionCost is null (only
-    // its scanCost is priced), so Printing is still a chip there — row B
-    // (mockImpressionTask) already has a priced Printing service, so its
-    // chip is on and its button reads "Remove Printing" instead, leaving
-    // "Add Printing" unique to row A.
-    await editAllTasks();
+    // its scanCost is priced), so Printing is still a chip there. Row A is
+    // named explicitly because edit is exclusive — the default (last row)
+    // would open row B and leave row A's form unmounted.
+    await editTask(0);
     fireEvent.click(await screen.findByRole('button', { name: 'Add Printing' }));
+    // One form on screen, so one weight input, and it is row A's.
     const weightInputs = await screen.findAllByLabelText(/weight/i);
-    expect(weightInputs).toHaveLength(2);
+    expect(weightInputs).toHaveLength(1);
     fireEvent.change(weightInputs[0], { target: { value: '40' } });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
@@ -1075,8 +1092,14 @@ describe('ProjectDetailPanel tasks', () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
-    // Row B is now the only row, showing its own (untouched) data.
-    await screen.findByDisplayValue('Bracket mount');
+    // Row B is now the only row, showing its own (untouched) data. It reads
+    // back in read mode rather than as a form: row A held the single edit
+    // slot, and deleting it leaves no row explicitly open — row B has steps of
+    // its own, so nothing auto-opens it. Both fixtures share a title, so the
+    // count is what proves row A is gone.
+    await waitFor(() =>
+      expect(screen.getAllByRole('heading', { name: /^Bracket mount/ })).toHaveLength(1),
+    );
 
     vi.useRealTimers();
 
@@ -1156,7 +1179,7 @@ describe('ProjectDetailPanel tasks', () => {
 
     await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
 
-    await editAllTasks();
+    await editTask();
     const scan = await screen.findByLabelText('Scan Cost');
     await user.clear(scan);
     // 700, not mockTask's own baseline (500): typing back to the persisted
@@ -1219,7 +1242,7 @@ describe('ProjectDetailPanel tasks', () => {
     const { rerender } = render(<BoardHost showPanel />);
     await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
 
-    await editAllTasks();
+    await editTask();
     const scan = await screen.findByLabelText('Scan Cost');
 
     // Keystroke 1: PATCH fires and lands, so the panel is now dirty.
@@ -1269,7 +1292,7 @@ describe('ProjectDetailPanel tasks', () => {
     const { rerender } = render(<BoardHost showPanel />);
     await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(1));
 
-    await editAllTasks();
+    await editTask();
     const scan = await screen.findByLabelText('Scan Cost');
     fireEvent.change(scan, { target: { value: '700' } });
     await waitFor(() => expect(bodies).toHaveLength(1));
@@ -1327,7 +1350,7 @@ describe('ProjectDetailPanel tasks', () => {
     );
 
     const { rerender } = rtlRender(<Host open />);
-    await editAllTasks();
+    await editTask();
     const scanInput = await screen.findByLabelText('Scan Cost');
     fireEvent.change(scanInput, { target: { value: '700' } });
 
@@ -1344,7 +1367,7 @@ describe('ProjectDetailPanel tasks', () => {
 
     // Reopen well inside the 60s staleTime window.
     rerender(<Host open />);
-    await editAllTasks();
+    await editTask();
 
     // `waitFor` on the VALUE, not `findByLabelText` on the element. React
     // Query serves the reopened panel its cached (pre-PATCH) snapshot on the

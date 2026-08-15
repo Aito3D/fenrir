@@ -139,7 +139,7 @@ function ControlledTaskEditor({
 /** Same wiring as `ControlledTaskEditor`, but `onRemove` actually splices the
  *  index out of the array instead of being a stub — the way `NewProjectDrawer`
  *  and the detail panel both wire it. Needed for tests that check what
- *  happens to `TaskEditor`'s own row-keyed state (`editingKeys`, `openKey`)
+ *  happens to `TaskEditor`'s own row-keyed state (`editingKey`, `openKey`)
  *  when a row disappears via removal, as opposed to `ControlledTaskEditor` +
  *  a manual `onChange` swap (used by the "wipe draft" test) which never goes
  *  through `onRemove` at all. */
@@ -292,6 +292,97 @@ describe('TaskEditor', () => {
     expect(screen.getByRole('heading', { name: /^Un/ })).toBeInTheDocument();
   });
 
+  it('editing a second row closes the first one — one open form at a time', async () => {
+    // The detail panel's task column is a single scroll region, and an open
+    // edit form is several times the height of the read-only step list it
+    // replaces. Two of them at once pushes every other task off screen, so
+    // edit is exclusive: opening one closes whichever was open.
+    const tasks = [
+      { ...emptyTaskDraft(), title: 'Un', scanCost: 10 },
+      { ...emptyTaskDraft(), title: 'Deux', scanCost: 20 },
+    ];
+    render(<TaskEditor value={tasks} onChange={vi.fn()} onRemove={vi.fn()} canTick />);
+
+    await editTask(0);
+    expect(screen.getByDisplayValue('Un')).toBeInTheDocument();
+
+    await editTask(1);
+
+    // Exactly one form, and it is Deux's — Un fell back to its step list.
+    expect(screen.getAllByLabelText('Optional title')).toHaveLength(1);
+    expect(screen.getByDisplayValue('Deux')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Un')).not.toBeInTheDocument();
+  });
+
+  it('the pencil still closes the row it opened', async () => {
+    // Exclusivity must not cost the toggle: pressing the same pencil twice
+    // returns the row to its step list rather than latching it open forever.
+    render(
+      <TaskEditor
+        value={[{ ...emptyTaskDraft(), title: 'Un', scanCost: 10 }]}
+        onChange={vi.fn()}
+        onRemove={vi.fn()}
+        canTick
+      />,
+    );
+
+    await editTask(0);
+    expect(screen.getByDisplayValue('Un')).toBeInTheDocument();
+
+    await editTask(0);
+    expect(screen.queryByLabelText('Optional title')).not.toBeInTheDocument();
+  });
+
+  it('"+ Add task" closes the form that was open', async () => {
+    // Same rule reached the other way: the new task IS a form (it is
+    // stepless), so leaving the previous one open would put two on screen.
+    const user = userEvent.setup();
+    render(
+      <ControlledTaskEditor
+        initial={[{ ...emptyTaskDraft(), title: 'Un', scanCost: 10 }]}
+        onChangeSpy={vi.fn()}
+      />,
+    );
+
+    await editTask(0);
+    expect(screen.getByDisplayValue('Un')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /add task/i }));
+
+    // The new row's form is the only one: Un is back to its step list.
+    expect(await screen.findByRole('heading', { name: /^Task 2/ })).toBeInTheDocument();
+    expect(screen.getAllByLabelText('Optional title')).toHaveLength(1);
+    expect(screen.queryByDisplayValue('Un')).not.toBeInTheDocument();
+  });
+
+  it('a second "+ Add task" closes the first unpriced draft, which keeps a pencil to reopen it', async () => {
+    // A stepless row auto-opens as a form because there is nothing else to
+    // show — but two of them is exactly the wall of forms this rule exists to
+    // prevent, so the newest wins. The one left behind must stay reachable:
+    // its pencil is normally hidden (a stepless row IS the form), and without
+    // it the row would be a dead header line.
+    const user = userEvent.setup();
+    render(<ControlledTaskEditor initial={[]} onChangeSpy={vi.fn()} />);
+
+    // Name the first draft so the assertions below can tell the two apart —
+    // both are stepless, so neither has a price or a step to identify it by.
+    await user.click(screen.getByRole('button', { name: /add task/i }));
+    await user.type(screen.getByLabelText('Optional title'), 'Un');
+    expect(screen.getByDisplayValue('Un')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /add task/i }));
+
+    // Only the new draft's form is open.
+    expect(screen.getAllByLabelText('Optional title')).toHaveLength(1);
+    expect(screen.queryByDisplayValue('Un')).not.toBeInTheDocument();
+
+    // Un is closed but still openable — its pencil (the only one on screen,
+    // since the open stepless row needs none) reopens it and closes the other.
+    await editTask(0);
+    expect(screen.getAllByLabelText('Optional title')).toHaveLength(1);
+    expect(screen.getByDisplayValue('Un')).toBeInTheDocument();
+  });
+
   it('a task added with "+ Add task" opens as the form — it has no steps yet', async () => {
     const user = userEvent.setup();
     render(<ControlledTaskEditor initial={[]} onChangeSpy={vi.fn()} />);
@@ -372,14 +463,42 @@ describe('TaskEditor', () => {
     vi.useRealTimers();
   });
 
-  it('removing a row does not disturb another row that is also being edited', async () => {
-    // Characterizes `editingKeys` before the removal-pruning change: the set
-    // can hold more than one row's key at once (edit is per-row, not
-    // exclusive outside accordion mode), and removing one row must drop only
-    // that row's own key, leaving a sibling's edit state alone. This is the
-    // regression guard for Task T-024's prune — a prune that targeted the
-    // wrong key (e.g. an off-by-one against the pre-removal index) would
-    // surface here as Deux silently losing its edit form.
+  it('removing a row does not disturb the row being edited', async () => {
+    // `editingKey` is keyed by `rowKey` (uid-based), not by position, so a
+    // removal that shifts every later row down one index must leave the open
+    // form exactly where it was. An implementation that tracked the edited row
+    // by INDEX would surface here as Deux losing its form — or worse, as the
+    // form reappearing on whichever row inherited index 1.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const tasks = [
+      { ...emptyTaskDraft(), title: 'Un', scanCost: 10 },
+      { ...emptyTaskDraft(), title: 'Deux', scanCost: 20 },
+      { ...emptyTaskDraft(), title: 'Trois', scanCost: 30 },
+    ];
+    render(<RemovableTaskEditor initial={tasks} />);
+
+    await editTask(1);
+    expect(screen.getByDisplayValue('Deux')).toBeInTheDocument();
+
+    // Remove Un — the row BEFORE the edited one, so every index shifts.
+    const removeButtons = screen.getAllByLabelText('Remove task');
+    await act(async () => {
+      fireEvent.pointerDown(removeButtons[0]);
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    vi.useRealTimers();
+
+    expect(screen.queryByRole('heading', { name: /^Un/ })).not.toBeInTheDocument();
+    // Deux is still the one mid-edit, despite having slid from index 1 to 0.
+    expect(screen.getAllByLabelText('Optional title')).toHaveLength(1);
+    expect(screen.getByDisplayValue('Deux')).toBeInTheDocument();
+  });
+
+  it('removing the row being edited leaves every survivor read-only', async () => {
+    // The stale key must resolve to "nothing open" rather than latching onto
+    // whichever row inherits the removed one's slot. Both survivors have
+    // steps, so neither is auto-opened by `isEditing`'s stepless fallback —
+    // the panel is simply left with no form, which is the honest answer.
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const tasks = [
       { ...emptyTaskDraft(), title: 'Un', scanCost: 10 },
@@ -388,8 +507,7 @@ describe('TaskEditor', () => {
     render(<RemovableTaskEditor initial={tasks} />);
 
     await editTask(0);
-    await editTask(1);
-    expect(screen.getAllByLabelText('Optional title')).toHaveLength(2);
+    expect(screen.getByDisplayValue('Un')).toBeInTheDocument();
 
     const removeButtons = screen.getAllByLabelText('Remove task');
     await act(async () => {
@@ -398,10 +516,8 @@ describe('TaskEditor', () => {
     });
     vi.useRealTimers();
 
-    // Un is gone, Deux (now at index 0) is still mid-edit.
     expect(screen.getByRole('heading', { name: /^Deux/ })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: /^Un/ })).not.toBeInTheDocument();
-    expect(screen.getAllByLabelText('Optional title')).toHaveLength(1);
+    expect(screen.queryByLabelText('Optional title')).not.toBeInTheDocument();
   });
 
   it('shows its own "Tasks / Project total" header by default, so NewProjectModal is unaffected', () => {
@@ -1016,12 +1132,10 @@ describe('TaskEditor accordion (create drawer)', () => {
     // Same `effectiveOpenKey` fallback as the "wipe draft" test above, but
     // reached through an actual removal (`onRemove`, wired for real by
     // `RemovableTaskEditor`) rather than a full-array swap via `onChange`.
-    // This is the path Task T-024's prune touches, and it must keep landing
-    // on the same row the unpruned code already opens: `effectiveOpenKey`
-    // derives its fallback from `openKey` and `value` alone, never from
-    // `editingKeys`, so pruning the latter has nothing to do with which row
-    // this resolves to — characterizing it here pins that down before the
-    // change, not just after.
+    // Which row ends up EXPANDED is settled by `effectiveOpenKey` alone,
+    // derived from `openKey` and `value` and never from `editingKey` — the
+    // two dangling-key fallbacks are deliberately independent, so a change to
+    // how edit state survives a removal must not move this answer.
     vi.useFakeTimers({ shouldAdvanceTime: true });
     render(<RemovableTaskEditor initial={[priced('Alpha'), priced('Beta')]} accordion />);
 
