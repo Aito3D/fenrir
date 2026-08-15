@@ -65,10 +65,16 @@ export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
   });
 
   // Each entry is [icon, accessible field name, value]. Absent values are left
-  // out entirely rather than rendered blank: quantity defaults to 1 on every
-  // draft, so "×1" is noise, not information.
+  // out entirely rather than rendered blank.
+  //
+  // Quantity is the exception that always renders: ×1 used to be suppressed as
+  // a default not worth stating, which left the reader to infer "no quantity
+  // shown" means one — an inference the line is supposed to spare them. How
+  // many of the part this step prints is what the meta line is FOR, and a
+  // one-off is an answer. 0 stays hidden: that is not a job, and "×0" explains
+  // nothing.
   const impressionMeta: { key: string; icon: typeof Layers; label: string; value: string }[] = [];
-  if (task.impression.quantity > 1) {
+  if (task.impression.quantity >= 1) {
     impressionMeta.push({ key: 'quantity', icon: Layers, label: t('aito.quantity'), value: `×${task.impression.quantity}` });
   }
   const material = needsFilamentName

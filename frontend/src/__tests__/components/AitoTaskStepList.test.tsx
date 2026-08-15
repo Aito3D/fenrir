@@ -153,7 +153,7 @@ describe('TaskStepList', () => {
       expect(meta).toHaveTextContent('Colour');
     });
 
-    it('omits a quantity of 1, a blank colour and an unset material', async () => {
+    it('shows a quantity of 1 as ×1, even with no colour and no material', async () => {
       mockFilaments();
       render(
         <TaskStepList
@@ -164,8 +164,28 @@ describe('TaskStepList', () => {
       );
 
       await screen.findByText('Printing');
-      // Every draft carries a quantity defaulting to 1, so "×1" is noise, and
-      // an empty line is worse than no line.
+      // How many of the part this step prints is what the line is FOR, and a
+      // one-off is an answer, not a blank. Leaving ×1 out meant the reader had
+      // to know that a missing quantity means one — the line now always says
+      // so. Colour and material stay omitted when unset: those really are
+      // absent data, not a default worth stating.
+      const meta = screen.getByTestId('step-meta-impression');
+      expect(meta).toHaveTextContent('×1');
+      expect(meta).not.toHaveTextContent('Colour');
+      expect(meta).not.toHaveTextContent('Material');
+    });
+
+    it('omits a quantity of 0 — that is not a job, and ×0 explains nothing', async () => {
+      mockFilaments();
+      render(
+        <TaskStepList
+          task={task({ impression: impression({ quantity: 0, filamentId: null, color: '   ' }) })}
+          onChange={vi.fn()}
+          canTick
+        />,
+      );
+
+      await screen.findByText('Printing');
       expect(screen.queryByTestId('step-meta-impression')).not.toBeInTheDocument();
     });
 
@@ -173,15 +193,18 @@ describe('TaskStepList', () => {
       mockFilaments();
       render(
         <TaskStepList
-          task={task({ impression: impression({ quantity: 1, filamentId: null, color: 'Noir mat' }) })}
+          task={task({ impression: impression({ quantity: 2, filamentId: null, color: 'Noir mat' }) })}
           onChange={vi.fn()}
           canTick
         />,
       );
 
       const meta = await screen.findByTestId('step-meta-impression');
+      expect(meta).toHaveTextContent('×2');
       expect(meta).toHaveTextContent('Noir mat');
-      expect(meta).not.toHaveTextContent('×');
+      // No filament picked, so no lookup and no material — the other two
+      // still render rather than the whole line going missing.
+      expect(meta).not.toHaveTextContent('Material');
     });
 
     it('never renders the line when the task has no printing step', async () => {
