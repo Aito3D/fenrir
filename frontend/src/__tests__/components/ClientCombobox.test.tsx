@@ -95,4 +95,84 @@ describe('ClientCombobox', () => {
     await user.click(screen.getByRole('button', { name: /default client/i }));
     expect(onReset).toHaveBeenCalled();
   });
+
+  it('moves the highlight down through the results and wraps back to the first', async () => {
+    const user = userEvent.setup();
+    render(<ClientCombobox {...props} />);
+    const input = screen.getByRole('combobox');
+    await user.clear(input);
+    await user.type(input, 'acm');
+    const options = await screen.findAllByRole('option');
+    expect(options).toHaveLength(2);
+    expect(options.map((o) => o.getAttribute('aria-selected'))).toEqual(['false', 'false']);
+
+    await user.keyboard('{ArrowDown}');
+    expect(options[0]).toHaveAttribute('aria-selected', 'true');
+    expect(options[1]).toHaveAttribute('aria-selected', 'false');
+
+    await user.keyboard('{ArrowDown}');
+    expect(options[0]).toHaveAttribute('aria-selected', 'false');
+    expect(options[1]).toHaveAttribute('aria-selected', 'true');
+
+    // Wraps back to the first result past the last one.
+    await user.keyboard('{ArrowDown}');
+    expect(options[0]).toHaveAttribute('aria-selected', 'true');
+    expect(options[1]).toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('moves the highlight up through the results, wrapping to the last from the top', async () => {
+    const user = userEvent.setup();
+    render(<ClientCombobox {...props} />);
+    const input = screen.getByRole('combobox');
+    await user.clear(input);
+    await user.type(input, 'acm');
+    const options = await screen.findAllByRole('option');
+    expect(options).toHaveLength(2);
+
+    // From no selection, up goes to the last result.
+    await user.keyboard('{ArrowUp}');
+    expect(options[0]).toHaveAttribute('aria-selected', 'false');
+    expect(options[1]).toHaveAttribute('aria-selected', 'true');
+
+    await user.keyboard('{ArrowUp}');
+    expect(options[0]).toHaveAttribute('aria-selected', 'true');
+    expect(options[1]).toHaveAttribute('aria-selected', 'false');
+
+    // Wraps back to the last result past the first one.
+    await user.keyboard('{ArrowUp}');
+    expect(options[0]).toHaveAttribute('aria-selected', 'false');
+    expect(options[1]).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('picks the highlighted contact on Enter and closes the list', async () => {
+    const onSelect = vi.fn();
+    const user = userEvent.setup();
+    render(<ClientCombobox {...props} onSelect={onSelect} />);
+    const input = screen.getByRole('combobox');
+    await user.clear(input);
+    await user.type(input, 'acm');
+    await screen.findAllByRole('option');
+
+    await user.keyboard('{ArrowDown}{ArrowDown}{Enter}');
+
+    expect(onSelect).toHaveBeenCalledWith(contacts[1]);
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(input).toHaveValue('Client de passage');
+  });
+
+  it('closes the list on Escape without picking a contact', async () => {
+    const onSelect = vi.fn();
+    const user = userEvent.setup();
+    render(<ClientCombobox {...props} onSelect={onSelect} />);
+    const input = screen.getByRole('combobox');
+    await user.clear(input);
+    await user.type(input, 'acm');
+    await screen.findAllByRole('option');
+
+    await user.keyboard('{ArrowDown}{Escape}');
+
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(input).toHaveValue('Client de passage');
+  });
 });
