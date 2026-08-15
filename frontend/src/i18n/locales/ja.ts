@@ -354,6 +354,7 @@ export default {
     shippingRateEdited: '編集済み',
     shippingRateReset: 'Zoho料金に戻す',
     shippingNoRate: 'Zohoからの料金なし — 入力してください',
+    shippingRateNegative: '料金にマイナスの値は入力できません',
     shippingUnavailable: 'Zohoに接続できない間、配送サービスは利用できません',
     ruleShippingPending: '配送情報を入力中',
     ruleShippingOk: '{{island}}への配送 · {{recipient}}',

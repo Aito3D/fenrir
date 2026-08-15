@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detailText, formatValue } from '../../components/aito/history/eventKinds';
+import { detailText, elapsedBucket, formatValue } from '../../components/aito/history/eventKinds';
 
 describe('formatValue', () => {
   it('renders an em dash for null and undefined', () => {
@@ -63,5 +63,29 @@ describe('detailText', () => {
 
   it('returns null for any other kind', () => {
     expect(detailText('task.added', { text: 'ignored' })).toBeNull();
+  });
+});
+
+describe('elapsedBucket', () => {
+  it('returns null for a gap under a minute (same-minute, nothing worth a row)', () => {
+    expect(elapsedBucket(0)).toBeNull();
+    expect(elapsedBucket(59)).toBeNull();
+  });
+
+  it('buckets in minutes from 60s up to (but not including) an hour', () => {
+    expect(elapsedBucket(60)).toEqual({ value: 1, unit: 'minute' });
+    expect(elapsedBucket(150)).toEqual({ value: 3, unit: 'minute' });
+    expect(elapsedBucket(3_599)).toEqual({ value: 60, unit: 'minute' });
+  });
+
+  it('buckets in hours from exactly one hour up to (but not including) a day', () => {
+    expect(elapsedBucket(3_600)).toEqual({ value: 1, unit: 'hour' });
+    expect(elapsedBucket(7_200)).toEqual({ value: 2, unit: 'hour' });
+    expect(elapsedBucket(86_399)).toEqual({ value: 24, unit: 'hour' });
+  });
+
+  it('buckets in days from exactly one day and beyond', () => {
+    expect(elapsedBucket(86_400)).toEqual({ value: 1, unit: 'day' });
+    expect(elapsedBucket(259_200)).toEqual({ value: 3, unit: 'day' });
   });
 });

@@ -1616,3 +1616,108 @@ statements 1873/1956 (83 missed), branches 1875/2040 (165 missed), functions
 628/656 (28 missed), lines 1642/1680 (38 missed) — identical to the figures
 above, flat as expected: the assertion-timing fix changes when the test
 asserts, not what source lines/branches execute. `npm run lint`: clean.
+
+## T-092 — 2026-08-15 — user-approved behavior change
+
+`ShippingFields`' rate input typed straight into `ShippingDraft.price` via
+`Number(e.target.value)`, with no floor: `Number('-50')` is `-50`. Verified
+all three of the auditor's claims before fixing: `min={0}` on the input is
+inert because nothing in either caller submits a `<form>` — `ShippingCard`'s
+Save (`onClick={save}`) and `NewProjectDrawer`'s Create (`onClick={create}`)
+are both `type="button"`; `shippingDraftErrors` (`utils/shippingDraft.ts`)
+checked only `draft.price !== null`, so a negative figure passed as
+"complete"; and the server field is `shipping_price: float | None =
+Field(default=None, ge=0)` (`backend/app/schemas/aito.py:171`), which 422s.
+A negative price previously reached `isShippingComplete`/`shippingPayload`
+undetected — from the panel that surfaced as the generic `aito.saveFailed`
+toast, and from the create drawer as the whole-project `aito.createFailed`
+toast, in both cases with no field named as the cause.
+
+CHOSEN SHAPE: a validation branch in `shippingDraftErrors`, not a
+`Math.max(0, ...)` clamp. `ShippingFields`/`shippingDraft.ts` already treat
+every other invalid state this way — island, name and phone are each a pure
+`shippingDraftErrors` check, revealed via `blurred` and rendered with
+`FieldError` under the field, and gate `isShippingComplete`/`canCreate`
+identically. A silent clamp would also have been the shape the task
+explicitly warned about: clamping toward 0 cannot mis-bill a *different*
+positive charge, but it would still swallow a typo like "-50" into "0" (a
+free shipment) with nothing on screen telling the operator their figure was
+rejected — the opposite of "flagged". Reusing the existing validation
+machinery keeps both surfaces (panel Save, drawer Create) blocked from
+submitting a negative price with no code changes needed in either caller:
+`ShippingCard.save()` and `NewProjectDrawer.create()` already gate on
+`isShippingComplete`/`visibleShippingDraftErrors`.
+
+FIX, confined to `shippingDraft.ts` and `ShippingFields.tsx`:
+`shippingDraftErrors().price` now returns `'aito.shippingNoRate'` for a null
+price (unchanged) and the new `'aito.shippingRateNegative'` for a negative
+one — a distinct key, since null and negative are different problems with
+different fixes. `ShippingFields` surfaces the negative case directly on the
+rate input: `aria-invalid` + the same red-border class the other fields use,
+plus a `FieldError` line underneath, gated so it fires ONLY on the negative
+branch (`value.price !== null && value.price < 0`) — the null branch is
+left alone because the existing amber "No rate from Zoho — enter one" text
+already covers it per-service, and surfacing `errors.price` unconditionally
+would have doubled that message. One new i18n key,
+`aito.shippingRateNegative` ("Rate cannot be negative" / per-locale
+translations), added to all 13 locale files, following the
+`aito.pricingUnavailable` precedent exactly; `check-i18n-parity.mjs` passes
+(6623 leaves in every locale).
+
+OBSERVABLE CHANGE, quoting the approved description verbatim: "typing a
+negative shipping rate will be corrected/flagged in the field instead of
+being accepted and later failing the whole save or create." Concretely: the
+rate input gets a red border and an inline "Rate cannot be negative" message
+the moment a negative figure is typed (the field only ever renders once an
+island is picked, which already sets `blurred.island` — no extra blur is
+needed to reveal it), and both Save and Create refuse to submit while it
+stays negative.
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9. `bash tools/gen_surface.sh`
+diff against `SURFACE.md`: empty — no top-level export added, renamed or
+removed.
+
+Added one test to `shippingDraft.test.ts` (negative price gets the new key,
+distinctly from a null one; `isShippingComplete` goes false; `-0` is not
+flagged) and two to `AitoShippingFields.test.tsx`: typing `-50` into the
+rate input renders "cannot be negative" and sets `aria-invalid`, and
+correcting it to `50` clears both; a service with no Zoho rate and a null
+price renders the "No rate from Zoho" line exactly once (not doubled by the
+new field-level error). Reverted the two source files
+(`git checkout --` against the committed `HEAD`, leaving the new tests and
+i18n additions in place) and ran the two affected test files three times:
+2 failed / 32 passed on every run (the two new negative-price tests, the
+same two each time). Restored the source fix and re-ran three more times:
+34 passed / 34 passed / 34 passed. Confirmed a clean tracked tree afterward.
+
+Aito coverage gate, from `frontend/`: statements 1874/1957 (83 missed),
+branches 1885/2050 (165 missed), functions 628/656 (28 missed), lines
+1643/1681 (38 missed) — all four sit at the same ratchet ceiling as before
+this task (the new branch is fully covered by the new tests; `shippingDraft.ts`
+itself falls outside this gate's `src/utils/aito*.ts` glob, so its own new
+branch is exercised only by `shippingDraft.test.ts`, not counted in this
+report). `npm run lint`: clean. `npm run build`: succeeds; `static/`
+reverted afterward and left untouched. Full `npx vitest run`: 3 pre-existing
+failures, all in the briefing's known-flaky list (`PrintModal.test.tsx` x2,
+`LoginPage.test.tsx` x1) — all three pass in isolation, confirmed flaky and
+unrelated to this change.
+
+### CORRECTION — 2026-08-15 — T-091 prose drift, caught by the iteration-6 verifier
+
+The T-091 entry above describes `referenceDataError` as
+
+    filamentsQuery.isError || printersQuery.isError || defaultsQuery.isError
+
+That was true of the FIRST version of the fix and is stale. The shipped code applies a per-query
+`isFetchFailure(query) = query.isError && !query.data` to all three reference queries — the
+narrowing made by the loop-5 verifier fix and described in the correction blocks above. The
+prose in the original entry was simply never updated when the code was narrowed.
+
+This matters only for accuracy of the record, not for scope: `isError && !data` is strictly
+NARROWER than `isError`, so a failed BACKGROUND refetch with cached data still present keeps the
+BASE behavior (the real price stays on screen) instead of claiming pricing is unavailable. The
+observable change therefore sits INSIDE the envelope the user approved, not outside it. Nothing
+needs re-approval; the entry above simply overstated what changed.
+
+Recorded as an append rather than an edit, consistent with this file's append-only history across
+the whole campaign (`git diff refactor-base..HEAD -- BASELINE-CHANGELOG.md` has zero removed lines).

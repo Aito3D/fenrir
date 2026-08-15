@@ -358,6 +358,7 @@ export default {
     shippingRateEdited: 'edited',
     shippingRateReset: 'Back to the Zoho rate',
     shippingNoRate: 'No rate from Zoho — enter one',
+    shippingRateNegative: 'Rate cannot be negative',
     shippingUnavailable: 'Shipping services are unavailable while Zoho is unreachable',
     ruleShippingPending: 'Shipping being filled in',
     ruleShippingOk: 'Shipping to {{island}} · {{recipient}}',

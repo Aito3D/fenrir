@@ -33,6 +33,12 @@ export function ShippingFields({ value, onChange, services, catalogueResolved, c
   const errors = visibleShippingDraftErrors(value);
   const service = services.find((s) => s.key === value.service);
   const zohoRate = service?.rate ?? null;
+  // Split out of `errors.price`: that field is also `aito.shippingNoRate`
+  // when the price is null, which the amber "No rate from Zoho" text below
+  // already covers — showing it a second time here would just duplicate it.
+  // A negative figure has nothing else on screen to catch it, so only that
+  // half of `errors.price` is surfaced on the input itself.
+  const priceError = value.price !== null && value.price < 0 ? errors.price : null;
 
   const selectIsland = (islandKey: string) => {
     const owner = services.find((s) => s.islands.some((island) => island.key === islandKey));
@@ -102,7 +108,8 @@ export function ShippingFields({ value, onChange, services, catalogueResolved, c
                     priceEdited: true,
                   })
                 }
-                className={`${inputCls} text-right`}
+                aria-invalid={priceError !== null ? true : undefined}
+                className={`${priceError ? inputErrorCls : inputCls} text-right`}
               />
             </div>
             {value.priceEdited && (
@@ -122,6 +129,15 @@ export function ShippingFields({ value, onChange, services, catalogueResolved, c
               </button>
             )}
           </div>
+          {/* `w-full`, not a bare sibling: this box is `flex-wrap`, so a
+              zero-basis paragraph would sit on the same line as the price
+              input instead of forcing the break the other fields' errors get
+              for free from their own block-level wrappers. */}
+          {priceError && (
+            <div className="w-full">
+              <FieldError messageKey={priceError} />
+            </div>
+          )}
         </div>
       )}
 

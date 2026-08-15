@@ -354,6 +354,7 @@ export default {
     shippingRateEdited: 'изменён',
     shippingRateReset: 'Вернуться к тарифу Zoho',
     shippingNoRate: 'Нет тарифа от Zoho — введите его',
+    shippingRateNegative: 'Тариф не может быть отрицательным',
     shippingUnavailable: 'Службы доставки недоступны, пока нет связи с Zoho',
     ruleShippingPending: 'Доставка заполняется',
     ruleShippingOk: 'Доставка на {{island}} · {{recipient}}',

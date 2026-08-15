@@ -37,7 +37,12 @@ export interface ShippingDraftErrors {
    *  real, free shipment and stays valid. Reuses `aito.shippingNoRate` — the
    *  same key `ShippingFields` already shows as its amber "enter one" hint —
    *  rather than a new key, so the field's own message and the checklist's
-   *  never say two different things about the same missing rate. */
+   *  never say two different things about the same missing rate. A negative
+   *  price gets its own key (`aito.shippingRateNegative`): the server field
+   *  is `ge=0` (backend/app/schemas/aito.py), and nothing here submits a
+   *  `<form>`, so `min={0}` on the input never runs native validation — this
+   *  is the only thing standing between a typo like "-50" and a 422 behind
+   *  the generic "save failed" toast. */
   price: string | null;
 }
 
@@ -103,7 +108,9 @@ export function shippingDraftErrors(draft: ShippingDraft): ShippingDraftErrors {
     phone: draft.nationalNumber.trim() && validatePhone(phone) === null ? null : 'aito.ruleShippingInvalidPhone',
     // null = no rate known and none typed yet (an error); 0 is a real, free
     // shipment and must stay valid — this is a null check, never falsiness.
-    price: draft.price !== null ? null : 'aito.shippingNoRate',
+    // A negative figure is checked separately: it is never null, so the
+    // check above alone would wave it through.
+    price: draft.price === null ? 'aito.shippingNoRate' : draft.price < 0 ? 'aito.shippingRateNegative' : null,
   };
 }
 

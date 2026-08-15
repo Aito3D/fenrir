@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { EVENT_LABEL_KEY, dotClass, detailText, formatValue } from './eventKinds';
+import { EVENT_LABEL_KEY, dotClass, detailText, formatValue, elapsedBucket } from './eventKinds';
 import type { AitoEvent } from '../../../api/client';
 import { parseUTCDate } from '../../../utils/date';
 
@@ -18,17 +18,14 @@ import { parseUTCDate } from '../../../utils/date';
  *  costs no new translation keys — the Intl data is the translation. */
 function ElapsedGutter({ from, to, lang }: { from: Date; to: Date; lang: string }) {
   const seconds = Math.round((to.getTime() - from.getTime()) / 1000);
-  if (seconds < 60) return null; // same minute — nothing worth a row
+  const bucket = elapsedBucket(seconds);
+  if (!bucket) return null;
 
   const format = new Intl.RelativeTimeFormat(lang, { numeric: 'always' });
-  const [value, unit]: [number, Intl.RelativeTimeFormatUnit] =
-    seconds >= 86_400
-      ? [Math.round(seconds / 86_400), 'day']
-      : seconds >= 3_600
-        ? [Math.round(seconds / 3_600), 'hour']
-        : [Math.round(seconds / 60), 'minute'];
 
-  return <p className="pl-4 pb-2 text-[11px] text-bambu-gray/70 italic">{format.format(value, unit)}</p>;
+  return (
+    <p className="pl-4 pb-2 text-[11px] text-bambu-gray/70 italic">{format.format(bucket.value, bucket.unit)}</p>
+  );
 }
 
 /** One entry: who, what, the diff, and when.

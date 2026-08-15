@@ -354,6 +354,7 @@ export default {
     shippingRateEdited: '已編輯',
     shippingRateReset: '恢復為 Zoho 運費',
     shippingNoRate: 'Zoho 未提供運費 — 請輸入',
+    shippingRateNegative: '運費不能為負數',
     shippingUnavailable: '在無法連線 Zoho 期間，運送服務無法使用',
     ruleShippingPending: '運送資訊填寫中',
     ruleShippingOk: '運送至 {{island}} · {{recipient}}',

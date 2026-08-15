@@ -354,6 +354,7 @@ export default {
     shippingRateEdited: 'düzenlendi',
     shippingRateReset: 'Zoho ücretine dön',
     shippingNoRate: 'Zoho’dan ücret yok — bir tane girin',
+    shippingRateNegative: 'Ücret negatif olamaz',
     shippingUnavailable: 'Zoho’ya ulaşılamadığında kargo hizmetleri kullanılamaz',
     ruleShippingPending: 'Kargo bilgileri dolduruluyor',
     ruleShippingOk: 'Kargo: {{island}} · {{recipient}}',

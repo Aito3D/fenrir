@@ -354,6 +354,7 @@ export default {
     shippingRateEdited: 'geändert',
     shippingRateReset: 'Zurück zum Zoho-Tarif',
     shippingNoRate: 'Kein Tarif von Zoho — einen eingeben',
+    shippingRateNegative: 'Der Preis darf nicht negativ sein',
     shippingUnavailable: 'Versanddienste sind nicht verfügbar, solange Zoho nicht erreichbar ist',
     ruleShippingPending: 'Versand wird ausgefüllt',
     ruleShippingOk: 'Versand nach {{island}} · {{recipient}}',

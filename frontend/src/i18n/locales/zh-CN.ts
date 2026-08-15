@@ -354,6 +354,7 @@ export default {
     shippingRateEdited: '已编辑',
     shippingRateReset: '恢复为 Zoho 运费',
     shippingNoRate: 'Zoho 未提供运费 — 请输入',
+    shippingRateNegative: '运费不能为负数',
     shippingUnavailable: 'Zoho 无法访问期间，运送服务不可用',
     ruleShippingPending: '运送信息填写中',
     ruleShippingOk: '运送至 {{island}} · {{recipient}}',

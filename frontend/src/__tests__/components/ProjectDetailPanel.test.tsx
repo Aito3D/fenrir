@@ -678,6 +678,92 @@ describe('ProjectDetailPanel tasks', () => {
     }
   });
 
+  it('blurring an edited, persisted row flushes its debounced PATCH immediately, instead of waiting out the 500ms window', async () => {
+    // ProjectDetailPanel wires TaskEditor's onRowBlur to
+    // `if (task.id !== null) onRowBlur(task.id)` (onRowBlur here is
+    // useProjectTasks' `flush`). This is the panel's only caller of that
+    // early-flush path — useProjectTasks.test.tsx calls `flush` directly,
+    // never through a real blur event — so nothing previously proved the
+    // wiring itself fires. Fake timers make the point: the sibling
+    // "debounces a task-field edit" test above proves the 500ms timer alone
+    // eventually sends the PATCH, which would make a working AND a
+    // completely disconnected blur handler look identical if this test also
+    // let 500ms elapse. Asserting the PATCH lands after advancing 0ms —
+    // strictly less than the debounce — isolates the blur path from the
+    // timer path.
+    const updateSpy = vi.spyOn(api, 'updateAitoTask').mockResolvedValue({ ...mockTask, scan_cost: 700 });
+    try {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      show();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      await editAllTasks();
+      const scanInput = await screen.findByLabelText('Scan Cost');
+
+      fireEvent.change(scanInput, { target: { value: '700' } });
+      // relatedTarget outside the row (document.body), so TaskRow's
+      // `!e.currentTarget.contains(e.relatedTarget)` reads true — focus
+      // genuinely left the row rather than moving to a sibling field inside
+      // it, which the same handler treats as "still editing" and ignores.
+      fireEvent.blur(scanInput, { relatedTarget: document.body });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(updateSpy).toHaveBeenCalledTimes(1);
+      expect(updateSpy).toHaveBeenCalledWith(101, { scan_cost: 700 });
+    } finally {
+      updateSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('blurring an edited, still-creating row (no id yet) never attempts to save it', async () => {
+    // The other half of the same guard: TaskEditor's onRowBlur only calls
+    // `onRowBlur(task.id)` when `task.id !== null`. A freshly added row's
+    // create POST is held open for this whole test, so its `id` stays null
+    // throughout — exactly the row `useProjectTasks`' `onTasksChange` itself
+    // already declines to diff/PATCH ("not yet persisted; nothing to PATCH").
+    // A bare `waitFor(() => expect(updateSpy).not.toHaveBeenCalled())` would
+    // pass the instant it's called, proving nothing about whether the blur
+    // was even processed — see the `titleInput` assertion below, which is
+    // positive proof the edit (and therefore the row/blur machinery around
+    // it) is live, before the negative PATCH assertion that follows it.
+    let releaseCreate: (task: AitoTask) => void = () => {};
+    const heldCreate = new Promise<AitoTask>((resolve) => {
+      releaseCreate = resolve;
+    });
+    const updateSpy = vi.spyOn(api, 'updateAitoTask');
+    server.use(http.post('/api/v1/aito/12/tasks', async () => HttpResponse.json(await heldCreate)));
+
+    try {
+      show();
+      await screen.findByRole('heading', { name: /^Bracket mount/ });
+      await userEvent.click(screen.getByRole('button', { name: /add task/i }));
+
+      const titleInput = await screen.findByLabelText('Optional title');
+      fireEvent.change(titleInput, { target: { value: 'Still creating' } });
+      // Positive evidence the edit landed — `onTasksChange` calls
+      // `setTasks(next)` before it ever inspects `edited.id`, so the value on
+      // screen updating proves this exact row's edit/blur wiring ran, not
+      // just that the click was ignored.
+      expect(titleInput).toHaveValue('Still creating');
+
+      fireEvent.blur(titleInput, { relatedTarget: document.body });
+      // Real time, past the 500ms debounce a persisted row would flush
+      // within — there is no timer to advance for a row with no pending
+      // patch, so this just gives any (wrongly fired) mutate() a chance to
+      // reach the mocked endpoint.
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      expect(updateSpy).not.toHaveBeenCalled();
+    } finally {
+      updateSpy.mockRestore();
+      releaseCreate({ ...mockTask, id: 999, title: 'Still creating' });
+    }
+  });
+
   it('does not resurrect a step\'s old Done state when the card is reopened', async () => {
     // Production runs a 60s app-wide staleTime (App.tsx), so reopening a card
     // within the minute is served from the `['aito-tasks', id]` cache with no

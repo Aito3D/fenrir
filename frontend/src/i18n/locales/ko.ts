@@ -354,6 +354,7 @@ export default {
     shippingRateEdited: '수정됨',
     shippingRateReset: 'Zoho 요금으로 되돌리기',
     shippingNoRate: 'Zoho 요금 없음 — 직접 입력하세요',
+    shippingRateNegative: '요금은 음수가 될 수 없습니다',
     shippingUnavailable: 'Zoho에 연결할 수 없는 동안에는 배송 서비스를 사용할 수 없습니다',
     ruleShippingPending: '배송 정보 입력 중',
     ruleShippingOk: '{{island}} 배송 · {{recipient}}',

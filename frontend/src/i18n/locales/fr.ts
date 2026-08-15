@@ -354,6 +354,7 @@ export default {
     shippingRateEdited: 'modifié',
     shippingRateReset: 'Revenir au tarif Zoho',
     shippingNoRate: 'Aucun tarif Zoho — saisissez-en un',
+    shippingRateNegative: 'Le tarif ne peut pas être négatif',
     shippingUnavailable: "Les services d'expédition sont indisponibles tant que Zoho est injoignable",
     ruleShippingPending: 'Expédition en cours de saisie',
     ruleShippingOk: 'Expédition vers {{island}} · {{recipient}}',

@@ -92,3 +92,14 @@ export function detailText(kind: string, detail: Record<string, unknown> | null)
 
   return null;
 }
+
+/** The magnitude and unit for the elapsed-gutter label: `null` when the gap
+ *  is under a minute (same-minute, nothing worth a row), otherwise the
+ *  largest whole unit that fits — days, then hours, then minutes. */
+export function elapsedBucket(seconds: number): { value: number; unit: Intl.RelativeTimeFormatUnit } | null {
+  if (seconds < 60) return null; // same minute — nothing worth a row
+
+  if (seconds >= 86_400) return { value: Math.round(seconds / 86_400), unit: 'day' };
+  if (seconds >= 3_600) return { value: Math.round(seconds / 3_600), unit: 'hour' };
+  return { value: Math.round(seconds / 60), unit: 'minute' };
+}
