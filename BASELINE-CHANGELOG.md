@@ -1149,3 +1149,51 @@ FLAKE PROTOCOL. Frontend Aito coverage gate: statements 1787/1918 (131
 missed), branches 1765/1979 (214 missed), functions 603/647 (44 missed),
 lines 1574/1649 (75 missed) — all four exactly at the existing ratchet
 ceiling, no regression.
+
+## T-075 — 2026-08-14 — user-approved behavior change
+
+`AitoPage` rendered its "No projects yet" empty state for the whole duration
+of the first board fetch: `useBoardDrag(undefined)` starts at `emptyBoard()`,
+so `visibleCount === 0 && board.done.length === 0` is already true before
+`aitoQuery` has resolved, and nothing in the file gated the empty-state block
+on `aitoQuery.isPending`/`isLoading`. On a cold or slow load the page told the
+operator a populated board had no projects. Fixed by adding an
+`aitoQuery.isPending` branch ahead of the empty-state block, rendering the
+same bare `Loader2` spinner `TrashGrid` uses for its own `isLoading` prop, and
+gating the empty-state block itself on `!aitoQuery.isPending`. Observable
+change, quoting the approved description verbatim: "during the initial board
+fetch the page shows a loading indicator instead of the 'No projects yet'
+message it shows today."
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9, unaffected — the only
+frontend probe, `aito-frontend-pure`, covers the pure utils in
+`frontend/src/utils/aito*.ts`, not React render output, and this change
+touches neither. `bash tools/gen_surface.sh` diff against `SURFACE.md`: empty
+— no top-level export added, renamed, or removed.
+
+Added `it('shows a spinner rather than "no projects yet" while the first
+fetch is still pending', ...)` to the `empty board` describe in
+`AitoPage.test.tsx`, holding the GET response open by hand (same pattern the
+file already uses elsewhere for "still pending" assertions) to assert the
+spinner shows and the empty text does not, then releasing the response to
+assert the empty state appears and the spinner is gone. This also surfaced
+that the pre-existing "says there are no projects yet when nothing exists
+anywhere" test's settle signal — `findByRole('button', { name: /show done
+\(0\)/i })` — was not actually a settle signal in the zero-row case: `(0)`
+is on screen from the very first render regardless of whether the fetch has
+resolved, since `board.done.length` defaults to 0 either way (unlike the
+sibling "(1)" test, where the count only becomes non-zero once real data
+arrives). That test was passing before this task only because the old,
+buggy empty-state block did not care whether the fetch was pending. Updated
+it to `findByText` the empty message directly, which now IS a settle signal
+because the empty message's own visibility is gated on `!isPending`.
+
+Frontend: `npm run lint` clean. `npm run build` clean; `git checkout --
+static/` after, nothing under it committed. `AitoPage.test.tsx` alone: 56/56
+passed, re-run 3x with no flakes. Full Aito-scoped suite (54 files matching
+`components/aito|utils/aito|hooks/useAito|pages/AitoPage`): 826/826 passed.
+Aito coverage gate: statements 1820/1941 (121 missed), branches 1809/2021
+(212 missed), functions 611/649 (38 missed), lines 1603/1668 (65 missed) —
+all four exactly at the existing ratchet ceiling, no regression (the new
+render branch's statements/branches are fully exercised by the new test, so
+the denominator grew without growing the missed count).

@@ -1646,6 +1646,28 @@ describe('AitoPage (backend board)', () => {
   // The board's empty region is three-way, and each arm says something the
   // other two would get wrong.
   describe('empty board', () => {
+    it('shows a spinner rather than "no projects yet" while the first fetch is still pending', async () => {
+      // Controlled by hand, not answered until after the pending assertion
+      // below — a mocked response resolved immediately would make "still
+      // pending" indistinguishable from "already settled".
+      let release: (v: Response) => void = () => {};
+      server.use(
+        http.get('/api/v1/aito/', () => new Promise<Response>((resolve) => { release = resolve; })),
+      );
+      render(<AitoPage />);
+
+      await waitFor(() => expect(document.querySelector('.animate-spin')).toBeInTheDocument());
+      expect(screen.queryByText(/no projects yet|aucun projet pour/i)).not.toBeInTheDocument();
+
+      await act(async () => {
+        release(HttpResponse.json([]));
+      });
+
+      // Settles into the genuinely-empty state once the fetch resolves.
+      await screen.findByText(/no projects yet|aucun projet pour/i);
+      expect(document.querySelector('.animate-spin')).not.toBeInTheDocument();
+    });
+
     it('says nothing is in production, not "no projects yet", when every project is done', async () => {
       // The board really is empty — counting the done column would claim it is
       // populated while showing six empty columns. But "No projects yet / add
@@ -1676,8 +1698,13 @@ describe('AitoPage (backend board)', () => {
       server.use(http.get('*/api/v1/aito/', () => HttpResponse.json([])));
       render(<AitoPage />);
 
-      await screen.findByRole('button', { name: /show done \(0\)/i });
-      expect(screen.getByText(/no projects yet|aucun projet/i)).toBeInTheDocument();
+      // `findByText`, not a settle signal off the Show done count: with zero
+      // rows either way, "(0)" is already on screen from the very first
+      // render (before the fetch even resolves), so it cannot tell "empty
+      // board" apart from "still loading" the way "(1)" can above. The empty
+      // message itself is gated on the fetch no longer being pending, so
+      // waiting for it to appear IS the settle signal here.
+      await screen.findByText(/no projects yet|aucun projet/i);
       expect(screen.queryByText(/nothing in production/i)).not.toBeInTheDocument();
     });
 
