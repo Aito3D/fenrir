@@ -719,15 +719,30 @@ describe('ProjectDetailPanel tasks', () => {
     }
   });
 
-  it('blurring an edited, still-creating row (no id yet) never attempts to save it', async () => {
-    // The other half of the same guard: TaskEditor's onRowBlur only calls
-    // `onRowBlur(task.id)` when `task.id !== null`. A freshly added row's
-    // create POST is held open for this whole test, so its `id` stays null
-    // throughout — exactly the row `useProjectTasks`' `onTasksChange` itself
-    // already declines to diff/PATCH ("not yet persisted; nothing to PATCH").
-    // A bare `waitFor(() => expect(updateSpy).not.toHaveBeenCalled())` would
-    // pass the instant it's called, proving nothing about whether the blur
-    // was even processed — see the `titleInput` assertion below, which is
+  it('blurring a still-creating row (no id yet) never results in a PATCH — defended in depth, not by any single guard', async () => {
+    // This pins the OUTCOME ("no PATCH is ever attempted for a draft row"),
+    // not any one guard: three independent layers each independently
+    // prevent it, so no single-line removal of any ONE of them falsifies
+    // this test —
+    //   1. ProjectDetailPanel.tsx's wiring: `if (task.id !== null)
+    //      onRowBlur(task.id)`. In real code this is also enforced at
+    //      compile time — `onRowBlur`'s parameter is `number` and `task.id`
+    //      is `number | null`, so removing the guard fails `tsc -b` outright
+    //      (confirmed separately; not exercised by this runtime test).
+    //   2. useProjectTasks.ts's `onTasksChange`: `if (edited.id === null)
+    //      return;` — a null-id edit is never diffed into a pending patch in
+    //      the first place, so this row's `pendingRef` entry is never
+    //      created regardless of whether blur calls `flush` at all.
+    //   3. Even with (1) and (2) both gone, `onTasksChange` would still bail
+    //      at `const baselineRow = baselineRef.current.get(taskId); if
+    //      (!baselineRow) return;` — `baselineRef` is populated only from
+    //      server-loaded tasks, which never contain a null id, so a pending
+    //      patch for id `null` can never be scheduled by any path.
+    // A freshly added row's create POST is held open for this whole test, so
+    // its `id` stays null throughout. A bare
+    // `waitFor(() => expect(updateSpy).not.toHaveBeenCalled())` would pass
+    // the instant it's called, proving nothing about whether the blur was
+    // even processed — see the `titleInput` assertion below, which is
     // positive proof the edit (and therefore the row/blur machinery around
     // it) is live, before the negative PATCH assertion that follows it.
     let releaseCreate: (task: AitoTask) => void = () => {};
@@ -751,14 +766,21 @@ describe('ProjectDetailPanel tasks', () => {
       expect(titleInput).toHaveValue('Still creating');
 
       fireEvent.blur(titleInput, { relatedTarget: document.body });
-      // Real time, past the 500ms debounce a persisted row would flush
-      // within — there is no timer to advance for a row with no pending
-      // patch, so this just gives any (wrongly fired) mutate() a chance to
-      // reach the mocked endpoint.
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      // Deterministically past the 500ms debounce a persisted row would
+      // flush within — there is no timer for production code to schedule
+      // for a row with no pending patch, so this just gives any (wrongly
+      // fired) mutate() a chance to reach the mocked endpoint. Fake timers
+      // (rather than a wall-clock `setTimeout`) keep this instant and
+      // immune to slow-CI flakiness — same precedent as QuoteResultList's
+      // prefetch-dwell-gate tests.
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(600);
+      });
 
       expect(updateSpy).not.toHaveBeenCalled();
     } finally {
+      vi.useRealTimers();
       updateSpy.mockRestore();
       releaseCreate({ ...mockTask, id: 999, title: 'Still creating' });
     }
@@ -2551,8 +2573,7 @@ describe('ProjectDetailPanel description regeneration', () => {
     // `user.type` characters and the rest of the typed string would land on
     // top of the reset text instead of the text the assertion expects.
     // Holding the response open until the test has finished typing and
-    // asserting removes that race entirely — same precedent as T-091's
-    // externally-held QueryClient / explicit `refetchQueries` call.
+    // asserting removes that race entirely.
     let resolvePatch: () => void;
     const patchGate = new Promise<void>((resolve) => {
       resolvePatch = resolve;

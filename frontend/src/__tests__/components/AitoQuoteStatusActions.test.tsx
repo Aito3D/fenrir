@@ -281,7 +281,7 @@ describe('QuoteStatusActions', () => {
 
   it('puts the card back and flashes when the server refuses', async () => {
     vi.spyOn(api, 'setAitoQuoteStatus').mockRejectedValue(new Error('nope'));
-    const flash = vi.mocked(flashRevert); // see Task 7 Step 7 for the required vi.mock
+    const flash = vi.mocked(flashRevert);
 
     const project = makeProject({ id: 1, column: 'devis', quote_status: 'sent' });
     const client = renderWithBoard(project);
@@ -306,7 +306,7 @@ describe('QuoteStatusActions', () => {
 
   it('puts the card back and flashes when the server refuses a decline', async () => {
     vi.spyOn(api, 'setAitoQuoteStatus').mockRejectedValue(new Error('nope'));
-    const flash = vi.mocked(flashRevert); // see Task 7 Step 7 for the required vi.mock
+    const flash = vi.mocked(flashRevert);
 
     const project = makeProject({ id: 1, column: 'waiting', quote_status: 'sent' });
     const client = renderWithBoard(project);
