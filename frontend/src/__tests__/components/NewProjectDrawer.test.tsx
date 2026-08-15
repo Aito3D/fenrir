@@ -631,6 +631,32 @@ describe('NewProjectDrawer', () => {
     expect(within(screen.getByTestId('drawer-checklist')).getByText(/island missing/i)).toBeInTheDocument();
   });
 
+  it('reveals the shipping checklist error too when Create is blocked by an unpriced task, not by the shipment', async () => {
+    // The sibling test above ('blocks Create on an incomplete shipment...')
+    // routes through create()'s OWN post-canCreate shipping check (`canCreate`
+    // is already true there, since the task is priced and the client is
+    // reachable) — it never exercises `revealEverything`'s shipping branch
+    // (NewProjectDrawer.tsx, inside `revealEverything`), which only runs when
+    // `!canCreate` for a reason having nothing to do with shipping. Here the
+    // seeded task is deliberately left unpriced (no `fillOneTask`), so
+    // `canCreate` is false before shipping is even considered, and clicking
+    // Create takes the `revealEverything` branch instead.
+    const onCreate = vi.fn();
+    await renderDrawer({ onCreate });
+    await openClientSection();
+    await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
+
+    await userEvent.click(createButton());
+
+    expect(onCreate).not.toHaveBeenCalled();
+    const checklist = within(screen.getByTestId('drawer-checklist'));
+    // The unblocking-unrelated failure: the seeded task, never priced.
+    expect(checklist.getByText('"Task 1" needs at least one priced sub-task')).toBeInTheDocument();
+    // The shipment's OWN error — revealed as a side effect of the click, even
+    // though the shipment is not what disabled Create.
+    expect(checklist.getByText(/island missing/i)).toBeInTheDocument();
+  });
+
   it('puts the shipping cost in the rail receipt and the project total', async () => {
     await renderDrawer();
     await fillOneTask(); // 10 000
