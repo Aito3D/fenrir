@@ -726,6 +726,96 @@ describe('TaskRow', () => {
     });
   });
 
+  it('printing: clamps a negative typed weight to zero, and reprices the clamped value rather than the negative one', async () => {
+    // ImpressionFields' weight handler is `Math.max(0, Number(e.target.value))`
+    // — every existing test types only well-formed positive weights, so this
+    // is the only test that would notice the clamp being dropped (which would
+    // let a negative weight reach `computeImpressionCost` and corrupt the
+    // printed total).
+    const onChangeSpy = vi.fn();
+    const task: TaskDraft = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: 500,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
+
+    const weightInput = await screen.findByLabelText(/weight/i);
+    // Wait for the reference-data queries to resolve first: firing the edit
+    // while they are still pending hits ImpressionFields' `referenceDataLoading`
+    // guard, which reports the edit with no computed cost at all — leaving
+    // `impressionCost` unchanged and making the assertion below meaningless.
+    await waitFor(() => expect(screen.getByTestId('impression-computed')).not.toHaveTextContent('—'));
+    fireEvent.change(weightInput, { target: { value: '-10' } });
+
+    // Positive evidence first: the field itself settles on the clamped value
+    // (the parent state ImpressionFields is controlled by), not the typed
+    // negative one.
+    await waitFor(() => expect(weightInput).toHaveValue(0));
+
+    const lastTask = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft;
+    expect(lastTask.impression?.weightG).toBe(0);
+
+    // The clamp feeds the priced total too: the reported cost is what a 0 g
+    // print prices to, not whatever a raw -10 g would have produced.
+    const pricedAtZero = computeImpressionCost(
+      { ...task.impression, weightG: 0 },
+      mockFilaments[0],
+      mockPrinters[0],
+      mockDefaults,
+    );
+    expect(lastTask.impressionCost).toBe(roundUpTo50(pricedAtZero!.total_ttc));
+  });
+
+  it('printing: clamps a zero-typed or fractional quantity to a positive integer, and reprices at the clamped value', async () => {
+    // ImpressionFields' quantity handler is
+    // `Math.max(1, Math.floor(Number(e.target.value) || 1))` — every existing
+    // test types only well-formed positive integers, so this is the only test
+    // that would notice either the `|| 1` fallback (for a typed '0', where
+    // `Number('0')` is falsy) or the `Math.floor` (for a typed '1.5') being
+    // dropped, both of which would let a bad piece count reach the printed
+    // total.
+    const onChangeSpy = vi.fn();
+    const task: TaskDraft = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 2, color: 'Noir' },
+      impressionCost: 500,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
+
+    const quantityInput = await screen.findByLabelText('Quantity');
+    // Wait for the reference-data queries to resolve first: firing the edit
+    // while they are still pending hits ImpressionFields' `referenceDataLoading`
+    // guard, which reports the edit with no computed cost at all — leaving
+    // `impressionCost` unchanged and making the assertions below meaningless.
+    await waitFor(() => expect(screen.getByTestId('impression-computed')).not.toHaveTextContent('—'));
+    const pricedOne = computeImpressionCost(
+      { ...task.impression, quantity: 1 },
+      mockFilaments[0],
+      mockPrinters[0],
+      mockDefaults,
+    );
+    const expectedCostAtOne = roundUpTo50(pricedOne!.total_ttc);
+
+    // A typed '0': `Number('0')` is falsy, so without the `|| 1` fallback the
+    // stored quantity would be zero pieces.
+    fireEvent.change(quantityInput, { target: { value: '0' } });
+    await waitFor(() => expect(quantityInput).toHaveValue(1));
+    let lastTask = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft;
+    expect(lastTask.impression?.quantity).toBe(1);
+    expect(lastTask.impressionCost).toBe(expectedCostAtOne);
+
+    onChangeSpy.mockClear();
+
+    // A typed '1.5': without `Math.floor`, the stored quantity would be a
+    // fractional piece count.
+    fireEvent.change(quantityInput, { target: { value: '1.5' } });
+    await waitFor(() => expect(quantityInput).toHaveValue(1));
+    lastTask = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft;
+    expect(lastTask.impression?.quantity).toBe(1);
+    expect(lastTask.impressionCost).toBe(expectedCostAtOne);
+  });
+
   it('printing: every print parameter is on screen, with no disclosure to open', async () => {
     const task = {
       ...emptyTaskDraft(),

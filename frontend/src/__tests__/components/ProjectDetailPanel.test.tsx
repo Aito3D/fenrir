@@ -2460,6 +2460,145 @@ describe('ProjectDetailPanel description regeneration', () => {
     await waitFor(() => expect(screen.getByTestId('panel-value-ring')).toHaveAttribute('aria-valuemax', '0'));
     expect(screen.getByRole('button', { name: 'Regenerate' })).toBeDisabled();
   });
+
+  it('skips the save entirely when the regenerated summary is unchanged', async () => {
+    // Pins the guard at the top of regenerateMutation's onSuccess: an
+    // unchanged (or blank) summary sets 'saved' directly and returns before
+    // ever calling updateMutation.mutate — no PATCH belongs on the wire for a
+    // save the operator never asked for. The mocked PATCH here 500s
+    // (deliberately, not 200) specifically so that removing the guard does
+    // not silently still reach 'saved' through the other, real-save path:
+    // if the guard is gone, the resulting real save fails, descState never
+    // reaches 'saved', and the findByText below times out instead of passing
+    // by accident.
+    const patched = vi.fn();
+    server.use(
+      http.post('/api/v1/aito/summarize', () =>
+        HttpResponse.json({ summary: project.description, model: 'mistralai/mistral-small' }),
+      ),
+      http.patch('/api/v1/aito/12', () => {
+        patched();
+        return HttpResponse.json({ detail: 'should never be called' }, { status: 500 });
+      }),
+    );
+    show();
+    const button = screen.getByRole('button', { name: 'Regenerate' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    // Positive evidence the onSuccess handler actually ran its skip branch
+    // to completion before asserting the PATCH's absence below — otherwise a
+    // vacuous pass while the summarize call is still in flight.
+    expect(await screen.findByText(/saved/i)).toBeInTheDocument();
+    expect(patched).not.toHaveBeenCalled();
+  });
+
+  it('rolls the description card back to idle when the post-regenerate save fails', async () => {
+    // Pins regenerateMutation's inner onError (877-879): a successful
+    // regenerate that then fails to save must not leave descState stranded
+    // on 'saving' forever, and must not falsely land on 'saved' either.
+    server.use(
+      http.post('/api/v1/aito/summarize', () =>
+        HttpResponse.json({ summary: 'Résumé IA.', model: 'mistralai/mistral-small' }),
+      ),
+      http.patch('/api/v1/aito/12', () => HttpResponse.json({ detail: 'db locked' }, { status: 500 })),
+    );
+    show();
+    const button = screen.getByRole('button', { name: 'Regenerate' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    // Scoped to the Product description card specifically: ActivityRail
+    // mounts its own Loader2 (same 'lucide-loader-circle' class) while its
+    // events query is in flight, and that query has no handler in this
+    // describe block, so onUnhandledRequest: 'bypass' sends it to a real,
+    // slow-and-variable network call. An unscoped document.querySelector
+    // picks up whichever spinner happens to be in the DOM at that instant —
+    // this is what made the test non-deterministic — not SaveIndicator's.
+    const descriptionCard = screen
+      .getAllByTestId('panel-card-heading')
+      .find((h) => h.textContent === 'Product description')!
+      .closest('section')!;
+    // Positive evidence the save actually started (SaveIndicator's own
+    // spinner) before asserting the rollback below — otherwise a vacuous
+    // pass while still in flight.
+    await waitFor(() => expect(descriptionCard.querySelector('.lucide-loader-circle')).toBeInTheDocument());
+    // Positive evidence the failed save's onError handlers actually ran to
+    // completion: the shared mutation's own toast (useProjectPatchMutation's
+    // onError) fires before this panel's local setDescState/setDraft in the
+    // very same dispatch, so waiting for it — rather than racing the
+    // spinner's disappearance — cannot pass vacuously mid-flight.
+    expect(await screen.findByText(/could not save your changes/i)).toBeInTheDocument();
+    expect(descriptionCard.querySelector('.lucide-loader-circle')).not.toBeInTheDocument();
+    expect(screen.queryByText(/saved/i)).not.toBeInTheDocument();
+  });
+
+  it('restores an in-flight manual edit when a concurrent regenerate save fails', async () => {
+    // The Regenerate button disables itself while its own save is pending,
+    // but the description paragraph's own click-to-edit affordance is not
+    // gated on it (see its own comment) — so an operator can open the editor
+    // and start typing before the regenerate-triggered save has settled.
+    // That race is the only path through which `draft` can differ from
+    // `project.description` while this save is outstanding: in the ordinary,
+    // non-racing case the two are already identical (the effect that keeps
+    // `draft` following `project.description` while not editing has already
+    // done that), so `setDraft(project.description)` at 879 would be a
+    // silent no-op there and no assertion reachable without editing open
+    // could ever catch its removal.
+    const user = userEvent.setup();
+    // The PATCH's response is gated on a promise the TEST resolves, not on
+    // a fixed wall-clock delay: msw's `delay(300)` raced `user.type` below —
+    // on a slow run the 300ms could elapse mid-keystroke, so the PATCH's
+    // onError would call setDraft(project.description) between two
+    // `user.type` characters and the rest of the typed string would land on
+    // top of the reset text instead of the text the assertion expects.
+    // Holding the response open until the test has finished typing and
+    // asserting removes that race entirely — same precedent as T-091's
+    // externally-held QueryClient / explicit `refetchQueries` call.
+    let resolvePatch: () => void;
+    const patchGate = new Promise<void>((resolve) => {
+      resolvePatch = resolve;
+    });
+    server.use(
+      http.post('/api/v1/aito/summarize', () =>
+        HttpResponse.json({ summary: 'Résumé IA.', model: 'mistralai/mistral-small' }),
+      ),
+      http.patch('/api/v1/aito/12', async () => {
+        await patchGate;
+        return HttpResponse.json({ detail: 'db locked' }, { status: 500 });
+      }),
+    );
+    show();
+    const button = screen.getByRole('button', { name: 'Regenerate' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    // Scoped to the Product description card, same reason as the previous
+    // test: an unscoped document.querySelector can match ActivityRail's own
+    // (unrelated) loading spinner instead of SaveIndicator's.
+    const descriptionCard = screen
+      .getAllByTestId('panel-card-heading')
+      .find((h) => h.textContent === 'Product description')!
+      .closest('section')!;
+    // Positive evidence the regenerate's own save actually started before
+    // racing a manual edit against it.
+    await waitFor(() => expect(descriptionCard.querySelector('.lucide-loader-circle')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /edit description/i }));
+    // getByRole('textbox') is ambiguous once the editor is open: ActivityRail
+    // renders its own note <input> alongside the description <textarea>.
+    const textarea = screen.getAllByRole('textbox').find((el) => el.tagName === 'TEXTAREA')!;
+    await user.clear(textarea);
+    await user.type(textarea, 'Typed mid-regenerate');
+    expect(textarea).toHaveValue('Typed mid-regenerate');
+    // Only now let the gated PATCH fail — the race window the operator's
+    // typing needed to win is over, so the response can land safely.
+    resolvePatch!();
+    // Positive evidence the failed save's onError handlers actually ran
+    // (the shared mutation's own toast), rather than racing the spinner's
+    // disappearance.
+    expect(await screen.findByText(/could not save your changes/i)).toBeInTheDocument();
+    // The failed regenerate-save's own rollback must reclaim the draft the
+    // operator was mid-typing, not leave it holding text that was never
+    // actually saved.
+    expect(textarea).toHaveValue('Support de caméra');
+  });
 });
 
 /** A backend-shaped naive-UTC stamp N days before now. Used instead of fake
