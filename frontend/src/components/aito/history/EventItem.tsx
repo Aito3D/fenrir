@@ -1,52 +1,8 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { EVENT_LABEL_KEY, dotClass } from './eventKinds';
+import { EVENT_LABEL_KEY, dotClass, detailText, formatValue } from './eventKinds';
 import type { AitoEvent } from '../../../api/client';
 import { parseUTCDate } from '../../../utils/date';
-
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined) return '—';
-  if (typeof value === 'boolean') return value ? '✓' : '—';
-  return String(value);
-}
-
-/** `detail` is stored on every event but the label alone only carries the
- *  full story for a handful of kinds — the ones with nothing else to show:
- *
- *  - `zoho.comment` carries Books' verbatim text in `detail.text`. It is the
- *    lossless fallback tier for a comment the pattern table did not
- *    recognise, and without this the bare label "Comment in Zoho Books"
- *    tells the reader nothing.
- *  - `sync.failed` (and the two ambiguous-outcome kinds that share its
- *    shape) carries the reason in `detail.error`, or the two sides of a
- *    disagreement in `detail.ours`/`detail.theirs` — without this a card
- *    that failed last week can say THAT it failed but never WHY.
- *
- *  `detail` is `Record<string, unknown> | null` from the wire, so every read
- *  here is narrowed before use — never rendered as an object.
- *
- *  Deliberately returns plain text, not a translated sentence: the brief for
- *  this fix is explicit that no new i18n keys may be added, so the conflict
- *  sides are shown as bare values rather than composed into a phrase. */
-function detailText(kind: string, detail: Record<string, unknown> | null): string | null {
-  if (!detail) return null;
-
-  if (kind === 'zoho.comment') {
-    return typeof detail.text === 'string' && detail.text ? detail.text : null;
-  }
-
-  if (kind === 'sync.failed') {
-    return typeof detail.error === 'string' && detail.error ? detail.error : null;
-  }
-
-  if (kind === 'sync.conflict' || kind === 'sync.status_rejected') {
-    const hasSides =
-      (typeof detail.ours === 'string' && detail.ours) || (typeof detail.theirs === 'string' && detail.theirs);
-    return hasSides ? `${formatValue(detail.ours)} → ${formatValue(detail.theirs)}` : null;
-  }
-
-  return null;
-}
 
 /** The gap from the PREVIOUS (older) entry to this one, in the reader's locale.
  *

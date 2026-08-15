@@ -293,6 +293,31 @@ describe('QuoteStatusActions', () => {
     });
     expect(flash).toHaveBeenCalledWith(1);
   });
+
+  it('sends the declined transition when its hold completes', async () => {
+    const spy = vi.spyOn(api, 'setAitoQuoteStatus').mockResolvedValue({ project, zoho_synced: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<QuoteStatusActions project={{ ...project, quote_status: 'sent' }} />);
+
+    await user.pointer({ keys: '[MouseLeft>]', target: screen.getByRole('button', { name: /decline quote/i }) });
+    vi.advanceTimersByTime(600);
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(12, { status: 'declined' }));
+  });
+
+  it('puts the card back and flashes when the server refuses a decline', async () => {
+    vi.spyOn(api, 'setAitoQuoteStatus').mockRejectedValue(new Error('nope'));
+    const flash = vi.mocked(flashRevert); // see Task 7 Step 7 for the required vi.mock
+
+    const project = makeProject({ id: 1, column: 'waiting', quote_status: 'sent' });
+    const client = renderWithBoard(project);
+
+    await holdButton(screen.getByRole('button', { name: /decline quote/i }));
+
+    await waitFor(() => {
+      expect(client.getQueryData<AitoProject[]>(['aito-projects'])![0].column).toBe('waiting');
+    });
+    expect(flash).toHaveBeenCalledWith(1);
+  });
 });
 
 describe('ProjectDoneAction — glyph swap in the panel footer', () => {
