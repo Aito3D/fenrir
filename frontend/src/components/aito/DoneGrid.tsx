@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Archive, Undo2 } from 'lucide-react';
+import { ArchiveGrid } from './archives/ArchiveGrid';
 import { CardView } from './CardView';
 import { HoldButton } from './HoldButton';
 import { useColumnMoveMutation } from '../../hooks/useColumnMoveMutation';
@@ -86,19 +87,9 @@ export function DoneGrid({
   }
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide pb-4">
-      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 stagger-parents">
-        {/* `animate-rise-lg`, not `animate-rise`: only the -lg entrance reads
-            `--enter-delay`, which is the ONLY thing `stagger-parents` above
-            sets. Paired with the plain rise the cascade silently did nothing
-            and the whole archive landed on one frame. Same pairing the board's
-            columns, Archives and the file grid use. */}
-        {visible.map((project) => (
-          <div key={project.id} className="animate-rise-lg">
-            <DoneCard project={project} onExpand={() => onExpandCard(project.id)} />
-          </div>
-        ))}
-      </div>
-    </div>
+    <ArchiveGrid
+      projects={visible}
+      renderCard={(project) => <DoneCard project={project} onExpand={() => onExpandCard(project.id)} />}
+    />
   );
 }

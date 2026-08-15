@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { DndContext, DragOverlay, MeasuringStrategy, closestCorners, type DropAnimation } from '@dnd-kit/core';
-import { AlertTriangle, Archive, FileInput, Kanban, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, Archive, FileInput, Kanban, Loader2, Plus, Trash2 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { CardView } from '../components/aito/CardView';
 import { BoardColumn } from '../components/aito/BoardColumn';
@@ -303,10 +303,19 @@ export function AitoPage() {
         </div>
       )}
 
+      {/* First fetch — no rows yet, either way. Ahead of the empty state below
+          so the still-loading board is never mistaken for a shop with no work
+          (the same reason TrashGrid renders a spinner for its `isLoading`). */}
+      {aitoQuery.isPending && view === 'board' && (
+        <div className="flex-1 text-center py-8">
+          <Loader2 className="w-8 h-8 text-bambu-gray mx-auto animate-spin" />
+        </div>
+      )}
+
       {/* Empty state — three different nothings, and telling them apart is the
           whole point. A query that matched nothing is not an empty board, and
           a shop whose work is all finished is not a shop with no work. */}
-      {!aitoQuery.isError && view === 'board' && visibleCount === 0 && (
+      {!aitoQuery.isPending && !aitoQuery.isError && view === 'board' && visibleCount === 0 && (
         <div className="text-center py-8 animate-rise">
           <Kanban className="w-10 h-10 text-bambu-gray mx-auto mb-3" />
           {filtering ? (

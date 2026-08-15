@@ -470,6 +470,42 @@ describe('NewProjectDrawer', () => {
     await waitFor(() => expect(createButton()).toHaveAttribute('aria-disabled', 'false'));
   });
 
+  it('surfaces a failed Zoho status query, distinct from "not configured" and the happy path', async () => {
+    // 1. The status GET itself fails: `statusQuery.data` stays undefined, so
+    //    (unlike `configured: false`, which still ships a fallback contact)
+    //    the default-contact effect never seeds `draft` — without the fix,
+    //    the Client section body renders nothing at all and Create sits
+    //    silently disabled.
+    server.use(http.get('/api/v1/zoho/status', () => HttpResponse.error()));
+    const { unmount: unmountError } = render(<NewProjectDrawer onClose={vi.fn()} onCreate={vi.fn()} />);
+    expect(await screen.findByText(/could not reach zoho/i)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /connect zoho/i })).not.toBeInTheDocument();
+    expect(createButton()).toHaveAttribute('aria-disabled', 'true');
+    unmountError();
+
+    // 2. The request succeeds but reports `configured: false`: the existing
+    //    "not configured" settings-link panel shows — never the unreachable
+    //    message, which is reserved for a request that actually failed.
+    server.use(
+      http.get('/api/v1/zoho/status', () =>
+        HttpResponse.json({
+          configured: false, reachable: false,
+          default_contact_id: DEFAULT_ID, default_contact_name: 'Client de passage',
+        }),
+      ),
+    );
+    const { unmount: unmountNotConfigured } = render(<NewProjectDrawer onClose={vi.fn()} onCreate={vi.fn()} />);
+    expect(await screen.findByRole('link', { name: /connect zoho/i })).toBeInTheDocument();
+    expect(screen.queryByText(/could not reach zoho/i)).not.toBeInTheDocument();
+    unmountNotConfigured();
+
+    // 3. The happy path (shared `beforeEach` mock, `configured: true`):
+    //    neither failure message renders.
+    await renderDrawer();
+    expect(screen.queryByText(/could not reach zoho/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /connect zoho/i })).not.toBeInTheDocument();
+  });
+
   it('✕ plays the drawer exit, then calls onClose', async () => {
     const user = userEvent.setup();
     const { onClose } = await renderDrawer();
@@ -593,6 +629,32 @@ describe('NewProjectDrawer', () => {
     await userEvent.click(createButton());
     expect(onCreate).not.toHaveBeenCalled();
     expect(within(screen.getByTestId('drawer-checklist')).getByText(/island missing/i)).toBeInTheDocument();
+  });
+
+  it('reveals the shipping checklist error too when Create is blocked by an unpriced task, not by the shipment', async () => {
+    // The sibling test above ('blocks Create on an incomplete shipment...')
+    // routes through create()'s OWN post-canCreate shipping check (`canCreate`
+    // is already true there, since the task is priced and the client is
+    // reachable) — it never exercises `revealEverything`'s shipping branch
+    // (NewProjectDrawer.tsx, inside `revealEverything`), which only runs when
+    // `!canCreate` for a reason having nothing to do with shipping. Here the
+    // seeded task is deliberately left unpriced (no `fillOneTask`), so
+    // `canCreate` is false before shipping is even considered, and clicking
+    // Create takes the `revealEverything` branch instead.
+    const onCreate = vi.fn();
+    await renderDrawer({ onCreate });
+    await openClientSection();
+    await userEvent.click(screen.getByRole('button', { name: /add shipping/i }));
+
+    await userEvent.click(createButton());
+
+    expect(onCreate).not.toHaveBeenCalled();
+    const checklist = within(screen.getByTestId('drawer-checklist'));
+    // The unblocking-unrelated failure: the seeded task, never priced.
+    expect(checklist.getByText('"Task 1" needs at least one priced sub-task')).toBeInTheDocument();
+    // The shipment's OWN error — revealed as a side effect of the click, even
+    // though the shipment is not what disabled Create.
+    expect(checklist.getByText(/island missing/i)).toBeInTheDocument();
   });
 
   it('puts the shipping cost in the rail receipt and the project total', async () => {

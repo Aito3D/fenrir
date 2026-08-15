@@ -133,6 +133,20 @@ describe('validation', () => {
     expect(isShippingComplete(draft({ price: 3200 }))).toBe(true);
   });
 
+  it('rejects a negative price the server would 422 on, distinctly from a missing one', () => {
+    // The server field is `ge=0` (AitoShippingInput.shipping_price) and 422s
+    // on a negative figure — this is the only client-side check standing
+    // between a typo like "-50" and that 422, since nothing here submits a
+    // <form> for the input's `min={0}` to enforce natively.
+    expect(shippingDraftErrors(draft({ price: -50 })).price).toBe('aito.shippingRateNegative');
+    expect(isShippingComplete(draft({ price: -50 }))).toBe(false);
+    // Distinct key from the null case, so a caller (ShippingFields,
+    // CreateChecklist) can tell "nothing typed" from "typed something invalid".
+    expect(shippingDraftErrors(draft({ price: -50 })).price).not.toBe(shippingDraftErrors(draft({ price: null })).price);
+    // -0 is not negative — must not be flagged as though it were.
+    expect(shippingDraftErrors(draft({ price: -0 })).price).toBeNull();
+  });
+
   it('gates the missing-price error on the ISLAND having been left, not a flag of its own', () => {
     const untouched = draft({
       price: null,

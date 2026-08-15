@@ -311,6 +311,53 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
     expect(body).not.toHaveProperty('email');
   });
 
+  it('PATCHes only the touched email field for a non-default client, and omits phone entirely when untouched', async () => {
+    // Mirror of the phone-only test above, but through the opposite branch:
+    // `touched.email` true / `touched.phone` false. `syncClientToZoho` builds
+    // its PATCH body from two independent ternaries (one per field) — a test
+    // that only ever edits phone can pass even if the email ternary's "true"
+    // branch (actually including `email` in the body) were deleted, since
+    // nothing would ever check for its presence. This is the one case in the
+    // file where email is the only thing touched, so that branch has to run.
+    const user = userEvent.setup();
+    const patchSpy = vi.fn();
+    server.use(
+      http.post('/api/v1/aito/', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(createdProject(body), { status: 201 });
+      }),
+      http.patch('/api/v1/zoho/contacts/:id', async ({ request, params }) => {
+        patchSpy(params.id, await request.json());
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    await openDrawer(user);
+
+    const combobox = screen.getByRole('combobox', { name: /client/i });
+    await user.clear(combobox);
+    await user.type(combobox, 'Jean');
+    await user.click(await screen.findByRole('option', { name: /Jean DUPONT/i }, { timeout: 3000 }));
+
+    // OTHER_CONTACT already carries a phone, so the client is reachable
+    // without touching it — only the email is edited here.
+    await user.clear(screen.getByLabelText(/^email/i));
+    await user.type(screen.getByLabelText(/^email/i), 'jean.new@example.pf');
+    await user.tab();
+    await waitForSummary();
+
+    await user.click(screen.getByRole('button', { name: /create project/i }));
+
+    await waitFor(() => expect(patchSpy).toHaveBeenCalled());
+    const [id, body] = patchSpy.mock.calls[0];
+    expect(id).toBe(OTHER_CONTACT.id);
+    expect(body).toMatchObject({ email: 'jean.new@example.pf' });
+    // Phone was never edited — must not be sent at all (same no-op/stale-
+    // overwrite risk the sibling phone-only test guards on the email side).
+    expect(body).not.toHaveProperty('phone');
+    expect(body).not.toHaveProperty('phone_field');
+  });
+
   it('sends client_is_company: true when the selected contact is a business', async () => {
     // The true branch is the one that actually matters: it is what the panel
     // reads to decide between "Client name:" and "Company name:". The other

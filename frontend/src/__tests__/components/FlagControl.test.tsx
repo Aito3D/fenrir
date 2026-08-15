@@ -251,6 +251,68 @@ describe('FlagControl', () => {
     expect(document.activeElement).not.toBe(document.body);
   });
 
+  it('opens on pointer hover and closes on pointer leave, for a mouse', () => {
+    render(<FlagControl project={{ ...baseProject, flag: null }} />);
+    const root = screen.getByTestId('flag-control');
+    expect(root).toHaveAttribute('data-open', 'false');
+
+    fireEvent.pointerEnter(root);
+    expect(root).toHaveAttribute('data-open', 'true');
+
+    fireEvent.pointerLeave(root);
+    expect(root).toHaveAttribute('data-open', 'false');
+  });
+
+  // Pins the component's own docstring claim: "Touch has neither hover nor
+  // pointerleave, so an outside press is the only thing that can close the
+  // control there." Opened here the way touch actually opens it — a tap on
+  // the resting chip, never pointerEnter or focus — so nothing but the
+  // document-level outside-pointerdown listener is available to close it.
+  it('closes on an outside pointerdown, the only close path touch has (no hover, no pointerleave)', () => {
+    render(<FlagControl project={{ ...baseProject, flag: null }} />);
+    openControl();
+    const root = screen.getByTestId('flag-control');
+    expect(root).toHaveAttribute('data-open', 'true');
+
+    fireEvent.pointerDown(document.body);
+    expect(root).toHaveAttribute('data-open', 'false');
+  });
+
+  it('does not close on a pointerdown that lands inside the control', () => {
+    render(<FlagControl project={{ ...baseProject, flag: null }} />);
+    openControl();
+    const root = screen.getByTestId('flag-control');
+
+    fireEvent.pointerDown(segment('urgent'));
+    expect(root).toHaveAttribute('data-open', 'true');
+  });
+
+  it('keeps the resting chip visible while it holds focus, even once the control is open for everyone else', () => {
+    render(<FlagControl project={{ ...baseProject, flag: null }} />);
+    const root = screen.getByTestId('flag-control');
+    const chip = screen.getByRole('button', { name: /^mark$/i });
+    const chipWrapper = chip.parentElement as HTMLElement;
+
+    fireEvent.pointerEnter(root);
+    expect(root).toHaveAttribute('data-open', 'true');
+    // Open for everyone else, and the chip itself has no focus yet, so it
+    // collapses like the rest of the resting state does.
+    expect(chipWrapper.className).toContain('max-w-0');
+
+    fireEvent.focus(chip);
+    // Focus pins it back open even though the control as a whole stays open.
+    expect(chipWrapper.className).toContain('max-w-[9rem]');
+
+    // `relatedTarget` lands inside the control (a segment), so this blur
+    // is isolated to the chip's own focus tracking rather than also
+    // closing the control via the root's onBlur — see the "keeps focus
+    // inside the control" test above for that other path.
+    fireEvent.blur(chip, { relatedTarget: segment('urgent') });
+    expect(root).toHaveAttribute('data-open', 'true');
+    // Losing focus lets it collapse again.
+    expect(chipWrapper.className).toContain('max-w-0');
+  });
+
   it('collapses onto the flagged segment when closed, leaving the other segment collapsed and disabled', () => {
     render(<FlagControl project={{ ...baseProject, flag: 'urgent' }} />);
     const root = screen.getByTestId('flag-control');

@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Loader2, Trash2, Undo2 } from 'lucide-react';
+import { ArchiveGrid } from './archives/ArchiveGrid';
 import { CardView } from './CardView';
 import { HoldButton } from './HoldButton';
 import { Button } from '../Button';
@@ -144,17 +145,9 @@ export function TrashGrid({
   }
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide pb-4">
-      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 stagger-parents">
-        {/* `animate-rise-lg`, not `animate-rise`: only the -lg entrance reads
-            `--enter-delay`, which is the ONLY thing `stagger-parents` above
-            sets. Same pairing the done grid and the board's columns use. */}
-        {visible.map((project) => (
-          <div key={project.id} className="animate-rise-lg">
-            <TrashCard project={project} onExpand={() => onExpandCard(project.id)} />
-          </div>
-        ))}
-      </div>
-    </div>
+    <ArchiveGrid
+      projects={visible}
+      renderCard={(project) => <TrashCard project={project} onExpand={() => onExpandCard(project.id)} />}
+    />
   );
 }

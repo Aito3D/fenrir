@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { screen, act } from '@testing-library/react';
+import { screen, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { ShippingFields } from '../../components/aito/ShippingFields';
@@ -259,6 +259,55 @@ describe('ShippingFields', () => {
     await userEvent.click(screen.getByLabelText(/recipient first name/i));
     await userEvent.tab();
     expect(await screen.findByText(/recipient name missing/i)).toBeInTheDocument();
+  });
+
+  it('flags a hand-typed negative rate in the field itself, and clears the flag once corrected', async () => {
+    // The field only appears after an island is picked (selectIsland sets
+    // blurred.island true as one atomic action), so this needs no separate
+    // blur — same as every other assertion in this file that types into the
+    // rate input directly.
+    // `blurred.island: true`, matching what `selectIsland` always sets as one
+    // atomic action the moment a real operator picks an island — without it
+    // `visibleShippingDraftErrors` would mask the price error regardless of
+    // what is typed, and this test would prove nothing.
+    setup({
+      island: 'rangiroa',
+      service: 'tuamotu',
+      price: 3200,
+      blurred: { island: true, firstName: false, lastName: false, phone: false },
+    });
+    // fireEvent.change, not userEvent.type: a `type="number"` input's value
+    // sanitization runs per keystroke in jsdom, and typing "-" then "5" then
+    // "0" character-by-character (userEvent.type's usual idiom) leaves the
+    // DOM value empty mid-sequence — this sets the full string in one React
+    // change event, the same as a paste, which is what an operator hand-
+    // editing a figure this small (one or two digits) would realistically do.
+    fireEvent.change(getRateInput(), { target: { value: '-50' } });
+    expect(await screen.findByText(/cannot be negative/i)).toBeInTheDocument();
+    expect(getRateInput()).toHaveAttribute('aria-invalid', 'true');
+
+    fireEvent.change(getRateInput(), { target: { value: '50' } });
+    expect(screen.queryByText(/cannot be negative/i)).not.toBeInTheDocument();
+    expect(getRateInput()).not.toHaveAttribute('aria-invalid');
+  });
+
+  it('does not duplicate the "no rate" hint under the field when the price is merely empty, not negative', () => {
+    // `errors.price` is also `aito.shippingNoRate` for a null price, which
+    // the amber "No rate from Zoho" line (rendered above, per-service) already
+    // covers when Zoho gave none — this proves the field-level message stays
+    // scoped to the negative case and does not fire a second copy of that
+    // same text next to the input.
+    render(
+      <ShippingFields
+        value={{ ...emptyShippingDraft(null), island: 'rangiroa', service: 'tuamotu', blurred: { island: true, firstName: false, lastName: false, phone: false } }}
+        onChange={vi.fn()}
+        services={[{ ...SERVICES[0], rate: null }]}
+        catalogueResolved={true}
+        currency="XPF"
+      />,
+    );
+    expect(screen.getAllByText(/no rate from zoho/i)).toHaveLength(1);
+    expect(getRateInput()).not.toHaveAttribute('aria-invalid');
   });
 
   it('reports the reveal upward, not just locally: blurring first name shows the error and tells the caller', async () => {

@@ -1149,3 +1149,575 @@ FLAKE PROTOCOL. Frontend Aito coverage gate: statements 1787/1918 (131
 missed), branches 1765/1979 (214 missed), functions 603/647 (44 missed),
 lines 1574/1649 (75 missed) — all four exactly at the existing ratchet
 ceiling, no regression.
+
+## T-075 — 2026-08-14 — user-approved behavior change
+
+`AitoPage` rendered its "No projects yet" empty state for the whole duration
+of the first board fetch: `useBoardDrag(undefined)` starts at `emptyBoard()`,
+so `visibleCount === 0 && board.done.length === 0` is already true before
+`aitoQuery` has resolved, and nothing in the file gated the empty-state block
+on `aitoQuery.isPending`/`isLoading`. On a cold or slow load the page told the
+operator a populated board had no projects. Fixed by adding an
+`aitoQuery.isPending` branch ahead of the empty-state block, rendering the
+same bare `Loader2` spinner `TrashGrid` uses for its own `isLoading` prop, and
+gating the empty-state block itself on `!aitoQuery.isPending`. Observable
+change, quoting the approved description verbatim: "during the initial board
+fetch the page shows a loading indicator instead of the 'No projects yet'
+message it shows today."
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9, unaffected — the only
+frontend probe, `aito-frontend-pure`, covers the pure utils in
+`frontend/src/utils/aito*.ts`, not React render output, and this change
+touches neither. `bash tools/gen_surface.sh` diff against `SURFACE.md`: empty
+— no top-level export added, renamed, or removed.
+
+Added `it('shows a spinner rather than "no projects yet" while the first
+fetch is still pending', ...)` to the `empty board` describe in
+`AitoPage.test.tsx`, holding the GET response open by hand (same pattern the
+file already uses elsewhere for "still pending" assertions) to assert the
+spinner shows and the empty text does not, then releasing the response to
+assert the empty state appears and the spinner is gone. This also surfaced
+that the pre-existing "says there are no projects yet when nothing exists
+anywhere" test's settle signal — `findByRole('button', { name: /show done
+\(0\)/i })` — was not actually a settle signal in the zero-row case: `(0)`
+is on screen from the very first render regardless of whether the fetch has
+resolved, since `board.done.length` defaults to 0 either way (unlike the
+sibling "(1)" test, where the count only becomes non-zero once real data
+arrives). That test was passing before this task only because the old,
+buggy empty-state block did not care whether the fetch was pending. Updated
+it to `findByText` the empty message directly, which now IS a settle signal
+because the empty message's own visibility is gated on `!isPending`.
+
+Frontend: `npm run lint` clean. `npm run build` clean; `git checkout --
+static/` after, nothing under it committed. `AitoPage.test.tsx` alone: 56/56
+passed, re-run 3x with no flakes. Full Aito-scoped suite (54 files matching
+`components/aito|utils/aito|hooks/useAito|pages/AitoPage`): 826/826 passed.
+Aito coverage gate: statements 1820/1941 (121 missed), branches 1809/2021
+(212 missed), functions 611/649 (38 missed), lines 1603/1668 (65 missed) —
+all four exactly at the existing ratchet ceiling, no regression (the new
+render branch's statements/branches are fully exercised by the new test, so
+the denominator grew without growing the missed count).
+
+## T-076 — 2026-08-14 — user-approved behavior change
+
+`ActivityRail` destructured only `data`/`isLoading`/`fetchNextPage`/
+`hasNextPage`/`isFetchingNextPage` from `useProjectEvents` (an
+`useInfiniteQuery`), never `isError`. When `GET /aito/{id}/events` fails
+(Zoho/DB hiccup, 500, offline — retried once per `App.tsx`'s `retry: 1`),
+`isLoading` is false and `data` is `undefined`, so `events` falls back to
+`[]` and the panel rendered `t('aito.history.empty')` ("Nothing recorded
+yet") for a project with a full audit trail — no error indication, no retry
+control, only reopening the panel to try again. Fixed by taking
+`isError`/`refetch` from `useProjectEvents` and, ahead of the empty-state
+check, rendering the same `aito.loadFailed` + `common.retry` pair
+`AitoPage` and `TrashGrid` already use for their own failed fetches
+(`AlertTriangle` icon, message, secondary `Button` calling `refetch()`).
+Observable change, quoting the approved description verbatim: "a project
+whose history fails to load now shows a load-failed message with a Retry
+button where it previously showed 'Nothing recorded yet'."
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9, unaffected — the only
+frontend probe, `aito-frontend-pure`, covers the pure utils in
+`frontend/src/utils/aito*.ts`, not React render output, and this change
+touches neither. `bash tools/gen_surface.sh` diff against `SURFACE.md`:
+empty — the generator's `components/aito/*.tsx` glob is not recursive, so
+it never looks inside `history/`, and no top-level export changed anyway.
+
+Added two cases to `AitoActivityRail.test.tsx`: one mocking
+`api.getAitoEvents` to reject once then resolve with an event, asserting
+the load-failed message (and not the empty message) appears first, then
+that clicking Retry re-fetches and the actor's name from the resolved
+event appears while the load-failed message is gone; the pre-existing
+"says so when there is nothing to show" test is untouched and continues
+to assert the empty message on a genuine zero-event success, keeping the
+two states distinguishable.
+
+Frontend: `npm run lint` clean. `AitoActivityRail.test.tsx` alone: 15/15
+passed. Full Aito-scoped suite (54 files matching
+`components/aito|utils/aito|hooks/useAito|pages/AitoPage`): 827/827 passed.
+Aito coverage gate: statements 1821/1942 (121 missed), branches 1811/2023
+(212 missed), functions 612/650 (38 missed), lines 1604/1669 (65 missed) —
+all four exactly at the existing ratchet ceiling, no regression (the new
+render branch is fully exercised by the new test, so the denominator grew
+without growing the missed count).
+
+### CORRECTION — 2026-08-15 — loop-5 verifier fix, narrowing
+
+A blind verifier caught that this fix went further than approved.
+`useProjectEvents` is a `useInfiniteQuery`; in TanStack Query v5 `isError` is
+the parent observer's OVERALL status, true for a failed `fetchNextPage` as
+much as for a failed first fetch (`infiniteQueryObserver.js`'s
+`isFetchNextPageError` is derived from it). The `isError` branch above ran
+ahead of the event list unconditionally, so a "Load more" click that failed
+replaced an ALREADY-RENDERED timeline with the load-failed panel — losing
+history that was on screen a moment before, which BASE never did and which
+the approved wording ("a project whose history fails to load...") never
+covered; it was scoped to the first fetch only.
+
+FIX: the error branch is now `isError && !data` rather than bare `isError`.
+`data` (TanStack's accumulated pages) survives a failed `fetchNextPage` the
+same way it survives on a regular `useQuery`, so this confines the panel to
+the case `data` is genuinely absent — the first-fetch failure — and a failed
+next page now leaves the rendered timeline up, with the pre-existing
+Load-more button (unchanged, still outside the ternary) available to retry
+it. Narrowing only: no case that showed the load-failed panel before still
+shows anything else, and the first-fetch-failure test above still passes
+unmodified.
+
+Added one test to `AitoActivityRail.test.tsx`: first page resolves and
+renders, `fetchNextPage` (via the Load More click) rejects, timeline and
+Load More stay up and the load-failed text does not appear, then clicking
+Load More again succeeds and appends the second page — pinning the failed-
+load-more state as distinct from both the first-fetch-failure and the
+plain-success paging states, which remain covered by the pre-existing tests.
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9. `bash tools/gen_surface.sh`
+diff against `SURFACE.md`: empty. See T-091's correction block below for the
+combined coverage-gate numbers (both fixes landed in the same pass).
+
+## T-077 — 2026-08-14 — user-approved behavior change
+
+`ActivityRail`'s note `<input>` carried no `maxLength`, but the server's
+`AitoNoteCreate.note` (`backend/app/schemas/aito.py`) is
+`Field(min_length=1, max_length=2000)`. Pasting a longer note (an email
+thread, a client's message) 422s; the generic `noteFailed` toast names no
+cause, and the same over-long text is put back in the box on every retry,
+so the failure repeats identically with nothing on screen explaining why.
+Every other free-text field in this feature (the panel description, the
+import/summary textareas) already caps at its own server limit. Fixed by
+adding `maxLength={2000}` to the note input, mirroring the verified server
+cap exactly. Observable change, quoting the approved description verbatim:
+"typing or pasting past 2000 characters into the note box stops being
+accepted by the field instead of being accepted and then rejected by the
+server."
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9, unaffected — no probe
+touches this input. `bash tools/gen_surface.sh` diff against `SURFACE.md`:
+empty — the generator's globs are not recursive into `history/`, and no
+top-level export changed anyway.
+
+Added a case to `AitoActivityRail.test.tsx` asserting the input carries
+`maxLength={2000}` and that a note of exactly 2000 characters (set via
+`fireEvent.change`, which bypasses the DOM's own maxLength enforcement)
+is still submitted verbatim to `api.addAitoNote` — guarding against the
+cap ever silently drifting to an off-by-one that would block a legal note.
+
+Frontend: `npm run lint` clean. `AitoActivityRail.test.tsx` alone: 16/16
+passed. Full Aito-scoped suite (54 files matching
+`components/aito|utils/aito|hooks/useAito|pages/AitoPage`): 828/828 passed.
+Aito coverage gate: statements 1821/1942 (121 missed), branches 1811/2023
+(212 missed), functions 612/650 (38 missed), lines 1604/1669 (65 missed) —
+all four exactly at the existing ratchet ceiling, no regression.
+
+## T-078 — 2026-08-15 — user-approved behavior change
+
+SANCTIONED RETROACTIVELY, and the sequence matters for the record. The
+`audit-robustness` finding that produced T-078 was emitted with
+`behavior_change: false`, on the reasoning that a prefetch only warms a
+cache and the real fetch still happens on selection. The orchestrator
+accepted that judgement, and the worker — instructed to stop if it
+disagreed — also found no observable difference, because
+`setHighlighted()` remained synchronous so nothing the user *sees* was
+delayed. The iteration-2 blind verifier rejected all three of those
+judgements and returned FAIL, with the case none of them had constructed:
+
+  "a user who hovers and clicks inside that window sees the drawer's
+   preview loading state where BASE had the fetch already in flight or
+   cached"
+
+That is observable, so it needed the user's decision and had not had it.
+The user was then asked directly, shown both the defect and the cost, and
+APPROVED keeping the change at the implemented 200 ms (the alternatives
+offered were a full revert and a shortened ~100 ms dwell).
+
+WHAT CHANGED. `frontend/src/components/aito/QuoteResultList.tsx`:
+`highlight(index)` fired `prefetch(quote.id)` synchronously on every
+`onMouseEnter` and every ArrowUp/ArrowDown. Each prefetch is
+`GET /zoho/estimates/{id}/preview`, which on the server runs
+`get_estimate` + `books_app_url` + `get_contact` against Books live, so
+sweeping the pointer down a 20-row list or holding ArrowDown fired dozens
+of upstream Books calls in about a second — against a per-org rate limit
+SHARED WITH the `aito_quote_sync` worker. Browsing the picker could
+therefore 429 the quote sync, not merely its own previews. The prefetch is
+now gated behind a 200 ms dwell timer (`PREFETCH_DWELL_MS`), cleared on
+the next highlight change and again on unmount.
+
+OBSERVABLE CHANGE: a hover or arrow-key transit shorter than 200 ms that
+issued a preview request at BASE now issues none, and a user who hovers
+and clicks inside that window sees the preview's loading state where BASE
+had the request already in flight or its result cached. Bounded by the
+dwell: at most a 200 ms perceived delay, and only on hover-then-immediate-
+click. `setHighlighted()` is untouched and still synchronous, so the
+highlight itself never lags. The selection path is byte-identical.
+
+KNOWN BENIGN SIDE EFFECT, recorded by the verifier rather than hidden:
+selecting a quote early-returns to the selected-card branch instead of
+unmounting, so a timer already pending can still fire one prefetch up to
+200 ms after selection. Harmless — the query client is alive and the
+effect is a cache write with no render consequence.
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9, unaffected — the only
+frontend probe covers the pure utils in `frontend/src/utils/aito*.ts`, not
+React render output. `bash tools/gen_surface.sh` diff against
+`SURFACE.md`: empty — no top-level export added, renamed or removed.
+
+CORRECTION to this entry's first draft, made before the squash and noted
+rather than silently overwritten: the draft called `QuoteResultList.test.tsx`
+a NEW file. It is not — it existed at BASE at 118 lines (confirmed by
+`git show refactor-base:frontend/src/__tests__/components/QuoteResultList.test.tsx`),
+and T-078 added a `describe('prefetch dwell gate')` block to it. The
+verifier caught this on re-judgement; the tests themselves are exactly as
+described below.
+
+Tests added to the existing `QuoteResultList.test.tsx`, all on fake timers so no
+wall-clock dependence enters a suite that already carries four load-induced
+flakes: a fast sweep across rows fires at most one prefetch and only for
+the row rested on; unmounting with a timer pending fires no prefetch and
+leaks nothing; and the highlight still moves with zero time advanced,
+which is what pins the "nothing visible was delayed" half of the claim.
+
+Aito coverage gate at the time of the fix: statements 121 missed, branches
+212, functions 38, lines 65 — all four exactly at the ratchet ceiling. The
+worker's first attempt measured 122 missed statements because its guard
+introduced an unreachable early return; it restructured to an `if (quote)`
+block rather than accept the regression or add an uncoverable line.
+
+## T-090 — 2026-08-15 — user-approved behavior change
+
+`frontend/src/components/aito/NewProjectDrawer.tsx`: the drawer's own
+`statusQuery = useQuery({ queryKey: ['zoho-status', ...], ... })` feeds
+`configured` (`statusQuery.data?.configured === true`) and `defaultId`
+(`statusQuery.data?.default_contact_id ?? ''`). With the app's default
+`retry: 1`, one failed `GET /api/v1/zoho/status` leaves `statusQuery.data`
+`undefined` for up to 60s. Unlike a *successful* response reporting
+`configured: false` — which still ships a fallback `default_contact_id`,
+so the default-contact effect seeds `draft` and `ClientSection` mounts and
+shows its own "Zoho not configured" panel — an *errored* query leaves
+`defaultId` empty, the seeding effect never fires, `draft` stays `null`,
+and the Client section's body ternary (`creatingClient ? … : draft ? … :
+null`) rendered bare `null`. The operator saw an empty Client step and a
+Create button that, on every click, revealed no errors and did nothing.
+
+Verified each link of the audit chain before building on it: confirmed
+`statusQuery` had no `isError` consumer in this file; confirmed
+`ClientSection` gates its "not configured" panel on
+`statusQuery.data?.configured === false` only (`ClientSection.tsx:61`),
+which an errored query never satisfies; confirmed `CreateChecklist`'s
+client-account line is hard-coded `<Line state="ok" ...>`
+(`CreateChecklist.tsx:113`) with no Zoho-specific line at all; confirmed
+`draft` really stays `null` on an errored query (the seeding effect's
+`defaultId` guard) so the section body renders `null`. All four links
+held.
+
+FIX, confined to the assigned file: added a third arm to the Client
+section's body ternary — `statusQuery.isError ? <panel> : null` — showing
+a small "unavailable" panel (same shape as `ClientSection`'s own
+not-configured panel: a label plus a bordered text block) reusing the
+EXISTING i18n key `aito.zohoUnreachable` ("Could not reach Zoho Books.
+Please try again.", already present in all 15 locale files and already
+used by `ClientCombobox.tsx`/`QuoteResultList.tsx` for the same failed-
+Zoho-request condition). No new i18n key was added. `configured`,
+`canCreate` and the retry/staleTime settings are untouched — Create stays
+blocked exactly as before; only the reason is now visible.
+
+OBSERVABLE CHANGE, quoting the approved description verbatim: "when the
+Zoho status request fails, the new-project drawer will show an
+'unavailable/not configured' message where it currently shows an empty
+client section and a silently inert Create button."
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9, unaffected — no probe
+covers React render output. `bash tools/gen_surface.sh` diff against
+`SURFACE.md`: empty — no top-level export added, renamed or removed.
+
+Added one test to `NewProjectDrawer.test.tsx` asserting all three states
+are distinct: (1) the status GET rejects — the `zohoUnreachable` message
+renders, the "not configured" settings link does not, and Create stays
+`aria-disabled`; (2) the GET succeeds with `configured: false` — the
+settings link renders, the unreachable message does not; (3) the shared
+`beforeEach` happy path (`configured: true`) — neither renders.
+
+Aito coverage gate: statements 83 missed, branches 171, functions 28,
+lines 38 — all four exactly at the existing ratchet ceiling, no
+regression; the new branch is exercised by state (1) of the new test.
+
+## T-091 — 2026-08-15 — user-approved behavior change
+
+`ImpressionFields`' `notConfigured` calc gated only on `referenceDataLoading`
+(`filamentsQuery.isLoading || printersQuery.isLoading || defaultsQuery.isLoading`)
+before falling through to `printers.length === 0 ? 'printers' : 'filaments'`.
+In TanStack Query v5, `isLoading` is `isPending && isFetching`, which goes
+FALSE the instant a query settles into its error state — it is not "loading
+OR failed", just "loading". `printers`/`filaments` both default to `[]`
+(`?? []`) before their query resolves, which is what a failed fetch also
+leaves them at. So when GET /calculator/printers (or filaments, or defaults)
+failed, the gate did not catch it: the band rendered
+`t('aito.noPrintersConfigured')` plus a `/calculator` navigation link — a
+false, actionable-looking claim that sends the operator to fix a calculator
+that is not misconfigured, for a request that simply failed. Confirmed all
+three of the auditor's claims hold before fixing: `isLoading`'s v5 semantics,
+the `?? []` fallback on both query results, and that `handleChange` already
+stops repricing whenever `defaultsQuery` itself has failed (via its existing
+`!defaults` check) — that repricing short-circuit is pre-existing and out of
+this task's scope, left untouched.
+
+FIX, confined to `ImpressionFields.tsx` and `ImpressionCostBand.tsx`: added
+`referenceDataError` (`filamentsQuery.isError || printersQuery.isError ||
+defaultsQuery.isError`), checked FIRST in the `notConfigured` calc, ahead of
+the loading/empty-list branches — matching the shape of commit `f2ba215ed`,
+which added the equivalent loading-window gate. `notConfigured`'s type grew
+a third value, `'unavailable'`, alongside the existing `'printers'` /
+`'filaments'` / `null`. `ImpressionCostBand` renders it as its own line —
+`t('aito.pricingUnavailable')`, no `/calculator` link, since there is
+nothing misconfigured there to go fix — instead of falling into the
+`'printers'`/`'filaments'` branch. One new i18n key, `aito.pricingUnavailable`
+("Could not load calculator pricing. Please try again."), added to all 13
+locale files (checked `aito.zohoUnreachable` and `aito.loadFailed` first per
+the brief; both are worded for Zoho/board-specific failures and would
+misdirect here, so neither was reused — `frontend/scripts/check-i18n-parity.mjs`
+and the `src/__tests__/i18n` suite both pass with the new key).
+
+OBSERVABLE CHANGE, quoting the approved description verbatim: "with the
+calculator endpoints failing, the printing block will say pricing is
+unavailable instead of claiming no printers are configured."
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9, unaffected — no probe
+covers React render output. `bash tools/gen_surface.sh` diff against
+`SURFACE.md`: empty — no top-level export added, renamed or removed.
+
+Added three tests to `TaskEditor.test.tsx`, keeping all three `notConfigured`
+states distinguishable: (1) `GET /calculator/printers/` rejects — the new
+"Could not load calculator pricing" message renders, neither "not
+configured" message nor the `/calculator` link appears; (2) printers resolve
+to a genuinely empty list — "No printers configured" and the link still
+render, the unavailable message does not; (3) filaments resolve to a
+genuinely empty list — "No filaments configured" and the link still render,
+the unavailable message does not. (2) and (3) were previously untested
+gaps this task's brief asked to close without touching the printers-vs-
+filaments selection itself (T-098's territory) — the new `'unavailable'`
+branch sits ahead of that selection in the ternary and does not change it.
+
+Aito coverage gate: statements 83 missed, branches 165, functions 28, lines
+38 — statements/functions/lines unchanged at the ratchet ceiling, branches
+dropped from 171 to 165 (the new `referenceDataError` branch is fully
+covered by the three new tests), no regression.
+
+### CORRECTION — 2026-08-15 — loop-5 verifier fix, narrowing
+
+The verifier flagged (without failing the loop on) the same shape of
+overreach here as in T-076's correction above. `referenceDataError` was
+`filamentsQuery.isError || printersQuery.isError || defaultsQuery.isError` —
+the bare `isError`. With `retry: 1`, `staleTime: 60_000` and v5's default
+`refetchOnWindowFocus`, a query that already fetched successfully once can
+still fail on a later BACKGROUND refetch while its previous `data` stays in
+the cache. `isError` goes true in that case too, so the band would flip to
+"Could not load calculator pricing" over a price it could still compute
+perfectly well from the data it already had — a case the approved wording
+never covered (it was scoped to a fetch that "fails to load", i.e. never
+produces anything, not a fetch that succeeded and later degraded).
+
+FIX: added a module-level `isFetchFailure(query)` helper —
+`query.isError && !query.data`, mirroring the `isError && !data` shape used
+in `ActivityRail` (T-076's correction) — and built `referenceDataError` from
+it for all three reference-data queries instead of their bare `isError`
+flags. One shared helper rather than three inline `isError && !data` checks:
+istanbul counts branch hits at the SOURCE location, not per call site, so
+three separate inline checks would have needed a background-failure test for
+each of the three queries to keep the coverage ratchet from moving; routed
+through one function, any one of them exercising the `isError && !data` path
+covers the branch for all three. Narrowing only: a query that has never
+resolved still reports unavailable exactly as before (`!query.data` is true
+until the first success), so the original first-fetch-failure test and the
+two "genuinely not configured" tests are unaffected.
+
+Added one test to `TaskEditor.test.tsx`: renders with all three queries
+resolving successfully first (band shows the real "Where the money goes"
+split), then fails the next `GET /calculator/printers/` response and forces
+a refetch directly on an externally-held `QueryClient`
+(`client.refetchQueries`, since jsdom does not model `staleTime`/window-focus
+timing deterministically) — asserts the band keeps showing the computed
+price and never renders "Could not load calculator pricing", pinning this
+state as distinct from the cold-cache failure test above.
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9. `bash tools/gen_surface.sh`
+diff against `SURFACE.md`: empty — no top-level export changed in either
+fix's files.
+
+Combined (T-076 + T-091 corrections) Aito coverage gate, from `frontend/`:
+statements 1873/1956 (83 missed), branches 1875/2040 (165 missed), functions
+628/656 (28 missed), lines 1642/1680 (38 missed) — all four exactly at the
+ratchet ceiling carried over from T-091's own pass, no regression. Full
+Aito-scoped suite (56 files matching
+`components/aito|utils/aito|hooks/useAito|pages/AitoPage`): 868/868 passed.
+`npm run lint`: clean.
+
+### CORRECTION — 2026-08-15 — loop-5 verifier fix #2, assertion point and a
+### false coverage claim above
+
+The blind verifier caught two separate problems with the correction directly
+above this one.
+
+**The new test did not guard the fix.** It reverted `isFetchFailure`'s body
+to the bare `query.isError` — exactly the overreach this task's fix exists to
+remove — and ran the whole `TaskEditor.test.tsx` file 5 times: 47/47 passed,
+5/5 runs. Instrumenting `ImpressionFields`'s render sequence showed the error
+render DOES eventually land (`printersQuery` does settle into `status:
+"error"` with `data` retained, so the fix is genuinely needed), but
+`await act(async () => { await client.refetchQueries(...) })` does not
+reliably flush that propagation before the test's two synchronous assertions
+run. The test was checking a negative (`queryByText(...).not.toBeInTheDocument()`)
+with nothing forcing it to wait for the failed state to actually arrive first
+— a negative assertion that races the state it is supposed to observe passes
+whether or not the underlying narrowing exists.
+
+FIX, confined to the test: before the two existing assertions, added
+`await waitFor(() => expect(client.getQueryState(['calculatorPrinters'])?.status).toBe('error'))`
+— positive evidence that the refetch has actually landed in `error` (with
+`data` retained, since the query previously fetched successfully) before
+asserting the unavailable message is absent and the price still renders.
+Confirmed by direct measurement, not assumption: with `isFetchFailure`
+temporarily reverted to bare `query.isError`, the revised test fails on 5/5
+runs of the full file (1 failed, 46 passed each time); restoring the
+narrowing, it passes 5/5. Source files (`ImpressionFields.tsx`,
+`ActivityRail.tsx`) were not touched — the verifier confirmed both
+narrowings are correct and the `ActivityRail` test is already
+mutation-proven.
+
+**The "one shared helper instead of three inline checks" coverage rationale
+above, in this task's own text, is false.** It claimed three inline
+`isError && !data` checks "would have needed a background-failure test for
+each of the three queries to keep the coverage ratchet from moving." Istanbul
+records `&&` branches by whether the second operand was EVALUATED, not
+whether it was true — reaching `isError` with `data` still falsy already
+exercises both sides of `isError && !data`, regardless of which query it is
+attached to or whether that particular query ever undergoes a background
+refetch. The verifier measured branch coverage at `ImpressionFields.tsx:22`
+directly: `[274, 3]` (hit counts for the two operands) with the new test
+present, `[193, 2]` with it deleted — both already fully covered (every
+branch hit at least once) by the pre-existing cold-cache failure tests added
+earlier in this same task, which reach `isError` with `data` absent. The new
+background-refetch test contributes ZERO branch coverage; the coverage
+number never depended on it, with or without a shared helper.
+
+The shared `isFetchFailure` helper is NOT being undone by this correction —
+it remains a reasonable design on its own terms (one reader for three
+identically-treated queries, rather than three copies of the same
+condition, hides nothing and cannot drift out of sync). But the coverage
+argument for it was wrong and is struck; the actual reason to have the new
+background-refetch test is behavioral verification (pinning that a
+degraded-but-cached query still prices), not coverage — the coverage ratchet
+was never at risk either way.
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9. `bash tools/gen_surface.sh`
+diff against `SURFACE.md`: empty — this correction touches only test code and
+this changelog.
+
+Aito coverage gate, from `frontend/`, re-run after the test-only change:
+statements 1873/1956 (83 missed), branches 1875/2040 (165 missed), functions
+628/656 (28 missed), lines 1642/1680 (38 missed) — identical to the figures
+above, flat as expected: the assertion-timing fix changes when the test
+asserts, not what source lines/branches execute. `npm run lint`: clean.
+
+## T-092 — 2026-08-15 — user-approved behavior change
+
+`ShippingFields`' rate input typed straight into `ShippingDraft.price` via
+`Number(e.target.value)`, with no floor: `Number('-50')` is `-50`. Verified
+all three of the auditor's claims before fixing: `min={0}` on the input is
+inert because nothing in either caller submits a `<form>` — `ShippingCard`'s
+Save (`onClick={save}`) and `NewProjectDrawer`'s Create (`onClick={create}`)
+are both `type="button"`; `shippingDraftErrors` (`utils/shippingDraft.ts`)
+checked only `draft.price !== null`, so a negative figure passed as
+"complete"; and the server field is `shipping_price: float | None =
+Field(default=None, ge=0)` (`backend/app/schemas/aito.py:171`), which 422s.
+A negative price previously reached `isShippingComplete`/`shippingPayload`
+undetected — from the panel that surfaced as the generic `aito.saveFailed`
+toast, and from the create drawer as the whole-project `aito.createFailed`
+toast, in both cases with no field named as the cause.
+
+CHOSEN SHAPE: a validation branch in `shippingDraftErrors`, not a
+`Math.max(0, ...)` clamp. `ShippingFields`/`shippingDraft.ts` already treat
+every other invalid state this way — island, name and phone are each a pure
+`shippingDraftErrors` check, revealed via `blurred` and rendered with
+`FieldError` under the field, and gate `isShippingComplete`/`canCreate`
+identically. A silent clamp would also have been the shape the task
+explicitly warned about: clamping toward 0 cannot mis-bill a *different*
+positive charge, but it would still swallow a typo like "-50" into "0" (a
+free shipment) with nothing on screen telling the operator their figure was
+rejected — the opposite of "flagged". Reusing the existing validation
+machinery keeps both surfaces (panel Save, drawer Create) blocked from
+submitting a negative price with no code changes needed in either caller:
+`ShippingCard.save()` and `NewProjectDrawer.create()` already gate on
+`isShippingComplete`/`visibleShippingDraftErrors`.
+
+FIX, confined to `shippingDraft.ts` and `ShippingFields.tsx`:
+`shippingDraftErrors().price` now returns `'aito.shippingNoRate'` for a null
+price (unchanged) and the new `'aito.shippingRateNegative'` for a negative
+one — a distinct key, since null and negative are different problems with
+different fixes. `ShippingFields` surfaces the negative case directly on the
+rate input: `aria-invalid` + the same red-border class the other fields use,
+plus a `FieldError` line underneath, gated so it fires ONLY on the negative
+branch (`value.price !== null && value.price < 0`) — the null branch is
+left alone because the existing amber "No rate from Zoho — enter one" text
+already covers it per-service, and surfacing `errors.price` unconditionally
+would have doubled that message. One new i18n key,
+`aito.shippingRateNegative` ("Rate cannot be negative" / per-locale
+translations), added to all 13 locale files, following the
+`aito.pricingUnavailable` precedent exactly; `check-i18n-parity.mjs` passes
+(6623 leaves in every locale).
+
+OBSERVABLE CHANGE, quoting the approved description verbatim: "typing a
+negative shipping rate will be corrected/flagged in the field instead of
+being accepted and later failing the whole save or create." Concretely: the
+rate input gets a red border and an inline "Rate cannot be negative" message
+the moment a negative figure is typed (the field only ever renders once an
+island is picked, which already sets `blurred.island` — no extra blur is
+needed to reveal it), and both Save and Create refuse to submit while it
+stays negative.
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9. `bash tools/gen_surface.sh`
+diff against `SURFACE.md`: empty — no top-level export added, renamed or
+removed.
+
+Added one test to `shippingDraft.test.ts` (negative price gets the new key,
+distinctly from a null one; `isShippingComplete` goes false; `-0` is not
+flagged) and two to `AitoShippingFields.test.tsx`: typing `-50` into the
+rate input renders "cannot be negative" and sets `aria-invalid`, and
+correcting it to `50` clears both; a service with no Zoho rate and a null
+price renders the "No rate from Zoho" line exactly once (not doubled by the
+new field-level error). Reverted the two source files
+(`git checkout --` against the committed `HEAD`, leaving the new tests and
+i18n additions in place) and ran the two affected test files three times:
+2 failed / 32 passed on every run (the two new negative-price tests, the
+same two each time). Restored the source fix and re-ran three more times:
+34 passed / 34 passed / 34 passed. Confirmed a clean tracked tree afterward.
+
+Aito coverage gate, from `frontend/`: statements 1874/1957 (83 missed),
+branches 1885/2050 (165 missed), functions 628/656 (28 missed), lines
+1643/1681 (38 missed) — all four sit at the same ratchet ceiling as before
+this task (the new branch is fully covered by the new tests; `shippingDraft.ts`
+itself falls outside this gate's `src/utils/aito*.ts` glob, so its own new
+branch is exercised only by `shippingDraft.test.ts`, not counted in this
+report). `npm run lint`: clean. `npm run build`: succeeds; `static/`
+reverted afterward and left untouched. Full `npx vitest run`: 3 pre-existing
+failures, all in the briefing's known-flaky list (`PrintModal.test.tsx` x2,
+`LoginPage.test.tsx` x1) — all three pass in isolation, confirmed flaky and
+unrelated to this change.
+
+### CORRECTION — 2026-08-15 — T-091 prose drift, caught by the iteration-6 verifier
+
+The T-091 entry above describes `referenceDataError` as
+
+    filamentsQuery.isError || printersQuery.isError || defaultsQuery.isError
+
+That was true of the FIRST version of the fix and is stale. The shipped code applies a per-query
+`isFetchFailure(query) = query.isError && !query.data` to all three reference queries — the
+narrowing made by the loop-5 verifier fix and described in the correction blocks above. The
+prose in the original entry was simply never updated when the code was narrowed.
+
+This matters only for accuracy of the record, not for scope: `isError && !data` is strictly
+NARROWER than `isError`, so a failed BACKGROUND refetch with cached data still present keeps the
+BASE behavior (the real price stays on screen) instead of claiming pricing is unavailable. The
+observable change therefore sits INSIDE the envelope the user approved, not outside it. Nothing
+needs re-approval; the entry above simply overstated what changed.
+
+Recorded as an append rather than an edit, consistent with this file's append-only history across
+the whole campaign (`git diff refactor-base..HEAD -- BASELINE-CHANGELOG.md` has zero removed lines).

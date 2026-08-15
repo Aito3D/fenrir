@@ -12,7 +12,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act, waitFor, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SHIPPING_PHONE_RE, useAitoPageMutations } from '../../hooks/useAitoPageMutations';
 import { __resetBoardSync } from '../../hooks/useBoardSync';
@@ -20,6 +20,17 @@ import { ToastProvider } from '../../contexts/ToastContext';
 import { placeholderProject } from '../../utils/aitoOptimistic';
 import { api } from '../../api/client';
 import type { AitoProject, ZohoQuotePreview, ZohoQuoteShipping } from '../../api/client';
+import { flashRevert } from '../../hooks/useRevertFlash';
+
+// `flashRevert` is imported as a direct binding by useOptimisticBoardMutation,
+// so vi.spyOn on the module namespace would patch an object nobody reads.
+// Mock the module instead, spreading the original so anything else the
+// module exports (none currently, but future-proof) stays real. Same
+// pattern as AitoQuoteStatusActions.test.tsx.
+vi.mock('../../hooks/useRevertFlash', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../hooks/useRevertFlash')>()),
+  flashRevert: vi.fn(),
+}));
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -132,5 +143,48 @@ describe('importMutation — importableShipping gate', () => {
       shipping_price: 3200,
     });
     expect(body).not.toHaveProperty('shipping_service');
+  });
+});
+
+// deleteMutation's optimistic remove is otherwise only ever exercised with
+// deleteAitoProject resolving (AitoPage.test.tsx's `heldDelete`, which always
+// eventually settles) — nothing makes it reject, so the rollback + toast in
+// its onError never ran. Mirrors "puts the card back and flashes when the
+// server refuses" in AitoQuoteStatusActions.test.tsx.
+describe('deleteMutation — onError', () => {
+  beforeEach(() => {
+    __resetBoardSync();
+    vi.mocked(flashRevert).mockClear();
+  });
+
+  it('puts the optimistically-removed card back and shows the delete-failed toast', async () => {
+    vi.spyOn(api, 'deleteAitoProject').mockRejectedValue(new Error('nope'));
+    const project = { id: 7, description: 'Support de caméra' } as AitoProject;
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    client.setQueryData(['aito-projects'], [project]);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>
+        <ToastProvider>{children}</ToastProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAitoPageMutations(), { wrapper });
+
+    act(() => {
+      result.current.deleteMutation.mutate(7);
+    });
+
+    // The rejection settles fast enough (mockRejectedValue, fake-timer-free)
+    // that the transient optimistic-empty state isn't reliably observable
+    // here — same reasoning AitoQuoteStatusActions.test.tsx's equivalent test
+    // uses. What's asserted is the rollback's end state: the card is back,
+    // the revert flashed, and the failure toast fired.
+    await waitFor(() => {
+      expect(client.getQueryData<AitoProject[]>(['aito-projects'])).toEqual([project]);
+    });
+    expect(flashRevert).toHaveBeenCalledWith(7);
+    expect(await screen.findByText('Could not delete this project')).toBeInTheDocument();
   });
 });

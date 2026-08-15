@@ -8,11 +8,14 @@
 
 import { useState } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { screen, fireEvent, act, waitFor, within } from '@testing-library/react';
+import { screen, fireEvent, act, waitFor, within, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BrowserRouter } from 'react-router-dom';
 import { server } from '../mocks/server';
 import { render } from '../utils';
+import { ToastProvider } from '../../contexts/ToastContext';
 import { TaskRow } from '../../components/aito/TaskRow';
 import { TaskEditor } from '../../components/aito/TaskEditor';
 import { computeImpressionCost, emptyTaskDraft, roundUpTo50, taskTotal } from '../../utils/taskDraft';
@@ -105,6 +108,27 @@ function ControlledTaskRow({
       canTick
     />
   );
+}
+
+/** Same wiring as `render(<ControlledTaskRow .../>)`, but with the
+ *  `QueryClient` mounted OUTSIDE the tree so a test can force a background
+ *  refetch on it directly (`client.refetchQueries`) rather than waiting on
+ *  `staleTime`/window-focus semantics neither jsdom nor fake timers model
+ *  cleanly. */
+function renderControlledTaskRowWithClient(initial: TaskDraft, onChangeSpy: (next: TaskDraft) => void) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  rtlRender(
+    <QueryClientProvider client={client}>
+      <BrowserRouter>
+        <ToastProvider>
+          <ControlledTaskRow initial={initial} onChangeSpy={onChangeSpy} />
+        </ToastProvider>
+      </BrowserRouter>
+    </QueryClientProvider>,
+  );
+  return client;
 }
 
 /** Same wiring, one level up: state lives outside `TaskEditor`, `onChange`
@@ -818,6 +842,96 @@ describe('TaskRow', () => {
     });
   });
 
+  it('printing: clamps a negative typed weight to zero, and reprices the clamped value rather than the negative one', async () => {
+    // ImpressionFields' weight handler is `Math.max(0, Number(e.target.value))`
+    // — every existing test types only well-formed positive weights, so this
+    // is the only test that would notice the clamp being dropped (which would
+    // let a negative weight reach `computeImpressionCost` and corrupt the
+    // printed total).
+    const onChangeSpy = vi.fn();
+    const task: TaskDraft = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: 500,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
+
+    const weightInput = await screen.findByLabelText(/weight/i);
+    // Wait for the reference-data queries to resolve first: firing the edit
+    // while they are still pending hits ImpressionFields' `referenceDataLoading`
+    // guard, which reports the edit with no computed cost at all — leaving
+    // `impressionCost` unchanged and making the assertion below meaningless.
+    await waitFor(() => expect(screen.getByTestId('impression-computed')).not.toHaveTextContent('—'));
+    fireEvent.change(weightInput, { target: { value: '-10' } });
+
+    // Positive evidence first: the field itself settles on the clamped value
+    // (the parent state ImpressionFields is controlled by), not the typed
+    // negative one.
+    await waitFor(() => expect(weightInput).toHaveValue(0));
+
+    const lastTask = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft;
+    expect(lastTask.impression?.weightG).toBe(0);
+
+    // The clamp feeds the priced total too: the reported cost is what a 0 g
+    // print prices to, not whatever a raw -10 g would have produced.
+    const pricedAtZero = computeImpressionCost(
+      { ...task.impression, weightG: 0 },
+      mockFilaments[0],
+      mockPrinters[0],
+      mockDefaults,
+    );
+    expect(lastTask.impressionCost).toBe(roundUpTo50(pricedAtZero!.total_ttc));
+  });
+
+  it('printing: clamps a zero-typed or fractional quantity to a positive integer, and reprices at the clamped value', async () => {
+    // ImpressionFields' quantity handler is
+    // `Math.max(1, Math.floor(Number(e.target.value) || 1))` — every existing
+    // test types only well-formed positive integers, so this is the only test
+    // that would notice either the `|| 1` fallback (for a typed '0', where
+    // `Number('0')` is falsy) or the `Math.floor` (for a typed '1.5') being
+    // dropped, both of which would let a bad piece count reach the printed
+    // total.
+    const onChangeSpy = vi.fn();
+    const task: TaskDraft = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 2, color: 'Noir' },
+      impressionCost: 500,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
+
+    const quantityInput = await screen.findByLabelText('Quantity');
+    // Wait for the reference-data queries to resolve first: firing the edit
+    // while they are still pending hits ImpressionFields' `referenceDataLoading`
+    // guard, which reports the edit with no computed cost at all — leaving
+    // `impressionCost` unchanged and making the assertions below meaningless.
+    await waitFor(() => expect(screen.getByTestId('impression-computed')).not.toHaveTextContent('—'));
+    const pricedOne = computeImpressionCost(
+      { ...task.impression, quantity: 1 },
+      mockFilaments[0],
+      mockPrinters[0],
+      mockDefaults,
+    );
+    const expectedCostAtOne = roundUpTo50(pricedOne!.total_ttc);
+
+    // A typed '0': `Number('0')` is falsy, so without the `|| 1` fallback the
+    // stored quantity would be zero pieces.
+    fireEvent.change(quantityInput, { target: { value: '0' } });
+    await waitFor(() => expect(quantityInput).toHaveValue(1));
+    let lastTask = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft;
+    expect(lastTask.impression?.quantity).toBe(1);
+    expect(lastTask.impressionCost).toBe(expectedCostAtOne);
+
+    onChangeSpy.mockClear();
+
+    // A typed '1.5': without `Math.floor`, the stored quantity would be a
+    // fractional piece count.
+    fireEvent.change(quantityInput, { target: { value: '1.5' } });
+    await waitFor(() => expect(quantityInput).toHaveValue(1));
+    lastTask = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft;
+    expect(lastTask.impression?.quantity).toBe(1);
+    expect(lastTask.impressionCost).toBe(expectedCostAtOne);
+  });
+
   it('printing: every print parameter is on screen, with no disclosure to open', async () => {
     const task = {
       ...emptyTaskDraft(),
@@ -922,6 +1036,106 @@ describe('TaskRow', () => {
     // Once the queries land, the band settles into the real cost split — the
     // same end state as the "shows the line total and the cost split" test.
     await band.findByRole('img', { name: 'Where the money goes' });
+  });
+
+  it('printing: reports a failed reference-data fetch as pricing unavailable, not as unconfigured', async () => {
+    // `isLoading` (`isPending && isFetching`) goes FALSE the instant a query
+    // settles into its error state, and `printers`/`filaments` still default
+    // to `[]` on error — so an ungated check reads a fetch failure exactly
+    // like a genuinely empty calculator and sends the operator to
+    // `/calculator` to "fix" a configuration problem that does not exist.
+    server.use(http.get('/api/v1/calculator/printers/', () => HttpResponse.error()));
+
+    const task = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: 500,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
+
+    const band = within(await screen.findByTestId('impression-band'));
+    await band.findByText('Could not load calculator pricing. Please try again.');
+    expect(band.queryByText(/no printers configured/i)).not.toBeInTheDocument();
+    expect(band.queryByText(/no filaments configured/i)).not.toBeInTheDocument();
+    // No trip to the calculator either: there is nothing misconfigured there.
+    expect(band.queryByRole('link', { name: 'Calculator' })).not.toBeInTheDocument();
+  });
+
+  it('printing: keeps the computed price when a background refetch fails after data has already loaded', async () => {
+    // With `staleTime: 60_000` and v5's default `refetchOnWindowFocus`, a
+    // reference-data query can fail on a REFETCH while the previously-fetched
+    // list is still sitting in its cache — `isError` goes true, but `data`
+    // (and everything `ImpressionFields` prices with) is untouched. That is a
+    // different, later state than the cold-cache failure above, and must not
+    // collapse into the same "pricing unavailable" message: the band still
+    // has everything it needs to show a real price.
+    const task = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: 500,
+    };
+    const client = renderControlledTaskRowWithClient(task, vi.fn());
+
+    // Let all three reference-data queries land successfully first — same
+    // settled state as the "shows the line total and the cost split" test.
+    const band = within(await screen.findByTestId('impression-band'));
+    await band.findByRole('img', { name: 'Where the money goes' });
+
+    // Fail the next fetch and force a refetch directly on the client. This
+    // reaches the real-world "background refetch failed" state (`isError`
+    // true, cached `data` retained) without depending on `staleTime` or
+    // window-focus timing, which jsdom does not model deterministically.
+    server.use(http.get('/api/v1/calculator/printers/', () => HttpResponse.error()));
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ['calculatorPrinters'] });
+    });
+
+    // Positive evidence FIRST: without this, the two assertions below can run
+    // before the failed-refetch state has actually propagated through
+    // `printersQuery` and into `referenceDataError`, and the negative
+    // assertion passes vacuously — it would pass whether or not the fix
+    // exists. Only once the query has genuinely settled into `error` (with
+    // `data` retained, since `retry: false` and the mocked response reject
+    // immediately) does checking for the absent error message actually prove
+    // anything.
+    await waitFor(() => {
+      expect(client.getQueryState(['calculatorPrinters'])?.status).toBe('error');
+    });
+
+    expect(band.queryByText('Could not load calculator pricing. Please try again.')).not.toBeInTheDocument();
+    band.getByRole('img', { name: 'Where the money goes' });
+  });
+
+  it('printing: still reports "No printers configured" when the calculator genuinely has none', async () => {
+    server.use(http.get('/api/v1/calculator/printers/', () => HttpResponse.json([])));
+
+    const task = {
+      ...emptyTaskDraft(),
+      impression: { printerId: null, filamentId: 1, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: 500,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
+
+    const band = within(await screen.findByTestId('impression-band'));
+    await band.findByText(/no printers configured/i);
+    band.getByRole('link', { name: 'Calculator' });
+    expect(band.queryByText('Could not load calculator pricing. Please try again.')).not.toBeInTheDocument();
+  });
+
+  it('printing: still reports "No filaments configured" when the calculator genuinely has none', async () => {
+    server.use(http.get('/api/v1/calculator/filaments/', () => HttpResponse.json([])));
+
+    const task = {
+      ...emptyTaskDraft(),
+      impression: { printerId: 1, filamentId: null, weightG: 40, timeMin: 60, quantity: 1, color: 'Noir' },
+      impressionCost: 500,
+    };
+    render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
+
+    const band = within(await screen.findByTestId('impression-band'));
+    await band.findByText(/no filaments configured/i);
+    band.getByRole('link', { name: 'Calculator' });
+    expect(band.queryByText('Could not load calculator pricing. Please try again.')).not.toBeInTheDocument();
   });
 
   it('printing: the band still carries the total when nothing can be computed', async () => {

@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
+import { AlertTriangle, Loader2 } from 'lucide-react';
 import { EventItem } from './EventItem';
 import { useProjectEvents } from '../../../hooks/useProjectEvents';
 import { api, type AitoEvent, type AitoEventPage, type AitoHistoryDepth } from '../../../api/client';
 import { useToast } from '../../../contexts/ToastContext';
 import { nextPlaceholderId } from '../../../utils/aitoOptimistic';
+import { Button } from '../../Button';
 
 const DEPTH_STORAGE_KEY = 'aito.history.depth';
 
@@ -49,7 +50,10 @@ export function ActivityRail({ projectId }: { projectId: number }) {
   const seenIds = useRef<Set<number>>(new Set());
   const shouldAnimateIn = (id: number) => !seenIds.current.has(id);
 
-  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useProjectEvents(projectId, depth);
+  const { data, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = useProjectEvents(
+    projectId,
+    depth,
+  );
 
   const addNote = useMutation({
     mutationFn: ({ body }: { body: string; optimistic: AitoEvent }) => api.addAitoNote(projectId, body),
@@ -173,6 +177,7 @@ export function ActivityRail({ projectId }: { projectId: number }) {
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder={t('aito.history.notePlaceholder')}
+          maxLength={2000}
           className="flex-1 min-w-0 rounded-md bg-bambu-dark-tertiary/40 border border-bambu-dark-tertiary px-2 py-1 text-sm text-white placeholder:text-bambu-gray focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"
         />
         <button
@@ -186,6 +191,22 @@ export function ActivityRail({ projectId }: { projectId: number }) {
 
       {isLoading ? (
         <Loader2 className="w-4 h-4 text-bambu-gray animate-spin" />
+      ) : isError && !data ? (
+        // `!data` confines this to a first fetch that never landed a page —
+        // `useInfiniteQuery`'s `isError` is the parent observer's overall
+        // status (see infiniteQueryObserver.js), which also goes true for a
+        // failed `fetchNextPage`. In that case `data` (and therefore `events`
+        // below) is still the last-successful set of pages, and swallowing an
+        // already-rendered timeline behind this panel would be a bigger
+        // regression than the failed page itself. The Load-more button below
+        // stays live either way, so a failed next page can just be retried.
+        <div className="text-center py-4 animate-rise">
+          <AlertTriangle className="w-6 h-6 text-red-400 mx-auto mb-2" />
+          <p className="text-sm text-white font-medium">{t('aito.loadFailed')}</p>
+          <Button variant="secondary" onClick={() => refetch()} className="mt-2 mx-auto">
+            {t('common.retry')}
+          </Button>
+        </div>
       ) : events.length === 0 ? (
         <p className="text-sm text-bambu-gray">{t('aito.history.empty')}</p>
       ) : (

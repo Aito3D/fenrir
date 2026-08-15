@@ -82,3 +82,60 @@ describe('HoldButton pressEffect', () => {
     vi.useRealTimers();
   });
 });
+
+describe('HoldButton pointer/keyboard cancellation', () => {
+  const base = {
+    onHold: vi.fn(),
+    durationMs: 500 as const,
+    label: 'Test',
+    hint: 'Hold 0.5s',
+  };
+
+  it('cancels the hold on pointerleave before duration elapses, without firing onHold', () => {
+    vi.useFakeTimers();
+    const onHold = vi.fn();
+    render(<HoldButton {...base} onHold={onHold}>Go</HoldButton>);
+    const button = screen.getByRole('button');
+    const wrapper = button.parentElement!;
+    fireEvent.pointerDown(button);
+    expect(wrapper.className).toContain('scale-[1.08]');
+    act(() => vi.advanceTimersByTime(200));
+    fireEvent.pointerLeave(button);
+    expect(wrapper.className).not.toContain('scale-[1.08]');
+    act(() => vi.advanceTimersByTime(500));
+    expect(onHold).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('cancels the hold on pointercancel before duration elapses, without firing onHold', () => {
+    vi.useFakeTimers();
+    const onHold = vi.fn();
+    render(<HoldButton {...base} onHold={onHold}>Go</HoldButton>);
+    const button = screen.getByRole('button');
+    const wrapper = button.parentElement!;
+    fireEvent.pointerDown(button);
+    expect(wrapper.className).toContain('scale-[1.08]');
+    act(() => vi.advanceTimersByTime(200));
+    fireEvent.pointerCancel(button);
+    expect(wrapper.className).not.toContain('scale-[1.08]');
+    act(() => vi.advanceTimersByTime(500));
+    expect(onHold).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('cancels a keyboard hold on keyup before duration elapses, the same way a short pointer tap cancels', () => {
+    vi.useFakeTimers();
+    const onHold = vi.fn();
+    render(<HoldButton {...base} onHold={onHold}>Go</HoldButton>);
+    const button = screen.getByRole('button');
+    const wrapper = button.parentElement!;
+    fireEvent.keyDown(button, { key: 'Enter' });
+    expect(wrapper.className).toContain('scale-[1.08]');
+    act(() => vi.advanceTimersByTime(200));
+    fireEvent.keyUp(button, { key: 'Enter' });
+    expect(wrapper.className).not.toContain('scale-[1.08]');
+    act(() => vi.advanceTimersByTime(500));
+    expect(onHold).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+});

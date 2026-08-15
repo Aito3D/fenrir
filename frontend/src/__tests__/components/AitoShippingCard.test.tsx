@@ -246,6 +246,38 @@ describe('ShippingCard', () => {
     render(<ShippingCard project={{ ...shipped, shipping_island: 'bora-bora' } as AitoProject} currency="XPF" />);
     expect(screen.getByText('Bora Bora')).toBeInTheDocument();
   });
+
+  // None of the 13 add/edit/save/priceEdited/PATCH-failure tests in this
+  // file ever click Cancel — the one interaction that discards an
+  // in-progress edit without sending anything. `cancel()` clears both
+  // `editing` and `draft`, so this asserts the POSITIVE evidence that the
+  // read view is back on screen (with the pre-edit stored values still
+  // showing, not the typed-but-discarded ones) before checking the negative
+  // (no PATCH). `updateAitoProject` is only ever reached from `save()`, so
+  // there is exactly one layer standing between Cancel and a PATCH — cancel()
+  // itself never calling `mutate`.
+  it('discards an in-progress edit and sends nothing when Cancel is clicked', async () => {
+    const spy = vi.spyOn(api, 'updateAitoProject');
+    render(<ShippingCard project={shipped} currency="XPF" />);
+
+    await userEvent.click(screen.getByRole('button', { name: /edit shipping/i }));
+    const firstName = screen.getByLabelText(/recipient first name/i);
+    await userEvent.clear(firstName);
+    await userEvent.type(firstName, 'Someone Else');
+    expect(firstName).toHaveValue('Someone Else');
+
+    await userEvent.click(screen.getByRole('button', { name: /cancel/i }));
+
+    // Positive evidence first: the read view is back (Edit control visible
+    // again, the edit form's fields gone) before trusting any absence.
+    expect(await screen.findByRole('button', { name: /edit shipping/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/recipient first name/i)).not.toBeInTheDocument();
+    // The stored, pre-edit recipient is what the read view shows — not the
+    // discarded 'Someone Else' typed into the form.
+    expect(screen.getByText('Jean-Pierre DUPONT')).toBeInTheDocument();
+    expect(screen.queryByText(/Someone Else/)).not.toBeInTheDocument();
+    expect(spy).not.toHaveBeenCalled();
+  });
 });
 
 /** Renders `ShippingCard` against a real QueryClient seeded with the board

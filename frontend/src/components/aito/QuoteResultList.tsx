@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
@@ -14,6 +14,14 @@ export interface QuoteResultListProps {
 }
 
 const DEBOUNCE_MS = 250;
+
+// Hover-intent style dwell: only a row the pointer or the keyboard cursor
+// actually rests on gets its preview warmed. 200ms is squarely in the usual
+// hover-intent range (150-250ms) — long enough that a pointer sweeping
+// across a 20-row list, or a held ArrowDown, settles on nothing and fires no
+// prefetch at all, short enough that a genuine pause still feels instant by
+// the time the user reaches for Enter or a click.
+const PREFETCH_DWELL_MS = 200;
 
 /** Browse-first Zoho quote picker for the import drawer.
  *
@@ -36,6 +44,15 @@ export function QuoteResultList({ selected, onSelect, onClear }: QuoteResultList
   const [rawQuery, setRawQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [highlighted, setHighlighted] = useState(-1);
+  const prefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    // Clears any dwell timer left pending when the component goes away —
+    // the leaked-timer-after-unmount class of bug this gate exists to avoid.
+    return () => {
+      if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const id = setTimeout(() => setDebouncedQuery(rawQuery.trim()), DEBOUNCE_MS);
@@ -80,8 +97,14 @@ export function QuoteResultList({ selected, onSelect, onClear }: QuoteResultList
 
   const highlight = (index: number) => {
     setHighlighted(index);
+    if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current);
     const quote = results[index];
-    if (quote) prefetch(quote.id);
+    if (quote) {
+      prefetchTimerRef.current = setTimeout(() => {
+        prefetchTimerRef.current = null;
+        prefetch(quote.id);
+      }, PREFETCH_DWELL_MS);
+    }
   };
 
   if (selected) {

@@ -686,6 +686,114 @@ describe('ProjectDetailPanel tasks', () => {
     }
   });
 
+  it('blurring an edited, persisted row flushes its debounced PATCH immediately, instead of waiting out the 500ms window', async () => {
+    // ProjectDetailPanel wires TaskEditor's onRowBlur to
+    // `if (task.id !== null) onRowBlur(task.id)` (onRowBlur here is
+    // useProjectTasks' `flush`). This is the panel's only caller of that
+    // early-flush path — useProjectTasks.test.tsx calls `flush` directly,
+    // never through a real blur event — so nothing previously proved the
+    // wiring itself fires. Fake timers make the point: the sibling
+    // "debounces a task-field edit" test above proves the 500ms timer alone
+    // eventually sends the PATCH, which would make a working AND a
+    // completely disconnected blur handler look identical if this test also
+    // let 500ms elapse. Asserting the PATCH lands after advancing 0ms —
+    // strictly less than the debounce — isolates the blur path from the
+    // timer path.
+    const updateSpy = vi.spyOn(api, 'updateAitoTask').mockResolvedValue({ ...mockTask, scan_cost: 700 });
+    try {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      show();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      await editTask();
+      const scanInput = await screen.findByLabelText('Scan Cost');
+
+      fireEvent.change(scanInput, { target: { value: '700' } });
+      // relatedTarget outside the row (document.body), so TaskRow's
+      // `!e.currentTarget.contains(e.relatedTarget)` reads true — focus
+      // genuinely left the row rather than moving to a sibling field inside
+      // it, which the same handler treats as "still editing" and ignores.
+      fireEvent.blur(scanInput, { relatedTarget: document.body });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(updateSpy).toHaveBeenCalledTimes(1);
+      expect(updateSpy).toHaveBeenCalledWith(101, { scan_cost: 700 });
+    } finally {
+      updateSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('blurring a still-creating row (no id yet) never results in a PATCH — defended in depth, not by any single guard', async () => {
+    // This pins the OUTCOME ("no PATCH is ever attempted for a draft row"),
+    // not any one guard: three independent layers each independently
+    // prevent it, so no single-line removal of any ONE of them falsifies
+    // this test —
+    //   1. ProjectDetailPanel.tsx's wiring: `if (task.id !== null)
+    //      onRowBlur(task.id)`. In real code this is also enforced at
+    //      compile time — `onRowBlur`'s parameter is `number` and `task.id`
+    //      is `number | null`, so removing the guard fails `tsc -b` outright
+    //      (confirmed separately; not exercised by this runtime test).
+    //   2. useProjectTasks.ts's `onTasksChange`: `if (edited.id === null)
+    //      return;` — a null-id edit is never diffed into a pending patch in
+    //      the first place, so this row's `pendingRef` entry is never
+    //      created regardless of whether blur calls `flush` at all.
+    //   3. Even with (1) and (2) both gone, `onTasksChange` would still bail
+    //      at `const baselineRow = baselineRef.current.get(taskId); if
+    //      (!baselineRow) return;` — `baselineRef` is populated only from
+    //      server-loaded tasks, which never contain a null id, so a pending
+    //      patch for id `null` can never be scheduled by any path.
+    // A freshly added row's create POST is held open for this whole test, so
+    // its `id` stays null throughout. A bare
+    // `waitFor(() => expect(updateSpy).not.toHaveBeenCalled())` would pass
+    // the instant it's called, proving nothing about whether the blur was
+    // even processed — see the `titleInput` assertion below, which is
+    // positive proof the edit (and therefore the row/blur machinery around
+    // it) is live, before the negative PATCH assertion that follows it.
+    let releaseCreate: (task: AitoTask) => void = () => {};
+    const heldCreate = new Promise<AitoTask>((resolve) => {
+      releaseCreate = resolve;
+    });
+    const updateSpy = vi.spyOn(api, 'updateAitoTask');
+    server.use(http.post('/api/v1/aito/12/tasks', async () => HttpResponse.json(await heldCreate)));
+
+    try {
+      show();
+      await screen.findByRole('heading', { name: /^Bracket mount/ });
+      await userEvent.click(screen.getByRole('button', { name: /add task/i }));
+
+      const titleInput = await screen.findByLabelText('Optional title');
+      fireEvent.change(titleInput, { target: { value: 'Still creating' } });
+      // Positive evidence the edit landed — `onTasksChange` calls
+      // `setTasks(next)` before it ever inspects `edited.id`, so the value on
+      // screen updating proves this exact row's edit/blur wiring ran, not
+      // just that the click was ignored.
+      expect(titleInput).toHaveValue('Still creating');
+
+      fireEvent.blur(titleInput, { relatedTarget: document.body });
+      // Deterministically past the 500ms debounce a persisted row would
+      // flush within — there is no timer for production code to schedule
+      // for a row with no pending patch, so this just gives any (wrongly
+      // fired) mutate() a chance to reach the mocked endpoint. Fake timers
+      // (rather than a wall-clock `setTimeout`) keep this instant and
+      // immune to slow-CI flakiness — same precedent as QuoteResultList's
+      // prefetch-dwell-gate tests.
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(600);
+      });
+
+      expect(updateSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      updateSpy.mockRestore();
+      releaseCreate({ ...mockTask, id: 999, title: 'Still creating' });
+    }
+  });
+
   it('does not resurrect a step\'s old Done state when the card is reopened', async () => {
     // Production runs a 60s app-wide staleTime (App.tsx), so reopening a card
     // within the minute is served from the `['aito-tasks', id]` cache with no
@@ -2396,6 +2504,144 @@ describe('ProjectDetailPanel description regeneration', () => {
     // the pre-fetch disabled state by accident.
     await waitFor(() => expect(screen.getByTestId('panel-value-ring')).toHaveAttribute('aria-valuemax', '0'));
     expect(screen.getByRole('button', { name: 'Regenerate' })).toBeDisabled();
+  });
+
+  it('skips the save entirely when the regenerated summary is unchanged', async () => {
+    // Pins the guard at the top of regenerateMutation's onSuccess: an
+    // unchanged (or blank) summary sets 'saved' directly and returns before
+    // ever calling updateMutation.mutate — no PATCH belongs on the wire for a
+    // save the operator never asked for. The mocked PATCH here 500s
+    // (deliberately, not 200) specifically so that removing the guard does
+    // not silently still reach 'saved' through the other, real-save path:
+    // if the guard is gone, the resulting real save fails, descState never
+    // reaches 'saved', and the findByText below times out instead of passing
+    // by accident.
+    const patched = vi.fn();
+    server.use(
+      http.post('/api/v1/aito/summarize', () =>
+        HttpResponse.json({ summary: project.description, model: 'mistralai/mistral-small' }),
+      ),
+      http.patch('/api/v1/aito/12', () => {
+        patched();
+        return HttpResponse.json({ detail: 'should never be called' }, { status: 500 });
+      }),
+    );
+    show();
+    const button = screen.getByRole('button', { name: 'Regenerate' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    // Positive evidence the onSuccess handler actually ran its skip branch
+    // to completion before asserting the PATCH's absence below — otherwise a
+    // vacuous pass while the summarize call is still in flight.
+    expect(await screen.findByText(/saved/i)).toBeInTheDocument();
+    expect(patched).not.toHaveBeenCalled();
+  });
+
+  it('rolls the description card back to idle when the post-regenerate save fails', async () => {
+    // Pins regenerateMutation's inner onError (877-879): a successful
+    // regenerate that then fails to save must not leave descState stranded
+    // on 'saving' forever, and must not falsely land on 'saved' either.
+    server.use(
+      http.post('/api/v1/aito/summarize', () =>
+        HttpResponse.json({ summary: 'Résumé IA.', model: 'mistralai/mistral-small' }),
+      ),
+      http.patch('/api/v1/aito/12', () => HttpResponse.json({ detail: 'db locked' }, { status: 500 })),
+    );
+    show();
+    const button = screen.getByRole('button', { name: 'Regenerate' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    // Scoped to the Product description card specifically: ActivityRail
+    // mounts its own Loader2 (same 'lucide-loader-circle' class) while its
+    // events query is in flight, and that query has no handler in this
+    // describe block, so onUnhandledRequest: 'bypass' sends it to a real,
+    // slow-and-variable network call. An unscoped document.querySelector
+    // picks up whichever spinner happens to be in the DOM at that instant —
+    // this is what made the test non-deterministic — not SaveIndicator's.
+    const descriptionCard = screen
+      .getAllByTestId('panel-card-heading')
+      .find((h) => h.textContent === 'Product description')!
+      .closest('section')!;
+    // Positive evidence the save actually started (SaveIndicator's own
+    // spinner) before asserting the rollback below — otherwise a vacuous
+    // pass while still in flight.
+    await waitFor(() => expect(descriptionCard.querySelector('.lucide-loader-circle')).toBeInTheDocument());
+    // Positive evidence the failed save's onError handlers actually ran to
+    // completion: the shared mutation's own toast (useProjectPatchMutation's
+    // onError) fires before this panel's local setDescState/setDraft in the
+    // very same dispatch, so waiting for it — rather than racing the
+    // spinner's disappearance — cannot pass vacuously mid-flight.
+    expect(await screen.findByText(/could not save your changes/i)).toBeInTheDocument();
+    expect(descriptionCard.querySelector('.lucide-loader-circle')).not.toBeInTheDocument();
+    expect(screen.queryByText(/saved/i)).not.toBeInTheDocument();
+  });
+
+  it('restores an in-flight manual edit when a concurrent regenerate save fails', async () => {
+    // The Regenerate button disables itself while its own save is pending,
+    // but the description paragraph's own click-to-edit affordance is not
+    // gated on it (see its own comment) — so an operator can open the editor
+    // and start typing before the regenerate-triggered save has settled.
+    // That race is the only path through which `draft` can differ from
+    // `project.description` while this save is outstanding: in the ordinary,
+    // non-racing case the two are already identical (the effect that keeps
+    // `draft` following `project.description` while not editing has already
+    // done that), so `setDraft(project.description)` at 879 would be a
+    // silent no-op there and no assertion reachable without editing open
+    // could ever catch its removal.
+    const user = userEvent.setup();
+    // The PATCH's response is gated on a promise the TEST resolves, not on
+    // a fixed wall-clock delay: msw's `delay(300)` raced `user.type` below —
+    // on a slow run the 300ms could elapse mid-keystroke, so the PATCH's
+    // onError would call setDraft(project.description) between two
+    // `user.type` characters and the rest of the typed string would land on
+    // top of the reset text instead of the text the assertion expects.
+    // Holding the response open until the test has finished typing and
+    // asserting removes that race entirely.
+    let resolvePatch: () => void;
+    const patchGate = new Promise<void>((resolve) => {
+      resolvePatch = resolve;
+    });
+    server.use(
+      http.post('/api/v1/aito/summarize', () =>
+        HttpResponse.json({ summary: 'Résumé IA.', model: 'mistralai/mistral-small' }),
+      ),
+      http.patch('/api/v1/aito/12', async () => {
+        await patchGate;
+        return HttpResponse.json({ detail: 'db locked' }, { status: 500 });
+      }),
+    );
+    show();
+    const button = screen.getByRole('button', { name: 'Regenerate' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    // Scoped to the Product description card, same reason as the previous
+    // test: an unscoped document.querySelector can match ActivityRail's own
+    // (unrelated) loading spinner instead of SaveIndicator's.
+    const descriptionCard = screen
+      .getAllByTestId('panel-card-heading')
+      .find((h) => h.textContent === 'Product description')!
+      .closest('section')!;
+    // Positive evidence the regenerate's own save actually started before
+    // racing a manual edit against it.
+    await waitFor(() => expect(descriptionCard.querySelector('.lucide-loader-circle')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /edit description/i }));
+    // getByRole('textbox') is ambiguous once the editor is open: ActivityRail
+    // renders its own note <input> alongside the description <textarea>.
+    const textarea = screen.getAllByRole('textbox').find((el) => el.tagName === 'TEXTAREA')!;
+    await user.clear(textarea);
+    await user.type(textarea, 'Typed mid-regenerate');
+    expect(textarea).toHaveValue('Typed mid-regenerate');
+    // Only now let the gated PATCH fail — the race window the operator's
+    // typing needed to win is over, so the response can land safely.
+    resolvePatch!();
+    // Positive evidence the failed save's onError handlers actually ran
+    // (the shared mutation's own toast), rather than racing the spinner's
+    // disappearance.
+    expect(await screen.findByText(/could not save your changes/i)).toBeInTheDocument();
+    // The failed regenerate-save's own rollback must reclaim the draft the
+    // operator was mid-typing, not leave it holding text that was never
+    // actually saved.
+    expect(textarea).toHaveValue('Support de caméra');
   });
 });
 
