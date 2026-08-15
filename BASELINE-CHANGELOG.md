@@ -1197,3 +1197,153 @@ Aito coverage gate: statements 1820/1941 (121 missed), branches 1809/2021
 all four exactly at the existing ratchet ceiling, no regression (the new
 render branch's statements/branches are fully exercised by the new test, so
 the denominator grew without growing the missed count).
+
+## T-076 — 2026-08-14 — user-approved behavior change
+
+`ActivityRail` destructured only `data`/`isLoading`/`fetchNextPage`/
+`hasNextPage`/`isFetchingNextPage` from `useProjectEvents` (an
+`useInfiniteQuery`), never `isError`. When `GET /aito/{id}/events` fails
+(Zoho/DB hiccup, 500, offline — retried once per `App.tsx`'s `retry: 1`),
+`isLoading` is false and `data` is `undefined`, so `events` falls back to
+`[]` and the panel rendered `t('aito.history.empty')` ("Nothing recorded
+yet") for a project with a full audit trail — no error indication, no retry
+control, only reopening the panel to try again. Fixed by taking
+`isError`/`refetch` from `useProjectEvents` and, ahead of the empty-state
+check, rendering the same `aito.loadFailed` + `common.retry` pair
+`AitoPage` and `TrashGrid` already use for their own failed fetches
+(`AlertTriangle` icon, message, secondary `Button` calling `refetch()`).
+Observable change, quoting the approved description verbatim: "a project
+whose history fails to load now shows a load-failed message with a Retry
+button where it previously showed 'Nothing recorded yet'."
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9, unaffected — the only
+frontend probe, `aito-frontend-pure`, covers the pure utils in
+`frontend/src/utils/aito*.ts`, not React render output, and this change
+touches neither. `bash tools/gen_surface.sh` diff against `SURFACE.md`:
+empty — the generator's `components/aito/*.tsx` glob is not recursive, so
+it never looks inside `history/`, and no top-level export changed anyway.
+
+Added two cases to `AitoActivityRail.test.tsx`: one mocking
+`api.getAitoEvents` to reject once then resolve with an event, asserting
+the load-failed message (and not the empty message) appears first, then
+that clicking Retry re-fetches and the actor's name from the resolved
+event appears while the load-failed message is gone; the pre-existing
+"says so when there is nothing to show" test is untouched and continues
+to assert the empty message on a genuine zero-event success, keeping the
+two states distinguishable.
+
+Frontend: `npm run lint` clean. `AitoActivityRail.test.tsx` alone: 15/15
+passed. Full Aito-scoped suite (54 files matching
+`components/aito|utils/aito|hooks/useAito|pages/AitoPage`): 827/827 passed.
+Aito coverage gate: statements 1821/1942 (121 missed), branches 1811/2023
+(212 missed), functions 612/650 (38 missed), lines 1604/1669 (65 missed) —
+all four exactly at the existing ratchet ceiling, no regression (the new
+render branch is fully exercised by the new test, so the denominator grew
+without growing the missed count).
+
+## T-077 — 2026-08-14 — user-approved behavior change
+
+`ActivityRail`'s note `<input>` carried no `maxLength`, but the server's
+`AitoNoteCreate.note` (`backend/app/schemas/aito.py`) is
+`Field(min_length=1, max_length=2000)`. Pasting a longer note (an email
+thread, a client's message) 422s; the generic `noteFailed` toast names no
+cause, and the same over-long text is put back in the box on every retry,
+so the failure repeats identically with nothing on screen explaining why.
+Every other free-text field in this feature (the panel description, the
+import/summary textareas) already caps at its own server limit. Fixed by
+adding `maxLength={2000}` to the note input, mirroring the verified server
+cap exactly. Observable change, quoting the approved description verbatim:
+"typing or pasting past 2000 characters into the note box stops being
+accepted by the field instead of being accepted and then rejected by the
+server."
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9, unaffected — no probe
+touches this input. `bash tools/gen_surface.sh` diff against `SURFACE.md`:
+empty — the generator's globs are not recursive into `history/`, and no
+top-level export changed anyway.
+
+Added a case to `AitoActivityRail.test.tsx` asserting the input carries
+`maxLength={2000}` and that a note of exactly 2000 characters (set via
+`fireEvent.change`, which bypasses the DOM's own maxLength enforcement)
+is still submitted verbatim to `api.addAitoNote` — guarding against the
+cap ever silently drifting to an off-by-one that would block a legal note.
+
+Frontend: `npm run lint` clean. `AitoActivityRail.test.tsx` alone: 16/16
+passed. Full Aito-scoped suite (54 files matching
+`components/aito|utils/aito|hooks/useAito|pages/AitoPage`): 828/828 passed.
+Aito coverage gate: statements 1821/1942 (121 missed), branches 1811/2023
+(212 missed), functions 612/650 (38 missed), lines 1604/1669 (65 missed) —
+all four exactly at the existing ratchet ceiling, no regression.
+
+## T-078 — 2026-08-15 — user-approved behavior change
+
+SANCTIONED RETROACTIVELY, and the sequence matters for the record. The
+`audit-robustness` finding that produced T-078 was emitted with
+`behavior_change: false`, on the reasoning that a prefetch only warms a
+cache and the real fetch still happens on selection. The orchestrator
+accepted that judgement, and the worker — instructed to stop if it
+disagreed — also found no observable difference, because
+`setHighlighted()` remained synchronous so nothing the user *sees* was
+delayed. The iteration-2 blind verifier rejected all three of those
+judgements and returned FAIL, with the case none of them had constructed:
+
+  "a user who hovers and clicks inside that window sees the drawer's
+   preview loading state where BASE had the fetch already in flight or
+   cached"
+
+That is observable, so it needed the user's decision and had not had it.
+The user was then asked directly, shown both the defect and the cost, and
+APPROVED keeping the change at the implemented 200 ms (the alternatives
+offered were a full revert and a shortened ~100 ms dwell).
+
+WHAT CHANGED. `frontend/src/components/aito/QuoteResultList.tsx`:
+`highlight(index)` fired `prefetch(quote.id)` synchronously on every
+`onMouseEnter` and every ArrowUp/ArrowDown. Each prefetch is
+`GET /zoho/estimates/{id}/preview`, which on the server runs
+`get_estimate` + `books_app_url` + `get_contact` against Books live, so
+sweeping the pointer down a 20-row list or holding ArrowDown fired dozens
+of upstream Books calls in about a second — against a per-org rate limit
+SHARED WITH the `aito_quote_sync` worker. Browsing the picker could
+therefore 429 the quote sync, not merely its own previews. The prefetch is
+now gated behind a 200 ms dwell timer (`PREFETCH_DWELL_MS`), cleared on
+the next highlight change and again on unmount.
+
+OBSERVABLE CHANGE: a hover or arrow-key transit shorter than 200 ms that
+issued a preview request at BASE now issues none, and a user who hovers
+and clicks inside that window sees the preview's loading state where BASE
+had the request already in flight or its result cached. Bounded by the
+dwell: at most a 200 ms perceived delay, and only on hover-then-immediate-
+click. `setHighlighted()` is untouched and still synchronous, so the
+highlight itself never lags. The selection path is byte-identical.
+
+KNOWN BENIGN SIDE EFFECT, recorded by the verifier rather than hidden:
+selecting a quote early-returns to the selected-card branch instead of
+unmounting, so a timer already pending can still fire one prefetch up to
+200 ms after selection. Harmless — the query client is alive and the
+effect is a cache write with no render consequence.
+
+`./venv/bin/python3 tools/snapshot.py verify`: 9/9, unaffected — the only
+frontend probe covers the pure utils in `frontend/src/utils/aito*.ts`, not
+React render output. `bash tools/gen_surface.sh` diff against
+`SURFACE.md`: empty — no top-level export added, renamed or removed.
+
+CORRECTION to this entry's first draft, made before the squash and noted
+rather than silently overwritten: the draft called `QuoteResultList.test.tsx`
+a NEW file. It is not — it existed at BASE at 118 lines (confirmed by
+`git show refactor-base:frontend/src/__tests__/components/QuoteResultList.test.tsx`),
+and T-078 added a `describe('prefetch dwell gate')` block to it. The
+verifier caught this on re-judgement; the tests themselves are exactly as
+described below.
+
+Tests added to the existing `QuoteResultList.test.tsx`, all on fake timers so no
+wall-clock dependence enters a suite that already carries four load-induced
+flakes: a fast sweep across rows fires at most one prefetch and only for
+the row rested on; unmounting with a timer pending fires no prefetch and
+leaks nothing; and the highlight still moves with zero time advanced,
+which is what pins the "nothing visible was delayed" half of the claim.
+
+Aito coverage gate at the time of the fix: statements 121 missed, branches
+212, functions 38, lines 65 — all four exactly at the ratchet ceiling. The
+worker's first attempt measured 122 missed statements because its guard
+introduced an unreachable early return; it restructured to an `if (quote)`
+block rather than accept the regression or add an uncoverable line.

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { ActivityRail } from '../../components/aito/history/ActivityRail';
@@ -136,6 +136,25 @@ describe('ActivityRail', () => {
     release(event({ id: 99, kind: 'note.added', note: 'called the client' }));
   });
 
+  it('caps the note input at the server\'s 2000-character limit, and still accepts exactly 2000', async () => {
+    vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
+    const longNote = 'a'.repeat(2000);
+    const add = vi.spyOn(api, 'addAitoNote').mockResolvedValue(event({ kind: 'note.added', note: longNote }));
+    const user = userEvent.setup();
+    render(<ActivityRail projectId={12} />);
+
+    const box = await screen.findByPlaceholderText(/add a note/i);
+    expect(box).toHaveAttribute('maxLength', '2000');
+
+    // fireEvent bypasses maxLength enforcement (unlike a real paste/keystroke
+    // via userEvent), so this exercises the submit path with a note that is
+    // exactly at the server's cap rather than the DOM's truncation of it.
+    fireEvent.change(box, { target: { value: longNote } });
+    await user.click(screen.getByRole('button', { name: /add note/i }));
+
+    await waitFor(() => expect(add).toHaveBeenCalledWith(12, longNote));
+  });
+
   it('removes the note and restores the text when the POST fails', async () => {
     vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
     vi.spyOn(api, 'addAitoNote').mockRejectedValue(new Error('nope'));
@@ -195,6 +214,23 @@ describe('ActivityRail', () => {
     vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
     render(<ActivityRail projectId={12} />);
     expect(await screen.findByText(/nothing recorded yet/i)).toBeInTheDocument();
+  });
+
+  it('shows a load-failed message with a working retry, not an empty timeline, when the fetch fails', async () => {
+    const spy = vi.spyOn(api, 'getAitoEvents')
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce({ events: [event({})], has_more: false });
+    const user = userEvent.setup();
+    render(<ActivityRail projectId={12} />);
+
+    expect(await screen.findByText(/could not load the board/i)).toBeInTheDocument();
+    expect(screen.queryByText(/nothing recorded yet/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /retry/i }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/paul/)).toBeInTheDocument();
+    expect(screen.queryByText(/could not load the board/i)).not.toBeInTheDocument();
   });
 
   it('offers load-more only when the server says there is more', async () => {

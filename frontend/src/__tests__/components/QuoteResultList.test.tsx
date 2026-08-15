@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { screen, waitFor, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
@@ -114,5 +114,80 @@ describe('QuoteResultList', () => {
     render(<QuoteResultList selected={null} onSelect={vi.fn()} onClear={vi.fn()} />);
     await user.hover(await screen.findByText('DEV26-2461'));
     await waitFor(() => expect(prefetched).toBe(1));
+  });
+
+  // The dwell gate (T-078): a hover/arrow-key sweep only warms the preview
+  // cache for the row the pointer or cursor actually rests on. Fake timers
+  // throughout — a wall-clock-dependent test here would just add a ninth
+  // flake to the four this repo already carries.
+  describe('prefetch dwell gate', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+    });
+
+    it('sweeping across rows quickly fires at most one prefetch, for the row rested on', async () => {
+      const prefetchedIds: string[] = [];
+      server.use(
+        http.get('/api/v1/zoho/estimates/:id/preview', ({ params }) => {
+          prefetchedIds.push(params.id as string);
+          return HttpResponse.json({});
+        }),
+      );
+      render(<QuoteResultList selected={null} onSelect={vi.fn()} onClear={vi.fn()} />);
+      const row1 = await screen.findByRole('option', { name: /DEV26-2461/i });
+      const row2 = screen.getByRole('option', { name: /DEV26-2462/i });
+
+      // A pointer sweeping down the list crosses row1 then settles on row2,
+      // all faster than the dwell window.
+      fireEvent.mouseEnter(row1);
+      fireEvent.mouseEnter(row2);
+
+      await act(async () => {
+        vi.advanceTimersByTime(500);
+      });
+
+      expect(prefetchedIds).toEqual(['e2']);
+    });
+
+    it('unmounting with a dwell timer pending fires no prefetch and leaks nothing', async () => {
+      let prefetched = 0;
+      server.use(
+        http.get('/api/v1/zoho/estimates/:id/preview', () => {
+          prefetched += 1;
+          return HttpResponse.json({});
+        }),
+      );
+      const result = render(<QuoteResultList selected={null} onSelect={vi.fn()} onClear={vi.fn()} />);
+      const row1 = await screen.findByRole('option', { name: /DEV26-2461/i });
+
+      fireEvent.mouseEnter(row1);
+      result.unmount();
+
+      // If the timer weren't cleared on unmount, this would either throw
+      // (calling prefetch against an unmounted tree's query client) or
+      // silently fire the network call it exists to prevent.
+      await act(async () => {
+        vi.advanceTimersByTime(500);
+      });
+
+      expect(prefetched).toBe(0);
+    });
+
+    it('moves the highlight immediately, before the dwell timer fires', async () => {
+      render(<QuoteResultList selected={null} onSelect={vi.fn()} onClear={vi.fn()} />);
+      const row1 = await screen.findByRole('option', { name: /DEV26-2461/i });
+      const row2 = screen.getByRole('option', { name: /DEV26-2462/i });
+      expect(row2).toHaveAttribute('aria-selected', 'false');
+
+      fireEvent.mouseEnter(row2);
+
+      // No time advanced at all: the highlight is synchronous, un-debounced.
+      expect(row2).toHaveAttribute('aria-selected', 'true');
+      expect(row1).toHaveAttribute('aria-selected', 'false');
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
   });
 });
