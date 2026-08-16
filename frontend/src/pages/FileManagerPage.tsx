@@ -796,6 +796,11 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
   const canPreview3d = hasPermission('library:read');
   const canRename = canModify('library', 'update', file.created_by_id);
   const canDelete = canModify('library', 'delete', file.created_by_id);
+  // Same rule the archive card's menu uses: the calculator needs both a weight
+  // and a duration to prefill, so a file the slicer left without either can't
+  // open it. Shown greyed out rather than hidden, like every sibling entry.
+  const canOpenInCalculator =
+    hasPermission('calculator:read') && !!file.filament_used_grams && !!file.print_time_seconds;
 
   const menuItems: ContextMenuItem[] = [];
   if (onPrint && isSlicedFilename(file.filename)) {
@@ -896,12 +901,6 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
     disabled: !canDelete,
     title: !canDelete ? t('fileManager.noPermissionDeleteFile') : undefined,
   });
-
-  // Same rule the archive card's menu uses: the calculator needs both a weight
-  // and a duration to prefill, so a file the slicer left without either can't
-  // open it. Shown greyed out rather than hidden, like every sibling entry.
-  const canOpenInCalculator =
-    hasPermission('calculator:read') && !!file.filament_used_grams && !!file.print_time_seconds;
 
   return (
     <div

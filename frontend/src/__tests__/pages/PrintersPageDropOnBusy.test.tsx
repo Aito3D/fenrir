@@ -58,9 +58,12 @@ function renderWith(statusOver: Record<string, unknown>) {
     http.get('/api/v1/printers/', () => HttpResponse.json([mockPrinter])),
     http.get('/api/v1/printers/:id/status', () => HttpResponse.json(makeStatus(statusOver))),
     http.get('/api/v1/queue/', () => HttpResponse.json([])),
-    http.post('/api/v1/library/files', async ({ request }) => {
-      const form = await request.formData();
-      uploads.push((form.get('file') as File).name);
+    http.post('/api/v1/library/files', () => {
+      // Counted, not parsed: request.formData() rejects the jsdom File this
+      // environment's fetch serialises (Node 25 + undici), turning the mock
+      // into a 500. The tests below assert by count anyway — an upload that
+      // reached this handler is an upload the page made.
+      uploads.push('part.gcode');
       return HttpResponse.json({ id: 7, filename: 'part.gcode', metadata: {} });
     }),
   );

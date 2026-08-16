@@ -98,13 +98,15 @@ async def test_running_observed_skips_when_baseline_already_present():
     """If on_print_start already ran in this Bambuddy process for the same
     printer (the realistic same-session race), a second capture would
     overwrite the correct pre-print baseline with one taken later — which
-    could include the in-flight MP4. The archive lookup still has to run so
-    restart recovery can restore durable print ownership for the kill switch."""
+    could include the in-flight MP4. Ownership restore AND the catch-up
+    archive reconciliation still have to run — only the camera work is
+    one-shot."""
     _timelapse_baselines[1] = {"pre_existing_a.mp4", "pre_existing_b.mp4"}
 
     with (
         patch("backend.app.main.async_session") as mock_session_maker,
         patch("backend.app.main._list_timelapse_videos", new=AsyncMock()) as mock_list,
+        patch("backend.app.main.on_print_start", new=AsyncMock()) as mock_catch_up,
     ):
         from backend.app.main import on_print_running_observed
 
@@ -123,6 +125,11 @@ async def test_running_observed_skips_when_baseline_already_present():
         # timelapse scan remains one-shot.
         mock_session_maker.assert_called_once()
         mock_list.assert_not_called()
+        # The archive lookup is not skipped with the baseline: a print started
+        # while Bambuddy was down still needs its archive row reattached or
+        # created (fork's catch-up path).
+        mock_catch_up.assert_awaited_once()
+        assert mock_catch_up.await_args.kwargs.get("catch_up") is True
 
     # Original baseline preserved.
     assert _timelapse_baselines[1] == {"pre_existing_a.mp4", "pre_existing_b.mp4"}

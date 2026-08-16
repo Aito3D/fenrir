@@ -1170,61 +1170,52 @@ class PrintScheduler:
 
                     # Check if printer is idle (busy with another print)
                     if not printer_idle:
-                        # If printer is drying (not truly busy), handle based on queue_drying_block
-                        if self._drying_in_progress.get(item.printer_id):
-                            if block_for_drying:
-                                # Drying blocks queue — skip this printer
+                        if self._drying_in_progress.get(item.printer_id) and no_auto_stop and not block_for_drying:
+                            # Never-auto-stop mode: dispatch WITHOUT stopping drying when
+                            # the hardware supports Print While Drying and the toggle is on;
+                            # otherwise the print waits for the drying timer to expire.
+                            state = printer_manager.get_status(item.printer_id)
+                            firmware = state.firmware_version if state else None
+                            model = printer_manager.get_model(item.printer_id)
+                            plate_blocked = require_plate_clear and printer_manager.is_awaiting_plate_clear(
+                                item.printer_id
+                            )
+                            # A printer can be in _drying_in_progress while an ACTUAL print
+                            # runs (mid-print drying, or a slicer-started print during a
+                            # drying session) — busy_printers only knows queue-dispatched
+                            # prints. Any evidence of an active job (layers/progress/
+                            # remaining time; a drying session has none) must block the
+                            # forced dispatch or we double-dispatch onto a busy printer.
+                            job_active = bool(
+                                state
+                                and (
+                                    (state.progress or 0) > 0
+                                    or (state.total_layers or 0) > 0
+                                    or (state.remaining_time or 0) > 0
+                                )
+                            )
+                            if (
+                                print_drying_enabled
+                                and not plate_blocked
+                                and not job_active
+                                and supports_drying_while_printing(model, firmware)
+                            ):
+                                logger.info(
+                                    "Queue item %s: printer %d is drying — dispatching print "
+                                    "while drying continues (Print While Drying)",
+                                    item.id,
+                                    item.printer_id,
+                                )
+                                printer_idle = True
+                            else:
                                 busy_printers.add(item.printer_id)
                                 continue
-                            if no_auto_stop:
-                                # Never-auto-stop mode: dispatch WITHOUT stopping drying when
-                                # the hardware supports Print While Drying and the toggle is on;
-                                # otherwise the print waits for the drying timer to expire.
-                                state = printer_manager.get_status(item.printer_id)
-                                firmware = state.firmware_version if state else None
-                                model = printer_manager.get_model(item.printer_id)
-                                plate_blocked = require_plate_clear and printer_manager.is_awaiting_plate_clear(
-                                    item.printer_id
-                                )
-                                # A printer can be in _drying_in_progress while an ACTUAL print
-                                # runs (mid-print drying, or a slicer-started print during a
-                                # drying session) — busy_printers only knows queue-dispatched
-                                # prints. Any evidence of an active job (layers/progress/
-                                # remaining time; a drying session has none) must block the
-                                # forced dispatch or we double-dispatch onto a busy printer.
-                                job_active = bool(
-                                    state
-                                    and (
-                                        (state.progress or 0) > 0
-                                        or (state.total_layers or 0) > 0
-                                        or (state.remaining_time or 0) > 0
-                                    )
-                                )
-                                if (
-                                    print_drying_enabled
-                                    and not plate_blocked
-                                    and not job_active
-                                    and supports_drying_while_printing(model, firmware)
-                                ):
-                                    logger.info(
-                                        "Queue item %s: printer %d is drying — dispatching print "
-                                        "while drying continues (Print While Drying)",
-                                        item.id,
-                                        item.printer_id,
-                                    )
-                                    printer_idle = True
-                                else:
-                                    busy_printers.add(item.printer_id)
-                                    continue
-                            else:
-                                # Print takes priority — stop drying
-                                await self._stop_drying(item.printer_id)
-                                # Re-check idle after stopping drying
-                                printer_idle = self._is_printer_idle(item.printer_id, require_plate_clear)
-                                if not printer_idle:
-                                    busy_printers.add(item.printer_id)
-                                    continue
                         else:
+                            # Never stop drying here (#2801): drying is not one of
+                            # the things _is_printer_idle looks at, so whatever is
+                            # holding this printer, tearing down a cycle could not
+                            # have unblocked it. The print-takes-priority stop
+                            # happens at dispatch time, when the print will start.
                             busy_printers.add(item.printer_id)
                             continue
 
