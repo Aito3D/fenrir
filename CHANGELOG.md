@@ -2,6 +2,11 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
+## [1.2.6b1] - Unreleased
+
+### Fixed
+- **The File Manager's card menu no longer loses its top entry (#2846)** — In grid view a file card's action menu was drawn inside the card, and the card clipped anything its children painted outside it. A card is as tall as its square thumbnail plus whatever metadata the file has, so an STL — which has none beyond a name and a size — produced the shortest card in the library, about 270px against a seven-entry menu that needs closer to 310px. The difference was one row, and the row it took was the top one: **Slice**, since **Print** is only offered for a file that is already sliced. A 3MF carries a target model and a print count, two more rows, and its card was tall enough, which is why the button appeared there and looked like a file-type rule rather than a layout accident. Nothing about STL was special; the shortest card simply lost the first item, whichever it happened to be. The menu now opens against the viewport, the way the archive card's menu already did, so no card can crop it, and the card no longer clips its own children. List view was never affected — it has no menu, only inline buttons. Covered by a frontend test.
+
 ## [1.2.5.3] - 2026-08-15
 
 ### Added

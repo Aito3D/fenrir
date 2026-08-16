@@ -3941,6 +3941,8 @@ export default {
     noPermissionSlice: 'ファイルをスライスする権限がありません',
     noPermissionAddToQueue: 'キューに追加する権限がありません',
     noPermissionDownload: 'ファイルをダウンロードする権限がありません',
+    noPermissionPreview: 'ファイルをプレビューする権限がありません',
+    preview3d: '3Dプレビュー',
     noPermissionRenameFile: 'このファイル名を変更する権限がありません',
     noPermissionGenerateThumbnail: 'サムネイルを生成する権限がありません',
     noPermissionDeleteFile: 'このファイルを削除する権限がありません',

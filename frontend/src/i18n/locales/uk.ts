@@ -3969,6 +3969,8 @@ export default {
     noPermissionAddToQueue: "Ви не маєте дозволу на додавання в чергу",
     noPermissionSlice: "Ви не маєте дозволу нарізати файли",
     noPermissionDownload: "У вас немає дозволу на завантаження файлів",
+    noPermissionPreview: 'У вас немає дозволу на попередній перегляд файлів',
+    preview3d: '3D-перегляд',
     noPermissionRenameFile: "Ви не маєте дозволу на перейменування цього файлу",
     noPermissionGenerateThumbnail: "Ви не маєте дозволу створювати мініатюри",
     noPermissionDeleteFile: "Ви не маєте дозволу на видалення цього файлу",

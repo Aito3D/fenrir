@@ -3936,6 +3936,8 @@ export default {
     noPermissionAddToQueue: 'Kuyruğa ekleme izniniz yok',
     noPermissionSlice: 'Dosyaları dilimleme izniniz yok',
     noPermissionDownload: 'Dosyaları indirme izniniz yok',
+    noPermissionPreview: 'Dosyaları önizleme izniniz yok',
+    preview3d: '3B Önizleme',
     noPermissionRenameFile: 'Bu dosyayı yeniden adlandırma izniniz yok',
     noPermissionGenerateThumbnail: 'Küçük resim oluşturma izniniz yok',
     noPermissionDeleteFile: 'Bu dosyayı silme izniniz yok',

@@ -3929,6 +3929,8 @@ export default {
     noPermissionSlice: 'Non hai il permesso di sezionare i file',
     noPermissionAddToQueue: 'Non hai il permesso di aggiungere alla coda',
     noPermissionDownload: 'Non hai il permesso di scaricare file',
+    noPermissionPreview: 'Non hai il permesso di visualizzare l\'anteprima dei file',
+    preview3d: 'Anteprima 3D',
     noPermissionRenameFile: 'Non hai il permesso di rinominare questo file',
     noPermissionGenerateThumbnail: 'Non hai il permesso di generare miniature',
     noPermissionDeleteFile: 'Non hai il permesso di eliminare questo file',

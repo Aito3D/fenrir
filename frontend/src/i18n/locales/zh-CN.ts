@@ -3929,6 +3929,8 @@ export default {
     noPermissionSlice: '您没有切片文件的权限',
     noPermissionAddToQueue: '您没有添加到队列的权限',
     noPermissionDownload: '您没有下载文件的权限',
+    noPermissionPreview: '您没有预览文件的权限',
+    preview3d: '3D 预览',
     noPermissionRenameFile: '您没有重命名此文件的权限',
     noPermissionGenerateThumbnail: '您没有生成缩略图的权限',
     noPermissionDeleteFile: '您没有删除此文件的权限',

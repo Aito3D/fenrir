@@ -3751,6 +3751,8 @@ export default {
     noPermissionAddToQueue: '대기열 추가 권한이 없습니다',
     noPermissionSlice: '파일 슬라이싱 권한이 없습니다',
     noPermissionDownload: '파일 다운로드 권한이 없습니다',
+    noPermissionPreview: '파일을 미리 볼 권한이 없습니다',
+    preview3d: '3D 미리보기',
     noPermissionRenameFile: '파일 이름 변경 권한이 없습니다',
     noPermissionGenerateThumbnail: '썸네일 생성 권한이 없습니다',
     noPermissionDeleteFile: '파일 삭제 권한이 없습니다',
