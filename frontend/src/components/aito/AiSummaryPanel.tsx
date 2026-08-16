@@ -98,7 +98,11 @@ export function AiSummaryPanel({ tasks, value, edited, onChange, generateNonce }
       ) : mutation.isPending ? (
         <div data-testid="ai-summary-shimmer" className="h-10 animate-pulse rounded-md bg-violet-400/15" />
       ) : (
-        <>
+        // animate-rise: this branch mounts fresh out of the shimmer on every
+        // (re)generation, and the one moment the app visibly produces
+        // something for the user must not land on a single frame. Neutralized
+        // under reduced motion with the rest of the rise family.
+        <div className="animate-rise">
           <textarea
             aria-label={t('aito.summaryTitle')}
             value={value}
@@ -116,7 +120,7 @@ export function AiSummaryPanel({ tasks, value, edited, onChange, generateNonce }
                   : t('aito.summaryGeneratedBy', { model: mutation.data?.model ?? '' })}
             </p>
           )}
-        </>
+        </div>
       )}
     </div>
   );

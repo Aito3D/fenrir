@@ -1175,6 +1175,14 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
   from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: translateY(0); }
 }
+/* Standalone counterpart to .stagger-nested's per-child entrance: one element
+   re-entering with the small rise, no stagger. Used by TaskRow's body on the
+   read↔edit swap, where the container remounts (keyed by mode) so the new
+   body settles in rather than teleporting. `backwards` for the same reason as
+   .animate-rise: hidden until the animation starts, even under load. */
+.animate-rise-sm {
+  animation: rise-sm 0.28s var(--ease-signature) backwards;
+}
 .stagger-nested > * {
   animation: rise-sm 0.28s var(--ease-signature) backwards;
   animation-delay: calc(var(--enter-delay, 0ms) + 200ms + var(--nested-slot, 0) * 50ms);
@@ -1487,6 +1495,7 @@ tbody .calc-table-row:hover {
   .animate-topbar-in,
   .animate-rise,
   .animate-rise-lg,
+  .animate-rise-sm,
   .stagger-nested > *,
   .animate-page-in,
   .animate-modal-in,

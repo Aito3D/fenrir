@@ -45,12 +45,13 @@ export interface TaskRowProps {
    *  plain always-open heading the detail panel relies on. The accessible
    *  name is the header's own text, so no extra label is needed. */
   onToggleCollapse?: () => void;
-  /** Hides progress and the body (form/step list, the latter carrying each
-   *  step's own description), leaving the one-line header. Only meaningful
-   *  with `onToggleCollapse`. The body is
-   *  conditionally RENDERED, not just hidden — a collapsed row in edit mode
-   *  must not mount `TaskStepFields` and run ImpressionFields' three
-   *  reference-data queries (see the component doc below). */
+  /** Folds progress and the body (form/step list, the latter carrying each
+   *  step's own description) away, leaving the one-line header. Only
+   *  meaningful with `onToggleCollapse`. The body stays mounted but `inert`
+   *  so the fold animates height both ways — EXCEPT `TaskStepFields`, which
+   *  keeps a conditional mount: a collapsed row in edit mode must not run
+   *  ImpressionFields' three reference-data queries (see the body's own
+   *  comment below). */
   collapsed?: boolean;
 }
 
@@ -207,9 +208,31 @@ export function TaskRow({
 
       {/* The task's own progress, under its header. `ProjectProgress` renders
           nothing at zero steps, so an unpriced row shows no empty track.
-          Collapsed hides it with the body: the header line IS the whole row. */}
-      {!collapsed && (
-        <>
+          Collapsed folds it away with the body: the header line IS the whole
+          row.
+
+          The body stays MOUNTED while collapsed so the fold can animate height
+          both ways — a grid row interpolating 1fr↔0fr, the same idiom (and the
+          same two curves) as the drawer's Section, whose chevron this header
+          already borrows. `inert` is what keeps the closed state honest:
+          height 0 hides the body but alone would leave it in Tab order. Only
+          `TaskStepFields` keeps its `!collapsed` mount gate — a collapsed row
+          in edit mode must still not run ImpressionFields' three
+          reference-data queries (see the `collapsed` prop doc), which costs
+          that one case its exit animation: the form vanishes inside the
+          closing wrapper, and the wrapper still bridges the height. The
+          read-only `TaskStepList` is cheap to keep mounted — its one query is
+          `enabled`-gated and cache-shared. In the detail panel (`collapsed`
+          never true) the wrapper sits statically open and changes nothing. */}
+      <div
+        inert={collapsed}
+        className={`grid motion-reduce:transition-none ${
+          collapsed
+            ? 'grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity] duration-200 ease-[var(--ease-exit)]'
+            : 'grid-rows-[1fr] opacity-100 transition-[grid-template-rows,opacity] duration-[250ms] ease-[var(--ease-signature)]'
+        }`}
+      >
+        <div className="min-h-0 overflow-hidden">
           <div className="px-3 pb-2">
             <ProjectProgress
               done={steps.filter((s) => s.done).length}
@@ -218,15 +241,18 @@ export function TaskRow({
             />
           </div>
 
-          <div className="px-3 pb-3 space-y-3">
+          {/* Keyed by mode: the read body and the edit form differ wildly in
+              height, so the pencil swap re-enters with a soft rise rather
+              than teleporting — a remount, not a height morph. */}
+          <div key={editing ? 'edit' : 'read'} className="px-3 pb-3 space-y-3 animate-rise-sm">
             {editing ? (
-              <TaskStepFields task={task} onChange={onChange} disabled={pending} />
+              !collapsed && <TaskStepFields task={task} onChange={onChange} disabled={pending} />
             ) : (
               <TaskStepList task={task} onChange={onChange} canTick={canTick} />
             )}
           </div>
-        </>
-      )}
+        </div>
+      </div>
     </div>
   );
 }

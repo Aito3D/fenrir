@@ -147,6 +147,17 @@ describe('TaskRow', () => {
     expect(screen.getByTestId('task-progress-0')).toHaveStyle({ width: '33%' });
   });
 
+  it('re-enters the body with the rise animation on the read↔edit swap', () => {
+    // The two bodies differ wildly in height, so the swap gets a soft entrance
+    // (`animate-rise-sm` on a container keyed by mode) rather than a height
+    // morph. Both branches must sit inside that container, or only one
+    // direction of the swap would animate.
+    renderRow(makeTask({ scanCost: 20 }), { canTick: true });
+    expect(screen.getByRole('button', { name: /Scan/i }).closest('.animate-rise-sm')).not.toBeNull();
+    renderRow(makeTask({ scanCost: 20 }), { canTick: true, editing: true });
+    expect(screen.getAllByLabelText(/scan/i)[0].closest('.animate-rise-sm')).not.toBeNull();
+  });
+
   it('renders no progress for a task with no priced steps', () => {
     renderRow(makeTask({}), { canTick: false });
     expect(screen.queryByTestId('task-progress-0')).not.toBeInTheDocument();

@@ -272,7 +272,11 @@ export function BoardColumn({
             />
           ))}
           {projects.length === 0 && (
-            <div className="flex-1 min-h-[8rem] rounded-lg border border-dashed border-bambu-dark-tertiary/80" />
+            // animate-fade-in: the placeholder pops in the instant the last
+            // card leaves, while the flight/reflow is carrying the eye —
+            // entrance only, no exit, because an arriving card should cover
+            // it immediately.
+            <div className="animate-fade-in flex-1 min-h-[8rem] rounded-lg border border-dashed border-bambu-dark-tertiary/80" />
           )}
         </div>
       </SortableContext>

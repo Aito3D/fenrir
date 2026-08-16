@@ -53,6 +53,18 @@ describe('AiSummaryPanel', () => {
     await waitFor(() => expect(onChange).toHaveBeenCalledWith('Neuf.', false));
   });
 
+  it('settles the generated summary in with the rise entrance', async () => {
+    // The shimmer bridges the wait; the answer must not then pop in on a
+    // single frame. The wrapper remounts out of the pending branch on every
+    // (re)generation, so the entrance re-fires each time without a key.
+    vi.mocked(api.summarizeAitoProject).mockResolvedValue({ summary: 'Résumé.', model: 'm' });
+    const onChange = vi.fn();
+    renderPanel({ tasks, value: 'Résumé.', edited: false, onChange, generateNonce: 1 });
+    await waitFor(() =>
+      expect(screen.getByLabelText(/summary/i).closest('.animate-rise')).not.toBeNull(),
+    );
+  });
+
   it('falls back to an editable enumeration when the API fails', async () => {
     vi.mocked(api.summarizeAitoProject).mockRejectedValue(new Error('409'));
     const onChange = vi.fn();

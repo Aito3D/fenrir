@@ -1260,13 +1260,20 @@ describe('TaskEditor accordion (create drawer)', () => {
     render(<TaskEditor value={tasks} onChange={vi.fn()} onRemove={vi.fn()} canTick={false} accordion />);
   }
 
+  // The collapsed body stays MOUNTED so the fold can animate height both ways
+  // (a grid row interpolating 1fr↔0fr, same idiom as the drawer's Section);
+  // `inert` is what keeps the closed state honest — height 0 hides the body
+  // but alone would leave it in Tab order. So "folded" is asserted as
+  // inert-ancestry, not absence from the document.
+  const folded = (el: HTMLElement) => el.closest('[inert]') !== null;
+
   it('opens the first task and collapses the rest', () => {
     renderAccordion([priced('Alpha'), priced('Beta')]);
     expect(screen.getByRole('button', { name: /Alpha/, expanded: true })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Beta/, expanded: false })).toBeInTheDocument();
-    // The collapsed row's body — its progress included — is not rendered.
-    expect(screen.getByTestId('task-progress-0')).toBeInTheDocument();
-    expect(screen.queryByTestId('task-progress-1')).not.toBeInTheDocument();
+    // The collapsed row's body — its progress included — is folded away inert.
+    expect(folded(screen.getByTestId('task-progress-0'))).toBe(false);
+    expect(folded(screen.getByTestId('task-progress-1'))).toBe(true);
   });
 
   it('clicking a collapsed header opens it and collapses the previously open task', async () => {
@@ -1274,8 +1281,8 @@ describe('TaskEditor accordion (create drawer)', () => {
     await userEvent.click(screen.getByRole('button', { name: /Beta/, expanded: false }));
     expect(screen.getByRole('button', { name: /Beta/, expanded: true })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Alpha/, expanded: false })).toBeInTheDocument();
-    expect(screen.queryByTestId('task-progress-0')).not.toBeInTheDocument();
-    expect(screen.getByTestId('task-progress-1')).toBeInTheDocument();
+    expect(folded(screen.getByTestId('task-progress-0'))).toBe(true);
+    expect(folded(screen.getByTestId('task-progress-1'))).toBe(false);
   });
 
   it('clicking the open header closes it — zero open is allowed', async () => {
@@ -1290,9 +1297,9 @@ describe('TaskEditor accordion (create drawer)', () => {
     await userEvent.click(screen.getByRole('button', { name: /add task/i }));
     // The new stepless row is the form: its service chips are on screen.
     expect(screen.getByRole('button', { name: 'Add Scan' })).toBeInTheDocument();
-    // Alpha (index 0) collapsed: its progress is gone.
+    // Alpha (index 0) collapsed: its progress is folded away inert.
     expect(screen.getByRole('button', { name: /Alpha/, expanded: false })).toBeInTheDocument();
-    expect(screen.queryByTestId('task-progress-0')).not.toBeInTheDocument();
+    expect(folded(screen.getByTestId('task-progress-0'))).toBe(true);
   });
 
   it('the pencil on a collapsed row expands it straight into edit mode', async () => {
