@@ -6991,6 +6991,9 @@ export default {
     thankYou: 'ありがとうございます！',
     submitted: 'バグレポートが送信されました。',
     viewIssue: 'Issueを表示',
+    closeKeepsRecording: '問題を再現している間、このパネルを閉じても構いません。記録は続行され、再度開くとここに戻ります。',
+    resumeRecording: 'バグレポートを記録中 — {{elapsed}}。クリックして完了します。',
+    resumeReport: 'レポートを再開',
     unexpectedError: '予期しないエラーが発生しました',
   },
   failureDetection: {

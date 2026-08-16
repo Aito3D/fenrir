@@ -6929,6 +6929,9 @@ export default {
     thankYou: 'Teşekkürler!',
     submitted: 'Hata raporunuz gönderildi.',
     viewIssue: 'Sorunu Görüntüle',
+    closeKeepsRecording: 'Sorunu yeniden oluştururken bu paneli kapatabilirsiniz; kayıt devam eder ve yeniden açtığınızda buraya dönersiniz.',
+    resumeRecording: 'Hata raporu kaydediyor — {{elapsed}}. Tamamlamak için tıklayın.',
+    resumeReport: 'Rapora devam et',
     unexpectedError: 'Beklenmedik bir hata oluştu',
   },
   failureDetection: {

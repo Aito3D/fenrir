@@ -6980,6 +6980,9 @@ export default {
     thankYou: 'Merci !',
     submitted: 'Votre rapport de bug a été soumis.',
     viewIssue: 'Voir l\'issue',
+    closeKeepsRecording: 'Vous pouvez fermer ce panneau pendant que vous reproduisez le problème : l\'enregistrement continue et sa réouverture vous ramènera ici.',
+    resumeRecording: 'Rapport de bogue en cours d\'enregistrement — {{elapsed}}. Cliquez pour terminer.',
+    resumeReport: 'Reprendre le rapport',
     unexpectedError: 'Une erreur inattendue est survenue',
   },
   failureDetection: {

@@ -6979,6 +6979,9 @@ export default {
     thankYou: 'Obrigado!',
     submitted: 'Seu relatório de bug foi enviado.',
     viewIssue: 'Ver issue',
+    closeKeepsRecording: 'Você pode fechar este painel enquanto reproduz o problema: a gravação continua e, ao reabrir, você volta para cá.',
+    resumeRecording: 'Relatório de bug gravando — {{elapsed}}. Clique para concluir.',
+    resumeReport: 'Retomar relatório',
     unexpectedError: 'Ocorreu um erro inesperado',
   },
   failureDetection: {

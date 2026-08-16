@@ -6998,6 +6998,9 @@ export default {
     thankYou: '¡Gracias!',
     submitted: 'Su informe de error se ha enviado.',
     viewIssue: 'Ver incidencia',
+    closeKeepsRecording: 'Puedes cerrar este panel mientras reproduces el problema: la grabación sigue en marcha y al volver a abrirlo regresarás aquí.',
+    resumeRecording: 'Informe de error grabando — {{elapsed}}. Haz clic para finalizar.',
+    resumeReport: 'Reanudar informe',
     unexpectedError: 'Se produjo un error inesperado',
   },
   failureDetection: {

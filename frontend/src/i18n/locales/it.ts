@@ -6979,6 +6979,9 @@ export default {
     thankYou: 'Grazie!',
     submitted: 'La tua segnalazione bug è stata inviata.',
     viewIssue: 'Vedi issue',
+    closeKeepsRecording: 'Puoi chiudere questo pannello mentre riproduci il problema: la registrazione continua e riaprendolo tornerai qui.',
+    resumeRecording: 'Segnalazione in registrazione — {{elapsed}}. Fai clic per completare.',
+    resumeReport: 'Riprendi segnalazione',
     unexpectedError: 'Si è verificato un errore imprevisto',
   },
   failureDetection: {

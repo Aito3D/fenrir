@@ -6978,6 +6978,9 @@ export default {
     thankYou: '謝謝！',
     submitted: '您的錯誤報告已提交。',
     viewIssue: '檢視 Issue',
+    closeKeepsRecording: '重現問題時可以關閉此面板——記錄會繼續進行，重新開啟後會回到這一步。',
+    resumeRecording: '錯誤報告記錄中 — {{elapsed}}。點擊以完成。',
+    resumeReport: '繼續報告',
     unexpectedError: '發生了意外錯誤',
   },
   failureDetection: {

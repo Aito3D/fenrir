@@ -6990,6 +6990,9 @@ export default {
     thankYou: 'Vielen Dank!',
     submitted: 'Ihr Fehlerbericht wurde eingereicht.',
     viewIssue: 'Issue ansehen',
+    closeKeepsRecording: 'Sie können dieses Fenster schließen, während Sie das Problem reproduzieren — die Aufzeichnung läuft weiter, und beim erneuten Öffnen sind Sie wieder hier.',
+    resumeRecording: 'Fehlerbericht zeichnet auf — {{elapsed}}. Zum Abschließen klicken.',
+    resumeReport: 'Bericht fortsetzen',
     unexpectedError: 'Ein unerwarteter Fehler ist aufgetreten',
   },
   failureDetection: {
