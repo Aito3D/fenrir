@@ -28,13 +28,21 @@ export const AITO_SERVICE_LABEL_KEYS: Record<string, string> = {
 
 /** The task's steps, in canonical order — one per service whose cost is set.
  *  A cost of 0 is a step quoted free, not an absent one, so membership is a
- *  null check and never a truthiness test. */
+ *  null check and never a truthiness test.
+ *
+ *  `cost` is what the step is QUOTED at: `impressionCost` is stored
+ *  pre-discount (see TaskDraft), so the discount lands here, as it does in
+ *  `taskTotal` and `stagesWithWork` — otherwise a step list would show a
+ *  printing line that doesn't add up to the task total beside it. */
 export function taskSteps(task: TaskDraft): { service: ServiceId; cost: number; done: boolean }[] {
-  return SERVICES.filter((service) => taskCost(task, service) !== null).map((service) => ({
-    service,
-    cost: taskCost(task, service) as number,
-    done: task.done[service],
-  }));
+  return SERVICES.filter((service) => taskCost(task, service) !== null).map((service) => {
+    const cost = taskCost(task, service) as number;
+    return {
+      service,
+      cost: service === 'impression' ? cost * (1 - (task.impressionDiscountPct ?? 0) / 100) : cost,
+      done: task.done[service],
+    };
+  });
 }
 
 /** True once every step on the task is ticked. A task with no steps at all is

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { stagesWithWork } from '../../components/aito/services';
+import { stagesWithWork, taskSteps } from '../../components/aito/services';
 import { summariseTasks } from '../../utils/aitoBoardRules';
 import type { TaskDraft } from '../../utils/taskDraft';
 
@@ -18,6 +18,16 @@ function task(overrides: Partial<TaskDraft> = {}): TaskDraft {
     ...overrides,
   } as TaskDraft;
 }
+
+describe('taskSteps', () => {
+  it('reports the impression step at its discounted price, matching the totals', () => {
+    const steps = taskSteps(task({ scanCost: 200, impressionCost: 600, impressionDiscountPct: 15 }));
+    expect(steps).toEqual([
+      { service: 'scan', cost: 200, done: false },
+      { service: 'impression', cost: 510, done: false },
+    ]);
+  });
+});
 
 describe('stagesWithWork', () => {
   it('omits a stage no task carries work for', () => {

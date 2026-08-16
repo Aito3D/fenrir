@@ -25,6 +25,15 @@ describe('TaskStepList', () => {
     expect(screen.queryByText('Machining')).not.toBeInTheDocument();
   });
 
+  it('shows the printing price with its discount applied, matching the task total', () => {
+    render(
+      <TaskStepList task={task({ impressionCost: 600, impressionDiscountPct: 15 })} onChange={vi.fn()} canTick />,
+    );
+    const printing = screen.getByRole('button', { name: /Printing/i });
+    expect(printing.textContent).toMatch(/510/);
+    expect(printing.textContent).not.toMatch(/600/);
+  });
+
   it('shows a step quoted at zero, because free is not absent', () => {
     render(<TaskStepList task={task({ modelisationCost: 0 })} onChange={vi.fn()} canTick />);
     expect(screen.getByText('Modeling')).toBeInTheDocument();
