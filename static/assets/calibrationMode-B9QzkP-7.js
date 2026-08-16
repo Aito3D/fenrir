@@ -1,1 +1,0 @@
-var e=[`off`,`auto`,`on`],t={off:`bg-red-500 text-white`,auto:`bg-blue-500 text-white`,on:`bg-bambu-green text-white`},n=`bg-bambu-dark-tertiary text-bambu-gray hover:text-white`;export{t as n,n as r,e as t};
