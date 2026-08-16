@@ -274,7 +274,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
               }}
               disabled={item.disabled}
               title={item.title}
-              className={`btn-press w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+              className={`btn-press group w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
                 item.disabled
                   ? 'text-bambu-gray cursor-not-allowed'
                   : item.danger

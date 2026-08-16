@@ -195,6 +195,19 @@ describe('SettingsPage', () => {
       });
     });
 
+    it('no longer offers Camera View Mode, which moved to the printer card', async () => {
+      // The camera button on each printer card is a split control now, so the
+      // choice is made per stream rather than once for the whole install. The
+      // External Cameras section is still here, which is what keeps this from
+      // passing merely because the Camera card failed to render.
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('External Cameras')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Camera View Mode')).toBeNull();
+    });
+
     it('shows default printer setting', async () => {
       render(<SettingsPage />);
 
@@ -371,7 +384,7 @@ describe('SettingsPage', () => {
 
       expect(localStorage.setItem).toHaveBeenCalledWith(
         SIDEBAR_ORDER_KEY,
-        JSON.stringify(['ext-7', 'printers', 'inventory', 'archives', 'queue', 'projects', 'aito', 'files', 'makerworld', 'profiles', 'maintenance', 'calculator', 'stats', 'notifications', 'settings']),
+        JSON.stringify(['ext-7', 'printers', 'inventory', 'archives', 'queue', 'projects', 'aito', 'files', 'makerworld', 'profiles', 'maintenance', 'calculator', 'stats', 'finance', 'notifications', 'settings']),
       );
     });
 
@@ -413,7 +426,7 @@ describe('SettingsPage', () => {
       expect(localStorage.setItem).toHaveBeenCalledWith(SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY, JSON.stringify([]));
       expect(localStorage.setItem).toHaveBeenCalledWith(
         SIDEBAR_ORDER_KEY,
-        JSON.stringify(['printers', 'inventory', 'archives', 'queue', 'projects', 'aito', 'files', 'makerworld', 'profiles', 'maintenance', 'calculator', 'stats', 'notifications', 'settings', 'ext-7']),
+        JSON.stringify(['printers', 'inventory', 'archives', 'queue', 'projects', 'aito', 'files', 'makerworld', 'profiles', 'maintenance', 'calculator', 'stats', 'finance', 'notifications', 'settings', 'ext-7']),
       );
 
       const settingsRow = screen.getAllByText('Settings')
@@ -486,6 +499,7 @@ describe('SettingsPage', () => {
           'maintenance',
           'calculator',
           'stats',
+          'finance',
           'notifications',
           'settings',
         ],
@@ -729,6 +743,38 @@ describe('SettingsPage', () => {
       await waitFor(() => {
         expect(screen.getByText('AMS Display Thresholds')).toBeInTheDocument();
       });
+    });
+
+    // #2770: an AMS reads 15-20% while its own heater runs, so a drying
+    // threshold set below that can never be met and auto-drying ends one
+    // cycle only to arm the next. The default of 60 must stay quiet.
+    const openFilamentTab = async (humidityFair: number) => {
+      server.use(
+        http.get('/api/v1/settings/', () =>
+          HttpResponse.json({ ...mockSettings, ams_humidity_fair: humidityFair })
+        )
+      );
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+      await waitFor(() => {
+        expect(screen.getAllByText('Filament').length).toBeGreaterThan(0);
+      });
+      await user.click(screen.getAllByText('Filament')[0]);
+      await waitFor(() => {
+        expect(screen.getByText('AMS Display Thresholds')).toBeInTheDocument();
+      });
+    };
+
+    it('warns when the humidity threshold is below what a drying AMS reports', async () => {
+      await openFilamentTab(14);
+
+      expect(await screen.findByText(/Auto-drying cannot reach this value/)).toBeInTheDocument();
+    });
+
+    it('stays quiet for a humidity threshold auto-drying can actually reach', async () => {
+      await openFilamentTab(60);
+
+      expect(screen.queryByText(/Auto-drying cannot reach this value/)).not.toBeInTheDocument();
     });
   });
 

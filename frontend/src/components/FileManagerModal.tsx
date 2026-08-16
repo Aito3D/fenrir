@@ -26,10 +26,10 @@ import { api } from '../api/client';
 import { parseUTCDate } from '../utils/date';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
-// Lazy: ModelViewer pulls in three.js + jszip, GcodeViewer pulls in
-// gcode-preview — defer those bundles until a preview is actually opened.
+// Lazy: ModelViewer pulls in three.js + jszip, GcodeToolpathViewer pulls in
+// the slicer's renderer — defer those bundles until a preview is actually opened.
 const ModelViewer = lazy(() => import('./ModelViewer').then(m => ({ default: m.ModelViewer })));
-const GcodeViewer = lazy(() => import('./GcodeViewer').then(m => ({ default: m.GcodeViewer })));
+const GcodeToolpathViewer = lazy(() => import('./GcodeToolpathViewer').then(m => ({ default: m.GcodeToolpathViewer })));
 
 function ViewerLoading() {
   return (
@@ -235,7 +235,7 @@ function PrinterFileViewerModal({ printerId, filePath, filename, onClose }: Prin
             </div>
           ) : activeTab === 'gcode' && hasGcode ? (
             <Suspense fallback={<ViewerLoading />}>
-              <GcodeViewer
+              <GcodeToolpathViewer
                 gcodeUrl={api.getPrinterFileGcodeUrl(printerId, filePath)}
                 className="w-full h-full"
               />

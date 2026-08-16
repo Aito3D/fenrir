@@ -43,6 +43,7 @@ from backend.app.schemas.print_queue import (
 )
 from backend.app.services.filament_deficit import compute_deficit_for_queue_item
 from backend.app.services.filament_requirements import overrides_for_plate
+from backend.app.services.finance_budget import release_budget_reservation, validate_print_budget
 from backend.app.services.notification_service import notification_service
 from backend.app.services.print_batch import (
     BatchDispatchError,
@@ -50,6 +51,7 @@ from backend.app.services.print_batch import (
     load_progress,
     refresh_batch_status,
 )
+from backend.app.services.print_cost_estimate import estimate_queue_source_cost
 from backend.app.utils.printer_models import (
     is_gcode_compatible,
 )
@@ -278,6 +280,55 @@ async def _resolve_source_path(db: AsyncSession, item: PrintQueueItem) -> Path |
     return None
 
 
+async def _trusted_item_estimated_cost(
+    db: AsyncSession,
+    item: PrintQueueItem,
+    *,
+    printer_id: int | None,
+    plate_id: int | None,
+    ams_mapping: list[int] | str | None,
+) -> float | None:
+    """Recompute an existing queue item's cost from its persisted source."""
+
+    if item.archive_id:
+        archive = await db.scalar(select(PrintArchive).where(PrintArchive.id == item.archive_id))
+        return await estimate_queue_source_cost(
+            db,
+            archive=archive,
+            plate_id=plate_id,
+            ams_mapping=ams_mapping,
+            printer_id=printer_id,
+        )
+    if item.library_file_id:
+        library_file = await db.scalar(LibraryFile.active().where(LibraryFile.id == item.library_file_id))
+        return await estimate_queue_source_cost(
+            db,
+            library_file=library_file,
+            plate_id=plate_id,
+            ams_mapping=ams_mapping,
+            printer_id=printer_id,
+        )
+
+    result = await db.execute(
+        select(PrintQueueVariant, LibraryFile)
+        .join(LibraryFile, LibraryFile.id == PrintQueueVariant.library_file_id)
+        .where(PrintQueueVariant.queue_item_id == item.id)
+    )
+    estimates = [
+        await estimate_queue_source_cost(
+            db,
+            library_file=library_file,
+            plate_id=variant.plate_id,
+            ams_mapping=variant.ams_mapping,
+            printer_id=printer_id,
+        )
+        for variant, library_file in result.all()
+    ]
+    if not estimates or any(cost is None for cost in estimates):
+        return None
+    return max(cost for cost in estimates if cost is not None)
+
+
 def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
     """Add nested archive/printer/library_file info to response."""
     # Parse ams_mapping from JSON string BEFORE model_validate
@@ -315,6 +366,15 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         except json.JSONDecodeError:
             nozzle_mapping_parsed = None
 
+    # The operator's rack-position pick (#1784), keyed by filament group. Sent
+    # parsed so the print dialog can show which hotend each group will use.
+    nozzle_rack_choice_parsed = None
+    if item.nozzle_rack_choice:
+        try:
+            nozzle_rack_choice_parsed = json.loads(item.nozzle_rack_choice)
+        except json.JSONDecodeError:
+            nozzle_rack_choice_parsed = None
+
     nozzles_info_parsed = None
     if item.nozzles_info:
         try:
@@ -333,6 +393,8 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "waiting_reason": item.waiting_reason,
         "archive_id": item.archive_id,
         "library_file_id": item.library_file_id,
+        "cost_center_id": item.cost_center_id,
+        "estimated_cost": item.estimated_cost,
         "position": item.position,
         "scheduled_time": item.scheduled_time,
         "require_previous_success": item.require_previous_success,
@@ -368,6 +430,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "gcode_injection": item.gcode_injection,
         # H2C rack-swap nozzle pick (#1780)
         "nozzle_mapping": nozzle_mapping_parsed,
+        "nozzle_rack_choice": nozzle_rack_choice_parsed,
         "nozzles_info": nozzles_info_parsed,
         "cleanup_library_after_dispatch": item.cleanup_library_after_dispatch,
         # Cross-model alternatives (#671). Guarded rather than read directly:
@@ -667,6 +730,7 @@ def _variant_values(
         "plate_id": spec.plate_id,
         "ams_mapping": json.dumps(spec.ams_mapping) if spec.ams_mapping else None,
         "nozzle_mapping": json.dumps(spec.nozzle_mapping) if spec.nozzle_mapping else None,
+        "nozzle_rack_choice": json.dumps(spec.nozzle_rack_choice) if spec.nozzle_rack_choice else None,
         "filament_overrides": filament_overrides_json,
         "required_filament_types": required_types,
         "print_time_seconds": print_time,
@@ -942,7 +1006,46 @@ async def add_to_queue(
         if not project_result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Project not found")
 
+    # Security boundary: the browser's estimated_cost is only a display hint.
+    # Budget enforcement and the persisted reservation value must be derived
+    # from the server-owned archive/library metadata and spool assignments.
+    if variant_specs:
+        variant_costs = [
+            await estimate_queue_source_cost(
+                db,
+                library_file=variant_file,
+                plate_id=spec.plate_id,
+                ams_mapping=spec.ams_mapping,
+                printer_id=data.printer_id,
+            )
+            for spec, variant_file, _model in variant_specs
+        ]
+        trusted_estimated_cost = (
+            max(cost for cost in variant_costs if cost is not None)
+            if variant_costs and all(cost is not None for cost in variant_costs)
+            else None
+        )
+    else:
+        trusted_estimated_cost = await estimate_queue_source_cost(
+            db,
+            archive=archive,
+            library_file=library_file,
+            plate_id=data.plate_id,
+            ams_mapping=data.ams_mapping,
+            printer_id=data.printer_id,
+        )
+
+    await validate_print_budget(
+        db,
+        cost_center_id=data.cost_center_id,
+        estimated_cost=trusted_estimated_cost,
+        current_user=current_user,
+        quantity=quantity,
+    )
+
     ams_mapping_json = json.dumps(data.ams_mapping) if data.ams_mapping else None
+    # Same Text-as-JSON convention for the rack-position pick (#1784).
+    nozzle_rack_choice_json = json.dumps(data.nozzle_rack_choice) if data.nozzle_rack_choice else None
     # Reprint fallback: the caller didn't specify an explicit ams_mapping (no
     # per-slot filament-mapping edit was made), but the archive carries the
     # slicer's own live-resolved AMS-slot pick from the original print (see
@@ -998,12 +1101,15 @@ async def add_to_queue(
             filament_overrides=filament_overrides_json,
             archive_id=data.archive_id,
             library_file_id=data.library_file_id,
+            cost_center_id=data.cost_center_id,
+            estimated_cost=trusted_estimated_cost,
             scheduled_time=data.scheduled_time,
             require_previous_success=data.require_previous_success,
             auto_off_after=data.auto_off_after,
             manual_start=data.manual_start,
             skip_filament_check=data.skip_filament_check,
             ams_mapping=ams_mapping_json,
+            nozzle_rack_choice=nozzle_rack_choice_json,
             plate_id=data.plate_id,
             bed_levelling=data.bed_levelling,
             flow_cali=data.flow_cali,
@@ -1133,6 +1239,7 @@ async def bulk_update_queue_items(
 
     updated_count = 0
     skipped_count = 0
+    validates_billing_fields = "cost_center_id" in update_data or "estimated_cost" in update_data
 
     for item in items:
         # Skip non-pending rows and rows a dispatch worker has claimed (#2615) —
@@ -1147,7 +1254,25 @@ async def bulk_update_queue_items(
             skipped_count += 1
             continue
 
-        for field, value in update_data.items():
+        item_update_data = update_data.copy()
+        if validates_billing_fields:
+            trusted_estimated_cost = await _trusted_item_estimated_cost(
+                db,
+                item,
+                printer_id=item_update_data.get("printer_id", item.printer_id),
+                plate_id=item.plate_id,
+                ams_mapping=item.ams_mapping,
+            )
+            item_update_data["estimated_cost"] = trusted_estimated_cost
+            await validate_print_budget(
+                db,
+                cost_center_id=item_update_data.get("cost_center_id", item.cost_center_id),
+                estimated_cost=trusted_estimated_cost,
+                current_user=user,
+                exclude_queue_item_id=item.id,
+            )
+
+        for field, value in item_update_data.items():
             setattr(item, field, value)
         updated_count += 1
 
@@ -1550,12 +1675,27 @@ async def cancel_batch(
     )
     pending_items = result.scalars().all()
     cancelled_count = 0
+    cancelled_ids: list[int] = []
     for item in pending_items:
         item.status = "cancelled"
+        await release_budget_reservation(
+            db,
+            source_type="print_queue",
+            source_id=item.id,
+            status="released",
+        )
+        cancelled_ids.append(item.id)
         cancelled_count += 1
 
     batch.status = "cancelled"
     await db.commit()
+
+    # Same as the single-item path: a dispatch already preheating for one of
+    # these cannot see the status change on its own (#2727).
+    from backend.app.services.print_scheduler import scheduler as _scheduler
+
+    for _cancelled_id in cancelled_ids:
+        _scheduler.notify_dispatch_cancelled(_cancelled_id)
 
     return {"message": f"Batch cancelled, {cancelled_count} pending items cancelled"}
 
@@ -1797,6 +1937,30 @@ async def update_queue_item(
             json.dumps(update_data["nozzle_mapping"]) if update_data["nozzle_mapping"] else None
         )
 
+    # Same Text-as-JSON convention for the rack-position pick (#1784). An empty
+    # object clears it, which is how the UI says "assign these for me again".
+    if "nozzle_rack_choice" in update_data:
+        update_data["nozzle_rack_choice"] = (
+            json.dumps(update_data["nozzle_rack_choice"]) if update_data["nozzle_rack_choice"] else None
+        )
+
+    trusted_estimated_cost = await _trusted_item_estimated_cost(
+        db,
+        item,
+        printer_id=update_data.get("printer_id", item.printer_id),
+        plate_id=update_data.get("plate_id", item.plate_id),
+        ams_mapping=update_data.get("ams_mapping", item.ams_mapping),
+    )
+    update_data["estimated_cost"] = trusted_estimated_cost
+
+    await validate_print_budget(
+        db,
+        cost_center_id=update_data.get("cost_center_id", item.cost_center_id),
+        estimated_cost=trusted_estimated_cost,
+        current_user=user,
+        exclude_queue_item_id=item.id,
+    )
+
     # Re-check the dispatch claim right before mutating (#2615). Several awaited
     # validations ran since the guard above, and a scheduler worker may have
     # claimed the row in that gap. A fresh read (item isn't dirty yet, so no
@@ -1844,8 +2008,20 @@ async def delete_queue_item(
     if item.status == "printing":
         raise HTTPException(400, "Cannot delete item that is currently printing")
 
+    await release_budget_reservation(
+        db,
+        source_type="print_queue",
+        source_id=item.id,
+        status="released",
+    )
     await db.delete(item)
     await db.commit()
+
+    # Stop an in-flight preheat for this item: the dispatch coroutine is
+    # parked in a sleep and cannot see the status we just wrote (#2727).
+    from backend.app.services.print_scheduler import scheduler as _scheduler
+
+    _scheduler.notify_dispatch_cancelled(item_id)
 
     logger.info("Deleted queue item %s", item_id)
     return {"message": "Queue item deleted"}
@@ -1956,7 +2132,19 @@ async def cancel_queue_item(
 
     item.status = "cancelled"
     item.completed_at = datetime.now(timezone.utc)
+    await release_budget_reservation(
+        db,
+        source_type="print_queue",
+        source_id=item.id,
+        status="released",
+    )
     await db.commit()
+
+    # Stop an in-flight preheat for this item: the dispatch coroutine is
+    # parked in a sleep and cannot see the status we just wrote (#2727).
+    from backend.app.services.print_scheduler import scheduler as _scheduler
+
+    _scheduler.notify_dispatch_cancelled(item_id)
 
     logger.info("Cancelled queue item %s", item_id)
     return {"message": "Queue item cancelled"}
@@ -2119,6 +2307,22 @@ async def start_queue_item(
 
     if item.status != "pending":
         raise HTTPException(400, f"Can only start pending items, current status: '{item.status}'")
+
+    item.estimated_cost = await _trusted_item_estimated_cost(
+        db,
+        item,
+        printer_id=item.printer_id,
+        plate_id=item.plate_id,
+        ams_mapping=item.ams_mapping,
+    )
+
+    await validate_print_budget(
+        db,
+        cost_center_id=item.cost_center_id,
+        estimated_cost=item.estimated_cost,
+        current_user=user,
+        exclude_queue_item_id=item.id,
+    )
 
     # Live deficit check — re-evaluated against current spool state, so a
     # spool swap between scheduler flagging and the user clicking ▶ clears

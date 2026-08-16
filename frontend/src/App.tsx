@@ -44,6 +44,7 @@ const StatsPage = lazyWithReload(() => import('./pages/StatsPage').then(m => ({ 
 const SettingsPage = lazyWithReload(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const ProfilesPage = lazyWithReload(() => import('./pages/ProfilesPage').then(m => ({ default: m.ProfilesPage })));
 const MaintenancePage = lazyWithReload(() => import('./pages/MaintenancePage').then(m => ({ default: m.MaintenancePage })));
+const FinancePage = lazyWithReload(() => import('./pages/FinancePage').then(m => ({ default: m.FinancePage })));
 const CalculatorPage = lazyWithReload(() => import('./pages/CalculatorPage').then(m => ({ default: m.CalculatorPage })));
 const CalculatorQuotePage = lazyWithReload(() => import('./pages/CalculatorQuotePage').then(m => ({ default: m.CalculatorQuotePage })));
 const ProjectsPage = lazyWithReload(() => import('./pages/ProjectsPage').then(m => ({ default: m.ProjectsPage })));
@@ -247,6 +248,7 @@ const router = createBrowserRouter(
         <Route path="pipelines/runs" element={<Navigate to="/queue?tab=pipelines" replace />} />
         <Route path="stats" element={<StatsPage />} />
         <Route path="profiles" element={<ProfilesPage />} />
+        <Route path="finance" element={<PermissionRoute permission="cost_centers:read_own"><FinancePage /></PermissionRoute>} />
         <Route path="maintenance" element={<MaintenancePage />} />
         <Route path="calculator" element={<PermissionRoute permission="calculator:read"><CalculatorPage /></PermissionRoute>} />
         <Route path="projects" element={<ProjectsPage />} />

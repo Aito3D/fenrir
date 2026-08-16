@@ -231,6 +231,8 @@ const FR_COGNATES = [
   'ntfy, Pushover, Discord, etc.',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
   'Client',  // Task 9 Aito client combobox label — same word in French
+  'Simple', 'Expert',  // slicer settings visibility tiers — identical words in French
+  'Support',  // same word in French
 ];
 
 // Italian cognates.
@@ -268,6 +270,7 @@ const IT_COGNATES = [
   'Proxy', 'Designer',
   'Off',  // cam-wall status overlay mode — common loanword in Italian UI
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
+  'Skirt / brim',  // Italian slicer UIs keep the English terms
 ];
 
 // Japanese: very few cognates because of script difference. Almost
@@ -389,6 +392,7 @@ const ES_COGNATES = [
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
   '{{days}} d',  // aito.ageDaysShort — "d" is also the abbreviation for "día" in Spanish
+  'Simple',  // slicer settings visibility tier — identical word in Spanish
 ];
 
 // Turkish cognates — technical UI labels that Turkish speakers use verbatim

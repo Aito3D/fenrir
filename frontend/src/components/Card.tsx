@@ -35,7 +35,7 @@ export function Card({ children, className = '', onClick, onContextMenu, interac
     : '';
   return (
     <div
-      className={`bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary card-shadow ${interactiveCls} ${className}`}
+      className={`bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary card-shadow ${interactiveCls} ${!interactive && onClick ? 'cursor-pointer' : ''} ${className}`}
       onClick={onClick}
       onContextMenu={onContextMenu}
       {...rest}

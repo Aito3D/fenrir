@@ -1,6 +1,6 @@
 """Pydantic schemas for slice requests."""
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -91,6 +91,19 @@ class SliceRequest(BaseModel):
             "height and so on, which ``--load-settings`` would otherwise discard. "
             "Only keys the source actually lists as changed are applied; anything "
             "else is ignored. ``None``/empty means a plain profile slice."
+        ),
+    )
+    process_overrides: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "The user's own process-setting edits from the slice modal's settings "
+            "panel, as a sparse ``{option_key: value}`` map (layer height, wall "
+            "count, supports, speeds — OrcaSlicer's process parameter set). Written "
+            "into the process JSON *after* the source's support settings and the "
+            "designer's carried tweaks, so an explicit choice here wins over both. "
+            "Values are normalised to the string forms a process preset stores; "
+            "keys that aren't valid config keys are dropped rather than failing "
+            "the slice. ``None``/empty leaves the picked preset untouched."
         ),
     )
     use_embedded_settings: bool = Field(
@@ -198,6 +211,13 @@ class SliceResponse(BaseModel):
     filament_used_g: float
     filament_used_mm: float
     used_embedded_settings: bool = False
+    # Set when the source lives in an external folder that could not receive
+    # the result (read-only, unreachable, not writable), so the file went to
+    # managed storage instead. Names which of those it was. ``None`` on every
+    # normal slice. Reported rather than silently absorbed: filing the output
+    # somewhere the user isn't looking, with no signal, is what made #2810
+    # impossible to reproduce from the UI.
+    external_write_fallback: str | None = None
 
 
 class SliceArchiveResponse(BaseModel):

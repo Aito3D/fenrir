@@ -41,15 +41,18 @@ from backend.app.schemas.printer import (
     PrinterUpdate,
     PrintOptionsResponse,
 )
+from backend.app.services import drying_preflight
 from backend.app.services.bambu_ftp import (
     cache_3mf_download,
     delete_file_async,
     download_file_bytes_async,
     download_file_try_paths_async,
+    ftps_handshake_blocked,
     get_cached_3mf,
     get_storage_info_async,
     list_files_async,
 )
+from backend.app.services.print_storage import print_file_reachable_over_ftp
 from backend.app.services.printer_diagnostic import run_connection_diagnostic
 from backend.app.services.printer_manager import (
     display_temperatures,
@@ -65,6 +68,7 @@ from backend.app.services.printer_manager import (
     uniform_tray_filament_hint,
 )
 from backend.app.utils.filament_ids import filament_id_to_setting_id
+from backend.app.utils.fts_routing import slot_extruder
 from backend.app.utils.http import build_content_disposition
 from backend.app.utils.printer_models import MAX_CHAMBER_TEMP_C, uses_exhaust_fan_label
 
@@ -409,6 +413,7 @@ async def delete_printer(
 
     from backend.app.models.archive import PrintArchive
     from backend.app.models.maintenance import MaintenanceHistory, PrinterMaintenance
+    from backend.app.models.scheduled_drying import ScheduledDrying
     from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
@@ -429,6 +434,9 @@ async def delete_printer(
 
     # Delete slot assignments for this printer (SQLite doesn't enforce FK cascades)
     await db.execute(sql_delete(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.printer_id == printer_id))
+
+    # Delete scheduled drying runs for this printer (SQLite doesn't enforce FK cascades)
+    await db.execute(sql_delete(ScheduledDrying).where(ScheduledDrying.printer_id == printer_id))
 
     # Delete maintenance history and items for this printer
     # (SQLite doesn't enforce FK cascades, so do it explicitly)
@@ -494,15 +502,31 @@ async def get_printer_status(
     ams_exists = False
     raw_data = state.raw_data or {}
 
-    # Build K-profile lookup map: cali_idx -> k_value
-    # This allows looking up the calibrated K value for each AMS slot
-    kprofile_map: dict[int, float] = {}
+    # Build K-profile lookup map: (extruder_id, cali_idx) -> k_value.
+    #
+    # Keyed on the pair, not on cali_idx alone: the printer numbers its
+    # calibration table per nozzle, so entry 16 exists on both and means a
+    # different profile on each. A cali_idx-only map let whichever profile the
+    # printer happened to list last overwrite the other, and the slot then
+    # displayed the wrong nozzle's K — on the maintainer's H2C, 0.018 and 0.020
+    # for the same spool.
+    kprofile_map: dict[tuple[int, int], float] = {}
     for kp in state.kprofiles or []:
         if kp.slot_id is not None and kp.k_value:
             try:
-                kprofile_map[kp.slot_id] = float(kp.k_value)
+                kprofile_map[(int(kp.extruder_id or 0), kp.slot_id)] = float(kp.k_value)
             except (ValueError, TypeError):
                 pass  # Skip K-profile entries with unparseable values
+
+    def _kprofile_k(cali_idx: int | None, ams_id: int, tray_id: int) -> float | None:
+        """K value for a slot's bound profile, resolved against its own nozzle."""
+        if cali_idx is None:
+            return None
+        extruder = slot_extruder(ams_id, tray_id, state.ams_extruder_map, state.ams_switch_inlet)
+        if extruder is not None:
+            return kprofile_map.get((extruder, cali_idx))
+        # Single-nozzle printers report everything under extruder 0.
+        return kprofile_map.get((0, cali_idx))
 
     # Cached active-cycle drying params (filament + target temp) we sent
     # last; Bambu doesn't echo them on the per-tick AMS push, so the badge
@@ -528,8 +552,8 @@ async def get_printer_status(
                 # Get K value: first try tray's k field, then lookup from K-profiles
                 k_value = tray_data.get("k")
                 cali_idx = tray_data.get("cali_idx")
-                if k_value is None and cali_idx is not None and cali_idx in kprofile_map:
-                    k_value = kprofile_map[cali_idx]
+                if k_value is None:
+                    k_value = _kprofile_k(cali_idx, int(ams_data.get("id", 0)), int(tray_data.get("id", 0)))
 
                 trays.append(
                     AMSTray(
@@ -624,8 +648,11 @@ async def get_printer_status(
             # Get K value: first try tray's k field, then lookup from K-profiles
             vt_k_value = vt_data.get("k")
             vt_cali_idx = vt_data.get("cali_idx")
-            if vt_k_value is None and vt_cali_idx is not None and vt_cali_idx in kprofile_map:
-                vt_k_value = kprofile_map[vt_cali_idx]
+            if vt_k_value is None:
+                # External holder: id 254 is Ext-L, 255 is Ext-R. slot_extruder
+                # takes the 0/1 tray index, so normalise before asking.
+                vt_id = int(vt_data.get("id", 254))
+                vt_k_value = _kprofile_k(vt_cali_idx, 255, vt_id - 254 if vt_id >= 254 else vt_id)
 
             tray_id = int(vt_data.get("id", 254))
             vt_tray.append(
@@ -769,6 +796,10 @@ async def get_printer_status(
         active_extruder=state.active_extruder,
         ams_mapping=ams_mapping,
         ams_extruder_map=ams_extruder_map,
+        # Only meaningful alongside an installed switch; without one the map is
+        # empty anyway, but gating it keeps a stale binding from outliving the
+        # accessory being unplugged.
+        ams_switch_inlet=(dict(state.ams_switch_inlet) if state.fila_switch and state.fila_switch.installed else {}),
         tray_now=tray_now,
         # Runout guidance (#2587): resolve the firmware's target/previous slot to a
         # global tray ID, but only while PAUSED — the moment the operator needs it.
@@ -1222,6 +1253,19 @@ async def _produce_cover_image(
             break
 
     if not downloaded:
+        # The cover lives inside the 3MF, so it is only reachable if the 3MF is.
+        # When the printer kept the print on internal storage there is nothing
+        # at any of these paths, and walking all sixteen of them just to end on
+        # a 404 that reads as "this print has no cover" helps nobody (#2780).
+        storage = print_file_reachable_over_ftp(printer_manager.get_status(printer_id))
+        if not storage.reachable:
+            _cover_404_cache.setdefault(printer_id, set()).add(cache_key)
+            raise HTTPException(
+                404,
+                f"The print file for '{subtask_name}' is not on storage Bambuddy can read over FTPS "
+                f"({storage.reason}), so it has no cover to extract.",
+            )
+
         logger.info(
             f"Trying to download cover for '{subtask_name}' from {printer.ip_address} (trying {len(remote_paths)} paths)"
         )
@@ -1231,6 +1275,16 @@ async def _produce_cover_image(
         last_error = None
 
         for attempt in range(max_retries + 1):
+            if ftps_handshake_blocked(printer.ip_address):
+                # Nothing to retry: the printer is not completing a TLS
+                # handshake on port 990, so no path and no attempt reaches it
+                # (#2780). Report the real cause instead of the 404 below,
+                # which would read as "this print has no cover".
+                raise HTTPException(
+                    503,
+                    f"Printer {printer.ip_address} is not answering its file service over TLS. "
+                    "Bambuddy will try again shortly.",
+                )
             try:
                 downloaded = await download_file_try_paths_async(
                     printer.ip_address,
@@ -1928,7 +1982,7 @@ async def clear_mqtt_logs(
 # The P1 firmware acks `ams_filament_drying` with result: success and then ignores it
 # — Bambu's own P1 manual says drying "may only be controlled from the P1S screen"
 # (#2533). Refuse the command rather than let the caller believe it landed.
-_DRYING_SCREEN_ONLY_DETAIL = "This printer only supports AMS drying from its own screen"
+_DRYING_SCREEN_ONLY_DETAIL = drying_preflight.SCREEN_ONLY_DETAIL
 
 
 @router.post("/{printer_id}/drying/start")
@@ -1951,10 +2005,9 @@ async def start_drying(
     # Server-side guard: reject if this model/firmware doesn't support drying
     live_state = printer_manager.get_status(printer_id)
     firmware = live_state.firmware_version if live_state else None
-    if drying_screen_only(printer.model):
-        raise HTTPException(400, _DRYING_SCREEN_ONLY_DETAIL)
-    if not supports_drying(printer.model, firmware):
-        raise HTTPException(400, "Drying not supported for this printer model or firmware version")
+    unsupported = drying_preflight.check_drying_supported(printer.model, firmware)
+    if unsupported:
+        raise HTTPException(400, unsupported)
 
     if temp < 45 or temp > 85:
         raise HTTPException(400, "Temperature must be 45-85°C")
@@ -1965,44 +2018,16 @@ async def start_drying(
     # firmware silently ignores the command — #971) and backfill an empty
     # filament field from the first loaded tray so the printer doesn't reject
     # the payload.
-    target_ams: dict | None = None
-    for unit in (live_state.raw_data.get("ams") if live_state else None) or []:
-        try:
-            if int(unit.get("id", -1)) == ams_id:
-                target_ams = unit
-                break
-        except (TypeError, ValueError):
-            continue
-
-    if target_ams is not None:
-        reason_messages = {
-            0: "Printer is busy",
-            1: "Insufficient power — too many AMS drying or external PSU required",
-            2: "AMS is busy",
-            3: "Filament is at the AMS outlet — retract it first",
-            4: "AMS is already starting a drying cycle",
-            5: "Not supported in 2D mode",
-            6: "AMS is already drying",
-            7: "AMS firmware is upgrading",
-            8: "Plug in the external AMS power adapter to start drying",
-        }
-        for code in target_ams.get("dry_sf_reason") or []:
-            try:
-                code_int = int(code)
-            except (TypeError, ValueError):
-                continue
-            if code_int in reason_messages:
-                raise HTTPException(409, reason_messages[code_int])
-
-        if not filament:
-            for tray in target_ams.get("tray") or []:
-                tray_type = tray.get("tray_type")
-                if tray_type:
-                    filament = str(tray_type)
-                    break
-
-    if not filament:
-        filament = "PLA"
+    target_ams = drying_preflight.find_ams_unit(live_state, ams_id)
+    blocking = drying_preflight.blocking_reason_codes(target_ams)
+    if blocking:
+        # Same pick the scheduled path makes, so both describe one blocked AMS
+        # the same way rather than differing on which code the firmware listed
+        # first.
+        raise HTTPException(
+            409, drying_preflight.DRY_SF_REASON_MESSAGES[drying_preflight.primary_reason_code(blocking)]
+        )
+    filament = drying_preflight.resolve_filament(target_ams, filament)
 
     success = printer_manager.send_drying_command(
         printer_id, ams_id, temp, duration, mode=1, filament=filament, rotate_tray=rotate_tray
@@ -2033,6 +2058,15 @@ async def stop_drying(
     success = printer_manager.send_drying_command(printer_id, ams_id, temp=0, duration=0, mode=0)
     if not success:
         raise HTTPException(400, "Printer not connected")
+
+    # A cycle the user stopped by hand tells us nothing about whether drying can
+    # move the humidity reading, so it must not count towards the auto-drying
+    # suspension (#2770). Imported here rather than at module scope to keep the
+    # existing routes/scheduler import direction.
+    from backend.app.services.print_scheduler import scheduler as print_scheduler
+
+    print_scheduler.forget_auto_dry_cycle(printer_id, ams_id)
+
     return {"status": "drying_stopped", "ams_id": ams_id}
 
 
@@ -2145,17 +2179,31 @@ async def get_inventory_remain(
     the dispatcher uses (#1766). Works for both internal inventory and
     Spoolman; unbound slots are absent from the map (client falls back to the
     printer's MQTT `remain` for those).
+
+    `slot_materials` carries the same bindings with their material identity and
+    extruder side attached, which is what the modal's pre-flight filament check
+    needs to pool spools under AMS Filament Backup the way the dispatcher does.
+    It is deliberately server-computed: the identity rule lives in
+    `filament_deficit`, and a client-side reimplementation of it is exactly how
+    the modal came to block prints the dispatcher would have accepted. Unlike
+    `inventory_remain_g` it covers every binding, not just currently-loaded
+    slots — again matching what the dispatcher pools.
     """
+    from backend.app.services.filament_deficit import build_slot_materials
     from backend.app.services.print_scheduler import PrintScheduler
 
     state = printer_manager.get_status(printer_id)
     if not state:
-        return {"inventory_remain_g": {}}
+        return {"inventory_remain_g": {}, "slot_materials": []}
 
     scheduler = PrintScheduler()
     loaded = scheduler._build_loaded_filaments(state)
     overrides = await scheduler._build_inventory_remain_overrides(db, printer_id, loaded)
-    return {"inventory_remain_g": {str(k): v for k, v in overrides.items()}}
+    slot_materials = await build_slot_materials(db, printer_id)
+    return {
+        "inventory_remain_g": {str(k): v for k, v in overrides.items()},
+        "slot_materials": [s.to_dict() for s in slot_materials],
+    }
 
 
 # ============================================
@@ -2617,17 +2665,22 @@ async def configure_ams_slot(
             from backend.app.models.spoolman_k_profile import SpoolmanKProfile
             from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 
-            # Resolve slot's extruder index for the K-profile match key. Same
-            # logic as _apply_pa_after_refresh: external slots invert tray→extruder,
-            # AMS slots come from ams_extruder_map. Falls back to 0 (single-nozzle).
+            # Resolve the slot's extruder for the K-profile match key. On a
+            # Filament Track Switch machine this comes from the AMS's inlet
+            # binding, because every unit reports extruder 0xE there — without
+            # that, the `else 0` below filed every profile under the right-hand
+            # nozzle and a left-nozzle calibration was stored as a right one.
             slot_state = printer_manager.get_status(printer_id)
-            slot_extruder: int | None = None
-            if slot_state and slot_state.ams_extruder_map:
-                if ams_id == 255:
-                    slot_extruder = 1 - tray_id
-                else:
-                    slot_extruder = slot_state.ams_extruder_map.get(str(ams_id))
-            kp_extruder = slot_extruder if slot_extruder is not None else 0
+            resolved_extruder = slot_extruder(
+                ams_id,
+                tray_id,
+                slot_state.ams_extruder_map if slot_state else None,
+                slot_state.ams_switch_inlet if slot_state else None,
+            )
+            # Still 0 when nothing is known, which is right for a single-nozzle
+            # printer — the resolver only returns None when it genuinely cannot
+            # tell, and on those machines extruder 0 is the only one there is.
+            kp_extruder = resolved_extruder if resolved_extruder is not None else 0
 
             # Spoolman SlotAssignment first — has UniqueConstraint, idempotent.
             sm_result = await db.execute(
@@ -3807,13 +3860,7 @@ async def _apply_pa_after_refresh(printer_id: int, ams_id: int, slot_id: int):
             if nd:
                 nozzle_diameter = nd
 
-        slot_extruder = None
-        if state.ams_extruder_map:
-            if ams_id == 255:
-                # External slots: ext-L (tray 0) → extruder 1, ext-R (tray 1) → extruder 0
-                slot_extruder = 1 - slot_id
-            else:
-                slot_extruder = state.ams_extruder_map.get(str(ams_id))
+        resolved_extruder = slot_extruder(ams_id, slot_id, state.ams_extruder_map, state.ams_switch_inlet)
 
         # 3-stage K-profile cascade: local SpoolKProfile → Spoolman SpoolmanKProfile
         # → live tray.cali_idx fallback. Pre-Phase-13 only handled the local path
@@ -3876,7 +3923,7 @@ async def _apply_pa_after_refresh(printer_id: int, ams_id: int, slot_id: int):
                 for kp in spool.k_profiles:
                     if kp.printer_id != printer_id or kp.nozzle_diameter != nozzle_diameter or kp.cali_idx is None:
                         continue
-                    if slot_extruder is not None and kp.extruder is not None and kp.extruder == slot_extruder:
+                    if resolved_extruder is not None and kp.extruder is not None and kp.extruder == resolved_extruder:
                         exact_kp = kp
                         break
                     if fallback_kp is None:
@@ -3910,7 +3957,11 @@ async def _apply_pa_after_refresh(printer_id: int, ams_id: int, slot_id: int):
                     )
                     for kp in kp_result.scalars().all():
                         if kp.nozzle_diameter == nozzle_diameter:
-                            if slot_extruder is not None and kp.extruder is not None and kp.extruder != slot_extruder:
+                            if (
+                                resolved_extruder is not None
+                                and kp.extruder is not None
+                                and kp.extruder != resolved_extruder
+                            ):
                                 continue
                             if kp.cali_idx is not None:
                                 matching_cali_idx = kp.cali_idx

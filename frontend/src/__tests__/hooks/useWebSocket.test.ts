@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, waitFor, act } from '@testing-library/react';
+import { renderHook, waitFor, act, screen } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '../../contexts/ToastContext';
@@ -23,6 +23,14 @@ vi.mock('react-i18next', () => ({
       if (key === 'printers.toast.missingSpoolAssignment' && options) {
         const { printer, slots } = options as { printer: string; slots: string };
         return `Missing assignments for ${printer}: ${slots}`;
+      }
+      if (key === 'printers.toast.killSwitchTriggered' && options) {
+        const { printer, filename } = options as { printer: string; filename: string };
+        return `Billing kill switch stopped ${filename} on ${printer}`;
+      }
+      if (key === 'printers.toast.billingChargeFailed' && options) {
+        const { printer, filename } = options as { printer: string; filename: string };
+        return `Billing failed for ${filename} on ${printer}. The budget reservation was retained; check the server logs.`;
       }
       return key;
     },
@@ -489,6 +497,52 @@ describe('useWebSocket hook', () => {
       }).not.toThrow();
 
       vi.unstubAllGlobals();
+    });
+
+    it('shows an error toast when the billing kill switch stops a print', async () => {
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+
+      renderHook(() => useWebSocket(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      const ws = await waitForWs();
+      act(() => {
+        ws.open();
+        ws.simulateMessage({
+          type: 'kill_switch_triggered',
+          printer_id: 7,
+          printer_name: 'Printer B',
+          filename: 'foreign_job.3mf',
+        });
+      });
+
+      const toast = screen.getByText('Billing kill switch stopped foreign_job.3mf on Printer B');
+      expect(toast.parentElement).toHaveClass('bg-red-500/10');
+    });
+
+    it('shows an error toast when a completed print could not be charged', async () => {
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+
+      renderHook(() => useWebSocket(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      const ws = await waitForWs();
+      act(() => {
+        ws.open();
+        ws.simulateMessage({
+          type: 'billing_charge_failed',
+          printer_id: 7,
+          printer_name: 'Printer B',
+          filename: 'paid-job.3mf',
+        });
+      });
+
+      const toast = screen.getByText(
+        'Billing failed for paid-job.3mf on Printer B. The budget reservation was retained; check the server logs.',
+      );
+      expect(toast.parentElement).toHaveClass('bg-red-500/10');
     });
 
     it('handles spool_assignment_verified messages (success and failure) without error', async () => {

@@ -16,7 +16,6 @@ import { CALIBRATION_MODES, CALIBRATION_MODE_ACTIVE, CALIBRATION_MODE_INACTIVE }
 import { PreheatFilamentTargetsEditor } from '../components/PreheatFilamentTargetsEditor';
 import type { APIKey, AppSettings, AppSettingsUpdate, PrinterHASensor, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse, CalibrationMode } from '../api/client';
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
-import { SlicerBundlesPanel } from '../components/SlicerBundlesPanel';
 import { SlicerPipelinesPanel } from '../components/SlicerPipelinesPanel';
 import { CameraTokensSection } from './CameraTokensPage';
 import { StreamOverlayBuilder } from '../components/StreamOverlayBuilder';
@@ -59,6 +58,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Gauge, Palette } from 'lucide-react';
 import { registerSettingsSearch, getSettingsSearchEntries } from '../lib/settingsSearch';
 import type { UsersSubTab } from '../lib/settingsSearch';
+import { availableEngines, hasEngineChoice, resolveEngine, type SliceEngineId } from '../lib/sliceEngines';
 
 const validTabs = ['general', 'plugs', 'notifications', 'queue', 'filament', 'network', 'apikeys', 'virtual-printer', 'spoolbuddy', 'failure-detection', 'users', 'backup', 'zoho'] as const;
 type TabType = typeof validTabs[number];
@@ -136,6 +136,12 @@ registerSettingsSearch({ labelKey: 'backup.history', labelFallback: 'Backup Hist
 registerSettingsSearch({ labelKey: 'backup.localBackup', labelFallback: 'Local Backup', tab: 'backup', keywords: 'local backup download zip manual export', anchor: 'card-backup-local' });
 registerSettingsSearch({ labelKey: 'backup.scheduledBackup', labelFallback: 'Scheduled Backups', tab: 'backup', keywords: 'scheduled backup automatic hourly daily weekly retention local path', anchor: 'card-backup-scheduled' });
 
+// Lowest humidity an AMS reports while its own dryer is running, measured on an
+// H2D/AMS 2 Pro that read 10-13% cold and 15-20% throughout every cycle (#2770).
+// A drying threshold below this can never be reached while the box is warm, so
+// auto-drying would end one cycle and immediately arm another.
+const HUMIDITY_DRYING_FLOOR = 20;
+
 const STORAGE_CATEGORY_COLORS: Record<string, string> = {
   database: 'bg-blue-600',
   library_files: 'bg-green-500',
@@ -200,6 +206,8 @@ export function SettingsPage() {
   const [templateFilter, setTemplateFilter] = useState('');
   const [settingsSearch, setSettingsSearch] = useState('');
   const [showLogViewer, setShowLogViewer] = useState(false);
+  const [showRebuildConfirm, setShowRebuildConfirm] = useState(false);
+  const [isRebuildLoading, setIsRebuildLoading] = useState(false);
   const [defaultView, setDefaultViewState] = useState<string>(getDefaultView());
 
   // Initialize tab from URL params (handle legacy ?tab=email → users tab + email sub-tab)
@@ -1073,8 +1081,8 @@ export function SettingsPage() {
       baseline.ha_token !== localSettings.ha_token ||
       (baseline.library_archive_mode ?? 'ask') !== (localSettings.library_archive_mode ?? 'ask') ||
       Number(baseline.library_disk_warning_gb ?? 5) !== Number(localSettings.library_disk_warning_gb ?? 5) ||
-      (baseline.camera_view_mode ?? 'window') !== (localSettings.camera_view_mode ?? 'window') ||
       (baseline.preferred_slicer ?? 'bambu_studio') !== (localSettings.preferred_slicer ?? 'bambu_studio') ||
+      resolveEngine(baseline.slice_engine) !== resolveEngine(localSettings.slice_engine) ||
       (baseline.open_in_slicer ?? null) !== (localSettings.open_in_slicer ?? null) ||
       (baseline.use_slicer_api ?? false) !== (localSettings.use_slicer_api ?? false) ||
       (baseline.orcaslicer_api_url ?? '') !== (localSettings.orcaslicer_api_url ?? '') ||
@@ -1097,11 +1105,18 @@ export function SettingsPage() {
       (baseline.preheat_filament_targets ?? '') !== (localSettings.preheat_filament_targets ?? '') ||
       (baseline.preheat_max_wait_seconds ?? 900) !== (localSettings.preheat_max_wait_seconds ?? 900) ||
       (baseline.preheat_soak_seconds ?? 300) !== (localSettings.preheat_soak_seconds ?? 300) ||
+      (baseline.queue_keep_bed_warm ?? false) !== (localSettings.queue_keep_bed_warm ?? false) ||
+      (baseline.queue_keep_warm_bed_temp ?? 90) !== (localSettings.queue_keep_warm_bed_temp ?? 90) ||
+      (baseline.queue_keep_warm_max_minutes ?? 120) !== (localSettings.queue_keep_warm_max_minutes ?? 120) ||
       (baseline.nozzle_temp_presets ?? '') !== (localSettings.nozzle_temp_presets ?? '') ||
       (baseline.bed_temp_presets ?? '') !== (localSettings.bed_temp_presets ?? '') ||
       (baseline.chamber_temp_presets ?? '') !== (localSettings.chamber_temp_presets ?? '') ||
       (baseline.fan_speed_presets ?? '') !== (localSettings.fan_speed_presets ?? '') ||
-      (baseline.session_max_hours ?? 24) !== (localSettings.session_max_hours ?? 24);
+      (baseline.session_max_hours ?? 24) !== (localSettings.session_max_hours ?? 24) ||
+      (baseline.billing_enabled ?? false) !== (localSettings.billing_enabled ?? false) ||
+      (baseline.printer_kill_switch_enabled ?? false) !== (localSettings.printer_kill_switch_enabled ?? false) ||
+      (baseline.finance_budget_reset_day ?? 1) !== (localSettings.finance_budget_reset_day ?? 1) ||
+      (baseline.finance_budget_reset_timezone ?? 'UTC') !== (localSettings.finance_budget_reset_timezone ?? 'UTC');
 
     if (!hasChanges) {
       return;
@@ -1183,6 +1198,7 @@ export function SettingsPage() {
         camera_gpu_accel: localSettings.camera_gpu_accel,
         camera_engine: localSettings.camera_engine,
         preferred_slicer: localSettings.preferred_slicer,
+        slice_engine: localSettings.slice_engine,
         open_in_slicer: localSettings.open_in_slicer,
         use_slicer_api: localSettings.use_slicer_api,
         orcaslicer_api_url: localSettings.orcaslicer_api_url,
@@ -1205,11 +1221,18 @@ export function SettingsPage() {
         preheat_filament_targets: localSettings.preheat_filament_targets,
         preheat_max_wait_seconds: localSettings.preheat_max_wait_seconds,
         preheat_soak_seconds: localSettings.preheat_soak_seconds,
+        queue_keep_bed_warm: localSettings.queue_keep_bed_warm,
+        queue_keep_warm_bed_temp: localSettings.queue_keep_warm_bed_temp,
+        queue_keep_warm_max_minutes: localSettings.queue_keep_warm_max_minutes,
         nozzle_temp_presets: localSettings.nozzle_temp_presets,
         bed_temp_presets: localSettings.bed_temp_presets,
         chamber_temp_presets: localSettings.chamber_temp_presets,
         fan_speed_presets: localSettings.fan_speed_presets,
         session_max_hours: localSettings.session_max_hours,
+        billing_enabled: localSettings.billing_enabled,
+        printer_kill_switch_enabled: localSettings.printer_kill_switch_enabled,
+        finance_budget_reset_day: localSettings.finance_budget_reset_day,
+        finance_budget_reset_timezone: localSettings.finance_budget_reset_timezone,
       };
       updateMutation.mutate(settingsToSave);
     }, 500);
@@ -2117,24 +2140,10 @@ export function SettingsPage() {
               </h2>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div>
-                <label className="block text-sm text-bambu-gray mb-1">
-                  {t('settings.cameraViewMode')}
-                </label>
-                <select
-                  value={localSettings.camera_view_mode ?? 'window'}
-                  onChange={(e) => updateSetting('camera_view_mode', e.target.value as 'window' | 'embedded')}
-                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                >
-                  <option value="window">{t('settings.newWindow')}</option>
-                  <option value="embedded">{t('settings.embeddedOverlay')}</option>
-                </select>
-                <p className="text-xs text-bambu-gray mt-1">
-                  {localSettings.camera_view_mode === 'embedded'
-                    ? t('settings.cameraOverlayDescription')
-                    : t('settings.cameraWindowDescription')}
-                </p>
-              </div>
+              {/* Camera View Mode used to live here. It is now the split
+                  camera button on each printer card, where the choice is made
+                  per stream instead of once for the whole install. The stored
+                  setting stays as the default a fresh browser starts from. */}
 
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
@@ -2435,6 +2444,151 @@ export function SettingsPage() {
                     ? t('settings.energyModePrintDescription')
                     : t('settings.energyModeTotalDescription')}
                 </p>
+              </div>
+              <div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white">{t('settings.billingEnabled')}</p>
+                    <p className="text-xs text-bambu-gray">{t('settings.billingEnabledDescription')}</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={localSettings.billing_enabled ?? false}
+                      onChange={(e) => updateSetting('billing_enabled', e.target.checked)}
+                      className="peer sr-only"
+                    />
+                    <div className="w-11 h-6 bg-bambu-dark-tertiary rounded-full peer-checked:bg-bambu-green peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all" />
+                  </label>
+                </div>
+                {localSettings.billing_enabled && (
+                  <div className="mt-4 flex items-center justify-between gap-4 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-4 py-3">
+                    <div className="flex-1">
+                      <p className="text-white">
+                        {t('settings.printerKillSwitch', 'Unauthorized print kill switch')}
+                      </p>
+                      <p className="text-xs text-bambu-gray mt-1">
+                        {t(
+                          'settings.printerKillSwitchDescription',
+                          'Immediately stop prints that start without authorization.'
+                        )}
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={localSettings.printer_kill_switch_enabled ?? false}
+                        onChange={(e) => updateSetting('printer_kill_switch_enabled', e.target.checked)}
+                        className="peer sr-only"
+                      />
+                      <div className="w-11 h-6 bg-bambu-dark-tertiary rounded-full peer-checked:bg-bambu-green peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all" />
+                    </label>
+                  </div>
+                )}
+                {localSettings.billing_enabled && (
+                  <div className="mt-4 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark p-4">
+                    <div className="mb-3">
+                      <h4 className="text-base font-medium text-white flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-bambu-green" />
+                        {t('settings.financeBudgetReset', 'Finance Monthly Budget Reset')}
+                      </h4>
+                    </div>
+                    <div className="flex gap-4">
+                      <div className="flex-1">
+                        <label className="block text-xs text-bambu-gray mb-1">
+                          {t('settings.financeBudgetResetDay', 'Reset Day')}
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={31}
+                          value={localSettings.finance_budget_reset_day ?? 1}
+                          onChange={(e) =>
+                            updateSetting(
+                              'finance_budget_reset_day',
+                              Math.max(1, Math.min(31, parseInt(e.target.value, 10) || 1))
+                            )
+                          }
+                          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+                        />
+                        <p className="text-xs text-bambu-gray mt-1">
+                          {t('settings.financeBudgetResetDayHelp', 'For short months, reset uses the last day of the month.')}
+                        </p>
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-xs text-bambu-gray mb-1">
+                          {t('settings.financeBudgetResetTimezone', 'Reset timezone')}
+                        </label>
+                        <select
+                          value={localSettings.finance_budget_reset_timezone ?? 'UTC'}
+                          onChange={(e) => updateSetting('finance_budget_reset_timezone', e.target.value)}
+                          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+                        >
+                          <option value="UTC">UTC</option>
+                          <option value="Europe/Berlin">Europe/Berlin</option>
+                          <option value="Europe/Vienna">Europe/Vienna</option>
+                          <option value="Europe/Zurich">Europe/Zurich</option>
+                          <option value="America/New_York">America/New_York</option>
+                          <option value="America/Chicago">America/Chicago</option>
+                          <option value="America/Denver">America/Denver</option>
+                          <option value="America/Los_Angeles">America/Los_Angeles</option>
+                          <option value="Asia/Tokyo">Asia/Tokyo</option>
+                          <option value="Asia/Singapore">Asia/Singapore</option>
+                          <option value="Australia/Sydney">Australia/Sydney</option>
+                        </select>
+                        <p className="text-xs text-bambu-gray mt-1">
+                          {t('settings.financeBudgetResetTimezoneHelp', 'Budget window start is calculated in this timezone.')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {localSettings.billing_enabled && isAdmin && (
+                  <div className="mt-3">
+                    <Button
+                      variant="secondary"
+                      onClick={() => setShowRebuildConfirm(true)}
+                      disabled={isRebuildLoading}
+                    >
+                      {isRebuildLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          {t('settings.rebuildLedgerInProgress', 'Starting...')}
+                        </>
+                      ) : (
+                        t('settings.rebuildLedger', 'Rebuild wallet ledger')
+                      )}
+                    </Button>
+
+                    {showRebuildConfirm && (
+                      <ConfirmModal
+                        title={t('settings.rebuildLedgerConfirmTitle', 'Rebuild wallet ledger?')}
+                        message={t(
+                          'settings.rebuildLedgerConfirmMessage',
+                          'This will rebuild the wallet ledger to repair historical balance values. Run this only if you know what you are doing.'
+                        )}
+                        confirmText={t('common.run', 'Run')}
+                        cancelText={t('common.cancel', 'Cancel')}
+                        isLoading={isRebuildLoading}
+                        loadingText={t('common.running', 'Running')}
+                        variant="warning"
+                        onCancel={() => setShowRebuildConfirm(false)}
+                        onConfirm={async () => {
+                          setIsRebuildLoading(true);
+                          try {
+                            await api.rebuildBalanceLedger();
+                            showToast(t('settings.rebuildLedgerStarted', 'Ledger rebuild started'), 'success');
+                            setShowRebuildConfirm(false);
+                          } catch (err) {
+                            showToast((err as Error).message || 'Failed to start ledger rebuild', 'error');
+                          } finally {
+                            setIsRebuildLoading(false);
+                          }
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -4893,6 +5047,64 @@ export function SettingsPage() {
                   </p>
                 </div>
               </div>
+              {/* Keep bed warm between consecutive queue prints */}
+              <div className="flex items-center justify-between pt-2 border-t border-bambu-dark-tertiary/50">
+                <div className="flex-1 mr-4">
+                  <p className="text-sm text-white">
+                    {t('settings.keepBedWarm', 'Keep bed warm between prints')}
+                  </p>
+                  <p className="text-xs text-bambu-gray mt-0.5">
+                    {t('settings.keepBedWarmDesc', 'While awaiting plate-clear, hold the bed at the keep-warm temperature below so the chamber stays hot — or at the next print\'s own bed temperature when that is higher. Only applies when the next print needs chamber heating (ASA, ABS, PA, PC etc.). Requires plate-clear confirmation to be enabled.')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.queue_keep_bed_warm ?? false}
+                    onChange={(e) => updateSetting('queue_keep_bed_warm', e.target.checked)}
+                    className="sr-only peer"
+                    disabled={!(localSettings.preheat_enabled ?? false) || !(localSettings.require_plate_clear ?? false)}
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
+                </label>
+              </div>
+              <div className="grid grid-cols-2 gap-3 mt-2">
+                <div>
+                  <label className="block text-xs text-bambu-gray mb-1">
+                    {t('settings.keepWarmBedTemp', 'Keep-warm bed temperature (°C)')}
+                  </label>
+                  <input
+                    type="number"
+                    min={40}
+                    max={110}
+                    value={localSettings.queue_keep_warm_bed_temp ?? 90}
+                    onChange={(e) => updateSetting('queue_keep_warm_bed_temp', Math.max(40, Math.min(110, parseInt(e.target.value) || 90)))}
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green disabled:opacity-50"
+                    disabled={!(localSettings.preheat_enabled ?? false)}
+                  />
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.keepWarmBedTempHelp', 'Used whenever the bed\'s job is to heat the chamber — the keep-warm hold, and preheat when the print file carries no bed temperature. A higher bed temperature from the print file always wins.')}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs text-bambu-gray mb-1">
+                    {t('settings.keepWarmMaxMinutes', 'Stop keeping warm after (minutes)')}
+                  </label>
+                  <input
+                    type="number"
+                    min={5}
+                    max={480}
+                    value={localSettings.queue_keep_warm_max_minutes ?? 120}
+                    onChange={(e) => updateSetting('queue_keep_warm_max_minutes', Math.max(5, Math.min(480, parseInt(e.target.value) || 120)))}
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green disabled:opacity-50"
+                    disabled={!(localSettings.queue_keep_bed_warm ?? false) || !(localSettings.preheat_enabled ?? false) || !(localSettings.require_plate_clear ?? false)}
+                  />
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.keepWarmMaxMinutesHelp', 'If the plate is not cleared within this time, the heaters are switched off rather than held indefinitely.')}
+                  </p>
+                </div>
+              </div>
+
               {/* Per-filament chamber target editor (#1468) */}
               <div className="pt-2 border-t border-bambu-dark-tertiary/50">
                 <div className="flex items-center justify-between mb-1">
@@ -4921,114 +5133,6 @@ export function SettingsPage() {
                 <span className="font-medium text-bambu-gray/90">{t('settings.preheatHardwareTitle', 'Per-printer behaviour:')}</span>{' '}
                 {t('settings.preheatHardwareDetail', 'H2C/H2D/H2D Pro/H2S/X2D/X1E actively heat the chamber via M141. X1C/P2S read chamber temp but rely on bed-radiation heating. P1S/P1P/A1/A1 Mini have no chamber sensor — only the soak timer applies.')}
               </p>
-            </CardContent>
-          </Card>
-
-          {/* G-code Injection (#422) */}
-          <Card id="card-gcode">
-            <CardHeader>
-              <h3 className="text-base font-semibold text-white flex items-center gap-2">
-                <Code className="w-4 h-4 text-bambu-green" />
-                {t('settings.gcodeInjection', 'G-code Injection')}
-              </h3>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-xs text-bambu-gray">
-                {t('settings.gcodeInjectionDescription', 'Configure custom G-code to inject at the start and/or end of prints for auto-print systems like Farmloop, SwapMod, AutoClear, and Printflow 3D. Snippets are configured per printer model and applied when "Inject G-code" is enabled on a queue item.')}
-              </p>
-              {(() => {
-                const gcodeSnippets: Record<string, { start_gcode: string; end_gcode: string }> = (() => {
-                  try {
-                    return localSettings.gcode_snippets ? JSON.parse(localSettings.gcode_snippets) : {};
-                  } catch {
-                    return {};
-                  }
-                })();
-                const printerModels = [...new Set((printers || []).filter((p) => p.model).map((p) => p.model as string))].sort();
-
-                const updateSnippet = (model: string, field: 'start_gcode' | 'end_gcode', value: string) => {
-                  const updated = { ...gcodeSnippets };
-                  if (!updated[model]) {
-                    updated[model] = { start_gcode: '', end_gcode: '' };
-                  }
-                  updated[model][field] = value;
-                  // Remove model entry if both fields are empty
-                  if (!updated[model].start_gcode && !updated[model].end_gcode) {
-                    delete updated[model];
-                  }
-                  const newValue = Object.keys(updated).length > 0 ? JSON.stringify(updated) : '';
-                  // Update local state for immediate UI feedback, save on blur
-                  setLocalSettings(prev => prev ? { ...prev, gcode_snippets: newValue } : null);
-                  pendingGcodeSnippetsRef.current = newValue;
-                };
-
-                const saveGcodeSnippets = () => {
-                  if (pendingGcodeSnippetsRef.current !== null) {
-                    updateMutation.mutate({ gcode_snippets: pendingGcodeSnippetsRef.current });
-                    pendingGcodeSnippetsRef.current = null;
-                  }
-                };
-
-                if (printerModels.length === 0) {
-                  return (
-                    <p className="text-sm text-bambu-gray italic">
-                      {t('settings.gcodeInjectionNoPrinters', 'No printers found. Add printers to configure G-code snippets.')}
-                    </p>
-                  );
-                }
-
-                return printerModels.map((model) => {
-                  const snippet = gcodeSnippets[model] || { start_gcode: '', end_gcode: '' };
-                  const hasContent = !!(snippet.start_gcode || snippet.end_gcode);
-                  return (
-                    <Collapsible
-                      key={model}
-                      animated
-                      defaultOpen={hasContent}
-                      className="border border-bambu-dark-tertiary rounded-lg px-3 py-2"
-                      summary={
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-sm font-medium text-white">{model}</h4>
-                          {hasContent && (
-                            <span className="text-xs px-1.5 py-0.5 rounded bg-bambu-green/20 text-bambu-green">
-                              {t('settings.gcodeConfigured', 'Configured')}
-                            </span>
-                          )}
-                        </div>
-                      }
-                    >
-                      <div className="space-y-2">
-                        <div>
-                          <label className="block text-xs text-bambu-gray mb-1">
-                            {t('settings.gcodeStartLabel', 'Start G-code')}
-                          </label>
-                          <textarea
-                            value={snippet.start_gcode}
-                            onChange={(e) => updateSnippet(model, 'start_gcode', e.target.value)}
-                            onBlur={saveGcodeSnippets}
-                            placeholder={t('settings.gcodeStartPlaceholder', 'G-code prepended before the print starts...')}
-                            rows={3}
-                            className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-xs font-mono focus:outline-none focus:border-bambu-green resize-y"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-bambu-gray mb-1">
-                            {t('settings.gcodeEndLabel', 'End G-code')}
-                          </label>
-                          <textarea
-                            value={snippet.end_gcode}
-                            onChange={(e) => updateSnippet(model, 'end_gcode', e.target.value)}
-                            onBlur={saveGcodeSnippets}
-                            placeholder={t('settings.gcodeEndPlaceholder', 'G-code appended after the print ends...')}
-                            rows={3}
-                            className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-xs font-mono focus:outline-none focus:border-bambu-green resize-y"
-                          />
-                        </div>
-                      </div>
-                    </Collapsible>
-                  );
-                });
-              })()}
             </CardContent>
           </Card>
 
@@ -5085,6 +5189,38 @@ export function SettingsPage() {
               </h3>
             </CardHeader>
             <CardContent className="space-y-3">
+              {/* Where slicing runs. Rendered only once more than one engine
+                  is actually usable — while the sidecar is the only one, a
+                  picker with a single entry is noise, and an entry the user
+                  can see but never select reads as a broken feature. Adding a
+                  browser engine to lib/sliceEngines.ts makes this appear. */}
+              {hasEngineChoice() && (
+                <div>
+                  <label className="block text-sm text-bambu-gray mb-1">
+                    {t('settings.sliceEngine')}
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={resolveEngine(localSettings.slice_engine)}
+                      onChange={(e) => updateSetting('slice_engine', e.target.value as SliceEngineId)}
+                      className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
+                    >
+                      {availableEngines().map((engine) => (
+                        <option key={engine.id} value={engine.id}>
+                          {t(engine.labelKey)}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                  </div>
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t(
+                      availableEngines().find((e) => e.id === resolveEngine(localSettings.slice_engine))?.descriptionKey
+                        ?? 'settings.sliceEngineSidecarHint',
+                    )}
+                  </p>
+                </div>
+              )}
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
                   {t('settings.preferredSlicer')}
@@ -5230,12 +5366,6 @@ export function SettingsPage() {
               )}
             </CardContent>
           </Card>
-
-          {/* Slicer Preset Bundles — only meaningful when the sidecar is in use,
-              since uploads / lists round-trip through it. Hide it entirely when
-              use_slicer_api is off so the Settings page doesn't show a panel that
-              can't do anything. */}
-          {(localSettings.use_slicer_api ?? false) && <SlicerBundlesPanel />}
 
           {/* Auto-Drying */}
           <Card>
@@ -5538,6 +5668,113 @@ export function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* G-code Injection (#422) */}
+          <Card id="card-gcode">
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Code className="w-4 h-4 text-bambu-green" />
+                {t('settings.gcodeInjection', 'G-code Injection')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-bambu-gray">
+                {t('settings.gcodeInjectionDescription', 'Configure custom G-code to inject at the start and/or end of prints for auto-print systems like Farmloop, SwapMod, AutoClear, and Printflow 3D. Snippets are configured per printer model and applied when "Inject G-code" is enabled on a queue item.')}
+              </p>
+              {(() => {
+                const gcodeSnippets: Record<string, { start_gcode: string; end_gcode: string }> = (() => {
+                  try {
+                    return localSettings.gcode_snippets ? JSON.parse(localSettings.gcode_snippets) : {};
+                  } catch {
+                    return {};
+                  }
+                })();
+                const printerModels = [...new Set((printers || []).filter((p) => p.model).map((p) => p.model as string))].sort();
+
+                const updateSnippet = (model: string, field: 'start_gcode' | 'end_gcode', value: string) => {
+                  const updated = { ...gcodeSnippets };
+                  if (!updated[model]) {
+                    updated[model] = { start_gcode: '', end_gcode: '' };
+                  }
+                  updated[model][field] = value;
+                  // Remove model entry if both fields are empty
+                  if (!updated[model].start_gcode && !updated[model].end_gcode) {
+                    delete updated[model];
+                  }
+                  const newValue = Object.keys(updated).length > 0 ? JSON.stringify(updated) : '';
+                  // Update local state for immediate UI feedback, save on blur
+                  setLocalSettings(prev => prev ? { ...prev, gcode_snippets: newValue } : null);
+                  pendingGcodeSnippetsRef.current = newValue;
+                };
+
+                const saveGcodeSnippets = () => {
+                  if (pendingGcodeSnippetsRef.current !== null) {
+                    updateMutation.mutate({ gcode_snippets: pendingGcodeSnippetsRef.current });
+                    pendingGcodeSnippetsRef.current = null;
+                  }
+                };
+
+                if (printerModels.length === 0) {
+                  return (
+                    <p className="text-sm text-bambu-gray italic">
+                      {t('settings.gcodeInjectionNoPrinters', 'No printers found. Add printers to configure G-code snippets.')}
+                    </p>
+                  );
+                }
+
+                return printerModels.map((model) => {
+                  const snippet = gcodeSnippets[model] || { start_gcode: '', end_gcode: '' };
+                  const hasContent = !!(snippet.start_gcode || snippet.end_gcode);
+                  return (
+                    <Collapsible
+                      key={model}
+                      defaultOpen={hasContent}
+                      className="border border-bambu-dark-tertiary rounded-lg px-3 py-2"
+                      summary={
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-medium text-white">{model}</h4>
+                          {hasContent && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-bambu-green/20 text-bambu-green">
+                              {t('settings.gcodeConfigured', 'Configured')}
+                            </span>
+                          )}
+                        </div>
+                      }
+                    >
+                      <div className="space-y-2">
+                        <div>
+                          <label className="block text-xs text-bambu-gray mb-1">
+                            {t('settings.gcodeStartLabel', 'Start G-code')}
+                          </label>
+                          <textarea
+                            value={snippet.start_gcode}
+                            onChange={(e) => updateSnippet(model, 'start_gcode', e.target.value)}
+                            onBlur={saveGcodeSnippets}
+                            placeholder={t('settings.gcodeStartPlaceholder', 'G-code prepended before the print starts...')}
+                            rows={3}
+                            className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-xs font-mono focus:outline-none focus:border-bambu-green resize-y"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-bambu-gray mb-1">
+                            {t('settings.gcodeEndLabel', 'End G-code')}
+                          </label>
+                          <textarea
+                            value={snippet.end_gcode}
+                            onChange={(e) => updateSnippet(model, 'end_gcode', e.target.value)}
+                            onBlur={saveGcodeSnippets}
+                            placeholder={t('settings.gcodeEndPlaceholder', 'G-code appended after the print ends...')}
+                            rows={3}
+                            className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-xs font-mono focus:outline-none focus:border-bambu-green resize-y"
+                          />
+                        </div>
+                      </div>
+                    </Collapsible>
+                  );
+                });
+              })()}
+            </CardContent>
+          </Card>
           </div>
         </div>
           )}
@@ -5677,6 +5914,17 @@ export function SettingsPage() {
                   <p className="text-xs text-amber-700/80 dark:text-amber-400/70">
                     {t('settings.fairAlsoDryingThreshold')}
                   </p>
+                  {/* An AMS reads 15-20% while its heater is running, well above
+                      what the same unit reports once cold, so a drying threshold
+                      inside that band can never be satisfied while drying (#2770).
+                      Warn rather than clamp — the number is also the colour
+                      threshold on the AMS card, where a low value is a legitimate
+                      choice. */}
+                  {(localSettings.ams_humidity_fair ?? 60) < HUMIDITY_DRYING_FLOOR && (
+                    <p className="text-xs text-red-600 dark:text-red-400">
+                      {t('settings.fairBelowDryingFloor', { floor: HUMIDITY_DRYING_FLOOR })}
+                    </p>
+                  )}
                 </div>
 
                 {/* Temperature Thresholds */}

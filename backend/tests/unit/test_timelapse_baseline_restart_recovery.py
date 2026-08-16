@@ -11,10 +11,7 @@ file ends up in the baseline set, and no diff ever matches.
 
 bambu_mqtt.py:_process_message now fires a sibling ``on_print_running_observed``
 callback in this case. main.py wires it to ``on_print_running_observed``
-which captures the baseline and then reconciles the print's archive via
-``on_print_start(catch_up=True)`` (#1304 follow-up: a print started while
-Bambuddy was down would otherwise never get an archive row). These tests
-verify that handler.
+which captures the baseline. These tests verify that handler.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -65,20 +62,21 @@ async def test_running_observed_captures_baseline_on_restart_recovery():
             "backend.app.main._list_timelapse_videos",
             new=AsyncMock(return_value=(existing_videos, "/timelapse")),
         ),
-        patch("backend.app.main.on_print_start", new_callable=AsyncMock) as mock_start,
     ):
         mock_session_maker.return_value = mock_session
 
         from backend.app.main import on_print_running_observed
 
-        payload = {
-            "filename": "/data/Metadata/test_print.gcode",
-            "subtask_name": "Test_Print",
-            "remaining_time": 3600,
-            "raw_data": {},
-            "ams_mapping": None,
-        }
-        await on_print_running_observed(1, payload)
+        await on_print_running_observed(
+            1,
+            {
+                "filename": "/data/Metadata/test_print.gcode",
+                "subtask_name": "Test_Print",
+                "remaining_time": 3600,
+                "raw_data": {},
+                "ams_mapping": None,
+            },
+        )
 
         # Snapshot the dict state immediately after the handler returns —
         # don't rely on _timelapse_baselines surviving outside the patches.
@@ -89,12 +87,6 @@ async def test_running_observed_captures_baseline_on_restart_recovery():
         # the baseline at the moment it returned.
         captured = _timelapse_baselines.get(1)
 
-        # #1304 follow-up: the handler must also reconcile the archive so a
-        # print started while Bambuddy was down gets its row (created or
-        # reattached). catch_up=True keeps the plate check and start
-        # notifications suppressed.
-        mock_start.assert_awaited_once_with(1, payload, catch_up=True)
-
     assert captured == {"earlier_a.mp4", "earlier_b.mp4", "earlier_c.mp4"}, (
         "restart-recovery handler must capture the printer's existing-videos "
         "baseline so the completion-time scan can set-diff to find the new file"
@@ -102,44 +94,35 @@ async def test_running_observed_captures_baseline_on_restart_recovery():
 
 
 @pytest.mark.asyncio
-async def test_running_observed_skips_baseline_capture_when_already_present():
+async def test_running_observed_skips_when_baseline_already_present():
     """If on_print_start already ran in this Bambuddy process for the same
     printer (the realistic same-session race), a second capture would
     overwrite the correct pre-print baseline with one taken later — which
-    could include the in-flight MP4. Skip the capture when a baseline
-    exists — but archive reconciliation must still run."""
+    could include the in-flight MP4. The archive lookup still has to run so
+    restart recovery can restore durable print ownership for the kill switch."""
     _timelapse_baselines[1] = {"pre_existing_a.mp4", "pre_existing_b.mp4"}
-
-    mock_printer = MagicMock()
-    mock_printer.id = 1
-
-    mock_session = AsyncMock()
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock()
-    mock_session.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=mock_printer)))
 
     with (
         patch("backend.app.main.async_session") as mock_session_maker,
         patch("backend.app.main._list_timelapse_videos", new=AsyncMock()) as mock_list,
-        patch("backend.app.main.on_print_start", new_callable=AsyncMock) as mock_start,
     ):
-        mock_session_maker.return_value = mock_session
-
         from backend.app.main import on_print_running_observed
 
-        payload = {
-            "filename": "/data/Metadata/test_print.gcode",
-            "subtask_name": "Test_Print",
-            "remaining_time": 3600,
-            "raw_data": {},
-            "ams_mapping": None,
-        }
-        await on_print_running_observed(1, payload)
+        await on_print_running_observed(
+            1,
+            {
+                "filename": "/data/Metadata/test_print.gcode",
+                "subtask_name": "Test_Print",
+                "remaining_time": 3600,
+                "raw_data": {},
+                "ams_mapping": None,
+            },
+        )
 
-        # The FTP scan must not run — the earlier baseline wins.
+        # Ownership reconciliation still consults the DB, but the expensive
+        # timelapse scan remains one-shot.
+        mock_session_maker.assert_called_once()
         mock_list.assert_not_called()
-        # But archive reconciliation still runs (#1304 follow-up).
-        mock_start.assert_awaited_once_with(1, payload, catch_up=True)
 
     # Original baseline preserved.
     assert _timelapse_baselines[1] == {"pre_existing_a.mp4", "pre_existing_b.mp4"}
@@ -157,7 +140,6 @@ async def test_running_observed_skips_when_printer_row_missing():
     with (
         patch("backend.app.main.async_session") as mock_session_maker,
         patch("backend.app.main._list_timelapse_videos", new=AsyncMock()) as mock_list,
-        patch("backend.app.main.on_print_start", new_callable=AsyncMock) as mock_start,
     ):
         mock_session_maker.return_value = mock_session
 
@@ -175,51 +157,7 @@ async def test_running_observed_skips_when_printer_row_missing():
             },
         )
 
-        # Neither the FTP scan nor archive reconciliation run without a printer row.
+        # FTP scan must not run if the printer row didn't resolve.
         mock_list.assert_not_called()
-        mock_start.assert_not_awaited()
 
     assert 999 not in _timelapse_baselines
-
-
-@pytest.mark.asyncio
-async def test_running_observed_swallows_reconciliation_errors():
-    """A failure in the catch-up archive path (FTP down, DB hiccup) must not
-    propagate out of the MQTT callback — the baseline was already captured
-    and the print keeps running regardless."""
-    mock_printer = MagicMock()
-    mock_printer.id = 1
-
-    mock_session = AsyncMock()
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock()
-    mock_session.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=mock_printer)))
-
-    with (
-        patch("backend.app.main.async_session") as mock_session_maker,
-        patch(
-            "backend.app.main._list_timelapse_videos",
-            new=AsyncMock(return_value=([], "/timelapse")),
-        ),
-        patch(
-            "backend.app.main.on_print_start",
-            new=AsyncMock(side_effect=RuntimeError("FTP exploded")),
-        ) as mock_start,
-    ):
-        mock_session_maker.return_value = mock_session
-
-        from backend.app.main import on_print_running_observed
-
-        # Must not raise despite on_print_start failing.
-        await on_print_running_observed(
-            1,
-            {
-                "filename": "/data/Metadata/test_print.gcode",
-                "subtask_name": "Test_Print",
-                "remaining_time": 3600,
-                "raw_data": {},
-                "ams_mapping": None,
-            },
-        )
-
-        mock_start.assert_awaited_once()

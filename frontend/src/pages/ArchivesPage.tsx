@@ -762,7 +762,8 @@ function ArchiveCard({
     { label: '', divider: true, onClick: () => {} },
     {
       label: archive.is_favorite ? t('archives.menu.removeFromFavorites') : t('archives.menu.addToFavorites'),
-      icon: <Star className={`w-4 h-4 ${archive.is_favorite ? 'fill-yellow-400 text-yellow-400' : ''}`} />,
+      // Preview the favourited state on hover so the row reads as clickable (#2791).
+      icon: <Star className={`w-4 h-4 ${archive.is_favorite ? 'fill-yellow-400 text-yellow-400' : canModify('archives', 'update', archive.created_by_id) ? 'group-hover:text-yellow-400' : ''}`} />,
       onClick: () => favoriteMutation.mutate(),
       disabled: !canModify('archives', 'update', archive.created_by_id),
       title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
@@ -2216,7 +2217,8 @@ function ArchiveListRow({
     { label: '', divider: true, onClick: () => {} },
     {
       label: archive.is_favorite ? t('archives.menu.removeFromFavorites') : t('archives.menu.addToFavorites'),
-      icon: <Star className={`w-4 h-4 ${archive.is_favorite ? 'fill-yellow-400 text-yellow-400' : ''}`} />,
+      // Preview the favourited state on hover so the row reads as clickable (#2791).
+      icon: <Star className={`w-4 h-4 ${archive.is_favorite ? 'fill-yellow-400 text-yellow-400' : canModify('archives', 'update', archive.created_by_id) ? 'group-hover:text-yellow-400' : ''}`} />,
       onClick: () => favoriteMutation.mutate(),
       disabled: !canModify('archives', 'update', archive.created_by_id),
       title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
@@ -2896,6 +2898,24 @@ export function ArchivesPage() {
     localStorage.setItem('archiveNo3MFWarningDismissed', 'true');
     setNo3MFWarningDismissed(true);
   };
+  // Why the 3MF was missing decides what to tell the user, and the original
+  // single wording is wrong for two of the three cases: it sends H2-series and
+  // P2S owners to switch on a setting that is already on and would not have
+  // helped, and it blames the slicer when the real answer is an empty card
+  // slot (#2780). An unknown/absent reason keeps the original text.
+  const no3MFVariant =
+    no3MFWarning?.reason === 'internal_storage'
+      ? 'InternalStorage'
+      : no3MFWarning?.reason === 'no_external_storage'
+        ? 'NoExternalStorage'
+        : '';
+  // Nothing to link for the empty-slot case — "put a card in" is the whole fix.
+  const no3MFDocsHref =
+    no3MFWarning?.reason === 'internal_storage'
+      ? 'https://wiki.bambuddy.cool/reference/troubleshooting/#archive-card-has-only-a-name'
+      : no3MFWarning?.reason === 'no_external_storage'
+        ? null
+        : 'https://wiki.bambuddy.cool/getting-started/#step-4-enable-store-sent-files-on-external-storage';
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [showBatchTag, setShowBatchTag] = useState(false);
@@ -3015,9 +3035,10 @@ export function ArchivesPage() {
     queryFn: api.getSettings,
   });
 
+  // Print Log user filter -- names only, so the slim listing is enough (#1894).
   const { data: users } = useQuery({
-    queryKey: ['users'],
-    queryFn: api.getUsers,
+    queryKey: ['users', 'slim'],
+    queryFn: api.getUsersSlim,
     enabled: viewMode === 'log',
   });
 
@@ -3790,19 +3811,28 @@ export function ArchivesPage() {
           <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-amber-900 dark:text-amber-200">
-              {t('archives.no3mfBanner.title')}
+              {t(`archives.no3mfBanner.title${no3MFVariant}`)}
             </div>
             <div className="text-xs text-amber-800/90 dark:text-amber-200/80 mt-1">
-              {t('archives.no3mfBanner.body')}{' '}
-              <a
-                href="https://wiki.bambuddy.cool/getting-started/#step-4-enable-store-sent-files-on-external-storage"
-                target="_blank"
-                rel="noreferrer"
-                className="underline hover:text-amber-900 dark:hover:text-amber-100 inline-flex items-center gap-1"
-              >
-                {t('archives.no3mfBanner.docsLink')}
-                <ExternalLink className="w-3 h-3" />
-              </a>
+              {t(`archives.no3mfBanner.body${no3MFVariant}`)}
+              {no3MFDocsHref && (
+                <>
+                  {' '}
+                  <a
+                    href={no3MFDocsHref}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline hover:text-amber-900 dark:hover:text-amber-100 inline-flex items-center gap-1"
+                  >
+                    {t(
+                      no3MFWarning?.reason === 'internal_storage'
+                        ? 'archives.no3mfBanner.docsLinkInternalStorage'
+                        : 'archives.no3mfBanner.docsLink',
+                    )}
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </>
+              )}
             </div>
           </div>
           <button

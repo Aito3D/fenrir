@@ -60,6 +60,10 @@ class QueueVariantCreate(BaseModel):
     plate_id: int | None = None
     ams_mapping: list[int] | None = None
     nozzle_mapping: list[int] | None = None
+    # Which rack position each filament group prints from (#1784), as
+    # {group_id: 1-based position}. The operator's pick, re-checked against the
+    # live rack at dispatch; null means "assign them for me".
+    nozzle_rack_choice: dict[int, int] | None = None
     filament_overrides: list[dict] | None = None
 
 
@@ -114,6 +118,12 @@ class PrintQueueItemCreate(BaseModel):
     batch_id: int | None = None
     # Project to associate the resulting archive with
     project_id: int | None = None
+    cost_center_id: int | None = None
+    estimated_cost: float | None = None
+    # Which rack position each filament group prints from (#1784), as
+    # {group_id: 1-based position}. The operator's pick, re-checked against the
+    # live rack at dispatch; null means "assign them for me".
+    nozzle_rack_choice: dict[int, int] | None = None
     # Direct printer-card uploads are temporary library files. The scheduler
     # deletes them after creating the durable archive copy.
     cleanup_library_after_dispatch: bool = False
@@ -149,10 +159,16 @@ class PrintQueueItemUpdate(BaseModel):
     preheat_chamber_target_override: int | None = Field(default=None, ge=0, le=MAX_CHAMBER_TEMP_C)
     # Auto-print G-code injection
     gcode_injection: bool | None = None
+    cost_center_id: int | None = None
+    estimated_cost: float | None = None
     # H2C dual-nozzle-rack slicer pick (#1780). list[int] per-filament
     # physical nozzle position IDs from BambuStudio's project_file MQTT
     # body; sent back to the printer verbatim on dispatch.
     nozzle_mapping: list[int] | None = None
+    # Which rack position each filament group prints from (#1784), as
+    # {group_id: 1-based position}. The operator's pick, re-checked against the
+    # live rack at dispatch; null means "assign them for me".
+    nozzle_rack_choice: dict[int, int] | None = None
 
 
 class QueueVariantSummary(BaseModel):
@@ -174,6 +190,8 @@ class PrintQueueItemResponse(BaseModel):
     waiting_reason: str | None = None  # Why a model-based job hasn't started yet
     archive_id: int | None  # None if library_file_id is set (archive created at print start)
     library_file_id: int | None  # For queue items from library files
+    cost_center_id: int | None = None
+    estimated_cost: float | None = None
     position: int
     scheduled_time: UTCDatetime
     require_previous_success: bool
@@ -261,6 +279,10 @@ class PrintQueueItemResponse(BaseModel):
     # "edit print → choose nozzle" UI; null on every model except O1C2
     # uploads from BambuStudio.
     nozzle_mapping: list[int] | None = None
+    # Which rack position each filament group prints from (#1784), as
+    # {group_id: 1-based position}. The operator's pick, re-checked against the
+    # live rack at dispatch; null means "assign them for me".
+    nozzle_rack_choice: dict[int, int] | None = None
 
     class Config:
         from_attributes = True
@@ -321,6 +343,8 @@ class PrintQueueBulkUpdate(BaseModel):
     preheat_chamber_target_override: int | None = Field(default=None, ge=0, le=MAX_CHAMBER_TEMP_C)
     # Auto-print G-code injection
     gcode_injection: bool | None = None
+    cost_center_id: int | None = None
+    estimated_cost: float | None = None
 
 
 class PrintQueueBulkUpdateResponse(BaseModel):

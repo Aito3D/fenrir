@@ -319,6 +319,19 @@ class AppSettings(BaseModel):
         ),
     )
 
+    # Where slicing runs. Orthogonal to ``preferred_slicer``, which only says
+    # *which slicer binary* the sidecar drives: a browser engine is a different
+    # execution site, not a different binary choice. Kept as its own key so the
+    # two never have to encode impossible combinations.
+    #
+    # Only "sidecar" is implemented today; the slice modal offers a per-job
+    # choice when more than one engine is available, and hides the control
+    # entirely while there is only one.
+    slice_engine: str = Field(
+        default="sidecar",
+        description="Default execution site for slicing: 'sidecar' (server-side API) or 'browser'",
+    )
+
     # Slicer dispatch mode: when True, "Slice" actions open the in-app
     # SliceModal and call the slicer-API sidecar. When False (default), they
     # hand off to the user's local desktop slicer via URI scheme — preserving
@@ -414,6 +427,26 @@ class AppSettings(BaseModel):
         default=5, ge=1, le=60, description="Minutes between staggered printer groups"
     )
 
+    # Finance budget window settings
+    billing_enabled: bool = Field(
+        default=False,
+        description="Enable cost-center billing enforcement for print and queue operations",
+    )
+    printer_kill_switch_enabled: bool = Field(
+        default=False,
+        description="Immediately stop printer jobs that start without Bambuddy authorization",
+    )
+    finance_budget_reset_day: int = Field(
+        default=1,
+        ge=1,
+        le=31,
+        description="Day of month when monthly finance budget window resets (1-31, clamped for short months)",
+    )
+    finance_budget_reset_timezone: str = Field(
+        default="UTC",
+        description="IANA timezone for finance monthly budget reset calculation (e.g., Europe/Berlin)",
+    )
+
     # Plate-clear confirmation for queue scheduling
     require_plate_clear: bool = Field(
         default=False,
@@ -469,6 +502,42 @@ class AppSettings(BaseModel):
         ge=0,
         le=1800,
         description="Additional hold time at temperature after the chamber reaches the target (or after max_wait_seconds elapses). 0 = no soak.",
+    )
+    queue_keep_bed_warm: bool = Field(
+        default=False,
+        description=(
+            "While a printer is in FINISH state awaiting plate-clear and the next queued item requires "
+            "chamber heating, hold the bed hot so the chamber stays warm during the bed-clearing "
+            "window. The bed is the chamber's heating element here: the hold target is "
+            "queue_keep_warm_bed_temp, or the item's own bed_temperature when the slicer metadata "
+            "reports a higher one. Only fires for filaments with a non-zero chamber target "
+            "(ASA, ABS, PA, PC etc.); PLA/PETG prints are skipped automatically."
+        ),
+    )
+    queue_keep_warm_bed_temp: int = Field(
+        default=90,
+        ge=40,
+        le=110,
+        description=(
+            "Bed temperature (°C) used when the bed's job is to heat the chamber. 90 sustains "
+            "chamber warmth on enclosed printers and satisfies bed-threshold-linked aftermarket "
+            "chamber heaters (which typically activate at bed ≥ 80). Applies in two places: the "
+            "keep-warm hold between chamber-heated prints, and preheat when a chamber-heated "
+            "item's slicer metadata carries no bed temperature at all. A parsed bed temperature "
+            "higher than this always wins, so the bed is never driven cooler than the print needs."
+        ),
+    )
+    queue_keep_warm_max_minutes: int = Field(
+        default=120,
+        ge=5,
+        le=480,
+        description=(
+            "How long keep-warm may hold the bed on a printer waiting for its plate to be cleared. "
+            "When this elapses the bed is switched off, and the hold does not re-arm until the "
+            "printer next becomes a keep-warm candidate — so a plate nobody clears cannot leave the "
+            "bed hot indefinitely. Set it to how long you realistically take to reach the printer; "
+            "the only cost of it being too short is that the next print re-soaks from cold."
+        ),
     )
 
     # User-configurable presets for the printer-card temperature / fan-speed
@@ -676,6 +745,7 @@ class AppSettingsUpdate(BaseModel):
     camera_engine: str | None = None
     preferred_slicer: str | None = None
     open_in_slicer: str | None = None
+    slice_engine: str | None = None
     use_slicer_api: bool | None = None
     orcaslicer_api_url: str | None = None
     bambu_studio_api_url: str | None = None
@@ -693,6 +763,10 @@ class AppSettingsUpdate(BaseModel):
     default_nozzle_offset_cali: TriState | None = None
     stagger_group_size: int | None = Field(default=None, ge=1, le=50)
     stagger_interval_minutes: int | None = Field(default=None, ge=1, le=60)
+    billing_enabled: bool | None = None
+    printer_kill_switch_enabled: bool | None = None
+    finance_budget_reset_day: int | None = Field(default=None, ge=1, le=31)
+    finance_budget_reset_timezone: str | None = None
     require_plate_clear: bool | None = None
     queue_shortest_first: bool | None = None
     queue_max_concurrent_uploads: int | None = Field(default=None, ge=1, le=16)
@@ -700,6 +774,9 @@ class AppSettingsUpdate(BaseModel):
     preheat_filament_targets: str | None = None
     preheat_max_wait_seconds: int | None = Field(default=None, ge=60, le=3600)
     preheat_soak_seconds: int | None = Field(default=None, ge=0, le=1800)
+    queue_keep_bed_warm: bool | None = None
+    queue_keep_warm_bed_temp: int | None = Field(default=None, ge=40, le=110)
+    queue_keep_warm_max_minutes: int | None = Field(default=None, ge=5, le=480)
     nozzle_temp_presets: str | None = None
     bed_temp_presets: str | None = None
     chamber_temp_presets: str | None = None

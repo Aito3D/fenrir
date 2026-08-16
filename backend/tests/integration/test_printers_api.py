@@ -281,6 +281,30 @@ class TestPrintersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_delete_printer_removes_scheduled_dryings(
+        self, async_client: AsyncClient, printer_factory, db_session
+    ):
+        """Deleting a printer must also delete its scheduled_dryings rows, since
+        SQLite doesn't enforce FK cascades (#2638).
+        """
+        from backend.app.models.scheduled_drying import ScheduledDrying
+
+        printer = await printer_factory()
+        printer_id = printer.id
+
+        row = ScheduledDrying(printer_id=printer_id, ams_id=0, temp=55, duration_hours=8)
+        db_session.add(row)
+        await db_session.commit()
+        row_id = row.id
+
+        response = await async_client.delete(f"/api/v1/printers/{printer_id}")
+        assert response.status_code == 200
+
+        result = await db_session.execute(select(ScheduledDrying).where(ScheduledDrying.id == row_id))
+        assert result.scalar_one_or_none() is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_delete_nonexistent_printer(self, async_client: AsyncClient):
         """Verify deleting non-existent printer returns 404."""
         response = await async_client.delete("/api/v1/printers/9999")
@@ -4167,3 +4191,132 @@ class TestExtruderJogAPI:
         assert response.status_code == 200
         sent = mock_client.send_gcode.call_args.args[0]
         assert "E-3.50" in sent
+
+
+class TestCoverWhenFileServiceIsWedged:
+    """The cover endpoint must not report a wedged printer as "no cover".
+
+    #2780: once a printer stops completing the FTPS handshake, every cover
+    request walked all 16 candidate paths three times over and ended in a 404
+    that read as "this print has no thumbnail" — the opposite of the truth.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_returns_503_naming_the_file_service(self, async_client: AsyncClient, printer_factory, db_session):
+        printer = await printer_factory(name="Wedged P2S")
+        # Spell out the storage fields rather than leaving them to MagicMock:
+        # every attribute of a bare mock is truthy, so the storage gate added
+        # in #2780 would read this stub as "the print is on internal storage"
+        # and answer 404 before the handshake check ever ran. This test is
+        # about a printer whose file service stopped answering, so say that
+        # its last print went to the card.
+        state = MagicMock(
+            subtask_name="job",
+            state="RUNNING",
+            gcode_file=None,
+            current_project_url="ftp://job.gcode.3mf",
+            sdcard=True,
+            sdcard_reported=True,
+        )
+
+        with (
+            patch("backend.app.api.routes.printers.printer_manager.get_status", return_value=state),
+            patch("backend.app.api.routes.printers.resolve_plate_id", return_value=1),
+            patch("backend.app.api.routes.printers.get_cached_3mf", return_value=None),
+            patch("backend.app.api.routes.printers.ftps_handshake_blocked", return_value=True),
+            patch(
+                "backend.app.api.routes.printers.download_file_try_paths_async",
+                new=AsyncMock(return_value=False),
+            ) as mock_download,
+        ):
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/cover")
+
+        assert response.status_code == 503, response.text
+        assert "TLS" in response.json()["detail"]
+        # The whole point: no FTP fan-out against a printer that cannot answer.
+        mock_download.assert_not_called()
+
+
+class TestCoverWhenThePrintIsOnInternalStorage:
+    """The cover lives inside the 3MF, so it is only reachable if the 3MF is.
+
+    #2780: on an H2C or P2S the sliced file routinely stays on internal
+    storage, which FTPS does not serve. Walking all sixteen candidate paths to
+    arrive at a bare 404 spends connections the printer is already short of
+    and tells the user "this print has no cover", which is not what happened.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _clear_404_cache(self):
+        """The route remembers 404s per printer+print so repeat requests skip
+        the fan-out. It is module-level, printer ids restart at 1 for each
+        test, and both tests here use the same subtask name -- so without this
+        the second test reads the first one's cached miss and never reaches
+        the code it is checking.
+        """
+        from backend.app.api.routes.printers import _cover_404_cache
+
+        _cover_404_cache.clear()
+        yield
+        _cover_404_cache.clear()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_skips_the_fan_out_and_says_why(self, async_client: AsyncClient, printer_factory, db_session):
+        printer = await printer_factory(name="H2C")
+        state = MagicMock(
+            subtask_name="job",
+            state="RUNNING",
+            gcode_file=None,
+            current_project_url="brtc://emmc/job.gcode.3mf",
+            sdcard=True,
+            sdcard_reported=True,
+        )
+
+        with (
+            patch("backend.app.api.routes.printers.printer_manager.get_status", return_value=state),
+            patch("backend.app.api.routes.printers.resolve_plate_id", return_value=1),
+            patch("backend.app.api.routes.printers.get_cached_3mf", return_value=None),
+            patch("backend.app.api.routes.printers.ftps_handshake_blocked", return_value=False),
+            patch(
+                "backend.app.api.routes.printers.download_file_try_paths_async",
+                new=AsyncMock(return_value=False),
+            ) as mock_download,
+        ):
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/cover")
+
+        assert response.status_code == 404, response.text
+        assert "internal_storage" in response.json()["detail"]
+        mock_download.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_print_on_external_storage_still_fans_out(
+        self, async_client: AsyncClient, printer_factory, db_session
+    ):
+        """The regression guard. Every install whose covers work today reaches
+        the download exactly as before."""
+        printer = await printer_factory(name="X1C")
+        state = MagicMock(
+            subtask_name="job",
+            state="RUNNING",
+            gcode_file=None,
+            current_project_url="ftp://job.gcode.3mf",
+            sdcard=True,
+            sdcard_reported=True,
+        )
+
+        with (
+            patch("backend.app.api.routes.printers.printer_manager.get_status", return_value=state),
+            patch("backend.app.api.routes.printers.resolve_plate_id", return_value=1),
+            patch("backend.app.api.routes.printers.get_cached_3mf", return_value=None),
+            patch("backend.app.api.routes.printers.ftps_handshake_blocked", return_value=False),
+            patch(
+                "backend.app.api.routes.printers.download_file_try_paths_async",
+                new=AsyncMock(return_value=False),
+            ) as mock_download,
+        ):
+            await async_client.get(f"/api/v1/printers/{printer.id}/cover")
+
+        mock_download.assert_called()
