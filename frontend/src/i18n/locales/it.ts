@@ -18,6 +18,7 @@ export default {
     printQuote: 'Stampa preventivo',
     printFailed: 'Impossibile recuperare il PDF del preventivo',
     printOpenedInTab: 'Aperto in una nuova scheda: premi Ctrl+P per stampare',
+    printPopupBlocked: 'Popup bloccato: il PDF verrà scaricato al suo posto',
     sendQuote: 'Invia preventivo',
     sendQuoteTitle: 'Invia preventivo via e-mail',
     sendQuoteRecipient: 'Destinatario',

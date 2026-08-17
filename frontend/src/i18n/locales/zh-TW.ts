@@ -18,6 +18,7 @@ export default {
     printQuote: '列印報價單',
     printFailed: '無法取得報價單 PDF',
     printOpenedInTab: '已在新分頁中開啟 — 按 Ctrl+P 列印',
+    printPopupBlocked: '彈出視窗被封鎖 — 改為下載 PDF',
     sendQuote: '傳送報價單',
     sendQuoteTitle: '以電子郵件傳送報價單',
     sendQuoteRecipient: '收件者',

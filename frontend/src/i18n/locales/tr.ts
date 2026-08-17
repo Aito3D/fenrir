@@ -18,6 +18,7 @@ export default {
     printQuote: 'Teklifi yazdır',
     printFailed: 'Teklif PDF’i alınamadı',
     printOpenedInTab: 'Yeni sekmede açıldı — yazdırmak için Ctrl+P’ye basın',
+    printPopupBlocked: 'Açılır pencere engellendi — bunun yerine PDF indiriliyor',
     sendQuote: 'Teklifi gönder',
     sendQuoteTitle: 'Teklifi e-posta ile gönder',
     sendQuoteRecipient: 'Alıcı',

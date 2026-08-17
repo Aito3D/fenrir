@@ -3,7 +3,7 @@
 // printer lists are searchable, filterable and sortable so they stay usable
 // with hundreds of entries.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronUp, Loader2, Pencil, Plus, Search, Trash2 } from 'lucide-react';
@@ -810,13 +810,24 @@ const DEFAULTS_FIELDS_FILAMENT: DefaultsField[] = [
 
 const DEFAULTS_FIELDS: DefaultsField[] = [...DEFAULTS_FIELDS_GENERAL, ...DEFAULTS_FIELDS_FILAMENT];
 
+const defaultsFormValues = (defaults: CalculatorDefaults): Record<string, string> =>
+  Object.fromEntries(DEFAULTS_FIELDS.map(({ key }) => [key, String(defaults[key])]));
+
 function DefaultsForm({ defaults, currencySymbol }: { defaults: CalculatorDefaults; currencySymbol: string }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const [form, setForm] = useState<Record<string, string>>(() =>
-    Object.fromEntries(DEFAULTS_FIELDS.map(({ key }) => [key, String(defaults[key])])),
-  );
+  const [form, setForm] = useState<Record<string, string>>(() => defaultsFormValues(defaults));
+  // Tracks whether the operator has touched a field since the form was last
+  // seeded (either on mount or after their own save). While untouched, the
+  // form keeps following the server row — e.g. a save from another session.
+  // Once dirty, a background refetch (like the invalidation this same panel
+  // triggers on save) must not blow away in-progress typing.
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (!dirty) setForm(defaultsFormValues(defaults));
+  }, [defaults, dirty]);
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -827,9 +838,14 @@ function DefaultsForm({ defaults, currencySymbol }: { defaults: CalculatorDefaul
       }
       return api.updateCalculatorDefaults(payload);
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
       queryClient.invalidateQueries({ queryKey: ['calculatorDefaults'] });
       showToast(t('calculator.defaultsSaved'));
+      // Adopt the operator's own successful save and clear dirty — otherwise
+      // the form would look perpetually dirty and ignore the very refetch
+      // its own save just triggered.
+      setForm(defaultsFormValues(saved));
+      setDirty(false);
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
@@ -839,6 +855,11 @@ function DefaultsForm({ defaults, currencySymbol }: { defaults: CalculatorDefaul
     return n !== null && n >= 0;
   });
 
+  const setField = (key: string, v: string) => {
+    setDirty(true);
+    setForm((f) => ({ ...f, [key]: v }));
+  };
+
   const renderFields = (fields: DefaultsField[]) => (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
       {fields.map(({ key, labelKey }) => (
@@ -847,7 +868,7 @@ function DefaultsForm({ defaults, currencySymbol }: { defaults: CalculatorDefaul
           id={`calc-def-${key}`}
           label={t(labelKey, { currency: currencySymbol })}
           value={form[key]}
-          onChange={(v) => setForm((f) => ({ ...f, [key]: v }))}
+          onChange={(v) => setField(key, v)}
           required
         />
       ))}
@@ -899,7 +920,7 @@ export function CalculatorDefaultsPanel() {
   return (
     <div className="max-w-4xl">
       {defaults ? (
-        <DefaultsForm key={defaults.updated_at} defaults={defaults} currencySymbol={currencySymbol} />
+        <DefaultsForm defaults={defaults} currencySymbol={currencySymbol} />
       ) : (
         <Card className="animate-calc-rise">
           <CardContent>

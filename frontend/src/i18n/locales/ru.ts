@@ -18,6 +18,7 @@ export default {
     printQuote: 'Печать сметы',
     printFailed: 'Не удалось получить PDF сметы',
     printOpenedInTab: 'Открыто в новой вкладке — нажмите Ctrl+P для печати',
+    printPopupBlocked: 'Всплывающее окно заблокировано — вместо этого PDF будет загружен',
     sendQuote: 'Отправить смету',
     sendQuoteTitle: 'Отправить смету по электронной почте',
     sendQuoteRecipient: 'Получатель',

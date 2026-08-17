@@ -9,6 +9,7 @@ import { render } from '../utils';
 import { CalculatorPage } from '../../pages/CalculatorPage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import { computePricing, formatMoney } from '../../utils/pricing';
 
 const mockFilaments = [
   {
@@ -55,6 +56,85 @@ const mockDefaults = {
   stuff_markup_pct: 20,
   updated_at: '2026-01-01T00:00:00Z',
 };
+
+// Reality-check insights matching the "applying the measured failure rate"
+// scenario: measured failure 8% vs the mock defaults' assumed 30%, tariff
+// equal to the default so only one reality-check row (and one Apply button).
+const failureCheckInsights = {
+  window_days: 365,
+  failure: {
+    overall_pct: 8.0,
+    sample: 25,
+    by_printer: [{ printer_id: 1, printer_name: 'H2S', material: null, rate_pct: 8.0, sample: 25 }],
+    by_material: [],
+  },
+  energy_cost_per_kwh: 120,
+  spool_cost_by_material: [],
+  spool_cost_by_brand: [],
+  time_accuracy: { overall_pct: null, sample: 0, by_printer: [] },
+  power_by_printer: [],
+  usage_by_printer: [],
+};
+
+// Pricing-engine inputs mirroring the reference case (40 g, 2 h, qty 1,
+// mockFilaments[0]/mockPrinters[0]/mockDefaults) — used to compute the exact
+// expected total after the 8% measured failure rate is applied, so the
+// save-as-default tests assert a specific recomputed price instead of merely
+// "not the old total".
+const referencePricingInputs = {
+  weight_g: 40,
+  printing_time_h: 2,
+  quantity: 1,
+  modeling_hours: 0,
+  modeling_base_price: 0,
+  prep_model_min: 0,
+  prep_slicing_min: 0,
+  prep_transfer_min: 0,
+  post_removal_min: 0,
+  post_support_min: 0,
+  post_additional_min: 0,
+  post_fulfillment_min: 0,
+  stuff_amount: 0,
+  stuff_markup_pct: 20,
+};
+const referencePricingFilament = { cost_per_kg: 3731, sale_price_per_kg: 5597, difficulty_pct: 150 };
+const referencePricingPrinter = {
+  purchase_price: 347000,
+  lifetime_years: 2,
+  daily_usage_hours: 5,
+  power_watts: 400,
+  repair_rate_pct: 30,
+};
+const referencePricingDefaults = {
+  electricity_tariff: 120,
+  labor_rate_per_hour: 3000,
+  consumables_packaging_flat: 30,
+  base_fee_flat: 0,
+  failure_rate_pct: 30,
+  prototype_rate_pct: 30,
+  ads_rate_pct: 5,
+  filament_markup_pct: 5,
+  global_markup_pct: 50,
+  tax_pct: 13,
+  default_difficulty_pct: 100,
+  stuff_markup_pct: 20,
+};
+// formatMoney() uses narrow-no-break (\u202f) and no-break (\u00a0) spaces as
+// separators, but testing-library's default text normalizer collapses all
+// whitespace to a plain " " before matching -- so screen.getByText/findByText
+// need the same collapsing applied to the string we search for.
+const collapseSpaces = (s: string) => s.replace(/[\u202f\u00a0]/g, ' ');
+const measuredFailureTotal = collapseSpaces(
+  formatMoney(
+    computePricing(
+      referencePricingInputs,
+      referencePricingFilament,
+      referencePricingPrinter,
+      { ...referencePricingDefaults, failure_rate_pct: 8 },
+    ).total_ttc,
+    'XPF',
+  ),
+);
 
 function useCalculatorHandlers({ filaments = mockFilaments, printers = mockPrinters, currency = 'XPF' } = {}) {
   server.use(
@@ -170,9 +250,78 @@ describe('CalculatorPage', () => {
     expect(screen.getByText(/Failure rate/)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
-    // Provisions shrink (30% → 8% failure provision), so the total drops.
-    await waitFor(() => expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument());
+    // Provisions shrink (30% → 8% failure provision), so the total drops to
+    // the exact recomputed figure (not just "no longer the old total").
+    await screen.findByText(measuredFailureTotal);
+    expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument();
     expect(screen.getByText('Applied')).toBeInTheDocument();
+  });
+
+  it('reality check: saving the measured failure rate as default clears the override only after the save succeeds', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+    let defaults = { ...mockDefaults };
+    server.use(
+      http.get('/api/v1/calculator/insights', () => HttpResponse.json(failureCheckInsights)),
+      http.get('/api/v1/calculator/defaults', () => HttpResponse.json(defaults)),
+      http.patch('/api/v1/calculator/defaults', async ({ request }) => {
+        const body = (await request.json()) as Record<string, number>;
+        defaults = { ...defaults, ...body, updated_at: '2026-01-02T00:00:00Z' };
+        return HttpResponse.json(defaults);
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorPage />);
+    await screen.findByText('2 031 FCFP');
+    await screen.findByText('Reality check');
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+    // Positive proof the override is live before we ever touch "save".
+    await screen.findByText(measuredFailureTotal);
+    expect(screen.getByText('Applied')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Save as default' }));
+
+    await screen.findByText('Default updated');
+    // The session override is cleared only now that the PATCH resolved —
+    // the price stays pinned to the measured value throughout (the new
+    // server-side default equals it, so nothing flickers).
+    expect(screen.getByText(measuredFailureTotal)).toBeInTheDocument();
+    expect(defaults.failure_rate_pct).toBe(8);
+  });
+
+  it('reality check: a failed save-as-default keeps the override applied and shows an error toast', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+    server.use(
+      http.get('/api/v1/calculator/insights', () => HttpResponse.json(failureCheckInsights)),
+      http.patch('/api/v1/calculator/defaults', () =>
+        HttpResponse.json({ detail: 'Could not save default' }, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorPage />);
+    await screen.findByText('2 031 FCFP');
+    await screen.findByText('Reality check');
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+    // Positive proof the override is live before the failed save.
+    await screen.findByText(measuredFailureTotal);
+    expect(screen.getByText('Applied')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Save as default' }));
+
+    await screen.findByText('Could not save default');
+    // The override survives the failed save — still applied, still priced
+    // off the measured figure instead of silently reverting to the old
+    // assumption-based total.
+    expect(screen.getByText('Applied')).toBeInTheDocument();
+    expect(screen.getByText(measuredFailureTotal)).toBeInTheDocument();
+    expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument();
   });
 
   it('reality check card stays hidden without insights data', async () => {

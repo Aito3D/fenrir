@@ -99,9 +99,35 @@ export function PdfPrintButton({
     }, REVOKE_DELAY_MS);
   };
 
+  // A blob URL is not "download.pdf" on its own — the browser has no path to
+  // read a name from — so the fallback anchor needs one supplied. Derived
+  // from `label` ("Print quote" -> "quote.pdf") rather than hardcoded: this
+  // component is shared between the quote and invoice buttons, and a
+  // filename that always says "quote" on an invoice download would be a
+  // second, quieter version of the bug this fix closes.
+  const downloadFilename = () =>
+    `${(label.replace(/^print\s+/i, '').trim() || 'document').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.pdf`;
+
   const openInTab = (url: string, frame: HTMLIFrameElement) => {
-    window.open(url, '_blank');
-    showToast(t('aito.printOpenedInTab'), 'info');
+    const popup = window.open(url, '_blank');
+    if (popup) {
+      showToast(t('aito.printOpenedInTab'), 'info');
+    } else {
+      // Popup blockers refuse window.open outside a user gesture, and both
+      // callers of openInTab run from one (the load-timeout timer, the
+      // catch around contentWindow.print()). Telling the operator it opened
+      // when nothing did is worse than telling them printing failed, so this
+      // reports failure — but the PDF was already fetched, so it is handed
+      // over as a download rather than only revoked out from under them.
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = downloadFilename();
+      anchor.style.display = 'none';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      showToast(t('aito.printPopupBlocked'), 'error');
+    }
     cleanup(frame, url);
     setBusy(false);
   };

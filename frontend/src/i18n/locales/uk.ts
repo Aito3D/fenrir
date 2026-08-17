@@ -19,6 +19,7 @@ export default {
     printQuote: "Друк кошторису",
     printFailed: "Не вдалося отримати PDF кошторису",
     printOpenedInTab: "Відкрито в новій вкладці — натисніть Ctrl+P для друку",
+    printPopupBlocked: "Спливаюче вікно заблоковано — натомість PDF буде завантажено",
     sendQuote: "Надіслати кошторис",
     sendQuoteTitle: "Надіслати кошторис електронною поштою",
     sendQuoteRecipient: "Одержувач",

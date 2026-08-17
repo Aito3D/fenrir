@@ -18,6 +18,7 @@ export default {
     printQuote: '견적서 인쇄',
     printFailed: '견적서 PDF를 가져오지 못했습니다',
     printOpenedInTab: '새 탭에서 열렸습니다. Ctrl+P를 눌러 인쇄하세요',
+    printPopupBlocked: '팝업이 차단되었습니다 — 대신 PDF를 다운로드합니다',
     sendQuote: '견적서 보내기',
     sendQuoteTitle: '견적서를 이메일로 보내기',
     sendQuoteRecipient: '받는 사람',

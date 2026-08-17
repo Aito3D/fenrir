@@ -18,6 +18,7 @@ export default {
     printQuote: '見積書を印刷',
     printFailed: '見積書の PDF を取得できませんでした',
     printOpenedInTab: '新しいタブで開きました。Ctrl+P で印刷してください',
+    printPopupBlocked: 'ポップアップがブロックされました。代わりに PDF をダウンロードします',
     sendQuote: '見積書を送信',
     sendQuoteTitle: '見積書をメールで送信',
     sendQuoteRecipient: '宛先',

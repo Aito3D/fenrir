@@ -222,12 +222,19 @@ export function CalculatorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.printerId]);
 
+  // Session overrides are cleared only once the server confirms the save —
+  // on failure the measured value stays applied and the operator sees why,
+  // instead of the quote silently reverting to the old assumption (#T-029).
   const saveDefaultMutation = useMutation({
-    mutationFn: (patch: { failure_rate_pct?: number; electricity_tariff?: number }) =>
-      api.updateCalculatorDefaults(patch),
-    onSuccess: () => {
+    mutationFn: (vars: { patch: { failure_rate_pct?: number; electricity_tariff?: number }; kind: 'failure' | 'tariff' }) =>
+      api.updateCalculatorDefaults(vars.patch),
+    onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ['calculatorDefaults'] });
       showToast(t('calculator.realityCheck.savedDefault'));
+      set(vars.kind === 'failure' ? { failureRateOverride: '' } : { tariffOverride: '' });
+    },
+    onError: (error: Error) => {
+      showToast(error.message, 'error');
     },
   });
   const updateFilamentCostMutation = useMutation({
@@ -236,13 +243,20 @@ export function CalculatorPage() {
       queryClient.invalidateQueries({ queryKey: ['calculatorFilaments'] });
       showToast(t('calculator.realityCheck.profileUpdated'));
     },
+    onError: (error: Error) => {
+      showToast(error.message, 'error');
+    },
   });
   const updatePrinterProfileMutation = useMutation({
-    mutationFn: ({ id, patch }: { id: number; patch: { power_watts?: number; daily_usage_hours?: number } }) =>
-      api.updateCalculatorPrinter(id, patch),
-    onSuccess: () => {
+    mutationFn: (vars: { id: number; patch: { power_watts?: number; daily_usage_hours?: number } }) =>
+      api.updateCalculatorPrinter(vars.id, vars.patch),
+    onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ['calculatorPrinters'] });
       showToast(t('calculator.realityCheck.printerUpdated'));
+      set(vars.patch.power_watts !== undefined ? { powerWattsOverride: '' } : { dailyHoursOverride: '' });
+    },
+    onError: (error: Error) => {
+      showToast(error.message, 'error');
     },
   });
 
@@ -445,19 +459,18 @@ export function CalculatorPage() {
                         if (kind !== 'spoolCost') set({ [overrideFieldFor[kind]]: '' });
                       }}
                       onSaveDefault={(kind, value) => {
-                        saveDefaultMutation.mutate(
-                          kind === 'failure' ? { failure_rate_pct: value } : { electricity_tariff: value },
-                        );
-                        // The saved default now equals the measured value —
-                        // the session override would just shadow it.
-                        set(kind === 'failure' ? { failureRateOverride: '' } : { tariffOverride: '' });
+                        // The override is cleared in the mutation's onSuccess
+                        // (not here) so a failed save keeps the measured value
+                        // applied instead of silently reverting the quote.
+                        saveDefaultMutation.mutate({
+                          patch: kind === 'failure' ? { failure_rate_pct: value } : { electricity_tariff: value },
+                          kind,
+                        });
                       }}
                       onUpdateFilamentCost={(id, cost) => updateFilamentCostMutation.mutate({ id, cost })}
                       onUpdatePrinterProfile={(id, patch) => {
+                        // Same as above — the override survives a failed save.
                         updatePrinterProfileMutation.mutate({ id, patch });
-                        // The profile now holds the measured figure — the
-                        // session override would just shadow it.
-                        set(patch.power_watts !== undefined ? { powerWattsOverride: '' } : { dailyHoursOverride: '' });
                       }}
                       onDismiss={(key) => set({ dismissedChecks: [...state.dismissedChecks, key] })}
                       dismissedCount={state.dismissedChecks.length}

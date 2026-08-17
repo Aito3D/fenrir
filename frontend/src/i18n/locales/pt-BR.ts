@@ -18,6 +18,7 @@ export default {
     printQuote: 'Imprimir orçamento',
     printFailed: 'Não foi possível obter o PDF do orçamento',
     printOpenedInTab: 'Aberto em uma nova aba — pressione Ctrl+P para imprimir',
+    printPopupBlocked: 'Pop-up bloqueado — baixando o PDF em vez disso',
     sendQuote: 'Enviar orçamento',
     sendQuoteTitle: 'Enviar orçamento por e-mail',
     sendQuoteRecipient: 'Destinatário',

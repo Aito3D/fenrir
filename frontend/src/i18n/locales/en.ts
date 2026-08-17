@@ -18,6 +18,7 @@ export default {
     printQuote: 'Print quote',
     printFailed: 'Could not fetch the quote PDF',
     printOpenedInTab: 'Opened in a new tab — press Ctrl+P to print',
+    printPopupBlocked: 'Pop-up blocked — downloading the PDF instead',
     sendQuote: 'Send quote',
     sendQuoteTitle: 'Send quote by email',
     sendQuoteRecipient: 'Recipient',

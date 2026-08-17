@@ -15,6 +15,7 @@ import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   CalculatorFilamentsPanel,
   CalculatorPrintersPanel,
@@ -349,6 +350,22 @@ describe('CalculatorPrintersPanel', () => {
   });
 });
 
+// Stands in for a background refetch of ['calculatorDefaults'] triggered
+// elsewhere (another session's save, another tab, T-029's reality-check
+// save) — invalidating the query without the DefaultsForm itself doing
+// anything.
+function InvalidateDefaultsButton() {
+  const queryClient = useQueryClient();
+  return (
+    <button
+      type="button"
+      onClick={() => queryClient.invalidateQueries({ queryKey: ['calculatorDefaults'] })}
+    >
+      simulate background refetch
+    </button>
+  );
+}
+
 describe('CalculatorDefaultsPanel', () => {
   it('saves edited global defaults with the full payload', async () => {
     let patchBody: unknown = null;
@@ -388,5 +405,99 @@ describe('CalculatorDefaultsPanel', () => {
       }),
     );
     expect(await screen.findByText('Defaults saved')).toBeInTheDocument();
+  });
+
+  it('an untouched form follows a background refetch (T-031)', async () => {
+    let current: CalculatorDefaults = baseDefaults;
+    server.use(http.get('/api/v1/calculator/defaults', () => HttpResponse.json(current)));
+    const user = userEvent.setup();
+
+    render(
+      <>
+        <InvalidateDefaultsButton />
+        <CalculatorDefaultsPanel />
+      </>,
+    );
+
+    const tariff = await screen.findByLabelText(/Electricity tariff/);
+    expect(tariff).toHaveValue(120);
+
+    // The underlying row changes elsewhere (another session's save) and
+    // something invalidates the query — the operator never touched this form.
+    current = { ...baseDefaults, electricity_tariff: 999, updated_at: '2026-01-02T00:00:00Z' };
+    await user.click(screen.getByRole('button', { name: 'simulate background refetch' }));
+
+    await waitFor(() => expect(tariff).toHaveValue(999));
+  });
+
+  it('a dirty form keeps the operator\'s typed values across a background refetch (T-031)', async () => {
+    let current: CalculatorDefaults = baseDefaults;
+    let fetchCount = 0;
+    server.use(
+      http.get('/api/v1/calculator/defaults', () => {
+        fetchCount += 1;
+        return HttpResponse.json(current);
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(
+      <>
+        <InvalidateDefaultsButton />
+        <CalculatorDefaultsPanel />
+      </>,
+    );
+
+    const tariff = await screen.findByLabelText(/Electricity tariff/);
+    await user.clear(tariff);
+    await user.type(tariff, '150');
+    expect(tariff).toHaveValue(150);
+
+    // Someone else's save changes the underlying row while this operator is
+    // mid-edit. Confirm the refetch actually happened, then confirm the
+    // typed value survived it instead of being clobbered.
+    const fetchesBefore = fetchCount;
+    current = { ...baseDefaults, electricity_tariff: 999, updated_at: '2026-01-02T00:00:00Z' };
+    await user.click(screen.getByRole('button', { name: 'simulate background refetch' }));
+    await waitFor(() => expect(fetchCount).toBeGreaterThan(fetchesBefore));
+
+    expect(tariff).toHaveValue(150);
+  });
+
+  it('adopts the operator\'s own successful save and resumes following the server (T-031)', async () => {
+    let current: CalculatorDefaults = baseDefaults;
+    server.use(
+      http.get('/api/v1/calculator/defaults', () => HttpResponse.json(current)),
+      http.patch('/api/v1/calculator/defaults', async ({ request }) => {
+        const body = (await request.json()) as Record<string, number>;
+        current = { ...current, ...body };
+        return HttpResponse.json(current);
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(
+      <>
+        <InvalidateDefaultsButton />
+        <CalculatorDefaultsPanel />
+      </>,
+    );
+
+    const tariff = await screen.findByLabelText(/Electricity tariff/);
+    await user.clear(tariff);
+    await user.type(tariff, '150');
+
+    await user.click(screen.getByRole('button', { name: 'Save defaults' }));
+    await screen.findByText('Defaults saved');
+
+    // The form adopts its own save rather than looking perpetually dirty.
+    expect(tariff).toHaveValue(150);
+
+    // Now that it's clean again, the next background refetch (another
+    // session's save) is followed just like a never-touched form.
+    current = { ...current, electricity_tariff: 777, updated_at: '2026-01-02T00:00:00Z' };
+    await user.click(screen.getByRole('button', { name: 'simulate background refetch' }));
+
+    await waitFor(() => expect(tariff).toHaveValue(777));
   });
 });

@@ -18,6 +18,7 @@ export default {
     printQuote: 'Imprimer le devis',
     printFailed: 'Impossible de récupérer le PDF du devis',
     printOpenedInTab: 'Ouvert dans un nouvel onglet — appuyez sur Ctrl+P pour imprimer',
+    printPopupBlocked: 'Fenêtre pop-up bloquée — téléchargement du PDF à la place',
     sendQuote: 'Envoyer le devis',
     sendQuoteTitle: 'Envoyer le devis par e-mail',
     sendQuoteRecipient: 'Destinataire',

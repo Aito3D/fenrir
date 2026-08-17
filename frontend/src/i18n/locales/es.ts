@@ -18,6 +18,7 @@ export default {
     printQuote: 'Imprimir presupuesto',
     printFailed: 'No se pudo obtener el PDF del presupuesto',
     printOpenedInTab: 'Abierto en una pestaña nueva: pulsa Ctrl+P para imprimir',
+    printPopupBlocked: 'Ventana emergente bloqueada: se descargará el PDF en su lugar',
     sendQuote: 'Enviar presupuesto',
     sendQuoteTitle: 'Enviar presupuesto por correo',
     sendQuoteRecipient: 'Destinatario',

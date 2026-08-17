@@ -18,6 +18,7 @@ export default {
     printQuote: '打印报价单',
     printFailed: '无法获取报价单 PDF',
     printOpenedInTab: '已在新标签页中打开 — 按 Ctrl+P 打印',
+    printPopupBlocked: '弹出窗口被阻止 — 改为下载 PDF',
     sendQuote: '发送报价单',
     sendQuoteTitle: '通过电子邮件发送报价单',
     sendQuoteRecipient: '收件人',

@@ -18,6 +18,7 @@ export default {
     printQuote: 'Angebot drucken',
     printFailed: 'Angebots-PDF konnte nicht geladen werden',
     printOpenedInTab: 'In neuem Tab geöffnet – zum Drucken Strg+P drücken',
+    printPopupBlocked: 'Pop-up blockiert – PDF wird stattdessen heruntergeladen',
     sendQuote: 'Angebot senden',
     sendQuoteTitle: 'Angebot per E-Mail senden',
     sendQuoteRecipient: 'Empfänger',

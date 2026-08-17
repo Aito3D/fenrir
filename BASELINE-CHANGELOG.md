@@ -1737,3 +1737,15 @@ T-026: grid toolbar live-camera count recomputed each stats tick from decoded-fr
 ## T-028 — 2026-08-16 — user-approved behavior change
 
 T-028: useMjpegStream counts consecutive decode failures; past the threshold the stream reports an error and enters the reconnect/give-up flow instead of spinning forever. user-approved 2026-08-16.
+
+## T-029 — 2026-08-16 — user-approved behavior change
+
+T-029: calculator 'save as default'/profile saves clear the session override only on success; failures show an error toast and keep the measured value applied. user-approved 2026-08-16.
+
+## T-031 — 2026-08-16 — user-approved behavior change
+
+T-031: calculator DefaultsForm no longer remounts on background refetch; an untouched form follows server changes, a dirty form keeps the operator's typed values (own saves still adopt + reset). user-approved 2026-08-16.
+
+## T-033 — 2026-08-16 — user-approved behavior change
+
+T-033: PdfPrintButton detects a blocked popup — shows a failure toast and hands the PDF over via download instead of falsely claiming it opened in a tab. user-approved 2026-08-16.
