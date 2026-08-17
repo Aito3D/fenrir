@@ -19,7 +19,16 @@ export interface PersistedDraft {
   shipping?: ShippingDraft | null;
 }
 
+// Bumped by every external clear so a live hook instance's debounced write
+// and unmount flush — both scheduled before the clear could reach into their
+// timerRef/pendingRef — can tell their queued payload is now stale and drop
+// it instead of re-writing it. Read by `save()`'s timeout and by the
+// unmount effect below; neither writes if the epoch has moved since the
+// write was queued.
+let clearEpoch = 0;
+
 export function clearNewProjectDraft(): void {
+  clearEpoch += 1;
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {
@@ -87,18 +96,26 @@ export function useNewProjectDraft() {
   // write actually lands (or by `clear`). Unmount checks this — not the timer —
   // so a still-pending write is flushed synchronously instead of dropped.
   const pendingRef = useRef<PersistedDraft | null>(null);
+  // The value of `clearEpoch` at the moment `pendingRef` was last set by
+  // `save`. An external `clearNewProjectDraft()` call (AuthContext.logout(),
+  // useAitoPageMutations' create-success handler) bumps the module epoch but
+  // has no handle on this instance's timer/pending refs — so both the
+  // debounce timeout and the unmount flush below compare against this to
+  // detect a clear that happened after their write was queued, and drop the
+  // payload instead of resurrecting it.
+  const pendingEpochRef = useRef(0);
 
   useEffect(
     () => () => {
       if (timerRef.current) clearTimeout(timerRef.current);
-      if (pendingRef.current) {
+      if (pendingRef.current && pendingEpochRef.current === clearEpoch) {
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(pendingRef.current));
         } catch {
           // Best-effort only.
         }
-        pendingRef.current = null;
       }
+      pendingRef.current = null;
     },
     [],
   );
@@ -106,11 +123,14 @@ export function useNewProjectDraft() {
   const save = (draft: PersistedDraft) => {
     if (timerRef.current) clearTimeout(timerRef.current);
     pendingRef.current = draft;
+    pendingEpochRef.current = clearEpoch;
     timerRef.current = setTimeout(() => {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
-      } catch {
-        // Best-effort only.
+      if (clearEpoch === pendingEpochRef.current) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
+        } catch {
+          // Best-effort only.
+        }
       }
       pendingRef.current = null;
     }, SAVE_DEBOUNCE_MS);

@@ -162,6 +162,45 @@ describe('useNewProjectDraft', () => {
     expect(localStorage.getItem('aito.newProjectDraft.v1')).toBeNull();
   });
 
+  // T-045: clearNewProjectDraft() is the module-level function AuthContext's
+  // logout() (and useAitoPageMutations' create-success handler) calls. It has
+  // no handle on a live hook instance's pendingRef/timerRef, so a save()
+  // queued just before the external clear must not be resurrected by either
+  // of the hook's own writers that fire after it: the unmount flush, and the
+  // debounce timer.
+  it('external clearNewProjectDraft() then unmount does not resurrect a pending save (logout purge)', () => {
+    vi.useFakeTimers();
+    const { result, unmount } = renderHook(() => useNewProjectDraft());
+    const draftWithClientPII = {
+      tasks: [],
+      client: defaultClientDraft('c1', 'Moana'),
+      summaryText: '',
+      summaryEdited: false,
+      summarySignature: '',
+    };
+    act(() => result.current.save(draftWithClientPII));
+    // No vi.advanceTimersByTime — the debounce has not fired yet.
+    clearNewProjectDraft();
+    unmount();
+    expect(localStorage.getItem('aito.newProjectDraft.v1')).toBeNull();
+  });
+
+  it('external clearNewProjectDraft() then the debounce timer firing does not resurrect a pending save', () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useNewProjectDraft());
+    const draftWithClientPII = {
+      tasks: [],
+      client: defaultClientDraft('c1', 'Moana'),
+      summaryText: '',
+      summaryEdited: false,
+      summarySignature: '',
+    };
+    act(() => result.current.save(draftWithClientPII));
+    clearNewProjectDraft();
+    act(() => void vi.advanceTimersByTime(500));
+    expect(localStorage.getItem('aito.newProjectDraft.v1')).toBeNull();
+  });
+
   it('restores a stored client written before the social fields existed', () => {
     const client = {
       id: 'c1',

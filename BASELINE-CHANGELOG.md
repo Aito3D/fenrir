@@ -1757,3 +1757,11 @@ T-020: Calculator settings panels (Filaments/Printers/Defaults) hide their Add/E
 ## T-021 — 2026-08-16 — user-approved behavior change
 
 T-021: logging out clears the persisted new-project draft (client PII) from localStorage; next login starts with an empty drawer. user-approved 2026-08-16.
+
+## T-049 — 2026-08-16 — user-approved behavior change
+
+T-049: off-screen camera tiles are exempt from stale/degraded/error classification and keep counting as live; scrolling back no longer shows false "Camera unavailable" overlays, and the toolbar count reads N/N on a scrolled wall. user-approved 2026-08-16.
+
+## T-050 — 2026-08-16 — user-approved behavior change
+
+T-050: after a grid-stream reconnect, cameras that never resume decoding now fall into the error state ("Camera unavailable") instead of freezing silently on the last frame. user-approved 2026-08-16.

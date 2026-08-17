@@ -35,13 +35,40 @@
  * from the same last-decoded-frame gaps that drive staleSet, so a printer
  * drops out of the active count as soon as it goes stale, and rejoins once
  * frames resume.
+ *
+ * T-049 (2026-08-16, user-approved behavior change): the decode worker drops
+ * frames for off-screen printers before decoding them (visibleSet check in
+ * cameraGridDecoder.worker.ts), so lastFrameTime freezes for a scrolled-past
+ * tile even though the underlying stream is still alive. The health pass now
+ * reads the same visibility the hook forwards to the worker
+ * (handleVisibilityChange) and exempts invisible printers from stale/
+ * degraded/error classification, counting them as active instead — so the
+ * toolbar reads N/N on a scrolled wall and a tile never comes back showing a
+ * stale "Camera unavailable" overlay. On visible:false -> true it resets
+ * that printer's lastFrameTime to now, giving it a fresh grace window rather
+ * than instantly reading as stale/degraded/error against the old frozen
+ * timestamp.
+ *
+ * T-050 (2026-08-16, user-approved behavior change): a successful reconnect
+ * clears loadedPrinters but previously left lastFrameTime holding pre-drop
+ * timestamps, and the health loop skips any id absent from loadedPrinters
+ * (`if (!last || !loadedPrinters.has(id)) continue;`). A printer that
+ * reconnected at the network level but never delivered another decoded
+ * frame therefore sat in NO state set at all — no spinner, no stale/
+ * degraded badge, no error overlay, just frozen on its last frame forever.
+ * lastFrameTime is now cleared alongside loadedPrinters on every successful
+ * reconnect, and a startup-style grace window (STREAM_ERROR_MS) is re-armed
+ * per reconnect: a printer that redelivers within it is fine (re-added to
+ * loadedPrinters by handleWorkerMessage before the timer fires); one that
+ * never does surfaces in errorSet once the window elapses — unless it's
+ * currently off-screen, composing with T-049's invisible exemption.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useGridReconnect } from '../../hooks/useGridReconnect';
 import { useGridStream, type GridStreamStats } from '../../hooks/useGridStream';
-import { STREAM_STALE_MS, STREAM_DEGRADED_MS, STREAM_ERROR_MS } from '../../utils/streamConstants';
+import { STREAM_STALE_MS, STREAM_DEGRADED_MS, STREAM_ERROR_MS, RECONNECT_BASE_DELAY_MS } from '../../utils/streamConstants';
 
 // --- Fake decode worker -----------------------------------------------
 //
@@ -103,15 +130,21 @@ function fakeResponse(body: ReadableStream<Uint8Array>): Response {
  * openStreamFromChunks, which drains a fixed list). Used where a test needs
  * to control exactly when frames arrive relative to fake-timer advances
  * (e.g. spreading network frames across several health-check intervals).
+ * `error()` rejects the pending `reader.read()`, simulating a dropped
+ * connection so the hook's catch block schedules a reconnect.
  */
-function openPushableStream(): { stream: ReadableStream<Uint8Array>; push: (chunk: Uint8Array) => void } {
+function openPushableStream(): { stream: ReadableStream<Uint8Array>; push: (chunk: Uint8Array) => void; error: (err: unknown) => void } {
   let controllerRef!: ReadableStreamDefaultController<Uint8Array>;
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       controllerRef = controller;
     },
   });
-  return { stream, push: chunk => controllerRef.enqueue(chunk) };
+  return {
+    stream,
+    push: chunk => controllerRef.enqueue(chunk),
+    error: err => controllerRef.error(err),
+  };
 }
 
 describe('GridStreamStats type', () => {
@@ -404,6 +437,372 @@ describe('useGridStream', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); }); // t=5000
     expect(result.current.getStatsSnapshot().active).toBe(2);
     expect(result.current.staleSet.has(1)).toBe(false);
+
+    unmount();
+  });
+
+  it('exempts an off-screen printer from stale/degraded/error classification and keeps counting it active (T-049)', async () => {
+    vi.useFakeTimers();
+    // fetch never resolves — isolates the health-pass math from the network/parse pipeline.
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})));
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1,2', gridParamsKey: '', restartKey: 0 }),
+    );
+
+    const worker = workerInstances[0];
+    const decode = (printerId: number) => {
+      const bitmap = { close: vi.fn(), width: 1, height: 1 };
+      act(() => {
+        worker.onmessage?.({ data: { type: 'frame', printerId, bitmap } } as MessageEvent);
+      });
+    };
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    decode(1);
+    decode(2);
+
+    // Printer 1 scrolls off-screen — from now on the worker drops its frames
+    // before decoding them, so its lastFrameTime is frozen going forward.
+    act(() => {
+      result.current.handleVisibilityChange(1, false);
+    });
+
+    // Keep printer 2 fresh every tick; printer 1 never decodes again — well
+    // past STREAM_ERROR_MS, which would normally push it into errorSet.
+    let elapsed = 0;
+    while (elapsed < STREAM_ERROR_MS + 5000) {
+      decode(2);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      elapsed += 1000;
+    }
+
+    // Mutation proof: removing the visibility exemption in the health pass
+    // makes this fail (printer 1 would land in errorSet and drop out of
+    // "active", same as the regression-pin test below shows for a visible
+    // printer under an identical silence).
+    expect(result.current.staleSet.has(1)).toBe(false);
+    expect(result.current.degradedSet.has(1)).toBe(false);
+    expect(result.current.errorSet.has(1)).toBe(false);
+    expect(result.current.getStatsSnapshot().active).toBe(2);
+    expect(result.current.getStatsSnapshot().total).toBe(2);
+
+    unmount();
+  });
+
+  it('gives a printer a fresh grace window on becoming visible again, instead of reading stale against its frozen off-screen timestamp (T-049)', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})));
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1', gridParamsKey: '', restartKey: 0 }),
+    );
+
+    const worker = workerInstances[0];
+    const decode = (printerId: number) => {
+      const bitmap = { close: vi.fn(), width: 1, height: 1 };
+      act(() => {
+        worker.onmessage?.({ data: { type: 'frame', printerId, bitmap } } as MessageEvent);
+      });
+    };
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    decode(1);
+
+    act(() => {
+      result.current.handleVisibilityChange(1, false);
+    });
+
+    // Sit off-screen well past STREAM_ERROR_MS — its lastFrameTime is frozen
+    // at the moment it went invisible and would read as errored if visible.
+    await act(async () => { await vi.advanceTimersByTimeAsync(STREAM_ERROR_MS + 1000); });
+    expect(result.current.errorSet.has(1)).toBe(false); // exempt while invisible
+
+    // Scroll back into view — handleVisibilityChange resets lastFrameTime to now.
+    act(() => {
+      result.current.handleVisibilityChange(1, true);
+    });
+
+    // One stats tick later, before any new decoded frame arrives: must NOT
+    // instantly read as stale/degraded/errored against the old frozen
+    // timestamp. Mutation proof: removing the reset-on-reentry makes this
+    // fail (errorSet would immediately contain 1, since the frozen gap is
+    // already ~46s).
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(result.current.staleSet.has(1)).toBe(false);
+    expect(result.current.degradedSet.has(1)).toBe(false);
+    expect(result.current.errorSet.has(1)).toBe(false);
+    expect(result.current.getStatsSnapshot().active).toBe(1);
+
+    unmount();
+  });
+
+  it('a visible printer that stops decoding still stales/degrades/errors exactly as before, unaffected by the invisible exemption (T-049 regression pin for T-022/T-026)', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})));
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1,2', gridParamsKey: '', restartKey: 0 }),
+    );
+
+    const worker = workerInstances[0];
+    const decode = (printerId: number) => {
+      const bitmap = { close: vi.fn(), width: 1, height: 1 };
+      act(() => {
+        worker.onmessage?.({ data: { type: 'frame', printerId, bitmap } } as MessageEvent);
+      });
+    };
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    decode(1);
+    decode(2);
+
+    // Neither printer's visibility is ever touched — both stay at the
+    // default visible=true, exercising the exact pre-T-049 code path.
+    let elapsed = 0;
+    while (elapsed < STREAM_ERROR_MS + 1000) {
+      decode(2); // printer 2 stays fresh; printer 1 goes silent
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      elapsed += 1000;
+
+      if (elapsed === STREAM_STALE_MS + 1000) {
+        expect(result.current.staleSet.has(1)).toBe(true);
+        expect(result.current.degradedSet.has(1)).toBe(false);
+      }
+      if (elapsed === STREAM_DEGRADED_MS + 1000) {
+        expect(result.current.degradedSet.has(1)).toBe(true);
+      }
+    }
+    expect(result.current.errorSet.has(1)).toBe(true);
+    expect(result.current.getStatsSnapshot().active).toBe(1);
+
+    unmount();
+  });
+
+  it('after a reconnect, a printer that never resumes decoding lands in errorSet instead of freezing in no state at all (T-050)', async () => {
+    vi.useFakeTimers();
+    const jpeg = new Uint8Array([1, 2, 3]);
+    const { stream: stream1, push: push1, error: dropStream1 } = openPushableStream();
+    const { stream: stream2, push: push2 } = openPushableStream();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(fakeResponse(stream1))
+      .mockResolvedValueOnce(fakeResponse(stream2));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1,2', gridParamsKey: '', restartKey: 0 }),
+    );
+
+    const decode = (printerId: number) => {
+      const worker = workerInstances[0];
+      const bitmap = { close: vi.fn(), width: 1, height: 1 };
+      act(() => {
+        worker.onmessage?.({ data: { type: 'frame', printerId, bitmap } } as MessageEvent);
+      });
+    };
+
+    // Initial connect: both printers decode successfully.
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    decode(1);
+    decode(2);
+    expect(result.current.loadingSet.size).toBe(0);
+
+    // Survive well past the mount-time startupTimeout (a one-shot timer
+    // that fires once, STREAM_ERROR_MS after mount, and separately marks
+    // any still-not-loaded printer errored) with keep-alive network chunks
+    // on stream1 so it fires as a no-op — both printers are already loaded.
+    // This isolates the *reconnect* grace timer below as the only
+    // mechanism that can classify printer 2 after the later drop: without
+    // this, the drop+reconnect below would happen to land inside the
+    // mount timer's own window and the test couldn't tell the two timers
+    // apart.
+    let pre = 0;
+    while (pre < STREAM_ERROR_MS + 5000) {
+      push1(encodeGridFrame(1, jpeg));
+      decode(1);
+      decode(2);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      pre += 1000;
+    }
+    expect(result.current.errorSet.size).toBe(0);
+
+    // Stream drops — the catch block schedules a reconnect.
+    await act(async () => {
+      dropStream1(new Error('network drop'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.reconnectingSet).toEqual(new Set([1, 2]));
+
+    // Advance past the reconnect backoff so the retry fetch (stream2) fires
+    // and succeeds.
+    await act(async () => { await vi.advanceTimersByTimeAsync(RECONNECT_BASE_DELAY_MS + 100); });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.current.reconnectingSet.size).toBe(0);
+
+    // Printer 1 resumes decoding every tick from here; printer 2 never
+    // decodes again after the reconnect. Keep-alive chunks on stream2 keep
+    // the connection itself alive throughout (a printer that "reconnects
+    // at the network level but never resumes decoding" is exactly the
+    // scenario this fix targets).
+    let elapsed = 0;
+    while (elapsed < STREAM_ERROR_MS - 1000) {
+      push2(encodeGridFrame(1, jpeg));
+      decode(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      elapsed += 1000;
+    }
+    // Just before the reconnect grace window elapses: printer 2 must not
+    // yet be flagged, and printer 1 (resumed) must show no spurious state.
+    expect(result.current.errorSet.has(2)).toBe(false);
+    expect(result.current.staleSet.has(2)).toBe(false);
+    expect(result.current.errorSet.has(1)).toBe(false);
+    expect(result.current.staleSet.has(1)).toBe(false);
+
+    // Cross the grace window (STREAM_ERROR_MS since the reconnect
+    // succeeded): printer 2 — never redelivered — must now be flagged
+    // errored instead of sitting frozen with no state at all. Mutation
+    // proof: reverting the lastFrameTime.clear()/armReconnectGraceTimer
+    // fix leaves printer 2 permanently absent from loadedPrinters with a
+    // stale-but-present lastFrameTime entry, which the health loop's
+    // `!loadedPrinters.has(id)` guard skips forever — verified by
+    // temporarily reverting the fix, which leaves errorSet empty for the
+    // rest of this test.
+    push2(encodeGridFrame(1, jpeg));
+    decode(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(result.current.errorSet.has(2)).toBe(true);
+    expect(result.current.errorSet.has(1)).toBe(false);
+    expect(result.current.staleSet.has(1)).toBe(false);
+    expect(result.current.degradedSet.has(1)).toBe(false);
+
+    unmount();
+  });
+
+  it('a normal reconnect where every printer resumes shows no spurious stale/degraded/error state (T-050 regression pin)', async () => {
+    vi.useFakeTimers();
+    const jpeg = new Uint8Array([1, 2, 3]);
+    const { stream: stream1, error: dropStream1 } = openPushableStream();
+    const { stream: stream2, push: push2 } = openPushableStream();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(fakeResponse(stream1))
+      .mockResolvedValueOnce(fakeResponse(stream2));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1,2', gridParamsKey: '', restartKey: 0 }),
+    );
+
+    const decode = (printerId: number) => {
+      const worker = workerInstances[0];
+      const bitmap = { close: vi.fn(), width: 1, height: 1 };
+      act(() => {
+        worker.onmessage?.({ data: { type: 'frame', printerId, bitmap } } as MessageEvent);
+      });
+    };
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    decode(1);
+    decode(2);
+
+    await act(async () => {
+      dropStream1(new Error('network drop'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(RECONNECT_BASE_DELAY_MS + 100); });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    // Both printers resume decoding every tick — well past the reconnect
+    // grace window (STREAM_ERROR_MS) — and neither should ever show a
+    // stale/degraded/error overlay. Keep-alive chunks on stream2 prevent an
+    // unrelated natural stall-timeout reconnect from confusing the result.
+    let elapsed = 0;
+    while (elapsed < STREAM_ERROR_MS + 2000) {
+      push2(encodeGridFrame(1, jpeg));
+      decode(1);
+      decode(2);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      elapsed += 1000;
+    }
+
+    expect(result.current.errorSet.size).toBe(0);
+    expect(result.current.staleSet.size).toBe(0);
+    expect(result.current.degradedSet.size).toBe(0);
+    expect(result.current.loadingSet.size).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    unmount();
+  });
+
+  it('a printer that never resumes after reconnect stays exempt from errorSet while off-screen (T-050 composes with T-049)', async () => {
+    vi.useFakeTimers();
+    const jpeg = new Uint8Array([1, 2, 3]);
+    const { stream: stream1, push: push1, error: dropStream1 } = openPushableStream();
+    const { stream: stream2, push: push2 } = openPushableStream();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(fakeResponse(stream1))
+      .mockResolvedValueOnce(fakeResponse(stream2));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1,2', gridParamsKey: '', restartKey: 0 }),
+    );
+
+    const decode = (printerId: number) => {
+      const worker = workerInstances[0];
+      const bitmap = { close: vi.fn(), width: 1, height: 1 };
+      act(() => {
+        worker.onmessage?.({ data: { type: 'frame', printerId, bitmap } } as MessageEvent);
+      });
+    };
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    decode(1);
+    decode(2);
+
+    // Survive well past the mount-time startupTimeout with keep-alive
+    // network chunks — its own `!loadedPrinters.has(id)` check has no
+    // visibility exemption, so without this the mount timer (not the
+    // reconnect grace timer under test) would be the one marking printer 2
+    // errored below regardless of its off-screen state.
+    let pre = 0;
+    while (pre < STREAM_ERROR_MS + 5000) {
+      push1(encodeGridFrame(1, jpeg));
+      decode(1);
+      decode(2);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      pre += 1000;
+    }
+    expect(result.current.errorSet.size).toBe(0);
+
+    await act(async () => {
+      dropStream1(new Error('network drop'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(RECONNECT_BASE_DELAY_MS + 100); });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    // Printer 2 scrolls off-screen right after the reconnect succeeds and
+    // never resumes decoding; printer 1 resumes decoding every tick.
+    act(() => {
+      result.current.handleVisibilityChange(2, false);
+    });
+
+    let elapsed = 0;
+    while (elapsed < STREAM_ERROR_MS + 5000) {
+      push2(encodeGridFrame(1, jpeg));
+      decode(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      elapsed += 1000;
+    }
+
+    // Mutation proof: removing the visibility check inside
+    // armReconnectGraceTimer's stillMissing filter makes this fail —
+    // printer 2 would land in errorSet exactly like the unconditional-bug
+    // test above, even while off-screen.
+    expect(result.current.errorSet.has(2)).toBe(false);
+    expect(result.current.staleSet.has(2)).toBe(false);
+    expect(result.current.degradedSet.has(2)).toBe(false);
+    expect(result.current.errorSet.has(1)).toBe(false);
 
     unmount();
   });
