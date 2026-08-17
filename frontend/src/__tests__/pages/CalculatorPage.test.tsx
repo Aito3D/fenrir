@@ -43,6 +43,7 @@ const mockDefaults = {
   electricity_tariff: 120,
   labor_rate_per_hour: 3000,
   consumables_packaging_flat: 30,
+  base_fee_flat: 0,
   failure_rate_pct: 30,
   prototype_rate_pct: 30,
   ads_rate_pct: 5,
@@ -545,6 +546,38 @@ describe('CalculatorPage', () => {
 
     await user.click(await screen.findByRole('button', { name: /Open calculator settings/ }));
     await screen.findByRole('button', { name: 'Add filament' });
+  });
+
+  it('editing global defaults changes the calculator tab totals', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+    );
+    let defaults = { ...mockDefaults };
+    server.use(
+      http.get('/api/v1/calculator/defaults', () => HttpResponse.json(defaults)),
+      http.patch('/api/v1/calculator/defaults', async ({ request }) => {
+        const body = (await request.json()) as Record<string, number>;
+        defaults = { ...defaults, ...body, updated_at: '2026-01-02T00:00:00Z' };
+        return HttpResponse.json(defaults);
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorPage />);
+    // Positive evidence of the pre-save reference total before asserting a change.
+    await screen.findByText('2 031 FCFP');
+
+    await user.click(screen.getByRole('tab', { name: 'Defaults' }));
+    const tariff = await screen.findByLabelText(/Electricity tariff/);
+    await user.clear(tariff);
+    await user.type(tariff, '5000');
+    await user.click(screen.getByRole('button', { name: 'Save defaults' }));
+    await screen.findByText('Defaults saved');
+
+    await user.click(screen.getByRole('tab', { name: 'Calculator' }));
+    await waitFor(() => {
+      expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument();
+    });
   });
 
   it('persists inputs to localStorage (debounced)', async () => {
