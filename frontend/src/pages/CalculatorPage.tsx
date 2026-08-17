@@ -85,6 +85,7 @@ export function CalculatorPage() {
     retry: false,
   });
   const { hasPermission } = useAuth();
+  const canUpdateCalculator = hasPermission('calculator:update');
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const currency = settings?.currency || 'USD';
@@ -379,17 +380,17 @@ export function CalculatorPage() {
 
       {tab === 'filaments' && (
         <div key="filaments" role="tabpanel" aria-labelledby="calc-tab-filaments" className="animate-calc-tab-in">
-          <CalculatorFilamentsPanel selectedFilamentId={filament?.id ?? null} />
+          <CalculatorFilamentsPanel selectedFilamentId={filament?.id ?? null} canUpdate={canUpdateCalculator} />
         </div>
       )}
       {tab === 'printers' && (
         <div key="printers" role="tabpanel" aria-labelledby="calc-tab-printers" className="animate-calc-tab-in">
-          <CalculatorPrintersPanel selectedPrinterId={printer?.id ?? null} />
+          <CalculatorPrintersPanel selectedPrinterId={printer?.id ?? null} canUpdate={canUpdateCalculator} />
         </div>
       )}
       {tab === 'defaults' && (
         <div key="defaults" role="tabpanel" aria-labelledby="calc-tab-defaults" className="animate-calc-tab-in">
-          <CalculatorDefaultsPanel />
+          <CalculatorDefaultsPanel canUpdate={canUpdateCalculator} />
         </div>
       )}
 
@@ -475,7 +476,7 @@ export function CalculatorPage() {
                       onDismiss={(key) => set({ dismissedChecks: [...state.dismissedChecks, key] })}
                       dismissedCount={state.dismissedChecks.length}
                       onRestoreDismissed={() => set({ dismissedChecks: [] })}
-                      canUpdate={hasPermission('calculator:update')}
+                      canUpdate={canUpdateCalculator}
                       allClear={allRealityChecks.length === 0 && hasRealityCheckData(insights)}
                     />
                   )}

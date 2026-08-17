@@ -4,9 +4,12 @@
  * defaults form. These panels render as tabs of CalculatorPage but are
  * exercised directly here — smaller surface, same behavior.
  *
- * Rendered with the default test auth context (auth disabled → effectively
- * full permissions), so these tests keep passing once T-020 gates the
- * add/edit/delete buttons behind calculator:update.
+ * `canUpdate` is threaded in as a prop from CalculatorPage (mirrors
+ * `canUpdate` on the reality-check card — see CalculatorPage.tsx), gating
+ * the add/edit/delete/Save controls (T-020). CRUD tests above pass
+ * `canUpdate` explicitly; the "permission gating" describe blocks below
+ * cover the `canUpdate={false}` case for each panel, and the listing
+ * (search/sort/filter) staying visible either way.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -97,7 +100,7 @@ describe('CalculatorFilamentsPanel', () => {
     );
     const user = userEvent.setup();
 
-    render(<CalculatorFilamentsPanel selectedFilamentId={null} />);
+    render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
 
     await user.click(await screen.findByRole('button', { name: 'Add filament' }));
     // Brand/material use the searchable-select combobox; typing with
@@ -146,7 +149,7 @@ describe('CalculatorFilamentsPanel', () => {
     );
     const user = userEvent.setup();
 
-    render(<CalculatorFilamentsPanel selectedFilamentId={null} />);
+    render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
 
     await user.click(await screen.findByRole('button', { name: 'Edit filament' }));
     // Form seeded from the existing filament: margin is pre-derived (50.0%)
@@ -182,7 +185,7 @@ describe('CalculatorFilamentsPanel', () => {
     );
     const user = userEvent.setup();
 
-    render(<CalculatorFilamentsPanel selectedFilamentId={null} />);
+    render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
 
     await user.click(await screen.findByRole('button', { name: 'Delete filament' }));
     expect(await screen.findByText('Delete filament')).toBeInTheDocument();
@@ -207,7 +210,7 @@ describe('CalculatorFilamentsPanel', () => {
     );
     const user = userEvent.setup();
 
-    render(<CalculatorFilamentsPanel selectedFilamentId={null} />);
+    render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
 
     await user.click(await screen.findByRole('button', { name: 'Delete filament' }));
     expect(await screen.findByText('Delete filament')).toBeInTheDocument();
@@ -217,6 +220,47 @@ describe('CalculatorFilamentsPanel', () => {
     expect(screen.queryByText('Delete filament')).not.toBeInTheDocument();
     expect(screen.getByRole('cell', { name: 'PLA' })).toBeInTheDocument();
     expect(deleteSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('CalculatorFilamentsPanel permission gating (T-020)', () => {
+  beforeEach(() => {
+    mockDefaultsHandler();
+  });
+
+  it('hides the add-filament control without calculator:update', async () => {
+    server.use(http.get('/api/v1/calculator/filaments/', () => HttpResponse.json([baseFilament])));
+
+    render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate={false} />);
+
+    // Positive evidence the panel actually rendered (list visible)...
+    expect(await screen.findByRole('cell', { name: 'PLA' })).toBeInTheDocument();
+    // ...before asserting the write control is gone.
+    expect(screen.queryByRole('button', { name: 'Add filament' })).not.toBeInTheDocument();
+  });
+
+  it('hides the edit and delete controls without calculator:update', async () => {
+    server.use(http.get('/api/v1/calculator/filaments/', () => HttpResponse.json([baseFilament])));
+
+    render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate={false} />);
+
+    await screen.findByRole('cell', { name: 'PLA' });
+    expect(screen.queryByRole('button', { name: 'Edit filament' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete filament' })).not.toBeInTheDocument();
+  });
+
+  it('keeps search, filter and sort usable without calculator:update', async () => {
+    const other: CalculatorFilament = { ...baseFilament, id: 2, name: 'Prusa PETG', brand: 'Prusa', material: 'PETG' };
+    server.use(http.get('/api/v1/calculator/filaments/', () => HttpResponse.json([baseFilament, other])));
+    const user = userEvent.setup();
+
+    render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate={false} />);
+
+    await screen.findByRole('cell', { name: 'PLA' });
+    await user.type(screen.getByLabelText('Search'), 'Prusa');
+
+    expect(screen.getByRole('cell', { name: 'PETG' })).toBeInTheDocument();
+    expect(screen.queryByRole('cell', { name: 'PLA' })).not.toBeInTheDocument();
   });
 });
 
@@ -236,7 +280,7 @@ describe('CalculatorPrintersPanel', () => {
     );
     const user = userEvent.setup();
 
-    render(<CalculatorPrintersPanel selectedPrinterId={null} />);
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate />);
 
     await user.click(await screen.findByRole('button', { name: 'Add printer' }));
     await user.type(screen.getByLabelText('Name'), 'A1 Mini');
@@ -277,7 +321,7 @@ describe('CalculatorPrintersPanel', () => {
     );
     const user = userEvent.setup();
 
-    render(<CalculatorPrintersPanel selectedPrinterId={null} />);
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate />);
 
     await user.click(await screen.findByRole('button', { name: 'Edit printer' }));
     const name = screen.getByLabelText('Name');
@@ -312,7 +356,7 @@ describe('CalculatorPrintersPanel', () => {
     );
     const user = userEvent.setup();
 
-    render(<CalculatorPrintersPanel selectedPrinterId={null} />);
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate />);
 
     await user.click(await screen.findByRole('button', { name: 'Delete printer' }));
     expect(await screen.findByText('Delete printer')).toBeInTheDocument();
@@ -337,7 +381,7 @@ describe('CalculatorPrintersPanel', () => {
     );
     const user = userEvent.setup();
 
-    render(<CalculatorPrintersPanel selectedPrinterId={null} />);
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate />);
 
     await user.click(await screen.findByRole('button', { name: 'Delete printer' }));
     expect(await screen.findByText('Delete printer')).toBeInTheDocument();
@@ -347,6 +391,41 @@ describe('CalculatorPrintersPanel', () => {
     expect(screen.queryByText('Delete printer')).not.toBeInTheDocument();
     expect(screen.getByRole('cell', { name: /H2S/ })).toBeInTheDocument();
     expect(deleteSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('CalculatorPrintersPanel permission gating (T-020)', () => {
+  it('hides the add-printer control without calculator:update', async () => {
+    server.use(http.get('/api/v1/calculator/printers/', () => HttpResponse.json([basePrinter])));
+
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate={false} />);
+
+    expect(await screen.findByRole('cell', { name: /H2S/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add printer' })).not.toBeInTheDocument();
+  });
+
+  it('hides the edit and delete controls without calculator:update', async () => {
+    server.use(http.get('/api/v1/calculator/printers/', () => HttpResponse.json([basePrinter])));
+
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate={false} />);
+
+    await screen.findByRole('cell', { name: /H2S/ });
+    expect(screen.queryByRole('button', { name: 'Edit printer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete printer' })).not.toBeInTheDocument();
+  });
+
+  it('keeps search still usable without calculator:update', async () => {
+    const other: CalculatorPrinter = { ...basePrinter, id: 2, name: 'A1 Mini' };
+    server.use(http.get('/api/v1/calculator/printers/', () => HttpResponse.json([basePrinter, other])));
+    const user = userEvent.setup();
+
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate={false} />);
+
+    await screen.findByRole('cell', { name: /H2S/ });
+    await user.type(screen.getByLabelText('Search'), 'A1');
+
+    expect(screen.getByRole('cell', { name: /A1 Mini/ })).toBeInTheDocument();
+    expect(screen.queryByRole('cell', { name: /H2S/ })).not.toBeInTheDocument();
   });
 });
 
@@ -378,7 +457,7 @@ describe('CalculatorDefaultsPanel', () => {
     );
     const user = userEvent.setup();
 
-    render(<CalculatorDefaultsPanel />);
+    render(<CalculatorDefaultsPanel canUpdate />);
 
     const tariff = await screen.findByLabelText(/Electricity tariff/);
     expect(tariff).toHaveValue(120);
@@ -415,7 +494,7 @@ describe('CalculatorDefaultsPanel', () => {
     render(
       <>
         <InvalidateDefaultsButton />
-        <CalculatorDefaultsPanel />
+        <CalculatorDefaultsPanel canUpdate />
       </>,
     );
 
@@ -444,7 +523,7 @@ describe('CalculatorDefaultsPanel', () => {
     render(
       <>
         <InvalidateDefaultsButton />
-        <CalculatorDefaultsPanel />
+        <CalculatorDefaultsPanel canUpdate />
       </>,
     );
 
@@ -479,7 +558,7 @@ describe('CalculatorDefaultsPanel', () => {
     render(
       <>
         <InvalidateDefaultsButton />
-        <CalculatorDefaultsPanel />
+        <CalculatorDefaultsPanel canUpdate />
       </>,
     );
 
@@ -499,5 +578,43 @@ describe('CalculatorDefaultsPanel', () => {
     await user.click(screen.getByRole('button', { name: 'simulate background refetch' }));
 
     await waitFor(() => expect(tariff).toHaveValue(777));
+  });
+});
+
+describe('CalculatorDefaultsPanel permission gating (T-020)', () => {
+  it('hides the Save control without calculator:update, while the values stay visible', async () => {
+    server.use(http.get('/api/v1/calculator/defaults', () => HttpResponse.json(baseDefaults)));
+
+    render(<CalculatorDefaultsPanel canUpdate={false} />);
+
+    // The read-only view of the values is unaffected...
+    const tariff = await screen.findByLabelText(/Electricity tariff/);
+    expect(tariff).toHaveValue(120);
+    // ...only the write control is gone.
+    expect(screen.queryByRole('button', { name: 'Save defaults' })).not.toBeInTheDocument();
+  });
+
+  it('does not call the update API without calculator:update, even if the form were submitted', async () => {
+    let patchCalled = false;
+    server.use(
+      http.get('/api/v1/calculator/defaults', () => HttpResponse.json(baseDefaults)),
+      http.patch('/api/v1/calculator/defaults', () => {
+        patchCalled = true;
+        return HttpResponse.json(baseDefaults);
+      }),
+    );
+
+    const { container } = render(<CalculatorDefaultsPanel canUpdate={false} />);
+    await screen.findByLabelText(/Electricity tariff/);
+
+    // Defense in depth: submitting the underlying <form> directly (e.g. an
+    // Enter keypress) must not reach the mutation when the Save control that
+    // normally guards it isn't rendered.
+    const form = container.querySelector('form');
+    expect(form).not.toBeNull();
+    form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(patchCalled).toBe(false);
   });
 });

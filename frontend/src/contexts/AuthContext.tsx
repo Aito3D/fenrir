@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, api, getAuthToken, setAuthToken } from '../api/client';
 import type { LoginResponse, Permission, TokenPersistence, UserResponse } from '../api/client';
+import { clearNewProjectDraft } from '../hooks/useNewProjectDraft';
 
 interface AuthContextType {
   user: UserResponse | null;
@@ -179,6 +180,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = () => {
     setAuthToken(null);
     setUser(null);
+    // Clear the new-project draft (client name/email/phone) so it can't be
+    // read back by whoever logs into this browser next (T-021).
+    clearNewProjectDraft();
     api.logout().catch(() => {
       // Ignore logout errors
     });

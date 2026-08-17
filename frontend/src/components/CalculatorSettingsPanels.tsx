@@ -268,7 +268,16 @@ type FilamentSortKey = 'name' | 'brand' | 'material' | 'cost' | 'sale' | 'margin
 const filamentMarginOverCost = (f: CalculatorFilament): number | null =>
   f.cost_per_kg > 0 ? (f.sale_price_per_kg - f.cost_per_kg) / f.cost_per_kg : null;
 
-export function CalculatorFilamentsPanel({ selectedFilamentId }: { selectedFilamentId: number | null }) {
+export function CalculatorFilamentsPanel({
+  selectedFilamentId,
+  canUpdate,
+}: {
+  selectedFilamentId: number | null;
+  /** Gates the add/edit/delete controls; the searchable, sortable listing
+   *  itself stays visible regardless (mirrors backend read/write split —
+   *  Permission.CALCULATOR_UPDATE only guards create/update/delete). */
+  canUpdate: boolean;
+}) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -371,7 +380,7 @@ export function CalculatorFilamentsPanel({ selectedFilamentId }: { selectedFilam
             {visible.length === filaments.length ? filaments.length : `${visible.length} / ${filaments.length}`}
           </span>
         </h2>
-        {!editing && (
+        {!editing && canUpdate && (
           <Button size="sm" onClick={() => setEditing('new')}>
             <Plus className="w-4 h-4" />
             {t('calculator.addFilament')}
@@ -379,7 +388,7 @@ export function CalculatorFilamentsPanel({ selectedFilamentId }: { selectedFilam
         )}
       </CardHeader>
       <CardContent>
-        {editing ? (
+        {editing && canUpdate ? (
           <FilamentForm
             initial={editing === 'new' ? undefined : editing}
             defaultDifficulty={defaults?.default_difficulty_pct ?? 100}
@@ -449,21 +458,23 @@ export function CalculatorFilamentsPanel({ selectedFilamentId }: { selectedFilam
                         </td>
                         <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`} title={t('calculator.difficultyTooltip')}>{formatPct(f.difficulty_pct / 100, 0)}</td>
                         <td className={`${tdCls} text-right`}>
-                          <div className="flex gap-1 justify-end">
-                            <Button variant="ghost" size="sm" onClick={() => setEditing(f)} aria-label={t('calculator.editFilament')}>
-                              <Pencil className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setToDelete(f)}
-                              disabled={f.id === selectedFilamentId}
-                              title={f.id === selectedFilamentId ? t('calculator.inUse') : undefined}
-                              aria-label={t('calculator.deleteFilamentTitle')}
-                            >
-                              <Trash2 className="w-4 h-4 text-status-error" />
-                            </Button>
-                          </div>
+                          {canUpdate && (
+                            <div className="flex gap-1 justify-end">
+                              <Button variant="ghost" size="sm" onClick={() => setEditing(f)} aria-label={t('calculator.editFilament')}>
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setToDelete(f)}
+                                disabled={f.id === selectedFilamentId}
+                                title={f.id === selectedFilamentId ? t('calculator.inUse') : undefined}
+                                aria-label={t('calculator.deleteFilamentTitle')}
+                              >
+                                <Trash2 className="w-4 h-4 text-status-error" />
+                              </Button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -612,7 +623,16 @@ function PrinterForm({
 
 type PrinterSortKey = 'name' | 'purchase' | 'power' | 'daily' | 'lifetime' | 'depreciation' | 'repairs';
 
-export function CalculatorPrintersPanel({ selectedPrinterId }: { selectedPrinterId: number | null }) {
+export function CalculatorPrintersPanel({
+  selectedPrinterId,
+  canUpdate,
+}: {
+  selectedPrinterId: number | null;
+  /** Gates the add/edit/delete controls; the searchable, sortable listing
+   *  itself stays visible regardless (mirrors backend read/write split —
+   *  Permission.CALCULATOR_UPDATE only guards create/update/delete). */
+  canUpdate: boolean;
+}) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -694,7 +714,7 @@ export function CalculatorPrintersPanel({ selectedPrinterId }: { selectedPrinter
             {visible.length === printers.length ? printers.length : `${visible.length} / ${printers.length}`}
           </span>
         </h2>
-        {!editing && (
+        {!editing && canUpdate && (
           <Button size="sm" onClick={() => setEditing('new')}>
             <Plus className="w-4 h-4" />
             {t('calculator.addPrinter')}
@@ -702,7 +722,7 @@ export function CalculatorPrintersPanel({ selectedPrinterId }: { selectedPrinter
         )}
       </CardHeader>
       <CardContent>
-        {editing ? (
+        {editing && canUpdate ? (
           <PrinterForm
             initial={editing === 'new' ? undefined : editing}
             currencySymbol={currencySymbol}
@@ -746,21 +766,23 @@ export function CalculatorPrintersPanel({ selectedPrinterId }: { selectedPrinter
                         <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{printerDepreciationPerHour(p).toFixed(2)}</td>
                         <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{printerRepairsPerHour(p).toFixed(2)}</td>
                         <td className={`${tdCls} text-right`}>
-                          <div className="flex gap-1 justify-end">
-                            <Button variant="ghost" size="sm" onClick={() => setEditing(p)} aria-label={t('calculator.editPrinter')}>
-                              <Pencil className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setToDelete(p)}
-                              disabled={p.id === selectedPrinterId}
-                              title={p.id === selectedPrinterId ? t('calculator.inUse') : undefined}
-                              aria-label={t('calculator.deletePrinterTitle')}
-                            >
-                              <Trash2 className="w-4 h-4 text-status-error" />
-                            </Button>
-                          </div>
+                          {canUpdate && (
+                            <div className="flex gap-1 justify-end">
+                              <Button variant="ghost" size="sm" onClick={() => setEditing(p)} aria-label={t('calculator.editPrinter')}>
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setToDelete(p)}
+                                disabled={p.id === selectedPrinterId}
+                                title={p.id === selectedPrinterId ? t('calculator.inUse') : undefined}
+                                aria-label={t('calculator.deletePrinterTitle')}
+                              >
+                                <Trash2 className="w-4 h-4 text-status-error" />
+                              </Button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -813,7 +835,18 @@ const DEFAULTS_FIELDS: DefaultsField[] = [...DEFAULTS_FIELDS_GENERAL, ...DEFAULT
 const defaultsFormValues = (defaults: CalculatorDefaults): Record<string, string> =>
   Object.fromEntries(DEFAULTS_FIELDS.map(({ key }) => [key, String(defaults[key])]));
 
-function DefaultsForm({ defaults, currencySymbol }: { defaults: CalculatorDefaults; currencySymbol: string }) {
+function DefaultsForm({
+  defaults,
+  currencySymbol,
+  canUpdate,
+}: {
+  defaults: CalculatorDefaults;
+  currencySymbol: string;
+  /** Gates the Save control — this form's only write. The fields themselves
+   *  stay visible/readable regardless (mirrors backend read/write split —
+   *  Permission.CALCULATOR_UPDATE only guards the PATCH). */
+  canUpdate: boolean;
+}) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -881,7 +914,7 @@ function DefaultsForm({ defaults, currencySymbol }: { defaults: CalculatorDefaul
       className="space-y-6"
       onSubmit={(e) => {
         e.preventDefault();
-        if (allValid) saveMutation.mutate();
+        if (allValid && canUpdate) saveMutation.mutate();
       }}
     >
       <Card className="animate-calc-rise">
@@ -898,17 +931,19 @@ function DefaultsForm({ defaults, currencySymbol }: { defaults: CalculatorDefaul
         </CardHeader>
         <CardContent>{renderFields(DEFAULTS_FIELDS_FILAMENT)}</CardContent>
       </Card>
-      <div className="flex justify-end">
-        <Button type="submit" size="sm" disabled={!allValid || saveMutation.isPending}>
-          {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-          {t('calculator.saveDefaults')}
-        </Button>
-      </div>
+      {canUpdate && (
+        <div className="flex justify-end">
+          <Button type="submit" size="sm" disabled={!allValid || saveMutation.isPending}>
+            {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+            {t('calculator.saveDefaults')}
+          </Button>
+        </div>
+      )}
     </form>
   );
 }
 
-export function CalculatorDefaultsPanel() {
+export function CalculatorDefaultsPanel({ canUpdate }: { canUpdate: boolean }) {
   const { data: defaults } = useQuery({
     queryKey: ['calculatorDefaults'],
     queryFn: api.getCalculatorDefaults,
@@ -920,7 +955,7 @@ export function CalculatorDefaultsPanel() {
   return (
     <div className="max-w-4xl">
       {defaults ? (
-        <DefaultsForm defaults={defaults} currencySymbol={currencySymbol} />
+        <DefaultsForm defaults={defaults} currencySymbol={currencySymbol} canUpdate={canUpdate} />
       ) : (
         <Card className="animate-calc-rise">
           <CardContent>

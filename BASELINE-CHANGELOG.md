@@ -1749,3 +1749,11 @@ T-031: calculator DefaultsForm no longer remounts on background refetch; an unto
 ## T-033 — 2026-08-16 — user-approved behavior change
 
 T-033: PdfPrintButton detects a blocked popup — shows a failure toast and hands the PDF over via download instead of falsely claiming it opened in a tab. user-approved 2026-08-16.
+
+## T-020 — 2026-08-16 — user-approved behavior change
+
+T-020: Calculator settings panels (Filaments/Printers/Defaults) hide their Add/Edit/Delete/Save controls without calculator:update; read-only listing unchanged; auth-disabled installs unaffected. user-approved 2026-08-16.
+
+## T-021 — 2026-08-16 — user-approved behavior change
+
+T-021: logging out clears the persisted new-project draft (client PII) from localStorage; next login starts with an empty drawer. user-approved 2026-08-16.

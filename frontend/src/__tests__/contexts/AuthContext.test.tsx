@@ -397,4 +397,62 @@ describe('AuthContext', () => {
       expect(getAuthToken()).toBe('valid-token');
     });
   });
+
+  describe('logout clears the new-project draft (T-021)', () => {
+    const DRAFT_KEY = 'aito.newProjectDraft.v1';
+
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        ),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 1,
+            username: 'alice',
+            is_active: true,
+            permissions: [],
+            groups: [],
+          })
+        ),
+        http.post('/api/v1/auth/logout', () => HttpResponse.json({ message: 'ok' }))
+      );
+      setAuthToken('valid-token', 'persistent');
+    });
+
+    afterEach(() => {
+      setAuthToken(null);
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem(DRAFT_KEY);
+    });
+
+    it('wipes the persisted client-PII draft blob when the operator logs out', async () => {
+      // A half-finished new-project draft — including the picked client's
+      // name/email — sitting in localStorage, as the drawer would leave it.
+      localStorage.setItem(
+        DRAFT_KEY,
+        JSON.stringify({
+          tasks: [],
+          client: { id: 1, name: 'Alice Client', email: 'alice@example.com' },
+          summaryText: '',
+          summaryEdited: false,
+          summarySignature: '',
+        })
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.user).not.toBeNull());
+
+      // Positive-before: the draft is present ahead of logout.
+      expect(localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+
+      act(() => {
+        result.current.logout();
+      });
+
+      // Negative-after: logout wipes it, so the next login opens an empty drawer.
+      expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
+      expect(result.current.user).toBeNull();
+    });
+  });
 });
