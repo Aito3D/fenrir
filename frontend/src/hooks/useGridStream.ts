@@ -106,7 +106,6 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
 
   // Mutable counters — updated in the stream loop, read by the stats interval
   const bytesRef = useRef(0);
-  const activeCamsRef = useRef(new Set<number>());
 
   // Worker ref — one worker per grid stream lifetime (mutable for restart)
   const workerRef = useRef<Worker | null>(null);
@@ -158,7 +157,6 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
     resetReconnect();
 
     bytesRef.current = 0;
-    activeCamsRef.current = new Set();
     let t0 = performance.now();
 
     // Spin up worker for off-thread JPEG decoding
@@ -212,8 +210,11 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
       pipeline.lastWorkerFrameTime = performance.now();
 
       // A decoded frame proves this printer is alive — always update tracking
-      // and clear error/reconnecting/loading state, even if canvas isn't mounted
-      activeCamsRef.current.add(pid);
+      // and clear error/reconnecting/loading state, even if canvas isn't mounted.
+      // The stats interval recomputes the "active" count from this timestamp
+      // each tick rather than accumulating into a set, so a printer that stops
+      // decoding drops back out of the live-camera count instead of being
+      // counted forever.
       lastFrameTime.set(pid, performance.now());
 
       setErrorSet(prev => {
@@ -283,21 +284,17 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
       bytesRef.current = 0;
       const elapsed = Math.floor((performance.now() - t0) / 1000);
 
-      statsRef.current = {
-        bw: `${formatFileSize(bytes)}/s`,
-        active: activeCamsRef.current.size,
-        total: ids.length,
-        uptime: formatUptime(elapsed),
-        rawBytesPerSecond: bytes,
-        droppedFrames: pipeline.workerDroppedFrames,
-      };
-      statsSubscribers.current.forEach(cb => cb());
-
-      // Detect degraded / stale cameras based on last frame time
+      // Detect degraded / stale / error cameras from last DECODED-frame time,
+      // and derive the "active" count from the same data in the same pass —
+      // a printer whose last decoded frame is stale no longer counts as live,
+      // so the toolbar's live-camera count drops when a camera stops
+      // delivering frames instead of only ever growing, and recovers on its
+      // own once frames resume (lastFrameTime advances again).
       const now = performance.now();
       const errorIds: number[] = [];
       const newDegraded = new Set<number>();
       const newStale = new Set<number>();
+      let activeCount = 0;
       for (const id of ids) {
         const last = lastFrameTime.get(id);
         if (!last || !loadedPrinters.has(id)) continue;
@@ -310,8 +307,21 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
           newStale.add(id);
         } else if (gap > STREAM_STALE_MS) {
           newStale.add(id);
+        } else {
+          activeCount++;
         }
       }
+
+      statsRef.current = {
+        bw: `${formatFileSize(bytes)}/s`,
+        active: activeCount,
+        total: ids.length,
+        uptime: formatUptime(elapsed),
+        rawBytesPerSecond: bytes,
+        droppedFrames: pipeline.workerDroppedFrames,
+      };
+      statsSubscribers.current.forEach(cb => cb());
+
       if (errorIds.length > 0) {
         setErrorSet(prev => {
           const hasAll = errorIds.every(id => prev.has(id));

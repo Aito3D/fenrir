@@ -15,10 +15,10 @@
  *
  * NOTE: several behaviors are intentionally NOT pinned here because they're
  * targeted by queued fixes (see PLAN.md T-007): no fetch connect-phase
- * timeout, worker restart re-marking all printers visible, activeCamsRef
- * only growing, no worker.onerror handler. Tests below stick to the stable
- * surface: first-frame loading clear, frame parse+dispatch, stream-failure
- * reconnect + startup timeout, visibility forwarding, and unmount teardown.
+ * timeout, worker restart re-marking all printers visible, no worker.onerror
+ * handler. Tests below stick to the stable surface: first-frame loading
+ * clear, frame parse+dispatch, stream-failure reconnect + startup timeout,
+ * visibility forwarding, and unmount teardown.
  *
  * T-022 (2026-08-16, user-approved behavior change) fixed two related
  * health-tracking gaps and both are now pinned below: (1) stale/degraded/
@@ -27,6 +27,14 @@
  * solely from frame-*decode* time (handleWorkerMessage); (2) once
  * MAX_WORKER_RESTARTS was exhausted the health monitor silently gave up —
  * it now surfaces a terminal error overlay on every tile.
+ *
+ * T-026 (2026-08-16, user-approved behavior change): the `active` count in
+ * getStatsSnapshot() used to accumulate into a Set that only ever grew —
+ * once a printer's first frame decoded it stayed "active" for the rest of
+ * the session even if the camera died. It's now recomputed every stats tick
+ * from the same last-decoded-frame gaps that drive staleSet, so a printer
+ * drops out of the active count as soon as it goes stale, and rejoins once
+ * frames resume.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -338,6 +346,64 @@ describe('useGridStream', () => {
       }
     }
     expect(result.current.errorSet.has(1)).toBe(true);
+
+    unmount();
+  });
+
+  it('drops a printer from the active count once its decoded frames go stale, and the printer rejoins once frames resume (T-026)', async () => {
+    vi.useFakeTimers();
+    // fetch never resolves — isolates the active-count math from the
+    // network/parse pipeline; decoded frames are delivered directly via
+    // worker.onmessage, same as the "clears loadingSet" test above.
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})));
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1,2', gridParamsKey: '', restartKey: 0 }),
+    );
+
+    const worker = workerInstances[0];
+    const decode = (printerId: number) => {
+      const bitmap = { close: vi.fn(), width: 1, height: 1 };
+      act(() => {
+        worker.onmessage?.({ data: { type: 'frame', printerId, bitmap } } as MessageEvent);
+      });
+    };
+
+    // Nudge the clock off exactly 0 first (performance.now() === 0 would make
+    // the hook's `!last` falsy-timestamp guard treat the decoded frame as if
+    // none had arrived yet — same caveat as the T-022 test above).
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    decode(1);
+    decode(2);
+
+    // t=1000 (1st stats tick): both printers decoded ~1s ago — both active.
+    await act(async () => { await vi.advanceTimersByTimeAsync(999); });
+    expect(result.current.getStatsSnapshot().active).toBe(2);
+    expect(result.current.getStatsSnapshot().total).toBe(2);
+
+    // Keep printer 2 fresh every tick from here; printer 1 goes silent.
+    decode(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); }); // t=2000
+    expect(result.current.getStatsSnapshot().active).toBe(2);
+
+    decode(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); }); // t=3000 — printer 1's gap (2999ms) is still within STREAM_STALE_MS
+    expect(result.current.getStatsSnapshot().active).toBe(2);
+
+    decode(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); }); // t=4000 — printer 1's gap (3999ms) now exceeds STREAM_STALE_MS
+    const staleSnapshot = result.current.getStatsSnapshot();
+    expect(staleSnapshot.active).toBe(1);
+    expect(staleSnapshot.total).toBe(2);
+    expect(result.current.staleSet.has(1)).toBe(true);
+    expect(result.current.staleSet.has(2)).toBe(false);
+
+    // Printer 1 resumes decoding — the active count recovers without a remount.
+    decode(1);
+    decode(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); }); // t=5000
+    expect(result.current.getStatsSnapshot().active).toBe(2);
+    expect(result.current.staleSet.has(1)).toBe(false);
 
     unmount();
   });

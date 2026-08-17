@@ -6,6 +6,13 @@ const API_BASE = '/api/v1';
 const JPEG_SOI_HI = 0xff;
 const JPEG_SOI_LO = 0xd8;
 const JPEG_EOI_LO = 0xd9;
+// If this many frames in a row fail to decode (e.g. the response body isn't a
+// real MJPEG stream at all — wrong content type, a truncated/corrupt producer,
+// an HTML error page framed as bytes), give up and report an error instead of
+// spinning forever. Kept small since a genuine decode desync should surface
+// quickly, but larger than 1 so an occasional bad frame in an otherwise-healthy
+// stream doesn't trip it — the counter resets on every successful decode.
+const MAX_CONSECUTIVE_DECODE_FAILURES = 20;
 
 interface UseMjpegStreamOptions {
   /** Stream URL path (relative to API_BASE, e.g. `/printers/1/camera/stream?fps=15`) */
@@ -86,6 +93,8 @@ export function useMjpegStream({
         const gbuf = new GrowingBuffer(256 * 1024, 5 * 1024 * 1024);
         let firstFrameDelivered = false;
         let cachedCtx: CanvasRenderingContext2D | null = null;
+        let consecutiveDecodeFailures = 0;
+        let decodeBudgetExceeded = false;
 
         while (true) {
           if (gen !== generationRef.current) break;
@@ -160,6 +169,7 @@ export function useMjpegStream({
                 }
               }
               bitmap.close();
+              consecutiveDecodeFailures = 0;
 
               if (!firstFrameDelivered && mountedRef.current) {
                 firstFrameDelivered = true;
@@ -168,9 +178,29 @@ export function useMjpegStream({
                 onFirstFrameRef.current?.();
               }
             } catch {
-              // Invalid JPEG — skip
+              // Invalid JPEG — skip, but track consecutive failures so a
+              // fully-undecodable stream doesn't spin forever (see
+              // MAX_CONSECUTIVE_DECODE_FAILURES above).
+              consecutiveDecodeFailures += 1;
+              if (consecutiveDecodeFailures >= MAX_CONSECUTIVE_DECODE_FAILURES) {
+                decodeBudgetExceeded = true;
+                break;
+              }
             }
           }
+
+          if (decodeBudgetExceeded) break;
+        }
+
+        if (decodeBudgetExceeded) {
+          controller.abort();
+          if (mountedRef.current && gen === generationRef.current) {
+            setIsLoading(false);
+            setHasError(true);
+            setIsConnected(false);
+            onErrorRef.current?.();
+          }
+          return;
         }
 
         // Stream ended naturally (clean EOF) — don't treat as error

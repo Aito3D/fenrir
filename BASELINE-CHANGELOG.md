@@ -1725,3 +1725,15 @@ the whole campaign (`git diff refactor-base..HEAD -- BASELINE-CHANGELOG.md` has 
 ## T-022 — 2026-08-16 — user-approved behavior change
 
 T-022: camera wall health (stale/degraded/error overlays + live count basis) now derived from decoded frames instead of parsed network frames; terminal 'unavailable' overlays when decode-worker restarts are exhausted. user-approved 2026-08-16.
+
+## T-019 — 2026-08-16 — user-approved behavior change
+
+T-019: AitoPage now gates its board write controls (New project, Import quote, delete/trash) on aito:create / aito:delete permissions, mirroring CalculatorPage; auth-disabled installs unaffected. user-approved 2026-08-16.
+
+## T-026 — 2026-08-16 — user-approved behavior change
+
+T-026: grid toolbar live-camera count recomputed each stats tick from decoded-frame recency; a camera that stops delivering frames now drops out of the count (and returns on recovery). user-approved 2026-08-16.
+
+## T-028 — 2026-08-16 — user-approved behavior change
+
+T-028: useMjpegStream counts consecutive decode failures; past the threshold the stream reports an error and enters the reconnect/give-up flow instead of spinning forever. user-approved 2026-08-16.

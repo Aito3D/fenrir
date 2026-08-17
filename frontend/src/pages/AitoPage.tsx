@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { DndContext, DragOverlay, MeasuringStrategy, closestCorners, type DropAnimation } from '@dnd-kit/core';
 import { AlertTriangle, Archive, FileInput, Kanban, Loader2, Plus, Trash2 } from 'lucide-react';
 import { Button } from '../components/Button';
+import { useAuth } from '../contexts/AuthContext';
 import { CardView } from '../components/aito/CardView';
 import { BoardColumn } from '../components/aito/BoardColumn';
 import { BoardSearch } from '../components/aito/BoardSearch';
@@ -47,6 +48,15 @@ const DROP_ANIMATION: DropAnimation = {
 
 export function AitoPage() {
   const { t } = useTranslation();
+  // Mirrors CalculatorPage's gating: `hasPermission` returns true for
+  // everything when auth is disabled, so a default single-user install sees
+  // no change at all. Only the write controls are gated — the board itself
+  // (and the trash/done archives) stay visible the way every sibling page
+  // leaves read access ungated, matching what the backend actually enforces
+  // (Permission.AITO_CREATE / Permission.AITO_DELETE in routes/aito.py).
+  const { hasPermission } = useAuth();
+  const canCreate = hasPermission('aito:create');
+  const canDelete = hasPermission('aito:delete');
   // Shares the module-level counters every optimistic board mutation feeds —
   // see that hook's own doc for why there are two. Only `isIdle` (the
   // `pendingWrites` one) is used here.
@@ -281,14 +291,18 @@ export function AitoPage() {
             icon={Trash2}
             label={t('aito.trash')}
           />
-          <Button variant="secondary" onClick={() => setShowImport(true)} className="flex-1 sm:flex-none">
-            <FileInput className="w-4 h-4 mr-2" />
-            {t('aito.importQuote')}
-          </Button>
-          <Button onClick={() => setShowModal(true)} className="flex-1 sm:flex-none">
-            <Plus className="w-4 h-4 mr-2" />
-            {t('aito.newProject')}
-          </Button>
+          {canCreate && (
+            <Button variant="secondary" onClick={() => setShowImport(true)} className="flex-1 sm:flex-none">
+              <FileInput className="w-4 h-4 mr-2" />
+              {t('aito.importQuote')}
+            </Button>
+          )}
+          {canCreate && (
+            <Button onClick={() => setShowModal(true)} className="flex-1 sm:flex-none">
+              <Plus className="w-4 h-4 mr-2" />
+              {t('aito.newProject')}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -460,7 +474,7 @@ export function AitoPage() {
           // no-op the server accepts, so the button would look live, do
           // nothing, and still ask you to hold it down to be sure.
           onDelete={
-            expandedProject.status === 'deleted'
+            expandedProject.status === 'deleted' || !canDelete
               ? undefined
               : () => {
                   // Close first, then delete. The panel is rendered from
