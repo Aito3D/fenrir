@@ -1721,3 +1721,7 @@ needs re-approval; the entry above simply overstated what changed.
 
 Recorded as an append rather than an edit, consistent with this file's append-only history across
 the whole campaign (`git diff refactor-base..HEAD -- BASELINE-CHANGELOG.md` has zero removed lines).
+
+## T-022 — 2026-08-16 — user-approved behavior change
+
+T-022: camera wall health (stale/degraded/error overlays + live count basis) now derived from decoded frames instead of parsed network frames; terminal 'unavailable' overlays when decode-worker restarts are exhausted. user-approved 2026-08-16.

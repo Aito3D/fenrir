@@ -77,6 +77,18 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mjpegRestartRef = useRef<() => void>(() => {});
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear any pending refresh-restart timer on unmount so it can't fire
+  // after the stream has already been torn down.
+  useEffect(() => {
+    return () => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+        refreshTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const {
     zoomLevel,
@@ -156,7 +168,13 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
 
     api.stopCameraStream(printerId).catch(() => {});
 
-    setTimeout(() => mjpeg.restart(), 100);
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+    }
+    refreshTimeoutRef.current = setTimeout(() => {
+      refreshTimeoutRef.current = null;
+      mjpeg.restart();
+    }, 100);
   };
 
   // Drag handlers

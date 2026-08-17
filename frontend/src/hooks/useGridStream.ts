@@ -125,6 +125,7 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
     lastParseTime: 0,
     workerRestarts: 0,
     stallPingPending: false,
+    workerExhausted: false,
   });
 
   // Ensure refs exist for all connected printers, clean up stale ones
@@ -379,6 +380,18 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
           pipeline.workerDecodeErrors = 0;
           pipeline.lastWorkerFrameTime = 0;
           pipeline.stallPingPending = false;
+        } else if (!pipeline.workerExhausted) {
+          // Restarts exhausted and the worker is still not decoding — give up
+          // restarting and surface a terminal error state for every tile instead
+          // of silently leaving frozen frames on screen with no indication.
+          pipeline.workerExhausted = true;
+          console.debug(
+            `[grid] Worker restarts exhausted (${MAX_WORKER_RESTARTS}) — marking all printers as unavailable`,
+          );
+          setErrorSet(new Set(ids));
+          setDegradedSet(new Set());
+          setStaleSet(new Set());
+          setLoadingSet(new Set());
         }
       } else {
         // Worker is healthy or no data flowing — reset stall tracking
@@ -435,6 +448,7 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
         pipeline.lastWorkerFrameTime = 0;
         pipeline.lastParseTime = 0;
         pipeline.stallPingPending = false;
+        pipeline.workerExhausted = false;
 
         const reader = res.body.getReader();
         readerRef = reader;
@@ -468,9 +482,14 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
           // Parse binary frames using extracted parser
           const { frames: parsedFrames, bytesConsumed } = parseGridFrames(gbuf.buffer, gbuf.byteOffset, gbuf.length);
 
-          // Deliver frames parsed before any corruption point — they're intact
+          // Deliver frames parsed before any corruption point — they're intact.
+          // NOTE: lastFrameTime (the map health/stale/error detection reads) is
+          // deliberately NOT touched here — a frame arriving off the network only
+          // proves the network is alive, not that it's been decoded and drawn.
+          // It's written in handleWorkerMessage once the worker actually decodes
+          // the frame, so a stalled decode worker correctly shows as stale/error
+          // instead of reading as healthy forever.
           for (const frame of parsedFrames) {
-            lastFrameTime.set(frame.printerId, performance.now());
             pipeline.framesParsed++;
             pipeline.framesSentToWorker++;
             pipeline.lastParseTime = performance.now();

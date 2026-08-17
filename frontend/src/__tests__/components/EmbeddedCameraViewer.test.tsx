@@ -10,8 +10,8 @@
  * and skip-objects modal gating.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { render } from '../utils';
@@ -286,6 +286,53 @@ describe('EmbeddedCameraViewer', () => {
       render(<EmbeddedCameraViewer printerId={1} printerName="P1" onClose={vi.fn()} />);
 
       expect(screen.queryByRole('heading', { name: 'Skip Objects' })).not.toBeInTheDocument();
+    });
+  });
+
+  // refresh() defers mjpeg.restart() by 100ms (to let the in-flight
+  // /camera/stop request land first). If the viewer unmounts inside that
+  // window, the timer must be cancelled — otherwise it fires after
+  // teardown and calls restart() on a stream whose read loop nothing can
+  // ever abort again (see T-023).
+  describe('refresh() restart timer', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('positive control: still-mounted refresh calls mjpeg.restart() once the 100ms delay elapses', () => {
+      const restart = vi.fn();
+      mockMjpegStream({ restart });
+
+      render(<EmbeddedCameraViewer printerId={1} printerName="P1" onClose={vi.fn()} />);
+
+      fireEvent.click(screen.getByTitle('Refresh stream'));
+      expect(restart).not.toHaveBeenCalled();
+
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+
+      expect(restart).toHaveBeenCalledTimes(1);
+    });
+
+    it('unmounting within the 100ms window clears the pending timer so restart() never fires', () => {
+      const restart = vi.fn();
+      mockMjpegStream({ restart });
+
+      const { unmount } = render(<EmbeddedCameraViewer printerId={1} printerName="P1" onClose={vi.fn()} />);
+
+      fireEvent.click(screen.getByTitle('Refresh stream'));
+      unmount();
+
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+
+      expect(restart).not.toHaveBeenCalled();
     });
   });
 });

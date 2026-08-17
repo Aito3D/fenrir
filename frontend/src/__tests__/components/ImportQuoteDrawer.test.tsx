@@ -99,7 +99,13 @@ describe('ImportQuoteDrawer', () => {
     render(<ImportQuoteDrawer onClose={vi.fn()} onImport={onImport} />);
     await pickTheQuote(user);
 
-    const description = await screen.findByRole('textbox', { name: /description/i });
+    // The description textarea and Import button are both always in the DOM
+    // (disabled/aria-disabled until the preview loads), so a bare findByRole
+    // for either can resolve before the preview GET settles — racing
+    // user.clear()/user.type() against a still-disabled textarea. Anchor on
+    // the receipt, which only renders once the preview has actually arrived.
+    await screen.findByTestId('import-receipt-totals');
+    const description = screen.getByRole('textbox', { name: /description/i });
     await user.clear(description);
     await user.type(description, 'Hélices de rechange');
     await user.click(screen.getByRole('button', { name: /^import\b/i }));
@@ -121,7 +127,11 @@ describe('ImportQuoteDrawer', () => {
     expect(cta).toHaveAttribute('aria-disabled', 'true');
     await user.click(cta);
     expect(onImport).not.toHaveBeenCalled();
-    expect(screen.getAllByText(/no aito 3d service lines/i).length).toBeGreaterThan(0);
+    // The button is in the DOM (aria-disabled) before the preview GET
+    // settles, so the click can land ahead of the fetch; findAllByText
+    // (rather than a bare getAllByText) waits for the preview — and thus
+    // the no-service-lines copy — to actually land before asserting on it.
+    expect((await screen.findAllByText(/no aito 3d service lines/i)).length).toBeGreaterThan(0);
   });
 
   it('an empty description blocks import and the click reveals the checklist miss', async () => {
@@ -130,7 +140,11 @@ describe('ImportQuoteDrawer', () => {
     render(<ImportQuoteDrawer onClose={vi.fn()} onImport={onImport} />);
     await pickTheQuote(user);
 
-    const description = await screen.findByRole('textbox', { name: /description/i });
+    // See the "submits the edited description" test: wait for the preview
+    // (and thus an enabled textarea) before clearing it, rather than racing
+    // a bare findByRole against a still-disabled element.
+    await screen.findByTestId('import-receipt-totals');
+    const description = screen.getByRole('textbox', { name: /description/i });
     await user.clear(description);
     const cta = screen.getByRole('button', { name: /^import\b/i });
     expect(cta).toHaveAttribute('aria-disabled', 'true');
@@ -172,7 +186,10 @@ describe('ImportQuoteDrawer', () => {
     expect(cta).toHaveAttribute('aria-disabled', 'true');
     await user.click(cta);
     expect(onImport).not.toHaveBeenCalled();
-    expect(screen.getAllByText(/already imported as project #42/i).length).toBeGreaterThan(0);
+    // Same preview-vs-click race as the no-service-lines test above:
+    // findAllByText waits for the preview to actually land instead of
+    // asserting on whatever is in the DOM the instant the click resolves.
+    expect((await screen.findAllByText(/already imported as project #42/i)).length).toBeGreaterThan(0);
   });
 
   it('lists skipped lines inside the receipt with the totals row', async () => {
