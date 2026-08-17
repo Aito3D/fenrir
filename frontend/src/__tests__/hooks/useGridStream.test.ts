@@ -62,6 +62,18 @@
  * loadedPrinters by handleWorkerMessage before the timer fires); one that
  * never does surfaces in errorSet once the window elapses — unless it's
  * currently off-screen, composing with T-049's invisible exemption.
+ *
+ * T-051 (2026-08-16, user-approved behavior change): pipeline.workerRestarts
+ * (the MAX_WORKER_RESTARTS=3 lifetime budget backing the terminal-error
+ * latch above) was previously never replenished — on a wall left running
+ * for days, three worker stalls that each successfully recovered would
+ * permanently exhaust the budget, so a later fourth stall skipped
+ * restarting and went straight to the terminal errorSet latch even though
+ * the worker had been healthy in between. It's now reset to 0 (a) in
+ * handleWorkerMessage once a restarted worker delivers a decoded frame
+ * again, and (b) alongside workerExhausted on every successful network
+ * reconnect — so only *consecutive, unrecovered* stalls still exhaust the
+ * budget and latch the terminal state, exactly as before.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -807,7 +819,7 @@ describe('useGridStream', () => {
     unmount();
   });
 
-  it('marks every tile with a terminal error once worker restarts are exhausted, even while frames keep arriving off the network', async () => {
+  it('marks every tile with a terminal error once worker restarts are exhausted, even while frames keep arriving off the network (also T-051 regression pin: consecutive unrecovered stalls still latch)', async () => {
     vi.useFakeTimers();
     const jpeg = new Uint8Array([1, 2, 3]);
     const { stream, push } = openPushableStream();
@@ -850,6 +862,162 @@ describe('useGridStream', () => {
     expect(workerInstances[0].terminate).toHaveBeenCalledTimes(1);
     expect(workerInstances[1].terminate).toHaveBeenCalledTimes(1);
     expect(workerInstances[2].terminate).toHaveBeenCalledTimes(1);
+
+    unmount();
+  });
+
+  it('replenishes the worker-restart budget once a restarted worker delivers a decoded frame again, so a 4th stall still restarts instead of latching a terminal error (T-051)', async () => {
+    vi.useFakeTimers();
+    const jpeg = new Uint8Array([1, 2, 3]);
+    const { stream, push } = openPushableStream();
+    const fetchMock = vi.fn().mockResolvedValue(fakeResponse(stream));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1', gridParamsKey: '', restartKey: 0 }),
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // Deliver one decoded frame from whichever worker is currently active —
+    // this is the "restarted worker recovers" signal the fix listens for.
+    const decodeOnLatestWorker = () => {
+      const worker = workerInstances[workerInstances.length - 1];
+      const bitmap = { close: vi.fn(), width: 1, height: 1 };
+      act(() => {
+        worker.onmessage?.({ data: { type: 'frame', printerId: 1, bitmap } } as MessageEvent);
+      });
+    };
+
+    // Keep raw network frames flowing 1s at a time (satisfies the health
+    // monitor's "data flowing" check) until a new worker instance appears
+    // (a restart happened). Capped well above the known cadence so a
+    // regression that stops restarting fails loudly instead of hanging.
+    const driveUntilRestart = async (previousCount: number) => {
+      let elapsed = 0;
+      while (workerInstances.length === previousCount && elapsed < 60_000) {
+        for (let i = 0; i < 10; i++) push(encodeGridFrame(1, jpeg));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1000);
+        });
+        elapsed += 1000;
+      }
+      expect(workerInstances.length).toBeGreaterThan(previousCount);
+    };
+
+    // Three stall -> restart -> recover cycles. Each one burns a restart,
+    // but recovering (a decoded frame from the replacement worker) resets
+    // the budget back to 0, so it never accumulates toward
+    // MAX_WORKER_RESTARTS (3) across cycles.
+    for (let cycle = 0; cycle < 3; cycle++) {
+      await driveUntilRestart(workerInstances.length);
+      decodeOnLatestWorker();
+      expect(result.current.errorSet.size).toBe(0);
+    }
+
+    // A 4th stall: without the fix, workerRestarts would already sit at 3
+    // (MAX_WORKER_RESTARTS) here, so the health monitor would skip
+    // restarting entirely and go straight to the terminal errorSet latch
+    // instead of spinning up a 5th worker instance.
+    const before4th = workerInstances.length;
+    await driveUntilRestart(before4th);
+
+    expect(result.current.errorSet.size).toBe(0);
+    expect(workerInstances.length).toBe(before4th + 1);
+
+    unmount();
+  });
+
+  it('resets the worker-restart budget on a successful network reconnect, so a stalled worker gets the full restart budget again afterward (T-051)', async () => {
+    vi.useFakeTimers();
+    const jpeg = new Uint8Array([1, 2, 3]);
+    const { stream: stream1, push: push1, error: dropStream1 } = openPushableStream();
+    const { stream: stream2, push: push2 } = openPushableStream();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(fakeResponse(stream1))
+      .mockResolvedValueOnce(fakeResponse(stream2));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1', gridParamsKey: '', restartKey: 0 }),
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // Never decoding a frame for printer 1 anywhere in this test means it
+    // never joins loadedPrinters, so it stays inside the mount-time startup
+    // timeout's and the post-reconnect grace timer's STREAM_ERROR_MS (45s)
+    // windows the whole time — bound the total time this test spends
+    // driving stalls well under 45s so neither of those unrelated timers
+    // fires and pollutes errorSet independently of the restart-budget logic
+    // under test here.
+    const driveUntilRestart = async (push: (c: Uint8Array) => void, previousCount: number) => {
+      let elapsed = 0;
+      while (workerInstances.length === previousCount && elapsed < 20_000) {
+        for (let i = 0; i < 10; i++) push(encodeGridFrame(1, jpeg));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1000);
+        });
+        elapsed += 1000;
+      }
+      expect(workerInstances.length).toBeGreaterThan(previousCount);
+    };
+
+    // Burn 1 of the 3 lifetime restarts before ever reconnecting. The
+    // worker never decodes a frame in this phase, so nothing here would
+    // reset the budget on its own — only the reconnect below should.
+    await driveUntilRestart(push1, workerInstances.length);
+
+    // Drop the connection and let it reconnect at the network level.
+    await act(async () => {
+      dropStream1(new Error('network drop'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RECONNECT_BASE_DELAY_MS + 100);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    // Post-reconnect, the worker still never decodes. Mutation proof:
+    // without resetting workerRestarts alongside workerExhausted on
+    // reconnect, the budget would already sit at 1/3 here, so only 2 more
+    // restarts would be available and the 3rd driveUntilRestart call below
+    // would fail its own "a new worker instance appeared" assertion — the
+    // health monitor would skip straight to the terminal errorSet latch
+    // instead of restarting a 3rd time. With the fix the full 3-restart
+    // budget is available again post-reconnect.
+    await driveUntilRestart(push2, workerInstances.length); // 1st post-reconnect restart
+    expect(result.current.errorSet.size).toBe(0);
+    await driveUntilRestart(push2, workerInstances.length); // 2nd post-reconnect restart
+    expect(result.current.errorSet.size).toBe(0);
+    await driveUntilRestart(push2, workerInstances.length); // 3rd post-reconnect restart
+    expect(result.current.errorSet.size).toBe(0);
+
+    // A 4th consecutive stall post-reconnect (no recovery in between)
+    // finally exhausts the replenished budget — pinning that the reset is
+    // bounded, not a way to dodge the terminal state forever. Also assert
+    // no further worker instance is spun up: this test's printer never
+    // joins loadedPrinters (it never decodes), so the unrelated mount-time
+    // startup-timeout / reconnect-grace-timer (both STREAM_ERROR_MS-based,
+    // see file-header T-050 note) would independently populate errorSet
+    // around the same wall-clock point — checking that no 4th post-reconnect
+    // worker was created is what actually pins the exhaustion path here,
+    // not just an errorSet size coincidence.
+    const instancesBeforeFinalStall = workerInstances.length;
+    let elapsed = 0;
+    while (result.current.errorSet.size === 0 && elapsed < 20_000) {
+      for (let i = 0; i < 10; i++) push2(encodeGridFrame(1, jpeg));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      elapsed += 1000;
+    }
+    expect(result.current.errorSet).toEqual(new Set([1]));
+    expect(workerInstances.length).toBe(instancesBeforeFinalStall);
 
     unmount();
   });

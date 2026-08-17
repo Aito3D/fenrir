@@ -270,6 +270,17 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
       pipeline.framesFromWorker++;
       pipeline.lastWorkerFrameTime = performance.now();
 
+      // A decoded frame proves the current worker (restarted or not) is
+      // actually delivering again — replenish the restart budget so a wall
+      // left running for days can survive more than MAX_WORKER_RESTARTS
+      // stalls total, as long as each restart is followed by recovery. A
+      // worker that stalls again immediately after restart without ever
+      // delivering a frame never reaches this branch, so consecutive
+      // unrecovered stalls still exhaust the budget exactly as before.
+      if (pipeline.workerRestarts > 0) {
+        pipeline.workerRestarts = 0;
+      }
+
       // A decoded frame proves this printer is alive — always update tracking
       // and clear error/reconnecting/loading state, even if canvas isn't mounted.
       // The stats interval recomputes the "active" count from this timestamp
@@ -549,6 +560,10 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
         pipeline.lastParseTime = 0;
         pipeline.stallPingPending = false;
         pipeline.workerExhausted = false;
+        // Reconnecting at the network level also earns a fresh restart
+        // budget — a wall that survived to reconnect shouldn't carry over
+        // restart counts from before the outage.
+        pipeline.workerRestarts = 0;
 
         const reader = res.body.getReader();
         readerRef = reader;

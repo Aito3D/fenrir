@@ -25,6 +25,16 @@
  * same path a fetch/network failure uses (`hasError` + `onError`). The
  * counter resets on every successful decode, so intermittent corruption in
  * an otherwise-healthy stream never trips it.
+ *
+ * T-052 (2026-08-17, user-approved behavior change): the T-028 budget above
+ * was terminal for callers that wire no `onError` (e.g. StreamOverlayPage) —
+ * once tripped, the canvas stayed frozen forever with no reconnect attempt.
+ * The hook now self-restarts with a bounded, backed-off retry when (and only
+ * when) no `onError` handler is supplied; callers that do supply `onError`
+ * (EmbeddedCameraViewer, CameraPage via useStreamReconnect) keep the exact
+ * prior behavior — abort + a single `onError` call, no internal restart —
+ * since they own their own reconnect machinery. These tests use fake timers
+ * to drive the backoff deterministically without any wall-clock sleep.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -32,6 +42,23 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { useMjpegStream } from '../../hooks/useMjpegStream';
 
 const MAX_CONSECUTIVE_DECODE_FAILURES = 20;
+const SELF_RESTART_INITIAL_DELAY_MS = 2000;
+
+/**
+ * Advance the fake clock in small steps, giving pending promise chains (the
+ * hook's `await reader.read()` / `await createImageBitmap()` loop) a chance
+ * to flush between each step, until `predicate` is true. Fake timers only
+ * mock `setTimeout`/`setInterval`, not Promise microtasks, but
+ * `vi.advanceTimersByTimeAsync` interleaves a microtask flush with each
+ * timer tick, so stepping repeatedly drains both without any real delay.
+ */
+async function pollUntil(predicate: () => boolean, { stepMs = 10, maxSteps = 800 } = {}) {
+  for (let i = 0; i < maxSteps; i++) {
+    if (predicate()) return;
+    await vi.advanceTimersByTimeAsync(stepMs);
+  }
+  throw new Error('pollUntil: condition was not met before maxSteps was reached');
+}
 
 /** One MJPEG frame: SOI marker, one payload byte (the id), EOI marker. */
 function encodeJpegFrame(id: number): Uint8Array {
@@ -81,6 +108,7 @@ describe('useMjpegStream', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it('clears isLoading and fires onFirstFrame once a frame decodes successfully', async () => {
@@ -227,5 +255,124 @@ describe('useMjpegStream', () => {
     expect(onError).not.toHaveBeenCalled();
 
     unmount();
+  });
+
+  it('T-052: self-restarts after a backoff when no onError handler is supplied, and resumes once the new stream decodes', async () => {
+    vi.useFakeTimers();
+
+    const failingFrames = Array.from({ length: MAX_CONSECUTIVE_DECODE_FAILURES }, (_, i) => encodeJpegFrame(i + 1));
+    const goodFrame = encodeJpegFrame(200);
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(fakeResponse(openStreamFromChunks([concatFrames(failingFrames)])))
+      .mockResolvedValueOnce(fakeResponse(openStreamFromChunks([concatFrames([goodFrame])])));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const bitmap = fakeBitmap();
+    let decodeCalls = 0;
+    vi.stubGlobal(
+      'createImageBitmap',
+      vi.fn().mockImplementation(() => {
+        decodeCalls += 1;
+        // Every frame from the first (failing) attempt is undecodable; the
+        // single frame from the second (post-restart) attempt decodes fine.
+        if (decodeCalls <= MAX_CONSECUTIVE_DECODE_FAILURES) return Promise.reject(new Error('not a JPEG'));
+        return Promise.resolve(bitmap);
+      }),
+    );
+
+    const onFirstFrame = vi.fn();
+    // No onError — this mirrors StreamOverlayPage's bare useMjpegStream call.
+    const { result, unmount } = renderHook(() =>
+      useMjpegStream({ url: '/printers/1/camera/stream', canvasRef: nullCanvasRef, onFirstFrame }),
+    );
+
+    // The first attempt trips the decode budget almost immediately (no real
+    // timer involved yet — just the frame-by-frame decode loop flushing).
+    await pollUntil(() => result.current.hasError === true, { maxSteps: 50 });
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.isConnected).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Nothing should happen before the backoff elapses.
+    await vi.advanceTimersByTimeAsync(SELF_RESTART_INITIAL_DELAY_MS - 100);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Once the backoff elapses, the hook restarts on its own and the new
+    // stream's single good frame clears loading/error and resumes the canvas.
+    await pollUntil(
+      () => result.current.isLoading === false && result.current.hasError === false && result.current.isConnected,
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(onFirstFrame).toHaveBeenCalledTimes(1);
+
+    unmount();
+  });
+
+  it('T-052: a caller that supplies onError keeps exclusive control — no internal self-restart fires', async () => {
+    vi.useFakeTimers();
+
+    const failingFrames = Array.from({ length: MAX_CONSECUTIVE_DECODE_FAILURES }, (_, i) => encodeJpegFrame(i + 1));
+    // Every fetch (were the hook ever to call it again) returns the same
+    // always-failing stream, so a stray internal restart would be visible as
+    // a second decode-budget trip / second onError call.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(fakeResponse(openStreamFromChunks([concatFrames(failingFrames)])));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('createImageBitmap', vi.fn().mockRejectedValue(new Error('not a JPEG')));
+
+    const onError = vi.fn();
+    const { result, unmount } = renderHook(() =>
+      useMjpegStream({ url: '/printers/1/camera/stream', canvasRef: nullCanvasRef, onError }),
+    );
+
+    await pollUntil(() => result.current.hasError === true, { maxSteps: 50 });
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Advance well past the backoff window (and its cap) the onError-less
+    // path would use — behavior must stay exactly as before T-052: the
+    // caller (e.g. useStreamReconnect) owns recovery, so the hook must not
+    // fetch again on its own.
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(result.current.hasError).toBe(true);
+
+    unmount();
+  });
+
+  it('T-052: unmounting during the backoff window cancels the pending self-restart', async () => {
+    vi.useFakeTimers();
+
+    const failingFrames = Array.from({ length: MAX_CONSECUTIVE_DECODE_FAILURES }, (_, i) => encodeJpegFrame(i + 1));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(fakeResponse(openStreamFromChunks([concatFrames(failingFrames)])));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('createImageBitmap', vi.fn().mockRejectedValue(new Error('not a JPEG')));
+
+    // No onError — the self-restart-eligible path.
+    const { result, unmount } = renderHook(() =>
+      useMjpegStream({ url: '/printers/1/camera/stream', canvasRef: nullCanvasRef }),
+    );
+
+    await pollUntil(() => result.current.hasError === true, { maxSteps: 50 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Unmount partway through the backoff window, before the scheduled
+    // restart would otherwise fire.
+    await vi.advanceTimersByTimeAsync(SELF_RESTART_INITIAL_DELAY_MS / 2);
+    unmount();
+
+    // Advance well past when the restart would have fired had it not been
+    // cancelled on unmount.
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

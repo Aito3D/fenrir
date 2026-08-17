@@ -13,6 +13,15 @@ const JPEG_EOI_LO = 0xd9;
 // quickly, but larger than 1 so an occasional bad frame in an otherwise-healthy
 // stream doesn't trip it — the counter resets on every successful decode.
 const MAX_CONSECUTIVE_DECODE_FAILURES = 20;
+// T-052: when a caller wires no `onError` handler, nobody else will retry —
+// the hook self-heals instead of leaving the canvas frozen after the budget
+// above trips. Callers that *do* supply `onError` own their own reconnect
+// machinery (e.g. useStreamReconnect); this backoff only ever runs for the
+// onError-less case, so it never races an external retry loop. Delay grows
+// from a few seconds to a cap, then holds there — acceptable for a kiosk
+// overlay that should keep trying indefinitely.
+const SELF_RESTART_INITIAL_DELAY_MS = 2000;
+const SELF_RESTART_MAX_DELAY_MS = 15000;
 
 interface UseMjpegStreamOptions {
   /** Stream URL path (relative to API_BASE, e.g. `/printers/1/camera/stream?fps=15`) */
@@ -54,10 +63,22 @@ export function useMjpegStream({
   onFirstFrameRef.current = onFirstFrame;
   onErrorRef.current = onError;
 
+  // T-052 self-restart bookkeeping — see SELF_RESTART_* constants above.
+  const selfRestartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selfRestartAttemptRef = useRef(0);
+
   const stopStream = useCallback(() => {
     if (controllerRef.current) {
       controllerRef.current.abort();
       controllerRef.current = null;
+    }
+    // Cancel any pending self-restart — covers restart()/stop()/unmount/the
+    // enabled-or-url effect cleanup, all of which route through here, so a
+    // scheduled retry from a stale generation never fires (T-023 was this
+    // exact class of leaked-timer bug).
+    if (selfRestartTimerRef.current) {
+      clearTimeout(selfRestartTimerRef.current);
+      selfRestartTimerRef.current = null;
     }
   }, []);
 
@@ -170,6 +191,10 @@ export function useMjpegStream({
               }
               bitmap.close();
               consecutiveDecodeFailures = 0;
+              // A frame actually decoded — the stream is healthy again, so a
+              // future budget trip should back off from scratch rather than
+              // continuing to grow off a now-stale attempt count.
+              selfRestartAttemptRef.current = 0;
 
               if (!firstFrameDelivered && mountedRef.current) {
                 firstFrameDelivered = true;
@@ -199,6 +224,30 @@ export function useMjpegStream({
             setHasError(true);
             setIsConnected(false);
             onErrorRef.current?.();
+
+            // No external error handler means no one else will retry this
+            // stream (see T-052 comment on SELF_RESTART_* above) — schedule
+            // a bounded, backed-off self-restart so the canvas doesn't stay
+            // frozen forever. Callers with onError keep exclusive control of
+            // recovery (e.g. useStreamReconnect), so this never runs for them.
+            if (!onErrorRef.current) {
+              const attempt = selfRestartAttemptRef.current;
+              selfRestartAttemptRef.current = attempt + 1;
+              const delay = Math.min(
+                SELF_RESTART_INITIAL_DELAY_MS * Math.pow(2, attempt),
+                SELF_RESTART_MAX_DELAY_MS,
+              );
+              // Cancellation lives entirely in stopStream() (unmount/restart/
+              // stop/enabled-off all route through it) — by the time this
+              // fires, if any of those happened, clearTimeout already
+              // prevented it from running at all, so no extra guard is
+              // needed here.
+              selfRestartTimerRef.current = setTimeout(() => {
+                selfRestartTimerRef.current = null;
+                generationRef.current += 1;
+                startStream(generationRef.current);
+              }, delay);
+            }
           }
           return;
         }

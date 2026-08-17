@@ -29,6 +29,10 @@ interface UseWebRTCStreamReturn {
 }
 
 const CONNECTION_TIMEOUT = 30_000;
+// Half the post-answer connection watchdog — if go2rtc never answers the SDP
+// offer, this bounds the hang so the tile surfaces an error and enters
+// backoff retry instead of spinning forever.
+const NEGOTIATION_TIMEOUT_MS = 15_000;
 const FRAME_CHECK_INTERVAL = 1_000;
 
 export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restartKey }: UseWebRTCStreamOptions): UseWebRTCStreamReturn {
@@ -60,6 +64,7 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
   // Frame monitoring refs
   const lastFrameTimeRef = useRef(0);
   const connectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const negotiationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const frameMonitorRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const rvfcHandleRef = useRef<number | null>(null);
   const reconnectScheduledRef = useRef(false);
@@ -93,6 +98,10 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
     if (connectionTimeoutRef.current) {
       clearTimeout(connectionTimeoutRef.current);
       connectionTimeoutRef.current = null;
+    }
+    if (negotiationTimeoutRef.current) {
+      clearTimeout(negotiationTimeoutRef.current);
+      negotiationTimeoutRef.current = null;
     }
     stopFrameMonitor();
     cleanupCountdown();
@@ -259,8 +268,26 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // Send offer to backend, get answer from go2rtc
-      const answer = await api.webrtcOffer(printerId, offer.sdp!);
+      // Send offer to backend, get answer from go2rtc — bounded by
+      // NEGOTIATION_TIMEOUT_MS so a go2rtc that never answers surfaces an
+      // error and enters backoff retry instead of hanging the tile forever.
+      // The timer is cleared unconditionally by cleanup() at the top of the
+      // next connect() call, so a superseded/stale attempt's timer can never
+      // fire against a fresher connection (see T-054 for the catch block's
+      // own generation-guard gap, which this does not touch).
+      const answer = await Promise.race([
+        api.webrtcOffer(printerId, offer.sdp!),
+        new Promise<never>((_resolve, reject) => {
+          negotiationTimeoutRef.current = setTimeout(() => {
+            negotiationTimeoutRef.current = null;
+            reject(new Error('WebRTC SDP negotiation timed out'));
+          }, NEGOTIATION_TIMEOUT_MS);
+        }),
+      ]);
+      if (negotiationTimeoutRef.current) {
+        clearTimeout(negotiationTimeoutRef.current);
+        negotiationTimeoutRef.current = null;
+      }
       if (!mountedRef.current || pcRef.current !== pc) return;
 
       // Set remote answer (go2rtc uses ICE-lite, no trickle ICE)

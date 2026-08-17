@@ -1773,3 +1773,15 @@ T-047: session expiry (auth:expired 401 path) now clears the persisted new-proje
 ## T-048 — 2026-08-16 — user-approved behavior change
 
 T-048: Aito board write controls (drag-move, flag, quote-status, send-quote, task editing, restore) now hidden/disabled without aito:update (task add/remove follow their backend permissions); auth-disabled installs unaffected. user-approved 2026-08-16.
+
+## T-051 — 2026-08-16 — user-approved behavior change
+
+T-051: decode-worker restart budget replenishes when a restarted worker recovers (and on stream reconnect); only consecutive unrecovered stalls latch the terminal "Camera unavailable" state. user-approved 2026-08-16.
+
+## T-052 — 2026-08-16 — user-approved behavior change
+
+T-052: useMjpegStream self-recovers after the decode-failure budget trips when the caller supplies no onError (bounded backoff, generation-guarded); callers with onError keep exclusive control of recovery. user-approved 2026-08-16.
+
+## T-053 — 2026-08-16 — user-approved behavior change
+
+T-053: WebRTC SDP negotiation now times out (bounded) when go2rtc never answers; the tile shows the error state and enters backoff retry instead of spinning forever. user-approved 2026-08-16.
