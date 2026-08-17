@@ -67,6 +67,7 @@ describe('DoneGrid', () => {
   it('orders the newest completion first', () => {
     render(
       <DoneGrid
+        canUpdate
         projects={[
           card({ id: 1, description: 'Oldest', updated_at: '2026-07-01T10:00:00Z' }),
           card({ id: 2, description: 'Newest', updated_at: '2026-07-20T10:00:00Z' }),
@@ -92,6 +93,7 @@ describe('DoneGrid', () => {
     // compare ranks 'Z' above the bare string and yields ['First', 'Second'].
     render(
       <DoneGrid
+        canUpdate
         projects={[
           card({ id: 1, description: 'First', updated_at: '2026-07-20T10:00:00Z' }),
           card({ id: 2, description: 'Second', updated_at: '2026-07-20T10:00:00' }),
@@ -107,6 +109,7 @@ describe('DoneGrid', () => {
   it('filters on the query', () => {
     render(
       <DoneGrid
+        canUpdate
         projects={[card({ id: 1, description: 'Support GoPro' }), card({ id: 2, description: 'Boîtier' })]}
         query="gopro"
         onExpandCard={vi.fn()}
@@ -117,18 +120,18 @@ describe('DoneGrid', () => {
   });
 
   it('shows the empty state when there is nothing done', () => {
-    render(<DoneGrid projects={[]} query="" onExpandCard={vi.fn()} />);
+    render(<DoneGrid canUpdate projects={[]} query="" onExpandCard={vi.fn()} />);
     expect(screen.getByText(/no finished projects|aucun projet terminé/i)).toBeInTheDocument();
   });
 
   it('shows a no-results state, not the empty state, when a search hides everything', () => {
-    render(<DoneGrid projects={[card()]} query="zzzz" onExpandCard={vi.fn()} />);
+    render(<DoneGrid canUpdate projects={[card()]} query="zzzz" onExpandCard={vi.fn()} />);
     expect(screen.getByText(/no projects match|aucun projet ne correspond/i)).toBeInTheDocument();
     expect(screen.queryByText(/no finished projects|aucun projet terminé/i)).not.toBeInTheDocument();
   });
 
   it('offers restore on a released card', () => {
-    render(<DoneGrid projects={[card({ move_lock: null })]} query="" onExpandCard={vi.fn()} />);
+    render(<DoneGrid canUpdate projects={[card({ move_lock: null })]} query="" onExpandCard={vi.fn()} />);
     expect(screen.getByRole('button', { name: /move back to finish|renvoyer en finition/i })).toBeEnabled();
   });
 
@@ -144,7 +147,7 @@ describe('DoneGrid', () => {
     vi.spyOn(api, 'moveAitoProject').mockImplementation(() => new Promise(() => {}));
     try {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-      render(<DoneGrid projects={[card({ id: 4, move_lock: null })]} query="" onExpandCard={vi.fn()} />);
+      render(<DoneGrid canUpdate projects={[card({ id: 4, move_lock: null })]} query="" onExpandCard={vi.fn()} />);
       const button = screen.getByRole('button', { name: /move back to finish|renvoyer en finition/i });
 
       await user.pointer({ keys: '[MouseLeft>]', target: button });
@@ -167,7 +170,7 @@ describe('DoneGrid', () => {
   });
 
   it('offers no restore on a declined card the rules pin to Done', () => {
-    render(<DoneGrid projects={[card({ move_lock: 'declined' })]} query="" onExpandCard={vi.fn()} />);
+    render(<DoneGrid canUpdate projects={[card({ move_lock: 'declined' })]} query="" onExpandCard={vi.fn()} />);
     expect(
       screen.queryByRole('button', { name: /move back to finish|renvoyer en finition/i }),
     ).not.toBeInTheDocument();
@@ -175,7 +178,7 @@ describe('DoneGrid', () => {
 
   it('has no drag handle', () => {
     // `aito.dragHandle` is 'Drag to reorder' / 'Glisser pour réordonner'.
-    render(<DoneGrid projects={[card()]} query="" onExpandCard={vi.fn()} />);
+    render(<DoneGrid canUpdate projects={[card()]} query="" onExpandCard={vi.fn()} />);
     expect(screen.queryByRole('button', { name: /drag|glisser/i })).not.toBeInTheDocument();
   });
 
@@ -183,7 +186,7 @@ describe('DoneGrid', () => {
     const onExpandCard = vi.fn();
     const { default: userEvent } = await import('@testing-library/user-event');
     const user = userEvent.setup();
-    render(<DoneGrid projects={[card({ id: 7 })]} query="" onExpandCard={onExpandCard} />);
+    render(<DoneGrid canUpdate projects={[card({ id: 7 })]} query="" onExpandCard={onExpandCard} />);
     await user.click(screen.getByRole('button', { name: /Support de caméra/ }));
     expect(onExpandCard).toHaveBeenCalledWith(7);
   });

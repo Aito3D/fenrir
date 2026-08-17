@@ -89,6 +89,19 @@ interface ProjectDetailPanelProps {
   /** Omitted for a project that is already in the trash — see AitoPage. The
    *  delete button is then not rendered at all. */
   onDelete?: () => void;
+  /** Gates the task list's "+ Add task" affordance — POST /{project_id}/tasks
+   *  enforces Permission.AITO_CREATE, a different permission than editing or
+   *  removing an existing task. Threaded straight into TaskEditor. */
+  canCreate: boolean;
+  /** Gates every control that mutates an EXISTING project: the flag chip,
+   *  the quote-status actions (mark sent / accept / decline) and send-quote
+   *  in the footer and Quote card. Every one of those routes enforces
+   *  Permission.AITO_UPDATE (routes/aito.py) — see AitoPage's own doc. */
+  canUpdate: boolean;
+  /** Gates the task list's per-row remove control — DELETE /tasks/{task_id}
+   *  enforces Permission.AITO_DELETE, independent of `onDelete` above (which
+   *  gates deleting the whole PROJECT, not one of its tasks). */
+  canDelete: boolean;
 }
 
 type SaveState = 'idle' | 'saving' | 'saved';
@@ -236,6 +249,7 @@ function PanelHeader({
   onSaveSocial,
   onCancelSocial,
   socialSaving,
+  canUpdate,
 }: {
   project: AitoProject;
   currency: string;
@@ -269,6 +283,9 @@ function PanelHeader({
   onSaveSocial: () => void;
   onCancelSocial: () => void;
   socialSaving: boolean;
+  /** Gates FlagControl — PATCH /{project_id}/flag enforces AITO_UPDATE. See
+   *  ProjectDetailPanelProps' own doc. */
+  canUpdate: boolean;
 }) {
   const { t } = useTranslation();
   // Same query key ShippingCard and the create drawer use, so this shares
@@ -391,9 +408,11 @@ function PanelHeader({
               not its button — is what lands in this flex row, so the class
               cannot be passed through `className`; without it a long client
               or island label squeezes "Marquer urgent" out of shape. */}
-          <span className="flex-shrink-0">
-            <FlagControl project={project} />
-          </span>
+          {canUpdate && (
+            <span className="flex-shrink-0">
+              <FlagControl project={project} />
+            </span>
+          )}
         </div>
         {/* 1.35rem at -.01em, not `text-xl`: the reference title is a step
             larger than Tailwind's 1.25rem, and the negative tracking is what
@@ -656,7 +675,7 @@ function SaveIndicator({ state }: { state: SaveState }) {
 /** Everything a card cannot fit: the untruncated description, the timestamps
  *  and the stage. Shares AITO_CARD_VT_NAME with the card it grew out of, so the
  *  browser morphs one into the other (see useCardMorph). */
-export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetailPanelProps) {
+export function ProjectDetailPanel({ project, onClose, onDelete, canCreate, canUpdate, canDelete }: ProjectDetailPanelProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
 
@@ -957,6 +976,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
           onSaveSocial={saveSocial}
           onCancelSocial={() => setEditingSocial(false)}
           socialSaving={socialMutation.isPending}
+          canUpdate={canUpdate}
         />
 
         {/* Who else has this project open right now. Filtered to exclude
@@ -1133,7 +1153,8 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                       what got it removed. */}
                   <div className="flex gap-2 mt-3">
                     <QuotePrintButton project={project} withLabel className="flex-1 justify-center" />
-                    <SendQuoteButton project={project} className="flex-1 justify-center" />
+                    {/* POST /{project_id}/quote-email enforces AITO_UPDATE. */}
+                    {canUpdate && <SendQuoteButton project={project} className="flex-1 justify-center" />}
                   </div>
                   </>
                   )}
@@ -1260,6 +1281,11 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
                 canTick={project.quote_status === 'accepted'}
                 pendingUids={pendingTaskUids}
                 showHeader={false}
+                // POST /{project_id}/tasks enforces AITO_CREATE, DELETE
+                // /tasks/{task_id} enforces AITO_DELETE — a different
+                // permission each, independent of `canUpdate` above.
+                canCreate={canCreate}
+                canDelete={canDelete}
               />
             </div>
 
@@ -1304,7 +1330,8 @@ export function ProjectDetailPanel({ project, onClose, onDelete }: ProjectDetail
               finding the card again. The two blocks are mutually exclusive by
               construction (see ProjectDoneAction), so this never crowds. */}
           <span className="flex-1" />
-          <QuoteStatusActions project={project} layout="row" />
+          {/* POST /{project_id}/quote-status enforces AITO_UPDATE. */}
+          {canUpdate && <QuoteStatusActions project={project} layout="row" />}
           <ProjectDoneAction project={project} />
         </div>
       </div>

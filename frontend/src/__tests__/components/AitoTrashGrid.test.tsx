@@ -73,6 +73,7 @@ const show = (props: Partial<React.ComponentProps<typeof TrashGrid>> = {}) =>
       isError={false}
       onRetry={vi.fn()}
       onExpandCard={vi.fn()}
+      canUpdate
       {...props}
     />,
   );

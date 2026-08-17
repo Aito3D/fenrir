@@ -136,6 +136,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const handleAuthExpired = () => {
       if (!mountedRef.current) return;
       setUser(null);
+      // Session is definitively over (invalid/expired token) — clear the
+      // new-project draft (client name/email/phone) the same way logout()
+      // does (T-021), so it can't be read back by the next person on this
+      // browser profile after their token expires or is revoked (T-047).
+      clearNewProjectDraft();
     };
     window.addEventListener('auth:expired', handleAuthExpired);
 

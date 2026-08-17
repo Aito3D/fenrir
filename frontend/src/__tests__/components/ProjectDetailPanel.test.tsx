@@ -67,7 +67,7 @@ const project: AitoProject = {
 };
 
 const show = (overrides: Partial<AitoProject> = {}) =>
-  render(<ProjectDetailPanel project={{ ...project, ...overrides }} onClose={vi.fn()} onDelete={vi.fn()} />);
+  render(<ProjectDetailPanel canCreate canUpdate canDelete project={{ ...project, ...overrides }} onClose={vi.fn()} onDelete={vi.fn()} />);
 
 // Mirrors AitoPage.tsx: `AitoPage` owns a `useQuery(['aito-projects'])`
 // (AitoPage.tsx:83) — no longer the only one in production; `QuoteCombobox`
@@ -86,7 +86,7 @@ const show = (overrides: Partial<AitoProject> = {}) =>
 function BoardHost({ showPanel, project: projectOverride }: { showPanel: boolean; project?: AitoProject }) {
   useQuery({ queryKey: ['aito-projects'], queryFn: api.getAitoProjects });
   return showPanel ? (
-    <ProjectDetailPanel project={projectOverride ?? project} onClose={vi.fn()} onDelete={vi.fn()} />
+    <ProjectDetailPanel canCreate canUpdate canDelete project={projectOverride ?? project} onClose={vi.fn()} onDelete={vi.fn()} />
   ) : null;
 }
 
@@ -817,7 +817,7 @@ describe('ProjectDetailPanel tasks', () => {
     const Host = ({ open }: { open: boolean }) => (
       <QueryClientProvider client={client}>
         <AuthProvider>
-          <ToastProvider>{open ? <ProjectDetailPanel project={acceptedProject} onClose={vi.fn()} onDelete={vi.fn()} /> : null}</ToastProvider>
+          <ToastProvider>{open ? <ProjectDetailPanel canCreate canUpdate canDelete project={acceptedProject} onClose={vi.fn()} onDelete={vi.fn()} /> : null}</ToastProvider>
         </AuthProvider>
       </QueryClientProvider>
     );
@@ -1451,7 +1451,7 @@ describe('ProjectDetailPanel tasks', () => {
       <QueryClientProvider client={client}>
         <BrowserRouter>
           <AuthProvider>
-            <ToastProvider>{open ? <ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} /> : null}</ToastProvider>
+            <ToastProvider>{open ? <ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={vi.fn()} onDelete={vi.fn()} /> : null}</ToastProvider>
           </AuthProvider>
         </BrowserRouter>
       </QueryClientProvider>
@@ -1897,7 +1897,7 @@ describe('ProjectDetailPanel activity rail', () => {
 
   it('shows the activity rail alongside the tasks', async () => {
     vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
-    render(<ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} />);
+    render(<ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={vi.fn()} onDelete={vi.fn()} />);
     expect(await screen.findByRole('region', { name: /activity/i })).toBeInTheDocument();
   });
 
@@ -1905,7 +1905,7 @@ describe('ProjectDetailPanel activity rail', () => {
     const events = vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
     vi.spyOn(api, 'updateAitoProject').mockResolvedValue({ ...project, description: 'Changed' });
     const user = userEvent.setup();
-    render(<ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} />);
+    render(<ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={vi.fn()} onDelete={vi.fn()} />);
 
     await screen.findByRole('region', { name: /activity/i });
     const before = events.mock.calls.length;
@@ -1936,7 +1936,7 @@ describe('ProjectDetailPanel footer', () => {
 
   it('still closes on Escape', async () => {
     const onClose = vi.fn();
-    render(<ProjectDetailPanel project={project} onClose={onClose} onDelete={vi.fn()} />);
+    render(<ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={onClose} onDelete={vi.fn()} />);
     await userEvent.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalled();
   });
@@ -1968,7 +1968,7 @@ describe('ProjectDetailPanel footer', () => {
   });
 
   it('omits the trash control for a project already in the trash', () => {
-    render(<ProjectDetailPanel project={project} onClose={vi.fn()} />);
+    render(<ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={vi.fn()} />);
     expect(screen.queryByRole('button', { name: /move to trash|delete project/i })).not.toBeInTheDocument();
   });
 });
@@ -2052,7 +2052,7 @@ describe('ProjectDetailPanel delete', () => {
     try {
       const onDelete = vi.fn();
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-      render(<ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={onDelete} />);
+      render(<ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={vi.fn()} onDelete={onDelete} />);
 
       const footer = screen.getByTestId('panel-footer');
       const button = within(footer).getByRole('button', { name: /move to trash|delete project/i });
@@ -2068,7 +2068,7 @@ describe('ProjectDetailPanel delete', () => {
   });
 
   it('separates the left column from the tasks on wide screens', () => {
-    const { container } = render(<ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} />);
+    const { container } = render(<ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={vi.fn()} onDelete={vi.fn()} />);
     // Task 10: the hairline `lg:border-l` dividers are gone — the panel body
     // became canvas (`bg-bambu-dark`) and every column now carries its own
     // padding, so a column's card content reads as a distinct block against
@@ -2754,7 +2754,7 @@ describe('ProjectDetailPanel presence', () => {
     registerPresenceSender(send);
 
     const { unmount } = render(
-      <ProjectDetailPanel project={project} onClose={vi.fn()} onDelete={vi.fn()} />,
+      <ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={vi.fn()} onDelete={vi.fn()} />,
     );
     expect(send).toHaveBeenCalledWith({ type: 'aito_presence', project_id: project.id });
 

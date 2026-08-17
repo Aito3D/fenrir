@@ -16,7 +16,17 @@ import type { AitoProject } from '../../api/client';
  *  Its own component because the restore mutation is per-project, and this is
  *  already the one-per-project layer — the same reason `SortableCard` owns
  *  mark-sent rather than `BoardColumn` owning one mutation per column. */
-function DoneCard({ project, onExpand }: { project: AitoProject; onExpand: () => void }) {
+function DoneCard({
+  project,
+  onExpand,
+  canUpdate,
+}: {
+  project: AitoProject;
+  onExpand: () => void;
+  /** POST /{project_id}/restore — well, `moveAitoProject` here, but the same
+   *  Permission.AITO_UPDATE guards it — see AitoPage's own doc. */
+  canUpdate: boolean;
+}) {
   const { t } = useTranslation();
   const restore = useColumnMoveMutation(project, 'finish');
   // A card whose restore failed and snapped back. On this wrapper rather than
@@ -33,7 +43,7 @@ function DoneCard({ project, onExpand }: { project: AitoProject; onExpand: () =>
           // `move_lock === null` is the rules' own release. A declined quote
           // sits here with move_lock 'declined' and cannot leave — offering a
           // button the server would 409 is worse than offering none.
-          project.move_lock === null ? (
+          project.move_lock === null && canUpdate ? (
             <HoldButton
               onHold={() => restore.mutate()}
               durationMs={restoreHoldDurationMs}
@@ -66,10 +76,14 @@ export function DoneGrid({
   projects,
   query,
   onExpandCard,
+  canUpdate,
 }: {
   projects: AitoProject[];
   query: string;
   onExpandCard: (id: number) => void;
+  /** Gates the restore-to-Finish control on every card — see DoneCard's own
+   *  doc. */
+  canUpdate: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -89,7 +103,9 @@ export function DoneGrid({
   return (
     <ArchiveGrid
       projects={visible}
-      renderCard={(project) => <DoneCard project={project} onExpand={() => onExpandCard(project.id)} />}
+      renderCard={(project) => (
+        <DoneCard project={project} onExpand={() => onExpandCard(project.id)} canUpdate={canUpdate} />
+      )}
     />
   );
 }

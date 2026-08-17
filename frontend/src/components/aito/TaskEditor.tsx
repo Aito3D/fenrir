@@ -59,6 +59,16 @@ export interface TaskEditorProps {
    *  separate questions — a row can be expanded-and-read-only, and under this
    *  prop it can also be collapsed while holding the edit slot. */
   accordion?: boolean;
+  /** Gates the "+ Add task" affordance. Optional, defaulting to true, so the
+   *  create drawer (which has no permission concept of its own — creating a
+   *  project already required aito:create to open) is unaffected; the detail
+   *  panel is the only caller that passes it explicitly, mirroring
+   *  POST /{project_id}/tasks' own Permission.AITO_CREATE. */
+  canCreate?: boolean;
+  /** Gates the per-row remove control, alongside the existing `minRows`/
+   *  `pending` checks. Optional, defaulting to true for the same reason as
+   *  `canCreate` — mirrors DELETE /tasks/{task_id}'s Permission.AITO_DELETE. */
+  canDelete?: boolean;
 }
 
 /** The task list for one Aito project: a heading, each task's `TaskRow`, "+
@@ -77,6 +87,8 @@ export function TaskEditor({
   showHeader = true,
   pendingUids,
   accordion = false,
+  canCreate = true,
+  canDelete = true,
 }: TaskEditorProps) {
   const { t } = useTranslation();
   const currency = useCurrency();
@@ -191,7 +203,9 @@ export function TaskEditor({
               // Absent (not merely disabled) while pending too, same rule as
               // `minRows` below it: the row's create hasn't landed, so there
               // is no id yet to send a DELETE for — see TaskRow's own prop doc.
-              onRemove={value.length > minRows && !pending ? () => onRemove(index) : undefined}
+              // `canDelete` is the same absent-not-disabled treatment: a user
+              // without it would only get a 403 from DELETE /tasks/{task_id}.
+              onRemove={value.length > minRows && !pending && canDelete ? () => onRemove(index) : undefined}
               editing={isEditing(task)}
               onToggleEdit={() => {
                 if (collapsed) {
@@ -217,6 +231,7 @@ export function TaskEditor({
         })}
       </div>
 
+      {canCreate && (
       <button
         type="button"
         onClick={() => {
@@ -244,6 +259,7 @@ export function TaskEditor({
         <Plus className="w-4 h-4" />
         {t('aito.addTask')}
       </button>
+      )}
     </div>
   );
 }

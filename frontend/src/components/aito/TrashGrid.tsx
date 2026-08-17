@@ -18,7 +18,17 @@ import { restoreButtonCls, restoreHoldDurationMs } from './restoreButton';
  *
  *  Its own component for the reason `DoneCard` is: the restore mutation is
  *  per-project, and this is the one-per-project layer. */
-function TrashCard({ project, onExpand }: { project: AitoProject; onExpand: () => void }) {
+function TrashCard({
+  project,
+  onExpand,
+  canUpdate,
+}: {
+  project: AitoProject;
+  onExpand: () => void;
+  /** POST /{project_id}/restore enforces Permission.AITO_UPDATE — see
+   *  AitoPage's own doc. */
+  canUpdate: boolean;
+}) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -54,23 +64,25 @@ function TrashCard({ project, onExpand }: { project: AitoProject; onExpand: () =
       // `updated_at`, because a soft delete is the last write the row took.
       footerNote={t('aito.deletedOn', { date: formatElapsedTime(project.updated_at, t) })}
       actions={
-        <HoldButton
-          onHold={() => {
-            // Drop it from the trash list too — the mutation wrapper's
-            // transform only owns the board query.
-            queryClient.setQueryData<AitoProject[]>(['aito-trash'], (prev) =>
-              prev?.filter((p) => p.id !== project.id) ?? prev,
-            );
-            restore.mutate(project);
-          }}
-          durationMs={restoreHoldDurationMs}
-          disabled={restore.isPending}
-          label={t('aito.restore')}
-          hint={t('aito.holdToConfirm')}
-          className={restoreButtonCls}
-        >
-          <Undo2 className="relative w-3.5 h-3.5" />
-        </HoldButton>
+        canUpdate ? (
+          <HoldButton
+            onHold={() => {
+              // Drop it from the trash list too — the mutation wrapper's
+              // transform only owns the board query.
+              queryClient.setQueryData<AitoProject[]>(['aito-trash'], (prev) =>
+                prev?.filter((p) => p.id !== project.id) ?? prev,
+              );
+              restore.mutate(project);
+            }}
+            durationMs={restoreHoldDurationMs}
+            disabled={restore.isPending}
+            label={t('aito.restore')}
+            hint={t('aito.holdToConfirm')}
+            className={restoreButtonCls}
+          >
+            <Undo2 className="relative w-3.5 h-3.5" />
+          </HoldButton>
+        ) : undefined
       }
     />
   );
@@ -97,6 +109,7 @@ export function TrashGrid({
   isError,
   onRetry,
   onExpandCard,
+  canUpdate,
 }: {
   projects: AitoProject[];
   query: string;
@@ -104,6 +117,8 @@ export function TrashGrid({
   isError: boolean;
   onRetry: () => void;
   onExpandCard: (id: number) => void;
+  /** Gates the restore control on every card — see TrashCard's own doc. */
+  canUpdate: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -147,7 +162,9 @@ export function TrashGrid({
   return (
     <ArchiveGrid
       projects={visible}
-      renderCard={(project) => <TrashCard project={project} onExpand={() => onExpandCard(project.id)} />}
+      renderCard={(project) => (
+        <TrashCard project={project} onExpand={() => onExpandCard(project.id)} canUpdate={canUpdate} />
+      )}
     />
   );
 }

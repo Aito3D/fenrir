@@ -307,6 +307,49 @@ describe('AuthContext', () => {
       });
     });
 
+    it('clears the persisted new-project draft when an auth:expired event is dispatched (T-047)', async () => {
+      const DRAFT_KEY = 'aito.newProjectDraft.v1';
+      // A half-finished new-project draft — including the picked client's
+      // name/email — sitting in localStorage, as the drawer would leave it.
+      localStorage.setItem(
+        DRAFT_KEY,
+        JSON.stringify({
+          tasks: [],
+          client: { id: 1, name: 'Alice Client', email: 'alice@example.com' },
+          summaryText: '',
+          summaryEdited: false,
+          summarySignature: '',
+        })
+      );
+
+      const { result } = renderHook(() => useAuth(), {
+        wrapper: createWrapper(),
+      });
+
+      await waitFor(() => {
+        expect(result.current.user).not.toBeNull();
+      });
+
+      // Positive-before: the draft is present ahead of the expiry event.
+      expect(localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+
+      // Simulate client.ts dispatching the event after a definitive 401 +
+      // token clear — the same event the "clears user" test above covers.
+      act(() => {
+        window.dispatchEvent(new CustomEvent('auth:expired'));
+      });
+
+      await waitFor(() => {
+        expect(result.current.user).toBeNull();
+      });
+      // Negative-after: session expiry wipes the draft like explicit logout
+      // does (T-021), so the next login opens an empty drawer instead of
+      // restoring the previous session's PII.
+      expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
+
+      localStorage.removeItem(DRAFT_KEY);
+    });
+
     it('does not crash when the event fires after unmount', async () => {
       const { result, unmount } = renderHook(() => useAuth(), {
         wrapper: createWrapper(),

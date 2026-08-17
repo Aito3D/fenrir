@@ -57,6 +57,11 @@ export function AitoPage() {
   const { hasPermission } = useAuth();
   const canCreate = hasPermission('aito:create');
   const canDelete = hasPermission('aito:delete');
+  // Everything that MOVES or MUTATES an existing project once it exists:
+  // dragging a card between columns, the panel's flag/quote-status/send-quote/
+  // task-edit controls, and restoring a trashed or archived card — every one
+  // of those fires Permission.AITO_UPDATE on the backend (routes/aito.py).
+  const canUpdate = hasPermission('aito:update');
   // Shares the module-level counters every optimistic board mutation feeds —
   // see that hook's own doc for why there are two. Only `isIdle` (the
   // `pendingWrites` one) is used here.
@@ -354,7 +359,7 @@ export function AitoPage() {
 
       {/* Board */}
       {view === 'done' ? (
-        <DoneGrid projects={board.done} query={search} onExpandCard={openCard} />
+        <DoneGrid projects={board.done} query={search} onExpandCard={openCard} canUpdate={canUpdate} />
       ) : view === 'trash' ? (
         <TrashGrid
           projects={trashQuery.data ?? []}
@@ -363,6 +368,7 @@ export function AitoPage() {
           isError={trashQuery.isError}
           onRetry={() => trashQuery.refetch()}
           onExpandCard={openCard}
+          canUpdate={canUpdate}
         />
       ) : (
         <DndContext
@@ -396,7 +402,12 @@ export function AitoPage() {
                   transitionConfig={reducedMotion ? null : SORTABLE_TRANSITION}
                   shouldAnimateIn={shouldAnimateIn}
                   dropDisabled={allowedDropColumns !== null && !allowedDropColumns.includes(column.id)}
-                  dragDisabled={filtering}
+                  // Board-wide filtering already disables drag (a filtered
+                  // card's index is not its real position — see BoardColumn's
+                  // own doc); a user without aito:update disables it for the
+                  // same reason a locked card can't leave its column — the
+                  // server would refuse the /move PATCH.
+                  dragDisabled={filtering || !canUpdate}
                   dragActive={dragging || dragSettling}
                 />
               </div>
@@ -463,6 +474,9 @@ export function AitoPage() {
       {expandedProject && (
         <ProjectDetailPanel
           project={expandedProject}
+          canCreate={canCreate}
+          canUpdate={canUpdate}
+          canDelete={canDelete}
           // Asked here rather than remembered, because `expandedId` is still
           // non-null at this moment: the map is still frozen and can still
           // answer. A card with a flight waiting gets the panel's own exit —

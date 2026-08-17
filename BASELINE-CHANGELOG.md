@@ -1765,3 +1765,11 @@ T-049: off-screen camera tiles are exempt from stale/degraded/error classificati
 ## T-050 — 2026-08-16 — user-approved behavior change
 
 T-050: after a grid-stream reconnect, cameras that never resume decoding now fall into the error state ("Camera unavailable") instead of freezing silently on the last frame. user-approved 2026-08-16.
+
+## T-047 — 2026-08-16 — user-approved behavior change
+
+T-047: session expiry (auth:expired 401 path) now clears the persisted new-project draft like explicit logout does. user-approved 2026-08-16.
+
+## T-048 — 2026-08-16 — user-approved behavior change
+
+T-048: Aito board write controls (drag-move, flag, quote-status, send-quote, task editing, restore) now hidden/disabled without aito:update (task add/remove follow their backend permissions); auth-disabled installs unaffected. user-approved 2026-08-16.

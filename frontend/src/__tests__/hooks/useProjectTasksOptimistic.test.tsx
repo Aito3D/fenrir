@@ -182,7 +182,7 @@ async function renderTasks({
       <BrowserRouter>
         <AuthProvider>
           <ToastProvider>
-            <ProjectDetailPanel project={resolvedProject} onClose={() => {}} onDelete={() => {}} />
+            <ProjectDetailPanel canCreate canUpdate canDelete project={resolvedProject} onClose={() => {}} onDelete={() => {}} />
           </ToastProvider>
         </AuthProvider>
       </BrowserRouter>

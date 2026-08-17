@@ -99,7 +99,7 @@ function renderPanel(project: AitoProject) {
     <QueryClientProvider client={client}>
       <AuthProvider>
         <ToastProvider>
-          <ProjectDetailPanel project={project} onClose={() => {}} onDelete={() => {}} />
+          <ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={() => {}} onDelete={() => {}} />
         </ToastProvider>
       </AuthProvider>
     </QueryClientProvider>,
@@ -251,7 +251,7 @@ function renderPanelReactive(project: AitoProject) {
     });
     const current = data?.find((p) => p.id === project.id);
     if (!current) return null;
-    return <ProjectDetailPanel project={current} onClose={() => {}} onDelete={() => {}} />;
+    return <ProjectDetailPanel canCreate canUpdate canDelete project={current} onClose={() => {}} onDelete={() => {}} />;
   }
 
   rtlRender(
