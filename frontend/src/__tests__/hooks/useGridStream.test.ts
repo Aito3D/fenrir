@@ -63,6 +63,23 @@
  * never does surfaces in errorSet once the window elapses — unless it's
  * currently off-screen, composing with T-049's invisible exemption.
  *
+ * T-057+T-062 (2026-08-16, user-approved behavior change): the mount-time
+ * startupTimeout used to classify "still missing" (`!loadedPrinters.has(id)`)
+ * with no visibility check at all — unlike its sibling timers (the periodic
+ * health loop and armReconnectGraceTimer, both already exempting invisible
+ * ids per T-049/T-050) — so an off-screen tile whose IntersectionObserver
+ * fires before it ever decodes a frame got errored 45s after mount for no
+ * reason. All three sites now share one `markStillMissing`/`isVisible`
+ * helper pair so the exemption can't drift again. Separately, both
+ * still-missing timers are one-shot and never re-arm: an id they skipped for
+ * invisibility could sit unresolved forever (no spinner, no overlay, frozen)
+ * even after scrolling back into view. Such ids are now recorded in a
+ * pendingOffscreenRef set; handleVisibilityChange's false->true transition
+ * arms a fresh one-shot STREAM_ERROR_MS grace timer for any id it finds
+ * there — still missing when it elapses -> errored; resumes decoding first
+ * (handleWorkerMessage) -> the pending entry and timer are cancelled, no
+ * overlay (T-049 semantics preserved for a healthy resumed tile).
+ *
  * T-051 (2026-08-16, user-approved behavior change): pipeline.workerRestarts
  * (the MAX_WORKER_RESTARTS=3 lifetime budget backing the terminal-error
  * latch above) was previously never replenished — on a wall left running
@@ -815,6 +832,144 @@ describe('useGridStream', () => {
     expect(result.current.staleSet.has(2)).toBe(false);
     expect(result.current.degradedSet.has(2)).toBe(false);
     expect(result.current.errorSet.has(1)).toBe(false);
+
+    unmount();
+  });
+
+  it('an off-screen printer that never decodes is NOT errored by the mount-time startup timeout while invisible (T-057)', async () => {
+    vi.useFakeTimers();
+    // fetch never resolves — isolates the startup timeout from the
+    // network/parse pipeline, same isolation strategy as the T-049 tests above.
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})));
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1', gridParamsKey: '', restartKey: 0 }),
+    );
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+
+    // Off-screen before it ever delivers a single decoded frame — mirrors a
+    // CameraGridCard whose IntersectionObserver fires immediately on mount
+    // for a tile below the fold on a scrolled multi-page camera wall.
+    act(() => {
+      result.current.handleVisibilityChange(1, false);
+    });
+
+    // Mutation proof: removing the visibility check from startupTimeout's
+    // still-missing filter (i.e. reverting to the pre-T-057
+    // `ids.filter(id => !loadedPrinters.has(id))`) makes this fail — printer
+    // 1 would land in errorSet 45s after mount purely because it's
+    // off-screen, exactly the bug T-050 already fixed for the sibling
+    // reconnect-grace timer.
+    await act(async () => { await vi.advanceTimersByTimeAsync(STREAM_ERROR_MS); });
+    expect(result.current.errorSet.has(1)).toBe(false);
+    expect(result.current.loadingSet.size).toBe(0);
+
+    unmount();
+  });
+
+  it('a printer skipped by the startup timeout while off-screen errors after its own re-entry grace window elapses without decoding (T-062)', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})));
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1', gridParamsKey: '', restartKey: 0 }),
+    );
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+
+    act(() => {
+      result.current.handleVisibilityChange(1, false);
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(STREAM_ERROR_MS); });
+    expect(result.current.errorSet.has(1)).toBe(false); // still exempt while invisible (T-057)
+
+    // Scrolls back into view but the stream never resumes decoding for it —
+    // neither the startup timeout nor the reconnect grace timer re-arms
+    // itself, so without a re-entry check this id would sit frozen with no
+    // spinner and no overlay forever, even after coming back on-screen.
+    act(() => {
+      result.current.handleVisibilityChange(1, true);
+    });
+
+    // Just before the fresh re-entry grace window elapses: still exempt — it
+    // gets the *full* STREAM_ERROR_MS window from re-entry, not an instant
+    // verdict against however long it happened to sit off-screen before.
+    await act(async () => { await vi.advanceTimersByTimeAsync(STREAM_ERROR_MS - 1000); });
+    expect(result.current.errorSet.has(1)).toBe(false);
+
+    // Mutation proof: removing the re-entry re-evaluation in
+    // handleVisibilityChange (the pendingOffscreenRef check that arms this
+    // timer on the false->true transition) makes this fail — printer 1
+    // would never enter errorSet at all, sitting unresolved indefinitely
+    // instead of surfacing here.
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(result.current.errorSet.has(1)).toBe(true);
+
+    unmount();
+  });
+
+  it('an off-screen printer that scrolls back into view and decodes before its re-entry grace window elapses shows no overlay and counts active (T-057/T-062 recovery)', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})));
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1', gridParamsKey: '', restartKey: 0 }),
+    );
+
+    const worker = workerInstances[0];
+    const decode = (printerId: number) => {
+      const bitmap = { close: vi.fn(), width: 1, height: 1 };
+      act(() => {
+        worker.onmessage?.({ data: { type: 'frame', printerId, bitmap } } as MessageEvent);
+      });
+    };
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+
+    // Invisible from the very start — never delivers a decoded frame before
+    // the mount-time startup timeout fires.
+    act(() => {
+      result.current.handleVisibilityChange(1, false);
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(STREAM_ERROR_MS); });
+    expect(result.current.errorSet.has(1)).toBe(false);
+
+    // Scrolls back into view and decodes shortly after — well within the
+    // fresh re-entry grace window — so it must read exactly like a tile
+    // that had never gone missing: no overlay at all, counted active.
+    act(() => {
+      result.current.handleVisibilityChange(1, true);
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    decode(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+
+    expect(result.current.errorSet.has(1)).toBe(false);
+    expect(result.current.staleSet.has(1)).toBe(false);
+    expect(result.current.degradedSet.has(1)).toBe(false);
+    expect(result.current.loadingSet.has(1)).toBe(false);
+    expect(result.current.getStatsSnapshot().active).toBe(1);
+
+    unmount();
+  });
+
+  it('a visible printer that never decodes is still errored by the startup timeout exactly as before (regression pin for the T-057 shared-helper refactor)', async () => {
+    vi.useFakeTimers();
+    // fetch never resolves — isolates the startup timeout from the
+    // reconnect-scheduling path exercised by the earlier "on stream
+    // failure..." test, so this pins the timer's own classification logic
+    // in isolation for a printer whose visibility is never touched (stays
+    // at the default visible=true).
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})));
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1', gridParamsKey: '', restartKey: 0 }),
+    );
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(STREAM_ERROR_MS); });
+    expect(result.current.errorSet.has(1)).toBe(true);
+    expect(result.current.loadingSet.size).toBe(0);
 
     unmount();
   });

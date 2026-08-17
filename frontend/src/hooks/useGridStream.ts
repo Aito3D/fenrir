@@ -88,6 +88,25 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
   // so an already-visible card never explicitly notifies.
   const visibilityRef = useRef<Map<number, boolean>>(new Map());
   const lastFrameTimeRef = useRef<Map<number, number>>(new Map());
+  // Which printers have delivered at least one decoded frame since the last
+  // connect/reconnect. Hoisted to hook scope (alongside visibilityRef/
+  // lastFrameTimeRef above) — same rationale: handleVisibilityChange is a
+  // stable callback that outlives any single run of the main effect below,
+  // so it needs to read the *same* live Set the effect's health timers use
+  // rather than a local variable it can't see (T-057/T-062 re-entry check).
+  const loadedPrintersRef = useRef<Set<number>>(new Set());
+  // Ids that the startup timeout or the reconnect grace timer skipped for
+  // "still missing" purposes solely because they were invisible at fire
+  // time (T-049 exemption). Neither timer re-arms itself, so without this
+  // record such an id would sit unresolved forever — no spinner, no error
+  // overlay, nothing — even after it scrolls back into view. Read (and
+  // cleared) by handleVisibilityChange on re-entry: see reentryTimersRef.
+  const pendingOffscreenRef = useRef<Set<number>>(new Set());
+  // Per-id one-shot grace timers armed by handleVisibilityChange when a
+  // pendingOffscreenRef id re-enters the viewport (T-057/T-062): gives it
+  // exactly one fresh STREAM_ERROR_MS window to resume decoding before
+  // erroring, mirroring the mount/reconnect timers it substitutes for.
+  const reentryTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   const [loadingSet, setLoadingSet] = useState<Set<number>>(new Set());
   const [errorSet, setErrorSet] = useState<Set<number>>(new Set());
@@ -164,6 +183,30 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
       // grace window instead of immediately reading as stale/degraded/error
       // before the next real decoded frame lands.
       lastFrameTimeRef.current.set(printerId, performance.now());
+
+      // T-057/T-062: this id was skipped as "still missing" by the startup
+      // timeout or the reconnect grace timer while invisible, and neither
+      // one-shot timer re-arms itself. Give it exactly one fresh grace
+      // window from re-entry: still missing when it elapses -> errored;
+      // resumes decoding first -> handleWorkerMessage clears the pending
+      // entry and cancels this timer, so a healthy resumed tile shows no
+      // overlay (T-049 semantics preserved).
+      if (pendingOffscreenRef.current.delete(printerId)) {
+        const existingTimer = reentryTimersRef.current.get(printerId);
+        if (existingTimer !== undefined) clearTimeout(existingTimer);
+        const timer = setTimeout(() => {
+          reentryTimersRef.current.delete(printerId);
+          if (!loadedPrintersRef.current.has(printerId)) {
+            setErrorSet(prev => {
+              if (prev.has(printerId)) return prev;
+              const next = new Set(prev);
+              next.add(printerId);
+              return next;
+            });
+          }
+        }, STREAM_ERROR_MS);
+        reentryTimersRef.current.set(printerId, timer);
+      }
     }
     workerRef.current?.postMessage({ type: 'visibility', printerId, visible });
   }, []);
@@ -193,18 +236,64 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
     const ctxCache = new Map<number, CanvasRenderingContext2D>();
     // Track canvas dimensions to avoid resetting every frame
     const dimCache = new Map<number, string>();
-    // Track which printers have delivered at least one frame
-    const loadedPrinters = new Set<number>();
+    // Track which printers have delivered at least one frame — a ref shared
+    // with handleVisibilityChange (see hook-scope declaration above), so its
+    // T-057/T-062 re-entry check reads the same live Set the health timers
+    // below read/write.
+    const loadedPrinters = loadedPrintersRef.current;
+    loadedPrinters.clear();
     // Track last frame time per printer for stale camera detection — a ref
     // shared with handleVisibilityChange (see hook-scope declaration above),
     // reset here since every id starts seeded visible=true on connect.
     const lastFrameTime = lastFrameTimeRef.current;
     lastFrameTime.clear();
     visibilityRef.current.clear();
+    pendingOffscreenRef.current.clear();
+    const clearReentryTimers = () => {
+      for (const timer of reentryTimersRef.current.values()) clearTimeout(timer);
+      reentryTimersRef.current.clear();
+    };
+    clearReentryTimers();
     // Throttle "canvas ref null" logging — once per printer per 5s
     const nullCanvasLogTime = new Map<number, number>();
 
     const pipeline = pipelineRef.current;
+
+    // Shared by the periodic health loop, armReconnectGraceTimer, and
+    // startupTimeout (T-057): a printer counts as visible unless explicitly
+    // marked otherwise — IntersectionObserver only fires on change, so an
+    // already-visible card never explicitly notifies (see hook-scope
+    // visibilityRef comment above).
+    const isVisible = (id: number) => visibilityRef.current.get(id) ?? true;
+
+    // Shared by armReconnectGraceTimer and startupTimeout (T-057): both fire
+    // once, STREAM_ERROR_MS after arming, and need to classify every id that
+    // still hasn't delivered a decoded frame (absent from loadedPrinters).
+    // A missing-and-visible id genuinely never came up — error it now. A
+    // missing-and-invisible one proves nothing yet (T-049: the worker never
+    // decodes for invisible printers, so "missing" is expected, not a
+    // failure) — record it in pendingOffscreenRef instead so
+    // handleVisibilityChange gives it a fresh grace window once it scrolls
+    // back into view (T-057/T-062), rather than leaving it unresolved
+    // forever since neither timer re-arms itself.
+    const markStillMissing = (candidateIds: number[]) => {
+      const missingVisible: number[] = [];
+      for (const id of candidateIds) {
+        if (loadedPrinters.has(id)) continue;
+        if (isVisible(id)) {
+          missingVisible.push(id);
+        } else {
+          pendingOffscreenRef.current.add(id);
+        }
+      }
+      if (missingVisible.length > 0) {
+        setErrorSet(prev => {
+          const next = new Set(prev);
+          for (const id of missingVisible) next.add(id);
+          return next;
+        });
+      }
+    };
 
     // Grace-window timer re-armed on each successful reconnect (mirrors the
     // mount-time startupTimeout below, but per-reconnect): on reconnect both
@@ -230,16 +319,7 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
       clearReconnectGraceTimer();
       reconnectGraceTimer = setTimeout(() => {
         reconnectGraceTimer = null;
-        const stillMissing = ids.filter(
-          id => !loadedPrinters.has(id) && (visibilityRef.current.get(id) ?? true),
-        );
-        if (stillMissing.length > 0) {
-          setErrorSet(prev => {
-            const next = new Set(prev);
-            for (const id of stillMissing) next.add(id);
-            return next;
-          });
-        }
+        markStillMissing(ids);
       }, STREAM_ERROR_MS);
     };
 
@@ -288,6 +368,17 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
       // decoding drops back out of the live-camera count instead of being
       // counted forever.
       lastFrameTime.set(pid, performance.now());
+
+      // T-057/T-062: a decoded frame resolves any pending re-entry check —
+      // cancel its grace timer so it doesn't later error a tile that's
+      // already delivering again.
+      if (pendingOffscreenRef.current.delete(pid)) {
+        const timer = reentryTimersRef.current.get(pid);
+        if (timer !== undefined) {
+          clearTimeout(timer);
+          reentryTimersRef.current.delete(pid);
+        }
+      }
 
       setErrorSet(prev => {
         if (!prev.has(pid)) return prev;
@@ -370,7 +461,7 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
       for (const id of ids) {
         const last = lastFrameTime.get(id);
         if (!last || !loadedPrinters.has(id)) continue;
-        if (!(visibilityRef.current.get(id) ?? true)) {
+        if (!isVisible(id)) {
           // Off-screen: the worker deliberately drops this printer's frames
           // before decoding (workers/cameraGridDecoder.worker.ts), so
           // lastFrameTime is frozen by design — that's not evidence the
@@ -651,14 +742,7 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
     startMultiplexedStream();
 
     const startupTimeout = setTimeout(() => {
-      const stillLoading = ids.filter(id => !loadedPrinters.has(id));
-      if (stillLoading.length > 0) {
-        setErrorSet(prev => {
-          const next = new Set(prev);
-          for (const id of stillLoading) next.add(id);
-          return next;
-        });
-      }
+      markStillMissing(ids);
       setLoadingSet(new Set());
     }, STREAM_ERROR_MS);
 
@@ -674,6 +758,7 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
       clearInterval(healthInterval);
       clearTimeout(startupTimeout);
       clearReconnectGraceTimer();
+      clearReentryTimers();
       cleanupReconnect();
       window.removeEventListener('beforeunload', onBeforeUnload);
       workerRef.current?.postMessage({ type: 'clear' });

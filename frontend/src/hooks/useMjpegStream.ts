@@ -13,13 +13,18 @@ const JPEG_EOI_LO = 0xd9;
 // quickly, but larger than 1 so an occasional bad frame in an otherwise-healthy
 // stream doesn't trip it — the counter resets on every successful decode.
 const MAX_CONSECUTIVE_DECODE_FAILURES = 20;
-// T-052: when a caller wires no `onError` handler, nobody else will retry —
-// the hook self-heals instead of leaving the canvas frozen after the budget
-// above trips. Callers that *do* supply `onError` own their own reconnect
-// machinery (e.g. useStreamReconnect); this backoff only ever runs for the
-// onError-less case, so it never races an external retry loop. Delay grows
-// from a few seconds to a cap, then holds there — acceptable for a kiosk
-// overlay that should keep trying indefinitely.
+// T-052/T-065: when a caller wires no `onError` handler, nobody else will
+// retry — the hook self-heals instead of leaving the canvas frozen after any
+// of the three ways a stream can terminate: the decode-budget trip above, a
+// network/fetch failure, or the server closing the connection cleanly (EOF).
+// Callers that *do* supply `onError` own their own reconnect machinery (e.g.
+// useStreamReconnect); this backoff only ever runs for the onError-less case,
+// so it never races an external retry loop. Delay grows from a few seconds to
+// a cap, then holds there — acceptable for a kiosk overlay that should keep
+// trying indefinitely. All three trigger kinds share one attempt counter,
+// reset on every successful decode, so an overlay that alternates between
+// e.g. decode failures and dropped connections still backs off smoothly
+// instead of resetting the delay each time the failure mode changes.
 const SELF_RESTART_INITIAL_DELAY_MS = 2000;
 const SELF_RESTART_MAX_DELAY_MS = 15000;
 
@@ -63,7 +68,7 @@ export function useMjpegStream({
   onFirstFrameRef.current = onFirstFrame;
   onErrorRef.current = onError;
 
-  // T-052 self-restart bookkeeping — see SELF_RESTART_* constants above.
+  // T-052/T-065 self-restart bookkeeping — see SELF_RESTART_* constants above.
   const selfRestartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selfRestartAttemptRef = useRef(0);
 
@@ -97,6 +102,30 @@ export function useMjpegStream({
     const headers: Record<string, string> = {};
     const token = getAuthToken();
     if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    // T-052/T-065: shared by all three termination paths below (decode
+    // budget, network-failure catch, clean EOF). No-ops when the caller
+    // supplied its own `onError` — those callers own recovery and this must
+    // never race their retry loop (see SELF_RESTART_* comment above).
+    // Cancellation lives entirely in stopStream() (unmount/restart/stop/the
+    // enabled-or-url effect cleanup all route through it), so by the time a
+    // scheduled restart fires, if any of those happened, clearTimeout already
+    // prevented it from running at all — no extra generation guard needed
+    // here beyond the one already gating the call site.
+    const scheduleSelfRestart = () => {
+      if (onErrorRef.current) return;
+      const attempt = selfRestartAttemptRef.current;
+      selfRestartAttemptRef.current = attempt + 1;
+      const delay = Math.min(
+        SELF_RESTART_INITIAL_DELAY_MS * Math.pow(2, attempt),
+        SELF_RESTART_MAX_DELAY_MS,
+      );
+      selfRestartTimerRef.current = setTimeout(() => {
+        selfRestartTimerRef.current = null;
+        generationRef.current += 1;
+        startStream(generationRef.current);
+      }, delay);
+    };
 
     (async () => {
       try {
@@ -224,38 +253,21 @@ export function useMjpegStream({
             setHasError(true);
             setIsConnected(false);
             onErrorRef.current?.();
-
-            // No external error handler means no one else will retry this
-            // stream (see T-052 comment on SELF_RESTART_* above) — schedule
-            // a bounded, backed-off self-restart so the canvas doesn't stay
-            // frozen forever. Callers with onError keep exclusive control of
-            // recovery (e.g. useStreamReconnect), so this never runs for them.
-            if (!onErrorRef.current) {
-              const attempt = selfRestartAttemptRef.current;
-              selfRestartAttemptRef.current = attempt + 1;
-              const delay = Math.min(
-                SELF_RESTART_INITIAL_DELAY_MS * Math.pow(2, attempt),
-                SELF_RESTART_MAX_DELAY_MS,
-              );
-              // Cancellation lives entirely in stopStream() (unmount/restart/
-              // stop/enabled-off all route through it) — by the time this
-              // fires, if any of those happened, clearTimeout already
-              // prevented it from running at all, so no extra guard is
-              // needed here.
-              selfRestartTimerRef.current = setTimeout(() => {
-                selfRestartTimerRef.current = null;
-                generationRef.current += 1;
-                startStream(generationRef.current);
-              }, delay);
-            }
+            scheduleSelfRestart();
           }
           return;
         }
 
-        // Stream ended naturally (clean EOF) — don't treat as error
+        // Stream ended naturally (clean EOF) — don't treat as error. A
+        // server-side no-viewer close is routine (not a fault), so this
+        // stays silent: no hasError, no onError — but an onError-less caller
+        // (T-065) still gets the same backed-off self-restart as the other
+        // two termination paths, so it doesn't sit frozen until the page is
+        // reloaded.
         if (mountedRef.current && gen === generationRef.current) {
           setIsLoading(false);
           setIsConnected(false);
+          scheduleSelfRestart();
         }
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return;
@@ -264,6 +276,7 @@ export function useMjpegStream({
           setHasError(true);
           setIsConnected(false);
           onErrorRef.current?.();
+          scheduleSelfRestart();
         }
       }
     })();

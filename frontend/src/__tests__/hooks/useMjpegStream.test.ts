@@ -35,6 +35,21 @@
  * prior behavior — abort + a single `onError` call, no internal restart —
  * since they own their own reconnect machinery. These tests use fake timers
  * to drive the backoff deterministically without any wall-clock sleep.
+ *
+ * T-065 (2026-08-17, user-approved behavior change): T-052's self-restart
+ * only covered the decode-budget trip above — a network/fetch failure (the
+ * `catch` block) or the server closing the stream cleanly (EOF) were still
+ * terminal for onError-less callers, so a 502, dropped Wi-Fi, or a backend
+ * no-viewer timeout left the canvas frozen indefinitely even though a stream
+ * that fed 20 undecodable frames would have recovered. The hook now routes
+ * all three termination paths through the same shared self-restart helper,
+ * gated the same way (`!onErrorRef.current` only) and sharing the same
+ * backoff attempt counter (reset on any successful decode, regardless of
+ * which path triggered the most recent restart). The clean-EOF path
+ * deliberately does *not* set `hasError` when it schedules a restart — a
+ * server-side no-viewer close is routine, not a fault, so the UI stays in
+ * its existing "not connected, no error" rendering while it quietly retries
+ * in the background.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -355,6 +370,148 @@ describe('useMjpegStream', () => {
       .mockResolvedValue(fakeResponse(openStreamFromChunks([concatFrames(failingFrames)])));
     vi.stubGlobal('fetch', fetchMock);
     vi.stubGlobal('createImageBitmap', vi.fn().mockRejectedValue(new Error('not a JPEG')));
+
+    // No onError — the self-restart-eligible path.
+    const { result, unmount } = renderHook(() =>
+      useMjpegStream({ url: '/printers/1/camera/stream', canvasRef: nullCanvasRef }),
+    );
+
+    await pollUntil(() => result.current.hasError === true, { maxSteps: 50 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Unmount partway through the backoff window, before the scheduled
+    // restart would otherwise fire.
+    await vi.advanceTimersByTimeAsync(SELF_RESTART_INITIAL_DELAY_MS / 2);
+    unmount();
+
+    // Advance well past when the restart would have fired had it not been
+    // cancelled on unmount.
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('T-065: self-restarts after a backoff on a network failure when no onError handler is supplied, and resumes once the new stream decodes', async () => {
+    vi.useFakeTimers();
+
+    const goodFrame = encodeJpegFrame(200);
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce(fakeResponse(openStreamFromChunks([concatFrames([goodFrame])])));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue(fakeBitmap()));
+
+    const onFirstFrame = vi.fn();
+    // No onError — mirrors StreamOverlayPage's bare useMjpegStream call.
+    const { result, unmount } = renderHook(() =>
+      useMjpegStream({ url: '/printers/1/camera/stream', canvasRef: nullCanvasRef, onFirstFrame }),
+    );
+
+    // The fetch rejection surfaces through the catch block almost immediately.
+    await pollUntil(() => result.current.hasError === true, { maxSteps: 50 });
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.isConnected).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Nothing should happen before the backoff elapses.
+    await vi.advanceTimersByTimeAsync(SELF_RESTART_INITIAL_DELAY_MS - 100);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Once the backoff elapses, the hook retries on its own and the new
+    // stream's good frame clears loading/error and resumes the canvas.
+    await pollUntil(
+      () => result.current.isLoading === false && result.current.hasError === false && result.current.isConnected,
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(onFirstFrame).toHaveBeenCalledTimes(1);
+
+    unmount();
+  });
+
+  it('T-065: silently self-restarts after a backoff on a clean EOF when no onError handler is supplied, without ever setting hasError', async () => {
+    vi.useFakeTimers();
+
+    const closingStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.close();
+      },
+    });
+    const goodFrame = encodeJpegFrame(200);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(fakeResponse(closingStream))
+      .mockResolvedValueOnce(fakeResponse(openStreamFromChunks([concatFrames([goodFrame])])));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue(fakeBitmap()));
+
+    const onFirstFrame = vi.fn();
+    // No onError — mirrors StreamOverlayPage's bare useMjpegStream call.
+    const { result, unmount } = renderHook(() =>
+      useMjpegStream({ url: '/printers/1/camera/stream', canvasRef: nullCanvasRef, onFirstFrame }),
+    );
+
+    // The clean EOF resolves the first attempt almost immediately.
+    await pollUntil(() => result.current.isLoading === false, { maxSteps: 50 });
+    expect(result.current.hasError).toBe(false);
+    expect(result.current.isConnected).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Nothing should happen before the backoff elapses.
+    await vi.advanceTimersByTimeAsync(SELF_RESTART_INITIAL_DELAY_MS - 100);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Once the backoff elapses, the hook retries on its own and the new
+    // stream's good frame connects the canvas — hasError stays false the
+    // entire time, pinning the "silent retry" semantics for a routine
+    // server-side close.
+    await pollUntil(() => result.current.isLoading === false && result.current.isConnected === true);
+
+    expect(result.current.hasError).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(onFirstFrame).toHaveBeenCalledTimes(1);
+
+    unmount();
+  });
+
+  it('T-065: a caller that supplies onError keeps exclusive control on a network failure — no internal self-restart fires', async () => {
+    vi.useFakeTimers();
+
+    // Every fetch (were the hook ever to call it again) rejects the same
+    // way, so a stray internal restart would be visible as a second onError
+    // call.
+    const fetchMock = vi.fn().mockRejectedValue(new Error('network down'));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('createImageBitmap', vi.fn());
+
+    const onError = vi.fn();
+    const { result, unmount } = renderHook(() =>
+      useMjpegStream({ url: '/printers/1/camera/stream', canvasRef: nullCanvasRef, onError }),
+    );
+
+    await pollUntil(() => result.current.hasError === true, { maxSteps: 50 });
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Advance well past the backoff window (and its cap) the onError-less
+    // path would use — the caller owns recovery, so the hook must not fetch
+    // again on its own.
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(result.current.hasError).toBe(true);
+
+    unmount();
+  });
+
+  it('T-065: unmounting during the backoff window after a network failure cancels the pending self-restart', async () => {
+    vi.useFakeTimers();
+
+    const fetchMock = vi.fn().mockRejectedValue(new Error('network down'));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('createImageBitmap', vi.fn());
 
     // No onError — the self-restart-eligible path.
     const { result, unmount } = renderHook(() =>

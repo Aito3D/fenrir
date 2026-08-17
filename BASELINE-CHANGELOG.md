@@ -1785,3 +1785,11 @@ T-052: useMjpegStream self-recovers after the decode-failure budget trips when t
 ## T-053 — 2026-08-16 — user-approved behavior change
 
 T-053: WebRTC SDP negotiation now times out (bounded) when go2rtc never answers; the tile shows the error state and enters backoff retry instead of spinning forever. user-approved 2026-08-16.
+
+## T-057+T-062 — 2026-08-16 — user-approved behavior change
+
+T-057+T-062: all three grid health timers (startup, reconnect grace, periodic) now share the visibility exemption; tiles skipped while off-screen get a fresh grace window on scroll-back and error only if they still fail to decode. user-approved 2026-08-16.
+
+## T-065 — 2026-08-16 — user-approved behavior change
+
+T-065: useMjpegStream's onError-less self-restart now also covers network failures and clean EOF (same backoff and generation guards), so overlay/kiosk streams recover from any termination; callers with onError unchanged. user-approved 2026-08-16.
