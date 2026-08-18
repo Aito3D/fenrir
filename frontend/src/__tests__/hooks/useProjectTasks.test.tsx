@@ -487,7 +487,6 @@ describe('useProjectTasks', () => {
 const ROW2 = { ...ROW, id: 8, title: 'b', position: 1 };
 
 async function mountedWithTwo() {
-  vi.spyOn(api, 'getAitoTasks').mockResolvedValue([ROW, ROW2]);
   const view = renderHook(() => useProjectTasks(1), { wrapper });
   await waitFor(() => expect(view.result.current.tasks).toHaveLength(2));
   return view;
@@ -495,6 +494,7 @@ async function mountedWithTwo() {
 
 describe('reorderTasks', () => {
   it('applies the new order optimistically and PATCHes the full id list', async () => {
+    vi.spyOn(api, 'getAitoTasks').mockImplementation(async () => [ROW, ROW2]);
     const reorder = vi.spyOn(api, 'reorderAitoTasks').mockResolvedValue([ROW2, ROW]);
     const { result } = await mountedWithTwo();
 
@@ -508,6 +508,7 @@ describe('reorderTasks', () => {
   });
 
   it('serialises overlapping drags: only the LATEST queued order is sent when the in-flight one settles', async () => {
+    vi.spyOn(api, 'getAitoTasks').mockImplementation(async () => [ROW, ROW2]);
     let release!: (rows: typeof ROW[]) => void;
     const reorder = vi
       .spyOn(api, 'reorderAitoTasks')
@@ -535,20 +536,22 @@ describe('reorderTasks', () => {
 
   it('on error: toasts and refetches the server order', async () => {
     vi.spyOn(api, 'reorderAitoTasks').mockRejectedValue(new ApiError('stale', 409));
-    const getTasks = vi.spyOn(api, 'getAitoTasks').mockResolvedValue([ROW, ROW2]);
+    const getTasks = vi.spyOn(api, 'getAitoTasks').mockImplementation(async () => [ROW, ROW2]);
     const { result } = await mountedWithTwo();
     const callsBefore = getTasks.mock.calls.length;
 
     act(() => result.current.reorderTasks([result.current.tasks[1], result.current.tasks[0]]));
     await waitFor(() => expect(getTasks.mock.calls.length).toBeGreaterThan(callsBefore));
+    // Advance timers to allow state updates to process
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(100);
     });
     // The refetch restores the server order over the optimistic one.
-    expect(result.current.tasks.map((row) => row.id)).toEqual([7, 8]);
+    await waitFor(() => expect(result.current.tasks.map((row) => row.id)).toEqual([7, 8]));
   });
 
   it('refuses to persist an order containing an unsaved row, but keeps the visual order', async () => {
+    vi.spyOn(api, 'getAitoTasks').mockImplementation(async () => [ROW, ROW2]);
     const reorder = vi.spyOn(api, 'reorderAitoTasks').mockResolvedValue([]);
     const { result } = await mountedWithTwo();
     const draft = { ...result.current.tasks[0], id: null, uid: 'draft-1' };
