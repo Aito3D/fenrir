@@ -22,6 +22,37 @@ import { computeImpressionCost, emptyTaskDraft, roundUpTo50, rowKey, taskTotal }
 import type { TaskDraft } from '../../utils/taskDraft';
 import { formatMoney } from '../../utils/pricing';
 
+/** Captures `TaskEditor`'s `onDragEnd` prop to `DndContext` so a test can call
+ *  it directly with a synthetic `DragEndEvent` shape, the same pattern
+ *  `AitoBoardDragFailure.test.tsx` and `AitoPageDragLock.test.tsx` use — jsdom
+ *  has no `PointerEvent` (confirmed in `AitoBoardColumnDrag.test.tsx`'s header
+ *  comment), so a real pointer drag cannot be dispatched and observed here.
+ *  This is the only way to exercise `handleDragEnd` → `onReorder` (the pure
+ *  reorder math already has its own tests above, via the exported
+ *  `reorderedTasks`) without exporting `handleDragEnd` itself from
+ *  TaskEditor.tsx, which the brief rules out.
+ *
+ *  Vitest hoists `vi.mock` above module-level `const`s, so the factory below
+ *  can only safely close over a variable named with the `mock` prefix — see
+ *  https://vitest.dev/api/vi.html#vi-mock. */
+const mockCapturedOnDragEnd: {
+  current?: (e: { active: { id: string }; over: { id: string } | null }) => void;
+} = {};
+
+vi.mock('@dnd-kit/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@dnd-kit/core')>();
+  return {
+    ...actual,
+    DndContext: (props: {
+      children: React.ReactNode;
+      onDragEnd?: typeof mockCapturedOnDragEnd.current;
+    }) => {
+      mockCapturedOnDragEnd.current = props.onDragEnd;
+      return props.children;
+    },
+  };
+});
+
 const mockFilaments = [
   {
     id: 1,
@@ -1434,5 +1465,49 @@ describe('task reordering', () => {
       />,
     );
     expect(screen.queryByRole('button', { name: 'Reorder task' })).toBeNull();
+  });
+
+  describe('handleDragEnd wiring', () => {
+    beforeEach(() => {
+      mockCapturedOnDragEnd.current = undefined;
+    });
+
+    it('a completed drop calls onReorder with the moved array', () => {
+      const [a, b] = twoTasks();
+      const onReorder = vi.fn();
+      render(<TaskEditor value={[a, b]} onChange={vi.fn()} onRemove={vi.fn()} canTick={false} onReorder={onReorder} />);
+
+      expect(mockCapturedOnDragEnd.current).toBeTypeOf('function');
+      act(() => {
+        mockCapturedOnDragEnd.current!({ active: { id: rowKey(a) }, over: { id: rowKey(b) } });
+      });
+
+      expect(onReorder).toHaveBeenCalledTimes(1);
+      expect(onReorder.mock.calls[0][0].map((task: TaskDraft) => task.title)).toEqual(['Beta', 'Alpha']);
+    });
+
+    it('a drop with no target (over null) does not call onReorder', () => {
+      const [a, b] = twoTasks();
+      const onReorder = vi.fn();
+      render(<TaskEditor value={[a, b]} onChange={vi.fn()} onRemove={vi.fn()} canTick={false} onReorder={onReorder} />);
+
+      act(() => {
+        mockCapturedOnDragEnd.current!({ active: { id: rowKey(a) }, over: null });
+      });
+
+      expect(onReorder).not.toHaveBeenCalled();
+    });
+
+    it('a drop on itself does not call onReorder', () => {
+      const [a, b] = twoTasks();
+      const onReorder = vi.fn();
+      render(<TaskEditor value={[a, b]} onChange={vi.fn()} onRemove={vi.fn()} canTick={false} onReorder={onReorder} />);
+
+      act(() => {
+        mockCapturedOnDragEnd.current!({ active: { id: rowKey(a) }, over: { id: rowKey(a) } });
+      });
+
+      expect(onReorder).not.toHaveBeenCalled();
+    });
   });
 });
