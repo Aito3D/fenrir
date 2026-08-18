@@ -49,6 +49,7 @@ KINDS: dict[str, str] = {
     "task.added": "detail",
     "task.updated": "detail",
     "task.removed": "detail",
+    "task.reordered": "detail",
     "task.step.ticked": "detail",
     "task.step.unticked": "detail",
     "project.updated": "detail",

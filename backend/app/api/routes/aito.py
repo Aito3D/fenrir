@@ -41,6 +41,7 @@ from backend.app.schemas.aito import (
     AitoSummarizeRequest,
     AitoSummarizeResponse,
     AitoTaskCreate,
+    AitoTaskReorder,
     AitoTaskResponse,
     AitoTaskStepsResponse,
     AitoTaskUpdate,
@@ -1657,6 +1658,61 @@ async def delete_task(
     queued = project is not None and project.quote_sync_state == "pending"
     await _commit_and_wake(db, queued, project.id if project is not None else None)
     await _broadcast_changed("task", task_project_id, _actor(current_user))
+
+
+@router.patch("/{project_id}/tasks/reorder", response_model=list[AitoTaskResponse])
+async def reorder_tasks(
+    project_id: int,
+    payload: AitoTaskReorder,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Renumber the project's tasks to the payload's order. `position` is what
+    every consumer sorts by — the task list endpoints and the Zoho quote sync
+    (aito_quote_sync.py) — so persisting it here IS the quote reorder; no
+    quote code is touched.
+
+    The payload must be exactly the current task-id set. Anything else
+    (missing, foreign, duplicate) means the client's list is stale — a
+    concurrent add or delete — and renumbering from it would drop or collide
+    positions, so it draws a 409 and the client refetches.
+
+    No `_apply_rules` call, unlike the other task writes: order changes
+    neither costs nor ticks, so the board column cannot move.
+    """
+    project = await _get_active_project_or_404(db, project_id)
+    stmt = select(AitoTask).where(AitoTask.project_id == project_id).order_by(AitoTask.position, AitoTask.id)
+    tasks = list((await db.execute(stmt)).scalars())
+    by_id = {t.id: t for t in tasks}
+    if sorted(payload.task_ids) != sorted(by_id):
+        raise HTTPException(status_code=409, detail="The task list changed — refresh and try again")
+    if payload.task_ids == [t.id for t in tasks]:
+        # Dropped back into its own slot: nothing changed, so no event and no
+        # Zoho push — an idle project must not be woken for a no-op.
+        return [_task_to_response(t) for t in tasks]
+    for index, task_id in enumerate(payload.task_ids):
+        by_id[task_id].position = index
+    was_pending = project.quote_sync_state == "pending"
+    _mark_pending_if_ours(project)
+    await record(
+        db,
+        project.id,
+        "task.reordered",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="project",
+        subject_id=project.id,
+    )
+    if not was_pending and project.quote_sync_state == "pending":
+        await record(db, project.id, "sync.queued", actor_class="system")
+    queued = project.quote_sync_state == "pending"
+    await _commit_and_wake(db, queued, project.id)
+    await _broadcast_changed("task", project.id, _actor(current_user))
+    # Refresh the tasks from the database after commit to ensure their state is valid.
+    stmt = select(AitoTask).where(AitoTask.project_id == project_id).order_by(AitoTask.position, AitoTask.id)
+    refreshed_tasks = list((await db.execute(stmt)).scalars())
+    refreshed_by_id = {t.id: t for t in refreshed_tasks}
+    return [_task_to_response(refreshed_by_id[task_id]) for task_id in payload.task_ids]
 
 
 @router.post("/import", response_model=list[AitoProjectResponse], status_code=201)

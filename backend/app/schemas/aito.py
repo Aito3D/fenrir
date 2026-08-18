@@ -381,6 +381,15 @@ class AitoProjectMove(BaseModel):
     position: int = Field(ge=0)
 
 
+class AitoTaskReorder(BaseModel):
+    """The complete desired order of one project's tasks. Complete, not a
+    delta: the handler validates it as exactly the current id set, which is
+    what turns a stale client list (concurrent add/delete) into a 409 instead
+    of silent corruption. 300 mirrors AitoProjectCreate's task-list cap."""
+
+    task_ids: list[int] = Field(min_length=1, max_length=300)
+
+
 class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput):
     """Content edits from the card detail panel. Ordering (column/position) is
     owned by the /move endpoint and deliberately not accepted here."""
