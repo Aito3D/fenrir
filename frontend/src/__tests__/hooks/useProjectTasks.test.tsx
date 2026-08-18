@@ -559,4 +559,24 @@ describe('reorderTasks', () => {
     act(() => result.current.reorderTasks([draft, result.current.tasks[1]]));
     expect(reorder).not.toHaveBeenCalled();
   });
+
+  it('on second error after first success: baseline rollback restores post-success order, not pre-first-reorder', async () => {
+    vi.spyOn(api, 'getAitoTasks').mockImplementation(async () => [ROW, ROW2]);
+    const reorder = vi
+      .spyOn(api, 'reorderAitoTasks')
+      .mockResolvedValueOnce([ROW2, ROW])
+      .mockRejectedValueOnce(new ApiError('stale', 409));
+    const { result } = await mountedWithTwo();
+
+    // First reorder succeeds: [7, 8] -> [8, 7]
+    act(() => result.current.reorderTasks([result.current.tasks[1], result.current.tasks[0]]));
+    await waitFor(() => expect(reorder).toHaveBeenCalledTimes(1));
+    expect(result.current.tasks.map((row) => row.id)).toEqual([8, 7]);
+
+    // Second reorder fails: should rollback to [8, 7] (post-success), NOT [7, 8] (pre-first)
+    act(() => result.current.reorderTasks([result.current.tasks[1], result.current.tasks[0]]));
+    await waitFor(() => expect(reorder).toHaveBeenCalledTimes(2));
+    // After error and baseline rollback, should be back to [8, 7] from first successful reorder
+    expect(result.current.tasks.map((row) => row.id)).toEqual([8, 7]);
+  });
 });

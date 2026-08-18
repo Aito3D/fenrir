@@ -447,7 +447,14 @@ export function useProjectTasks(projectId: number) {
       // lands mid-flight cannot stomp the optimistic order.
       inFlightRef.current += 1;
     },
-    onSuccess: () => {
+    onSuccess: (rows) => {
+      // Rebuild the baseline IN THE NEW ORDER: the error-path rollback below
+      // reads this Map's key insertion order as "the server's answer", and a
+      // successful reorder is exactly the moment that answer changes. The
+      // response rows also refresh each row's field baseline, which is safe —
+      // they reflect the DB at reorder time, i.e. every field save that had
+      // already landed.
+      baselineRef.current = new Map(rows.map((row) => [row.id, row]));
       tasksDirtyRef.current = true;
       // Same stamp as a field save: stops the resync effect from applying a
       // cached snapshot fetched BEFORE this reorder landed (which would
@@ -463,8 +470,9 @@ export function useProjectTasks(projectId: number) {
       // to the cached snapshot — React Query's structural sharing hands the
       // resync effect the SAME array identity it already applied, so the
       // `appliedDataRef` guard (rightly) skips it and nothing would ever
-      // undo the optimistic order. `baselineRef`'s insertion order is the
-      // last applied fetch order, i.e. the server's answer — same idiom as
+      // undo the optimistic order. `baselineRef`'s insertion order is kept
+      // current by onSuccess (rebuilt from each successful reorder's response),
+      // i.e. the server's answer at the moment of failure — same idiom as
       // the 422 rollback above. Rows not in the baseline (unsaved drafts)
       // keep their relative order at the end.
       const byId = new Map(tasksRef.current.map((row) => [row.id, row]));
