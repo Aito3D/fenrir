@@ -456,10 +456,30 @@ export function useProjectTasks(projectId: number) {
       queryClient.invalidateQueries({ queryKey: ['aito-events', projectId] });
     },
     onError: () => {
-      // 409 (stale id set after a concurrent add/delete) or a network error:
-      // either way the server's order is the truth now — refetch it rather
-      // than guessing. The resync effect applies it once nothing is in flight.
       showToast(t('aito.saveFailed'), 'error');
+      // Restore the last-known server ORDER immediately, keeping each row's
+      // current draft content: a failed reorder usually leaves the server
+      // exactly as it was, and the refetch below then comes back DEEP-EQUAL
+      // to the cached snapshot — React Query's structural sharing hands the
+      // resync effect the SAME array identity it already applied, so the
+      // `appliedDataRef` guard (rightly) skips it and nothing would ever
+      // undo the optimistic order. `baselineRef`'s insertion order is the
+      // last applied fetch order, i.e. the server's answer — same idiom as
+      // the 422 rollback above. Rows not in the baseline (unsaved drafts)
+      // keep their relative order at the end.
+      const byId = new Map(tasksRef.current.map((row) => [row.id, row]));
+      const restored: TaskDraft[] = [];
+      for (const id of baselineRef.current.keys()) {
+        const row = byId.get(id);
+        if (row) restored.push(row);
+      }
+      for (const row of tasksRef.current) {
+        if (row.id === null || !baselineRef.current.has(row.id)) restored.push(row);
+      }
+      setTasks(restored);
+      // Still refetch: after a 409 from a concurrent add/delete the baseline
+      // itself is stale, and that refetch DOES carry different data, gets a
+      // fresh identity, and the resync effect applies it normally.
       queryClient.invalidateQueries({ queryKey: ['aito-tasks', projectId] });
     },
     onSettled: () => {
