@@ -291,6 +291,7 @@ export default {
       taskAdded: '添加了任务',
       taskUpdated: '编辑了任务',
       taskRemoved: '删除了任务',
+      taskReordered: '重新排序了任务',
       taskStepTicked: '勾选了一个步骤',
       taskStepUnticked: '取消勾选了一个步骤',
       projectUpdated: '编辑了项目',

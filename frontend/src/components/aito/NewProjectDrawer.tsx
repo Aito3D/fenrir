@@ -416,6 +416,9 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
                 value={tasks}
                 onChange={setTasks}
                 onRemove={(index) => setTasks(tasks.filter((_, i) => i !== index))}
+                // Local drafts: a drop just reorders the array, and the
+                // create POST persists it — position is the array index.
+                onReorder={setTasks}
                 // Zero tasks is a visible checklist error, not a hard floor:
                 // being told "no" after the fact beats a ✕ that silently
                 // refuses to work.

@@ -291,6 +291,7 @@ export default {
       taskAdded: 'ha aggiunto un’attività',
       taskUpdated: 'ha modificato un’attività',
       taskRemoved: 'ha rimosso un’attività',
+      taskReordered: 'ha riordinato le attività',
       taskStepTicked: 'ha spuntato un passaggio',
       taskStepUnticked: 'ha tolto la spunta a un passaggio',
       projectUpdated: 'ha modificato il progetto',

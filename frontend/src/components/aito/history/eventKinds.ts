@@ -18,6 +18,7 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'task.added': 'aito.history.taskAdded',
   'task.updated': 'aito.history.taskUpdated',
   'task.removed': 'aito.history.taskRemoved',
+  'task.reordered': 'aito.history.taskReordered',
   'task.step.ticked': 'aito.history.taskStepTicked',
   'task.step.unticked': 'aito.history.taskStepUnticked',
   'project.updated': 'aito.history.projectUpdated',

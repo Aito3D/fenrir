@@ -784,7 +784,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete, canCreate, canU
     );
   };
 
-  const { tasks, onTasksChange, onRemoveTask, onRowBlur, pendingTaskUids } = useProjectTasks(project.id);
+  const { tasks, onTasksChange, onRemoveTask, onRowBlur, pendingTaskUids, reorderTasks } = useProjectTasks(project.id);
   const { data: latestEvent } = useLatestProjectEvent(project.id);
 
   // Value-weighted, not step-weighted — see ValueRing's doc.
@@ -1286,6 +1286,10 @@ export function ProjectDetailPanel({ project, onClose, onDelete, canCreate, canU
                 // permission each, independent of `canUpdate` above.
                 canCreate={canCreate}
                 canDelete={canDelete}
+                // Reordering rewrites every task's position and re-syncs the
+                // quote, so it rides aito:update — absent (no handles), not
+                // disabled, same treatment as canCreate/canDelete beside it.
+                onReorder={canUpdate ? reorderTasks : undefined}
               />
             </div>
 

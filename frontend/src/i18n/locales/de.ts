@@ -291,6 +291,7 @@ export default {
       taskAdded: 'hat eine Aufgabe hinzugefügt',
       taskUpdated: 'hat eine Aufgabe bearbeitet',
       taskRemoved: 'hat eine Aufgabe entfernt',
+      taskReordered: 'hat die Aufgaben neu angeordnet',
       taskStepTicked: 'hat einen Schritt abgehakt',
       taskStepUnticked: 'hat das Häkchen bei einem Schritt entfernt',
       projectUpdated: 'hat das Projekt bearbeitet',

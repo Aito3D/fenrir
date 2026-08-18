@@ -291,6 +291,7 @@ export default {
       taskAdded: 'bir görev ekledi',
       taskUpdated: 'bir görevi düzenledi',
       taskRemoved: 'bir görevi kaldırdı',
+      taskReordered: 'görevleri yeniden sıraladı',
       taskStepTicked: 'bir adımı işaretledi',
       taskStepUnticked: 'bir adımın işaretini kaldırdı',
       projectUpdated: 'projeyi düzenledi',

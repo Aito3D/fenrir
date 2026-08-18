@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detailText, elapsedBucket, formatValue } from '../../components/aito/history/eventKinds';
+import { detailText, elapsedBucket, EVENT_LABEL_KEY, formatValue } from '../../components/aito/history/eventKinds';
 
 describe('formatValue', () => {
   it('renders an em dash for null and undefined', () => {
@@ -87,5 +87,11 @@ describe('elapsedBucket', () => {
   it('buckets in days from exactly one day and beyond', () => {
     expect(elapsedBucket(86_400)).toEqual({ value: 1, unit: 'day' });
     expect(elapsedBucket(259_200)).toEqual({ value: 3, unit: 'day' });
+  });
+});
+
+describe('EVENT_LABEL_KEY', () => {
+  it('labels task.reordered', () => {
+    expect(EVENT_LABEL_KEY['task.reordered']).toBe('aito.history.taskReordered');
   });
 });

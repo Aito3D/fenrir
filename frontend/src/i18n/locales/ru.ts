@@ -291,6 +291,7 @@ export default {
       taskAdded: 'добавил задачу',
       taskUpdated: 'изменил задачу',
       taskRemoved: 'удалил задачу',
+      taskReordered: 'изменил порядок задач',
       taskStepTicked: 'отметил шаг',
       taskStepUnticked: 'снял отметку с шага',
       projectUpdated: 'изменил проект',

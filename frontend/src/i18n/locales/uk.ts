@@ -292,6 +292,7 @@ export default {
       taskAdded: "додав завдання",
       taskUpdated: "змінив завдання",
       taskRemoved: "видалив завдання",
+      taskReordered: "змінив порядок завдань",
       taskStepTicked: "позначив крок виконаним",
       taskStepUnticked: "зняв позначку з кроку",
       projectUpdated: "змінив проєкт",

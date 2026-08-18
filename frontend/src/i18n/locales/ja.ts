@@ -291,6 +291,7 @@ export default {
       taskAdded: 'タスクを追加しました',
       taskUpdated: 'タスクを編集しました',
       taskRemoved: 'タスクを削除しました',
+      taskReordered: 'タスクを並べ替えました',
       taskStepTicked: 'ステップにチェックを入れました',
       taskStepUnticked: 'ステップのチェックを外しました',
       projectUpdated: 'プロジェクトを編集しました',

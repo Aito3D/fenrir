@@ -295,6 +295,7 @@ export default {
       taskAdded: 'added a task',
       taskUpdated: 'edited a task',
       taskRemoved: 'removed a task',
+      taskReordered: 'reordered the tasks',
       taskStepTicked: 'ticked a step',
       taskStepUnticked: 'un-ticked a step',
       projectUpdated: 'edited the project',

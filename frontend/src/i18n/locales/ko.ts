@@ -291,6 +291,7 @@ export default {
       taskAdded: '작업을 추가했습니다',
       taskUpdated: '작업을 수정했습니다',
       taskRemoved: '작업을 삭제했습니다',
+      taskReordered: '작업 순서를 변경했습니다',
       taskStepTicked: '단계를 완료 처리했습니다',
       taskStepUnticked: '단계 완료를 취소했습니다',
       projectUpdated: '프로젝트를 수정했습니다',
