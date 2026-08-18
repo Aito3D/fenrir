@@ -1708,11 +1708,9 @@ async def reorder_tasks(
     queued = project.quote_sync_state == "pending"
     await _commit_and_wake(db, queued, project.id)
     await _broadcast_changed("task", project.id, _actor(current_user))
-    # Refresh the tasks from the database after commit to ensure their state is valid.
-    stmt = select(AitoTask).where(AitoTask.project_id == project_id).order_by(AitoTask.position, AitoTask.id)
-    refreshed_tasks = list((await db.execute(stmt)).scalars())
-    refreshed_by_id = {t.id: t for t in refreshed_tasks}
-    return [_task_to_response(refreshed_by_id[task_id]) for task_id in payload.task_ids]
+    for task_id in payload.task_ids:
+        await db.refresh(by_id[task_id])
+    return [_task_to_response(by_id[task_id]) for task_id in payload.task_ids]
 
 
 @router.post("/import", response_model=list[AitoProjectResponse], status_code=201)
