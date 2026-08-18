@@ -431,6 +431,84 @@ export function useProjectTasks(projectId: number) {
     },
   });
 
+  // Order dropped while a reorder PATCH was still open. Each request carries
+  // the COMPLETE order, so only the newest queued value matters — an older
+  // queued order is superseded, never replayed. One slot, not a queue.
+  const queuedReorderRef = useRef<number[] | null>(null);
+  const reorderInFlightRef = useRef(false);
+  // Reachable from reorderMutation's onSettled, which belongs to whichever
+  // render fired the mutation — same ref idiom as flushAllRef below.
+  const sendReorderRef = useRef<(ids: number[]) => void>(() => {});
+
+  const reorderMutation = useMutation({
+    mutationFn: (ids: number[]) => api.reorderAitoTasks(projectId, ids),
+    onMutate: () => {
+      // Blocks the resync effect (see the guard above it) so a refetch that
+      // lands mid-flight cannot stomp the optimistic order.
+      inFlightRef.current += 1;
+    },
+    onSuccess: () => {
+      tasksDirtyRef.current = true;
+      // Same stamp as a field save: stops the resync effect from applying a
+      // cached snapshot fetched BEFORE this reorder landed (which would
+      // silently revert the order one debounce window later).
+      lastSaveAtRef.current = Date.now();
+      queryClient.invalidateQueries({ queryKey: ['aito-events', projectId] });
+    },
+    onError: () => {
+      // 409 (stale id set after a concurrent add/delete) or a network error:
+      // either way the server's order is the truth now — refetch it rather
+      // than guessing. The resync effect applies it once nothing is in flight.
+      showToast(t('aito.saveFailed'), 'error');
+      queryClient.invalidateQueries({ queryKey: ['aito-tasks', projectId] });
+    },
+    onSettled: () => {
+      inFlightRef.current -= 1;
+      reorderInFlightRef.current = false;
+      setTasksSyncGeneration((generation) => generation + 1);
+      const queued = queuedReorderRef.current;
+      queuedReorderRef.current = null;
+      if (queued) sendReorderRef.current(queued);
+      if (closedRef.current && inFlightRef.current === 0 && tasksDirtyRef.current) {
+        invalidateRef.current();
+      }
+    },
+  });
+
+  const sendReorder = useCallback(
+    (ids: number[]) => {
+      if (reorderInFlightRef.current) {
+        queuedReorderRef.current = ids;
+        return;
+      }
+      reorderInFlightRef.current = true;
+      reorderMutation.mutate(ids);
+    },
+    // `mutate` specifically, not the mutation object — see `flush`'s comment
+    // above for why the object's identity isn't stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [reorderMutation.mutate],
+  );
+  sendReorderRef.current = sendReorder;
+
+  /** One completed drag: adopt the new order on screen immediately, persist
+   *  it as the full id list. TaskEditor hides the handles while any create
+   *  POST is pending, so a null id here is defense, not a code path — the
+   *  visual order is still adopted so the UI never snaps back, and the next
+   *  successful reorder (or refetch) reconciles. */
+  const reorderTasks = useCallback(
+    (next: TaskDraft[]) => {
+      setTasks(next);
+      const ids: number[] = [];
+      for (const row of next) {
+        if (row.id === null) return;
+        ids.push(row.id);
+      }
+      sendReorder(ids);
+    },
+    [sendReorder],
+  );
+
   // TaskEditor is fully controlled and reports the whole array on every edit.
   // Growing the array is always "+ Add task", so that case routes to the
   // create endpoint. Otherwise exactly one entry has a new object identity,
@@ -545,5 +623,5 @@ export function useProjectTasks(projectId: number) {
     [],
   );
 
-  return { tasks, onTasksChange, onRemoveTask, onRowBlur: flush, pendingTaskUids };
+  return { tasks, onTasksChange, onRemoveTask, onRowBlur: flush, pendingTaskUids, reorderTasks };
 }

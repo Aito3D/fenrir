@@ -7332,6 +7332,11 @@ export const api = {
     request<AitoTask>(`/aito/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteAitoTask: (taskId: number) =>
     request<void>(`/aito/tasks/${taskId}`, { method: 'DELETE' }),
+  reorderAitoTasks: (projectId: number, taskIds: number[]) =>
+    request<AitoTask[]>(`/aito/${projectId}/tasks/reorder`, {
+      method: 'PATCH',
+      body: JSON.stringify({ task_ids: taskIds }),
+    }),
   moveAitoProject: (id: number, data: { column: AitoColumnId; position: number }) =>
     request<AitoProject>(`/aito/${id}/move`, {
       method: 'PATCH',
