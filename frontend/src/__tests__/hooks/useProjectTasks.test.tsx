@@ -503,7 +503,7 @@ describe('reorderTasks', () => {
     });
 
     expect(result.current.tasks.map((row) => row.id)).toEqual([8, 7]);
-    expect(reorder).toHaveBeenCalledWith(1, [8, 7]);
+    await waitFor(() => expect(reorder).toHaveBeenCalledWith(1, [8, 7]));
     await act(() => vi.runOnlyPendingTimersAsync());
   });
 
@@ -517,6 +517,8 @@ describe('reorderTasks', () => {
     const [a, b] = result.current.tasks;
 
     act(() => result.current.reorderTasks([b, a]));
+    // Wait for the first mutation to start before queuing the next ones.
+    await waitFor(() => expect(reorder).toHaveBeenCalledTimes(1));
     // Two more drops while the first PATCH is still open.
     act(() => result.current.reorderTasks([a, b]));
     act(() => result.current.reorderTasks([b, a]));
@@ -527,7 +529,7 @@ describe('reorderTasks', () => {
       await vi.runOnlyPendingTimersAsync();
     });
     // Exactly one follow-up, carrying the latest order — the middle one was superseded.
-    expect(reorder).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(reorder).toHaveBeenCalledTimes(2));
     expect(reorder).toHaveBeenLastCalledWith(1, [8, 7]);
   });
 
@@ -539,8 +541,11 @@ describe('reorderTasks', () => {
 
     act(() => result.current.reorderTasks([result.current.tasks[1], result.current.tasks[0]]));
     await waitFor(() => expect(getTasks.mock.calls.length).toBeGreaterThan(callsBefore));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
     // The refetch restores the server order over the optimistic one.
-    await waitFor(() => expect(result.current.tasks.map((row) => row.id)).toEqual([7, 8]));
+    expect(result.current.tasks.map((row) => row.id)).toEqual([7, 8]);
   });
 
   it('refuses to persist an order containing an unsaved row, but keeps the visual order', async () => {
