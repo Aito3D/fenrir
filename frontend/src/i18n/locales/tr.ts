@@ -158,6 +158,7 @@ export default {
     markDone: 'Tamamlandı olarak işaretle',
     markNotDone: 'Tamamlanmadı olarak işaretle',
     editTask: 'Görevi düzenle',
+    reorderTask: 'Görevi yeniden sırala',
     taskFinished: 'Görev tamamlandı',
     noSteps: 'Henüz adım yok — oluşturmak için bir adıma maliyet ekleyin',
     importQuote: 'İçe aktar',

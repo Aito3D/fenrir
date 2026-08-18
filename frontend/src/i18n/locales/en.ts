@@ -161,6 +161,7 @@ export default {
     markDone: 'Mark done',
     markNotDone: 'Mark not done',
     editTask: 'Edit task',
+    reorderTask: 'Reorder task',
     taskFinished: 'Task finished',
     noSteps: 'No steps yet — add a cost to a step to create it',
     importQuote: 'Import',

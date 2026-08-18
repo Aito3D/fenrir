@@ -158,6 +158,7 @@ export default {
     markDone: 'Segna come fatto',
     markNotDone: 'Segna come non fatto',
     editTask: 'Modifica attività',
+    reorderTask: 'Riordina l’attività',
     taskFinished: 'Attività completata',
     noSteps: 'Ancora nessun passaggio — aggiungi un costo a un passaggio per crearlo',
     importQuote: 'Importa',

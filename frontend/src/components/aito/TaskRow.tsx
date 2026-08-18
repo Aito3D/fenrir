@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, ChevronDown, Pencil } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
@@ -53,6 +54,15 @@ export interface TaskRowProps {
    *  ImpressionFields' three reference-data queries (see the body's own
    *  comment below). */
   collapsed?: boolean;
+  /** The drag grab handle, rendered in the header's control cluster (before
+   *  the pencil). Built by SortableTaskRow — the listeners and aria wiring
+   *  live there — so this row stays presentational and callers without
+   *  reordering (or with it currently unavailable) simply pass nothing. */
+  dragHandle?: ReactNode;
+  /** True while THIS row is the one being dragged: lifts it visually above
+   *  its sliding siblings. Distinct from the list-wide fold (that arrives
+   *  through `collapsed`). */
+  dragging?: boolean;
 }
 
 /** One task of a project: title/description, the four services (each
@@ -84,6 +94,8 @@ export function TaskRow({
   pending = false,
   onToggleCollapse,
   collapsed = false,
+  dragHandle,
+  dragging = false,
 }: TaskRowProps) {
   const { t } = useTranslation();
   const currency = useCurrency();
@@ -125,7 +137,7 @@ export function TaskRow({
         finished
           ? 'border-bambu-green/40 bg-[color-mix(in_srgb,var(--color-bambu-green)_5%,var(--color-bambu-dark-secondary))]'
           : 'border-bambu-dark-tertiary bg-bambu-dark-secondary'
-      }`}
+      }${dragging ? ' scale-[1.02] shadow-xl' : ''}`}
       onBlur={(e) => {
         // focusout bubbles in React, so one handler covers every input in the
         // row. relatedTarget is where focus went: inside the row means the
@@ -187,6 +199,7 @@ export function TaskRow({
             — `TaskEditor` opens one form at a time, so a second unpriced row
             loses the slot to the newest one — and that row needs the pencil
             or it is a dead header line with no way back into its own form. */}
+        {dragHandle}
         {(steps.length > 0 || !editing) && (
           <button
             type="button"

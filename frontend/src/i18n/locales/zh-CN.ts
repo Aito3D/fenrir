@@ -158,6 +158,7 @@ export default {
     markDone: '标记为已完成',
     markNotDone: '标记为未完成',
     editTask: '编辑任务',
+    reorderTask: '重新排序任务',
     taskFinished: '任务已完成',
     noSteps: '还没有步骤——为某个步骤添加成本即可创建它',
     importQuote: '导入',

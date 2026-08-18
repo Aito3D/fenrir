@@ -158,6 +158,7 @@ export default {
     markDone: '完了にする',
     markNotDone: '未完了にする',
     editTask: 'タスクを編集',
+    reorderTask: 'タスクを並べ替え',
     taskFinished: 'タスク完了',
     noSteps: 'まだステップがありません — ステップにコストを追加すると作成されます',
     importQuote: 'インポート',

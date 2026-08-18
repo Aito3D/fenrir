@@ -158,6 +158,7 @@ export default {
     markDone: 'Als erledigt markieren',
     markNotDone: 'Als nicht erledigt markieren',
     editTask: 'Aufgabe bearbeiten',
+    reorderTask: 'Aufgabe neu anordnen',
     taskFinished: 'Aufgabe abgeschlossen',
     noSteps: 'Noch keine Schritte — fügen Sie einem Schritt Kosten hinzu, um ihn zu erstellen',
     importQuote: 'Importieren',

@@ -53,6 +53,7 @@ export default defineConfig([
       '**/components/Layout.tsx',
       '**/components/HMSErrorModal.tsx',
       '**/components/aito/SocialInput.tsx',
+      '**/components/aito/TaskEditor.tsx',
     ],
     rules: {
       'react-refresh/only-export-components': 'off',

@@ -158,6 +158,7 @@ export default {
     markDone: '완료로 표시',
     markNotDone: '미완료로 표시',
     editTask: '작업 편집',
+    reorderTask: '작업 순서 변경',
     taskFinished: '작업 완료',
     noSteps: '아직 단계가 없습니다 — 단계에 비용을 추가하면 생성됩니다',
     importQuote: '가져오기',

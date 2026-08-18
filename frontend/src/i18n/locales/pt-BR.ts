@@ -158,6 +158,7 @@ export default {
     markDone: 'Marcar como concluído',
     markNotDone: 'Marcar como não concluído',
     editTask: 'Editar tarefa',
+    reorderTask: 'Reordenar tarefa',
     taskFinished: 'Tarefa concluída',
     noSteps: 'Ainda não há etapas — adicione um custo a uma etapa para criá-la',
     importQuote: 'Importar',

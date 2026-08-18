@@ -17,7 +17,7 @@ import { server } from '../mocks/server';
 import { render } from '../utils';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { TaskRow } from '../../components/aito/TaskRow';
-import { TaskEditor } from '../../components/aito/TaskEditor';
+import { TaskEditor, reorderedTasks } from '../../components/aito/TaskEditor';
 import { computeImpressionCost, emptyTaskDraft, roundUpTo50, taskTotal } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
 import { formatMoney } from '../../utils/pricing';
@@ -1380,5 +1380,59 @@ describe('TaskEditor accordion (create drawer)', () => {
     expect(screen.queryByRole('button', { name: /Alpha/ })).not.toBeInTheDocument();
     expect(screen.getByTestId('task-progress-0')).toBeInTheDocument();
     expect(screen.getByTestId('task-progress-1')).toBeInTheDocument();
+  });
+});
+
+const twoTasks = () => {
+  const a = { ...emptyTaskDraft(), title: 'Alpha', scanCost: 100 };
+  const b = { ...emptyTaskDraft(), title: 'Beta', scanCost: 200 };
+  return [a, b];
+};
+
+describe('task reordering', () => {
+  it('reorderedTasks moves the active row into the over row slot', () => {
+    const [a, b] = twoTasks();
+    const next = reorderedTasks([a, b], a.uid, b.uid);
+    expect(next?.map((task) => task.title)).toEqual(['Beta', 'Alpha']);
+  });
+
+  it('reorderedTasks returns null for a drop on itself or an unknown id', () => {
+    const [a, b] = twoTasks();
+    expect(reorderedTasks([a, b], a.uid, a.uid)).toBeNull();
+    expect(reorderedTasks([a, b], 'nope', b.uid)).toBeNull();
+  });
+
+  it('shows a grab handle per row when onReorder is provided and there are 2+ rows', () => {
+    render(
+      <TaskEditor value={twoTasks()} onChange={vi.fn()} onRemove={vi.fn()} canTick={false} onReorder={vi.fn()} />,
+    );
+    expect(screen.getAllByRole('button', { name: 'Reorder task' })).toHaveLength(2);
+  });
+
+  it('shows no handles without onReorder', () => {
+    render(<TaskEditor value={twoTasks()} onChange={vi.fn()} onRemove={vi.fn()} canTick={false} />);
+    expect(screen.queryByRole('button', { name: 'Reorder task' })).toBeNull();
+  });
+
+  it('shows no handles with a single row', () => {
+    render(
+      <TaskEditor value={[twoTasks()[0]]} onChange={vi.fn()} onRemove={vi.fn()} canTick={false} onReorder={vi.fn()} />,
+    );
+    expect(screen.queryByRole('button', { name: 'Reorder task' })).toBeNull();
+  });
+
+  it('shows no handles while any row has a create POST in flight', () => {
+    const [a, b] = twoTasks();
+    render(
+      <TaskEditor
+        value={[a, b]}
+        onChange={vi.fn()}
+        onRemove={vi.fn()}
+        canTick={false}
+        onReorder={vi.fn()}
+        pendingUids={new Set([a.uid])}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Reorder task' })).toBeNull();
   });
 });

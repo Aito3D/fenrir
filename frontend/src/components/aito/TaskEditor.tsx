@@ -1,13 +1,39 @@
-import { useState } from 'react';
+import { useState } from 'react'; // already there
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
+import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
+import type { DragEndEvent, Modifier } from '@dnd-kit/core';
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { TaskRow } from './TaskRow';
+import { SortableTaskRow } from './SortableTaskRow';
 import { taskSteps } from './services';
 import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
 import { useCurrency } from '../../hooks/useCurrency';
 import { emptyTaskDraft, projectTotal, rowKey } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
+
+/** Reordering a vertical list, the x component of the drag is noise: locking
+ *  it keeps the card riding its own column, which reads as sliding into a
+ *  slot rather than floating free. Inline rather than @dnd-kit/modifiers'
+ *  restrictToVerticalAxis — one line does not justify a dependency. */
+const verticalAxis: Modifier = ({ transform }) => ({ ...transform, x: 0 });
+
+/** The new order for a completed drag, or null when the drop changes nothing
+ *  (dropped on itself, or on/from an id no longer in the list). Pure and
+ *  exported for its unit test — jsdom cannot host a real dnd-kit drag. */
+export function reorderedTasks(value: TaskDraft[], activeId: string, overId: string): TaskDraft[] | null {
+  if (activeId === overId) return null;
+  // Matches on the full `rowKey` (what a real drag reports — dnd-kit's ids
+  // are `sortId`, which TaskEditor sets to `rowKey(task)`) OR the bare
+  // `uid` (what the unit test above passes directly, skipping dnd-kit
+  // entirely) — a draft row answers to either.
+  const indexOfId = (id: string) => value.findIndex((task) => rowKey(task) === id || task.uid === id);
+  const from = indexOfId(activeId);
+  const to = indexOfId(overId);
+  if (from === -1 || to === -1) return null;
+  return arrayMove(value, from, to);
+}
 
 export interface TaskEditorProps {
   value: TaskDraft[];
@@ -69,6 +95,14 @@ export interface TaskEditorProps {
    *  `pending` checks. Optional, defaulting to true for the same reason as
    *  `canCreate` — mirrors DELETE /tasks/{task_id}'s Permission.AITO_DELETE. */
   canDelete?: boolean;
+  /** Present = this list is drag-reorderable: each row grows a grab handle
+   *  and the drop reports the full moved array here (never through
+   *  `onChange`, whose length/identity diffing would misread a reorder as an
+   *  edit). The drawer passes its local setter; the detail panel passes the
+   *  hook's persisting `reorderTasks`, and only when the user holds
+   *  aito:update — absent means no handles at all, mirroring how
+   *  `canCreate`/`canDelete` remove rather than disable their controls. */
+  onReorder?: (next: TaskDraft[]) => void;
 }
 
 /** The task list for one Aito project: a heading, each task's `TaskRow`, "+
@@ -89,6 +123,7 @@ export function TaskEditor({
   accordion = false,
   canCreate = true,
   canDelete = true,
+  onReorder,
 }: TaskEditorProps) {
   const { t } = useTranslation();
   const currency = useCurrency();
@@ -168,6 +203,25 @@ export function TaskEditor({
     }
   };
 
+  const [draggingTasks, setDraggingTasks] = useState(false);
+  const sensors = useSensors(
+    // distance 4: a click on the handle must stay a click (focus, then
+    // keyboard reorder) — only intent, a real pull, starts a drag.
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  // No handles while ANY create POST is open: a row with no server id cannot
+  // be placed in a persisted order, and reordering around it would misnumber
+  // its landing slot. The window is one POST round-trip.
+  const showHandles = value.length > 1 && (pendingUids?.size ?? 0) === 0;
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setDraggingTasks(false);
+    if (!onReorder || !event.over) return;
+    const next = reorderedTasks(value, String(event.active.id), String(event.over.id));
+    if (next) onReorder(next);
+  };
+
   return (
     <div className="space-y-3">
       {showHeader && (
@@ -180,56 +234,81 @@ export function TaskEditor({
         </div>
       )}
 
-      <div className="space-y-3">
-        {value.map((task, index) => {
-          const pending = pendingUids?.has(task.uid) ?? false;
-          const key = rowKey(task);
-          // EVERY row folds, the unpriced ones included — a collapsed
-          // stepless row shows its bare header and expands back into its
-          // form (`isEditing` keeps auto-editing it). Exempting stepless
-          // rows was tried first and meant a drawer full of unpriced drafts
-          // stayed a wall of forms — the exact problem accordion mode
-          // exists to solve.
-          const collapsed = accordion && key !== effectiveOpenKey;
-          return (
-            <TaskRow
-              key={key}
-              task={task}
-              index={index}
-              onChange={(next) => {
-                graduateToEditing(task, next);
-                onChange(value.map((existing, i) => (i === index ? next : existing)));
-              }}
-              // Absent (not merely disabled) while pending too, same rule as
-              // `minRows` below it: the row's create hasn't landed, so there
-              // is no id yet to send a DELETE for — see TaskRow's own prop doc.
-              // `canDelete` is the same absent-not-disabled treatment: a user
-              // without it would only get a 403 from DELETE /tasks/{task_id}.
-              onRemove={value.length > minRows && !pending && canDelete ? () => onRemove(index) : undefined}
-              editing={isEditing(task)}
-              onToggleEdit={() => {
-                if (collapsed) {
-                  // Pencil on a collapsed row: open it AND force edit ON —
-                  // a plain toggle could flip an already-editing key OFF
-                  // while the form it would close isn't even on screen.
-                  setOpenKey(key);
-                  setEditingKey(key);
-                } else {
-                  toggleEdit(key);
-                }
-              }}
-              onRowBlur={onRowBlur}
-              canTick={canTick}
-              pending={pending}
-              collapsed={collapsed}
-              // Compared against the EFFECTIVE key, not the stored one: when
-              // a dangling key has fallen back to opening this row, clicking
-              // its header must close it, not "open" it a second time.
-              onToggleCollapse={accordion ? () => setOpenKey(effectiveOpenKey === key ? null : key) : undefined}
-            />
-          );
-        })}
-      </div>
+      {(() => {
+        const rows = (
+          <div className="space-y-3">
+            {value.map((task, index) => {
+              const pending = pendingUids?.has(task.uid) ?? false;
+              const key = rowKey(task);
+              // EVERY row folds, the unpriced ones included — a collapsed
+              // stepless row shows its bare header and expands back into its
+              // form (`isEditing` keeps auto-editing it). Exempting stepless
+              // rows was tried first and meant a drawer full of unpriced drafts
+              // stayed a wall of forms — the exact problem accordion mode
+              // exists to solve.
+              const collapsed = accordion && key !== effectiveOpenKey;
+              const rowProps = {
+                task,
+                index,
+                onChange: (next: TaskDraft) => {
+                  graduateToEditing(task, next);
+                  onChange(value.map((existing, i) => (i === index ? next : existing)));
+                },
+                // Absent (not merely disabled) while pending too, same rule as
+                // `minRows` below it: the row's create hasn't landed, so there
+                // is no id yet to send a DELETE for — see TaskRow's own prop doc.
+                // `canDelete` is the same absent-not-disabled treatment: a user
+                // without it would only get a 403 from DELETE /tasks/{task_id}.
+                onRemove: value.length > minRows && !pending && canDelete ? () => onRemove(index) : undefined,
+                editing: isEditing(task),
+                onToggleEdit: () => {
+                  if (collapsed) {
+                    // Pencil on a collapsed row: open it AND force edit ON —
+                    // a plain toggle could flip an already-editing key OFF
+                    // while the form it would close isn't even on screen.
+                    setOpenKey(key);
+                    setEditingKey(key);
+                  } else {
+                    toggleEdit(key);
+                  }
+                },
+                onRowBlur,
+                canTick,
+                pending,
+                // The list-wide fold: while a drag is in flight EVERY row shows
+                // only its header line, so the user shuffles compact cards
+                // instead of scroll-fighting full-height ones. Rides the same
+                // grid fold the drawer's accordion uses.
+                collapsed: collapsed || draggingTasks,
+                // Compared against the EFFECTIVE key, not the stored one: when
+                // a dangling key has fallen back to opening this row, clicking
+                // its header must close it, not "open" it a second time.
+                onToggleCollapse: accordion ? () => setOpenKey(effectiveOpenKey === key ? null : key) : undefined,
+              };
+              return onReorder ? (
+                <SortableTaskRow key={key} sortId={key} showHandle={showHandles} {...rowProps} />
+              ) : (
+                <TaskRow key={key} {...rowProps} />
+              );
+            })}
+          </div>
+        );
+        if (!onReorder) return rows;
+        return (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            modifiers={[verticalAxis]}
+            onDragStart={() => setDraggingTasks(true)}
+            onDragCancel={() => setDraggingTasks(false)}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={value.map(rowKey)} strategy={verticalListSortingStrategy}>
+              {rows}
+            </SortableContext>
+          </DndContext>
+        );
+      })()}
 
       {canCreate && (
       <button
