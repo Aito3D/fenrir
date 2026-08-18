@@ -18,7 +18,7 @@ import { render } from '../utils';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { TaskRow } from '../../components/aito/TaskRow';
 import { TaskEditor, reorderedTasks } from '../../components/aito/TaskEditor';
-import { computeImpressionCost, emptyTaskDraft, roundUpTo50, taskTotal } from '../../utils/taskDraft';
+import { computeImpressionCost, emptyTaskDraft, roundUpTo50, rowKey, taskTotal } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
 import { formatMoney } from '../../utils/pricing';
 
@@ -1392,14 +1392,14 @@ const twoTasks = () => {
 describe('task reordering', () => {
   it('reorderedTasks moves the active row into the over row slot', () => {
     const [a, b] = twoTasks();
-    const next = reorderedTasks([a, b], a.uid, b.uid);
+    const next = reorderedTasks([a, b], rowKey(a), rowKey(b));
     expect(next?.map((task) => task.title)).toEqual(['Beta', 'Alpha']);
   });
 
   it('reorderedTasks returns null for a drop on itself or an unknown id', () => {
     const [a, b] = twoTasks();
-    expect(reorderedTasks([a, b], a.uid, a.uid)).toBeNull();
-    expect(reorderedTasks([a, b], 'nope', b.uid)).toBeNull();
+    expect(reorderedTasks([a, b], rowKey(a), rowKey(a))).toBeNull();
+    expect(reorderedTasks([a, b], 'nope', rowKey(b))).toBeNull();
   });
 
   it('shows a grab handle per row when onReorder is provided and there are 2+ rows', () => {

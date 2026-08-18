@@ -24,13 +24,9 @@ const verticalAxis: Modifier = ({ transform }) => ({ ...transform, x: 0 });
  *  exported for its unit test — jsdom cannot host a real dnd-kit drag. */
 export function reorderedTasks(value: TaskDraft[], activeId: string, overId: string): TaskDraft[] | null {
   if (activeId === overId) return null;
-  // Matches on the full `rowKey` (what a real drag reports — dnd-kit's ids
-  // are `sortId`, which TaskEditor sets to `rowKey(task)`) OR the bare
-  // `uid` (what the unit test above passes directly, skipping dnd-kit
-  // entirely) — a draft row answers to either.
-  const indexOfId = (id: string) => value.findIndex((task) => rowKey(task) === id || task.uid === id);
-  const from = indexOfId(activeId);
-  const to = indexOfId(overId);
+  const keys = value.map(rowKey);
+  const from = keys.indexOf(activeId);
+  const to = keys.indexOf(overId);
   if (from === -1 || to === -1) return null;
   return arrayMove(value, from, to);
 }
