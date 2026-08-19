@@ -1,8 +1,12 @@
-"""OpenRouter chat-completion client for the Aito project summary.
+"""OpenRouter chat-completion client for the Aito AI text features.
 
-One job: turn a project's task drafts into a short factual French summary.
-Configuration lives in the settings table (`openrouter_api_key` is write-only,
-`openrouter_model` defaults to mistral-small — cheap and strong in French).
+Two jobs, one API key. `summarize_tasks` turns a project's task drafts into a
+short factual French summary; `proofread_text` corrects one field's French
+spelling without rewriting it. Configuration lives in the settings table
+(`openrouter_api_key` is write-only, `openrouter_model` defaults to
+mistral-small — cheap and strong in French). Proofreading pins its own model
+rather than following that setting: a summary can trade prose quality for
+price, but a correction that reformulates is a wrong correction.
 """
 
 import httpx
@@ -10,6 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "mistralai/mistral-small"
+# Pinned, not a setting: see the module docstring. Every proofread call uses it.
+PROOFREAD_MODEL = "mistralai/mistral-small-2603"
+# Longest field we will pay to correct. Matches AitoProofreadRequest.text's own
+# cap — the API rejects anything longer before it reaches this module.
+PROOFREAD_MAX_CHARS = 2000
 TIMEOUT_S = 8.0
 
 # Wire-field -> description field -> French service name, in the board's
@@ -29,6 +38,16 @@ _SYSTEM_PROMPT = (
     "le travail à réaliser. Écris tous les nombres en chiffres (« 3 pièces », « 2 supports »), "
     "jamais en toutes lettres. Pas de prix, pas de formule de politesse, pas de liste à puces : "
     "uniquement le résumé."
+)
+
+
+_PROOFREAD_SYSTEM_PROMPT = (
+    "Tu es correcteur orthographique pour un atelier de fabrication 3D. "
+    "Corrige l'orthographe, les accents, la grammaire, la ponctuation et les majuscules du texte fourni, "
+    "en français. Ne reformule pas, n'ajoute rien, ne supprime rien, ne traduis pas : garde les mêmes mots, "
+    "le même ordre et le même sens. Laisse tels quels les nombres, les unités, les références, les noms "
+    "propres et les termes techniques. Si le texte est déjà correct, renvoie-le à l'identique. "
+    "Réponds uniquement par le texte corrigé, sans guillemets, sans commentaire, sans explication."
 )
 
 
@@ -71,23 +90,35 @@ def _task_lines(tasks: list[dict]) -> list[str]:
     return lines
 
 
-async def summarize_tasks(db: AsyncSession, tasks: list[dict]) -> tuple[str, str]:
-    """Returns (summary, model). Raises the two module errors; never returns ""."""
+async def _api_key(db: AsyncSession) -> str:
+    """The configured key, or OpenRouterNotConfiguredError."""
+    api_key = (await _setting(db, "openrouter_api_key")).strip()
+    if not api_key:
+        raise OpenRouterNotConfiguredError()
+    return api_key
+
+
+async def _setting(db: AsyncSession, key: str) -> str:
     # Lazy import: settings helpers live in the routes module (house style —
     # see services/zoho.py doing exactly this).
     from backend.app.api.routes.settings import get_setting
 
-    api_key = (await get_setting(db, "openrouter_api_key") or "").strip()
-    if not api_key:
-        raise OpenRouterNotConfiguredError()
-    model = (await get_setting(db, "openrouter_model") or "").strip() or DEFAULT_MODEL
+    return await get_setting(db, key) or ""
 
+
+async def _chat(api_key: str, model: str, system: str, user: str, max_tokens: int) -> str:
+    """One chat completion, returned as its stripped message content.
+
+    Every failure mode — transport, non-200, unexpected payload, empty answer —
+    raises OpenRouterUpstreamError, so callers have exactly two error cases to
+    handle (this one and "no key") whatever they asked the model for.
+    """
     payload = {
         "model": model,
-        "max_tokens": 200,
+        "max_tokens": max_tokens,
         "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": "\n".join(_task_lines(tasks))},
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
         ],
     }
     try:
@@ -102,9 +133,60 @@ async def summarize_tasks(db: AsyncSession, tasks: list[dict]) -> tuple[str, str
     if response.status_code != 200:
         raise OpenRouterUpstreamError(f"OpenRouter returned {response.status_code}")
     try:
-        summary = response.json()["choices"][0]["message"]["content"].strip()
-    except (KeyError, IndexError, TypeError, ValueError) as e:
+        content = response.json()["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError, TypeError, ValueError, AttributeError) as e:
         raise OpenRouterUpstreamError("OpenRouter returned an unexpected payload") from e
-    if not summary:
-        raise OpenRouterUpstreamError("OpenRouter returned an empty summary")
+    if not content:
+        raise OpenRouterUpstreamError("OpenRouter returned an empty answer")
+    return content
+
+
+async def summarize_tasks(db: AsyncSession, tasks: list[dict]) -> tuple[str, str]:
+    """Returns (summary, model). Raises the two module errors; never returns ""."""
+    api_key = await _api_key(db)
+    model = (await _setting(db, "openrouter_model")).strip() or DEFAULT_MODEL
+    summary = await _chat(api_key, model, _SYSTEM_PROMPT, "\n".join(_task_lines(tasks)), max_tokens=200)
     return summary, model
+
+
+def _unquote(corrected: str, original: str) -> str:
+    """Strip one layer of quotes the model wrapped the answer in.
+
+    Instructing it not to is not a guarantee, and a title that comes back as
+    `"Capot"` would otherwise land in the field — and on the quote — with the
+    quotes in it. Only stripped when the ORIGINAL had no such pair, so a user
+    who deliberately quoted their own text keeps it.
+    """
+    for opening, closing in (('"', '"'), ("«", "»"), ("“", "”"), ("'", "'")):
+        if (
+            len(corrected) >= 2
+            and corrected.startswith(opening)
+            and corrected.endswith(closing)
+            and not (original.startswith(opening) and original.endswith(closing))
+        ):
+            return corrected[1:-1].strip()
+    return corrected
+
+
+async def proofread_text(db: AsyncSession, text: str) -> tuple[str, str]:
+    """Correct one field's French spelling. Returns (corrected, model).
+
+    Correction only — the prompt forbids reformulating, adding or removing —
+    because the caller swaps the answer straight into the field the user just
+    left, and anything beyond a fix is words they did not write ending up on a
+    quote. Raises the two module errors; never returns "".
+    """
+    api_key = await _api_key(db)
+    # Bounded twice over: the request schema caps this at PROOFREAD_MAX_CHARS,
+    # and a correction is the same length as its input, so the answer needs no
+    # more room than the question plus a little slack for added accents and
+    # punctuation.
+    source = text.strip()[:PROOFREAD_MAX_CHARS]
+    corrected = await _chat(
+        api_key,
+        PROOFREAD_MODEL,
+        _PROOFREAD_SYSTEM_PROMPT,
+        source,
+        max_tokens=min(1000, len(source) // 2 + 120),
+    )
+    return _unquote(corrected, source), PROOFREAD_MODEL

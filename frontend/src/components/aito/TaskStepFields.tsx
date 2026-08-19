@@ -1,6 +1,7 @@
 import { useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
+import { AiTextField } from './AiTextField';
 import { ImpressionFields, rowLabelCls } from './ImpressionFields';
 import { Money } from '../calculator/shared';
 import { inputCls, focusRingCls } from '../formStyles';
@@ -43,7 +44,10 @@ function CostInput({
 }
 
 /** Optional free text for one service — becomes the quote line's `Info:` row.
- *  Reuses the old task-level description key: the label text is identical. */
+ *  Reuses the old task-level description key: the label text is identical.
+ *
+ *  An `AiTextField`, like the title: this text is printed on the quote the
+ *  client reads, so it spell-checks itself when the user leaves it. */
 function StepDescriptionInput({
   label,
   value,
@@ -55,13 +59,13 @@ function StepDescriptionInput({
 }) {
   const { t } = useTranslation();
   return (
-    <textarea
-      aria-label={`${label} ${t('aito.taskDescriptionPlaceholder')}`}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
+    <AiTextField
+      multiline
+      label={`${label} ${t('aito.taskDescriptionPlaceholder')}`}
       placeholder={t('aito.taskDescriptionPlaceholder')}
-      rows={2}
-      className={`${inputCls} resize-none mt-3`}
+      value={value}
+      onChange={onChange}
+      className="mt-3"
     />
   );
 }
@@ -231,12 +235,13 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
 
   return (
     <fieldset disabled={disabled} className="space-y-3">
-      <input
-        aria-label={t('aito.taskTitlePlaceholder')}
-        value={task.title}
-        onChange={(e) => onChange({ ...task, title: e.target.value })}
+      {/* The title becomes the quote line's name, so it is spell-checked on
+          blur like every description below it — see AiTextField. */}
+      <AiTextField
+        label={t('aito.taskTitlePlaceholder')}
         placeholder={t('aito.taskTitlePlaceholder')}
-        className={inputCls}
+        value={task.title}
+        onChange={(next) => onChange({ ...task, title: next })}
       />
 
       <div className="flex flex-wrap gap-2">

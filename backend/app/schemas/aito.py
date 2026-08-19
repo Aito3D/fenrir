@@ -705,3 +705,29 @@ class AitoSummarizeRequest(BaseModel):
 class AitoSummarizeResponse(BaseModel):
     summary: str
     model: str
+
+
+class AitoProofreadRequest(BaseModel):
+    """One field's text to spell-check. Sent on blur, so it is one title or one
+    service description — never a whole project."""
+
+    # 2000: the longest a service description gets in practice, and the cap the
+    # service trusts (openrouter.PROOFREAD_MAX_CHARS). Bounds what a paste can
+    # cost per blur.
+    text: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("text")
+    @classmethod
+    def _reject_blank(cls, v: str) -> str:
+        """Whitespace-only is nothing to correct: 422 rather than a paid call
+        that can only echo it back. Returns the TRIMMED text, so the answer the
+        field swaps in cannot reintroduce the user's stray whitespace."""
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("text must not be blank")
+        return stripped
+
+
+class AitoProofreadResponse(BaseModel):
+    text: str
+    model: str

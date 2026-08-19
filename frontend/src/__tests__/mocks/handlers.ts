@@ -602,4 +602,10 @@ export const handlers = [
     const body = (await request.json()) as Record<string, unknown>;
     return HttpResponse.json(body);
   }),
+  // Every Aito task field spell-checks itself on blur (AiTextField), so any
+  // test that types into one and tabs away fires this. Unconfigured (409) by
+  // default — the AI stays out of the way of tests about something else, and
+  // the field keeps exactly what was typed. Tests about the correction itself
+  // override this with server.use().
+  http.post('/api/v1/aito/proofread', () => HttpResponse.json({ detail: 'OpenRouter is not configured' }, { status: 409 })),
 ];

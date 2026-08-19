@@ -807,6 +807,66 @@ body {
   }
 }
 
+/* Aito: a field waiting on its AI spelling correction (AiTextField). Two light
+   arcs travel the field's own rounded rectangle, 180° apart — each fades in
+   behind and brightens to a head in front, so the pair reads as moving one way
+   round rather than sitting there. The sparkle that also pulses is 12px of
+   signal for a wait that can run a second or two, and the user has already left
+   the field by then, so the cue has to be findable from across the form.
+   2.8s per lap: present without being urgent.
+
+   Applied to the WRAPPER, never the control: an input or textarea is a replaced
+   element and has no ::before to hang this on. The ring is one conic gradient
+   masked down to a 1.5px band (paint the padding box, punch out the content
+   box), which is why the light follows the corners instead of sliding past
+   them. Both arcs live in that single gradient, so they can never drift apart.
+   The angle needs @property — a plain custom property is not animatable. */
+@property --aito-ai-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes aito-ai-sweep {
+  to { --aito-ai-angle: 360deg; }
+}
+.animate-ai-thinking::before {
+  content: '';
+  position: absolute;
+  /* -1px so the ring covers the field's own resting border rather than sitting
+     inside it; the radius follows suit (the field is rounded-lg = .5rem). */
+  inset: -1px;
+  border-radius: calc(0.5rem + 1px);
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--aito-ai-angle),
+    transparent 0deg,
+    color-mix(in srgb, var(--color-violet-400, #a78bfa) 10%, transparent) 10deg,
+    color-mix(in srgb, var(--color-violet-400, #a78bfa) 55%, transparent) 70deg,
+    var(--color-violet-400, #a78bfa) 108deg,
+    transparent 112deg,
+    transparent 180deg,
+    color-mix(in srgb, var(--color-violet-400, #a78bfa) 10%, transparent) 190deg,
+    color-mix(in srgb, var(--color-violet-400, #a78bfa) 55%, transparent) 250deg,
+    var(--color-violet-400, #a78bfa) 288deg,
+    transparent 292deg,
+    transparent 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: aito-ai-sweep 2.8s linear infinite;
+  pointer-events: none;
+}
+/* A steady lit ring instead of travelling arcs: still visibly "this field is
+   busy", with no motion at all. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-ai-thinking::before {
+    animation: none;
+    background: var(--color-violet-400, #a78bfa);
+  }
+}
+
 /* Route/page transition — the incoming page rises + fades in immediately on
    navigation. AnimatedOutlet mounts the destination right away (no exit
    phase/timer); this is the only animation that plays. */

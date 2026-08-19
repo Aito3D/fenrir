@@ -4156,6 +4156,12 @@ export interface AitoSummarizeResponse {
   model: string;
 }
 
+/** POST /aito/proofread — one task field's text, spell-checked in French. */
+export interface AitoProofreadResponse {
+  text: string;
+  model: string;
+}
+
 // Zoho Books integration
 export interface ZohoContact {
   id: string;
@@ -7319,6 +7325,11 @@ export const api = {
     request<AitoSummarizeResponse>('/aito/summarize', {
       method: 'POST',
       body: JSON.stringify({ tasks }),
+    }),
+  proofreadAitoText: (text: string) =>
+    request<AitoProofreadResponse>('/aito/proofread', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
     }),
   importAitoProjects: (data: { projects: { description: string; column: AitoColumnId; position: number }[] }) =>
     request<AitoProject[]>('/aito/import', {
