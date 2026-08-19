@@ -1591,6 +1591,84 @@
     "aito"
    ]
   }
+ },
+ "/api/v1/aito/{project_id}/tasks/reorder": {
+  "patch": {
+   "description": "Renumber the project's tasks to the payload's order. `position` is what\nevery consumer sorts by \u2014 the task list endpoints and the Zoho quote sync\n(aito_quote_sync.py) \u2014 so persisting it here IS the quote reorder; no\nquote code is touched.\n\nThe payload must be exactly the current task-id set. Anything else\n(missing, foreign, duplicate) means the client's list is stale \u2014 a\nconcurrent add or delete \u2014 and renumbering from it would drop or collide\npositions, so it draws a 409 and the client refetches.\n\nNo `_apply_rules` call, unlike the other task writes: order changes\nneither costs nor ticks, so the board column cannot move.",
+   "operationId": "reorder_tasks_api_v1_aito__project_id__tasks_reorder_patch",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "project_id",
+     "required": true,
+     "schema": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/AitoTaskReorder"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/AitoTaskResponse"
+        },
+        "title": "Response Reorder Tasks Api V1 Aito  Project Id  Tasks Reorder Patch",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Reorder Tasks",
+   "tags": [
+    "aito"
+   ]
+  }
  }
 }
 
