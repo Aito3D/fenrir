@@ -36,4 +36,37 @@ describe('useAitoPresence', () => {
     registerPresenceSender(send);
     expect(send).not.toHaveBeenCalled();
   });
+
+  it('clears viewers and notifies subscribers when the sender drops to null', () => {
+    const { result } = renderHook(() => useAitoViewers(3));
+    act(() => setAitoPresenceState({ '3': ['marie'], '9': ['jo'] }));
+    expect(result.current).toEqual(['marie']);
+
+    act(() => registerPresenceSender(null)); // socket dropped
+    expect(result.current).toEqual([]);
+  });
+
+  it('registering a real sender does not clear viewers', () => {
+    const { result } = renderHook(() => useAitoViewers(3));
+    act(() => setAitoPresenceState({ '3': ['marie'] }));
+    expect(result.current).toEqual(['marie']);
+
+    const send = vi.fn();
+    act(() => registerPresenceSender(send));
+    expect(result.current).toEqual(['marie']);
+  });
+
+  it('repopulates viewers normally after a reconnect sends aito_presence_state', () => {
+    const { result } = renderHook(() => useAitoViewers(3));
+    act(() => setAitoPresenceState({ '3': ['marie'] }));
+    expect(result.current).toEqual(['marie']);
+
+    act(() => registerPresenceSender(null)); // socket dropped
+    expect(result.current).toEqual([]);
+
+    const send = vi.fn();
+    act(() => registerPresenceSender(send)); // reconnected
+    act(() => setAitoPresenceState({ '3': ['marie', 'jo'] }));
+    expect(result.current).toEqual(['marie', 'jo']);
+  });
 });

@@ -1506,14 +1506,44 @@ async def add_task(
     project = (await db.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    _reject_ticks_without_acceptance(project.quote_status, payload.model_dump())
+    task_fields = payload.model_dump()
+    _reject_ticks_without_acceptance(project.quote_status, task_fields)
+    if (
+        any(task_fields.get(f"{service}_done") for service in SERVICES)
+        and current_user is not None
+        and not current_user.has_permission(Permission.AITO_UPDATE.value)
+    ):
+        # A ticked step is a DECISION about work already done: the same trust
+        # boundary PATCH /aito/tasks/{id} (update_task) enforces with
+        # Permission.AITO_UPDATE. Without this, aito:create alone (a real,
+        # supportable group configuration — see the denylist comment on
+        # Permission.AITO_CREATE in core/auth.py) could stamp ticked steps
+        # onto an existing, already-accepted project here, and _apply_rules /
+        # the sync worker would push the resulting priced line straight onto
+        # a live Zoho estimate, bypassing update_task's guards entirely.
+        # `current_user is None` means auth is disabled (the only way an
+        # AITO_CREATE-gated request reaches this body with no user — API
+        # keys are denylisted for AITO_CREATE, see core/auth.py) and the
+        # dependency above already granted unconditional access, so this
+        # check stays silent for that case too, same as everywhere else in
+        # this file.
+        #
+        # This runs AFTER _reject_ticks_without_acceptance so that a ticked
+        # step on a NON-accepted project still surfaces as 422 (the pre-
+        # existing, unapproved-change baseline), and the 403 only fires once
+        # acceptance has already cleared the tick to reach _apply_rules /
+        # the sync worker.
+        raise HTTPException(
+            status_code=403,
+            detail="a task with a step already marked done requires the aito:update permission",
+        )
     # Captured before the mark: it is unconditional and idempotent, so
     # checking the post-mark state alone would fire sync.queued on every task
     # added to an already-pending project, not just the transition into it.
     was_pending = project.quote_sync_state == "pending"
     _mark_pending_if_ours(project)
     highest = await db.scalar(select(func.max(AitoTask.position)).where(AitoTask.project_id == project_id))
-    task = AitoTask(project_id=project_id, position=(highest + 1) if highest is not None else 0, **payload.model_dump())
+    task = AitoTask(project_id=project_id, position=(highest + 1) if highest is not None else 0, **task_fields)
     db.add(task)
     await db.flush()  # so _summary_for's SELECT sees the new row
     await record(

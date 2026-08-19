@@ -1793,3 +1793,209 @@ T-057+T-062: all three grid health timers (startup, reconnect grace, periodic) n
 ## T-065 — 2026-08-16 — user-approved behavior change
 
 T-065: useMjpegStream's onError-less self-restart now also covers network failures and clean EOF (same backoff and generation guards), so overlay/kiosk streams recover from any termination; callers with onError unchanged. user-approved 2026-08-16.
+
+## T-001 — 2026-08-18 — user-approved behavior change
+
+`add_task` (`POST /aito/{project_id}/tasks`) writes the four `*_done` step
+flags (`scan_done`/`modelisation_done`/`impression_done`/`usinage_done`) onto
+the new task straight from `payload.model_dump()`. `_reject_ticks_without_
+acceptance` only checks the PARENT PROJECT's `quote_status`, never who is
+making the request, so once a project's quote is accepted, a principal
+holding only `aito:create` (a real, supportable custom-group configuration —
+the default Operators group bundles all four `aito:*` permissions, so this
+was never reachable through it) could POST a task with a step already ticked
+onto that EXISTING, already-accepted project. The identical write via `PATCH
+/aito/tasks/{task_id}` (`update_task`) has always required `Permission.
+AITO_UPDATE`. The same `add_task` call also runs `_mark_pending_if_ours` and
+`_apply_rules`, so the ticked, priced line the sync worker picks up gets
+pushed onto the project's live Zoho estimate via `_update_quote`'s full
+`line_items` rebuild — bypassing `update_task`'s trust boundary entirely.
+
+`add_task` now mirrors `create_project`'s existing in-body check (T-036,
+2026-08-12): it rejects the request with 403 when any of the four `*_done`
+fields is truthy in the payload and the caller's `current_user` does not hold
+`aito:update` (checked via `current_user.has_permission(Permission.AITO_UPDATE
+.value)`, the same idiom `create_project` already uses). The check is skipped
+when `current_user is None`, the auth-disabled case (the dependency returns
+`None` for both auth-disabled and a valid API key, and API keys cannot hold
+`AITO_CREATE` at all — it is denylisted in `core/auth.py`'s `_APIKEY_SCOPE_BY_
+PERMISSION`, so a ticked-task create can only reach the route body as a real
+JWT-authenticated user or with auth off) — an auth-disabled instance is
+unaffected, matching every other permission gate in this file.
+
+**Remediation (same day):** the check was initially wired in BEFORE
+`_reject_ticks_without_acceptance(task_fields)`, so an `aito:create`-only
+caller POSTing a ticked step to a NON-accepted project got 403 instead of the
+pre-existing, unapproved-change 422. The user approved only the
+already-accepted-project case quoted below, so the ordering was corrected:
+the 403 check now runs strictly AFTER `_reject_ticks_without_acceptance`.
+Final ordering, both branches verified by test: (1) non-accepted project +
+ticked step → 422, unchanged from BASE and untouched by this task, regardless
+of the caller's permissions; (2) accepted project + ticked step + caller
+lacks `aito:update` → 403, the approved change below. The 403 check's
+permission lookup is now only reached once `_reject_ticks_without_acceptance`
+has already let the request past the quote-acceptance gate.
+
+Observable change, quoting the approved description verbatim: "a user in a
+group granted aito:create without aito:update can currently POST a task with
+a step already ticked to an accepted project and would start getting 403;
+groups holding both permissions (including the default Operators group) see
+no change." Callers affected: a caller authenticated with a JWT whose
+group(s) grant `aito:create` but not `aito:update`, POSTing a task with at
+least one `*_done` flag truthy, to a project whose `quote_status` is already
+`"accepted"`. Callers NOT affected: any caller who also holds `aito:update`
+(including the default Operators group, unchanged); any caller POSTing a task
+with no ticked steps (the common case); any caller POSTing a ticked step to a
+NON-accepted project (still 422, from `_reject_ticks_without_acceptance`,
+which now runs first and is unchanged in behavior); any caller when auth is
+disabled; `update_task`, `_reject_ticks_without_acceptance`'s own logic, and
+every other route in this file, none of which were touched.
+
+`tools/snapshot.py verify` shows 12/12 probes matching — `aito-route-perms`
+only greps `RequirePermissionIfAuthEnabled(...)` call sites, and this check
+is an inline `current_user.has_permission(...)` in the route body, not a new
+dependency, so that probe is correctly unaffected; `aito-openapi` captures
+the `/aito` paths' OpenAPI schema (route metadata and request/response
+shapes), which this in-body runtime check does not alter either.
+`SURFACE.md` is also unaffected: `bash tools/gen_surface.sh` produces a
+byte-identical file (no new `def`/`class`, export, or route dependency was
+added). Backend coverage over the Aito scope: 2012/2051 statements (98.10%),
+542/570 branches (95.09%) — both at or above the 98.09%/95.07% baseline.
+
+## T-006 — 2026-08-18 — user-approved behavior change
+
+`useAitoPresence.ts`'s module-level `viewers` map is written exclusively by
+`setAitoPresenceState`, which only ever runs when the server sends an
+`aito_presence_state` WebSocket message. `useWebSocket` calls
+`registerPresenceSender(null)` from `ws.onclose`, but `registerPresenceSender`
+only ever swapped the `sender` reference and (when registering a real sender)
+replayed `sendAitoPresence`'s own project id — it never touched `viewers`.
+Once the socket dropped, the server's own presence bookkeeping for our
+connection was already gone, yet every card (`useAitoViewers`) and the
+detail-panel banner kept rendering the last-received operators as "viewing
+now" — stale for as long as the reconnect took, indefinitely if the backend
+stayed down, since only a fresh `aito_presence_state` after reconnecting
+could ever refresh the map.
+
+`registerPresenceSender` now clears `viewers` and calls the module's existing
+`emit()` (the same notify path `setAitoPresenceState` uses, so
+`useSyncExternalStore` re-renders every subscribed card and the panel
+banner) whenever it is invoked with `send === null` — the disconnect case —
+and `viewers` is non-empty. Registering a real sender (reconnect) is
+untouched: the existing own-presence replay (`send({ type: 'aito_presence',
+project_id: ownProjectId })`) still fires when applicable, and the clear
+branch is gated on `!send`, so it cannot run on that path. The emptiness
+check (`Object.keys(viewers).length > 0`) avoids an emit (and the resulting
+re-render fan-out) on a null-sender call that has nothing to clear, e.g. a
+second `ws.onclose` before any reconnect populated the map — matching the
+file's existing convention of not calling `emit()` when nothing observable
+changed.
+
+Observable change, quoting the approved description verbatim: "The 'X is
+viewing now' banner and card markers would vanish while the WebSocket is
+disconnected instead of showing the last-known viewers." Callers affected:
+any operator with the Aito board or a project's detail panel open at the
+moment another operator's (or their own) WebSocket disconnects — the
+viewing-now markers for whoever the server had last reported now clear
+instead of persisting stale. Callers NOT affected: `sendAitoPresence`,
+`setAitoPresenceState`, and the reconnect replay path, none of which
+changed; any observer while the socket stays connected (`viewers` is only
+ever cleared from the null-sender branch).
+
+`tools/snapshot.py verify` shows 12/12 probes matching, including
+`aito-frontend-pure` — this hook's logic is not part of that probe's
+bundled pure-function set, so no re-record was needed or performed.
+`SURFACE.md` is also unaffected: `bash tools/gen_surface.sh` produces a
+byte-identical file (no new export, route, or public signature was added).
+Frontend coverage over the Aito scope: 1930/2005 statements (96.25%),
+1976/2132 branches (92.68%) — both at or above the 96.25%/92.66% baseline.
+
+## T-003 — 2026-08-18 — user-approved behavior change
+
+`run_sync_once`'s per-project try block ended with `await _apply_rules(db,
+project, await _summary_for(db, project.id))`, reading `project.id` off the
+SAME `AitoProject` instance `sync_project` had just been handed. When
+`sync_project` hits one of its four terminal `except` clauses (a Zoho error
+its own logic treats as final rather than retryable), it calls
+`_terminal_error`, which first calls `_rollback_after_terminal_failure` —
+`await db.rollback()` when the session is not `is_active` — and that rollback
+expires every attribute SQLAlchemy is holding on `project`, per that helper's
+own docstring. `_terminal_error` then sets `project.quote_sync_state =
+"error"`, `project.quote_sync_error = message`, and `project.quote_sync_
+failures = 0` directly (plain attribute writes, which do not require a
+reload even on an expired instance), and — ONLY when the failure is new or
+its message changed since the last tick — calls `record(...)`, which flushes
+and, as a side effect of building that flush's UPDATE statement, reloads
+`project`'s expired attributes from inside the awaited flush's own greenlet
+context, leaving the instance safe to read afterwards.
+
+But when the SAME flush failure repeats on a later tick with an unchanged
+message, `_terminal_error`'s debounce (`if not already_in_error or previous_
+sync_error != project.quote_sync_error`) skips that `record()` call — by
+design, so a project stuck in `'error'` does not write one `sync.failed`
+event row per tick forever. With no flush in between, `project` stays
+expired when control returns to `run_sync_once`. The bare `project.id` read
+back in the loop is a plain synchronous attribute access, not an `await`, so
+it runs outside the greenlet context every awaited SQLAlchemy call in this
+file executes inside — exactly the "lazy reload outside a greenlet context"
+trap `run_sync_once`'s own loop comment already warned about elsewhere in
+this file. That raised `MissingGreenlet`, which propagated out of the try
+block into the loop's own `except Exception: await db.rollback(); logger.
+exception(...)`. That second rollback then discarded every uncommitted write
+`sync_project`/`_terminal_error` had just made in-memory for this
+project — the terminal `quote_sync_state="error"`, `quote_sync_error`, and
+`quote_sync_failures` reset — none of which had been committed yet, because
+the loop's `await db.commit()` sits AFTER the now-failing `_apply_rules`
+call.
+
+The fix re-fetches the project through the loop's own `project_id` local
+(`project = await db.get(AitoProject, project_id)`, an `await`ed call that
+runs inside a greenlet and is therefore always safe against an expired or
+even a fully evicted instance) immediately before `_apply_rules`, rather than
+reading off the possibly-expired `project` reference `sync_project` was
+handed. `_summary_for` is called with `project_id` directly rather than
+`project.id` for the same reason.
+
+Observable change: BEFORE this fix, a project whose Books flush failed
+REPEATEDLY with an unchanged error message (the debounced-record case above)
+was, from that tick onward, left exactly as it was before the tick started —
+the terminal error state `_terminal_error` had just computed was silently
+discarded by the loop's own rollback, no `aito_changed` WebSocket broadcast
+fired, the project's card kept showing no sync error at all, and the project
+remained `quote_sync_state="pending"` (or whatever pre-failure state made it
+eligible), so it was re-selected and retried — and spent another Zoho Books
+API call — on every subsequent tick, indefinitely, with no visible sign of
+the underlying failure. AFTER this fix, the terminal state and the freshly
+recomputed `board_column` persist through `db.commit()`, the project stops
+being re-selected as pending, the card's `quote_sync_error`/`quote_sync_
+state` (both public fields of `AitoProjectResponse`, rendered directly on
+the Aito board card) show the failure, and the `aito_changed` broadcast
+fires to connected clients same as any other successful tick. Callers
+affected: any project whose Zoho sync hits one of `sync_project`'s four
+terminal failure branches with the SAME error message on two or more
+consecutive ticks — the first occurrence of a given message was never
+affected, since `_terminal_error`'s debounce only skips `record()` (and thus
+only reproduces the bug) once `already_in_error` is already true with an
+identical `previous_sync_error`. Callers NOT affected: the non-repeating
+first-failure tick (already flushed and safe by way of `record()`'s own
+flush); any tick that completes `_apply_rules` without a terminal exception;
+`_terminal_error`, `_rollback_after_terminal_failure`, `sync_project`, and
+`record()` themselves, none of which were touched — only the two reads at
+the bottom of `run_sync_once`'s per-project loop changed.
+
+This was approved by the user on 2026-08-18 after the blind verifier flagged
+it as an unrecorded behavior change on iteration 1; the auditor that produced
+`TRIAGE.md`/`PLAN.md` had originally classified this task's diff as
+`behavior_change: false` on the theory that it was purely defensive
+(preventing a crash), missing that the crash's own `except Exception` was
+itself silently discarding the terminal error state, a state the fix now
+lets survive to be committed and observed.
+
+`tools/snapshot.py verify` shows 12/12 probes matching — this change touches
+neither a route signature nor `_apply_rules`'/`_summary_for`'s own public
+call shape, only which `AitoProject` instance and which id `run_sync_once`
+feeds them, so no probe recorded a change. `SURFACE.md` is also unaffected:
+`bash tools/gen_surface.sh` produces a byte-identical file (no new
+`def`/`class` or export was added). Backend coverage over the Aito scope
+remains at or above the 98.09%/95.07% baseline — see the combined
+verification run covering T-001 and T-003 together.

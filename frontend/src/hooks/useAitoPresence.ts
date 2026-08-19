@@ -38,6 +38,14 @@ export function registerPresenceSender(send: ((msg: Record<string, unknown>) => 
   if (send && ownProjectId !== null) {
     send({ type: 'aito_presence', project_id: ownProjectId });
   }
+  if (!send && Object.keys(viewers).length > 0) {
+    // Socket dropped — the server's presence map died with it, so the
+    // last-known viewers are stale until a reconnect replays a fresh
+    // aito_presence_state. Clear and notify so cards/banner stop showing
+    // operators whose connections are already gone.
+    viewers = {};
+    emit();
+  }
 }
 
 export function sendAitoPresence(projectId: number | null) {
