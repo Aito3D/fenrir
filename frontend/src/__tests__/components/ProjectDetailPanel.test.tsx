@@ -559,6 +559,33 @@ describe('ProjectDetailPanel tasks', () => {
     expect(capturedBody).toEqual({ scan_cost: 700 });
   });
 
+  it('persists the AI spelling correction a field makes on blur', async () => {
+    // The correction (AiTextField) lands AFTER the blur that flushes the
+    // debounced save, so it only reaches the server if the resulting task
+    // change arms a fresh debounce of its own. Nothing else in the panel
+    // proves that ordering.
+    const bodies: Record<string, unknown>[] = [];
+    server.use(
+      http.post('/api/v1/aito/proofread', () =>
+        HttpResponse.json({ text: 'Bracket Mount', model: 'test' }),
+      ),
+      http.patch('/api/v1/aito/tasks/:id', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        bodies.push(body);
+        return HttpResponse.json({ ...mockTask, title: 'Bracket Mount' });
+      }),
+    );
+
+    const user = userEvent.setup();
+    show();
+    await editTask();
+
+    await user.click(await screen.findByLabelText('Optional title'));
+    await user.tab();
+
+    await waitFor(() => expect(bodies.at(-1)).toEqual({ title: 'Bracket Mount' }));
+  });
+
   it('ticking a step\'s Done toggle issues PATCH /aito/tasks/{id} with only that field in the body', async () => {
     // Guards the wiring `diffTaskDraft` needs for a tick specifically: it is
     // easy to add a cost field to the diff and forget the *_done sibling, in

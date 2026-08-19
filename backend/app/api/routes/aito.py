@@ -10,7 +10,7 @@ from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_any_permission_if_auth_enabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.core.websocket import ws_manager
@@ -29,6 +29,8 @@ from backend.app.schemas.aito import (
     AitoProjectMove,
     AitoProjectResponse,
     AitoProjectUpdate,
+    AitoProofreadRequest,
+    AitoProofreadResponse,
     AitoQuoteEmailContent,
     AitoQuoteEmailRecipient,
     AitoQuoteEmailRequest,
@@ -59,7 +61,12 @@ from backend.app.services.aito_shipping import (
     grouped_islands,
     service_for_island,
 )
-from backend.app.services.openrouter import OpenRouterNotConfiguredError, OpenRouterUpstreamError, summarize_tasks
+from backend.app.services.openrouter import (
+    OpenRouterNotConfiguredError,
+    OpenRouterUpstreamError,
+    proofread_text,
+    summarize_tasks,
+)
 from backend.app.services.zoho import (
     ZohoNotConfiguredError,
     ZohoNotFound,
@@ -953,6 +960,29 @@ async def summarize_project(
     except OpenRouterUpstreamError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
     return AitoSummarizeResponse(summary=summary, model=model)
+
+
+@router.post("/proofread", response_model=AitoProofreadResponse)
+async def proofread_field(
+    payload: AitoProofreadRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(
+        # Any-of, not AITO_CREATE alone: the same field component serves the
+        # create drawer and the detail panel's edit mode, and a user who may
+        # only update existing projects must still get their spelling fixed.
+        require_any_permission_if_auth_enabled(Permission.AITO_CREATE, Permission.AITO_UPDATE)
+    ),
+):
+    """Spell-check one task field's French, on blur. Registered before the
+    /{project_id} routes for the same reason /summarize is — a literal segment
+    after a parametric route would 422 instead of matching."""
+    try:
+        corrected, model = await proofread_text(db, payload.text)
+    except OpenRouterNotConfiguredError:
+        raise HTTPException(status_code=409, detail="OpenRouter is not configured") from None
+    except OpenRouterUpstreamError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return AitoProofreadResponse(text=corrected, model=model)
 
 
 @router.get("/shipping/services", response_model=AitoShippingServicesResponse)
