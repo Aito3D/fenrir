@@ -1,65 +1,102 @@
-# Refactor-Loop Campaign 4 — Final Report
+# Refactor Loop — Final Report
 
-**Scope:** Camera Grid, Aito page, Calculator (frontend only) · **Goal:** more tests, more bug-resistance
-**Branch:** `auto-refactor-loop` · BASE tag `refactor-base` (8ed54cf87, cut from upstream b17ac5cca) · 2026-08-16 → 2026-08-17
+**Campaign:** aito-2026-08-18 · **Scope:** Aito page (frontend + backend)
+**Ended:** early, at the user's request after iteration 1 verified PASS — not converged, not capped.
 
-## Outcome
+## Counters
+- Iterations run: 1 of 8 · Survey rounds: 1 of 3 · Dry rounds: 0
+- Commits on branch: 2 (`chore(refactor-loop): setup`, `refactor(loop-1): ...`) + this report
+- Tags: `refactor-base` (BASE), `loop-1`
+- UPSTREAM: c501ae8663d03517c4bd519317fef55b8b38269b
 
-- **Iterations:** 10/10 run and verified (tags `loop-1`…`loop-10`, one squashed commit each + 1 setup commit)
-- **Survey rounds:** 3/3 (four-auditor panel each round; round 3 still productive — **ended on MAX_ITER, not converged**)
-- **Why the loop ended:** iteration budget spent (MAX_ITER 10) with 4 user-approved tasks still open
-- **Coverage (statements over the campaign scope, `tools/coverage_scope.sh`):** **71.7% → 86.72%** (3509/4894 → 4390/5062; +881 covered statements). Branches 70.6→82.9%, functions 74.3→86.4%
-- **Tests:** 4,527 → 4,652 (+125), 333 files. Zero test files deleted; zero skips added; every new pinned behavior carries a mutation proof (break → fail → restore → pass)
-- **Golden probes:** 12/12 matching at every iteration · **SURFACE.md:** byte-identical throughout · **`tools/` machinery:** zero diff
-- **Backend:** zero files touched
-- **Known-broken tests:** ImportQuoteDrawer.test.tsx **deflaked** (root cause: assertions racing the in-flight preview GET; 10× isolated + 3× full-suite proof). PrintModal/ModelViewerModal/StatsPageUserFilter1894/LoginPage remain load-flaky (all out of scope, all pass isolated).
+## Verdicts
+- Iteration 1: **FAIL**, then **PASS** after remediation. Both recorded in VERDICTS.log.
+- The FAIL was substantive, not procedural: the blind verifier caught that T-003 was an observable
+  behavior change the auditor had mis-classified as `behavior_change: false`, so it had reached a
+  worker without passing the approval gate. The user then approved it explicitly and it was recorded
+  in BASELINE-CHANGELOG.md. The verifier also caught that T-001's new 403 shadowed a pre-existing 422;
+  that was narrowed to exactly the approved change and pinned with a test.
 
-## Findings by auditor (`plan.py stats`, PLAN.md only — triage counted separately)
+## User-approved behavior changes (3, all in BASELINE-CHANGELOG.md, dated 2026-08-18)
+- **T-003** — `run_sync_once` reloads the project before `_apply_rules` after a terminal rollback.
+  Before: `MissingGreenlet` swallowed, terminal state discarded, no broadcast, project pending forever
+  and retried every tick (spending Zoho Books calls each time). After: error state and recomputed
+  board_column persist, the card shows the sync error, `aito_changed` broadcast fires.
+- **T-001** — `add_task` now returns 403 when a `*_done` step flag is set by a caller lacking
+  `aito:update`. Structurally unreachable unless `quote_status == "accepted"`; 422 preserved for the
+  non-accepted case. Closes a gap where an `aito:create`-only principal could stamp ticked, priced
+  steps onto an accepted project and have the sync worker push them to the live Zoho estimate.
+- **T-006** — presence `viewers` map is cleared and subscribers notified when the socket drops, so
+  cards and the panel banner stop showing operators whose connections are already gone.
 
-| Auditor | Filed | DONE | OPEN (approved leftovers) | Triaged (diverted) |
-|---|---|---|---|---|
-| audit-robustness | 15 | 12 | 1 (T-066) | 12 |
-| audit-security | 9 | 6 | 3 (T-059/060/061) | 2 |
-| audit-tests | 7 | 7 | 0 | 13 |
-| audit-cleanliness | 1 | 1 | 0 | 7 |
-| survey (hand-filed) | 1 | 1 | 0 | — |
-| **Total** | **33** | **29** | **4** | **34 filed → 33 remain** (1 promoted: T-046) |
+## Round 1 survey — findings by auditor
+| auditor | filed | DONE | OPEN | WONTFIX | triaged |
+|---|---|---|---|---|---|
+| audit-security   | 1 | 1 | 0 | 0 | 1 |
+| audit-robustness | 4 | 2 | 1 | 1 | 1 |
+| audit-cleanliness| 0 | 0 | 0 | 0 | 8 |
+| audit-tests      | 1 | 1 | 0 | 0 | 9 |
 
-Per-round: round 1 filed 17 workable + 19 triaged; round 2 filed 8 + 12 (after the behavior-change gate); round 3 filed 7 + 3 (tests lens came back clean). Dedup suppressed zero — no auditor restated.
+25 findings total: 6 filed to PLAN.md, **19 diverted to TRIAGE.md** by the TRIAGE=P2,P3 policy.
+TRIAGE.md holds every one with full evidence, for review or `plan.py promote <id> --iteration N`.
 
-## User-approved behavior changes (16, all in BASELINE-CHANGELOG.md)
+audit-security's negative results are worth recording: semgrep 0, bandit 0, gitleaks 0 in scope. It
+confirmed DOMPurify + `sandbox=""` + CSP on the quote preview, `rel="noopener noreferrer"` on all
+external links, server-side re-derivation of the email recipient allowlist, Zoho path-segment
+escaping, and that the sync handler deliberately stores exception CLASS NAMES to keep PII out of
+`quote_sync_error`.
 
-Camera wall honesty & resilience: T-022 decode-derived health · T-026 honest live count · T-049 off-screen tiles exempt · T-050 reconnect blind spot flagged · T-051 restart budget replenishes · T-057+T-062 visibility exemption unified across all three health timers + re-entry grace windows · T-028 decode-failure budget · T-052 self-restart for onError-less streams · T-065 self-restart extended to network death/clean EOF · T-053 WebRTC negotiation timeout.
-Permissions: T-019 AitoPage create/delete gating · T-048 aito:update gating (drag, flag, quote-status, send-quote, restore) · T-020 calculator settings CRUD gating.
-Data safety: T-029 failed default-saves keep the applied value + toast · T-031 defaults form survives background refetch · T-033 blocked print popup reports failure + hands PDF over as download · T-021 PII draft cleared on logout · T-047 …and on session expiry.
-Plus behavior-preserving fixes: T-023 leaked MJPEG restart timer, T-046 PII-draft resurrection race (epoch guard).
+## The setup finding (T-016) — retired pre-BASE
+audit-tests found the campaign's own coverage measurement was wrong: coverage.py had no
+`concurrency` setting, and SQLAlchemy's async ORM routes every sync DBAPI call through
+`greenlet_spawn`/`await_only`, so fully-tested async route bodies read as unexecuted.
+Independently reproduced before acting. Effect: `routes/aito.py` 61.77% -> 97.13%; scoped backend
+statements 88.81% -> 98.09%; branches 76.41% -> 95.07%; 11437 passing either way.
+Fixed in `pyproject.toml [tool.coverage.run]` and folded into BASE (setup commit amended), because a
+ratchet anchored at a fabricated 88.81% would have let a worker delete ~9 points of real backend
+coverage and still pass the gate.
 
-## Left OPEN for humans (user-approved, out of iteration budget)
+## Gates at exit
+- Coverage backend: 98.09% -> **98.10%** statements, 95.07% -> **95.09%** branches
+- Coverage frontend: 96.25% -> **96.25%** statements, 92.66% -> **92.68%** branches
+- Golden probes: **12/12 matching** · SURFACE.md: **unchanged**
+- Tests: backend 11437 -> **11443 passed** (1 pre-existing env skip); frontend 4667 -> **4670**
+- Known-broken tests: **0 before, 0 after**
+- Test integrity: zero deleted test lines across the whole campaign (+8 tests net)
+- Frozen machinery (tools/, PROBES.json, snapshots/): zero diff since BASE
 
-- **T-059** gate task-row editing on aito:update (PATCH /tasks/{id} 403s today)
-- **T-060** gate panel description/social editors + Mark done on aito:update
-- **T-061** gate board card quick actions (mark-sent/accept/done) on aito:update
-- **T-066** task PATCH rollback on 5xx/network failure (currently only 422 rolls back)
+## Golden-probe re-baseline at setup
+4 of the 12 probes (aito-openapi, aito-pydantic-schemas, aito-route-perms, aito-event-depths) were
+recorded at campaign 2's HEAD (2026-08-11) and had drifted. Verified structurally as PURELY ADDITIVE
+and entirely attributable to the task-reorder feature shipped 2026-08-18 (+1 endpoint, +1 model,
++1 AITO_UPDATE route, +`task.reordered`): zero endpoints, models, or event kinds removed or altered.
+Re-recorded as a sanctioned campaign re-baseline.
 
-All four have full evidence in PLAN.md (archived); promote with `python3 tools/plan.py promote <id> --iteration N` in a future campaign.
+## Frontend flake protocol (established at setup, used twice)
+The frontend suite has cold-cache load-flakes OUTSIDE the Aito scope: at BASE, run 1 showed 15
+failures across PrintModal / CalculatorPage / ModelViewerModal / StatsPageUserFilter1894; runs 2 and
+3 showed zero; those files pass 137/137 in isolation. `known_broken` is therefore empty, with the
+rule that no frontend failure counts until it reproduces with that file re-run alone on an idle
+machine. Both a worker and the verifier hit these flakes and correctly cleared them. The verifier
+also discovered that running an isolation check CONCURRENTLY with the backend `-n 30` suite itself
+produces false failures — worth remembering.
 
-## Verifier residuals from the final iteration (follow-up candidates)
+## Left for humans
+- **OPEN — T-007** (P3, user-approved, never worked): `list_events` accepts a timezone-aware
+  `before_at` whose offset SQLite's bind processor silently drops, so a third-party caller paging
+  with an offset gets a cursor hours off. Approved fix: normalize to naive UTC (NOT a 422).
+- **WONTFIX-AUTO — T-005** (P2, user-declined): `list_projects` / `list_trash` return the entire
+  never-pruned done archive with no limit, refetched on mount, every `aito_changed` broadcast, window
+  focus, and every 10s while a quote is pending. Declined as a feature change needing frontend work.
+  This is a real scaling issue and deserves its own design conversation.
+- **19 triaged findings** in TRIAGE.md — notably 8 cleanliness (a duplicated `_fold` helper that has
+  already drifted NFKD vs NFD between aito_shipping and aito_quote_import; duplicated combobox
+  keyboard nav; 4 unused exports) and 9 test-quality gaps (invoice.pdf error branches untested,
+  quote.pdf 404 branch untested, `ZohoNotFound` branch of a docstring-declared "load-bearing"
+  isinstance order untested, Zoho-comment timestamp fallbacks untested, `ServiceBadges` with no test
+  reference anywhere in the suite).
 
-1. `useMjpegStream`: `enabled`→false doesn't bump the generation counter — a one-microtask race can schedule a self-restart after teardown for the onError-less caller (StreamOverlayPage). Fix: bump generation in the `enabled`-off branch or `if (!enabled) return` inside scheduleSelfRestart.
-2. `useGridStream`: the new re-entry grace timer doesn't re-check visibility at fire time — a tile scrolling in and back out within 45s can get a brief error flash (self-heals on next decode).
-3. `clearReentryTimers()` on effect teardown is present in code but unpinned by any test.
-4. Cosmetic: two test-file headers date T-052/T-065 as 2026-08-17 vs. the changelog's 2026-08-16 (commits landed after midnight).
-Also recorded in VERDICTS.log (archived): T-048's changelog wording over-claims "task editing" (that hole is exactly T-059).
-
-## Triaged findings (33 in TRIAGE.md, full evidence archived — none worked)
-
-P2: T-001 calculator CRUD scaffold duplication · T-002 split CalculatorSettingsPanels (914 lines) · T-004 split useGridStream (563→ now larger) · T-009 GridToolbar no tests · T-010 useCombinedGridStats no tests · T-012 useCameraControls rollback untested · T-014 useMjpegStream test file (partially covered by T-028/T-052/T-065 tests) · T-015 useColumnMoveMutation branches · T-016 labor card inputs untested · T-017 WebRTCGridCard no tests · T-018 stream token appended to cross-origin srcs (origin-check fix) · T-024 grid fetch connect timeout · T-025 worker restart re-marks all visible · T-027 worker onerror unhandled · T-030 calculator localStorage shape crash · T-032 useCardMorph transition race · T-039 reality-check tests 1s timeout under load (the suite's main remaining flake) · T-040 openStreamFromChunks pull() spin · T-041 CameraGrid spyOn leak · T-042 ImportQuoteDrawer aria-disabled timing · T-043 CalculatorPage-level permission wiring untested · T-044 filament/printer T-029 arms untested · T-054 WebRTC superseded-failure guard · T-055 draft unmount-flush (largely addressed by T-046) · T-056 DefaultsForm whole-row PATCH clobbers concurrent saves · T-058 backoff formula ×4 duplication · T-063 single-frame budget reset (refinement of T-051) · T-064 stall-check latch can hang.
-P3: T-003 drag/resize clamp duplication · T-034 camera geometry NaN · T-035 pickDailyUsage zero-division · T-037 onError toast duplication · T-038 error-reset duplication.
-
-## Archives
-
-Everything untracked is copied to `../bambuddy-refactor-archive-c4/` (PLAN.md, TRIAGE.md, BASELINE.md, VERDICTS.log, BASELINE-CHANGELOG.md, all 12 findings-audit-*.json). Seeding a campaign 5 from this archive gives auditors real ALREADY_FILED lists and plan.py 66 dedup fingerprints.
-
-## Merge
-
-Review branch `auto-refactor-loop` in `/Users/paultheis/Documents/Code/bambuddy-refactor` (based on upstream `b17ac5cca`; if main has moved, merge/rebase and **run the full suite on the merged tree** — campaign 3's semantic-conflict lesson). Merge with `git merge auto-refactor-loop`; clean up with `git worktree remove --force /Users/paultheis/Documents/Code/bambuddy-refactor` (this deletes all remaining untracked files — the archive copy above is the durable one).
+## Preserved artifacts
+PLAN.md, TRIAGE.md, BASELINE.md, VERDICTS.log and all four raw `findings-audit-*.json` were copied to
+`/Users/paultheis/Documents/Code/bambuddy-refactor-archive-2026-08-18/` before the worktree was
+removed. They are NOT in git.
