@@ -85,3 +85,12 @@ dev = [
     "cryptography>=46.0.7",
     "pyjwt>=2.13.0",
 ]
+
+[tool.coverage.run]
+# SQLAlchemy's async ORM bridges every sync DBAPI call through greenlet_spawn/
+# await_only, and coverage.py loses line-level visibility for code resumed after
+# a greenlet switch unless concurrency names greenlet explicitly. Without this,
+# async route bodies that ARE fully tested report as unexecuted — measured on
+# this repo: backend/app/api/routes/aito.py read 61.77% instead of ~97%.
+branch = true
+concurrency = ["greenlet", "thread"]

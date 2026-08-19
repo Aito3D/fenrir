@@ -1593,7 +1593,24 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
             # module-level import here WOULD be a cycle.
             from backend.app.api.routes.aito import _apply_rules, _summary_for
 
-            await _apply_rules(db, project, await _summary_for(db, project.id))
+            # sync_project's own terminal handlers may have called
+            # _rollback_after_terminal_failure, which -- per that helper's
+            # own docstring -- expires every attribute on `project` still
+            # held in the identity map. A bare `project.id`/`project.
+            # board_column` read at that point, outside the greenlet context
+            # an awaited SQLAlchemy call runs inside, is exactly the "lazy
+            # reload outside a greenlet context" trap this loop's own
+            # comment above warns about: it raises MissingGreenlet, not a
+            # silent reload. Re-fetch through the awaited db.get() (safe --
+            # it runs inside a greenlet) using the loop's own `project_id`
+            # local rather than touching the possibly-expired instance, and
+            # feed the fresh instance to _apply_rules instead. `project` was
+            # already confirmed non-None at the top of this iteration and
+            # nothing since has deleted the row, so db.get() here is not
+            # expected to return None -- same assumption every caller of
+            # _apply_rules elsewhere in the codebase already makes.
+            project = await db.get(AitoProject, project_id)
+            await _apply_rules(db, project, await _summary_for(db, project_id))
             await db.commit()
             try:
                 await ws_manager.broadcast_aito(

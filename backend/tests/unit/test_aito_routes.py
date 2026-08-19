@@ -1712,6 +1712,92 @@ async def test_every_service_is_gated_on_add_task(async_client, service):
     assert r.json()["detail"] == f"{service} cannot be marked done until the quote is accepted"
 
 
+async def _add_task_as(client, project_id, permissions, **fields):
+    """Add a task as a user whose ONLY permissions are `permissions` (via a
+    throwaway in-memory group, never persisted). Mirrors _create_as's
+    dependency-override technique (see test_create_with_a_decided_status_and
+    _only_aito_create_is_403 and friends), applied to add_task's
+    `current_user` dependency instead of create_project's."""
+    from backend.app.main import app
+    from backend.app.models.group import Group
+    from backend.app.models.user import User
+
+    route = next(r for r in app.routes if getattr(r, "name", "") == "add_task")
+    dep = next(d.call for d in route.dependant.dependencies if d.name == "current_user")
+    app.dependency_overrides[dep] = lambda: User(
+        id=1, username="paul", groups=[Group(name="t", permissions=list(permissions))]
+    )
+    try:
+        return await _add_task(client, project_id, **fields)
+    finally:
+        app.dependency_overrides.pop(dep, None)
+
+
+@pytest.mark.asyncio
+async def test_add_task_with_a_ticked_step_and_only_aito_create_is_403(async_client):
+    """T-001: aito:create alone must not be able to stamp a ticked step onto
+    an EXISTING accepted project — that used to sail through unaudited (the
+    quote-acceptance gate above only checks the quote's status, not the
+    caller's permissions) and let the sync worker push the priced line
+    straight onto the live Zoho estimate via _update_quote's full
+    line_items rebuild. A caller must also hold aito:update, mirroring
+    create_project's T-036 gate on quote_status."""
+    p = await _create_accepted(async_client)
+    r = await _add_task_as(async_client, p["id"], ["aito:create"], scan_cost=1200.0, scan_done=True)
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_add_task_with_a_ticked_step_and_only_aito_create_on_a_non_accepted_project_is_422(async_client):
+    """T-001 remediation: the aito:update gate above only applies to an
+    ALREADY-ACCEPTED project (see test_add_task_with_a_ticked_step_and_only_
+    aito_create_is_403). Against a non-accepted project, _reject_ticks_
+    without_acceptance still runs FIRST, so an aito:create-only caller gets
+    the pre-existing 422 quote-acceptance error, not the new 403 — the 403
+    check never even evaluates the caller's permissions here. This pins the
+    ordering: moving the 403 check before the 422 check would flip this
+    response and is the regression this test exists to catch."""
+    p = (await _create(async_client, quote_status="draft")).json()
+    r = await _add_task_as(async_client, p["id"], ["aito:create"], scan_cost=1200.0, scan_done=True)
+    assert r.status_code == 422
+    assert r.json()["detail"] == "scan cannot be marked done until the quote is accepted"
+
+
+@pytest.mark.asyncio
+async def test_add_task_with_no_ticked_steps_and_only_aito_create_still_works(async_client):
+    """T-001: the new gate only fires when a *_done flag is truthy on the
+    payload — the common case, adding an unticked task, is unaffected for an
+    aito:create-only caller."""
+    p = await _create_accepted(async_client)
+    r = await _add_task_as(async_client, p["id"], ["aito:create"], scan_cost=1200.0)
+    assert r.status_code == 201
+    assert r.json()["scan_done"] is False
+
+
+@pytest.mark.asyncio
+async def test_add_task_with_a_ticked_step_and_aito_update_succeeds(async_client):
+    """T-001: the default Operators group (and any custom group granting
+    both) is unaffected — a caller holding aito:update alongside aito:create
+    can still add a pre-ticked task to an accepted project."""
+    p = await _create_accepted(async_client)
+    r = await _add_task_as(async_client, p["id"], ["aito:create", "aito:update"], scan_cost=1200.0, scan_done=True)
+    assert r.status_code == 201
+    assert r.json()["scan_done"] is True
+
+
+@pytest.mark.asyncio
+async def test_add_task_with_a_ticked_step_is_unaffected_when_auth_is_disabled(async_client):
+    """T-001: RequirePermissionIfAuthEnabled returns None (not a User) when
+    auth is off, and the new gate only applies when there IS a current_user
+    — an auth-disabled instance must keep working exactly as it did before
+    this task, same as test_add_task_rejection_names_the_service_and_the_gate
+    relying on the unauthenticated `async_client` fixture."""
+    p = await _create_accepted(async_client)
+    r = await _add_task(async_client, p["id"], scan_cost=1200.0, scan_done=True)
+    assert r.status_code == 201
+    assert r.json()["scan_done"] is True
+
+
 @pytest.mark.asyncio
 async def test_ticking_a_new_step_after_a_decline_is_still_422(async_client):
     """Complements test_unticking_survives_the_quote_leaving_accepted: a

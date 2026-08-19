@@ -335,6 +335,95 @@ async def test_unexpected_bug_in_one_project_does_not_abort_the_next(db_session,
 
 
 @pytest.mark.asyncio
+async def test_run_sync_once_reloads_the_project_before_apply_rules_after_a_terminal_rollback(db_session, monkeypatch):
+    """T-003: ``sync_project``'s own terminal handlers roll the session back
+    on a repeated flush failure (``_terminal_error`` via
+    ``_rollback_after_terminal_failure``), which -- per that helper's own
+    docstring -- expires every attribute on the project instance still held
+    in the identity map, primary key included. ``sync_project`` protects
+    itself from ever touching that expired instance again by reading
+    everything it needs from a ``project_id`` local snapshotted at its own
+    top (see aito_quote_sync.py's block starting "``project.id`` itself is
+    not exempt from this"), but its caller, ``run_sync_once``, did not: it
+    fed the SAME, now-expired ``project`` instance straight into
+    ``_apply_rules`` via a bare ``project.id`` read -- a lazy reload attempted
+    outside the greenlet context an awaited SQLAlchemy call runs inside,
+    which raises ``MissingGreenlet`` rather than silently reloading.
+
+    Reproduced here without wiring up a full Zoho race (a racing
+    ``zoho_comment_id`` or a duplicate ``quote_id``): a fake ``sync_project``
+    triggers the exact same "a flush genuinely fails and poisons the
+    session" mechanism with a plain primary-key collision, rolls the session
+    back exactly as ``_rollback_after_terminal_failure`` does, and then
+    writes new state the way ``_terminal_error`` does -- plain attribute
+    assignments, which need no I/O and stay safe on an expired instance --
+    before returning normally, honouring ``sync_project``'s own "never
+    raises" contract.
+
+    Before the fix: the MissingGreenlet raised by the bare ``project.id``
+    read is swallowed by ``run_sync_once``'s own except-all, logged as a
+    commit failure, and the whole block (including the 'error' state
+    ``fake_sync_project`` just wrote) is rolled back -- so the project is
+    left exactly as it was before this tick, as if nothing happened, even
+    though the real failure was already fully diagnosed. After the fix, the
+    loop reloads the row through ``db.get()`` (an awaited call, safe) before
+    handing it to ``_apply_rules``, so the 'error' state survives the commit.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    from backend.app.services import aito_quote_sync
+
+    project = AitoProject(
+        description="Helice",
+        board_column="devis",
+        position=0,
+        client_id="C1",
+        client_name="Client",
+        quote_sync_state="pending",
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(AitoTask(project_id=project.id, position=0, title="Helice", scan_cost=5000))
+    await db_session.commit()
+    project_id = project.id
+
+    async def fake_sync_project(db, proj):
+        # A real flush failure -- the same "poisons the session" mechanism
+        # every real terminal handler relies on (an IntegrityError from a
+        # racing zoho_comment_id, or a duplicate quote_id under
+        # uq_aito_project_active_quote) -- reproduced here with a plain
+        # primary-key collision so this test needs no Zoho or migration
+        # wiring.
+        db.add(
+            AitoProject(
+                id=project_id,
+                description="Collision",
+                board_column="devis",
+                position=0,
+                client_id="C1",
+                client_name="Client",
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await db.flush()
+        # Exactly _rollback_after_terminal_failure's own recovery.
+        await db.rollback()
+        # Exactly _terminal_error's own post-rollback writes: plain
+        # assignments, safe on an expired instance because they need no I/O.
+        proj.quote_sync_state = "error"
+        proj.quote_sync_error = "Duplicate comment id"
+        proj.quote_sync_failures = 0
+
+    monkeypatch.setattr(aito_quote_sync, "sync_project", fake_sync_project)
+
+    assert await run_sync_once(db_session) == 1
+
+    await db_session.refresh(project)
+    assert project.quote_sync_state == "error"
+    assert project.quote_sync_error == "Duplicate comment id"
+
+
+@pytest.mark.asyncio
 async def test_an_unexpected_error_never_leaks_its_message_into_the_card(db_session, monkeypatch):
     """quote_sync_error is a public field of AitoProjectResponse, rendered
     verbatim in the detail panel and as a card tooltip, and copied into the

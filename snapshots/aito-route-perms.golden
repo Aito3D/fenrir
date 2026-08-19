@@ -3,7 +3,7 @@
 4 RequirePermissionIfAuthEnabled(Permission.AITO_CREATE)
 2 RequirePermissionIfAuthEnabled(Permission.AITO_DELETE)
 9 RequirePermissionIfAuthEnabled(Permission.AITO_READ)
-8 RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE)
+9 RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE)
 
 ### stderr:
 

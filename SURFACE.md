@@ -31,6 +31,7 @@ surface change and fails the iteration.
 /api/v1/aito/{project_id}/restore ['POST']
 /api/v1/aito/{project_id}/tasks ['GET']
 /api/v1/aito/{project_id}/tasks ['POST']
+/api/v1/aito/{project_id}/tasks/reorder ['PATCH']
 ```
 
 ## Aito frontend exported symbols (utils + hooks)
@@ -160,6 +161,7 @@ export type ServiceId
 1 export function QuoteStatusActions
 1 export function quoteStatusLabelKey
 1 export function quoteStatusTone
+1 export function reorderedTasks
 1 export function SendQuoteButton
 1 export function SendQuoteModal
 1 export function ServiceBadges
@@ -168,6 +170,7 @@ export type ServiceId
 1 export function ShippingFields
 1 export function showVersionConflictToast
 1 export function SocialInput
+1 export function SortableTaskRow
 1 export function StageRail
 1 export function stagesWithWork
 1 export function TaskEditor
@@ -232,6 +235,7 @@ async def mirror_comments(db: AsyncSession, project: AitoProject, comments: list
 async def move_project(
 async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimate: dict) -> None:
 async def record(
+async def reorder_tasks(
 async def restore_project(
 async def run_sync_loop() -> None:
 async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
