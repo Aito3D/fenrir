@@ -4060,6 +4060,24 @@ export interface AitoQuoteEmailContent {
   default_email: string | null;
 }
 
+/** The send-invoice modal's prefill. `recipients` reuses the quote's
+ *  recipient shape — an address Books offers has the same three fields
+ *  whichever document it was read from. */
+export interface AitoInvoiceEmailContent {
+  subject: string;
+  /** Books' rendered HTML. Sanitized with DOMPurify and rendered by
+   *  ZohoEmailPreview inside an iframe with sandbox="" and an in-document
+   *  default-src 'none' CSP — never inlined into the app document. */
+  body: string;
+  recipients: AitoQuoteEmailRecipient[];
+  /** The address to preselect, or null when this client has none at all. */
+  default_email: string | null;
+  /** The invoice this prefill is about. Echoed back on send so the mail goes
+   *  to the document the operator actually saw. */
+  invoice_id: string;
+  invoice_number: string;
+}
+
 /** The Invoice card's contents, read live from Books rather than snapshotted
  *  onto the project like the quote fields are — an invoice's interesting
  *  field is whether it has been PAID, and a stored copy of that is wrong the
@@ -7396,6 +7414,26 @@ export const api = {
    *  is none — which is the ordinary state of a job that has not been billed
    *  yet, not an error. Hits Zoho on every call, so callers should cache. */
   getAitoInvoice: (projectId: number) => request<AitoInvoice | null>(`/aito/${projectId}/invoice`),
+  /** What Books would send if this invoice were emailed now — preview only.
+   *  The POST re-reads it server-side rather than trusting anything sent
+   *  back, so this is safe to treat as display data.
+   *
+   *  `invoiceId` pins the preview to the invoice the card is showing. The
+   *  server resolves this project's invoices itself and only checks the id
+   *  for membership, so this narrows the choice and never widens it. */
+  getAitoInvoiceEmail: (projectId: number, invoiceId?: string) =>
+    request<AitoInvoiceEmailContent>(
+      `/aito/${projectId}/invoice-email${invoiceId ? `?invoice_id=${encodeURIComponent(invoiceId)}` : ''}`,
+    ),
+  /** Email the invoice through Books and get it back as Books now sees it —
+   *  emailing marks an invoice `sent`, so the returned row is what the card
+   *  should render. No board column moves: an invoice going out is not a
+   *  board transition, which is why there is no `marked_sent` here. */
+  sendAitoInvoiceEmail: (projectId: number, data: { to: string; invoice_id?: string }) =>
+    request<AitoInvoice>(`/aito/${projectId}/invoice-email`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   /** The project's Zoho invoice as a PDF blob. Same manual-fetch reasoning as
    *  `getAitoQuotePdf` above: `request()` parses JSON, and the endpoint needs
    *  an Authorization header that no <iframe src> can carry.
