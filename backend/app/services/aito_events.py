@@ -32,6 +32,11 @@ KINDS: dict[str, str] = {
     # which is also set by a human clicking "Mark as sent" for a quote handed
     # over in person. Story depth: it belongs to the project's narrative.
     "quote.emailed": "story",
+    # The bill left the building. Story depth for the same reason
+    # quote.emailed has it: it belongs to the project's narrative, and it is
+    # the only record that an invoice was ever sent — nothing on the project
+    # row stores that.
+    "invoice.emailed": "story",
     "quote.viewed": "story",
     "quote.accepted": "story",
     "quote.declined": "story",

@@ -619,6 +619,40 @@ class AitoQuoteEmailResponse(BaseModel):
     marked_sent: bool | None
 
 
+class AitoInvoiceEmailContent(BaseModel):
+    """The send-invoice modal's prefill.
+
+    ``recipients`` reuses ``AitoQuoteEmailRecipient``: an address Books offers
+    has the same three fields whichever document it was read from, and a
+    parallel model with identical fields would be noise.
+
+    ``invoice_id`` and ``invoice_number`` name the document this prefill is
+    about. The modal echoes the id back on POST so the send is pinned to the
+    invoice the operator actually saw — the server still owns the candidate
+    set and only checks the id for membership.
+    """
+
+    subject: str
+    body: str
+    recipients: list[AitoQuoteEmailRecipient]
+    # The address to preselect: the project's own client_email when it has
+    # one, else Books' first recipient. None only when there is nobody to
+    # send to, which the modal renders as an explicit message rather than an
+    # empty dropdown.
+    default_email: str | None
+    invoice_id: str
+    invoice_number: str
+
+
+class AitoInvoiceEmailRequest(BaseModel):
+    """``invoice_id`` may only NARROW the server's own candidate set — see
+    ``send_invoice_email``. Optional, and omitting it sends the newest, so a
+    caller that has not read the card yet is still served."""
+
+    to: str
+    invoice_id: str | None = None
+
+
 class AitoInvoiceResponse(BaseModel):
     """The Invoice card's contents, read live from Books on panel open.
 
