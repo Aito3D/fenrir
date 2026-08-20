@@ -38,6 +38,7 @@ export default {
     sendInvoiceConfirm: 'Gönder',
     sendInvoiceNoRecipients: "Bu müşterinin Zoho'da e-posta adresi yok.",
     sendInvoiceLoadFailed: 'E-posta ayrıntıları yüklenemedi',
+    emailPreviewTitle: 'E-posta önizlemesi',
     invoiceEmailed: 'Fatura {{email}} adresine gönderildi',
     invoiceEmailFailed: 'Fatura gönderilemedi',
     acceptQuote: 'Teklifi kabul et',

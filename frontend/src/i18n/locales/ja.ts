@@ -38,6 +38,7 @@ export default {
     sendInvoiceConfirm: '送信',
     sendInvoiceNoRecipients: 'この顧客には Zoho にメールアドレスがありません。',
     sendInvoiceLoadFailed: 'メールの詳細を読み込めませんでした',
+    emailPreviewTitle: 'メールのプレビュー',
     invoiceEmailed: '請求書を {{email}} に送信しました',
     invoiceEmailFailed: '請求書を送信できませんでした',
     acceptQuote: '見積書を承認',

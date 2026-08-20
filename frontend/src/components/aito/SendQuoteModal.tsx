@@ -7,7 +7,7 @@ import { Button } from '../Button';
 import { inputCls, labelCls } from '../formStyles';
 import { api, type AitoProject } from '../../api/client';
 import { useSendQuoteMutation } from '../../hooks/useSendQuoteMutation';
-import { QuoteEmailPreview } from './QuoteEmailPreview';
+import { ZohoEmailPreview } from './ZohoEmailPreview';
 
 /** Pick an address and email this project's quote through Zoho Books.
  *
@@ -121,7 +121,7 @@ export function SendQuoteModal({
                   <span id="send-quote-message-label" className={labelCls}>
                     {t('aito.sendQuoteMessage')}
                   </span>
-                  <QuoteEmailPreview html={data.body} labelledBy="send-quote-message-label" />
+                  <ZohoEmailPreview html={data.body} labelledBy="send-quote-message-label" />
                 </div>
               </>
             )}

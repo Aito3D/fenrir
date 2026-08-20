@@ -4052,7 +4052,7 @@ export interface AitoQuoteEmailRecipient {
 export interface AitoQuoteEmailContent {
   subject: string;
   /** Books' rendered HTML. Sanitized with DOMPurify and rendered by
-   *  QuoteEmailPreview inside an iframe with sandbox="" and an in-document
+   *  ZohoEmailPreview inside an iframe with sandbox="" and an in-document
    *  default-src 'none' CSP — never inlined into the app document. */
   body: string;
   recipients: AitoQuoteEmailRecipient[];

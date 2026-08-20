@@ -38,6 +38,7 @@ export default {
     sendInvoiceConfirm: 'Send',
     sendInvoiceNoRecipients: 'This client has no email address in Zoho.',
     sendInvoiceLoadFailed: 'Could not load the email details',
+    emailPreviewTitle: 'Email preview',
     invoiceEmailed: 'Invoice sent to {{email}}',
     invoiceEmailFailed: 'Could not send the invoice',
     acceptQuote: 'Accept quote',

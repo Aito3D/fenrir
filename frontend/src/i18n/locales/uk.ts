@@ -39,6 +39,7 @@ export default {
     sendInvoiceConfirm: 'Надіслати',
     sendInvoiceNoRecipients: 'У цього клієнта немає електронної адреси в Zoho.',
     sendInvoiceLoadFailed: 'Не вдалося завантажити деталі листа',
+    emailPreviewTitle: 'Попередній перегляд листа',
     invoiceEmailed: 'Рахунок надіслано на {{email}}',
     invoiceEmailFailed: 'Не вдалося надіслати рахунок',
     acceptQuote: "Прийняти пропозицію",

@@ -38,6 +38,7 @@ export default {
     sendInvoiceConfirm: '发送',
     sendInvoiceNoRecipients: '该客户在 Zoho 中没有邮箱地址。',
     sendInvoiceLoadFailed: '无法加载邮件详情',
+    emailPreviewTitle: '邮件预览',
     invoiceEmailed: '发票已发送至 {{email}}',
     invoiceEmailFailed: '无法发送发票',
     acceptQuote: '接受报价单',

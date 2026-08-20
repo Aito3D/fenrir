@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '../utils';
-import { QuoteEmailPreview } from '../../components/aito/QuoteEmailPreview';
+import { ZohoEmailPreview } from '../../components/aito/ZohoEmailPreview';
 
 /** Reads the iframe's srcdoc. The component's whole contract lives in that
  *  attribute: jsdom does not execute or even parse srcdoc content, so the
@@ -12,12 +12,12 @@ function srcdocOf(container: HTMLElement): string {
   return frame!.getAttribute('srcdoc') || '';
 }
 
-describe('QuoteEmailPreview', () => {
+describe('ZohoEmailPreview', () => {
   it('keeps block structure instead of collapsing it to one line', () => {
     // The bug this component replaces: textContent glued adjacent blocks
     // together, so the whole email arrived as a single run-on string.
     const { container } = render(
-      <QuoteEmailPreview html="<p>Bonjour</p><p>Merci</p>" />,
+      <ZohoEmailPreview html="<p>Bonjour</p><p>Merci</p>" />,
     );
     const srcdoc = srcdocOf(container);
     expect(srcdoc).toContain('<p>Bonjour</p>');
@@ -30,7 +30,7 @@ describe('QuoteEmailPreview', () => {
     const hostile =
       '<img src=x onerror="window.__pwned = true">' +
       '<script>window.__pwned = true</script>Bonjour';
-    const { container } = render(<QuoteEmailPreview html={hostile} />);
+    const { container } = render(<ZohoEmailPreview html={hostile} />);
     const srcdoc = srcdocOf(container);
     expect(srcdoc).not.toContain('<script');
     expect(srcdoc).not.toContain('onerror');
@@ -39,7 +39,7 @@ describe('QuoteEmailPreview', () => {
 
   it('strips images, so no tracking pixel can fire', () => {
     const { container } = render(
-      <QuoteEmailPreview html='<p>Hi</p><img src="https://tracker.example/p.gif">' />,
+      <ZohoEmailPreview html='<p>Hi</p><img src="https://tracker.example/p.gif">' />,
     );
     expect(srcdocOf(container)).not.toContain('<img');
   });
@@ -50,7 +50,7 @@ describe('QuoteEmailPreview', () => {
     const hostile =
       '<svg><image href="https://tracker.example/p.gif"></svg>' +
       '<input type="image" src="https://tracker.example/p.gif">';
-    const { container } = render(<QuoteEmailPreview html={hostile} />);
+    const { container } = render(<ZohoEmailPreview html={hostile} />);
     const srcdoc = srcdocOf(container);
     expect(srcdoc).not.toContain('tracker.example');
     expect(srcdoc).not.toContain('<svg');
@@ -62,7 +62,7 @@ describe('QuoteEmailPreview', () => {
     // Fidelity: the template's own CSS is the reason for frame isolation.
     // Stripping it would discard exactly what the iframe was chosen to buy.
     const { container } = render(
-      <QuoteEmailPreview html="<style>p { color: red }</style><p>Hi</p>" />,
+      <ZohoEmailPreview html="<style>p { color: red }</style><p>Hi</p>" />,
     );
     // Regex, not toContain: DOMPurify runs its CSS sanitiser over style
     // blocks and may re-emit the rule without the spacing we wrote.
@@ -71,14 +71,14 @@ describe('QuoteEmailPreview', () => {
 
   it('locks the frame down with an empty sandbox and a deny-all CSP', () => {
     // Security contract. A refactor that drops either of these must fail here.
-    const { container } = render(<QuoteEmailPreview html="<p>Hi</p>" />);
+    const { container } = render(<ZohoEmailPreview html="<p>Hi</p>" />);
     const frame = container.querySelector('iframe')!;
     expect(frame.getAttribute('sandbox')).toBe('');
     expect(srcdocOf(container)).toContain("default-src 'none'");
   });
 
   it('gives the frame an accessible name', () => {
-    const { container } = render(<QuoteEmailPreview html="<p>Hi</p>" />);
+    const { container } = render(<ZohoEmailPreview html="<p>Hi</p>" />);
     expect(container.querySelector('iframe')!.getAttribute('title')).toBeTruthy();
   });
 });

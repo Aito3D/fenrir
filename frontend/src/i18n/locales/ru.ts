@@ -38,6 +38,7 @@ export default {
     sendInvoiceConfirm: 'Отправить',
     sendInvoiceNoRecipients: 'У этого клиента нет адреса эл. почты в Zoho.',
     sendInvoiceLoadFailed: 'Не удалось загрузить данные письма',
+    emailPreviewTitle: 'Предпросмотр письма',
     invoiceEmailed: 'Счёт отправлен на {{email}}',
     invoiceEmailFailed: 'Не удалось отправить счёт',
     acceptQuote: 'Принять смету',

@@ -38,6 +38,7 @@ export default {
     sendInvoiceConfirm: 'Senden',
     sendInvoiceNoRecipients: 'Dieser Kunde hat keine E-Mail-Adresse in Zoho.',
     sendInvoiceLoadFailed: 'E-Mail-Details konnten nicht geladen werden',
+    emailPreviewTitle: 'E-Mail-Vorschau',
     invoiceEmailed: 'Rechnung an {{email}} gesendet',
     invoiceEmailFailed: 'Rechnung konnte nicht gesendet werden',
     acceptQuote: 'Angebot annehmen',

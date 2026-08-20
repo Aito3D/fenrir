@@ -38,6 +38,7 @@ export default {
     sendInvoiceConfirm: '보내기',
     sendInvoiceNoRecipients: '이 고객은 Zoho에 이메일 주소가 없습니다.',
     sendInvoiceLoadFailed: '이메일 세부 정보를 불러오지 못했습니다',
+    emailPreviewTitle: '이메일 미리보기',
     invoiceEmailed: '{{email}}(으)로 청구서를 보냈습니다',
     invoiceEmailFailed: '청구서를 보내지 못했습니다',
     acceptQuote: '견적서 수락',
