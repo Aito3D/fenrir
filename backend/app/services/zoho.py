@@ -757,6 +757,39 @@ class ZohoService:
             raise ZohoUpstreamError("Zoho Books did not return a PDF")
         return response.content
 
+    async def get_invoice_email_content(self, db: AsyncSession, invoice_id: str) -> dict:
+        """The invoice's default email, as Books would send it right now.
+
+        The estimate twin of this (``get_estimate_email_content``) explains
+        the shape; Books nests both under ``data`` and names the recipient
+        list ``to_contacts`` on both. Kept as a separate method rather than
+        one parameterised by document type: the two are different REST
+        resources, and a shared helper taking a path fragment would read as
+        if the endpoints were interchangeable when only their payload is.
+
+        Recipients with no address are dropped, for the same reason as on the
+        estimate side: offering one is offering a send that must fail.
+        """
+        data = (await self._request(db, "GET", f"/invoices/{_seg(invoice_id)}/email")).get("data", {})
+        return {
+            "subject": data.get("subject", ""),
+            "body": data.get("body", ""),
+            "recipients": [_map_email_recipient(c) for c in (data.get("to_contacts") or []) if c.get("email")],
+        }
+
+    async def email_invoice(self, db: AsyncSession, invoice_id: str, *, to_mail_ids: list[str]) -> None:
+        """Email the invoice through Books, on the org's default template.
+
+        ``subject`` and ``body`` are omitted for the reason spelled out on
+        ``email_estimate``: Books renders its own default template only when
+        they are absent, and that is the one carrying the org's branding.
+
+        Books marks the invoice ``sent`` as a side effect, which is why the
+        Aito route re-reads the invoice afterwards rather than pushing a
+        status of its own.
+        """
+        await self._request(db, "POST", f"/invoices/{_seg(invoice_id)}/email", json={"to_mail_ids": to_mail_ids})
+
     async def create_contact(
         self,
         db: AsyncSession,
