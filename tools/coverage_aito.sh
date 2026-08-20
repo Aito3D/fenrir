@@ -9,6 +9,7 @@
 # entries are existence-checked so a rename fails loudly instead of silently
 # dropping a file from the gate.
 set -u
+set -o pipefail
 cd "$(dirname "$0")/.." || exit 1
 WHICH="${1:-both}"
 

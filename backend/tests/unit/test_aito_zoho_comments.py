@@ -22,6 +22,7 @@ from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.services.aito_zoho_comments import (
     COMMENT_REFRESH_INTERVAL,
+    DEFAULT_COMMENT_UTC_OFFSET_HOURS,
     map_comment,
     mirror_comments,
     should_pull_comments,
@@ -274,6 +275,80 @@ async def test_comment_utc_offset_is_read_from_settings_not_hardcoded(db_session
     row = (await db_session.execute(select(AitoEvent).where(AitoEvent.project_id == project.id))).scalar_one()
     # Org-local 09:00 at UTC+1 -> UTC 08:00 the same day.
     assert row.occurred_at == datetime(2026, 7, 28, 8, 0)
+
+
+@pytest.mark.asyncio
+async def test_an_unparseable_offset_setting_falls_back_to_the_default_not_zero(db_session):
+    """A corrupted zoho_comment_utc_offset_hours setting must not silently
+    become UTC+0 -- that is exactly the ten-hour drift the module's own
+    docstring warns about. It must fall back to the documented default
+    (French Polynesia, UTC-10), not raise and not use 0."""
+    await set_setting(db_session, "zoho_comment_utc_offset_hours", "not-a-number")
+
+    project = AitoProject(description="Trophy", board_column="devis", quote_id="EST-1")
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+
+    written = await mirror_comments(
+        db_session,
+        project,
+        [
+            {
+                "comment_id": "c-tz-corrupt",
+                "description": "Devis accepté à l'aide du lien public",
+                "comment_type": "system",
+                "date": "2026-07-28",
+                "time": "11:47 AM",
+            }
+        ],
+    )
+    assert written == 1
+
+    row = (await db_session.execute(select(AitoEvent).where(AitoEvent.project_id == project.id))).scalar_one()
+    # Org-local 11:47 AM at the default offset (UTC-10) -> UTC 21:47 the same
+    # day -- the same value as the "nothing configured" default-offset test
+    # above, proving the corrupted setting was ignored in favour of the
+    # documented default rather than treated as UTC+0 (which would give 11:47).
+    assert row.occurred_at == datetime(2026, 7, 28, 21, 47)
+    assert DEFAULT_COMMENT_UTC_OFFSET_HOURS == -10
+
+
+@pytest.mark.asyncio
+async def test_an_unparseable_comment_timestamp_falls_back_to_now_not_an_earlier_value(db_session):
+    """A comment whose date/time matches none of the three accepted formats
+    must not raise, and must not silently resolve to some earlier-computed
+    value (the epoch, a neighbouring comment's time, or an unconverted
+    local time) -- it falls back to the live wall clock. Bounded, not
+    exact: the fallback calls datetime.utcnow() itself, so we can only pin
+    a tight window around "now", captured before and after the call."""
+    project = AitoProject(description="Trophy", board_column="devis", quote_id="EST-1")
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+
+    before = datetime.utcnow()
+    written = await mirror_comments(
+        db_session,
+        project,
+        [
+            {
+                "comment_id": "c-bad-timestamp",
+                "description": "Estimate viewed by the customer",
+                "comment_type": "system",
+                "date": "garbage",
+                "time": "",
+            }
+        ],
+    )
+    after = datetime.utcnow()
+    assert written == 1
+
+    row = (await db_session.execute(select(AitoEvent).where(AitoEvent.project_id == project.id))).scalar_one()
+    assert before - timedelta(seconds=5) <= row.occurred_at <= after + timedelta(seconds=5)
+    # Not some earlier-computed stand-in: neither the epoch nor a bare
+    # zero-offset reading of the raw (unparseable) string.
+    assert row.occurred_at.year >= 2026
 
 
 # --- should_pull_comments: the quota gate ------------------------------------

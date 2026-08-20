@@ -2524,3 +2524,44 @@ being out of this campaign's scope. The proper fix — giving
 `ZohoQuotePreview` its own response model instead of reusing
 `AitoTaskCreate`, a write schema, on a read path — is left as follow-up
 work for whoever owns `backend/app/api/routes/zoho.py`.
+
+## Tooling repair — 2026-08-20 — sanctioned fix to frozen campaign machinery
+
+`tools/` is frozen for the duration of this campaign, but `tools/coverage_aito.sh` — the
+campaign's coverage gate — was shown to the user to be silently unable to fail. Both of its
+suite invocations pipe through `tail` for output trimming:
+
+```
+./venv/bin/python3 -m pytest ... 2>&1 | tail -6  || rc=1
+( cd frontend && npx vitest run ... 2>&1 | tail -40 ) || rc=1
+```
+
+A pipeline's exit status is its LAST command's, so each `|| rc=1` was reading `tail`'s exit
+status — which is (almost) always 0 — never pytest's or vitest's. This has two consequences,
+the second worse than the first: (1) the script cannot report a suite failure through its
+exit code, so both guards were dead; and (2) a flaky run reports a DEPRESSED coverage number
+alongside a success exit, indistinguishable from a real ratchet breach. This actually
+happened: a verifier's frontend run read 95.48% with `aitoOptimistic.ts` at 73%, while a
+direct re-run of the same code gave the true 96.84%.
+
+The user reviewed this defect and explicitly authorised repairing it — this specific fix, to
+this specific script, on 2026-08-20 — as a sanctioned exception to `tools/` being otherwise
+off-limits.
+
+The fix: added `set -o pipefail` next to the script's existing `set -u`. Before applying it,
+every pipeline in the script was inventoried (there are exactly two — the pytest|tail and
+vitest|tail lines above; every other `|` in the file is part of a `||` logical-or, not a
+pipe). Both `tail -6` and `tail -40` must read their entire input to know the last N lines,
+so neither closes its pipe early the way `head` would — there is no risk of `pipefail`
+turning a merely-truncated-early read into a false failure. No other pipeline in the script
+(no tolerant grep, no early-closing head) exists that `pipefail` would newly break. No scope
+file list, include glob, coverage flag, reporter, or `cov_filter.py` invocation was touched —
+only error propagation changed.
+
+Expected consequence, not a bug: with the guards now live, `bash tools/coverage_aito.sh
+frontend` will exit non-zero on any run where a documented load-flake fires (PrintModal,
+ModelViewerModal, StatsPageUserFilter1894, LoginPage, CalculatorPage — all out of campaign
+scope, all pass when re-run alone). The script's own `--coverage.reportOnFailure=true`
+comment already exists precisely so a full coverage report is still produced on such a
+failing run; a non-zero exit alongside a valid report is the intended shape now, not
+something to work around.
