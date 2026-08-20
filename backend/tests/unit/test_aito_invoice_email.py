@@ -1,6 +1,9 @@
 """GET/POST /aito/{id}/invoice-email — the Books invoice send path."""
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.services.zoho import ZohoRequestRejected, ZohoUpstreamError, zoho_service
 
@@ -330,3 +333,95 @@ async def test_a_failed_re_read_after_a_successful_send_still_returns_200(
     assert body["status"] == "draft"
     assert body["url"] == ""
     assert "invoice.emailed" in await _events(async_client, project["id"])
+
+
+@pytest.mark.asyncio
+async def test_a_re_read_failure_that_genuinely_locks_the_db_does_not_500(
+    async_client, books_invoice_email, monkeypatch
+):
+    """Regression test for a MissingGreenlet 500 that the test above cannot catch.
+
+    Session.rollback() expires EVERY object in the identity map —
+    ``_restore_snapshot(dirty_only=False)`` — not just dirty ones;
+    ``expire_on_commit=False`` only governs commit, never rollback. Reading an
+    expired attribute from async code afterwards does not lazily re-fetch it;
+    it raises ``MissingGreenlet``.
+
+    The fake above (and the fixture's own ``invoices``) never touch the
+    session, so ``db.rollback()`` in the handler's except-block is a no-op
+    there and this bug is invisible to it. This one actually executes a
+    statement before failing, so a transaction is genuinely open when the
+    handler's own ``await db.rollback()`` runs — reproducing what a real
+    "database is locked" failure inside ``list_project_invoices`` looks like
+    (it reaches this app's own SQLite file via ``_load_config``'s
+    ``get_setting`` SELECTs, sharing a connection with this same session).
+    """
+    project = await _create(async_client)
+    calls = {"n": 0}
+
+    async def touches_the_session_then_fails(db, estimate_id, customer_id):
+        calls["n"] += 1
+        if calls["n"] > 1:
+            await db.execute(text("SELECT 1"))
+            raise ZohoUpstreamError("Zoho Books unreachable: ConnectError")
+        return [dict(INVOICE)]
+
+    # Patched after the fixture so the first (pre-send) lookup still answers.
+    monkeypatch.setattr(zoho_service, "list_project_invoices", touches_the_session_then_fails)
+    response = await async_client.post(
+        f"/api/v1/aito/{project['id']}/invoice-email",
+        json={"to": "contact@example.pf", "invoice_id": "INV-7"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == "INV-7"
+    assert body["status"] == "draft"
+    assert body["url"] == ""
+    assert "invoice.emailed" in await _events(async_client, project["id"])
+
+
+@pytest.mark.asyncio
+async def test_a_record_commit_failure_after_a_real_send_does_not_500(async_client, books_invoice_email, monkeypatch):
+    """Same MissingGreenlet hazard, reached from the OTHER rollback: the
+    handler's own ``record()`` + ``commit()`` pair failing after a real send.
+
+    ``record()`` ends in ``await db.flush()``, which genuinely opens a
+    transaction on this session (an INSERT is sent to SQLite) before this
+    test's ``commit()`` override ever runs — so unlike the fake above, no
+    artificial ``db.execute()`` is needed to open one; the real code path
+    already does it. Faking ``AsyncSession.commit`` at the class level (only
+    for its first call within this test) reproduces "the local commit hit a
+    lock" without needing an actual second connection to contend for one.
+    """
+    project = await _create(async_client)
+    real_commit = AsyncSession.commit
+    calls = {"n": 0}
+
+    async def flaky_commit(self):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise SQLAlchemyError("database is locked")
+        return await real_commit(self)
+
+    monkeypatch.setattr(AsyncSession, "commit", flaky_commit)
+
+    response = await async_client.post(
+        f"/api/v1/aito/{project['id']}/invoice-email",
+        json={"to": "contact@example.pf", "invoice_id": "INV-7"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == "INV-7"
+    # The re-read after the failed commit still succeeds for real (the
+    # fixture's second call), proving the handler recovered rather than
+    # merely surviving by luck.
+    assert body["status"] == "sent"
+    assert body["url"]
+    assert books_invoice_email == [("INV-7", ["contact@example.pf"])]
+    # The commit that would have persisted invoice.emailed failed and was
+    # rolled back — the send went out for real, but there is deliberately no
+    # local record of it. See send_invoice_email's docstring on why a 500
+    # here (inviting a retry that sends a second real invoice) is worse.
+    assert "invoice.emailed" not in await _events(async_client, project["id"])

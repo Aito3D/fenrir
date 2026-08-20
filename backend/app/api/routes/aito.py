@@ -1323,10 +1323,23 @@ async def send_invoice_email(
     is returned instead — and so are its ``url`` and ``invoice_count``, not
     just its body: the mail has gone out and the event is committed, so
     500ing would erase nothing but would invite a real second send on retry.
+
+    Every field this function still needs off ``project`` is captured into a
+    local BEFORE the send, because every rollback below — the send failing,
+    the event failing to record, or the re-read hitting this app's own
+    locked SQLite file — expires ``project`` in SQLAlchemy's identity map.
+    ``expire_on_commit=False`` only governs commit; ``Session.rollback()``
+    expires every object regardless. Reading an expired attribute afterwards
+    from async code does not lazily re-fetch it — it raises
+    ``MissingGreenlet``, which is a ``SQLAlchemyError`` and so gets silently
+    swallowed by the very except-blocks meant to degrade gracefully,
+    producing a 500 anyway. Locals sidestep that entirely; ``project`` itself
+    must not be touched again past this point.
     """
     project, invoice, content, _default_email, pre_send_count = await _load_invoice_email_content(
         db, project_id, payload.invoice_id, rollback_on_error=True
     )
+    project_pk, quote_id, client_id = project.id, project.quote_id, project.client_id or ""
 
     # Re-read rather than trust the request. An allowlist the caller supplies
     # is not an allowlist: without this the endpoint is an open relay, and any
@@ -1351,15 +1364,16 @@ async def send_invoice_email(
         await db.rollback()
         raise _zoho_email_http_error(e) from e
 
+    event_recorded = True
     try:
         await record(
             db,
-            project.id,
+            project_pk,
             "invoice.emailed",
             actor_class="user",
             actor_name=_actor(current_user),
             subject_type="project",
-            subject_id=project.id,
+            subject_id=project_pk,
             detail={"email": recipient, "invoice_number": invoice["number"] or invoice["id"]},
         )
         await db.commit()
@@ -1372,7 +1386,11 @@ async def send_invoice_email(
         # half, and a 500 would invite a retry that sends the client a real
         # second invoice, which is worse than a timeline with a gap in it.
         # Logged loudly because this is the one path where a real send
-        # leaves no `invoice.emailed` row at all.
+        # leaves no `invoice.emailed` row at all. ``event_recorded`` is
+        # threaded into the re-read's own warning below so a second,
+        # independent failure there logs as a compounding problem rather
+        # than masquerading as the ONLY thing that went wrong.
+        event_recorded = False
         logger.error(
             "Aito invoice email for project %s WAS SENT via Books but recording the local "
             "invoice.emailed event failed — no event exists for this send: %s",
@@ -1383,7 +1401,7 @@ async def send_invoice_email(
 
     fresh, invoice_count, url = invoice, pre_send_count, ""
     try:
-        invoices = await zoho_service.list_project_invoices(db, project.quote_id, project.client_id or "")
+        invoices = await zoho_service.list_project_invoices(db, quote_id, client_id)
         fresh = next((i for i in invoices if i["id"] == invoice["id"]), invoice)
         invoice_count = len(invoices) or pre_send_count
         url = await zoho_service.books_invoice_url(db, fresh["id"])
@@ -1400,10 +1418,23 @@ async def send_invoice_email(
         # is required, not cosmetic: without it get_db's own trailing commit
         # would raise PendingRollbackError on the dirtied session and turn
         # this degrade into the very 500 this block exists to avoid.
-        logger.warning("Aito invoice re-read after emailing project %s failed: %s", project_id, e)
+        #
+        # This is genuinely a re-read failure, not the earlier record()
+        # failure in disguise — ``quote_id``/``client_id`` are plain locals,
+        # not attributes on the now-possibly-expired ``project``, so nothing
+        # here can raise MissingGreenlet on ``project``'s behalf. When
+        # ``event_recorded`` is already False, this is a second, independent
+        # failure on top of the first, so the log says so instead of reading
+        # like the send's only problem.
+        logger.warning(
+            "Aito invoice re-read after emailing project %s failed%s: %s",
+            project_id,
+            "" if event_recorded else " (invoice.emailed event was also not recorded — see the error above)",
+            e,
+        )
         await db.rollback()
 
-    await _broadcast_changed("invoice-email", project.id, _actor(current_user))
+    await _broadcast_changed("invoice-email", project_pk, _actor(current_user))
     return AitoInvoiceResponse(**fresh, url=url, invoice_count=invoice_count)
 
 
