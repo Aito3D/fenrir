@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation } from '@tanstack/react-query';
 import { Sparkles, Undo2 } from 'lucide-react';
@@ -19,6 +19,12 @@ import { focusRingCls } from '../formStyles';
  *  bottom border. */
 const aiInputCls =
   'block w-full pl-3 py-2 bg-bambu-dark border border-violet-400/35 rounded-lg text-white placeholder-bambu-gray no-spinner transition-colors focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 focus:outline-none';
+
+/** How long the busy ring keeps travelling after the answer lands, fading as
+ *  it goes. Must match the `aito-ai-settle` keyframe's duration in index.css:
+ *  this timer is what holds the class on, so a shorter value here cuts the
+ *  fade off mid-way and reinstates the snap it exists to remove. */
+export const AITO_AI_SETTLE_MS = 1100;
 
 export interface AiTextFieldProps {
   /** Accessible name, and the tooltip's subject. */
@@ -75,6 +81,30 @@ export function AiTextField({
   valueRef.current = value;
 
   const [undoTo, setUndoTo] = useState<string | null>(null);
+  // True for AITO_AI_SETTLE_MS after a call finishes: the arcs are still going
+  // round, dimming out. Separate from `isPending` because the corrected text is
+  // already in the field by then — this is the ring letting go, not a wait.
+  const [settling, setSettling] = useState(false);
+
+  // Hands the ring over to its fade. Driven from the mutation's `onSettled`
+  // rather than from an `isPending` effect, because a response that arrives
+  // inside the same React batch as the request never renders a pending state
+  // at all — and that field would then skip the fade entirely.
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startSettling = () => {
+    if (settleTimer.current) clearTimeout(settleTimer.current);
+    setSettling(true);
+    settleTimer.current = setTimeout(() => {
+      settleTimer.current = null;
+      setSettling(false);
+    }, AITO_AI_SETTLE_MS);
+  };
+  useEffect(
+    () => () => {
+      if (settleTimer.current) clearTimeout(settleTimer.current);
+    },
+    [],
+  );
 
   const mutation = useMutation({
     mutationFn: (text: string) => api.proofreadAitoText(text),
@@ -89,6 +119,11 @@ export function AiTextField({
     // No error branch: `sent` is already settled, so the user's own text
     // simply stands. An unconfigured install (409) is a silent no-op by
     // design — the fields still work, they just stop being corrected.
+    //
+    // `onSettled`, not `onSuccess`: a failure has to fade out exactly like a
+    // correction, or the one case where nothing visibly changes is also the
+    // one where the ring snaps off.
+    onSettled: startSettling,
   });
 
   const handleBlur = () => {
@@ -104,11 +139,15 @@ export function AiTextField({
   // stylesheet rather than overriding in source order.
   const padRight = undoTo !== null ? 'pr-14' : 'pr-9';
   // The field itself says it is busy: two light arcs travel its border for as
-  // long as the answer is outstanding, and stop on both outcomes (a correction
-  // and a failure both settle the mutation). The class goes on the WRAPPER —
-  // the arcs are a masked pseudo-element ring, and an input/textarea is a
-  // replaced element with no ::before. See .animate-ai-thinking in index.css.
-  const thinking = mutation.isPending ? 'animate-ai-thinking' : '';
+  // long as the answer is outstanding. When it lands they do NOT stop with it —
+  // the field hands over to `.animate-ai-settling`, where the same sweep runs on
+  // while the ring dims away over a second (a light that cuts out reads as an
+  // interruption; one that withdraws reads as a finish). The two classes are
+  // exclusive on purpose: swapping them is what restarts the fade keyframe if a
+  // second call begins before the first has finished fading. The class goes on
+  // the WRAPPER — the arcs are a masked pseudo-element ring, and an input or
+  // textarea is a replaced element with no ::before. See index.css.
+  const ring = mutation.isPending ? 'animate-ai-thinking' : settling ? 'animate-ai-settling' : '';
 
   const control = multiline ? (
     <textarea
@@ -132,7 +171,7 @@ export function AiTextField({
   );
 
   return (
-    <div className={`relative ${thinking} ${className}`}>
+    <div className={`relative ${ring} ${className}`}>
       {control}
       {/* Pinned to the field's trailing edge — bottom-aligned on a textarea so
           it rides the last line rather than floating in the middle of the
@@ -161,7 +200,9 @@ export function AiTextField({
         )}
         <Sparkles
           aria-hidden="true"
-          className={`h-3.5 w-3.5 text-violet-300 ${mutation.isPending ? 'animate-pulse' : ''}`}
+          className={`h-3.5 w-3.5 text-violet-300 ${
+            mutation.isPending ? 'animate-pulse' : settling ? 'animate-ai-sparkle-settle' : ''
+          }`}
         />
         {/* The sparkle is decorative; the state it carries is not, so it is
             announced here instead of through a title on an aria-hidden icon. */}

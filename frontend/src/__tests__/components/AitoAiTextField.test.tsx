@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { render } from '../utils';
-import { AiTextField } from '../../components/aito/AiTextField';
+import { AITO_AI_SETTLE_MS, AiTextField } from '../../components/aito/AiTextField';
 
 /** Feeds `onChange` back into state: the field is controlled, and the AI's
  *  correction arrives as an `onChange` the parent must apply for the swap to
@@ -169,6 +169,27 @@ describe('AiTextField', () => {
     release();
     await waitFor(() => expect(field).toHaveValue('Capot'));
     expect(field.parentElement).not.toHaveClass('animate-ai-thinking');
+  });
+
+  it('keeps the ring travelling and fades it out after the correction lands', async () => {
+    const user = userEvent.setup();
+    server.use(http.post('/api/v1/aito/proofread', () => HttpResponse.json({ text: 'Capot', model: 'm' })));
+    render(<ControlledAiTextField />);
+
+    const field = screen.getByLabelText('Task title');
+    await user.click(field);
+    await user.type(field, 'capot');
+    await user.tab();
+
+    // The moment the text lands the ring is still there, now fading — this is
+    // the whole point of the settle class, so it is asserted, not assumed.
+    await waitFor(() => expect(field).toHaveValue('Capot'));
+    expect(field.parentElement).toHaveClass('animate-ai-settling');
+
+    // ...and it does clear itself once the fade has run its course.
+    await waitFor(() => expect(field.parentElement).not.toHaveClass('animate-ai-settling'), {
+      timeout: AITO_AI_SETTLE_MS + 1000,
+    });
   });
 
   it('stops glowing when the correction fails', async () => {

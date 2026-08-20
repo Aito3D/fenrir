@@ -829,7 +829,8 @@ body {
 @keyframes aito-ai-sweep {
   to { --aito-ai-angle: 360deg; }
 }
-.animate-ai-thinking::before {
+.animate-ai-thinking::before,
+.animate-ai-settling::before {
   content: '';
   position: absolute;
   /* -1px so the ring covers the field's own resting border rather than sitting
@@ -855,14 +856,74 @@ body {
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   mask-composite: exclude;
-  animation: aito-ai-sweep 2.8s linear infinite;
   pointer-events: none;
 }
+.animate-ai-thinking::before {
+  animation: aito-ai-sweep 2.8s linear infinite;
+}
+
+/* The answer has landed, and the ring must not blink out with it — a light
+   that stops dead reads as an interruption, not as a finish. So the arcs KEEP
+   travelling at the same 2.8s pace while the whole ring dims away underneath
+   them: same motion, gently withdrawn. The state lives in AiTextField, which
+   holds this class for AITO_AI_SETTLE_MS after the mutation settles (the two
+   numbers must stay in step, or the class is dropped mid-fade and the ring
+   snaps off exactly the way this exists to prevent).
+
+   The curve is the point. A linear fade is visibly "a fade"; this one holds
+   full brightness for the first fifth — long enough for the eye to register
+   that the ring is still lit while the corrected text swaps in — then eases
+   out along a slow tail, so the ring is gone before you can say when. The
+   brightness bump on the first frames is the completion beat: the arcs flare
+   once, softly, at the moment the text changes.
+
+   Only three stops, and opacity moves across exactly one of the gaps. A
+   timing function is applied BETWEEN each pair of keyframes, not once across
+   the whole animation, so an intermediate opacity stop makes this curve
+   decelerate into it and accelerate back out — measured on the real field,
+   a four-stop version stalled visibly around 0.34. The filter rides its own
+   stop because it is finished before the fade proper begins. */
+@keyframes aito-ai-settle {
+  0% {
+    opacity: 1;
+    filter: brightness(1.45) saturate(1.15);
+  }
+  20% {
+    opacity: 1;
+    filter: brightness(1) saturate(1);
+  }
+  100% {
+    opacity: 0;
+    filter: brightness(1) saturate(1);
+  }
+}
+.animate-ai-settling::before {
+  animation:
+    aito-ai-sweep 2.8s linear infinite,
+    aito-ai-settle 1100ms cubic-bezier(0.33, 0, 0.15, 1) forwards;
+}
+/* The sparkle stops pulsing at the same moment, and `animate-pulse` can be
+   anywhere in its cycle when it does — landing on the dim half would snap the
+   icon brighter. This takes over from wherever the pulse left off and eases
+   back to full over the same window. */
+@keyframes aito-ai-sparkle-settle {
+  from { opacity: 0.55; }
+  to { opacity: 1; }
+}
+.animate-ai-sparkle-settle {
+  animation: aito-ai-sparkle-settle 1100ms var(--ease-signature) forwards;
+}
+
 /* A steady lit ring instead of travelling arcs: still visibly "this field is
-   busy", with no motion at all. */
+   busy", with no motion at all. The settle keeps its fade — dimming in place
+   is not motion, and without it the ring would vanish between two frames. */
 @media (prefers-reduced-motion: reduce) {
   .animate-ai-thinking::before {
     animation: none;
+    background: var(--color-violet-400, #a78bfa);
+  }
+  .animate-ai-settling::before {
+    animation: aito-ai-settle 1100ms cubic-bezier(0.33, 0, 0.15, 1) forwards;
     background: var(--color-violet-400, #a78bfa);
   }
 }
