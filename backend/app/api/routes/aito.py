@@ -22,6 +22,8 @@ from backend.app.schemas.aito import (
     AitoEventPage,
     AitoEventResponse,
     AitoFlagUpdate,
+    AitoInvoiceEmailContent,
+    AitoInvoiceEmailRequest,
     AitoInvoiceResponse,
     AitoNoteCreate,
     AitoProjectCreate,
@@ -1208,6 +1210,161 @@ async def get_invoice_pdf(
     )
 
 
+async def _load_invoice_email_content(
+    db: AsyncSession, project_id: int, invoice_id: str | None, *, rollback_on_error: bool = False
+) -> tuple[AitoProject, dict, dict, str | None]:
+    """Shared preamble for both invoice-email routes.
+
+    Returns the project, the chosen invoice, Books' email prefill with its
+    recipients widened, and the address to preselect.
+
+    The candidate invoices are ALWAYS resolved server-side from the project's
+    own estimate. ``invoice_id`` may only NARROW that set — it is checked for
+    membership, never trusted — so it cannot be used to email an invoice this
+    project has no claim to by walking ids. Same rule, and the same 404 for a
+    miss, as ``get_invoice_pdf``: from here "belongs to another customer" and
+    "was this project's until Books voided it a minute ago" are
+    indistinguishable, and they mean the same thing to the caller.
+
+    Recipients are widened with the project's own ``client_email`` when Books
+    does not already offer it, and that address becomes the default — the
+    same reasoning as ``_quote_email_content``: it is an address a human
+    attached to this card on purpose, and dropping it would leave a
+    hand-attached client unsendable.
+
+    ``rollback_on_error`` is only set by the send path, mirroring
+    ``_load_quote_email_content``: it leaves the session clean immediately
+    rather than relying on get_db's own unwinding.
+    """
+    project = await db.get(AitoProject, project_id)
+    if project is None or project.status == "deleted":
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.quote_id:
+        raise HTTPException(status_code=404, detail="This project has no Zoho quote")
+    try:
+        invoices = await zoho_service.list_project_invoices(db, project.quote_id, project.client_id or "")
+        if not invoices:
+            raise HTTPException(status_code=404, detail="This project has no Zoho invoice")
+        if invoice_id:
+            invoice = next((i for i in invoices if i["id"] == invoice_id), None)
+            if invoice is None:
+                raise HTTPException(status_code=404, detail="That invoice is not one of this project's")
+        else:
+            invoice = invoices[0]
+        content = await zoho_service.get_invoice_email_content(db, invoice["id"])
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito invoice email prefill failed for project %s: %s", project_id, e)
+        if rollback_on_error:
+            await db.rollback()
+        raise _zoho_email_http_error(e) from e
+
+    recipients = list(content["recipients"])
+    client_email = (project.client_email or "").strip()
+    if client_email and not any(r["email"].lower() == client_email.lower() for r in recipients):
+        recipients.insert(0, {"email": client_email, "name": project.client_name or "", "contact_person_id": ""})
+    default = client_email or (recipients[0]["email"] if recipients else None)
+    return project, invoice, {**content, "recipients": recipients}, default
+
+
+@router.get("/{project_id}/invoice-email", response_model=AitoInvoiceEmailContent)
+async def get_invoice_email(
+    project_id: int,
+    invoice_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+):
+    """What Books would send if this invoice were emailed right now.
+
+    Preview only. The send path deliberately re-reads all of this rather than
+    trusting whatever the client echoes back — see ``send_invoice_email``.
+    """
+    _project, invoice, content, default_email = await _load_invoice_email_content(db, project_id, invoice_id)
+    return AitoInvoiceEmailContent(
+        subject=content["subject"],
+        body=content["body"],
+        recipients=[AitoQuoteEmailRecipient(**r) for r in content["recipients"]],
+        default_email=default_email,
+        invoice_id=invoice["id"],
+        invoice_number=invoice["number"] or invoice["id"],
+    )
+
+
+@router.post("/{project_id}/invoice-email", response_model=AitoInvoiceResponse)
+async def send_invoice_email(
+    project_id: int,
+    payload: AitoInvoiceEmailRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Email this project's invoice through Books.
+
+    ZOHO-FIRST, for the reason given on ``send_quote_email``: the email IS
+    the act, so nothing is written locally until Books confirms. A timeline
+    entry for a message the client never received is worse than none.
+
+    Unlike the quote send, nothing on the board moves. An invoice going out
+    is not a board transition — no column is derived from it — so this
+    records one ``invoice.emailed`` event and stops. That is also why there
+    is no ``marked_sent`` tri-state here: there is no second local write that
+    can half-succeed.
+
+    The response is the invoice re-read AFTER the send, because Books marks
+    it ``sent`` as a side effect of emailing it and the card should show that
+    without a second round trip. If that re-read fails, the pre-send invoice
+    is returned instead: the mail has gone out and the event is committed, so
+    500ing would erase nothing but would invite a real second send on retry.
+    """
+    project, invoice, content, _ = await _load_invoice_email_content(
+        db, project_id, payload.invoice_id, rollback_on_error=True
+    )
+
+    # Re-read rather than trust the request. An allowlist the caller supplies
+    # is not an allowlist: without this the endpoint is an open relay, and any
+    # authenticated user could send arbitrary addresses mail from the
+    # company's Zoho account, on the company's own template. The same accepted
+    # residual as send_quote_email applies — a holder of AITO_UPDATE can widen
+    # the list by editing the card's client_email first, which is audited on
+    # its own as a `project.updated` event.
+    recipient = payload.to.strip()
+    if recipient.lower() not in {r["email"].lower() for r in content["recipients"]}:
+        raise HTTPException(status_code=422, detail="That address is not a recipient of this invoice")
+
+    try:
+        await zoho_service.email_invoice(db, invoice["id"], to_mail_ids=[recipient])
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito invoice email failed for project %s: %s", project_id, e)
+        await db.rollback()
+        raise _zoho_email_http_error(e) from e
+
+    await record(
+        db,
+        project.id,
+        "invoice.emailed",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        subject_type="project",
+        subject_id=project.id,
+        detail={"email": recipient, "invoice_number": invoice["number"] or invoice["id"]},
+    )
+    await db.commit()
+
+    fresh, count = invoice, 1
+    try:
+        invoices = await zoho_service.list_project_invoices(db, project.quote_id, project.client_id or "")
+        fresh = next((i for i in invoices if i["id"] == invoice["id"]), invoice)
+        count = len(invoices) or 1
+        url = await zoho_service.books_invoice_url(db, fresh["id"])
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        # Degrade, never 500 — see the docstring. The card shows the invoice
+        # as it was a moment before the send; its own query will correct the
+        # status on the next fetch.
+        logger.warning("Aito invoice re-read after emailing project %s failed: %s", project_id, e)
+        url = ""
+
+    await _broadcast_changed("invoice-email", project.id, _actor(current_user))
+    return AitoInvoiceResponse(**fresh, url=url, invoice_count=count)
+
+
 @router.get("/{project_id}/quote.pdf")
 async def get_quote_pdf(
     project_id: int,
@@ -1273,8 +1430,8 @@ async def _quote_email_content(db: AsyncSession, project: AitoProject) -> tuple[
     return {**content, "recipients": recipients}, default
 
 
-def _quote_email_http_error(e: Exception) -> HTTPException:
-    """Books' failures, mapped for the two quote-email routes.
+def _zoho_email_http_error(e: Exception) -> HTTPException:
+    """Books' failures, mapped for the quote- and invoice-email routes.
 
     The isinstance order is load-bearing: ZohoNotFound and
     ZohoRequestRejected both subclass ZohoUpstreamError, so testing the base
@@ -1311,7 +1468,7 @@ async def _load_quote_email_content(
         logger.warning("Aito quote email prefill failed for project %s: %s", project_id, e)
         if rollback_on_error:
             await db.rollback()
-        raise _quote_email_http_error(e) from e
+        raise _zoho_email_http_error(e) from e
 
 
 @router.get("/{project_id}/quote-email", response_model=AitoQuoteEmailContent)
@@ -1405,7 +1562,7 @@ async def send_quote_email(
         # session clean immediately, in case any code is ever added between
         # this line and the raise that reads it.
         await db.rollback()
-        raise _quote_email_http_error(e) from e
+        raise _zoho_email_http_error(e) from e
 
     await record(
         db,
