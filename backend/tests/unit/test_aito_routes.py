@@ -1,16 +1,26 @@
 """Aito board routes: required client, move reindexing, soft delete, one-shot import."""
 
 import json
+import math
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pydantic
 import pytest
 from sqlalchemy import event, select
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
-from backend.app.schemas.aito import AitoProjectImportItem
+from backend.app.schemas.aito import (
+    AitoProjectCreate,
+    AitoProjectImportItem,
+    AitoProjectUpdate,
+    AitoShippingInput,
+    AitoTaskCreate,
+    AitoTaskResponse,
+    AitoTaskUpdate,
+)
 from backend.app.services.aito_board_rules import SERVICES, summarise
 from backend.app.services.zoho import ZohoUpstreamError, zoho_service
 
@@ -724,6 +734,188 @@ async def test_project_list_does_not_include_tasks(async_client):
 async def test_create_project_rejects_a_negative_cost(async_client):
     r = await _create(async_client, tasks=[_task(scan_cost=-1)])
     assert r.status_code == 422
+
+
+# --- money/quantity fields must reject the non-standard `Infinity`/`NaN` -----
+#
+# Starlette's request body is parsed with plain json.loads, which (unlike the
+# JSON spec) accepts the `Infinity`/`-Infinity`/`NaN` tokens, and Pydantic v2
+# admits them into a plain `ge=0` float constraint (inf >= 0 is True) — see
+# schemas/aito.py's `allow_inf_nan=False` on every money/quantity field this
+# task touched. The schema-level tests below construct the models directly:
+# that is exactly the surface this task changed, and it is deterministic
+# (no HTTP stack, no persistence, no cross-cutting middleware involved).
+#
+# httpx's `json=` kwarg cannot be used to reproduce the wire request: httpx
+# serialises with a strict json.dumps and raises ValueError for a bare
+# float('inf')/float('nan') client-side, before any request is even built. A
+# raw body string is the only way to reproduce what Starlette's own
+# permissive json.loads actually accepts on the wire, matching the auditor's
+# repro exactly — used below for the one end-to-end test.
+@pytest.mark.parametrize("value", [math.inf, math.nan])
+@pytest.mark.parametrize(
+    "field",
+    [
+        "scan_cost",
+        "modelisation_cost",
+        "usinage_cost",
+        "impression_cost",
+        "impression_weight_g",
+    ],
+)
+def test_task_create_rejects_non_finite_money_fields(field, value):
+    with pytest.raises(pydantic.ValidationError):
+        AitoTaskCreate(title="t", **{field: value})
+
+
+@pytest.mark.parametrize("value", [math.inf, math.nan])
+def test_task_create_rejects_non_finite_discount_pct(value):
+    with pytest.raises(pydantic.ValidationError):
+        AitoTaskCreate(title="t", impression_discount_pct=value)
+
+
+@pytest.mark.parametrize("value", [math.inf, math.nan])
+@pytest.mark.parametrize(
+    "field",
+    ["scan_cost", "modelisation_cost", "usinage_cost", "impression_cost", "impression_weight_g"],
+)
+def test_task_update_rejects_non_finite_money_fields(field, value):
+    """AitoTaskUpdate inherits its cost fields from AitoTaskBase without
+    redeclaring them, so the update path (PATCH /aito/tasks/{id}) is closed
+    by the very same constraint as create — a poisoned PATCH would otherwise
+    leave the hole open even after create was fixed."""
+    with pytest.raises(pydantic.ValidationError):
+        AitoTaskUpdate(**{field: value})
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["scan_cost", "modelisation_cost", "usinage_cost", "impression_cost", "impression_weight_g"],
+)
+def test_task_response_still_accepts_infinite_money_fields(field):
+    """Regression guard for the loop-1 defect: T-001's `allow_inf_nan=False`
+    was first added directly on `AitoTaskBase`, which `AitoTaskResponse` also
+    inherits — so a row that BASE already accepted and persisted with, say,
+    `impression_cost = inf` (see test_create_project_with_infinite_task_cost_
+    does_not_persist's own docstring: BASE returned 201 and stored it) would
+    raise ValidationError the moment `_task_to_response` (routes/aito.py)
+    tried to build a response model from that row, 500ing
+    `GET /aito/{id}/tasks` for existing data.
+
+    `math.inf` only, not `math.nan`: verified directly against the
+    `refactor-base` tag's schemas/aito.py before writing this test — on a
+    plain `ge=0` field (no `allow_inf_nan` at all, BASE never had it),
+    Pydantic's own `ge` comparison already rejects `nan` (nan >= 0 is
+    False), so `nan` was NEVER accepted here, at BASE or after either fix.
+    `inf` passes `ge=0` on its own merits and was the value BASE actually
+    accepted — that is the one this task's fix must keep accepting.
+
+    This must construct cleanly, exactly as it did at BASE, and round-trip
+    the value out as JSON `null` (Pydantic's standard non-finite-float
+    encoding) rather than raising."""
+    model = AitoTaskResponse(
+        id=1,
+        project_id=1,
+        position=0,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        title="t",
+        **{field: math.inf},
+    )
+    assert getattr(model, field) == math.inf
+    assert json.loads(model.model_dump_json())[field] is None
+
+
+@pytest.mark.parametrize("value", [math.inf, math.nan])
+def test_task_response_rejects_non_finite_discount_pct_same_as_base(value):
+    """`impression_discount_pct` carries `gt=0, le=100` alongside
+    `allow_inf_nan=False`. Verified directly against `refactor-base`: unlike
+    the plain `ge=0` fields above, BOTH `inf` (fails `le=100`) and `nan`
+    (also fails the bound comparison) were ALREADY rejected there, with no
+    `allow_inf_nan` in play at all — so moving `allow_inf_nan=False` off
+    `AitoTaskBase` for this field changes nothing observable for
+    `AitoTaskResponse`; the `le=100` bound alone was always the effective
+    guard. This pins that non-difference so a future change to the bound
+    does not silently reopen the base-class hole for this field without
+    anyone noticing, the way T-001 opened it for the plain `ge=0` fields."""
+    with pytest.raises(pydantic.ValidationError):
+        AitoTaskResponse(
+            id=1,
+            project_id=1,
+            position=0,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            title="t",
+            impression_discount_pct=value,
+        )
+
+
+@pytest.mark.parametrize("value", [math.inf, math.nan])
+def test_shipping_input_rejects_non_finite_price(value):
+    with pytest.raises(pydantic.ValidationError):
+        AitoShippingInput(shipping_price=value)
+
+
+@pytest.mark.parametrize("value", [math.inf, math.nan])
+def test_project_update_rejects_non_finite_shipping_price(value):
+    """AitoProjectUpdate inherits shipping_price from AitoShippingInput
+    without redeclaring it, so PATCH /aito/{id} is closed the same way."""
+    with pytest.raises(pydantic.ValidationError):
+        AitoProjectUpdate(shipping_price=value)
+
+
+@pytest.mark.parametrize("value", [math.inf, math.nan])
+def test_project_create_rejects_non_finite_quote_total(value):
+    with pytest.raises(pydantic.ValidationError):
+        AitoProjectCreate(
+            description="d",
+            client_id="c1",
+            client_name="ACME",
+            quote_total=value,
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_project_with_infinite_task_cost_does_not_persist(async_client):
+    """End-to-end proof that the schema fix closes the hole the audit found:
+    at BASE (before `allow_inf_nan=False`) this exact request returned 201
+    and the row persisted with `impression_cost` stored as `inf` — Pydantic
+    v2 then serialises a non-finite float to JSON `null` on the way back out,
+    which is how the corruption stayed invisible in the response.
+
+    Post-fix, Pydantic rejects the body before the route handler — and
+    therefore before any DB write — ever runs, so nothing is persisted
+    (asserted below by re-listing the board). That is the security property
+    this task owns.
+
+    What this test deliberately does NOT assert is a clean HTTP 422. FastAPI's
+    default `RequestValidationError` handler builds its response body with
+    `jsonable_encoder(exc.errors())`, which does not sanitise a non-finite
+    float carried in a validation error's own `input` field
+    (`jsonable_encoder(float("inf")) == float("inf")`), and Starlette's
+    `JSONResponse.render` then calls `json.dumps(..., allow_nan=False)`,
+    which RAISES on that float — the attempt to report "you sent an invalid
+    number" crashes trying to echo the number back. In this app that crash
+    propagates out of `call_next` inside `auth_middleware`'s (main.py)
+    auth-disabled fast path, whose broad `except Exception` fails closed and
+    reports a misleading 503 "Authentication service temporarily
+    unavailable" instead. This is a PRE-EXISTING, framework-level bug: the
+    identical crash reproduces on unmodified code by sending `Infinity` to
+    `impression_time_min` (a plain `int` field this task never touched), so
+    it predates this fix and is out of T-001's scope (schemas/aito.py cannot
+    fix error-response serialisation in FastAPI/Starlette or exception
+    handling in main.py's middleware) — reported separately rather than
+    fixed here.
+    """
+    raw = (
+        '{"description": "t001-infinity-should-not-persist", "client_id": "z1", "client_name": "ACME", '
+        '"client_phone": "+33 6 12 34 56 78", '
+        '"tasks": [{"title": "t", "impression_cost": Infinity}]}'
+    )
+    r = await async_client.post("/api/v1/aito/", content=raw, headers={"Content-Type": "application/json"})
+    assert r.status_code != 201
+    board = (await async_client.get("/api/v1/aito/")).json()
+    assert not any(p["description"] == "t001-infinity-should-not-persist" for p in board)
 
 
 @pytest.mark.asyncio

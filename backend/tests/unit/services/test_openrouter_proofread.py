@@ -132,3 +132,31 @@ async def test_unexpected_payload_is_an_upstream_error(configured):
     with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
         with pytest.raises(OpenRouterUpstreamError):
             await proofread_text(None, "capot")
+
+
+@pytest.mark.asyncio
+async def test_truncated_completion_is_an_upstream_error(configured):
+    """finish_reason "length" means the model's answer was cut off mid-sentence.
+
+    Returning that truncated string as a 200 would let the caller swap it into
+    the field, silently deleting whatever came after the cut. It must instead
+    raise, so the caller leaves the user's original text alone.
+    """
+    payload = {"choices": [{"message": {"content": "Capot avec 3 pi"}, "finish_reason": "length"}]}
+    client, _ = build_client(payload=payload)
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client), pytest.raises(OpenRouterUpstreamError):
+        await proofread_text(None, "capot avec 3 pieces")
+
+
+@pytest.mark.asyncio
+async def test_max_tokens_is_sized_conservatively_for_a_long_source(configured):
+    """A 2000-char French source tokenises well under 2 chars/token, so a budget
+    of len(source)//2 caps the answer before it can finish a dense sentence.
+    max_tokens must instead scale from a conservative (smaller) chars-per-token
+    ratio, leaving real headroom above the character count.
+    """
+    source = "é" * 2000
+    client, sent = build_client(payload=chat_payload("é" * 2000))
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
+        await proofread_text(None, source)
+    assert sent[0]["max_tokens"] > len(source) // 2 + 120

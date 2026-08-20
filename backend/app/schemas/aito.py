@@ -168,7 +168,7 @@ class AitoShippingInput(BaseModel):
     shipping_first_name: str | None = Field(default=None, max_length=100)
     shipping_last_name: str | None = Field(default=None, max_length=100)
     shipping_phone: str | None = Field(default=None, max_length=50)
-    shipping_price: float | None = Field(default=None, ge=0)
+    shipping_price: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
     model_config = ConfigDict(extra="ignore")
 
@@ -181,6 +181,14 @@ class AitoTaskBase(BaseModel):
     modelisation_description: str | None = None
     impression_description: str | None = None
     usinage_description: str | None = None
+    # `allow_inf_nan=False` is NOT set here, on purpose, for the same reason
+    # `max_length` is not set here on the description fields two lines below:
+    # AitoTaskResponse also inherits from AitoTaskBase, and a constraint here
+    # would make reading back a row that ALREADY stores a non-finite value
+    # (accepted and persisted before this task, or by a future write path
+    # this task did not touch) raise a 500 out of GET /aito/{id}/tasks
+    # instead of serialising it as `null` the way BASE always has. The
+    # write-side reject lives on AitoTaskCreate/AitoTaskUpdate below instead.
     scan_cost: float | None = Field(default=None, ge=0)
     modelisation_cost: float | None = Field(default=None, ge=0)
     usinage_cost: float | None = Field(default=None, ge=0)
@@ -209,6 +217,17 @@ class AitoTaskCreate(AitoTaskBase):
     modelisation_description: str | None = Field(default=None, max_length=10_000)
     impression_description: str | None = Field(default=None, max_length=10_000)
     usinage_description: str | None = Field(default=None, max_length=10_000)
+    # Same reasoning as the description caps above, and the same precedent
+    # this task's own base-class comment documents: redeclared here (and on
+    # AitoTaskUpdate) rather than on AitoTaskBase, because AitoTaskResponse
+    # inherits AitoTaskBase too and must keep reading back an already-stored
+    # non-finite value as `null`, matching BASE, rather than 500ing.
+    scan_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    modelisation_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    usinage_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    impression_weight_g: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    impression_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    impression_discount_pct: float | None = Field(default=None, gt=0, le=100, allow_inf_nan=False)
 
 
 class AitoTaskUpdate(AitoTaskBase):
@@ -222,6 +241,14 @@ class AitoTaskUpdate(AitoTaskBase):
     modelisation_description: str | None = Field(default=None, max_length=10_000)
     impression_description: str | None = Field(default=None, max_length=10_000)
     usinage_description: str | None = Field(default=None, max_length=10_000)
+    # See AitoTaskCreate for why this is redeclared per-request-model instead
+    # of on AitoTaskBase.
+    scan_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    modelisation_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    usinage_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    impression_weight_g: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    impression_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    impression_discount_pct: float | None = Field(default=None, gt=0, le=100, allow_inf_nan=False)
 
 
 class AitoTaskResponse(AitoTaskBase):
@@ -251,7 +278,7 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     quote_id: str | None = Field(default=None, max_length=50, pattern=r"^[A-Za-z0-9_-]+$")
     quote_number: str | None = Field(default=None, max_length=50)
     quote_date: str | None = Field(default=None, max_length=10)
-    quote_total: float | None = Field(default=None, ge=0)
+    quote_total: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     quote_url: str | None = Field(default=None, max_length=300)
     quote_salesperson: str | None = Field(default=None, max_length=200)
     # Restricted to the Zoho vocabulary — an import usually carries one of
