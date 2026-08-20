@@ -1511,7 +1511,19 @@ def _reject_ticks_without_acceptance(quote_status: str | None, fields: dict) -> 
 
 
 async def _get_task_or_404(db: AsyncSession, task_id: int) -> AitoTask:
-    task = (await db.execute(select(AitoTask).where(AitoTask.id == task_id))).scalar_one_or_none()
+    """Only used by the task WRITE endpoints (update_task, delete_task) — the
+    join on AitoProject.status gates writes on a trashed project's tasks.
+    list_tasks (the read path) does not call this helper and stays
+    unfiltered on purpose: reading tasks on a trashed project must keep
+    working. See BASELINE-CHANGELOG.md T-002.
+    """
+    task = (
+        await db.execute(
+            select(AitoTask)
+            .join(AitoProject, AitoTask.project_id == AitoProject.id)
+            .where(AitoTask.id == task_id, AitoProject.status == "active")
+        )
+    ).scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
@@ -1533,9 +1545,7 @@ async def add_task(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
-    project = (await db.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await _get_active_project_or_404(db, project_id)
     task_fields = payload.model_dump()
     _reject_ticks_without_acceptance(project.quote_status, task_fields)
     if (

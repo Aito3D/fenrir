@@ -1,10 +1,44 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, waitFor, fireEvent } from '@testing-library/react';
+import { screen, waitFor, fireEvent, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BrowserRouter } from 'react-router-dom';
 import { render } from '../utils';
 import { ActivityRail } from '../../components/aito/history/ActivityRail';
+import { ToastProvider } from '../../contexts/ToastContext';
 import { api } from '../../api/client';
-import type { AitoEvent } from '../../api/client';
+import type { AitoEvent, AitoEventPage } from '../../api/client';
+
+// A second render helper, used only by the depth-race regression test below,
+// which needs a handle on the QueryClient to inspect BOTH depths' caches
+// directly rather than through the DOM. `ActivityRail` touches no context
+// besides React Query, the router, and toasts, so this is the full set —
+// `AuthProvider`/`ThemeProvider`/`FullscreenProvider` from the shared `render`
+// in `../utils` are not needed here.
+function renderWithClient(ui: React.ReactElement) {
+  // Deliberately NOT `gcTime: 0` (unlike the shared `createTestQueryClient`
+  // in `../utils`, which uses it for test-to-test isolation): the bug this
+  // test guards only shows up because a query the depth control has moved
+  // away from stays in the cache for a while, exactly as it does in
+  // production (`App.tsx`'s real QueryClient sets no `gcTime`, so it keeps
+  // the default 5 minutes). A gcTime of 0 would evict the DETAIL cache the
+  // instant the control moves to STORY, which would hide the very race this
+  // test exists to catch.
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+  const utils = rtlRender(
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <ToastProvider>{ui}</ToastProvider>
+      </BrowserRouter>
+    </QueryClientProvider>,
+  );
+  return { queryClient, ...utils };
+}
 
 const event = (over: Partial<AitoEvent>): AitoEvent => ({
   id: 1,
@@ -168,6 +202,58 @@ describe('ActivityRail', () => {
     await waitFor(() => expect(screen.queryByText('called the client')).not.toBeInTheDocument());
     // The text comes back so the user does not have to retype it.
     expect(box).toHaveValue('called the client');
+  });
+
+  it('rolls back a failed note from the depth it was WRITTEN to, even if the depth control moved on while the POST was in flight', async () => {
+    vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [], has_more: false });
+    let reject: (error: unknown) => void = () => {};
+    vi.spyOn(api, 'addAitoNote').mockImplementation(
+      () => new Promise((_resolve, rej) => { reject = rej; }),
+    );
+    const user = userEvent.setup();
+    const { queryClient } = renderWithClient(<ActivityRail projectId={12} />);
+
+    // Default depth is 'detail' (confirmed by the sibling test above).
+    await waitFor(() => expect(queryClient.getQueryData(['aito-events', 12, 'detail'])).toBeTruthy());
+
+    const box = await screen.findByPlaceholderText(/add a note/i);
+    await user.type(box, 'called the client');
+    await user.click(screen.getByRole('button', { name: /add note/i }));
+
+    // The optimistic row lands in the DETAIL cache — the depth in effect
+    // when the mutation was fired.
+    await waitFor(() => {
+      const detailCache = queryClient.getQueryData<{ pages: AitoEventPage[] }>(['aito-events', 12, 'detail']);
+      expect(detailCache?.pages[0]?.events.some((e) => e.note === 'called the client')).toBe(true);
+    });
+
+    // Move the depth control while the POST is still pending. This is the
+    // race: query-core refreshes the pending mutation's `onError` closure on
+    // every re-render, so without the fix the rollback below would target
+    // the STORY cache instead of the one the placeholder actually lives in.
+    await user.click(screen.getByRole('button', { name: /story/i }));
+    await waitFor(() => expect(queryClient.getQueryData(['aito-events', 12, 'story'])).toBeTruthy());
+    const storyCacheBeforeFailure = queryClient.getQueryData<{ pages: AitoEventPage[] }>(['aito-events', 12, 'story']);
+    expect(storyCacheBeforeFailure?.pages[0]?.events ?? []).toEqual([]);
+
+    // Now fail the POST.
+    reject(new Error('nope'));
+    await waitFor(() => expect(box).toHaveValue('called the client'));
+
+    // The placeholder must be gone from the cache it was written to (detail)...
+    await waitFor(() => {
+      const detailCache = queryClient.getQueryData<{ pages: AitoEventPage[] }>(['aito-events', 12, 'detail']);
+      expect(detailCache?.pages[0]?.events.some((e) => e.note === 'called the client')).toBe(false);
+    });
+    // ...and the cache the control had moved to (story) must never have been
+    // touched by the rollback — it stays exactly as the server returned it.
+    const storyCacheAfterFailure = queryClient.getQueryData<{ pages: AitoEventPage[] }>(['aito-events', 12, 'story']);
+    expect(storyCacheAfterFailure?.pages[0]?.events ?? []).toEqual([]);
+
+    // Switching the rail back to Detail must not resurrect the failed note
+    // as a real timeline entry — this is the user-visible face of the bug.
+    await user.click(screen.getByRole('button', { name: /detail/i }));
+    expect(screen.queryByText('called the client')).not.toBeInTheDocument();
   });
 
   it('renders the verbatim Books text for an unrecognised zoho.comment', async () => {

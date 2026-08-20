@@ -56,14 +56,22 @@ export function ActivityRail({ projectId }: { projectId: number }) {
   );
 
   const addNote = useMutation({
-    mutationFn: ({ body }: { body: string; optimistic: AitoEvent }) => api.addAitoNote(projectId, body),
+    mutationFn: ({ body }: { body: string; optimistic: AitoEvent; depth: AitoHistoryDepth }) =>
+      api.addAitoNote(projectId, body),
     // Prepends into the FIRST page only. The list runs newest-first and the
     // cursor keysets on (occurred_at, id), so a row at the head cannot shift
     // any page boundary — an optimistic note is invisible to paging.
-    onMutate: ({ optimistic }) => {
+    //
+    // `depth` here is the value captured in the mutation's variables at
+    // mutate()-time, NOT the component's current `depth` state — the depth
+    // control can move while the request is in flight, and React Query
+    // refreshes a pending mutation's closures on every re-render. Keying on
+    // the captured value keeps onMutate and onError pointed at the same
+    // cache entry regardless of what the control does meanwhile.
+    onMutate: ({ optimistic, depth: mutationDepth }) => {
       setNote('');
       queryClient.setQueryData<{ pages: AitoEventPage[]; pageParams: unknown[] }>(
-        ['aito-events', projectId, depth],
+        ['aito-events', projectId, mutationDepth],
         (prev) =>
           prev
             ? {
@@ -84,9 +92,9 @@ export function ActivityRail({ projectId }: { projectId: number }) {
       seenIds.current.add(created.id);
       queryClient.invalidateQueries({ queryKey: ['aito-events', projectId] });
     },
-    onError: (_error, { body, optimistic }) => {
+    onError: (_error, { body, optimistic, depth: mutationDepth }) => {
       queryClient.setQueryData<{ pages: AitoEventPage[]; pageParams: unknown[] }>(
-        ['aito-events', projectId, depth],
+        ['aito-events', projectId, mutationDepth],
         (prev) =>
           prev
             ? {
@@ -156,6 +164,7 @@ export function ActivityRail({ projectId }: { projectId: number }) {
           if (!body) return;
           addNote.mutate({
             body,
+            depth,
             optimistic: {
               id: nextPlaceholderId(),
               occurred_at: new Date().toISOString(),

@@ -1033,6 +1033,45 @@ async def test_delete_task_removes_only_that_task(async_client):
     assert [t["title"] for t in remaining] == ["Deux"]
 
 
+@pytest.mark.asyncio
+async def test_task_writes_404_once_the_parent_project_is_trashed(async_client):
+    """T-002 (user-approved behavior change): a trashed project's tasks can
+    still be READ (list_tasks stays unfiltered — see
+    test_task_reads_still_work_on_a_trashed_project below) but can no longer
+    be WRITTEN. Before this fix add_task/update_task/delete_task all
+    succeeded (201/200/204) against a soft-deleted project, letting priced
+    work be added to a card nobody can see, which then rides onto the live
+    Zoho estimate when the project is restored."""
+    project_id = (await _create(async_client, tasks=[_task(title="Un")])).json()["id"]
+    task_id = (await async_client.get(f"/api/v1/aito/{project_id}/tasks")).json()[0]["id"]
+
+    assert (await async_client.delete(f"/api/v1/aito/{project_id}")).status_code == 204
+
+    add = await async_client.post(f"/api/v1/aito/{project_id}/tasks", json=_task(title="Deux"))
+    assert add.status_code == 404, add.text
+
+    update = await async_client.patch(f"/api/v1/aito/tasks/{task_id}", json={"scan_cost": 9000.0})
+    assert update.status_code == 404, update.text
+
+    delete = await async_client.delete(f"/api/v1/aito/tasks/{task_id}")
+    assert delete.status_code == 404, delete.text
+
+
+@pytest.mark.asyncio
+async def test_task_reads_still_work_on_a_trashed_project(async_client):
+    """Pinning the deliberate asymmetry: only the WRITE endpoints gate on the
+    parent's status. list_tasks does not call `_get_task_or_404` and must
+    keep serving a trashed project's tasks — a client reading a card between
+    a trash and a restore must not itself break."""
+    project_id = (await _create(async_client, tasks=[_task(title="Un")])).json()["id"]
+
+    assert (await async_client.delete(f"/api/v1/aito/{project_id}")).status_code == 204
+
+    listed = await async_client.get(f"/api/v1/aito/{project_id}/tasks")
+    assert listed.status_code == 200
+    assert [t["title"] for t in listed.json()] == ["Un"]
+
+
 _TASK_DESCRIPTION_FIELDS = [
     "scan_description",
     "modelisation_description",

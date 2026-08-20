@@ -2370,3 +2370,157 @@ intact.
 this correction — `allow_inf_nan`'s presence or absence has no JSON Schema
 representation (same reasoning as the original T-001 entry above), and
 nothing about `AiTextField`'s public shape, props or rendered DOM changed.
+
+## T-002 — 2026-08-19 — user-approved behavior change
+
+`add_task` (`POST /aito/{project_id}/tasks`) resolved its parent project with
+a bare `select(AitoProject).where(AitoProject.id == project_id)` — no status
+filter — unlike every other project-scoped write in this file, which goes
+through `_get_active_project_or_404` (adds `AitoProject.status == "active"`).
+`update_task` (`PATCH /aito/tasks/{task_id}`) and `delete_task`
+(`DELETE /aito/tasks/{task_id}`) both resolved their task via
+`_get_task_or_404`, which filtered on the task's own id alone and never
+consulted the parent project's status at all. Confirmed against the app
+before this fix: after soft-deleting a project (`DELETE /aito/{id}`, 204,
+sets `status = "deleted"`), `POST /{id}/tasks` still returned 201,
+`PATCH /tasks/{tid}` still returned 200, and `DELETE /tasks/{tid}` still
+returned 204. Each write also calls `_mark_pending_if_ours`
+(unconditionally, regardless of status), which requeues the trashed project
+for the Zoho sync worker. `list_projects` excludes deleted rows from the
+board, so a priced task could be added or a cost changed on a card nobody
+can see, and that edit rides onto the live Zoho estimate once the project is
+later restored.
+
+Consumer enumeration performed before touching either helper:
+
+- `_get_task_or_404` had exactly two callers in the whole codebase (grepped
+  across `backend/`, not just this file): `update_task` (line ~1622) and
+  `delete_task` (line ~1701). Both are WRITE endpoints. **No read endpoint
+  calls this helper** — `list_tasks` (`GET /{project_id}/tasks`) queries
+  `AitoTask` directly by `project_id` with no status join at all, and does
+  not go through `_get_task_or_404`. Gating the helper on the parent's
+  status therefore only affects the two write endpoints; it cannot touch a
+  read path, because none exists among its callers. This was the exact
+  "enumerate every consumer" check the campaign's standing rule calls for,
+  and it came back negative for a read-path hit — confirmed independently
+  with a new regression test (below) that pins the read path still working
+  after the fix.
+- `_get_active_project_or_404` already had seven callers before this change
+  (`send_quote_email`, `reorder_tasks`, and four other project-level write
+  routes), all pre-existing and already status-filtered; `add_task` is now
+  an eighth, using the same helper rather than duplicating its logic. None
+  of the seven existing callers were touched — `add_task` only stopped
+  inlining its own weaker check and started calling the shared helper that
+  already existed for this exact purpose.
+
+Fix: `add_task` now resolves its parent via `project = await
+_get_active_project_or_404(db, project_id)` instead of its own unfiltered
+query. `_get_task_or_404` now joins `AitoProject` and filters on
+`AitoProject.status == "active"` in addition to the task's own id, so both
+`update_task` and `delete_task` 404 when the parent project is not active.
+`list_tasks` was not touched.
+
+Observable change, quoting the approved description verbatim: "adding,
+editing or deleting a task on a trashed project currently succeeds and would
+start returning 404, so any client that edits tasks between a trash and a
+restore would break." Confirmed exactly as scoped: `POST /{id}/tasks`,
+`PATCH /tasks/{tid}` and `DELETE /tasks/{tid}` against a trashed project's
+task now 404; `GET /{id}/tasks` against the same trashed project is
+unaffected and still returns 200 with the task list.
+
+New tests in `backend/tests/unit/test_aito_routes.py`:
+`test_task_writes_404_once_the_parent_project_is_trashed` (soft-deletes a
+project, then asserts `add_task`/`update_task`/`delete_task` all 404) and
+`test_task_reads_still_work_on_a_trashed_project` (pins that `list_tasks`
+still returns 200 with the task's data on the same trashed project, so a
+future change cannot silently gate the read path too). Run against the
+code as it stood before this fix (verified via `git apply -R` on this
+commit's diff to `backend/app/api/routes/aito.py`, then `git apply` to
+restore it — no `git stash` used, per the campaign's shared-stash hazard),
+`test_task_writes_404_once_the_parent_project_is_trashed` failed at its
+first assertion: `add_task` returned 201 instead of 404
+(`assert 201 == 404`). It passes after the fix. The read-path pin test
+passes both before and after the fix, as expected — it does not by itself
+prove anything about the fix (a test that passes on both sides of a change
+proves nothing about that change), but it does prevent a future regression
+from gating the read path silently.
+
+`tools/snapshot.py verify` showed 11/11 probes matching both before and
+after this change (re-verified independently by reverting/reapplying the
+diff the same way as the test proof above). `aito-route-perms` and
+`aito-openapi` were checked specifically, per this task's instructions —
+neither route's permission decorator, path, method, status code, or request/
+response schema changed; only an internal WHERE-clause filter did, which is
+invisible to both probes. No probe needed re-recording.
+`bash tools/gen_surface_aito.sh` produced a byte-identical `SURFACE.md` — no
+route, request/response model, or exported name was added or removed.
+
+### Correction — 2026-08-20, iteration-2 blind verifier run, read-path
+### consequence found by a third verification pass
+
+**This correction does not change or revert the fix above; it documents a
+consequence of it that the original T-001 entry did not enumerate.**
+
+`AitoTaskCreate` is not only the write-path schema `T-001` was approved to
+harden — it is also composed into a response model.
+`backend/app/api/routes/zoho.py:291` declares:
+
+    class ZohoQuotePreview(BaseModel):
+        tasks: list[AitoTaskCreate]
+
+and `zoho.py:313` serves `GET /api/v1/zoho/estimates/{estimate_id}/preview`
+with `response_model=ZohoQuotePreview`. That is a direct use of
+`AitoTaskCreate` itself (not `AitoTaskResponse`, which only inherits
+`AitoTaskBase`), so the `allow_inf_nan=False` constraints this task added at
+`schemas/aito.py:221-228` (`scan_cost`, `modelisation_cost`, `usinage_cost`,
+`impression_weight_g`, `impression_cost`, `impression_discount_pct`) now sit
+directly on this response path too. BEFORE this task, a non-finite value on
+one of those fields serialised out of this endpoint as JSON `null` (200).
+AFTER, the same value raises `ResponseValidationError` inside FastAPI while
+building the response, and the endpoint 500s instead.
+
+Reachability was checked, not assumed — this is producible from real
+estimate data reaching `preview_estimate`, not only by hand-crafting a
+request body:
+
+- `_line_amount({'quantity': 1e200, 'rate': 1e200}, inclusive=True,
+  precision=2)` returns `inf`.
+- `parse_weight_g('9'*310 + ' g')` returns `inf` — the weight regex's `\d+`
+  is unbounded, so an absurdly long digit run in a Zoho line description
+  overflows a Python `float` on conversion.
+
+Both functions live in `backend/app/services/aito_quote_import.py` and both
+feed fields on the `AitoTaskCreate` instances this endpoint builds and
+returns.
+
+Severity is LOW, and the record should say so plainly rather than let the
+mechanism above read as alarming:
+
+- it needs a magnitude past roughly `1.8e308` arriving from Zoho Books —
+  not an operational input for a quantity, rate, or weight field;
+- the hazard CLASS is pre-existing, not introduced by this task.
+  `AitoTaskCreate` already carried `max_length=10_000` on its four
+  `*_description` fields at BASE, and an 11,000-character Zoho line
+  description already 500s this same `preview_estimate` endpoint today, on
+  unmodified BASE code — `AitoTaskCreate` was already a write schema leaking
+  into a response before this task touched it;
+- `backend/app/api/routes/zoho.py` is OUT of this campaign's scope, so no
+  fix to the response model itself was made or attempted here.
+
+Also worth recording honestly: the T-001 entry above states that the
+remaining, unconstrained fields were re-audited against the question "does
+any response/read schema INHERIT the class this field's constraint sits
+on?" That audit was inheritance-only, checking `AitoTaskResponse`'s
+inheritance of `AitoTaskBase`, and by its own framing could not have caught
+a schema that is instead composed directly into a response model's field
+type, which is what `ZohoQuotePreview.tasks: list[AitoTaskCreate]` does. Two
+verification passes over this task saw `ZohoQuotePreview`'s use of
+`AitoTaskCreate` and judged it unreachable in practice; a third pass found
+the reachability path documented above.
+
+The user was shown this finding and approved it on 2026-08-20, choosing to
+record it here rather than change code — consistent with `routes/zoho.py`
+being out of this campaign's scope. The proper fix — giving
+`ZohoQuotePreview` its own response model instead of reusing
+`AitoTaskCreate`, a write schema, on a read path — is left as follow-up
+work for whoever owns `backend/app/api/routes/zoho.py`.
