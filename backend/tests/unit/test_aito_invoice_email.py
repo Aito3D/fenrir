@@ -23,6 +23,15 @@ INVOICE = {
     "status": "draft",
 }
 
+# A second, older invoice for this same project. Books lists invoices
+# newest-first, so a pair like this is what makes invoice_id="INV-7" (older)
+# and invoice_id=None (which must fall through to the newest, INV-42)
+# actually distinguishable in a test — a single-invoice fixture can't tell
+# "pinned correctly" apart from "ignored payload.invoice_id entirely".
+OLDER_INVOICE = {**INVOICE, "id": "INV-7", "number": "INV-00087"}
+NEWER_INVOICE = {**INVOICE, "id": "INV-42", "number": "INV-00099"}
+TWO_INVOICES = [NEWER_INVOICE, OLDER_INVOICE]
+
 
 @pytest.fixture
 def books_invoice_email(monkeypatch):
@@ -32,11 +41,22 @@ def books_invoice_email(monkeypatch):
     safe only because ``reset_zoho_singleton_shadows`` in conftest strips the
     shadow monkeypatch's undo leaves behind on the singleton — without it this
     fixture silently disarms every later class-level patch of the same method.
+
+    The listed invoice's ``status`` flips from "draft" to "sent" starting on
+    the SECOND call to ``list_project_invoices`` within a test — mirroring
+    what Books actually does as a side effect of emailing an invoice. The
+    send route calls this once before the send (still "draft") and once more
+    after (now "sent") to build its response; without this flip, a send
+    handler that skipped the post-send re-read entirely and just echoed the
+    pre-send invoice back would pass every test in this file undetected.
     """
     sent: list[tuple[str, list[str]]] = []
+    calls = {"invoices": 0}
 
     async def invoices(db, estimate_id, customer_id):
-        return [dict(INVOICE)]
+        calls["invoices"] += 1
+        status = "draft" if calls["invoices"] == 1 else "sent"
+        return [{**INVOICE, "status": status}]
 
     async def url(db, invoice_id):
         return f"https://books.zoho.com/app#/invoices/{invoice_id}"
@@ -98,7 +118,9 @@ async def test_prefill_prefers_the_cards_own_client_email(async_client, books_in
 @pytest.mark.asyncio
 async def test_prefill_404s_without_a_quote(async_client, books_invoice_email):
     project = await _create(async_client, quote_id=None, quote_number=None)
-    assert (await async_client.get(f"/api/v1/aito/{project['id']}/invoice-email")).status_code == 404
+    response = await async_client.get(f"/api/v1/aito/{project['id']}/invoice-email")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "This project has no Zoho quote"
 
 
 @pytest.mark.asyncio
@@ -108,7 +130,9 @@ async def test_prefill_404s_when_the_estimate_has_no_invoice(async_client, monke
 
     monkeypatch.setattr(zoho_service, "list_project_invoices", none)
     project = await _create(async_client)
-    assert (await async_client.get(f"/api/v1/aito/{project['id']}/invoice-email")).status_code == 404
+    response = await async_client.get(f"/api/v1/aito/{project['id']}/invoice-email")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "This project has no Zoho invoice"
 
 
 @pytest.mark.asyncio
@@ -116,6 +140,7 @@ async def test_prefill_404s_for_an_invoice_that_is_not_this_projects(async_clien
     project = await _create(async_client)
     response = await async_client.get(f"/api/v1/aito/{project['id']}/invoice-email?invoice_id=INV-999")
     assert response.status_code == 404
+    assert response.json()["detail"] == "That invoice is not one of this project's"
 
 
 @pytest.mark.asyncio
@@ -152,7 +177,13 @@ async def test_send_emails_the_invoice_and_records_one_event(async_client, books
     )
 
     assert response.status_code == 200
-    assert response.json()["id"] == "INV-7"
+    body = response.json()
+    assert body["id"] == "INV-7"
+    # Proves the response is the POST-send re-read, not an echo of the
+    # pre-send invoice: the fixture flips status to "sent" and gives a URL
+    # only from its second call onward.
+    assert body["status"] == "sent"
+    assert body["url"]
     assert books_invoice_email == [("INV-7", ["contact@example.pf"])]
     kinds = await _events(async_client, project["id"])
     assert kinds.count("invoice.emailed") == 1
@@ -165,14 +196,59 @@ async def test_send_never_moves_the_card(async_client, books_invoice_email):
     project = await _create(async_client)
     before = next(p for p in (await async_client.get("/api/v1/aito/")).json() if p["id"] == project["id"])
 
-    await async_client.post(
+    response = await async_client.post(
         f"/api/v1/aito/{project['id']}/invoice-email",
         json={"to": "contact@example.pf", "invoice_id": "INV-7"},
     )
+    assert response.status_code == 200
 
     after = next(p for p in (await async_client.get("/api/v1/aito/")).json() if p["id"] == project["id"])
     assert after["column"] == before["column"]
     assert after["quote_status"] == before["quote_status"]
+
+
+@pytest.mark.asyncio
+async def test_send_pins_to_the_requested_invoice_among_several(async_client, books_invoice_email, monkeypatch):
+    # Books lists newest-first (NEWER_INVOICE, then OLDER_INVOICE). Pinning to
+    # the older one and getting the newer one back instead is exactly the bug
+    # invoice_id exists to prevent — a fixture with only one candidate invoice
+    # can't catch it, since invoice_id and "no invoice_id" would be
+    # indistinguishable.
+    async def two(db, estimate_id, customer_id):
+        return [dict(i) for i in TWO_INVOICES]
+
+    monkeypatch.setattr(zoho_service, "list_project_invoices", two)
+    project = await _create(async_client)
+
+    response = await async_client.post(
+        f"/api/v1/aito/{project['id']}/invoice-email",
+        json={"to": "contact@example.pf", "invoice_id": "INV-7"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "INV-7"
+    assert books_invoice_email == [("INV-7", ["contact@example.pf"])]
+
+
+@pytest.mark.asyncio
+async def test_send_uses_the_newest_invoice_when_none_is_pinned(async_client, books_invoice_email, monkeypatch):
+    # The schema promises invoice_id is optional and falls back to the
+    # newest invoice. Untested, this is exactly as likely to silently regress
+    # as the pinning behaviour above.
+    async def two(db, estimate_id, customer_id):
+        return [dict(i) for i in TWO_INVOICES]
+
+    monkeypatch.setattr(zoho_service, "list_project_invoices", two)
+    project = await _create(async_client)
+
+    response = await async_client.post(
+        f"/api/v1/aito/{project['id']}/invoice-email",
+        json={"to": "contact@example.pf"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "INV-42"
+    assert books_invoice_email == [("INV-42", ["contact@example.pf"])]
 
 
 @pytest.mark.asyncio
@@ -185,6 +261,7 @@ async def test_an_address_outside_the_allowlist_is_refused_without_sending(async
     )
 
     assert response.status_code == 422
+    assert response.json()["detail"] == "That address is not a recipient of this invoice"
     assert books_invoice_email == []  # Zoho was never asked to send anything
     assert "invoice.emailed" not in await _events(async_client, project["id"])
 
@@ -222,7 +299,9 @@ async def test_a_failed_send_records_nothing(async_client, books_invoice_email, 
 
 
 @pytest.mark.asyncio
-async def test_a_failed_re_read_after_a_successful_send_still_returns_200(async_client, books_invoice_email):
+async def test_a_failed_re_read_after_a_successful_send_still_returns_200(
+    async_client, books_invoice_email, monkeypatch
+):
     # The mail has gone out and the event is committed. 500ing here would
     # invite a real second send on retry, which is the one thing this
     # handler exists to prevent.
@@ -236,15 +315,18 @@ async def test_a_failed_re_read_after_a_successful_send_still_returns_200(async_
         return [dict(INVOICE)]
 
     # Patched after the fixture so the first (pre-send) lookup still answers.
-    zoho_service.list_project_invoices = flaky
-    try:
-        response = await async_client.post(
-            f"/api/v1/aito/{project['id']}/invoice-email",
-            json={"to": "contact@example.pf", "invoice_id": "INV-7"},
-        )
-    finally:
-        del zoho_service.list_project_invoices
+    monkeypatch.setattr(zoho_service, "list_project_invoices", flaky)
+    response = await async_client.post(
+        f"/api/v1/aito/{project['id']}/invoice-email",
+        json={"to": "contact@example.pf", "invoice_id": "INV-7"},
+    )
 
     assert response.status_code == 200
-    assert response.json()["id"] == "INV-7"
+    body = response.json()
+    assert body["id"] == "INV-7"
+    # The re-read failed, so this must be the PRE-send invoice, not an
+    # invented or defaulted one: still "draft", and no url — Books was never
+    # reached a second time to produce either.
+    assert body["status"] == "draft"
+    assert body["url"] == ""
     assert "invoice.emailed" in await _events(async_client, project["id"])
