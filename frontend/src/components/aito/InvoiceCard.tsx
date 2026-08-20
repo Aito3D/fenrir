@@ -4,6 +4,7 @@ import { ExternalLink } from 'lucide-react';
 import { api, type AitoProject } from '../../api/client';
 import { PanelCard } from './PanelCard';
 import { InvoicePrintButton } from './InvoicePrintButton';
+import { SendInvoiceButton } from './SendInvoiceButton';
 import { INVOICE_STATUS_TEXT_TONE_CLASSES, invoiceStatusLabelKey, invoiceStatusTone } from './invoiceStatus';
 import { Money } from '../calculator/shared';
 import { useCurrency } from '../../hooks/useCurrency';
@@ -139,11 +140,13 @@ export function InvoiceCard({ project }: { project: AitoProject }) {
         </p>
       )}
 
-      {/* Full width: unlike the Quote card, which pairs Print with Send, this
-          is the only action here. "Open in Zoho" is absent for the same
-          reason it is there — the number above already goes there. */}
+      {/* Print and Send, both flex-1: the pair mirrors the Quote card's own
+          row so the two cards read as one family. "Open in Zoho" is still
+          absent for the same reason it always was — the number above already
+          goes there. */}
       <div className="flex gap-2 mt-3">
         <InvoicePrintButton projectId={project.id} invoiceId={invoice.id} className="flex-1 justify-center" />
+        <SendInvoiceButton projectId={project.id} invoiceId={invoice.id} className="flex-1 justify-center" />
       </div>
     </PanelCard>
   );
