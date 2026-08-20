@@ -110,10 +110,7 @@ export function useAitoPageMutations() {
       // were already turned into this project.
       clearNewProjectDraft();
     },
-    onError: (_error, { placeholder }) => {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.filter((p) => p.id !== placeholder.id) ?? prev,
-      );
+    onError: () => {
       showToast(t('aito.createFailed'), 'error');
     },
   });
@@ -165,10 +162,7 @@ export function useAitoPageMutations() {
         prev?.map((p) => (p.id === placeholder.id ? created : p)) ?? prev,
       );
     },
-    onError: (error, { placeholder }) => {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
-        prev?.filter((p) => p.id !== placeholder.id) ?? prev,
-      );
+    onError: (error) => {
       const conflict = error instanceof ApiError && error.status === 409;
       showToast(t(conflict ? 'aito.quoteAlreadyHasProject' : 'aito.createFailed'), 'error');
     },

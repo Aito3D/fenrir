@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, waitFor, fireEvent, render as rtlRender } from '@testing-library/react';
+import { screen, waitFor, fireEvent, within, cleanup, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
@@ -8,6 +8,7 @@ import { ActivityRail } from '../../components/aito/history/ActivityRail';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { api } from '../../api/client';
 import type { AitoEvent, AitoEventPage } from '../../api/client';
+import i18n from '../../i18n';
 
 // A second render helper, used only by the depth-race regression test below,
 // which needs a handle on the QueryClient to inspect BOTH depths' caches
@@ -416,5 +417,111 @@ describe('ActivityRail', () => {
     await screen.findByText(/second-page-event/);
     expect(screen.getByText(/first-event/)).toBeInTheDocument();
     expect(screen.getByText(/oldest-event/)).toBeInTheDocument();
+  });
+
+  // ElapsedGutter (EventItem.tsx) only renders at Story depth, between an
+  // event and the next-older one. `elapsedBucket` (eventKinds.ts) buckets the
+  // gap into null (<60s, no row), minute, hour, or day — largest whole unit
+  // that fits, rounded. These tests pin those boundaries directly, plus the
+  // deliberately-positive sign documented above ElapsedGutter: the list runs
+  // newest-first, so the gutter sits under the NEWER of the pair and reads
+  // "in N days" measured forward from the older entry, not "N days ago".
+  //
+  // The expected text is built from `Intl.RelativeTimeFormat` with a value
+  // and unit chosen by hand from reading `elapsedBucket`'s thresholds — never
+  // by calling `elapsedBucket` itself — so a sign flip or threshold change in
+  // production actually disagrees with what the test expects, rather than
+  // both sides drifting together. The language passed to it is whatever this
+  // suite's `i18n.language` already is (matching the rest of this file's
+  // locale-sensitive assertions, e.g. the depth/timestamp tests above) rather
+  // than a hardcoded 'en', so the test does not depend on the runner's
+  // default locale either. Runs of Unicode whitespace are matched loosely for
+  // the same reason `AitoShippingFields.test.tsx`'s French-grouping test
+  // does: some locales separate the parts with a narrow no-break space.
+  describe('elapsed gutter (Story depth only)', () => {
+    function relativePattern(value: number, unit: Intl.RelativeTimeFormatUnit): RegExp {
+      const formatted = new Intl.RelativeTimeFormat(i18n.language, { numeric: 'always' }).format(value, unit);
+      const escaped = formatted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/gu, '\\s+');
+      return new RegExp(escaped);
+    }
+
+    // occurred_at strings match the fixture's own format (no 'Z' — parseUTCDate
+    // appends one), built from a fixed UTC instant so the gap between the two
+    // events is an exact number of seconds rather than something derived from
+    // wall-clock month/day arithmetic.
+    const isoNoZ = (epochSeconds: number) => new Date(epochSeconds * 1000).toISOString().replace(/\.\d{3}Z$/, '');
+
+    const BASE_EPOCH = Date.parse('2026-07-29T12:00:00Z') / 1000;
+
+    async function renderAtStoryDepth(gapSeconds: number) {
+      // Some tests below call this twice (once on each side of a boundary)
+      // to compare the two renders. `render()` mounts into a fresh container
+      // appended to `document.body` without unmounting a prior one, so
+      // without this, a second call would leave two "Story" buttons live at
+      // once and every `screen`-scoped query would find both.
+      cleanup();
+      const newer = event({ id: 2, occurred_at: isoNoZ(BASE_EPOCH), actor_name: 'newer-row' });
+      const older = event({ id: 1, occurred_at: isoNoZ(BASE_EPOCH - gapSeconds), actor_name: 'older-row' });
+      const spy = vi.spyOn(api, 'getAitoEvents').mockResolvedValue({ events: [newer, older], has_more: false });
+      const user = userEvent.setup();
+      const { container } = render(<ActivityRail projectId={12} />);
+
+      await waitFor(() => expect(spy).toHaveBeenCalledWith(12, expect.objectContaining({ depth: 'detail' })));
+      await user.click(screen.getByRole('button', { name: /story/i }));
+      await waitFor(() => expect(spy).toHaveBeenCalledWith(12, expect.objectContaining({ depth: 'story' })));
+      await screen.findByText(/newer-row/);
+      await screen.findByText(/older-row/);
+
+      // The first <li> is the newer event (the list runs newest-first, and
+      // the mock hands the events back in that order) — the gutter for the
+      // gap to the older one renders inside IT, not the older row's own <li>.
+      const rows = container.querySelectorAll('li');
+      return rows[0] as HTMLElement;
+    }
+
+    it('renders "in 3 days" — a POSITIVE value — for two Story-depth events 3 days apart, not "3 days ago"', async () => {
+      const newerRow = await renderAtStoryDepth(3 * 86_400);
+      // A negative value here (a sign-flip regression) would format as "3
+      // days ago" in English and the equivalent past-tense phrasing in any
+      // other locale — this pattern, built from a hardcoded POSITIVE 3,
+      // would then no longer match what actually rendered.
+      expect(within(newerRow).getByText(relativePattern(3, 'day'))).toBeInTheDocument();
+    });
+
+    it('renders no gutter at all when the gap is under a minute (elapsedBucket returns null)', async () => {
+      const newerRow = await renderAtStoryDepth(30);
+      // No note, no detail, no changes on this fixture, so the ONLY <p> a
+      // rendered row can have is its own timestamp line — a second <p> would
+      // be the gutter, which must not exist when the bucket short-circuits.
+      expect(newerRow.querySelectorAll('p')).toHaveLength(1);
+    });
+
+    it('pins the null/minute boundary at exactly 60 seconds', async () => {
+      const justUnder = await renderAtStoryDepth(59);
+      expect(justUnder.querySelectorAll('p')).toHaveLength(1);
+
+      const atBoundary = await renderAtStoryDepth(60);
+      expect(within(atBoundary).getByText(relativePattern(1, 'minute'))).toBeInTheDocument();
+    });
+
+    it('pins the minute/hour boundary at exactly 3600 seconds', async () => {
+      // Just under the hour boundary is still the minute bucket —
+      // round(3599 / 60) = 60, i.e. "in 60 minutes", not "in 1 hour".
+      const justUnder = await renderAtStoryDepth(3_599);
+      expect(within(justUnder).getByText(relativePattern(60, 'minute'))).toBeInTheDocument();
+
+      const atBoundary = await renderAtStoryDepth(3_600);
+      expect(within(atBoundary).getByText(relativePattern(1, 'hour'))).toBeInTheDocument();
+    });
+
+    it('pins the hour/day boundary at exactly 86400 seconds', async () => {
+      // Just under the day boundary is still the hour bucket —
+      // round(86399 / 3600) = 24, i.e. "in 24 hours", not "in 1 day".
+      const justUnder = await renderAtStoryDepth(86_399);
+      expect(within(justUnder).getByText(relativePattern(24, 'hour'))).toBeInTheDocument();
+
+      const atBoundary = await renderAtStoryDepth(86_400);
+      expect(within(atBoundary).getByText(relativePattern(1, 'day'))).toBeInTheDocument();
+    });
   });
 });
