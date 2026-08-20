@@ -103,6 +103,30 @@ const trashProject = {
   status: 'deleted',
 };
 
+// A billed variant of `project`, for the Send-invoice permission gate below
+// (T-051). `quote_invoiced: true` is what flips InvoiceCard's own
+// `mayHaveInvoice` gate to true — without it the card's query stays disabled
+// and it self-hides, which is exactly why the read-only assertions elsewhere
+// in this file never had to think about the invoice card at all.
+const invoicedProject = {
+  ...project,
+  quote_invoiced: true,
+  quote_sync_state: 'idle' as const,
+};
+
+const invoice = {
+  id: 'INV-7',
+  number: 'INV-00087',
+  date: '2026-08-18',
+  due_date: '2026-09-18',
+  total: 45000,
+  balance: 0,
+  currency_code: 'XPF',
+  status: 'paid',
+  url: 'https://books.zoho.com/app#/invoices/INV-7',
+  invoice_count: 1,
+};
+
 // One task, for the task-edit (add/remove) matrix below.
 const task = {
   id: 101,
@@ -242,6 +266,33 @@ describe('AitoPage — aito:update permission gating (T-048)', () => {
     expect(within(dialog).queryByRole('button', { name: /send quote/i })).not.toBeInTheDocument();
     await waitFor(() => expect(within(dialog).queryByRole('button', { name: /add task/i })).not.toBeInTheDocument());
     await waitFor(() => expect(within(dialog).queryByLabelText('Remove task')).not.toBeInTheDocument());
+  });
+
+  it('read-only (aito:read only): hides send-invoice but keeps print-invoice in the detail panel (T-051)', async () => {
+    // The Quote card's Send button self-hides for a read-only user via the
+    // fixture above having no invoice at all — that proves nothing about the
+    // Invoice card, whose own query is gated on `quote_invoiced` rather than
+    // on any prop. This is the one case in the file where the card is made
+    // to actually render, so the gate on its own Send button has something
+    // to hide.
+    mockUseAuth.authEnabled = true;
+    mockUseAuth.hasPermission.mockImplementation((permission: string) => permission === 'aito:read');
+    server.use(
+      http.get('/api/v1/aito/', () => HttpResponse.json([invoicedProject])),
+      http.get('/api/v1/aito/12/invoice', () => HttpResponse.json(invoice)),
+    );
+
+    const user = userEvent.setup();
+    render(<AitoPage />);
+
+    await openCard(user);
+    const dialog = await screen.findByRole('dialog');
+
+    // Print needs no permission gate (see InvoicePrintButton) and must still
+    // be there once the invoice loads — a Send-only regression that also
+    // swallowed Print would be a worse bug than the one this test exists for.
+    expect(await within(dialog).findByRole('button', { name: /print invoice/i })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: /send invoice/i })).not.toBeInTheDocument();
   });
 
   it('auth enabled + every aito permission granted: shows flag, quote-status, send-quote, add-task and remove-task in the detail panel', async () => {

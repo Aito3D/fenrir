@@ -5,9 +5,14 @@ import { SendInvoiceModal } from './SendInvoiceModal';
 
 /** Email this project's invoice to the client, from the panel's Invoice card.
  *
- *  No gate of its own, for the same reason `InvoicePrintButton` has none:
- *  whether an invoice exists is only known once the card's query has
- *  answered, so `InvoiceCard` does not render this until it holds one.
+ *  No EXISTENCE gate of its own, for the same reason `InvoicePrintButton`
+ *  has none: whether an invoice exists is only known once the card's query
+ *  has answered, so `InvoiceCard` does not render this until it holds one.
+ *  That is a different question from the PERMISSION gate — POST
+ *  /{project_id}/invoice-email enforces AITO_UPDATE, and unlike existence
+ *  that is knowable up front. The permission gate is the call site's, same
+ *  as `SendQuoteButton`: `InvoiceCard` wraps this in `canUpdate &&`, one
+ *  card up from where `ProjectDetailPanel` does the same for the quote.
  *
  *  Re-sending an invoice already out with the client — they lost the mail,
  *  you are chasing payment — is a real thing to want, so this is offered

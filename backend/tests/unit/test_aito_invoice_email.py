@@ -31,7 +31,11 @@ INVOICE = {
 # and invoice_id=None (which must fall through to the newest, INV-42)
 # actually distinguishable in a test — a single-invoice fixture can't tell
 # "pinned correctly" apart from "ignored payload.invoice_id entirely".
-OLDER_INVOICE = {**INVOICE, "id": "INV-7", "number": "INV-00087"}
+# OLDER_INVOICE is just INVOICE by another name — INVOICE already carries the
+# id/number this pair needs for the "older" half, so nothing needs
+# overriding. Only NEWER_INVOICE has to override anything, to become a
+# distinct second invoice.
+OLDER_INVOICE = dict(INVOICE)
 NEWER_INVOICE = {**INVOICE, "id": "INV-42", "number": "INV-00099"}
 TWO_INVOICES = [NEWER_INVOICE, OLDER_INVOICE]
 
@@ -119,6 +123,23 @@ async def test_prefill_prefers_the_cards_own_client_email(async_client, books_in
 
 
 @pytest.mark.asyncio
+async def test_prefill_default_matches_books_casing_not_the_cards(async_client, books_invoice_email):
+    # The card holds a case-variant of an address Books already offers. The
+    # `any(...)` guard above is case-insensitive, so this address is
+    # correctly NOT duplicated into `recipients` — but a naive `default =
+    # client_email or ...` would still preselect the CARD's casing, which is
+    # not a string equal to the option value the <select> actually renders
+    # (Books' own casing). React can't match that to any <option>, so the
+    # operator would see a blank required field on a dialog that sends a
+    # bill. The default must be the casing that is actually IN recipients.
+    project = await _create(async_client, client_email="Contact@Example.pf")
+    body = (await async_client.get(f"/api/v1/aito/{project['id']}/invoice-email")).json()
+
+    assert body["default_email"] == "contact@example.pf"
+    assert [r["email"] for r in body["recipients"]] == ["contact@example.pf"]
+
+
+@pytest.mark.asyncio
 async def test_prefill_404s_without_a_quote(async_client, books_invoice_email):
     project = await _create(async_client, quote_id=None, quote_number=None)
     response = await async_client.get(f"/api/v1/aito/{project['id']}/invoice-email")
@@ -183,8 +204,12 @@ async def test_send_emails_the_invoice_and_records_one_event(async_client, books
     body = response.json()
     assert body["id"] == "INV-7"
     # Proves the response is the POST-send re-read, not an echo of the
-    # pre-send invoice: the fixture flips status to "sent" and gives a URL
-    # only from its second call onward.
+    # pre-send invoice: the fixture's `status` flips to "sent" starting on
+    # its second call (see the fixture's own docstring). `url` comes from a
+    # separate fake that always answers the same way — what makes it
+    # meaningful here is not the fixture varying, but that the handler only
+    # ever calls `books_invoice_url` inside the post-send block, so getting
+    # one back at all is itself proof that block ran.
     assert body["status"] == "sent"
     assert body["url"]
     assert books_invoice_email == [("INV-7", ["contact@example.pf"])]

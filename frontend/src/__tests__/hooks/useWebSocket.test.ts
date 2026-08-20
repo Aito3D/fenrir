@@ -767,6 +767,58 @@ describe('useWebSocket hook', () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['aito-events', 9] });
       vi.useRealTimers();
     });
+
+    it('invalidates the invoice card immediately on invoice-email, not just aito-events', async () => {
+      // A second operator's open panel learns of a send through this alone:
+      // the project row does not change (see test_send_never_moves_the_card),
+      // so a board resync would not touch it, and the card's own query sits
+      // on a 5-minute staleTime. Asserted with no fake-timer advance, unlike
+      // the board/trash cases above, because this one must not wait on the
+      // 300ms resync debounce either — see the handler's own comment.
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+      renderHook(() => useWebSocket(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      await waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
+      const ws = wsInstances[wsInstances.length - 1]!;
+      act(() => {
+        ws.open();
+      });
+
+      act(() => {
+        ws.simulateMessage({ type: 'aito_changed', action: 'invoice-email', project_id: 12, actor: 'Marie' });
+      });
+
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['aito-invoice', 12] });
+    });
+
+    it('leaves the invoice card alone for every other aito_changed action', async () => {
+      // The negative half of the test above: an unrelated action (here,
+      // 'update') must not invalidate a cache the action did not touch —
+      // over-invalidating would cost the same live-read round trip the
+      // Invoice card's whole 5-minute staleTime exists to avoid.
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+      renderHook(() => useWebSocket(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      await waitFor(() => expect(wsInstances.length).toBeGreaterThan(0));
+      const ws = wsInstances[wsInstances.length - 1]!;
+      act(() => {
+        ws.open();
+      });
+
+      act(() => {
+        ws.simulateMessage({ type: 'aito_changed', action: 'update', project_id: 12, actor: 'Marie' });
+      });
+
+      expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['aito-invoice', 12] });
+    });
   });
 
   /**

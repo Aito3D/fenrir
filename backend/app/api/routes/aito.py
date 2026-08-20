@@ -1271,7 +1271,20 @@ async def _load_invoice_email_content(
     client_email = (project.client_email or "").strip()
     if client_email and not any(r["email"].lower() == client_email.lower() for r in recipients):
         recipients.insert(0, {"email": client_email, "name": project.client_name or "", "contact_person_id": ""})
-    default = client_email or (recipients[0]["email"] if recipients else None)
+    # Not `client_email or ...`: when Books already offers this address under
+    # different casing, `client_email` is deliberately NOT inserted above (the
+    # `any(...)` guard sees it as already present) — but the project's own
+    # casing is not necessarily a casing Books actually offers. The <select>
+    # this feeds binds `value={to}` against the option values built from
+    # `recipients`, so preselecting an address string that is not exactly one
+    # of those options gives the browser no match at all: React sets
+    # selectedIndex = -1 and the operator sees a blank, empty-looking
+    # required field on a dialog whose whole job is to mail a bill. Matching
+    # case-insensitively against `recipients` and taking the casing already
+    # there is what keeps the preselection landing on a real option.
+    default = next((r["email"] for r in recipients if r["email"].lower() == client_email.lower()), None) or (
+        recipients[0]["email"] if recipients else None
+    )
     return project, invoice, {**content, "recipients": recipients}, default, count
 
 
@@ -1397,7 +1410,21 @@ async def send_invoice_email(
             project_id,
             e,
         )
-        await db.rollback()
+        # Guarded, not a bare `await db.rollback()`: a real send must never
+        # 500 past this point, because a 500 here invites a client retry that
+        # mails a second real invoice through Books — the one outcome this
+        # whole handler exists to prevent. If the rollback itself raises
+        # (SQLite lock, cancelled task, whatever), letting that propagate
+        # would 500 anyway and defeat the entire point of catching
+        # SQLAlchemyError above it. Swallowing it is safe: the only thing an
+        # unrolled-back session risks is `get_db`'s own trailing commit
+        # raising PendingRollbackError, which the re-read block's rollback
+        # below (or the guarded one right before `_broadcast_changed`) still
+        # gets a chance to clear.
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001 — see the comment above
+            pass
 
     fresh, invoice_count, url = invoice, pre_send_count, ""
     try:
@@ -1432,7 +1459,26 @@ async def send_invoice_email(
             "" if event_recorded else " (invoice.emailed event was also not recorded — see the error above)",
             e,
         )
+        # Guarded for the same reason as the rollback above the record()
+        # except-block: the mail is already out through Books, so nothing
+        # past this point may 500 and invite a retry that sends it twice.
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001 — see the comment on the rollback above
+            pass
+
+    # Reached on the SUCCESS path too, where neither except-block above ran:
+    # the re-read's SELECTs (list_project_invoices, books_invoice_url) still
+    # leave a read transaction open on `db`, which nothing else has rolled
+    # back. Without this, get_db's own trailing `session.commit()` commits
+    # THAT open transaction on the way out — mostly harmless for a pure read,
+    # but not a guarantee this handler wants to depend on, and cheap enough
+    # to close explicitly. Guarded the same way as its siblings above: a real
+    # send must never 500 on the way out, whatever the reason.
+    try:
         await db.rollback()
+    except Exception:  # noqa: BLE001 — see the comment on the rollback above
+        pass
 
     await _broadcast_changed("invoice-email", project_pk, _actor(current_user))
     return AitoInvoiceResponse(**fresh, url=url, invoice_count=invoice_count)

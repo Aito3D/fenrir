@@ -33,7 +33,7 @@ const INVOICE_STALE_MS = 5 * 60_000;
  *  noise the Quote card's own gating comment argues against, and the card is
  *  additive information: a panel without it is still complete.
  */
-export function InvoiceCard({ project }: { project: AitoProject }) {
+export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canUpdate: boolean }) {
   const { t } = useTranslation();
   const appCurrency = useCurrency();
 
@@ -76,20 +76,32 @@ export function InvoiceCard({ project }: { project: AitoProject }) {
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm items-baseline">
         <dt className="text-bambu-gray">{t('aito.invoiceNumberLabel')}</dt>
         <dd className="text-right min-w-0">
-          <a
-            href={invoice.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={t('aito.invoiceOpenInZoho')}
-            className="text-white hover:text-bambu-green inline-flex items-center gap-1 min-w-0 truncate"
-          >
-            {/* Falls back to the id: Books has returned an invoice with no
-                number before it is finalised, and a link whose only visible
-                content is an external-link icon is unclickable-looking and
-                says nothing about where it goes. */}
-            {invoice.number || invoice.id}
-            <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
-          </a>
+          {/* `url` is normally never empty — GET /invoice 502s rather than
+              returning one. The one path that produces `""` is the send
+              route's own post-send degrade (see routes/aito.py), and
+              `useSendInvoiceMutation` writes that response straight into this
+              card's cache. An `<a href="">` self-navigates: it reloads the
+              whole SPA and drops the panel, which reads as far worse than a
+              plain-text row the next 5-minute refetch quietly upgrades back
+              into a link. */}
+          {invoice.url ? (
+            <a
+              href={invoice.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={t('aito.invoiceOpenInZoho')}
+              className="text-white hover:text-bambu-green inline-flex items-center gap-1 min-w-0 truncate"
+            >
+              {/* Falls back to the id: Books has returned an invoice with no
+                  number before it is finalised, and a link whose only visible
+                  content is an external-link icon is unclickable-looking and
+                  says nothing about where it goes. */}
+              {invoice.number || invoice.id}
+              <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
+            </a>
+          ) : (
+            <span className="text-white inline-block min-w-0 truncate">{invoice.number || invoice.id}</span>
+          )}
         </dd>
 
         {/* `common.date`, not a new aito key: it is the same word, already
@@ -146,7 +158,11 @@ export function InvoiceCard({ project }: { project: AitoProject }) {
           goes there. */}
       <div className="flex gap-2 mt-3">
         <InvoicePrintButton projectId={project.id} invoiceId={invoice.id} className="flex-1 justify-center" />
-        <SendInvoiceButton projectId={project.id} invoiceId={invoice.id} className="flex-1 justify-center" />
+        {/* POST /{project_id}/invoice-email enforces AITO_UPDATE — same gate,
+            same call site pattern, as SendQuoteButton one card up. */}
+        {canUpdate && (
+          <SendInvoiceButton projectId={project.id} invoiceId={invoice.id} className="flex-1 justify-center" />
+        )}
       </div>
     </PanelCard>
   );

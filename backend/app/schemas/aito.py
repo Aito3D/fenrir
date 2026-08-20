@@ -579,9 +579,11 @@ class AitoQuoteEmailRecipient(BaseModel):
 class AitoQuoteEmailContent(BaseModel):
     """The send modal's prefill.
 
-    ``body`` is Books' rendered HTML. The client displays it as PLAIN TEXT and
-    never injects it into the DOM — a preview is not worth an injection
-    surface fed by an upstream template.
+    ``body`` is Books' rendered HTML. Sanitised with DOMPurify and rendered by
+    ``ZohoEmailPreview`` inside an iframe with ``sandbox=""`` and an
+    in-document CSP — never inlined into the app document. (Not, as this
+    docstring used to claim, displayed as plain text: that was true before
+    the sandboxed preview component landed and has been stale since.)
     """
 
     subject: str

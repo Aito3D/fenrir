@@ -34,7 +34,7 @@ describe('InvoiceCard', () => {
   it('renders the number, total and status once Books answers', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
 
-    render(<InvoiceCard project={project} />);
+    render(<InvoiceCard project={project} canUpdate />);
 
     expect(await screen.findByText('FA-26-0001')).toBeInTheDocument();
     expect(screen.getByText('2026-08-03')).toBeInTheDocument();
@@ -44,7 +44,7 @@ describe('InvoiceCard', () => {
   it('links the number to the invoice in Books', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
 
-    render(<InvoiceCard project={project} />);
+    render(<InvoiceCard project={project} canUpdate />);
 
     const link = await screen.findByRole('link', { name: /FA-26-0001/ });
     expect(link).toHaveAttribute('href', INVOICE.url);
@@ -56,7 +56,7 @@ describe('InvoiceCard', () => {
   it('renders nothing when the project has no invoice', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(null);
 
-    render(<InvoiceCard project={project} />);
+    render(<InvoiceCard project={project} canUpdate />);
 
     await waitFor(() => expect(api.getAitoInvoice).toHaveBeenCalled());
     // Not `toBeEmptyDOMElement` on the container: the shared render wrapper
@@ -71,7 +71,7 @@ describe('InvoiceCard', () => {
     // not take the panel with it — every other card still has its data.
     vi.spyOn(api, 'getAitoInvoice').mockRejectedValue(new Error('HTTP 502'));
 
-    render(<InvoiceCard project={project} />);
+    render(<InvoiceCard project={project} canUpdate />);
 
     await waitFor(() => expect(api.getAitoInvoice).toHaveBeenCalled());
     expect(screen.queryByTestId('panel-card-heading')).not.toBeInTheDocument();
@@ -80,7 +80,7 @@ describe('InvoiceCard', () => {
   it('never asks Zoho about a project that has not been invoiced', async () => {
     const spy = vi.spyOn(api, 'getAitoInvoice');
 
-    render(<InvoiceCard project={{ ...project, quote_invoiced: false } as AitoProject} />);
+    render(<InvoiceCard project={{ ...project, quote_invoiced: false } as AitoProject} canUpdate />);
 
     await waitFor(() => expect(spy).not.toHaveBeenCalled());
   });
@@ -92,7 +92,7 @@ describe('InvoiceCard', () => {
     const spy = vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
 
     render(
-      <InvoiceCard project={{ ...project, quote_invoiced: false, quote_sync_state: 'unmanaged' } as AitoProject} />,
+      <InvoiceCard project={{ ...project, quote_invoiced: false, quote_sync_state: 'unmanaged' } as AitoProject} canUpdate />,
     );
 
     await waitFor(() => expect(spy).toHaveBeenCalledWith(12));
@@ -101,7 +101,7 @@ describe('InvoiceCard', () => {
   it('never asks about a hand-made project with no quote at all', async () => {
     const spy = vi.spyOn(api, 'getAitoInvoice');
 
-    render(<InvoiceCard project={{ ...project, quote_id: null } as unknown as AitoProject} />);
+    render(<InvoiceCard project={{ ...project, quote_id: null } as unknown as AitoProject} canUpdate />);
 
     await waitFor(() => expect(spy).not.toHaveBeenCalled());
   });
@@ -109,7 +109,7 @@ describe('InvoiceCard', () => {
   it('shows the balance only while something is still owed', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue({ ...INVOICE, status: 'partially_paid', balance: 5000 });
 
-    render(<InvoiceCard project={project} />);
+    render(<InvoiceCard project={project} canUpdate />);
 
     expect(await screen.findByText('Balance due')).toBeInTheDocument();
     expect(screen.getByText('Partially paid')).toBeInTheDocument();
@@ -118,7 +118,7 @@ describe('InvoiceCard', () => {
   it('hides the balance row on a fully paid invoice', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
 
-    render(<InvoiceCard project={project} />);
+    render(<InvoiceCard project={project} canUpdate />);
 
     await screen.findByText('FA-26-0001');
     expect(screen.queryByText('Balance due')).not.toBeInTheDocument();
@@ -127,7 +127,7 @@ describe('InvoiceCard', () => {
   it('says how many other invoices this quote has', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue({ ...INVOICE, invoice_count: 3 });
 
-    render(<InvoiceCard project={project} />);
+    render(<InvoiceCard project={project} canUpdate />);
 
     // 3 invoices total, 2 besides the one shown.
     expect(await screen.findByText('Other invoices: 2')).toBeInTheDocument();
@@ -136,7 +136,7 @@ describe('InvoiceCard', () => {
   it('renders a status Zoho invented rather than dropping it', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue({ ...INVOICE, status: 'disputed' });
 
-    render(<InvoiceCard project={project} />);
+    render(<InvoiceCard project={project} canUpdate />);
 
     expect(await screen.findByText('disputed')).toBeInTheDocument();
   });
@@ -144,7 +144,7 @@ describe('InvoiceCard', () => {
   it('offers a print button', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
 
-    render(<InvoiceCard project={project} />);
+    render(<InvoiceCard project={project} canUpdate />);
 
     expect(await screen.findByRole('button', { name: /print invoice/i })).toBeInTheDocument();
   });
@@ -159,7 +159,7 @@ describe('InvoiceCard', () => {
     globalThis.URL.revokeObjectURL = vi.fn();
     const user = userEvent.setup();
 
-    render(<InvoiceCard project={project} />);
+    render(<InvoiceCard project={project} canUpdate />);
     await user.click(await screen.findByRole('button', { name: /print invoice/i }));
 
     await waitFor(() => expect(pdf).toHaveBeenCalledWith(12, 'inv-1'));
@@ -168,7 +168,7 @@ describe('InvoiceCard', () => {
   it('falls back to the id when Books gives the invoice no number', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue({ ...INVOICE, number: '' });
 
-    render(<InvoiceCard project={project} />);
+    render(<InvoiceCard project={project} canUpdate />);
 
     // The link must carry readable text, not just an external-link icon.
     const link = await screen.findByRole('link', { name: /inv-1/ });

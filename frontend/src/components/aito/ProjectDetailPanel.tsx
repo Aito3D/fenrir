@@ -1238,8 +1238,10 @@ export function ProjectDetailPanel({ project, onClose, onDelete, canCreate, canU
               {/* Directly under the Quote card: the invoice is the quote's
                   next chapter, and the two read as one story in that order.
                   Renders itself away when there is no invoice — see
-                  InvoiceCard, which is why there is no gate here. */}
-              <InvoiceCard project={project} />
+                  InvoiceCard, which is why there is no gate here. `canUpdate`
+                  is passed through so the card can gate its own Send button
+                  the same way the Quote card gates SendQuoteButton above. */}
+              <InvoiceCard project={project} canUpdate={canUpdate} />
 
               <RecordCard project={project} latestEvent={latestEvent} />
 
