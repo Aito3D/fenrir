@@ -131,7 +131,11 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
     indistinguishable from a genuinely empty catalogue. A malformed individual
     item (e.g. a non-numeric dealer price) is logged and skipped rather than
     failing the whole refresh — one bad Zoho record must not blank the
-    catalogue or fall back to the stale cache.
+    catalogue or fall back to the stale cache. But if EVERY active item in a
+    non-empty batch fails to map, that is treated as a refresh failure too
+    (same stale-cache-or-raise handling) rather than silently caching an
+    empty list — a systemic mapping bug must not look identical to "Zoho
+    genuinely has no active filaments".
     """
     global _cache, _cache_at
 
@@ -152,16 +156,27 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
                 break
             page += 1
 
+        active_items = [item for item in items if (item.get("status") or "active") == "active"]
         mapped: list[FilamentProduct] = []
-        for item in items:
-            if (item.get("status") or "active") != "active":
-                continue
+        for item in active_items:
             try:
                 mapped.append(_map_item(item))
-            except Exception:
+            except Exception as exc:
                 # One malformed record (e.g. a non-numeric dealer price) must
-                # not blank the entire catalogue — skip it and keep going.
-                logger.warning("Skipping malformed Zoho filament item %s", item.get("item_id"), exc_info=True)
+                # not blank the entire catalogue — skip it and keep going. The
+                # item_id and exception are logged explicitly so a systematic
+                # mapping bug is visible instead of looking like routine bad
+                # upstream data.
+                logger.warning("Skipping malformed Zoho filament item %s: %s", item.get("item_id"), exc, exc_info=True)
+
+        if active_items and not mapped:
+            # Legitimate empties (no items at all, or all filtered out as
+            # inactive) fall through below with an empty `mapped` and no
+            # active_items — this branch only fires when items WERE active
+            # and NONE of them mapped, which is a mapping failure, not an
+            # empty catalogue. Route it through the same stale-cache-or-raise
+            # handling as a fetch failure.
+            raise RuntimeError(f"None of the {len(active_items)} active Zoho filament items could be mapped")
     except Exception:
         if _cache is not None:
             logger.warning("Zoho filament catalogue refresh failed; serving the cached copy", exc_info=True)

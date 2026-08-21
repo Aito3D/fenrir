@@ -147,6 +147,65 @@ async def test_malformed_item_is_skipped_and_does_not_destroy_the_warm_cache(mon
 
 
 @pytest.mark.asyncio
+async def test_entirely_malformed_batch_falls_back_to_the_warm_cache(monkeypatch):
+    """If every active item in the refreshed batch fails to map, that is a
+    mapping failure, not a legitimately empty catalogue — it must behave like
+    any other refresh failure and serve the stale cache unchanged."""
+    monkeypatch.setattr(zoho_service, "list_items_page", _fake_request([PAGE_1], []))
+    await zoho_filaments.fetch_catalogue(None)
+    zoho_filaments._cache_at = None  # force the next call to refresh
+
+    all_malformed = [
+        _item("97", "Bambu Lab - PLA - Rouge (Red) - 1.75mm - 1kg", "N/A", "BAD-1"),
+        _item("98", "Bambu Lab - PLA - Vert - 1.75mm - 1kg", "oops", "BAD-2"),
+    ]
+
+    async def flaky_page(db, **kwargs):
+        return all_malformed, False
+
+    monkeypatch.setattr(zoho_service, "list_items_page", flaky_page)
+    catalogue = await zoho_filaments.fetch_catalogue(None)
+
+    # unchanged: still the 4 items from the original warm cache
+    assert len(catalogue) == 4
+    assert [p.item_id for p in catalogue] == ["1", "2", "3", "4"]
+
+
+@pytest.mark.asyncio
+async def test_entirely_malformed_batch_with_cold_cache_raises(monkeypatch):
+    """The cold-cache case must not silently return an empty list either —
+    an all-malformed batch is indistinguishable from a real Zoho failure."""
+    all_malformed = [
+        _item("97", "Bambu Lab - PLA - Rouge (Red) - 1.75mm - 1kg", "N/A", "BAD-1"),
+    ]
+
+    async def flaky_page(db, **kwargs):
+        return all_malformed, False
+
+    monkeypatch.setattr(zoho_service, "list_items_page", flaky_page)
+    with pytest.raises(RuntimeError):
+        await zoho_filaments.fetch_catalogue(None)
+
+
+@pytest.mark.asyncio
+async def test_all_items_inactive_is_a_legitimate_empty_catalogue(monkeypatch):
+    """Distinguishes the mapping-failure case above from the legitimate case
+    where Zoho really has no active filaments — this must return an empty
+    list without raising, cold cache or not."""
+    all_inactive = [
+        _item("50", "Bambu Lab - PLA - Rouge (Red) - 1.75mm - 1kg", 1000.0, "X-1", status="inactive"),
+        _item("51", "Bambu Lab - PLA - Vert - 1.75mm - 1kg", 1000.0, "X-2", status="confirmation_pending"),
+    ]
+
+    async def inactive_page(db, **kwargs):
+        return all_inactive, False
+
+    monkeypatch.setattr(zoho_service, "list_items_page", inactive_page)
+    catalogue = await zoho_filaments.fetch_catalogue(None)
+    assert catalogue == []
+
+
+@pytest.mark.asyncio
 async def test_search_matches_all_terms_across_fields(monkeypatch):
     monkeypatch.setattr(zoho_service, "list_items_page", _fake_request([PAGE_1, PAGE_2], []))
     catalogue = await zoho_filaments.fetch_catalogue(None)
