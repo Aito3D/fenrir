@@ -4704,16 +4704,36 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE calculator_filaments ADD COLUMN spool_weight_kg FLOAT")
     await _safe_execute(conn, "ALTER TABLE calculator_filaments ADD COLUMN zoho_synced_at TIMESTAMP")
     async with conn.begin_nested():
+        # ROUND(..., 2) is load-bearing, not cosmetic: a hand-typed sale price
+        # rarely divides into a clean percentage (3731 -> 5597 backfills to
+        # 50.013401232913424), and the margin dropdown renders the stored value
+        # verbatim as an option label. Two decimals is the same precision the
+        # money columns carry.
         await conn.execute(
             text(
                 "UPDATE calculator_filaments "
-                "SET margin_pct = ((sale_price_per_kg / cost_per_kg) - 1) * 100 "
+                "SET margin_pct = ROUND(((sale_price_per_kg / cost_per_kg) - 1) * 100, 2) "
                 "WHERE margin_pct IS NULL AND cost_per_kg > 0 AND sale_price_per_kg IS NOT NULL"
             )
         )
         # Rows with no usable cost cannot yield a margin; 0 keeps the
         # sale = cost * (1 + margin/100) invariant true for them.
         await conn.execute(text("UPDATE calculator_filaments SET margin_pct = 0 WHERE margin_pct IS NULL"))
+        # Rounding the margin above would otherwise leave the row's stored sale
+        # price disagreeing with what the margin now derives, so re-derive it
+        # here. Written as a self-heal over every row rather than only the
+        # freshly backfilled ones: sale_price_per_kg is derived output now, so
+        # any row where it disagrees with cost + margin is drift (the sync's
+        # "unchanged" branch can leave some behind), and the WHERE makes it a
+        # no-op for every row that already agrees.
+        await conn.execute(
+            text(
+                "UPDATE calculator_filaments "
+                "SET sale_price_per_kg = ROUND(cost_per_kg * (1 + margin_pct / 100.0), 2) "
+                "WHERE cost_per_kg > 0 AND margin_pct IS NOT NULL AND sale_price_per_kg IS NOT NULL "
+                "AND sale_price_per_kg != ROUND(cost_per_kg * (1 + margin_pct / 100.0), 2)"
+            )
+        )
 
     # Migration: Aito cards snapshot the client's email alongside the phone so
     # the walk-in customer's details survive on the card even when they are
@@ -5699,7 +5719,12 @@ async def seed_calculator_defaults():
                     brand="SUNLU",
                     material="PA6-CF",
                     cost_per_kg=3731.0,
-                    sale_price_per_kg=5597.0,
+                    # Derived, never hand-picked: round(3731 * (1 + 50/100), 2).
+                    # margin_pct defaults to 50.0, and the seed has to satisfy
+                    # the same sale = round(cost * (1 + margin/100), 2)
+                    # invariant every create/update/sync maintains — otherwise
+                    # a fresh install ships already 0.5 off the grid.
+                    sale_price_per_kg=5596.5,
                     difficulty_pct=150.0,
                 )
             )

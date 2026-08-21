@@ -153,6 +153,52 @@ async def test_unchanged_price_is_counted_separately(async_client, zoho_catalogu
 
 
 @pytest.mark.asyncio
+async def test_unlinking_clears_the_sync_stamp(async_client, zoho_catalogue):
+    """A row that is no longer linked must not keep looking Zoho-priced.
+
+    The settings panel reads a non-null ``zoho_synced_at`` as proof the cost is
+    Zoho-owned and reconstructs a dealer price from it. A stamp surviving an
+    unlink means that after re-linking to an unpriced product, a hand-typed
+    cost would be treated as a dealer price and silently rescaled by a
+    spool-weight correction.
+    """
+    created = await _create(async_client, zoho_item_id="A", material="ABS-GF")
+    await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
+    assert (await async_client.get("/api/v1/calculator/filaments/")).json()[0]["zoho_synced_at"] is not None
+
+    resp = await async_client.patch(
+        f"/api/v1/calculator/filaments/{created['id']}",
+        json={"zoho_item_id": None, "zoho_item_name": None, "zoho_sku": None, "spool_weight_kg": None},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["zoho_synced_at"] is None
+    # And it stays cleared when read back, not just in the write's response.
+    assert (await async_client.get("/api/v1/calculator/filaments/")).json()[0]["zoho_synced_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_relinking_to_another_product_clears_the_sync_stamp(async_client, zoho_catalogue):
+    """Re-pointing the row at a different item invalidates the old stamp too.
+
+    The panel only offers the product search once the form is unlinked, but the
+    resulting PATCH carries the NEW item id — nothing in it says "I unlinked
+    first", so the stamp has to be cleared on any change of ``zoho_item_id``.
+    """
+    created = await _create(async_client, zoho_item_id="A", material="ABS-GF")
+    await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
+
+    resp = await async_client.patch(
+        f"/api/v1/calculator/filaments/{created['id']}",
+        # "B" is the zero-dealer-price product: the sync will never stamp it,
+        # so the cost below stays the operator's own.
+        json={"zoho_item_id": "B", "zoho_item_name": "Item B", "zoho_sku": "SKU-B", "cost_per_kg": 1234.0},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["zoho_synced_at"] is None
+    assert resp.json()["cost_per_kg"] == 1234.0
+
+
+@pytest.mark.asyncio
 async def test_unlinked_filaments_are_never_touched(async_client, zoho_catalogue):
     await _create(async_client, material="PLA")  # no zoho_item_id
     resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})

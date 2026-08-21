@@ -89,6 +89,61 @@ async def test_rows_with_no_cost_get_a_zero_margin(raw_conn):
 
 
 @pytest.mark.asyncio
+async def test_an_off_grid_margin_is_rounded_to_two_decimals(raw_conn):
+    """The real row 1 of the user's database: cost 3731, sale 5597.
+
+    ``(5597 / 3731 - 1) * 100`` is 50.013401232913424 — 18 significant digits
+    that the margin dropdown would render verbatim as an option label. The
+    backfill rounds to the same 2 decimals the money columns carry, and
+    re-derives the sale price so the row still satisfies
+    ``sale == round(cost * (1 + margin/100), 2)`` afterwards.
+    """
+    await _drop_margin_pct(raw_conn)
+    await raw_conn.execute(
+        text(
+            "INSERT INTO calculator_filaments (name, brand, material, cost_per_kg, "
+            "sale_price_per_kg, difficulty_pct) VALUES "
+            "('SUNLU PA6-CF', 'SUNLU', 'PA6-CF', 3731.0, 5597.0, 150.0)"
+        )
+    )
+
+    await run_migrations(raw_conn)
+
+    cost, margin, sale = (
+        await raw_conn.execute(text("SELECT cost_per_kg, margin_pct, sale_price_per_kg FROM calculator_filaments"))
+    ).one()
+    assert margin == pytest.approx(50.01)
+    assert sale == pytest.approx(round(cost * (1 + margin / 100.0), 2))
+
+
+@pytest.mark.asyncio
+async def test_every_backfilled_row_satisfies_the_derived_sale_invariant(raw_conn):
+    """Whatever the pre-migration prices were, the invariant holds afterwards."""
+    await _drop_margin_pct(raw_conn)
+    await raw_conn.execute(
+        text(
+            "INSERT INTO calculator_filaments (name, brand, material, cost_per_kg, "
+            "sale_price_per_kg, difficulty_pct) VALUES "
+            "('A', '', 'A', 3731.0, 5597.0, 100.0), "  # off-grid
+            "('B', '', 'B', 1114.0, 1671.0, 100.0), "  # exactly 50%
+            "('C', '', 'C', 7199.0, 7199.0, 100.0), "  # exactly 0%
+            "('D', '', 'D', 999.0, 1301.0, 100.0)"  # 30.23%, off the 25% grid
+        )
+    )
+
+    await run_migrations(raw_conn)
+
+    rows = (
+        await raw_conn.execute(
+            text("SELECT material, cost_per_kg, margin_pct, sale_price_per_kg FROM calculator_filaments")
+        )
+    ).all()
+    for material, cost, margin, sale in rows:
+        assert margin == pytest.approx(round(margin, 2)), f"{material} margin is not rounded"
+        assert sale == pytest.approx(round(cost * (1 + margin / 100.0), 2)), f"{material} breaks the invariant"
+
+
+@pytest.mark.asyncio
 async def test_migration_is_idempotent(raw_conn):
     await _drop_margin_pct(raw_conn)
     await raw_conn.execute(

@@ -336,6 +336,20 @@ async def update_settings(
     }
     mqtt_updated = bool(mqtt_keys & set(update_data.keys()))
 
+    # Zoho credentials/endpoints identify an organization, and the filament
+    # catalogue is cached in-process for ~10 minutes. Without dropping it on a
+    # rotation the calculator would keep searching (and syncing prices from)
+    # the previous org's catalogue for the rest of that window.
+    zoho_keys = {
+        "zoho_client_id",
+        "zoho_client_secret",
+        "zoho_refresh_token",
+        "zoho_organization_id",
+        "zoho_base_url",
+        "zoho_accounts_url",
+    }
+    zoho_updated = bool(zoho_keys & set(update_data.keys()))
+
     for key, value in update_data.items():
         # Convert value to string for storage
         if isinstance(value, bool):
@@ -349,6 +363,12 @@ async def update_settings(
     await db.commit()
     # Expire all objects to ensure fresh reads after commit
     db.expire_all()
+
+    # Drop the cached Zoho filament catalogue when the credentials change
+    if zoho_updated:
+        from backend.app.services import zoho_filaments
+
+        zoho_filaments.reset_cache()
 
     # Reconfigure MQTT relay if any MQTT settings changed
     if mqtt_updated:

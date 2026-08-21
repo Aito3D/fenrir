@@ -84,12 +84,19 @@ the user. Nothing downstream needs to change.
 | `margin_pct` | `Float`, default `50.0` | User-chosen margin over cost |
 | `zoho_synced_at` | `DateTime`, nullable | Last successful price refresh |
 
-**Backfill:** `margin_pct = (sale_price_per_kg / cost_per_kg - 1) × 100`, run once
-for rows where `cost_per_kg > 0`. All 17 existing rows land on exactly 50% or 0%,
-both already on the 25% grid, so no row is disturbed.
+**Backfill:** `margin_pct = round((sale_price_per_kg / cost_per_kg - 1) × 100, 2)`,
+run once for rows where `cost_per_kg > 0`. 16 of the 17 existing rows land on
+exactly 50% or 0%, both already on the 25% grid. The 17th does not: SUNLU PA6-CF
+(cost 3731, sale 5597) yields `50.013401232913424`, which is why the backfill
+rounds to 2 decimals — the margin dropdown renders the stored value as an option
+label, and an unrounded float would show 18 significant digits. Rounding moves
+that row's derived sale price by 0.13, so the backfill re-derives
+`sale_price_per_kg` from the rounded margin in the same migration; the dropdown
+additionally trims off-grid labels for any value that arises later.
 
 **Invariant:** `sale_price_per_kg == round(cost_per_kg × (1 + margin_pct/100), 2)`
-must hold after every create, update and sync.
+must hold after every create, update and sync — including for the demo seed row
+and for every row the migration touches.
 
 ## Components
 

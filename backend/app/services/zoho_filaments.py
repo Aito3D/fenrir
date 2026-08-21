@@ -92,8 +92,13 @@ class FilamentProduct:
 
 
 def reset_cache() -> None:
-    """Drop the cached catalogue. Used by tests and by the settings panel when
-    Zoho credentials change."""
+    """Drop the cached catalogue.
+
+    Called by the settings save path whenever a Zoho credential or endpoint
+    changes (``backend/app/api/routes/settings.py``), so rotating an
+    organization does not keep serving the previous org's filaments for the
+    rest of the TTL window. Tests call it to isolate each case.
+    """
     global _cache, _cache_at
     _cache = None
     _cache_at = None

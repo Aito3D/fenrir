@@ -223,6 +223,34 @@ class TestCalculatorFilaments:
         assert resp.json()["zoho_item_id"] is None
         assert resp.json()["zoho_sku"] is None
 
+    @pytest.mark.asyncio
+    async def test_zero_spool_weight_is_rejected(self, async_client):
+        """The UI must not be able to submit it; the API is the backstop."""
+        resp = await async_client.post(
+            "/api/v1/calculator/filaments/",
+            json={**FILAMENT_PAYLOAD, "zoho_item_id": "1", "spool_weight_kg": 0},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_seeded_example_filament_satisfies_the_derived_sale_invariant(self, async_client):
+        """A fresh install must not ship a row that already breaks the invariant.
+
+        The seed writes ``sale_price_per_kg`` directly (it builds the ORM object
+        rather than going through the create route), so nothing else enforces
+        ``sale == round(cost * (1 + margin/100), 2)`` for it. 3731 at the
+        default 50% margin is 5596.5, not the 5597 that was originally typed.
+        """
+        from backend.app.api.routes.calculator import derive_sale_price
+        from backend.app.core.database import seed_calculator_defaults
+
+        await seed_calculator_defaults()
+
+        rows = (await async_client.get("/api/v1/calculator/filaments/")).json()
+        assert rows, "the seed should have created the example filament"
+        for row in rows:
+            assert row["sale_price_per_kg"] == derive_sale_price(row["cost_per_kg"], row["margin_pct"])
+
 
 class TestCalculatorPrinters:
     @pytest.mark.asyncio

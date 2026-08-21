@@ -101,6 +101,8 @@ async def update_calculator_filament(
     if not filament:
         raise HTTPException(status_code=404, detail="Calculator filament not found")
 
+    linked_item_id_before = filament.zoho_item_id
+
     # exclude_unset: an absent key means "leave unchanged". An explicit null is
     # only honoured for the Zoho columns, which is how unlinking works; for the
     # non-nullable columns a null would crash the name derivation below.
@@ -108,6 +110,18 @@ async def update_calculator_filament(
         if value is None and key not in _NULLABLE_FILAMENT_FIELDS:
             continue
         setattr(filament, key, value)
+
+    # The sync stamp belongs to the link it was made under, so unlinking (or
+    # re-pointing the row at a different product) clears it. The settings panel
+    # reads a non-null zoho_synced_at as proof the cost came from a Zoho dealer
+    # price and reconstructs that price as cost * spool_weight — a stamp left
+    # over from a PREVIOUS link would make a hand-typed cost read-only and let
+    # a spool-weight correction silently rescale it. Enforced server-side
+    # rather than by asking the client for a fifth explicit null
+    # (zoho_synced_at is deliberately absent from the update schema: only the
+    # sync may ever set it), so no future caller can forget it.
+    if filament.zoho_item_id != linked_item_id_before:
+        filament.zoho_synced_at = None
     filament.name = _filament_display_name(filament.brand, filament.material)
     filament.sale_price_per_kg = derive_sale_price(filament.cost_per_kg, filament.margin_pct)
 

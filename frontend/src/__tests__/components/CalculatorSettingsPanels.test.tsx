@@ -367,6 +367,27 @@ describe('CalculatorFilamentsPanel filament form (Zoho link)', () => {
     expect(margin.value).toBe('47.3');
   });
 
+  it('renders an off-grid margin label at money precision, keeping the exact value', async () => {
+    // What the migration's backfill produces for the real row 1 of the user's
+    // database (cost 3731, sale 5597) before it was rounded: rendering the raw
+    // float would put "50.013401232913424%" in the dropdown.
+    await openTheEditFormFor({ ...baseFilament, margin_pct: 50.013401232913424 });
+    const margin = screen.getByLabelText(/margin/i) as HTMLSelectElement;
+    const offGrid = Array.from(margin.options)[0];
+    expect(offGrid.textContent).toBe('50.01%');
+    // The value stays exact so re-saving the row does not move its margin.
+    expect(offGrid.value).toBe('50.013401232913424');
+    expect(margin.value).toBe('50.013401232913424');
+  });
+
+  it('does not pad a whole-number margin with decimals', async () => {
+    await openTheAddFilamentForm();
+    const margin = screen.getByLabelText(/margin/i) as HTMLSelectElement;
+    expect(Array.from(margin.options).map((o) => o.textContent)).toEqual([
+      '0%', '25%', '50%', '75%', '100%', '125%', '150%', '175%', '200%',
+    ]);
+  });
+
   it('shows printing cost per kg as a read-only derived field', async () => {
     await openTheAddFilamentForm();
     await userEvent.type(screen.getByLabelText(/^cost per kg/i), '1000');
@@ -431,6 +452,70 @@ describe('CalculatorFilamentsPanel filament form (Zoho link)', () => {
     await userEvent.clear(screen.getByLabelText(/spool weight/i));
     await userEvent.type(screen.getByLabelText(/spool weight/i), '0.5');
     expect((screen.getByLabelText(/^cost per kg/i) as HTMLInputElement).value).toBe('3732');
+  });
+
+  it('cannot submit a zero spool weight', async () => {
+    // The API rejects spool_weight_kg <= 0 with a field-level 422 whose raw
+    // `body.spool_weight_kg: Input should be greater than 0` reaches the toast,
+    // and clearing the weight leaves `cost` at its previous value so nothing
+    // else would disable Save.
+    const onSubmit = await openTheEditFormFor(linkedFilament);
+    const weight = screen.getByLabelText(/spool weight/i) as HTMLInputElement;
+    await userEvent.clear(weight);
+    await userEvent.type(weight, '0');
+
+    // `min` is also the step base, so it has to stay on the 0.05 grid the
+    // step uses — otherwise an ordinary 1 kg spool becomes a step mismatch.
+    expect(weight).toHaveAttribute('min', '0.05');
+    expect(weight).toHaveAttribute('step', '0.05');
+    expect(screen.getByRole('button', { name: /save/i })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: /save/i }));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('still saves an ordinary 1 kg spool weight', async () => {
+    // Pin against the step-base trap: a `min` off the step grid would make the
+    // commonest weight of all unsubmittable.
+    const onSubmit = await openTheEditFormFor(linkedFilament);
+    await userEvent.click(screen.getByRole('button', { name: /save/i }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      linkedFilament.id,
+      expect.objectContaining({ spool_weight_kg: 1 }),
+    );
+  });
+
+  it('keeps a hand-typed cost editable after unlinking and re-linking to an unpriced product', async () => {
+    // The corruption path commit 3e8693544 exists to prevent: link to a priced
+    // product and sync, unlink, re-link to one of the zero-dealer-price items,
+    // type a cost by hand. If anything still treated that cost as Zoho-owned,
+    // it would go read-only and a spool-weight correction would rescale it
+    // (1234 at 1 kg -> 1645.33 at 0.75 kg). The server half is clearing
+    // zoho_synced_at on unlink; this is the client half, within one session.
+    vi.spyOn(api, 'searchZohoFilaments').mockResolvedValue([ZOHO_WHITE_NO_PRICE]);
+    const onSubmit = await openTheEditFormFor(linkedFilament);
+    expect(screen.getByLabelText(/^cost per kg/i)).toHaveAttribute('readonly');
+
+    await userEvent.click(screen.getByRole('button', { name: /unlink/i }));
+    await userEvent.type(zohoSearchBox(), 'blanc');
+    await userEvent.click(await screen.findByText(/Blanc \(White\)/));
+
+    const cost = screen.getByLabelText(/^cost per kg/i) as HTMLInputElement;
+    expect(cost).not.toHaveAttribute('readonly');
+    await userEvent.clear(cost);
+    await userEvent.type(cost, '1234');
+    await userEvent.clear(screen.getByLabelText(/spool weight/i));
+    await userEvent.type(screen.getByLabelText(/spool weight/i), '0.75');
+    expect(cost.value).toBe('1234');
+
+    await userEvent.click(screen.getByRole('button', { name: /save/i }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      linkedFilament.id,
+      expect.objectContaining({
+        cost_per_kg: 1234,
+        spool_weight_kg: 0.75,
+        zoho_item_id: ZOHO_WHITE_NO_PRICE.item_id,
+      }),
+    );
   });
 
   it('warns but does not block when the link duplicates an existing filament', async () => {

@@ -95,6 +95,16 @@ function SearchBox({ value, onChange, className = '' }: { value: string; onChang
 /** Margin choices offered in the dropdown: 0 % to 200 % in 25 % steps. */
 export const MARGIN_STEPS = [0, 25, 50, 75, 100, 125, 150, 175, 200] as const;
 
+/** Label for one margin option.
+ *
+ *  Off-grid margins reach the dropdown from the backfill of a hand-typed sale
+ *  price, and a float like 50.013401232913424 would otherwise be rendered at
+ *  full precision. The option's *value* stays the exact stored number so
+ *  re-saving such a row leaves its margin (and therefore its printing cost)
+ *  untouched — only the label is trimmed.
+ */
+const formatMarginLabel = (margin: number): string => `${Number(margin.toFixed(2))}%`;
+
 interface FilamentFormState {
   brand: string;
   material: string;
@@ -241,6 +251,7 @@ function FilamentForm({
   const cost = parseNum(form.cost);
   const margin = parseNum(form.margin);
   const difficulty = parseNum(form.difficulty);
+  const spoolWeight = parseNum(form.spoolWeight);
   const printingCost = cost !== null && margin !== null ? Math.round(cost * (1 + margin / 100) * 100) / 100 : null;
 
   // An existing row may carry a margin that predates the 25 % grid; offering it
@@ -250,10 +261,19 @@ function FilamentForm({
       ? [margin, ...MARGIN_STEPS]
       : [...MARGIN_STEPS];
 
+  // A blank weight is legitimate (it posts as null, which the API accepts on a
+  // linked row); a zero or non-numeric one is not — the API rejects it with a
+  // field-level 422 that surfaces as raw `body.spool_weight_kg` text in a
+  // toast. Mirror the server's `gt=0, nullable` rule so Save is simply
+  // disabled instead.
+  const spoolWeightValid =
+    !linked || form.spoolWeight.trim() === '' || (spoolWeight !== null && spoolWeight > 0);
+
   const valid =
     form.material.trim().length > 0 &&
     cost !== null && cost > 0 &&
     margin !== null && margin >= 0 &&
+    spoolWeightValid &&
     difficulty !== null && difficulty >= 100 && difficulty <= 1000;
 
   // Colour is not stored, so two colours of the same brand+material would
@@ -283,7 +303,7 @@ function FilamentForm({
             zoho_item_id: form.zohoItemId,
             zoho_item_name: form.zohoItemName,
             zoho_sku: form.zohoSku,
-            spool_weight_kg: linked ? parseNum(form.spoolWeight) : null,
+            spool_weight_kg: linked ? spoolWeight : null,
           });
         }
       }}
@@ -334,6 +354,14 @@ function FilamentForm({
             value={form.spoolWeight}
             onChange={setSpoolWeight}
             step="0.05"
+            // NumberField defaults to min="0", which would let a 0 kg spool
+            // through to an API that requires > 0 (a field-level 422 whose raw
+            // body path lands in the toast). 0.05 rather than a smaller floor
+            // because `min` is also the step base: with step="0.05", min="0.01"
+            // would make an ordinary 1 kg spool a step mismatch and block the
+            // save outright. Anchoring at 0.05 keeps exactly today's accepted
+            // set of values (multiples of 50 g) minus zero.
+            min="0.05"
             required
           />
         )}
@@ -369,7 +397,7 @@ function FilamentForm({
             onChange={(e) => setForm((f) => ({ ...f, margin: e.target.value }))}
           >
             {marginChoices.map((choice) => (
-              <option key={choice} value={choice}>{choice}%</option>
+              <option key={choice} value={choice}>{formatMarginLabel(choice)}</option>
             ))}
           </select>
         </div>

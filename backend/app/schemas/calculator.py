@@ -36,6 +36,10 @@ class CalculatorFilamentUpdate(BaseModel):
 
     The Zoho fields and ``spool_weight_kg`` accept an explicit ``null`` — that
     is how the UI unlinks a filament from its Zoho product.
+
+    ``zoho_synced_at`` is deliberately NOT writable here: only a sync that
+    actually applied a dealer price may stamp it. The patch route clears it by
+    itself whenever ``zoho_item_id`` changes, so no caller has to remember to.
     """
 
     brand: str | None = Field(default=None, max_length=100)
