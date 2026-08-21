@@ -573,6 +573,24 @@ class ZohoService:
         body = await self._request(db, "GET", "/items", params={"search_text": search_text})
         return body.get("items") or []
 
+    async def list_items_page(
+        self, db: AsyncSession, *, category: str, page: int, per_page: int
+    ) -> tuple[list[dict], bool]:
+        """One page of Books items filtered by the ``cf_nature_du_produit``
+        custom field, plus a flag saying whether more pages follow.
+
+        Zoho accepts the custom field as a server-side query parameter, so the
+        whole filament catalogue arrives in two requests instead of scanning
+        every item in the org.
+        """
+        body = await self._request(
+            db,
+            "GET",
+            "/items",
+            params={"cf_nature_du_produit": category, "page": page, "per_page": per_page},
+        )
+        return body.get("items") or [], bool((body.get("page_context") or {}).get("has_more_page"))
+
     async def get_shipping_catalogue(self, db: AsyncSession, *, refresh: bool = True) -> dict[str, ShippingItem]:
         """The 5 "Livraison Avion" items, resolved from Books and cached.
 
