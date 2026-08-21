@@ -1182,7 +1182,10 @@ describe('TaskRow', () => {
     render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
 
     const band = within(await screen.findByTestId('impression-band'));
-    band.getByText(formatMoney(9000, 'USD').replace(/\s+/g, ' '));
+    // Quantity defaults to 1, so the per-part rate (now stated unconditionally
+    // — see Task 11) divides back to the exact same figure as the total: two
+    // matches, not one. The total renders first, so index 0 is it.
+    expect(band.getAllByText(formatMoney(9000, 'USD').replace(/\s+/g, ' '))[0]).toBeInTheDocument();
     expect(band.queryByRole('img', { name: 'Where the money goes' })).not.toBeInTheDocument();
     // No split, and no instructions in its place either: the band states what
     // it knows and stays quiet about what it doesn't. The operator filling
