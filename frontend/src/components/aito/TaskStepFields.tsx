@@ -316,12 +316,10 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
     task.impressionCost === null
       ? null
       : round2(task.impressionCost * (1 - (task.impressionDiscountPct ?? 0) / 100));
-  // The discounted per-piece rate, for the band to state beside the total —
-  // and ONLY when a discount is set: without one it is the Cost input's own
-  // value, and the band would just be echoing the field above it. Derived
-  // from `lineTotal` rather than re-applying the percentage to `unitCost`, so
-  // the two figures can never round apart.
-  const discountedUnit = lineTotal === null || !task.impressionDiscountPct ? null : round2(lineTotal / quantity);
+  // The per-piece rate the line actually charges, for the band to state
+  // beside the total. Derived from `lineTotal` rather than re-applying the
+  // percentage to `unitCost`, so the two figures can never round apart.
+  const unitRate = lineTotal === null ? null : round2(lineTotal / quantity);
 
   return (
     <fieldset disabled={disabled} className="space-y-3">
@@ -405,7 +403,7 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
               </>
             }
             lineTotal={lineTotal}
-            discountedUnit={discountedUnit}
+            unitRate={unitRate}
             unitCost={unitCost}
             discountField={
               <>

@@ -191,7 +191,12 @@ describe('TaskStepFields', () => {
     expect(totalRow).toHaveTextContent(`${formatMoney(200, 'USD')} per part`);
   });
 
-  it('printing: no per-part line without a discount — the cost field already says it', () => {
+  it('printing: states the per-part rate even with no discount set', () => {
+    // 1000 stored over 4 parts, no discount: the line total and the unit
+    // rate are the same figure the Cost input already shows, but the band
+    // now states it anyway — the three plain service blocks (see the
+    // scan/machining tests above) state theirs unconditionally, and a rate
+    // that only sometimes appears reads as one that only sometimes applies.
     render(
       <TaskStepFields
         task={{
@@ -202,7 +207,9 @@ describe('TaskStepFields', () => {
         onChange={vi.fn()}
       />,
     );
-    expect(screen.getByText('Line total').parentElement!).not.toHaveTextContent('per part');
+    expect(screen.getByText('Line total').parentElement!).toHaveTextContent(
+      `${formatMoney(250, 'USD')} per part`,
+    );
   });
 
   it('machining: a unit price times the quantity is what gets stored', () => {

@@ -105,10 +105,11 @@ export interface ImpressionFieldsProps {
    *  used to render below this component is GONE — the band replaced it, and
    *  the total must not appear twice. */
   lineTotal: number | null;
-  /** What one part costs once the discount is taken off, or `null` when no
-   *  discount is set — computed by TaskStepFields for the same reason
-   *  `lineTotal` is. Passed straight to the band, which renders it. */
-  discountedUnit: number | null;
+  /** What one part costs at the line's final price — the total divided back
+   *  by the quantity, discount or not — computed by TaskStepFields for the
+   *  same reason `lineTotal` is. Passed straight to the band, which renders
+   *  it. */
+  unitRate: number | null;
   /** The unit price currently stored on the task (`impressionCost` divided by
    *  quantity), so this block can tell whether the calculator's figure and
    *  the stored one have parted ways. Read only for that comparison. */
@@ -127,7 +128,7 @@ export function ImpressionFields({
   discountField,
   noteField,
   lineTotal,
-  discountedUnit,
+  unitRate,
   unitCost,
 }: ImpressionFieldsProps) {
   const { t } = useTranslation();
@@ -381,7 +382,7 @@ export function ImpressionFields({
           result={result}
           notConfigured={notConfigured}
           lineTotal={lineTotal}
-          discountedUnit={discountedUnit}
+          unitRate={unitRate}
           currency={currency}
         />
 
