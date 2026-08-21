@@ -8937,11 +8937,14 @@
           "impression_discount_pct": null,
           "impression_done": false,
           "modelisation_cost": null,
+          "modelisation_discount_pct": null,
           "modelisation_done": false,
           "scan_cost": null,
+          "scan_discount_pct": null,
           "scan_done": false,
           "title": "",
           "usinage_cost": null,
+          "usinage_discount_pct": null,
           "usinage_done": false
         }
       ],
@@ -8973,11 +8976,14 @@
           "impression_discount_pct": null,
           "impression_done": false,
           "modelisation_cost": null,
+          "modelisation_discount_pct": null,
           "modelisation_done": false,
           "scan_cost": 0.0,
+          "scan_discount_pct": null,
           "scan_done": false,
           "title": "",
           "usinage_cost": null,
+          "usinage_discount_pct": null,
           "usinage_done": false
         }
       ],
@@ -9009,11 +9015,14 @@
           "impression_discount_pct": null,
           "impression_done": false,
           "modelisation_cost": null,
+          "modelisation_discount_pct": null,
           "modelisation_done": false,
           "scan_cost": null,
+          "scan_discount_pct": null,
           "scan_done": false,
           "title": "",
           "usinage_cost": null,
+          "usinage_discount_pct": null,
           "usinage_done": true
         }
       ],
@@ -9055,11 +9064,14 @@
           "impression_discount_pct": null,
           "impression_done": false,
           "modelisation_cost": 20.0,
+          "modelisation_discount_pct": null,
           "modelisation_done": true,
           "scan_cost": 10.0,
+          "scan_discount_pct": null,
           "scan_done": true,
           "title": "Support principal",
           "usinage_cost": 40.0,
+          "usinage_discount_pct": null,
           "usinage_done": false
         }
       ],
@@ -9100,11 +9112,14 @@
           "impression_discount_pct": null,
           "impression_done": false,
           "modelisation_cost": null,
+          "modelisation_discount_pct": null,
           "modelisation_done": false,
           "scan_cost": 1.0,
+          "scan_discount_pct": null,
           "scan_done": true,
           "title": "Pi\u00e8ce A",
           "usinage_cost": null,
+          "usinage_discount_pct": null,
           "usinage_done": false
         },
         {
@@ -9112,11 +9127,14 @@
           "impression_discount_pct": null,
           "impression_done": false,
           "modelisation_cost": null,
+          "modelisation_discount_pct": null,
           "modelisation_done": false,
           "scan_cost": 2.0,
+          "scan_discount_pct": null,
           "scan_done": false,
           "title": "",
           "usinage_cost": null,
+          "usinage_discount_pct": null,
           "usinage_done": false
         }
       ],
@@ -9151,11 +9169,14 @@
           "impression_discount_pct": null,
           "impression_done": false,
           "modelisation_cost": 0.2,
+          "modelisation_discount_pct": null,
           "modelisation_done": false,
           "scan_cost": 0.1,
+          "scan_discount_pct": null,
           "scan_done": false,
           "title": "",
           "usinage_cost": null,
+          "usinage_discount_pct": null,
           "usinage_done": false
         }
       ],
@@ -9190,11 +9211,14 @@
           "impression_discount_pct": null,
           "impression_done": true,
           "modelisation_cost": null,
+          "modelisation_discount_pct": null,
           "modelisation_done": false,
           "scan_cost": 1.0,
+          "scan_discount_pct": null,
           "scan_done": true,
           "title": "",
           "usinage_cost": null,
+          "usinage_discount_pct": null,
           "usinage_done": false
         }
       ],
@@ -9229,11 +9253,14 @@
           "impression_discount_pct": 10.0,
           "impression_done": false,
           "modelisation_cost": null,
+          "modelisation_discount_pct": null,
           "modelisation_done": false,
           "scan_cost": 500.0,
+          "scan_discount_pct": null,
           "scan_done": false,
           "title": "",
           "usinage_cost": null,
+          "usinage_discount_pct": null,
           "usinage_done": false
         }
       ],
@@ -9268,11 +9295,14 @@
           "impression_discount_pct": null,
           "impression_done": false,
           "modelisation_cost": null,
+          "modelisation_discount_pct": null,
           "modelisation_done": false,
           "scan_cost": 500.0,
+          "scan_discount_pct": null,
           "scan_done": false,
           "title": "",
           "usinage_cost": 1000.0,
+          "usinage_discount_pct": 10.0,
           "usinage_done": false
         }
       ],
@@ -9313,11 +9343,14 @@
           "impression_discount_pct": 10.0,
           "impression_done": false,
           "modelisation_cost": 100.0,
+          "modelisation_discount_pct": 25.0,
           "modelisation_done": false,
           "scan_cost": 100.0,
+          "scan_discount_pct": 50.0,
           "scan_done": false,
           "title": "",
           "usinage_cost": 100.0,
+          "usinage_discount_pct": 5.0,
           "usinage_done": false
         }
       ],
@@ -9381,11 +9414,14 @@
           "impression_discount_pct": null,
           "impression_done": false,
           "modelisation_cost": 2.0,
+          "modelisation_discount_pct": null,
           "modelisation_done": true,
           "scan_cost": 1.0,
+          "scan_discount_pct": null,
           "scan_done": true,
           "title": "",
           "usinage_cost": null,
+          "usinage_discount_pct": null,
           "usinage_done": false
         },
         {
@@ -9393,11 +9429,14 @@
           "impression_discount_pct": null,
           "impression_done": true,
           "modelisation_cost": null,
+          "modelisation_discount_pct": null,
           "modelisation_done": false,
           "scan_cost": 0.0,
+          "scan_discount_pct": null,
           "scan_done": false,
           "title": "",
           "usinage_cost": 5.0,
+          "usinage_discount_pct": null,
           "usinage_done": false
         },
         {
@@ -9405,11 +9444,14 @@
           "impression_discount_pct": null,
           "impression_done": false,
           "modelisation_cost": 7.0,
+          "modelisation_discount_pct": null,
           "modelisation_done": false,
           "scan_cost": 6.0,
+          "scan_discount_pct": null,
           "scan_done": false,
           "title": "",
           "usinage_cost": 9.0,
+          "usinage_discount_pct": null,
           "usinage_done": false
         }
       ],

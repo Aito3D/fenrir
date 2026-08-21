@@ -27,6 +27,14 @@ describe('taskSteps', () => {
       { service: 'impression', cost: 510, done: false },
     ]);
   });
+
+  it('taskSteps states a machining step at its discounted price', () => {
+    const t = task({ usinageCost: 1000, usinageDiscountPct: 10 });
+    const steps = taskSteps(t);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].service).toBe('usinage');
+    expect(steps[0].cost).toBe(900);
+  });
 });
 
 describe('stagesWithWork', () => {
@@ -106,5 +114,11 @@ describe('stagesWithWork', () => {
     ];
     const stageValue = stagesWithWork(tasks).reduce((sum, s) => sum + s.value, 0);
     expect(stageValue).toBe(summariseTasks(tasks).total);
+  });
+
+  it('stagesWithWork values a machining step at its discounted price', () => {
+    const t = task({ usinageCost: 1000, usinageDiscountPct: 10 });
+    const print = stagesWithWork([t]).find((s) => s.column === 'print');
+    expect(print?.value).toBe(900);
   });
 });

@@ -1,4 +1,4 @@
-import { SERVICES, STAGES, taskCost } from '../../utils/aitoBoardRules';
+import { SERVICES, STAGES, taskCost, netCost } from '../../utils/aitoBoardRules';
 import type { ServiceId } from '../../utils/aitoBoardRules';
 import type { AitoColumnId } from '../../api/client';
 import type { TaskDraft } from '../../utils/taskDraft';
@@ -30,16 +30,15 @@ export const AITO_SERVICE_LABEL_KEYS: Record<string, string> = {
  *  A cost of 0 is a step quoted free, not an absent one, so membership is a
  *  null check and never a truthiness test.
  *
- *  `cost` is what the step is QUOTED at: `impressionCost` is stored
+ *  `cost` is what the step is QUOTED at: every `<service>Cost` is stored
  *  pre-discount (see TaskDraft), so the discount lands here, as it does in
  *  `taskTotal` and `stagesWithWork` — otherwise a step list would show a
- *  printing line that doesn't add up to the task total beside it. */
+ *  line that doesn't add up to the task total beside it. */
 export function taskSteps(task: TaskDraft): { service: ServiceId; cost: number; done: boolean }[] {
   return SERVICES.filter((service) => taskCost(task, service) !== null).map((service) => {
-    const cost = taskCost(task, service) as number;
     return {
       service,
-      cost: service === 'impression' ? cost * (1 - (task.impressionDiscountPct ?? 0) / 100) : cost,
+      cost: netCost(task, service) as number,
       done: task.done[service],
     };
   });
@@ -88,13 +87,13 @@ export function stagesWithWork(tasks: readonly TaskDraft[]): StageWork[] {
         // null is "absent from the job"; 0 is "quoted free" and is a real step.
         if (cost === null) continue;
         entry.stepsTotal += 1;
-        // `impressionCost` is stored PRE-discount (see TaskDraft), so the
+        // Every `<service>Cost` is stored PRE-discount (see TaskDraft), so the
         // discount lands here — exactly as `summariseTasks` does it. Without
         // this, the panel header's total (which reduces `value` over every
         // stage) reported the pre-discount figure while the board's own
         // `tasks_total` reported the discounted one, and neither the panel
         // nor the StageRail matched what the Zoho quote actually says.
-        const value = service === 'impression' ? cost * (1 - (task.impressionDiscountPct ?? 0) / 100) : cost;
+        const value = netCost(task, service) as number;
         entry.value += value;
         if (task.done[service]) {
           entry.stepsDone += 1;

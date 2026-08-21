@@ -79,11 +79,15 @@ export interface TaskLike {
   /** Optional so every existing cost/done literal still compiles; absent
    *  reads as '' — the mirror's fallback name, same as a task with none. */
   title?: string;
-  /** Percent discount on the impression service. `impressionCost` is stored
-   *  PRE-discount, so the total applies this here — mirroring `summarise` in
+  /** Percent discount for each service. `<service>Cost` is stored
+   *  PRE-discount, so the total applies this here — mirroring `net_cost` in
    *  backend/app/services/aito_board_rules.py. Optional: absent (or null)
-   *  means no discount. */
+   *  means no discount, which is what keeps every existing cost/done literal
+   *  in the test suite compiling. */
+  scanDiscountPct?: number | null;
+  modelisationDiscountPct?: number | null;
   impressionDiscountPct?: number | null;
+  usinageDiscountPct?: number | null;
 }
 
 const COST_KEYS: Record<ServiceId, keyof TaskLike> = {
@@ -97,6 +101,27 @@ const COST_KEYS: Record<ServiceId, keyof TaskLike> = {
  *  `0` is a real cost — a step quoted free. */
 export function taskCost(task: TaskLike, service: ServiceId): number | null {
   return task[COST_KEYS[service]] as number | null;
+}
+
+const DISCOUNT_KEYS: Record<ServiceId, keyof TaskLike> = {
+  scan: 'scanDiscountPct',
+  modelisation: 'modelisationDiscountPct',
+  impression: 'impressionDiscountPct',
+  usinage: 'usinageDiscountPct',
+};
+
+/** The service's cost as the quote will state it: the stored PRE-discount
+ *  cost less that service's own percent. `null` when the service is absent
+ *  from the job — `0` is a step quoted free and passes straight through, so
+ *  callers must test for null and never for falsiness.
+ *
+ *  Exact mirror of `net_cost` in backend/app/services/aito_board_rules.py,
+ *  pinned by the shared contract fixture. */
+export function netCost(task: TaskLike, service: ServiceId): number | null {
+  const cost = taskCost(task, service);
+  if (cost === null) return null;
+  const pct = (task[DISCOUNT_KEYS[service]] as number | null | undefined) ?? 0;
+  return cost * (1 - pct / 100);
 }
 
 /** The whole rule set: `[column, moveLock]`.
@@ -182,13 +207,7 @@ export function summariseTasks(tasks: readonly TaskLike[]): TaskSummary {
       if (cost === null) continue;
       enabled.add(service);
       taskServices.push(service);
-      if (service === 'impression') {
-        // Pre-discount cost, discounted here — the card's total must say
-        // what the quote will actually say. Mirrors the backend exactly.
-        total += cost * (1 - (task.impressionDiscountPct ?? 0) / 100);
-      } else {
-        total += cost;
-      }
+      total += netCost(task, service) as number;
       stepsTotal += 1;
       if (task.done[service]) {
         stepsDone += 1;

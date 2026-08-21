@@ -172,8 +172,8 @@ def _task_payload(shape: dict[str, Any]) -> dict[str, Any]:
     for service in SERVICES:
         payload[f"{service}_cost"] = shape.get(f"{service}_cost")
         payload[f"{service}_done"] = shape.get(f"{service}_done", False)
+        payload[f"{service}_discount_pct"] = shape.get(f"{service}_discount_pct")
     payload["title"] = shape.get("title", "")
-    payload["impression_discount_pct"] = shape.get("impression_discount_pct")
     return payload
 
 
