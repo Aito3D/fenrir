@@ -12,7 +12,7 @@
  * (search/sort/filter) staying visible either way.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
@@ -24,7 +24,13 @@ import {
   CalculatorPrintersPanel,
   CalculatorDefaultsPanel,
 } from '../../components/CalculatorSettingsPanels';
-import type { CalculatorFilament, CalculatorPrinter, CalculatorDefaults } from '../../api/client';
+import { api } from '../../api/client';
+import type {
+  CalculatorFilament,
+  CalculatorPrinter,
+  CalculatorDefaults,
+  ZohoFilamentProduct,
+} from '../../api/client';
 
 const NOW = '2026-01-01T00:00:00Z';
 
@@ -34,10 +40,50 @@ const baseFilament: CalculatorFilament = {
   brand: 'Sunlu',
   material: 'PLA',
   cost_per_kg: 20,
+  // Server-derived from cost * (1 + margin/100); never sent on write.
   sale_price_per_kg: 30,
+  margin_pct: 50,
   difficulty_pct: 100,
+  zoho_item_id: null,
+  zoho_item_name: null,
+  zoho_sku: null,
+  spool_weight_kg: null,
+  zoho_synced_at: null,
   created_at: NOW,
   updated_at: NOW,
+};
+
+/** A second row so the duplicate-link warning has something to collide with. */
+const bambuAbsGf: CalculatorFilament = {
+  ...baseFilament,
+  id: 2,
+  name: 'Bambu Lab ABS-GF',
+  brand: 'Bambu Lab',
+  material: 'ABS-GF',
+  cost_per_kg: 1866,
+  sale_price_per_kg: 2799,
+};
+
+const ZOHO_BLUE: ZohoFilamentProduct = {
+  item_id: '66407000008022673',
+  name: 'Bambu Lab - ABS-GF - Bleu (Blue) - 1.75mm - 1kg',
+  sku: 'B50-B0-1.75-1000-SPL',
+  brand: 'Bambu Lab',
+  material: 'ABS-GF',
+  colour: 'Bleu (Blue)',
+  spool_weight_kg: 1,
+  weight_inferred: false,
+  dealer_price: 1866,
+  cost_per_kg: 1866,
+  has_price: true,
+};
+const ZOHO_WHITE_NO_PRICE: ZohoFilamentProduct = {
+  ...ZOHO_BLUE,
+  item_id: '66407000008023724',
+  colour: 'Blanc (White)',
+  dealer_price: 0,
+  cost_per_kg: 0,
+  has_price: false,
 };
 
 const basePrinter: CalculatorPrinter = {
@@ -74,6 +120,35 @@ function mockDefaultsHandler(defaults: CalculatorDefaults = baseDefaults) {
   server.use(http.get('/api/v1/calculator/defaults', () => HttpResponse.json(defaults)));
 }
 
+/** Render CalculatorFilamentsPanel with canUpdate, seeded with `filaments`. */
+async function renderFilamentsPanel(filaments: CalculatorFilament[] = [baseFilament, bambuAbsGf]): Promise<void> {
+  server.use(http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(filaments)));
+  render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
+  await screen.findByRole('button', { name: 'Add filament' });
+}
+
+/** The form's Zoho search box. The add/edit form holds four comboboxes (Zoho
+ *  search, brand, material and the margin <select>), so it has to be named. */
+const zohoSearchBox = () => screen.getByRole('combobox', { name: /zoho product/i });
+
+/** Render the panel, click "Add filament" and return the spy standing in for
+ *  the form's onSubmit — the panel routes it straight to this API call. */
+async function openTheAddFilamentForm() {
+  const create = vi.spyOn(api, 'createCalculatorFilament').mockResolvedValue({ ...baseFilament, id: 99 });
+  await renderFilamentsPanel();
+  await userEvent.click(screen.getByRole('button', { name: 'Add filament' }));
+  return create;
+}
+
+/** Render the panel seeded with `filament`, click its edit (pencil) button and
+ *  return the spy standing in for the form's onSubmit. */
+async function openTheEditFormFor(filament: CalculatorFilament) {
+  const update = vi.spyOn(api, 'updateCalculatorFilament').mockResolvedValue(filament);
+  await renderFilamentsPanel([filament]);
+  await userEvent.click(await screen.findByRole('button', { name: 'Edit filament' }));
+  return update;
+}
+
 describe('CalculatorFilamentsPanel', () => {
   beforeEach(() => {
     mockDefaultsHandler();
@@ -108,8 +183,9 @@ describe('CalculatorFilamentsPanel', () => {
     await user.type(screen.getByLabelText('Brand'), 'Prusament');
     await user.type(screen.getByLabelText('Material'), 'PETG');
     // Leave margin/difficulty at their (prefilled) defaults from
-    // calculatorDefaults — cost auto-derives sale via the live margin sync.
-    await user.type(screen.getByLabelText(/Cost per kg/), '25');
+    // calculatorDefaults. "Cost per kg" is anchored because "Printing cost
+    // per kg" (the derived field) would otherwise match the same regex.
+    await user.type(screen.getByLabelText(/^Cost per kg/), '25');
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
@@ -118,9 +194,14 @@ describe('CalculatorFilamentsPanel', () => {
         brand: 'Prusament',
         material: 'PETG',
         cost_per_kg: 25,
-        // default_margin_over_cost_pct is 50% → 25 * 1.5
-        sale_price_per_kg: 37.5,
+        // default_margin_over_cost_pct is 50%; the server derives the sale
+        // price from it, so the payload carries the margin, not the price.
+        margin_pct: 50,
         difficulty_pct: 100,
+        zoho_item_id: null,
+        zoho_item_name: null,
+        zoho_sku: null,
+        spool_weight_kg: null,
       }),
     );
 
@@ -152,8 +233,8 @@ describe('CalculatorFilamentsPanel', () => {
     render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
 
     await user.click(await screen.findByRole('button', { name: 'Edit filament' }));
-    // Form seeded from the existing filament: margin is pre-derived (50.0%)
-    const cost = screen.getByLabelText(/Cost per kg/);
+    // Form seeded from the existing filament: margin comes from its column.
+    const cost = screen.getByLabelText(/^Cost per kg/);
     expect(cost).toHaveValue(20);
     await user.clear(cost);
     await user.type(cost, '22');
@@ -165,9 +246,14 @@ describe('CalculatorFilamentsPanel', () => {
       brand: 'Sunlu',
       material: 'PLA',
       cost_per_kg: 22,
-      // Margin carried over from the existing filament (50.0%) → 22 * 1.5
-      sale_price_per_kg: 33,
+      // Margin carried over from the existing filament; the server re-derives
+      // the sale price (22 * 1.5) from it.
+      margin_pct: 50,
       difficulty_pct: 100,
+      zoho_item_id: null,
+      zoho_item_name: null,
+      zoho_sku: null,
+      spool_weight_kg: null,
     });
     expect(await screen.findByText('Filament updated')).toBeInTheDocument();
   });
@@ -220,6 +306,112 @@ describe('CalculatorFilamentsPanel', () => {
     expect(screen.queryByText('Delete filament')).not.toBeInTheDocument();
     expect(screen.getByRole('cell', { name: 'PLA' })).toBeInTheDocument();
     expect(deleteSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('CalculatorFilamentsPanel filament form (Zoho link)', () => {
+  beforeEach(() => {
+    mockDefaultsHandler();
+  });
+  // The helpers above replace api methods on the shared module object;
+  // restore them so later tests in this file talk to MSW again.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('offers margin in 25% steps from 0 to 200', async () => {
+    await openTheAddFilamentForm();
+    const margin = screen.getByLabelText(/margin/i) as HTMLSelectElement;
+    const values = Array.from(margin.options).map((o) => Number(o.value));
+    expect(values).toEqual([0, 25, 50, 75, 100, 125, 150, 175, 200]);
+  });
+
+  it('keeps an off-grid margin selectable so an existing row can be saved unchanged', async () => {
+    await openTheEditFormFor({ ...baseFilament, margin_pct: 47.3 });
+    const margin = screen.getByLabelText(/margin/i) as HTMLSelectElement;
+    expect(Array.from(margin.options).map((o) => Number(o.value))).toContain(47.3);
+    expect(margin.value).toBe('47.3');
+  });
+
+  it('shows printing cost per kg as a read-only derived field', async () => {
+    await openTheAddFilamentForm();
+    await userEvent.type(screen.getByLabelText(/^cost per kg/i), '1000');
+    await userEvent.selectOptions(screen.getByLabelText(/margin/i), '75');
+    const printing = screen.getByLabelText(/printing cost per kg/i) as HTMLInputElement;
+    expect(printing).toHaveAttribute('readonly');
+    expect(printing.value).toBe('1750');
+  });
+
+  it('fills brand, material, weight and cost when a Zoho product is chosen', async () => {
+    vi.spyOn(api, 'searchZohoFilaments').mockResolvedValue([ZOHO_BLUE]);
+    await openTheAddFilamentForm();
+    await userEvent.type(zohoSearchBox(), 'abs-gf');
+    await userEvent.click(await screen.findByText(/Bleu \(Blue\)/));
+
+    expect(screen.getByText(/Linked to/)).toBeInTheDocument();
+    expect((screen.getByLabelText(/^cost per kg/i) as HTMLInputElement).value).toBe('1866');
+    expect(screen.getByLabelText(/^cost per kg/i)).toHaveAttribute('readonly');
+    expect((screen.getByLabelText(/spool weight/i) as HTMLInputElement).value).toBe('1');
+  });
+
+  it('leaves cost blank when the chosen product has no dealer price', async () => {
+    vi.spyOn(api, 'searchZohoFilaments').mockResolvedValue([ZOHO_WHITE_NO_PRICE]);
+    await openTheAddFilamentForm();
+    await userEvent.type(zohoSearchBox(), 'blanc');
+    await userEvent.click(await screen.findByText(/Blanc \(White\)/));
+    expect((screen.getByLabelText(/^cost per kg/i) as HTMLInputElement).value).toBe('');
+    expect(screen.getByLabelText(/^cost per kg/i)).not.toHaveAttribute('readonly');
+  });
+
+  it('unlinking restores manual editing and clears the Zoho fields on save', async () => {
+    vi.spyOn(api, 'searchZohoFilaments').mockResolvedValue([ZOHO_BLUE]);
+    const onSubmit = await openTheAddFilamentForm();
+    await userEvent.type(zohoSearchBox(), 'abs-gf');
+    await userEvent.click(await screen.findByText(/Bleu \(Blue\)/));
+    await userEvent.click(screen.getByRole('button', { name: /unlink/i }));
+
+    expect(screen.getByLabelText(/^cost per kg/i)).not.toHaveAttribute('readonly');
+    await userEvent.clear(screen.getByLabelText(/^cost per kg/i));
+    await userEvent.type(screen.getByLabelText(/^cost per kg/i), '900');
+    await userEvent.click(screen.getByRole('button', { name: /save/i }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ cost_per_kg: 900, zoho_item_id: null, spool_weight_kg: null }),
+    );
+  });
+
+  it('recomputes cost per kg when the spool weight is corrected', async () => {
+    vi.spyOn(api, 'searchZohoFilaments').mockResolvedValue([ZOHO_BLUE]);
+    await openTheAddFilamentForm();
+    await userEvent.type(zohoSearchBox(), 'abs-gf');
+    await userEvent.click(await screen.findByText(/Bleu \(Blue\)/));
+    await userEvent.clear(screen.getByLabelText(/spool weight/i));
+    await userEvent.type(screen.getByLabelText(/spool weight/i), '0.5');
+    expect((screen.getByLabelText(/^cost per kg/i) as HTMLInputElement).value).toBe('3732');
+  });
+
+  it('warns but does not block when the link duplicates an existing filament', async () => {
+    vi.spyOn(api, 'searchZohoFilaments').mockResolvedValue([ZOHO_BLUE]);
+    // The panel already lists a Bambu Lab ABS-GF filament.
+    const onSubmit = await openTheAddFilamentForm();
+    await userEvent.type(zohoSearchBox(), 'abs-gf');
+    await userEvent.click(await screen.findByText(/Bleu \(Blue\)/));
+
+    expect(screen.getByText(/already exists/i)).toBeInTheDocument();
+    // Warning only — saving still works.
+    expect(screen.getByRole('button', { name: /save/i })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: /save/i }));
+    expect(onSubmit).toHaveBeenCalled();
+  });
+
+  it('submits margin_pct and never sale_price_per_kg', async () => {
+    const onSubmit = await openTheAddFilamentForm();
+    await userEvent.type(screen.getByLabelText(/material/i), 'PETG');
+    await userEvent.type(screen.getByLabelText(/^cost per kg/i), '1000');
+    await userEvent.selectOptions(screen.getByLabelText(/margin/i), '25');
+    await userEvent.click(screen.getByRole('button', { name: /save/i }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ margin_pct: 25 }));
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('sale_price_per_kg');
   });
 });
 

@@ -14,8 +14,10 @@ import {
   type CalculatorFilamentCreate,
   type CalculatorPrinter,
   type CalculatorPrinterCreate,
+  type ZohoFilamentProduct,
 } from '../api/client';
 import { Button } from './Button';
+import { ZohoFilamentSearch } from './calculator/ZohoFilamentSearch';
 import { Card, CardContent, CardHeader } from './Card';
 import { ConfirmModal } from './ConfirmModal';
 import { NumberField } from './NumberField';
@@ -89,34 +91,53 @@ function SearchBox({ value, onChange, className = '' }: { value: string; onChang
   );
 }
 
+/** Margin choices offered in the dropdown: 0 % to 200 % in 25 % steps. */
+export const MARGIN_STEPS = [0, 25, 50, 75, 100, 125, 150, 175, 200] as const;
+
 interface FilamentFormState {
   brand: string;
   material: string;
   cost: string;
-  sale: string;
   margin: string;
   difficulty: string;
+  zohoItemId: string | null;
+  zohoItemName: string | null;
+  zohoSku: string | null;
+  spoolWeight: string;
+  /** True when the linked Zoho item name carried no weight and 1 kg was assumed. */
+  weightInferred: boolean;
 }
 
-function filamentFormFrom(defaultDifficulty: number, defaultMargin: number, f?: CalculatorFilament): FilamentFormState {
+function filamentFormFrom(
+  defaultDifficulty: number,
+  defaultMargin: number,
+  f?: CalculatorFilament,
+): FilamentFormState {
   if (!f) {
     return {
       brand: '',
       material: '',
       cost: '',
-      sale: '',
       margin: String(defaultMargin),
       difficulty: String(defaultDifficulty),
+      zohoItemId: null,
+      zohoItemName: null,
+      zohoSku: null,
+      spoolWeight: '',
+      weightInferred: false,
     };
   }
-  const margin = f.cost_per_kg > 0 ? ((f.sale_price_per_kg / f.cost_per_kg - 1) * 100).toFixed(1) : '';
   return {
     brand: f.brand,
     material: f.material,
     cost: String(f.cost_per_kg),
-    sale: String(f.sale_price_per_kg),
-    margin,
+    margin: String(f.margin_pct),
     difficulty: String(f.difficulty_pct),
+    zohoItemId: f.zoho_item_id,
+    zohoItemName: f.zoho_item_name,
+    zohoSku: f.zoho_sku,
+    spoolWeight: f.spool_weight_kg === null ? '' : String(f.spool_weight_kg),
+    weightInferred: false,
   };
 }
 
@@ -124,7 +145,10 @@ function FilamentForm({
   initial,
   defaultDifficulty,
   defaultMargin,
+  currency,
   currencySymbol,
+  zohoConfigured,
+  existingFilaments,
   isSaving,
   onSubmit,
   onCancel,
@@ -132,7 +156,12 @@ function FilamentForm({
   initial?: CalculatorFilament;
   defaultDifficulty: number;
   defaultMargin: number;
+  /** ISO code (e.g. "XPF") — what `formatMoney` needs; not the symbol. */
+  currency: string;
   currencySymbol: string;
+  zohoConfigured: boolean;
+  /** The rows already listed, for the duplicate brand+material warning. */
+  existingFilaments: CalculatorFilament[];
   isSaving: boolean;
   onSubmit: (data: CalculatorFilamentCreate) => void;
   onCancel: () => void;
@@ -142,37 +171,79 @@ function FilamentForm({
     filamentFormFrom(defaultDifficulty, defaultMargin, initial),
   );
 
-  // Sale price and margin % are live-synced: editing either keeps the other consistent.
-  const setCost = (cost: string) =>
+  const linked = form.zohoItemId !== null;
+
+  // Cost is Zoho-owned while linked: dealer price divided by the spool weight.
+  // Editing the weight therefore re-derives the cost, which is why the raw
+  // dealer price is kept in state rather than only the cost.
+  const [dealerPrice, setDealerPrice] = useState<number | null>(null);
+
+  const setSpoolWeight = (spoolWeight: string) =>
     setForm((f) => {
-      const c = parseNum(cost);
-      const m = parseNum(f.margin);
-      if (c !== null && m !== null) return { ...f, cost, sale: String(Math.round(c * (1 + m / 100) * 100) / 100) };
-      return { ...f, cost };
-    });
-  const setSale = (sale: string) =>
-    setForm((f) => {
-      const c = parseNum(f.cost);
-      const s = parseNum(sale);
-      const margin = c !== null && c > 0 && s !== null ? ((s / c - 1) * 100).toFixed(1) : f.margin;
-      return { ...f, sale, margin };
-    });
-  const setMargin = (margin: string) =>
-    setForm((f) => {
-      const c = parseNum(f.cost);
-      const m = parseNum(margin);
-      const sale = c !== null && m !== null ? String(Math.round(c * (1 + m / 100) * 100) / 100) : f.sale;
-      return { ...f, margin, sale };
+      const weight = parseNum(spoolWeight);
+      if (dealerPrice !== null && weight !== null && weight > 0) {
+        return { ...f, spoolWeight, cost: String(Math.round((dealerPrice / weight) * 100) / 100) };
+      }
+      return { ...f, spoolWeight };
     });
 
+  const selectZohoProduct = (product: ZohoFilamentProduct) => {
+    setDealerPrice(product.has_price ? product.dealer_price : null);
+    setForm((f) => ({
+      ...f,
+      brand: product.brand,
+      material: product.material,
+      // A dealer price of 0 must never become a cost of 0 — leave it for the
+      // user to type, and keep the link so a later sync can fill it in.
+      cost: product.has_price ? String(product.cost_per_kg) : '',
+      zohoItemId: product.item_id,
+      zohoItemName: product.name,
+      zohoSku: product.sku,
+      spoolWeight: String(product.spool_weight_kg),
+      weightInferred: product.weight_inferred,
+    }));
+  };
+
+  const unlinkZohoProduct = () => {
+    setDealerPrice(null);
+    setForm((f) => ({
+      ...f,
+      zohoItemId: null,
+      zohoItemName: null,
+      zohoSku: null,
+      spoolWeight: '',
+      weightInferred: false,
+    }));
+  };
+
   const cost = parseNum(form.cost);
-  const sale = parseNum(form.sale);
+  const margin = parseNum(form.margin);
   const difficulty = parseNum(form.difficulty);
+  const printingCost = cost !== null && margin !== null ? Math.round(cost * (1 + margin / 100) * 100) / 100 : null;
+
+  // An existing row may carry a margin that predates the 25 % grid; offering it
+  // as an extra choice means such a row can still be saved unchanged.
+  const marginChoices =
+    margin !== null && !MARGIN_STEPS.includes(margin as (typeof MARGIN_STEPS)[number])
+      ? [margin, ...MARGIN_STEPS]
+      : [...MARGIN_STEPS];
+
   const valid =
     form.material.trim().length > 0 &&
     cost !== null && cost > 0 &&
-    sale !== null && sale > 0 &&
+    margin !== null && margin >= 0 &&
     difficulty !== null && difficulty >= 100 && difficulty <= 1000;
+
+  // Colour is not stored, so two colours of the same brand+material would
+  // collapse into two identically-named rows. That is a warning, not an error:
+  // duplicates already exist in production (SUNLU/ASA appears twice) and
+  // blocking would stop a legitimate re-price of the same material.
+  const duplicateOf = existingFilaments.find(
+    (other) =>
+      other.id !== initial?.id &&
+      other.brand.trim().toLowerCase() === form.brand.trim().toLowerCase() &&
+      other.material.trim().toLowerCase() === form.material.trim().toLowerCase(),
+  );
 
   return (
     <form
@@ -185,12 +256,30 @@ function FilamentForm({
             brand: form.brand.trim(),
             material: form.material.trim(),
             cost_per_kg: cost,
-            sale_price_per_kg: sale,
+            margin_pct: margin,
             difficulty_pct: difficulty,
+            zoho_item_id: form.zohoItemId,
+            zoho_item_name: form.zohoItemName,
+            zoho_sku: form.zohoSku,
+            spool_weight_kg: linked ? parseNum(form.spoolWeight) : null,
           });
         }
       }}
     >
+      {zohoConfigured && !linked && (
+        <ZohoFilamentSearch onSelect={selectZohoProduct} currency={currency} />
+      )}
+      {linked && (
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-bambu-green/40 bg-bambu-green/10 px-3 py-2">
+          <span className="text-sm text-white truncate">
+            {t('calculator.zohoLinkedProduct', { name: form.zohoItemName })}
+            {form.zohoSku && <span className="ml-2 text-xs text-bambu-gray">{form.zohoSku}</span>}
+          </span>
+          <Button type="button" variant="secondary" size="sm" onClick={unlinkZohoProduct}>
+            {t('calculator.zohoUnlink')}
+          </Button>
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label htmlFor="calc-fil-brand" className={labelCls}>{t('calculator.brand')}</label>
@@ -200,6 +289,7 @@ function FilamentForm({
             onChange={(v) => setForm((f) => ({ ...f, brand: v }))}
             options={FILAMENT_BRANDS.map((b) => ({ value: b, label: b }))}
             allowCustom
+            disabled={linked}
           />
         </div>
         <div>
@@ -210,33 +300,29 @@ function FilamentForm({
             onChange={(v) => setForm((f) => ({ ...f, material: v }))}
             options={FILAMENT_MATERIALS.map((m) => ({ value: m, label: m }))}
             allowCustom
+            disabled={linked}
           />
         </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {linked && (
+          <NumberField
+            id="calc-fil-spool-weight"
+            label={t('calculator.spoolWeightKg')}
+            value={form.spoolWeight}
+            onChange={setSpoolWeight}
+            step="0.05"
+            required
+          />
+        )}
         <NumberField
           id="calc-fil-cost"
           label={t('calculator.costPerKg', { currency: currencySymbol })}
           value={form.cost}
-          onChange={setCost}
+          onChange={(v) => setForm((f) => ({ ...f, cost: v }))}
+          readOnly={linked && dealerPrice !== null}
           required
         />
-        <NumberField
-          id="calc-fil-sale"
-          label={t('calculator.salePerKg', { currency: currencySymbol })}
-          value={form.sale}
-          onChange={setSale}
-          required
-        />
-        <NumberField
-          id="calc-fil-margin"
-          label={t('calculator.marginOverCost')}
-          value={form.margin}
-          onChange={setMargin}
-          min="-100"
-        />
-      </div>
-      <div>
         <NumberField
           id="calc-fil-difficulty"
           label={t('calculator.difficulty')}
@@ -247,8 +333,37 @@ function FilamentForm({
           max="1000"
           required
         />
-        <p className="text-xs text-bambu-gray mt-1">{t('calculator.difficultyTooltip')}</p>
       </div>
+      {linked && form.weightInferred && (
+        <p className="text-xs text-status-warning">{t('calculator.zohoWeightInferred')}</p>
+      )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label htmlFor="calc-fil-margin" className={labelCls}>{t('calculator.marginOverCost')}</label>
+          <select
+            id="calc-fil-margin"
+            className={inputCls}
+            value={form.margin}
+            onChange={(e) => setForm((f) => ({ ...f, margin: e.target.value }))}
+          >
+            {marginChoices.map((choice) => (
+              <option key={choice} value={choice}>{choice}%</option>
+            ))}
+          </select>
+        </div>
+        <NumberField
+          id="calc-fil-printing-cost"
+          label={t('calculator.printingCostPerKg', { currency: currencySymbol })}
+          value={printingCost === null ? '' : String(printingCost)}
+          onChange={() => {}}
+          readOnly
+        />
+      </div>
+      {duplicateOf && (
+        <p className="text-xs text-status-warning">
+          {t('calculator.zohoDuplicateWarning', { name: duplicateOf.name })}
+        </p>
+      )}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="secondary" size="sm" onClick={onCancel}>
           {t('common.cancel')}
@@ -263,10 +378,6 @@ function FilamentForm({
 }
 
 type FilamentSortKey = 'name' | 'brand' | 'material' | 'cost' | 'sale' | 'margin' | 'difficulty';
-
-/** Margin over purchase cost as a fraction; null when there is no cost yet. */
-const filamentMarginOverCost = (f: CalculatorFilament): number | null =>
-  f.cost_per_kg > 0 ? (f.sale_price_per_kg - f.cost_per_kg) / f.cost_per_kg : null;
 
 export function CalculatorFilamentsPanel({
   selectedFilamentId,
@@ -353,7 +464,7 @@ export function CalculatorFilamentsPanel({
         case 'sale':
           return dir * (a.sale_price_per_kg - b.sale_price_per_kg);
         case 'margin':
-          return dir * ((filamentMarginOverCost(a) ?? -1) - (filamentMarginOverCost(b) ?? -1));
+          return dir * (a.margin_pct - b.margin_pct);
         case 'difficulty':
           return dir * (a.difficulty_pct - b.difficulty_pct);
         default:
@@ -393,7 +504,12 @@ export function CalculatorFilamentsPanel({
             initial={editing === 'new' ? undefined : editing}
             defaultDifficulty={defaults?.default_difficulty_pct ?? 100}
             defaultMargin={defaults?.default_margin_over_cost_pct ?? 50}
+            currency={currency}
             currencySymbol={currencySymbol}
+            // Task 11 replaces this with the /zoho/status query that also
+            // gates the sync button; until then the search is always offered.
+            zohoConfigured
+            existingFilaments={filaments}
             isSaving={saveMutation.isPending}
             onSubmit={(data) => saveMutation.mutate(data)}
             onCancel={() => setEditing(null)}
@@ -454,7 +570,7 @@ export function CalculatorFilamentsPanel({
                         <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{formatMoney(f.cost_per_kg, currency, false)}</td>
                         <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{formatMoney(f.sale_price_per_kg, currency, false)}</td>
                         <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>
-                          {filamentMarginOverCost(f) !== null ? formatPct(filamentMarginOverCost(f)!, 0) : '—'}
+                          {formatPct(f.margin_pct / 100, 0)}
                         </td>
                         <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`} title={t('calculator.difficultyTooltip')}>{formatPct(f.difficulty_pct / 100, 0)}</td>
                         <td className={`${tdCls} text-right`}>
