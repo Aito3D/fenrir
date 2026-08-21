@@ -10,6 +10,7 @@ import {
   projectTotal,
   taskDraftFromAitoTask,
   taskDraftToTaskCreate,
+  normaliseTaskDraft,
   roundUpTo50,
 } from '../../utils/taskDraft';
 import type { PricingDefaults, PricingFilament, PricingPrinter } from '../../utils/pricing';
@@ -139,36 +140,45 @@ describe('taskTotal / projectTotal', () => {
   });
 });
 
+// Reused by the round-trip tests below and by the per-service quantity /
+// discount tests further down — the one full-`AitoTask` fixture the file
+// builds, so a second addition of the same fields doesn't drift from this one.
+const row: AitoTask = {
+  id: 7,
+  project_id: 3,
+  position: 0,
+  title: 'Bracket',
+  scan_description: 'Scanner la pièce',
+  modelisation_description: null,
+  impression_description: 'PETG noir',
+  usinage_description: null,
+  scan_cost: 0,
+  modelisation_cost: null,
+  usinage_cost: 1500,
+  scan_quantity: null,
+  modelisation_quantity: null,
+  usinage_quantity: null,
+  scan_discount_pct: null,
+  modelisation_discount_pct: null,
+  usinage_discount_pct: null,
+  impression_printer_id: 1,
+  impression_filament_id: 2,
+  impression_weight_g: 120,
+  impression_time_min: 270,
+  impression_quantity: 3,
+  impression_color: 'Noir',
+  impression_cost: 4200,
+  impression_discount_pct: 15,
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+};
+
 describe('taskDraftFromAitoTask / taskDraftToTaskCreate', () => {
   // Both directions used to be written out twice — once in AitoPage.tsx (the
   // create modal's inline mapping) and once in ProjectDetailPanel.tsx — and
   // agreed only because one was copy-pasted from the other. Now both callers
   // share this pair, so this round trip is the single place the wire contract
   // is pinned.
-  const row: AitoTask = {
-    id: 7,
-    project_id: 3,
-    position: 0,
-    title: 'Bracket',
-    scan_description: 'Scanner la pièce',
-    modelisation_description: null,
-    impression_description: 'PETG noir',
-    usinage_description: null,
-    scan_cost: 0,
-    modelisation_cost: null,
-    usinage_cost: 1500,
-    impression_printer_id: 1,
-    impression_filament_id: 2,
-    impression_weight_g: 120,
-    impression_time_min: 270,
-    impression_quantity: 3,
-    impression_color: 'Noir',
-    impression_cost: 4200,
-    impression_discount_pct: 15,
-    created_at: '2026-01-01T00:00:00Z',
-    updated_at: '2026-01-01T00:00:00Z',
-  };
-
   it('reproduces a persisted row\'s wire fields after a round trip through the draft shape', () => {
     const wireBack = taskDraftToTaskCreate(taskDraftFromAitoTask(row));
     expect(wireBack).toEqual({
@@ -188,6 +198,12 @@ describe('taskDraftFromAitoTask / taskDraftToTaskCreate', () => {
       impression_color: row.impression_color,
       impression_cost: row.impression_cost,
       impression_discount_pct: row.impression_discount_pct,
+      scan_quantity: 1,
+      modelisation_quantity: 1,
+      usinage_quantity: 1,
+      scan_discount_pct: row.scan_discount_pct,
+      modelisation_discount_pct: row.modelisation_discount_pct,
+      usinage_discount_pct: row.usinage_discount_pct,
     });
   });
 
@@ -255,6 +271,57 @@ describe('taskTotal with an impression discount', () => {
   it('no discount leaves the total untouched', () => {
     const task = { ...emptyTaskDraft(), impressionCost: 1000 };
     expect(taskTotal(task)).toBe(1000);
+  });
+});
+
+describe('per-service quantity and discount', () => {
+  it('emptyTaskDraft starts every service at quantity 1 with no discount', () => {
+    const draft = emptyTaskDraft();
+    expect(draft.scanQuantity).toBe(1);
+    expect(draft.modelisationQuantity).toBe(1);
+    expect(draft.usinageQuantity).toBe(1);
+    expect(draft.scanDiscountPct).toBeNull();
+    expect(draft.modelisationDiscountPct).toBeNull();
+    expect(draft.usinageDiscountPct).toBeNull();
+  });
+
+  it('normaliseTaskDraft fills the new fields from a blob written before they existed', () => {
+    // Exactly what the new-project drawer's localStorage held before this
+    // change. Reading these ungated is what used to throw up to the router
+    // error boundary.
+    const legacy = { title: 'Support', usinageCost: 1000, impression: { quantity: 2 } };
+    const draft = normaliseTaskDraft(legacy);
+    expect(draft.usinageQuantity).toBe(1);
+    expect(draft.usinageDiscountPct).toBeNull();
+    expect(draft.usinageCost).toBe(1000);
+  });
+
+  it('normaliseTaskDraft rejects a non-numeric quantity rather than passing it through', () => {
+    const draft = normaliseTaskDraft({ usinageQuantity: 'three', usinageDiscountPct: 'ten' });
+    expect(draft.usinageQuantity).toBe(1);
+    expect(draft.usinageDiscountPct).toBeNull();
+  });
+
+  it('taskDraftFromAitoTask reads a null quantity as one', () => {
+    const draft = taskDraftFromAitoTask({
+      ...row,
+      usinage_cost: 1000,
+      usinage_quantity: null,
+      usinage_discount_pct: 10,
+    });
+    expect(draft.usinageQuantity).toBe(1);
+    expect(draft.usinageDiscountPct).toBe(10);
+  });
+
+  it('taskDraftToTaskCreate sends the quantity and discount verbatim', () => {
+    const wire = taskDraftToTaskCreate({
+      ...emptyTaskDraft(),
+      usinageCost: 36000,
+      usinageQuantity: 3,
+      usinageDiscountPct: 10,
+    });
+    expect(wire.usinage_quantity).toBe(3);
+    expect(wire.usinage_discount_pct).toBe(10);
   });
 });
 

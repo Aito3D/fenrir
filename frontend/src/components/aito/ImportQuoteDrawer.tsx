@@ -27,7 +27,7 @@ export interface ImportQuoteDrawerProps {
 /** Adapts a preview task's snake_case `AitoTaskCreate` shape to the canonical
  *  `TaskLike` `aitoBoardRules.ts` operates on, so this drawer can delegate to
  *  `taskCost`/`summariseTasks` instead of re-implementing their null-cost and
- *  impression-discount rules. `*_done` defaults to `false` server-side
+ *  per-service discount rules. `*_done` defaults to `false` server-side
  *  (`_build_task` in services/aito_quote_import.py never sets it) and is
  *  carried through rather than hand-set — a preview task is never actually
  *  ticked, but there is no reason to assert that here too. */
@@ -44,7 +44,10 @@ function toTaskLike(task: AitoTaskCreate): TaskLike {
       usinage: task.usinage_done ?? false,
     },
     title: task.title ?? undefined,
+    scanDiscountPct: task.scan_discount_pct,
+    modelisationDiscountPct: task.modelisation_discount_pct,
     impressionDiscountPct: task.impression_discount_pct,
+    usinageDiscountPct: task.usinage_discount_pct,
   };
 }
 
@@ -56,12 +59,12 @@ function servicesOf(task: AitoTaskCreate): string[] {
 
 /** What the quote charges for one preview task.
  *
- *  `impression_cost` arrives PRE-discount — `_build_task` in
- *  services/aito_quote_import.py adopts the line's percent into
- *  `impression_discount_pct` rather than baking it into the cost, so the two
+ *  Every service's cost arrives PRE-discount — `_build_task` in
+ *  services/aito_quote_import.py adopts each line's percent into its own
+ *  `<service>_discount_pct` rather than baking it into the cost, so the two
  *  never double-count. `summariseTasks` (utils/aitoBoardRules.ts) already
- *  applies that same discount rule, so a single-task summary gives this
- *  preview its total without restating it. */
+ *  applies that same discount rule for all four services, so a single-task
+ *  summary gives this preview its total without restating it. */
 function taskTotal(task: AitoTaskCreate): number {
   return summariseTasks([toTaskLike(task)]).total;
 }

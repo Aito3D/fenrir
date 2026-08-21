@@ -4142,6 +4142,15 @@ export interface AitoTask {
   impression_color: string | null;
   impression_cost: number | null;
   impression_discount_pct: number | null;
+  /** Per-service unit count. `null` reads as 1. */
+  scan_quantity: number | null;
+  modelisation_quantity: number | null;
+  usinage_quantity: number | null;
+  /** Per-service percent discount, `null` for none. `<service>_cost` is
+   *  stored PRE-discount, so the two never double-count. */
+  scan_discount_pct: number | null;
+  modelisation_discount_pct: number | null;
+  usinage_discount_pct: number | null;
   scan_done: boolean;
   modelisation_done: boolean;
   impression_done: boolean;
