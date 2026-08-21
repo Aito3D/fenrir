@@ -11,8 +11,8 @@ from backend.app.services.aito_quote_export import (
     ExportShipping,
     ExportTask,
     build_line_items,
-    impression_rate_quantity,
     is_foreign,
+    rate_quantity,
 )
 from backend.app.services.aito_quote_import import build_preview
 
@@ -127,25 +127,25 @@ def test_vente_line_imports_as_usinage_and_exports_on_the_usinage_item():
 
 
 def test_quantity_zero_none_and_negative_all_clamp_to_one():
-    assert impression_rate_quantity(_task(impression_cost=900, impression_quantity=0)) == (900, 1)
-    assert impression_rate_quantity(_task(impression_cost=900, impression_quantity=None)) == (900, 1)
-    assert impression_rate_quantity(_task(impression_cost=900, impression_quantity=-3)) == (900, 1)
+    assert rate_quantity(_task(impression_cost=900, impression_quantity=0), "impression") == (900, 1)
+    assert rate_quantity(_task(impression_cost=900, impression_quantity=None), "impression") == (900, 1)
+    assert rate_quantity(_task(impression_cost=900, impression_quantity=-3), "impression") == (900, 1)
 
 
 def test_missing_cost_yields_rate_zero():
-    assert impression_rate_quantity(_task(impression_cost=None, impression_quantity=4)) == (0, 4)
+    assert rate_quantity(_task(impression_cost=None, impression_quantity=4), "impression") == (0, 4)
 
 
 def test_an_out_of_contract_float_quantity_truncates():
     """ExportTask types the quantity int | None, but a float that sneaks past
     the contract is truncated by int(), not rounded — 1.9 bills as 1 unit."""
-    assert impression_rate_quantity(_task(impression_cost=1000, impression_quantity=1.9)) == (1000, 1)
+    assert rate_quantity(_task(impression_cost=1000, impression_quantity=1.9), "impression") == (1000, 1)
 
 
 def test_non_dividing_total_rounds_the_per_unit_rate():
     """1000 over 3 units: the rate is the rounded per-unit figure; the
     achievable total (999) is what the caller writes back to the task."""
-    rate, quantity = impression_rate_quantity(_task(impression_cost=1000, impression_quantity=3))
+    rate, quantity = rate_quantity(_task(impression_cost=1000, impression_quantity=3), "impression")
     assert (rate, quantity) == (333, 3)
     assert rate * quantity == 999
 
@@ -153,8 +153,8 @@ def test_non_dividing_total_rounds_the_per_unit_rate():
 def test_halfway_rates_use_bankers_rounding():
     """Python's round() at .5 goes to the even neighbour — pinned so nobody
     'fixes' it to always-up and silently changes real quotes by 1 XPF/unit."""
-    assert impression_rate_quantity(_task(impression_cost=250, impression_quantity=100))[0] == 2  # 2.5 -> 2
-    assert impression_rate_quantity(_task(impression_cost=350, impression_quantity=100))[0] == 4  # 3.5 -> 4
+    assert rate_quantity(_task(impression_cost=250, impression_quantity=100), "impression")[0] == 2  # 2.5 -> 2
+    assert rate_quantity(_task(impression_cost=350, impression_quantity=100), "impression")[0] == 4  # 3.5 -> 4
 
 
 # ---------------------------------------------------------------------------
