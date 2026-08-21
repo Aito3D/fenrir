@@ -4,14 +4,24 @@ from pydantic import BaseModel, Field
 
 
 class CalculatorFilamentBase(BaseModel):
-    """Base schema for calculator filaments."""
+    """Base schema for calculator filaments.
+
+    ``sale_price_per_kg`` is deliberately absent: it is derived server-side from
+    ``cost_per_kg`` and ``margin_pct`` and only ever appears in responses.
+    """
 
     brand: str = Field(default="", max_length=100, description="Filament brand (optional)")
     material: str = Field(..., min_length=1, max_length=100, description="Filament material, e.g. PLA or PETG-CF")
     cost_per_kg: float = Field(..., gt=0, description="Purchase cost per kg (app currency)")
-    sale_price_per_kg: float = Field(..., gt=0, description="Sale price per kg charged for material (app currency)")
+    margin_pct: float = Field(default=50.0, ge=0, le=1000, description="Margin over cost, percent")
     difficulty_pct: float = Field(
         default=100.0, ge=100, le=1000, description="Difficulty multiplier for this filament (100 = no surcharge)"
+    )
+    zoho_item_id: str | None = Field(default=None, max_length=50, description="Linked Zoho item id")
+    zoho_item_name: str | None = Field(default=None, max_length=255, description="Linked Zoho item name")
+    zoho_sku: str | None = Field(default=None, max_length=100, description="Linked Zoho item SKU")
+    spool_weight_kg: float | None = Field(
+        default=None, gt=0, le=100, description="Spool weight used to derive cost per kg from the dealer price"
     )
 
 
@@ -22,13 +32,21 @@ class CalculatorFilamentCreate(CalculatorFilamentBase):
 
 
 class CalculatorFilamentUpdate(BaseModel):
-    """Schema for updating a calculator filament (all fields optional)."""
+    """Schema for updating a calculator filament (all fields optional).
+
+    The Zoho fields and ``spool_weight_kg`` accept an explicit ``null`` — that
+    is how the UI unlinks a filament from its Zoho product.
+    """
 
     brand: str | None = Field(default=None, max_length=100)
     material: str | None = Field(default=None, min_length=1, max_length=100)
     cost_per_kg: float | None = Field(default=None, gt=0)
-    sale_price_per_kg: float | None = Field(default=None, gt=0)
+    margin_pct: float | None = Field(default=None, ge=0, le=1000)
     difficulty_pct: float | None = Field(default=None, ge=100, le=1000)
+    zoho_item_id: str | None = Field(default=None, max_length=50)
+    zoho_item_name: str | None = Field(default=None, max_length=255)
+    zoho_sku: str | None = Field(default=None, max_length=100)
+    spool_weight_kg: float | None = Field(default=None, gt=0, le=100)
 
 
 class CalculatorFilamentResponse(CalculatorFilamentBase):
@@ -36,6 +54,8 @@ class CalculatorFilamentResponse(CalculatorFilamentBase):
 
     id: int
     name: str  # derived display label: "<brand> <material>"
+    sale_price_per_kg: float  # derived: cost_per_kg * (1 + margin_pct / 100)
+    zoho_synced_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

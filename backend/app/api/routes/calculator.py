@@ -38,6 +38,21 @@ def _filament_display_name(brand: str, material: str) -> str:
     return f"{brand.strip()} {material.strip()}".strip()
 
 
+# Fields the UI is allowed to null out explicitly; everything else treats an
+# explicit JSON null as "leave unchanged" because no other column is nullable.
+_NULLABLE_FILAMENT_FIELDS = frozenset({"zoho_item_id", "zoho_item_name", "zoho_sku", "spool_weight_kg"})
+
+
+def derive_sale_price(cost_per_kg: float, margin_pct: float) -> float:
+    """The printing cost per kg shown to the user.
+
+    The single place this arithmetic lives — the create route, the patch route
+    and the Zoho sync all call it, so the stored invariant
+    ``sale_price_per_kg == cost_per_kg * (1 + margin_pct/100)`` cannot drift.
+    """
+    return round(cost_per_kg * (1 + margin_pct / 100.0), 2)
+
+
 @router.get("/filaments/", response_model=list[CalculatorFilamentResponse])
 async def list_calculator_filaments(
     db: AsyncSession = Depends(get_db),
@@ -55,7 +70,11 @@ async def create_calculator_filament(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_UPDATE),
 ):
     """Create a calculator filament."""
-    filament = CalculatorFilament(**data.model_dump(), name=_filament_display_name(data.brand, data.material))
+    filament = CalculatorFilament(
+        **data.model_dump(),
+        name=_filament_display_name(data.brand, data.material),
+        sale_price_per_kg=derive_sale_price(data.cost_per_kg, data.margin_pct),
+    )
     db.add(filament)
     await db.commit()
     await db.refresh(filament)
@@ -76,11 +95,15 @@ async def update_calculator_filament(
     if not filament:
         raise HTTPException(status_code=404, detail="Calculator filament not found")
 
-    # exclude_none: no column is nullable, so an explicit JSON null means
-    # "leave unchanged" rather than crashing the name derivation below.
-    for key, value in update_data.model_dump(exclude_unset=True, exclude_none=True).items():
+    # exclude_unset: an absent key means "leave unchanged". An explicit null is
+    # only honoured for the Zoho columns, which is how unlinking works; for the
+    # non-nullable columns a null would crash the name derivation below.
+    for key, value in update_data.model_dump(exclude_unset=True).items():
+        if value is None and key not in _NULLABLE_FILAMENT_FIELDS:
+            continue
         setattr(filament, key, value)
     filament.name = _filament_display_name(filament.brand, filament.material)
+    filament.sale_price_per_kg = derive_sale_price(filament.cost_per_kg, filament.margin_pct)
 
     await db.commit()
     await db.refresh(filament)
