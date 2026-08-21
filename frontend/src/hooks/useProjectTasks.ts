@@ -49,8 +49,26 @@ export function diffTaskDraft(baseline: TaskDraft, next: TaskDraft): AitoTaskUpd
  *
  *  Extracted from ProjectDetailPanel, which had grown to 579 lines around four
  *  interdependent refs. All of that reasoning is preserved below — it was
- *  correct, it was just impossible to test without mounting a modal. */
-export function useProjectTasks(projectId: number) {
+ *  correct, it was just impossible to test without mounting a modal.
+ *
+ *  `onDirtyClose` fires at exactly the same instant as the board refresh —
+ *  the LAST of (panel closed, every write settled), and only when something
+ *  was actually written. ProjectDetailPanel uses it to ask the backend for a
+ *  Zoho push, which is deliberately hung off this existing arbitration rather
+ *  than given its own: "wait for the in-flight PATCH, then fire once" is the
+ *  same problem, already solved here, and a second mechanism would drift.
+ *
+ *  `externalDirtyRef` is how the panel folds its OWN writes — description,
+ *  client social, shipping, none of which go through this hook — into that
+ *  same decision. It has to be one decision rather than two: a panel that
+ *  fired its own close-sync on unmount would race a task PATCH still in
+ *  flight, queueing a push that cannot contain the edit it was fired for. A
+ *  ref rather than a boolean because the value is read at close time, from a
+ *  callback that outlives the render it was created in. */
+export function useProjectTasks(
+  projectId: number,
+  options?: { onDirtyClose?: () => void; externalDirtyRef?: { current: boolean } },
+) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -92,6 +110,19 @@ export function useProjectTasks(projectId: number) {
   // something was really saved: a panel opened and closed without edits must
   // cost nothing.
   const tasksDirtyRef = useRef(false);
+
+  // Read through a ref because `closeSettled` below is reached from mutation
+  // callbacks that outlive the render they were created in — including the
+  // unmount cleanup, where a callback captured at mount time would be the one
+  // that runs.
+  const onDirtyCloseRef = useRef(options?.onDirtyClose);
+  onDirtyCloseRef.current = options?.onDirtyClose;
+  const externalDirtyRef = useRef(options?.externalDirtyRef);
+  externalDirtyRef.current = options?.externalDirtyRef;
+
+  /** Did this panel write anything at all — through this hook or around it?
+   *  The gate on both the close refresh and the close sync. */
+  const isDirty = () => tasksDirtyRef.current || externalDirtyRef.current?.current === true;
 
   // "The panel closed" and "the last task PATCH landed" are two independent
   // events and either can happen first. The board must be refreshed on
@@ -282,12 +313,12 @@ export function useProjectTasks(projectId: number) {
       // a sync that was skipped while this PATCH (or another row's debounced
       // edit) was outstanding.
       setTasksSyncGeneration((generation) => generation + 1);
-      if (closedRef.current && inFlightRef.current === 0 && tasksDirtyRef.current) {
+      if (closedRef.current && inFlightRef.current === 0 && isDirty()) {
         // Both keys, via the same ref the unmount effect uses below: with the
         // app-wide 60s staleTime, invalidating only the board would leave the
         // tasks cache holding the pre-edit row, so reopening the card within
         // that window would rehydrate stale data over this save.
-        invalidateRef.current();
+        closeSettledRef.current();
       }
     },
   });
@@ -497,8 +528,8 @@ export function useProjectTasks(projectId: number) {
       const queued = queuedReorderRef.current;
       queuedReorderRef.current = null;
       if (queued) sendReorderRef.current(queued);
-      if (closedRef.current && inFlightRef.current === 0 && tasksDirtyRef.current) {
-        invalidateRef.current();
+      if (closedRef.current && inFlightRef.current === 0 && isDirty()) {
+        closeSettledRef.current();
       }
     },
   });
@@ -624,8 +655,25 @@ export function useProjectTasks(projectId: number) {
 
   const flushAllRef = useRef(flushAll);
   flushAllRef.current = flushAll;
-  const invalidateRef = useRef(invalidateTasksAndBoard);
-  invalidateRef.current = invalidateTasksAndBoard;
+
+  /** Everything owed once the panel is closed AND every write it made has
+   *  landed: refresh the caches, then ask for the Zoho push.
+   *
+   *  Reached from three places — both `onSettled`s and the unmount cleanup —
+   *  because either event can be the last one. Each guards on the same three
+   *  conditions so exactly one of them fires.
+   *
+   *  Refresh first, push second, and the order is not arbitrary: the push
+   *  request flips the card to `quote_sync_state: 'pending'`, so a refetch
+   *  started after it can still resolve before it and write the pre-push
+   *  state back over it. `onDirtyClose`'s own implementation owns re-reading
+   *  the board once its request has actually landed. */
+  const closeSettled = useCallback(() => {
+    invalidateTasksAndBoard();
+    onDirtyCloseRef.current?.();
+  }, [invalidateTasksAndBoard]);
+  const closeSettledRef = useRef(closeSettled);
+  closeSettledRef.current = closeSettled;
 
   useEffect(
     () => {
@@ -641,8 +689,8 @@ export function useProjectTasks(projectId: number) {
         // Only when every PATCH has already landed. If any is still open, the
         // refresh is onSettled's job: invalidating now would race the write it
         // is supposed to reflect.
-        if (tasksDirtyRef.current && inFlightRef.current === 0) {
-          invalidateRef.current();
+        if (isDirty() && inFlightRef.current === 0) {
+          closeSettledRef.current();
         }
       };
     },

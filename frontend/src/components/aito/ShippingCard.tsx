@@ -60,7 +60,19 @@ function draftFromProject(project: AitoProject, services: AitoShippingService[])
  *  from a local draft. Edit seeds that draft from the PROJECT's stored
  *  columns (`draftFromProject`) rather than a blank one — the whole point of
  *  editing is to change what is already there, not to retype it. */
-export function ShippingCard({ project, currency }: { project: AitoProject; currency: string }) {
+export function ShippingCard({
+  project,
+  currency,
+  onWrite,
+}: {
+  project: AitoProject;
+  currency: string;
+  /** Told when this card issues a write, so the panel's close sync knows the
+   *  quote owes Books a push. The shipment is a quote LINE (see
+   *  aito_quote_export.build_line_items), so attaching or detaching one
+   *  changes what Books must say just as much as a task edit does. */
+  onWrite?: () => void;
+}) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<ShippingDraft | null>(null);
@@ -167,6 +179,7 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
       setDraft({ ...draft, blurred: { island: true, firstName: true, lastName: true, phone: true } });
       return;
     }
+    onWrite?.();
     shippingMutation.mutate(
       { ...shippingPayload(draft), expected_version: editVersionRef.current },
       {
@@ -181,6 +194,7 @@ export function ShippingCard({ project, currency }: { project: AitoProject; curr
     );
   };
   const remove = () => {
+    onWrite?.();
     shippingMutation.mutate({ shipping_island: null });
   };
 

@@ -622,7 +622,7 @@ def _mark_pending_if_ours(project: AitoProject) -> None:
         _mark_pending(project)
 
 
-def _wake_worker(queued: bool) -> None:
+def _wake_worker(queued: bool, immediate: bool = False) -> None:
     """Ask the sync worker to drain, for an edit that left a project pending.
 
     Call AFTER the commit, never before — the worker reads through its own
@@ -634,12 +634,26 @@ def _wake_worker(queued: bool) -> None:
     Debounced, not immediate: an edit gets a bounded wait rather than the full
     300s poll, while a burst of task ticks still collapses into one PUT.
     Creation uses ``request_immediate_sync`` instead — see there.
+
+    ``immediate`` is for the one caller that is not itself an edit:
+    ``sync_project_now``, the push a detail panel owes Books when it closes.
+    An edit wants the window because more edits are likely coming; a close is
+    the proof that none are. It matters that this CANCELS the standing window
+    rather than merely bypassing it — ``request_debounced_sync``'s window is
+    fixed, so the deadline still open at close time was set by the FIRST edit
+    of the session (often the empty task POST that "+ Add task" fires) and
+    would otherwise drain a half-typed card. See ``request_immediate_sync``.
     """
     if queued:
-        request_debounced_sync()
+        if immediate:
+            request_immediate_sync()
+        else:
+            request_debounced_sync()
 
 
-async def _commit_and_wake(db: AsyncSession, queued: bool, project_id: int | None = None) -> None:
+async def _commit_and_wake(
+    db: AsyncSession, queued: bool, project_id: int | None = None, immediate: bool = False
+) -> None:
     """Commit the session, bump the sync worker's requeue marker if this call
     left a project pending, then wake the worker.
 
@@ -678,7 +692,7 @@ async def _commit_and_wake(db: AsyncSession, queued: bool, project_id: int | Non
     await db.commit()
     if queued and project_id is not None:
         _bump_requeue_marker(project_id)
-    _wake_worker(queued)
+    _wake_worker(queued, immediate)
 
 
 def _actor(user: User | None) -> str | None:
@@ -2414,6 +2428,60 @@ async def set_project_flag(
         await _broadcast_changed("flag", project.id, _actor(current_user))
         await db.refresh(project)
 
+    return await _project_response(db, project)
+
+
+@router.post("/{project_id}/sync", response_model=AitoProjectResponse)
+async def sync_project_now(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Queue this card for a Zoho push right now. The detail panel calls this
+    once, on close, after every write it made has settled.
+
+    It exists because every other write path wakes the worker through
+    ``request_debounced_sync``, whose window is FIXED — the first edit opens
+    it and later edits do not push the deadline out. The panel POSTs a task
+    the instant "+ Add task" is clicked, empty, and the title and costs arrive
+    as later PATCHes; so in practice that window is opened by the empty POST
+    and expires while the operator is still typing. ``build_line_items`` emits
+    no line at all for a task with no priced service, so the drain pushes a
+    quote the new task is simply absent from, and the card reads as "not in
+    the quote" until something else queues it again.
+
+    A close is the one moment the card is known to be finished, which is why
+    this wakes the worker IMMEDIATELY: ``request_immediate_sync`` cancels the
+    standing window rather than queueing behind a deadline set before any of
+    the real content existed.
+
+    Deliberately NOT a force-push. It marks the project pending exactly the
+    way an edit does and lets the worker decide what that means, so every
+    guard the worker already owns still applies unchanged: an 'unmanaged'
+    card is never touched (``_mark_pending_if_ours``), a 'locked' one
+    re-locks without a write, a trashed one gets its status reconciled
+    instead of its lines rewritten. That also keeps a panel opened and closed
+    with no edits from costing a Books call at all — the frontend only calls
+    this when it actually wrote something.
+
+    Reuses ``Permission.AITO_UPDATE`` for the same reason ``set_project_flag``
+    does: this is reachable only by someone who could already edit the card,
+    and a new permission would need adding to the API-key classification lists
+    and the role defaults for no gain.
+    """
+    project = await _get_active_project_or_404(db, project_id)
+
+    # Captured before the mark, same as the task endpoints: the mark is
+    # unconditional and idempotent, so recording off the post-mark state alone
+    # would put a `sync.queued` row on the timeline every time a panel closed.
+    was_pending = project.quote_sync_state == "pending"
+    _mark_pending_if_ours(project)
+    if not was_pending and project.quote_sync_state == "pending":
+        await record(db, project.id, "sync.queued", actor_class="system")
+
+    queued = project.quote_sync_state == "pending"
+    await _commit_and_wake(db, queued, project.id, immediate=True)
+    await db.refresh(project)
     return await _project_response(db, project)
 
 

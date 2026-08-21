@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Check, Copy, ExternalLink, Eye, Loader2, Mail, Pencil, Phone, Plane, Plus, RefreshCw, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
@@ -22,6 +22,7 @@ import {
   QUOTE_STATUS_TEXT_TONE_CLASSES,
 } from './quoteStatus';
 import { ShippingCard } from './ShippingCard';
+import { useBoardSync } from '../../hooks/useBoardSync';
 import { stagesWithWork } from './services';
 import { StageRail } from './StageRail';
 import { TaskEditor } from './TaskEditor';
@@ -678,6 +679,21 @@ function SaveIndicator({ state }: { state: SaveState }) {
 export function ProjectDetailPanel({ project, onClose, onDelete, canCreate, canUpdate, canDelete }: ProjectDetailPanelProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const { resyncIfIdle } = useBoardSync();
+
+  // Everything this panel wrote that did NOT go through useProjectTasks:
+  // description, client social, shipping. Folded into that hook's own close
+  // arbitration rather than acted on here — see its `externalDirtyRef` doc
+  // for why the panel must not fire its own close sync in parallel.
+  //
+  // Set when the write is ISSUED, not when it succeeds. A patch that fails
+  // still leaves the panel unable to prove the card matches Books, and one
+  // wasted queue attempt is much cheaper than a missed push.
+  const externalDirtyRef = useRef(false);
+  const markExternalWrite = () => {
+    externalDirtyRef.current = true;
+  };
 
   // A status rendered through the shared quote-status labels (see
   // `quoteStatusText` above), so the two sides of a block message are
@@ -767,6 +783,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete, canCreate, canU
     // save had nothing left on screen to show the retry toast against, and
     // whatever the user typed was gone rather than sitting in the field for
     // a second attempt.
+    markExternalWrite();
     socialMutation.mutate(
       {
         // Blank handle clears the pair, matching the server's own rule — a
@@ -784,7 +801,27 @@ export function ProjectDetailPanel({ project, onClose, onDelete, canCreate, canU
     );
   };
 
-  const { tasks, onTasksChange, onRemoveTask, onRowBlur, pendingTaskUids, reorderTasks } = useProjectTasks(project.id);
+  // At most once per panel, whichever of the two arbitration branches gets
+  // there first. Fire-and-forget by design: the card is already closed, the
+  // request only queues the push (the worker owns the Books call), and a
+  // failed queue attempt is recovered by the next edit or the 300s sweep —
+  // so there is nothing to report and nothing to block on. The board is
+  // re-read only once the request has actually landed, because the response
+  // is what flips the card to `pending`.
+  const closeSyncSentRef = useRef(false);
+  const requestCloseSync = () => {
+    if (closeSyncSentRef.current) return;
+    closeSyncSentRef.current = true;
+    api
+      .syncAitoProject(project.id)
+      .then(() => resyncIfIdle(queryClient))
+      .catch(() => {});
+  };
+
+  const { tasks, onTasksChange, onRemoveTask, onRowBlur, pendingTaskUids, reorderTasks } = useProjectTasks(project.id, {
+    onDirtyClose: requestCloseSync,
+    externalDirtyRef,
+  });
   const { data: latestEvent } = useLatestProjectEvent(project.id);
 
   // Value-weighted, not step-weighted — see ValueRing's doc.
@@ -845,6 +882,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete, canCreate, canU
       return;
     }
     setDescState('saving');
+    markExternalWrite();
     updateMutation.mutate(
       { description: next, expected_version: descEditVersionRef.current },
       {
@@ -889,6 +927,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete, canCreate, canU
         return;
       }
       setDescState('saving');
+      markExternalWrite();
       updateMutation.mutate(
         { description: next },
         {
@@ -1245,7 +1284,7 @@ export function ProjectDetailPanel({ project, onClose, onDelete, canCreate, canU
 
               <RecordCard project={project} latestEvent={latestEvent} />
 
-              <ShippingCard project={project} currency={currency} />
+              <ShippingCard project={project} currency={currency} onWrite={markExternalWrite} />
             </div>
 
             <div

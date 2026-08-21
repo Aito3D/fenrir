@@ -7370,6 +7370,11 @@ export const api = {
     request<AitoTask>(`/aito/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteAitoTask: (taskId: number) =>
     request<void>(`/aito/tasks/${taskId}`, { method: 'DELETE' }),
+  /** Queue this card for a Zoho push now. The detail panel calls it once, on
+   *  close, after every write it made has settled — the backend's edit window
+   *  is fixed, so without this the push a freshly-added task earns can fire
+   *  before the task has a price and then wait out the full poll interval. */
+  syncAitoProject: (projectId: number) => request<AitoProject>(`/aito/${projectId}/sync`, { method: 'POST' }),
   reorderAitoTasks: (projectId: number, taskIds: number[]) =>
     request<AitoTask[]>(`/aito/${projectId}/tasks/reorder`, {
       method: 'PATCH',
