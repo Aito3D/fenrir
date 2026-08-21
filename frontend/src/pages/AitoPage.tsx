@@ -22,6 +22,7 @@ import type { TaskDraft } from '../utils/taskDraft';
 import type { ShippingDraft } from '../utils/shippingDraft';
 import { matchesSearch } from '../utils/aitoSearch';
 import { useCardFlight } from '../hooks/useCardFlight';
+import { CelebrationProvider } from '../components/aito/celebration';
 import { useCardMorph } from '../hooks/useCardMorph';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useBoardDrag } from '../hooks/useBoardDrag';
@@ -243,16 +244,21 @@ export function AitoPage() {
   };
 
   return (
-    // Full-height page so the columns run the height of the screen and each
-    // one scrolls its own cards. The offsets mirror the shell exactly
-    // (Layout.tsx): a 56px compact top bar below 1144px, nothing above it —
-    // the old hard-coded 64px matched neither and left a dead band at the
-    // bottom. Below 1024px it stays a min-height so a narrow screen scrolls
-    // the page normally rather than squeezing six columns into a phone.
-    // `min-[1024px]:` not `lg:` — Tailwind v4 emits every arbitrary min-[…]
-    // block before the named-breakpoint blocks, so a `lg:` height here would
-    // override `min-[1144px]:h-dvh` and bring the dead band back.
-    <div className="p-4 md:p-8 md:pb-4 flex flex-col gap-6 min-h-[calc(100dvh-3.5rem)] min-[1024px]:h-[calc(100dvh-3.5rem)] min-[1144px]:h-dvh">
+    // The celebration layer wraps the whole page — board AND detail panel —
+    // because Finish -> Done is offered on both, and its canvas has to be
+    // able to paint over either. Confetti: chosen from the five propositions
+    // on the /aito/fx bench.
+    <CelebrationProvider variant="confetti">
+      {/* Full-height page so the columns run the height of the screen and each
+          one scrolls its own cards. The offsets mirror the shell exactly
+          (Layout.tsx): a 56px compact top bar below 1144px, nothing above it —
+          the old hard-coded 64px matched neither and left a dead band at the
+          bottom. Below 1024px it stays a min-height so a narrow screen scrolls
+          the page normally rather than squeezing six columns into a phone.
+          `min-[1024px]:` not `lg:` — Tailwind v4 emits every arbitrary min-[…]
+          block before the named-breakpoint blocks, so a `lg:` height here would
+          override `min-[1144px]:h-dvh` and bring the dead band back. */}
+      <div className="p-4 md:p-8 md:pb-4 flex flex-col gap-6 min-h-[calc(100dvh-3.5rem)] min-[1024px]:h-[calc(100dvh-3.5rem)] min-[1144px]:h-dvh">
       {/* Header — one row at lg+ so the board gets every remaining pixel of
           height: title, search (which flexes to fill the middle and gives up
           width first when the window narrows), the two view switches, then
@@ -503,6 +509,7 @@ export function AitoPage() {
           }
         />
       )}
-    </div>
+      </div>
+    </CelebrationProvider>
   );
 }

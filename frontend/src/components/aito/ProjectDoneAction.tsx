@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, Plane } from 'lucide-react';
 import { HoldButton } from './HoldButton';
@@ -33,7 +34,14 @@ import { type AitoProject } from '../../api/client';
  *  on the bar. */
 export function ProjectDoneAction({ project }: { project: AitoProject }) {
   const { t } = useTranslation();
-  const markDone = useColumnMoveMutation(project, 'done');
+  // Where the celebration comes from on THIS surface: the pill itself.
+  // The board card's version fires out of the card, but the panel is a
+  // fullscreen modal — the card is not on screen, and the button is the only
+  // thing the user is looking at. Handed over by `HoldButton` at the moment
+  // the hold completes, and stashed for the mutation's own `onMutate` to read
+  // one tick later.
+  const originRef = useRef<DOMRect | null>(null);
+  const markDone = useColumnMoveMutation(project, 'done', () => originRef.current);
 
   // After the hook, never before it: the panel re-renders with the moved row
   // the instant the optimistic write lands, and a gate above the hook would
@@ -43,7 +51,10 @@ export function ProjectDoneAction({ project }: { project: AitoProject }) {
 
   return (
     <HoldButton
-      onHold={() => markDone.mutate()}
+      onHold={(origin) => {
+        originRef.current = origin;
+        markDone.mutate();
+      }}
       durationMs={500}
       disabled={markDone.isPending}
       label={t('aito.markProjectDone')}

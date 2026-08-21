@@ -63,10 +63,24 @@ function SortableCard({
   // are the same transition endpoint fed a different status.
   const quoteStatus = useQuoteStatusMutation(project);
 
+  // The card's own node, for the celebration to fire out of. dnd-kit's
+  // `setNodeRef` is a callback ref, so the two are composed rather than
+  // assigned — the same pattern `BoardColumn` uses below for the droppable
+  // and the reflow ref.
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const setCardRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      cardRef.current = node;
+      setNodeRef(node);
+    },
+    [setNodeRef],
+  );
+
   // Finish's counterpart to the Quote column's mark-sent: the board's only
   // other manual transition, and the only way to reach Done now that the
-  // column itself is off the board.
-  const markDone = useColumnMoveMutation(project, 'done');
+  // column itself is off the board. The getter is read at click time, before
+  // the optimistic move takes the card off the board.
+  const markDone = useColumnMoveMutation(project, 'done', () => cardRef.current?.getBoundingClientRect() ?? null);
 
   // A card that just snapped back. The ring lives on this wrapper rather than
   // on CardView so the DragOverlay clone — which renders CardView directly —
@@ -75,7 +89,7 @@ function SortableCard({
 
   return (
     <div
-      ref={setNodeRef}
+      ref={setCardRef}
       // Read by `useColumnReflow` on the column below, so a card that stays
       // when its neighbours are filtered away slides into the gap instead of
       // teleporting. The id, not the index: the index is what changes.
