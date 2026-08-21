@@ -64,6 +64,19 @@ const bambuAbsGf: CalculatorFilament = {
   sale_price_per_kg: 2799,
 };
 
+/** An already-linked row, as it comes back from the server: the stored cost is
+ *  round(dealer_price / spool_weight_kg, 2), so 1866 at 1 kg reconstructs a
+ *  1866 dealer price exactly. */
+const linkedFilament: CalculatorFilament = {
+  ...bambuAbsGf,
+  id: 3,
+  zoho_item_id: '66407000008022673',
+  zoho_item_name: 'Bambu Lab - ABS-GF - Bleu (Blue) - 1.75mm - 1kg',
+  zoho_sku: 'B50-B0-1.75-1000-SPL',
+  spool_weight_kg: 1,
+  zoho_synced_at: NOW,
+};
+
 const ZOHO_BLUE: ZohoFilamentProduct = {
   item_id: '66407000008022673',
   name: 'Bambu Lab - ABS-GF - Bleu (Blue) - 1.75mm - 1kg',
@@ -402,6 +415,45 @@ describe('CalculatorFilamentsPanel filament form (Zoho link)', () => {
     expect(screen.getByRole('button', { name: /save/i })).toBeEnabled();
     await userEvent.click(screen.getByRole('button', { name: /save/i }));
     expect(onSubmit).toHaveBeenCalled();
+  });
+
+  it('keeps cost Zoho-owned when editing an already-linked filament', async () => {
+    await openTheEditFormFor(linkedFilament);
+    expect(screen.getByLabelText(/^cost per kg/i)).toHaveAttribute('readonly');
+  });
+
+  it('re-derives the cost when the spool weight of a linked filament is corrected', async () => {
+    await openTheEditFormFor(linkedFilament);
+    await userEvent.clear(screen.getByLabelText(/spool weight/i));
+    await userEvent.type(screen.getByLabelText(/spool weight/i), '0.5');
+    // Stored 1866 at 1 kg reconstructs an 1866 dealer price; half a spool costs
+    // the same, so the per-kg cost doubles.
+    expect((screen.getByLabelText(/^cost per kg/i) as HTMLInputElement).value).toBe('3732');
+  });
+
+  it('saving a linked filament untouched does not perturb its cost', async () => {
+    // Reconstruction (cost * weight) is lossy by up to half a cent because the
+    // stored cost was rounded to 2dp — opening and saving must not re-derive.
+    const lossy = { ...linkedFilament, cost_per_kg: 2488.67, spool_weight_kg: 0.75 };
+    const onSubmit = await openTheEditFormFor(lossy);
+    await userEvent.click(screen.getByRole('button', { name: /save/i }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      lossy.id,
+      expect.objectContaining({ cost_per_kg: 2488.67, spool_weight_kg: 0.75 }),
+    );
+  });
+
+  it('leaves cost editable for a linked filament that has no dealer price', async () => {
+    // has_price was false at sync time, so the operator typed the cost by hand
+    // (here: never got round to it). There is no dealer price to reconstruct.
+    await openTheEditFormFor({ ...linkedFilament, cost_per_kg: 0 });
+    const cost = screen.getByLabelText(/^cost per kg/i);
+    expect(cost).not.toHaveAttribute('readonly');
+    await userEvent.clear(cost);
+    await userEvent.type(cost, '500');
+    await userEvent.clear(screen.getByLabelText(/spool weight/i));
+    await userEvent.type(screen.getByLabelText(/spool weight/i), '0.5');
+    expect((cost as HTMLInputElement).value).toBe('500');
   });
 
   it('submits margin_pct and never sale_price_per_kg', async () => {

@@ -176,7 +176,23 @@ function FilamentForm({
   // Cost is Zoho-owned while linked: dealer price divided by the spool weight.
   // Editing the weight therefore re-derives the cost, which is why the raw
   // dealer price is kept in state rather than only the cost.
-  const [dealerPrice, setDealerPrice] = useState<number | null>(null);
+  //
+  // A row that arrives already linked has no dealer price on it — the column
+  // stores the cost, not the price — so reconstruct it from the same
+  // arithmetic that produced the cost (`round(dealer_price / weight, 2)`
+  // server-side). That is lossy by up to half a cent, which is why it only
+  // ever feeds a *re-derivation* on a weight change: opening and saving a
+  // linked row untouched submits the stored cost verbatim.
+  const [dealerPrice, setDealerPrice] = useState<number | null>(() => {
+    // A zero cost is the zero-dealer-price case (has_price false at sync
+    // time), where the cost is the operator's to type: nothing to reconstruct,
+    // so leave it null and the field stays editable. Same for a missing or
+    // nonsensical weight, which would make the division meaningless.
+    if (!initial?.zoho_item_id) return null;
+    const weight = initial.spool_weight_kg;
+    if (weight === null || weight <= 0 || initial.cost_per_kg <= 0) return null;
+    return initial.cost_per_kg * weight;
+  });
 
   const setSpoolWeight = (spoolWeight: string) =>
     setForm((f) => {
