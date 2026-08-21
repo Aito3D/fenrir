@@ -4693,6 +4693,28 @@ async def run_migrations(conn):
             )
         )
 
+    # Migration: calculator filaments can be linked to a Zoho product, whose
+    # dealer price drives cost per kg. margin_pct becomes the stored input and
+    # sale_price_per_kg becomes derived output, so the margin is backfilled from
+    # the sale price that was previously typed by hand.
+    await _safe_execute(conn, "ALTER TABLE calculator_filaments ADD COLUMN margin_pct FLOAT DEFAULT 50.0")
+    await _safe_execute(conn, "ALTER TABLE calculator_filaments ADD COLUMN zoho_item_id VARCHAR(50)")
+    await _safe_execute(conn, "ALTER TABLE calculator_filaments ADD COLUMN zoho_item_name VARCHAR(255)")
+    await _safe_execute(conn, "ALTER TABLE calculator_filaments ADD COLUMN zoho_sku VARCHAR(100)")
+    await _safe_execute(conn, "ALTER TABLE calculator_filaments ADD COLUMN spool_weight_kg FLOAT")
+    await _safe_execute(conn, "ALTER TABLE calculator_filaments ADD COLUMN zoho_synced_at TIMESTAMP")
+    async with conn.begin_nested():
+        await conn.execute(
+            text(
+                "UPDATE calculator_filaments "
+                "SET margin_pct = ((sale_price_per_kg / cost_per_kg) - 1) * 100 "
+                "WHERE margin_pct IS NULL AND cost_per_kg > 0 AND sale_price_per_kg IS NOT NULL"
+            )
+        )
+        # Rows with no usable cost cannot yield a margin; 0 keeps the
+        # sale = cost * (1 + margin/100) invariant true for them.
+        await conn.execute(text("UPDATE calculator_filaments SET margin_pct = 0 WHERE margin_pct IS NULL"))
+
     # Migration: Aito cards snapshot the client's email alongside the phone so
     # the walk-in customer's details survive on the card even when they are
     # deliberately not written back to Zoho.
