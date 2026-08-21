@@ -2,7 +2,8 @@ import { useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import { AiTextField } from './AiTextField';
-import { ImpressionFields, rowLabelCls } from './ImpressionFields';
+import { ImpressionFields } from './ImpressionFields';
+import { rowLabelCls, DiscountSelect } from './servicePriceFields';
 import { Money } from '../calculator/shared';
 import { inputCls, focusRingCls } from '../formStyles';
 import { useCurrency } from '../../hooks/useCurrency';
@@ -322,34 +323,11 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
                 <label htmlFor={`${reactId}-impression-discount`} className={rowLabelCls}>
                   {t('aito.discount')}
                 </label>
-                {/* Fixed-width, not flex-1: a discount is two digits and a
-                    sign at most — same reasoning as the quantity input above
-                    (a little wider, `w-24` not `w-20`, to fit "30%" plus the
-                    select's own disclosure arrow). Bare `inputCls` (`w-full`)
-                    would otherwise fill the whole field column for "—" or
-                    "30%". */}
-                <div className="max-w-24">
-                  <select
-                    id={`${reactId}-impression-discount`}
-                    value={task.impressionDiscountPct ?? ''}
-                    onChange={(e) =>
-                      onChange({
-                        ...task,
-                        impressionDiscountPct: e.target.value === '' ? null : Number(e.target.value),
-                      })
-                    }
-                    className={inputCls}
-                  >
-                    {/* An em dash, not "0%": no discount means no discount
-                        column on the quote's PDF at all. */}
-                    <option value="">—</option>
-                    {[5, 10, 15, 20, 25, 30].map((pct) => (
-                      <option key={pct} value={pct}>
-                        {pct}%
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <DiscountSelect
+                  id={`${reactId}-impression-discount`}
+                  value={task.impressionDiscountPct}
+                  onChange={(impressionDiscountPct) => onChange({ ...task, impressionDiscountPct })}
+                />
               </>
             }
             noteField={

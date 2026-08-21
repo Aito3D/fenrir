@@ -10,6 +10,7 @@ import { inputCls, focusRingCls } from '../formStyles';
 import { useCurrency } from '../../hooks/useCurrency';
 import { computeImpressionCost, roundUpTo50 } from '../../utils/taskDraft';
 import type { ImpressionDraft } from '../../utils/taskDraft';
+import { rowLabelCls, QuantityInput } from './servicePriceFields';
 
 /** A query counts as failed for THIS component's purposes only when it has
  *  never produced anything usable — `isError` alone is not that: with
@@ -21,14 +22,6 @@ import type { ImpressionDraft } from '../../utils/taskDraft';
 function isFetchFailure(query: { isError: boolean; data: unknown }): boolean {
   return query.isError && !query.data;
 }
-
-/** Inline label for a grid row. Not `labelCls`: that one is `block` with a
- *  bottom margin, for a label STACKED above its field. Here the label sits
- *  beside its field, in the grid's own label column — which is what buys the
- *  block ~24px per field. Exported: TaskStepFields' slot fragments (costField,
- *  discountField, noteField) render their own `<label>`/`<span>` for the same
- *  grid, and must match this class rather than re-typing the literal. */
-export const rowLabelCls = 'text-sm text-bambu-gray text-right';
 
 /** One `label | control` pair in the block's shared grid.
  *
@@ -330,29 +323,11 @@ export function ImpressionFields({
         </div>
 
         <GridRow side="price" row={2} htmlFor={`${reactId}-quantity`} label={t('aito.quantity')}>
-          {/* Fixed-width (`w-20`), not flex-1: a count is 1-3 digits — the
-              unit cost (`costField`, above) is the field that earns the rest
-              of the line. Without a cap, bare `inputCls` (`w-full`) stretches
-              this across the whole ~230px field column for three digits'
-              worth of content. Same reasoning covers the discount select in
-              TaskStepFields (`w-24`, wide enough for "30%"). */}
-          <div className="max-w-20">
-            <input
-              id={`${reactId}-quantity`}
-              type="number"
-              min={1}
-              step={1}
-              inputMode="numeric"
-              value={value.quantity}
-              onChange={(e) =>
-                handleChange({
-                  ...value,
-                  quantity: e.target.value === '' ? 1 : Math.max(1, Math.floor(Number(e.target.value) || 1)),
-                })
-              }
-              className={inputCls}
-            />
-          </div>
+          <QuantityInput
+            id={`${reactId}-quantity`}
+            value={value.quantity}
+            onChange={(quantity) => handleChange({ ...value, quantity })}
+          />
         </GridRow>
 
         <div className="impression-price-row" style={{ '--ip-row': 3 } as React.CSSProperties}>
