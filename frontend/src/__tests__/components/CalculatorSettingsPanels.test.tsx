@@ -388,9 +388,18 @@ describe('CalculatorFilamentsPanel filament form (Zoho link)', () => {
     await userEvent.type(screen.getByLabelText(/^cost per kg/i), '900');
     await userEvent.click(screen.getByRole('button', { name: /save/i }));
 
-    expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({ cost_per_kg: 900, zoho_item_id: null, spool_weight_kg: null }),
-    );
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ cost_per_kg: 900 }));
+    // Exactly these four keys carry an explicit null — no more, no fewer. They
+    // are the only fields the backend clears on a null; leaving zoho_sku or
+    // zoho_item_name populated would orphan them on a row the sync no longer
+    // visits (it selects on zoho_item_id.is_not(None)).
+    const payload = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+    expect(Object.keys(payload).filter((key) => payload[key] === null).sort()).toEqual([
+      'spool_weight_kg',
+      'zoho_item_id',
+      'zoho_item_name',
+      'zoho_sku',
+    ]);
   });
 
   it('recomputes cost per kg when the spool weight is corrected', async () => {
@@ -431,16 +440,20 @@ describe('CalculatorFilamentsPanel filament form (Zoho link)', () => {
     expect((screen.getByLabelText(/^cost per kg/i) as HTMLInputElement).value).toBe('3732');
   });
 
-  it('saving a linked filament untouched does not perturb its cost', async () => {
-    // Reconstruction (cost * weight) is lossy by up to half a cent because the
-    // stored cost was rounded to 2dp — opening and saving must not re-derive.
-    const lossy = { ...linkedFilament, cost_per_kg: 2488.67, spool_weight_kg: 0.75 };
-    const onSubmit = await openTheEditFormFor(lossy);
-    await userEvent.click(screen.getByRole('button', { name: /save/i }));
-    expect(onSubmit).toHaveBeenCalledWith(
-      lossy.id,
-      expect.objectContaining({ cost_per_kg: 2488.67, spool_weight_kg: 0.75 }),
-    );
+  it('leaves a hand-typed cost editable on a linked row Zoho never priced', async () => {
+    // The row is linked and carries a real cost, but the cost is the
+    // operator's: the sync stamps zoho_synced_at only when it applied a dealer
+    // price, and a has_price:false item is skipped before that stamp. So a null
+    // stamp means no Zoho price ever landed here, whatever the cost says.
+    const handPriced = { ...linkedFilament, cost_per_kg: 500, zoho_synced_at: null };
+    await openTheEditFormFor(handPriced);
+    const cost = screen.getByLabelText(/^cost per kg/i);
+    expect(cost).not.toHaveAttribute('readonly');
+
+    await userEvent.clear(screen.getByLabelText(/spool weight/i));
+    await userEvent.type(screen.getByLabelText(/spool weight/i), '0.5');
+    // A weight correction must not rescale a number Zoho never supplied.
+    expect((cost as HTMLInputElement).value).toBe('500');
   });
 
   it('leaves cost editable for a linked filament that has no dealer price', async () => {

@@ -180,15 +180,20 @@ function FilamentForm({
   // A row that arrives already linked has no dealer price on it — the column
   // stores the cost, not the price — so reconstruct it from the same
   // arithmetic that produced the cost (`round(dealer_price / weight, 2)`
-  // server-side). That is lossy by up to half a cent, which is why it only
-  // ever feeds a *re-derivation* on a weight change: opening and saving a
-  // linked row untouched submits the stored cost verbatim.
+  // server-side), which recovers the price for any weight the cost was
+  // actually divided by.
   const [dealerPrice, setDealerPrice] = useState<number | null>(() => {
-    // A zero cost is the zero-dealer-price case (has_price false at sync
-    // time), where the cost is the operator's to type: nothing to reconstruct,
-    // so leave it null and the field stays editable. Same for a missing or
-    // nonsensical weight, which would make the division meaningless.
     if (!initial?.zoho_item_id) return null;
+    // `zoho_synced_at` is stamped only by a sync that actually applied a dealer
+    // price: a `has_price: false` item (55 of the 256 real ones) is counted as
+    // `skipped_no_price` and `continue`s before the stamp. A null stamp on a
+    // linked row therefore means its cost is the operator's own, whatever the
+    // number is — reconstructing a "dealer price" from it would make the field
+    // read-only and let a weight correction silently rescale a figure Zoho
+    // never supplied. Erring toward editable is the safe direction here.
+    if (initial.zoho_synced_at === null) return null;
+    // Belt and braces on the value itself: a zero cost or a missing/nonsensical
+    // weight makes the division meaningless in either direction.
     const weight = initial.spool_weight_kg;
     if (weight === null || weight <= 0 || initial.cost_per_kg <= 0) return null;
     return initial.cost_per_kg * weight;
