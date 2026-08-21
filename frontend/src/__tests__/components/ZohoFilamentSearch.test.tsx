@@ -34,11 +34,11 @@ const PRODUCTS = [
   },
 ];
 
-function renderSearch(onSelect = vi.fn()) {
+function renderSearch(onSelect = vi.fn(), currency = 'USD') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <ZohoFilamentSearch onSelect={onSelect} currencySymbol="F" />
+      <ZohoFilamentSearch onSelect={onSelect} currency={currency} />
     </QueryClientProvider>,
   );
   return onSelect;
@@ -82,5 +82,58 @@ describe('ZohoFilamentSearch', () => {
     renderSearch();
     await userEvent.type(screen.getByRole('combobox'), 'abs');
     expect(await screen.findByText(/could not reach zoho/i)).toBeInTheDocument();
+  });
+
+  // F1 — aria-expanded must track whether the popup is actually rendered
+  // (i.e. whether a search is "enabled"), not whether it happens to have
+  // result rows. The no-results status row is visibly on screen too.
+  it('reports aria-expanded while the popup shows a status row, not just result rows', async () => {
+    vi.spyOn(api, 'searchZohoFilaments').mockResolvedValue([]);
+    renderSearch();
+    const input = screen.getByRole('combobox');
+    await userEvent.type(input, 'zzz');
+    await screen.findByText(/no matching zoho filament/i);
+    expect(input).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  // F2 — formatMoney keys its zero-decimal-currency detection off the ISO
+  // *code*, not a display symbol. XPF is a real, zero-decimal user currency;
+  // passing anything but the code here must not print spurious decimals.
+  it('formats prices for a zero-decimal currency (XPF) with no decimal part', async () => {
+    vi.spyOn(api, 'searchZohoFilaments').mockResolvedValue(PRODUCTS);
+    renderSearch(vi.fn(), 'XPF');
+    await userEvent.type(screen.getByRole('combobox'), 'abs-gf');
+    const price = await screen.findByText(/1[\s\u2009\u202f\u00a0]?866/);
+    expect(price.textContent).not.toMatch(/1[\s\u2009\u202f\u00a0]?866\.00/);
+  });
+
+  // F3 — the debounce exists specifically to avoid one Zoho request per
+  // keystroke. Assert an exact call count, not just "was called".
+  it('debounces so a multi-character query fires exactly one search', async () => {
+    vi.spyOn(api, 'searchZohoFilaments').mockResolvedValue(PRODUCTS);
+    renderSearch();
+    await userEvent.type(screen.getByRole('combobox'), 'abs-gf');
+    await waitFor(() => expect(api.searchZohoFilaments).toHaveBeenCalledTimes(1));
+    // Give any extra pending timers a chance to fire so a broken/absent
+    // debounce (one call per keystroke) would be caught here too.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(api.searchZohoFilaments).toHaveBeenCalledTimes(1);
+  });
+
+  // F4 — the shared `renderSearch` helper's QueryClient defaults to
+  // retry:false, which would mask the component losing its own retry:false
+  // on the query. Build a client here with production's retry:1 default
+  // (frontend/src/App.tsx) so it's the component's own setting under test.
+  it('does not retry a failed search even when the QueryClient default allows retries', async () => {
+    vi.spyOn(api, 'searchZohoFilaments').mockRejectedValue(new Error('502'));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: 1, retryDelay: 0 } } });
+    render(
+      <QueryClientProvider client={client}>
+        <ZohoFilamentSearch onSelect={vi.fn()} currency="USD" />
+      </QueryClientProvider>,
+    );
+    await userEvent.type(screen.getByRole('combobox'), 'abs');
+    expect(await screen.findByText(/could not reach zoho/i)).toBeInTheDocument();
+    expect(api.searchZohoFilaments).toHaveBeenCalledTimes(1);
   });
 });

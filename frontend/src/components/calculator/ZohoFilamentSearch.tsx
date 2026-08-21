@@ -18,11 +18,15 @@ const MIN_QUERY_LENGTH = 2;
 
 export function ZohoFilamentSearch({
   onSelect,
-  currencySymbol,
+  currency,
   disabled = false,
 }: {
   onSelect: (product: ZohoFilamentProduct) => void;
-  currencySymbol: string;
+  /** ISO currency code (e.g. "USD", "XPF") — passed straight through to
+   * `formatMoney`, which keys its zero-decimal-currency detection off the
+   * code, not a display symbol. Passing a symbol here would silently print
+   * spurious decimals for zero-decimal currencies like XPF/JPY/KRW. */
+  currency: string;
   disabled?: boolean;
 }) {
   const { t } = useTranslation();
@@ -53,7 +57,7 @@ export function ZohoFilamentSearch({
         <input
           id="calc-fil-zoho"
           role="combobox"
-          aria-expanded={enabled && results.length > 0}
+          aria-expanded={enabled}
           aria-controls="calc-fil-zoho-results"
           autoComplete="off"
           className={`${inputCls} pl-9`}
@@ -90,7 +94,7 @@ export function ZohoFilamentSearch({
                 <span className="block text-xs text-bambu-gray tabular-nums">
                   {product.has_price ? (
                     <>
-                      {formatMoney(product.cost_per_kg, currencySymbol, false)} / kg · {product.spool_weight_kg} kg
+                      {formatMoney(product.cost_per_kg, currency, false)} / kg · {product.spool_weight_kg} kg
                     </>
                   ) : (
                     <span className="text-status-warning">{t('calculator.zohoNoDealerPrice')}</span>
