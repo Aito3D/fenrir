@@ -199,14 +199,19 @@ async def sync_calculator_filaments_from_zoho(
         if product is None:
             missing += 1
             continue
-        if not product.has_price:
-            skipped_no_price += 1
-            continue
 
         # The filament's own stored weight wins: re-deriving it from the Zoho
         # name on every sync would let an upstream rename re-scale the price.
         weight = filament.spool_weight_kg or product.spool_weight_kg or 1.0
         new_cost = round(product.dealer_price / weight, 2)
+
+        # Guard the value about to be written, not just the upstream flag: a
+        # tiny dealer price over a large stored weight can round to 0.0 even
+        # when ``product.has_price`` is true, and a zero cost is never written.
+        if not product.has_price or new_cost <= 0:
+            skipped_no_price += 1
+            continue
+
         filament.zoho_synced_at = now
         if abs(new_cost - filament.cost_per_kg) < 0.005:
             unchanged += 1

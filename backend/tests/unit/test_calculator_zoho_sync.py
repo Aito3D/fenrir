@@ -26,7 +26,23 @@ def _product(item_id, dealer, weight=1.0):
 @pytest.fixture
 def zoho_catalogue(monkeypatch):
     """Install a catalogue; returns the mutable list so tests can reprice it."""
-    catalogue = [_product("A", 2000.0), _product("B", 0.0), _product("C", 3000.0, weight=0.5)]
+    catalogue = [
+        _product("A", 2000.0),
+        _product("B", 0.0),
+        # Deliberately mismatched weight: the catalogue claims 1.0 kg while
+        # tests store 0.5 kg on the filament, so a stored-weight assertion can
+        # only pass if the route uses the STORED weight, not the product's.
+        _product("C", 3000.0, weight=1.0),
+        # A dealer price so small that dividing by even a 1 kg spool rounds to
+        # 0.0 per kg, while ``has_price`` (dealer_price > 0) is still True.
+        _product("TINY", 0.001),
+        # Distinct item ids at distinct prices so a chunking test can prove
+        # every row was visited exactly once (a repeat or a skip would leave
+        # some price un-updated or double-applied). Offset from 1000 so none
+        # collides with ``_create``'s default cost_per_kg (which would land
+        # on "unchanged" instead of "updated").
+        *[_product(f"D{index}", 1100.0 + index * 100) for index in range(5)],
+    ]
 
     async def configured(db):
         return True
@@ -70,7 +86,11 @@ async def test_sync_updates_cost_and_recomputes_printing_cost(async_client, zoho
 
 @pytest.mark.asyncio
 async def test_sync_uses_the_stored_spool_weight(async_client, zoho_catalogue):
-    """A 0.5 kg spool at 3000 per spool is 6000 per kg."""
+    """The filament stores 0.5 kg while the catalogue product claims 1.0 kg.
+
+    3000 / 0.5 = 6000 (stored weight, the only correct answer) versus
+    3000 / 1.0 = 3000 (the catalogue's weight, which must lose).
+    """
     await _create(async_client, zoho_item_id="C", material="PA6-CF", spool_weight_kg=0.5)
     await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"offset": 0, "limit": 25})
     row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
@@ -85,6 +105,33 @@ async def test_zero_dealer_price_is_skipped_not_written(async_client, zoho_catal
     assert resp.json()["updated"] == 0
     row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
     assert row["cost_per_kg"] == 1000.0  # untouched
+
+
+@pytest.mark.asyncio
+async def test_subcent_result_is_skipped_not_written_as_zero(async_client, zoho_catalogue):
+    """A tiny dealer price over a 1 kg spool rounds to 0.0 per kg.
+
+    ``product.has_price`` is True here (dealer_price = 0.001 > 0), so the
+    guard must check the VALUE about to be written, not just that flag, or a
+    near-zero result gets written and counted as ``updated`` — and a zero
+    ``cost_per_kg`` permanently breaks the filament list response schema
+    (``cost_per_kg`` is ``gt=0``).
+    """
+    await _create(async_client, zoho_item_id="TINY", material="PETG")
+    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"offset": 0, "limit": 25})
+    assert resp.json()["skipped_no_price"] == 1
+    assert resp.json()["updated"] == 0
+    row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
+    assert row["cost_per_kg"] == 1000.0  # untouched
+
+
+@pytest.mark.asyncio
+async def test_filament_list_still_responds_after_a_subcent_sync(async_client, zoho_catalogue):
+    """Regression guard: the list endpoint must stay readable after a sync."""
+    await _create(async_client, zoho_item_id="TINY", material="PETG")
+    await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"offset": 0, "limit": 25})
+    resp = await async_client.get("/api/v1/calculator/filaments/")
+    assert resp.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -116,8 +163,15 @@ async def test_unlinked_filaments_are_never_touched(async_client, zoho_catalogue
 
 @pytest.mark.asyncio
 async def test_chunking_walks_every_row_exactly_once(async_client, zoho_catalogue):
-    for index in range(5):
-        await _create(async_client, zoho_item_id="A", material=f"MAT{index}")
+    """Each row links to its OWN item id at its OWN price.
+
+    A repeated or skipped row would show up two ways: the ``updated`` counts
+    would not sum to 5, and/or some row's final price would not match its
+    item's dealer price (a repeat lands on ``unchanged`` the second time
+    through, so a naive count-only check could still add up to 5 by luck —
+    the per-row price assertion below is what actually catches that case).
+    """
+    created = [await _create(async_client, zoho_item_id=f"D{index}", material=f"MAT{index}") for index in range(5)]
 
     seen, offset, guard = 0, 0, 0
     while offset is not None and guard < 10:
@@ -125,12 +179,17 @@ async def test_chunking_walks_every_row_exactly_once(async_client, zoho_catalogu
             await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"offset": offset, "limit": 2})
         ).json()
         assert body["total"] == 5
-        seen += body["processed"]
+        seen += body["updated"]
         offset = body["next_offset"]
         guard += 1
 
     assert seen == 5
     assert guard == 3  # 2 + 2 + 1
+
+    rows = {row["id"]: row for row in (await async_client.get("/api/v1/calculator/filaments/")).json()}
+    for index, filament in enumerate(created):
+        expected_price = 1100.0 + index * 100
+        assert rows[filament["id"]]["cost_per_kg"] == expected_price
 
 
 @pytest.mark.asyncio
