@@ -263,7 +263,15 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     # 10_000 is generous headroom over anything a human types — it exists to keep a
     # pathological payload from ballooning the row or the AI summarizer's prompt.
     description: str = Field(min_length=1, max_length=10_000)
-    client_id: str = Field(min_length=1)
+    # 50 matches the AitoProject.client_id column (String(50)) — see the
+    # T-003 comment on AitoProjectUpdate.client_id below for why the bound
+    # sits here and on AitoProjectUpdate only, never on a response model.
+    # Deliberately no character-class pattern (unlike quote_id's below): a
+    # Zoho contact id is opaque and this app never interpolates it into a
+    # URL path or trusts it as a filesystem-adjacent token the way quote_id
+    # is, so there is nothing here for a charset to protect against — only
+    # length matches the column it is stored in.
+    client_id: str = Field(min_length=1, max_length=50)
     # Caps mirror ZohoContactCreate's company_name/email/phone — the same contact data,
     # captured here instead of a Zoho round-trip.
     client_name: str = Field(min_length=1, max_length=200)
@@ -422,7 +430,16 @@ class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput):
     owned by the /move endpoint and deliberately not accepted here."""
 
     description: str | None = Field(default=None, min_length=1, max_length=10_000)
-    client_id: str | None = None
+    # 50, matching the AitoProject.client_id column (String(50)) and
+    # AitoProjectCreate.client_id above — bounded here (the WRITE path) and
+    # not on a response model, for the same reason AitoTaskCreate/Update's
+    # description/cost caps sit off of AitoTaskBase (see that class's
+    # comment): AitoProjectResponse.client_id is its own independent field,
+    # not inherited from either create/update schema, so it keeps reading
+    # back an already-stored over-length value unchanged rather than 500ing.
+    # No character-class pattern — see AitoProjectCreate.client_id's comment
+    # for why quote_id's `^[A-Za-z0-9_-]+$` does not apply to this field.
+    client_id: str | None = Field(default=None, max_length=50)
     client_name: str | None = Field(default=None, max_length=200)
     client_phone: str | None = Field(default=None, max_length=50)
     client_email: str | None = Field(default=None, max_length=200)

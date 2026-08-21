@@ -3,6 +3,48 @@
 User-approved behavior changes made during the refactor campaign, each an
 explicit exception to the campaign's zero-functionality-change rule.
 
+## T-003 — 2026-08-20 — user-approved behavior change
+
+`AitoProjectCreate.client_id` (`Field(min_length=1)`) and `AitoProjectUpdate.client_id`
+(`str | None = None`) carried no upper bound, unlike every sibling identifier field in the
+same module (`quote_id`: `max_length=50, pattern=r"^[A-Za-z0-9_-]+$"`; `client_name`:
+`max_length=200`). The backing column is `String(50)` (`models/aito_project.py`) and SQLite
+does not enforce VARCHAR length, so an over-length value was silently stored and echoed back
+in `AitoProjectResponse.client_id` on every `GET /api/v1/aito/`.
+
+Fixed by adding `max_length=50` to `client_id` on both `AitoProjectCreate` and
+`AitoProjectUpdate`, matching the column. The auditor's finding also suggested reusing
+`quote_id`'s `^[A-Za-z0-9_-]+$` character-class pattern; the user explicitly **declined**
+that half — a Zoho contact id is opaque and, unlike `quote_id`, is never interpolated into a
+URL path or trusted as a filesystem-adjacent token, so a character-class restriction would
+only risk rejecting a real Zoho client id already in use, for no corresponding safety
+benefit. Only the length bound was added.
+
+Consumer enumeration for both schemas (including composition, not just inheritance) before
+the change: grepped `backend/app/` for `AitoProjectCreate` and `AitoProjectUpdate`. Both
+names appear only as (a) the class definitions themselves, (b) FastAPI request-body
+parameters on `POST /api/v1/aito/` and `PATCH /api/v1/aito/{id}` in `routes/aito.py`, and (c)
+comments in `routes/zoho.py` and `services/aito_quote_import.py` referencing the shape by
+name, not by import/composition. Neither class is imported or constructed anywhere else in
+`backend/`, and neither is composed as a field type (`x: AitoProjectCreate` /
+`list[AitoProjectCreate]`) on any other schema — unlike the `AitoTaskCreate` composition
+found during T-001/T-009. `AitoProjectResponse.client_id` is its own independently-declared
+field (`client_id: str | None` with no `max_length`), not inherited from either write schema,
+so it keeps reading back an already-stored over-length value unchanged rather than raising —
+confirmed with a test that constructs `AitoProjectResponse` directly with a 60-character
+`client_id` and asserts it still validates.
+
+Observable change, quoting the approved description verbatim: "a client_id longer than 50
+characters is currently accepted and stored, and would start returning 422."
+
+Snapshot fallout: `aito-pydantic-schemas` mismatched (pydantic's `model_json_schema()` emits
+`maxLength` in JSON Schema, unlike `allow_inf_nan`) and was re-recorded — confirmed by
+diffing golden vs. current JSON Schema output that the only two fields that changed were
+`AitoProjectCreate.properties.client_id` and `AitoProjectUpdate.properties.client_id`, each
+gaining `"maxLength": 50` and nothing else. `aito-openapi` was unaffected: that probe only
+captures `spec["paths"]`, where request bodies appear as a `$ref` to the components schema,
+not the inlined schema itself. `SURFACE.md` did not move (no schema class added or removed).
+
 ## T-012 — 2026-08-11 — user-approved behavior change
 
 `useProjectPatchMutation`'s three consumers (`ProjectDetailPanel`'s description
@@ -2565,3 +2607,156 @@ scope, all pass when re-run alone). The script's own `--coverage.reportOnFailure
 comment already exists precisely so a full coverage report is still produced on such a
 failing run; a non-zero exit alongside a valid report is the intended shape now, not
 something to work around.
+
+## T-004 — 2026-08-20 — user-approved behavior change (correction to an entry omitted at commit time)
+
+**This entry was written after the fact.** Commit `cad0f792c` ("refactor(loop-5): T-003,
+T-004, T-009 — bound client_id, strip control chars from the PDF filename, stop a
+quote-pair reply blanking a field") shipped T-004 — `_CONTROL_CHARS_RE = re.compile(r"[\x00-
+\x1f\x7f]")` in `backend/app/api/routes/aito.py`, stripped from the quote PDF filename
+before it reaches `build_content_disposition` in `get_quote_pdf` — with no changelog entry,
+on the stated rationale that the guard only "turns an aborted response into a normal one,
+not the other way around." A blind verifier in a later iteration FAILED the range on this
+item: that rationale is true for only 5 of the 33 characters the regex strips, and false for
+the other 28. The mis-reasoning originated in the orchestrator's brief for the task, not in
+anything the implementing worker invented; the guard itself is unaffected by any of this and
+was already, and remains, correct.
+
+The split, checked against h11's actual header-value grammar (`field_value =
+([^\x00\s]+(?:[ \t]+[^\x00\s]+)*)?`, from `h11/_abnf.py`):
+
+- **5 characters are REJECTED by h11**: `\x00`, `\x0a` (LF), `\x0b` (VT), `\x0c` (FF), `\x0d`
+  (CR). For these, BASE's response really is aborted outright — h11 refuses to send a header
+  value containing them — and the fix genuinely turns a broken response into a working one.
+  There is no observable change here anyone could depend on.
+- **28 characters are ACCEPTED by h11**: `\x01`–`\x08`, `\x09` (TAB), `\x0e`–`\x1f`
+  (including `\x1b` ESC), and `\x7f` (DEL). For these, BASE returns a normal `200` and the
+  fix changes that working response's header content. Demonstrated directly with
+  `quote_number = "AB\x07CD"`:
+  - BASE: `200`, `Content-Disposition: inline; filename="AB\x07CD.pdf";
+    filename*=UTF-8''AB%07CD.pdf`
+  - HEAD: `200`, `Content-Disposition: inline; filename="ABCD.pdf";
+    filename*=UTF-8''ABCD.pdf`
+
+  Reachable in production: `quote_number` is `Field(default=None, max_length=50)` with no
+  pattern (`schemas/aito.py`), and `AitoProjectCreate(quote_number="AB\x01CD")` validates
+  without error — nothing upstream of `get_quote_pdf` rejects or sanitizes this value first.
+
+So T-004 is an observable behavior change for 28 of the 33 stripped characters, not merely a
+fix for an already-broken response, and it needed an entry in this file from the start.
+
+The user was shown this 5-vs-28 split, together with the `AB\x07CD` before/after evidence
+above, on 2026-08-20, and approved keeping the full `[\x00-\x1f\x7f]` strip as originally
+shipped — choosing to document the change here rather than narrow the regex to just the
+5 h11-rejects-outright characters. The regex itself, `_CONTROL_CHARS_RE`, is unchanged from
+commit `cad0f792c` and no test was added or altered; the existing
+`test_quote_pdf_strips_control_characters_from_the_filename`
+(`backend/tests/unit/test_aito_routes.py`) already pins all four of `\x00`, `\x07`, `\x1b`,
+and `\x7f` being stripped, spanning both halves of the split.
+
+Why the full strip is correct regardless of the split: a control character has no legitimate
+place in a downloaded filename. TAB and DEL both corrupt the name a browser ends up saving
+the file under; ESC (`\x1b`) can drive terminal escape sequences in any context where the
+filename is later echoed to a terminal (e.g. a shell script or log viewer that prints
+`Content-Disposition` verbatim). Stripping only the 5 that h11 rejects outright and leaving
+the other 28 in place would still hand a client-controlled control character straight into a
+filename a browser writes to disk, for no benefit beyond a paper-thin "BASE technically
+returned a 200" argument.
+
+Out of scope, unfixed, left as a known follow-up: `backend/app/utils/http.py`'s
+`build_content_disposition` — the shared helper used across roughly eight call sites — has
+the same gap (it strips only non-ASCII, quotes, and backslashes, never C0/DEL) and is not
+touched by this fix. `get_quote_pdf` is the only call site patched. The shared helper is the
+better long-term home for this guard, since fixing it there would close the gap for every
+caller at once instead of one call site at a time; that consolidation was not undertaken here
+because `backend/app/utils/http.py` was out of this task's scope.
+
+## T-009 — 2026-08-20 — user-approved behavior change (approval given RETROACTIVELY)
+
+**This entry was written after the fact.** Commit `cad0f792c` ("refactor(loop-5): T-003,
+T-004, T-009 — bound client_id, strip control chars from the PDF filename, stop a
+quote-pair reply blanking a field") shipped T-009's fix to `proofread_text`
+(`backend/app/services/openrouter.py`) with no changelog entry, on the stated rationale
+that it "restores a documented contract" — the function's own docstring already promised
+"never returns \"\"". Iteration 5's blind verifier FAILED the range on this item: the
+docstring promise is true, but the endpoint's 200 response body still moved for a real,
+reachable class of upstream replies, and that is what needed an entry regardless of whether
+the change also happens to be a bug fix. The user was shown the finding and approved the
+change as shipped, on 2026-08-20.
+
+`_unquote(corrected, source)` strips one layer of quote punctuation the model wrapped its
+answer in, but does not special-case a reply that IS the quote pair with nothing inside it —
+`corrected[1:-1].strip()` on a 2-character input returns `""`. BASE:
+
+    return _unquote(corrected, source), PROOFREAD_MODEL
+
+HEAD:
+
+    unquoted = _unquote(corrected, source)
+    ...
+    return unquoted or source, PROOFREAD_MODEL
+
+Measured against the shipped `_unquote` with `source = 'capot avec 3 pieces'`, five reply
+shapes that are each exactly a quote pair:
+
+    reply '""'   -> BASE returns ''  | HEAD returns 'capot avec 3 pieces'
+    reply '«»'   -> BASE returns ''  | HEAD returns 'capot avec 3 pieces'
+    reply '« »'  -> BASE returns ''  | HEAD returns 'capot avec 3 pieces'
+    reply '“”'   -> BASE returns ''  | HEAD returns 'capot avec 3 pieces'
+    reply "''"   -> BASE returns ''  | HEAD returns 'capot avec 3 pieces'
+
+So `POST /api/v1/aito/proofread` answered `200 {"text": ""}` at BASE for any of these five
+reply shapes, and answers `200 {"text": "<the operator's own text>"}` at HEAD — the
+endpoint's OUTPUT genuinely moved, not just an internal implementation detail. `_chat`'s
+empty-answer guard does not intercept this: the raw model reply is two non-empty characters,
+and the emptiness is produced afterward, by `_unquote`'s own stripping. `AitoProofreadResponse
+.text` carries no `min_length`, so the schema layer does not stop `""` from serialising out
+either.
+
+Why this was reachable and why it mattered: `AiTextField.onSuccess` applies `data.text` via
+`onChange` whenever the response differs from what the field last sent — its ONLY skip
+condition is `data.text === sent`, an exact-string equality guard, not an emptiness check. A
+`""` response therefore always fails that equality (the operator's text is never itself
+empty — the request schema rejects a blank field before this endpoint is even called) and
+gets applied, wiping the task title or description the operator had just typed on blur —
+text that is printed on the client's quote — for no reason evident to the operator, since a
+proofread call is not something they see complete.
+
+Why `source` (returning the operator's own text unchanged) was chosen, over two rejected
+alternatives:
+- Returning the quote-pair string verbatim (e.g. `'""'` or `'« »'`) would put
+  punctuation-only garbage directly into the field.
+- Raising `OpenRouterUpstreamError` would mislabel this: the model DID answer — a
+  degenerate one — so treating it as an upstream failure conflates a local post-processing
+  artifact (`_unquote` stripping a pair down to nothing) with an actual upstream problem, and
+  would add a spurious 502 the caller's existing silent-no-op handling for that error class
+  was never designed to absorb quietly for this cause.
+- `source` was chosen specifically because it makes `AiTextField.onSuccess`'s existing
+  `data.text === sent` equality guard fire and skip `onChange` entirely — the field does not
+  even flicker, and the observable result is indistinguishable from "nothing needed
+  correcting", which is the true semantic content of a quote-pair-only reply.
+
+**This is the third instance, in this campaign, of an entry omitted at commit time on the
+same mis-reasoning** — "it's a bug fix restoring a documented contract, so it doesn't need an
+entry" — after T-005 (2026-08-19, `AiTextField` unmount guard) and T-004 (2026-08-20, PDF
+filename control-character strip). All three times a blind verifier proved the change also
+moved observable output, and none of the three fixes has been reverted or altered — the
+reasoning was always wrong about whether an entry was needed, never about whether the fix
+itself was correct. The mis-reasoning originated in the orchestrator's brief each time, not
+with the worker implementing the fix; it is recorded here, a third time, because the
+repetition itself is the useful part of this record, not any one instance of it.
+
+Also worth recording for consistency: this change sits in the same function as, and is
+adjacent to, T-006 (2026-08-19, above) — another degenerate-reply case in `proofread_text`,
+where a truncated (`finish_reason == "length"`) completion is turned into a raised
+`OpenRouterUpstreamError` instead of a silently-applied partial correction. T-006 was
+recorded as a user-approved behavior change at commit time, without needing a blind verifier
+to catch the omission. That T-009's own entry only exists now, after the same kind of
+after-the-fact correction as T-005 and T-004, is itself part of what this entry is
+documenting — the same file, the same function, two adjacent degenerate-reply fixes, treated
+inconsistently at commit time for no principled reason.
+
+No code, comment, or test changed as part of writing this entry. `_unquote` and
+`proofread_text` are unchanged from commit `cad0f792c`. `tools/snapshot.py verify` is
+unaffected — none of the 11 probes touch `openrouter.py`'s runtime behavior or
+`AitoProofreadResponse`'s schema (`min_length` was not added).

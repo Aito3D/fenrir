@@ -216,4 +216,13 @@ async def proofread_text(db: AsyncSession, text: str) -> tuple[str, str]:
         max_tokens=int(len(source) / 1.5) + 120,
         raise_on_truncation=True,
     )
-    return _unquote(corrected, source), PROOFREAD_MODEL
+    unquoted = _unquote(corrected, source)
+    # A reply that is exactly a quote pair (`""`, `«  »`) passes _unquote's
+    # len>=2 check and strips to "". That is not an upstream failure — the
+    # model did answer — so raising here would mislabel it; and returning the
+    # quote characters themselves would put punctuation-only garbage in the
+    # field. `source` is guaranteed non-empty (the request schema rejects a
+    # blank field before this is ever called), so falling back to it is the
+    # same outcome as "nothing needed correcting": the caller sees its own
+    # text unchanged, exactly as if the model had echoed it back.
+    return unquoted or source, PROOFREAD_MODEL

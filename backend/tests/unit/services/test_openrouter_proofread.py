@@ -149,6 +149,45 @@ async def test_truncated_completion_is_an_upstream_error(configured):
 
 
 @pytest.mark.asyncio
+async def test_pinned_quote_correction_still_strips_to_the_bare_word(configured):
+    """Pin: a normal quoted correction still strips to the bare word, unchanged
+    by the emptiness fallback below."""
+    client, _ = build_client(payload=chat_payload('"Capot"'))
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
+        corrected, _ = await proofread_text(None, "capot")
+    assert corrected == "Capot"
+
+
+@pytest.mark.asyncio
+async def test_reply_that_is_only_a_quote_pair_keeps_the_original_text(configured):
+    """A reply of exactly `""` strips to "" in _unquote, which would otherwise
+    blank the field (T-009). The caller must get its own text back instead."""
+    client, _ = build_client(payload=chat_payload('""'))
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
+        corrected, _ = await proofread_text(None, "capot")
+    assert corrected == "capot"
+
+
+@pytest.mark.asyncio
+async def test_reply_that_is_a_guillemet_pair_with_only_whitespace_inside_keeps_the_original(configured):
+    """Same failure mode, other quote style, whitespace instead of nothing
+    between the pair — `.strip()` still empties it."""
+    client, _ = build_client(payload=chat_payload("«  »"))
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
+        corrected, _ = await proofread_text(None, "capot")
+    assert corrected == "capot"
+
+
+@pytest.mark.asyncio
+async def test_reply_that_is_a_curly_quote_pair_with_nothing_inside_keeps_the_original(configured):
+    """A third quote style from the pair list, same degenerate shape."""
+    client, _ = build_client(payload=chat_payload("“”"))
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
+        corrected, _ = await proofread_text(None, "capot")
+    assert corrected == "capot"
+
+
+@pytest.mark.asyncio
 async def test_max_tokens_is_sized_conservatively_for_a_long_source(configured):
     """A 2000-char French source tokenises well under 2 chars/token, so a budget
     of len(source)//2 caps the answer before it can finish a dense sentence.

@@ -15,6 +15,7 @@ from backend.app.models.aito_task import AitoTask
 from backend.app.schemas.aito import (
     AitoProjectCreate,
     AitoProjectImportItem,
+    AitoProjectResponse,
     AitoProjectUpdate,
     AitoShippingInput,
     AitoTaskCreate,
@@ -23,6 +24,7 @@ from backend.app.schemas.aito import (
 )
 from backend.app.services.aito_board_rules import SERVICES, summarise
 from backend.app.services.zoho import ZohoUpstreamError, zoho_service
+from backend.app.utils.http import build_content_disposition
 
 
 async def _create(client, **overrides):
@@ -873,6 +875,133 @@ def test_project_create_rejects_non_finite_quote_total(value):
             client_name="ACME",
             quote_total=value,
         )
+
+
+def test_project_create_rejects_a_client_id_over_the_column_cap():
+    """AitoProject.client_id is a String(50) column; SQLite does not enforce
+    VARCHAR length, so an unbounded value would be stored (and echoed back on
+    every GET /aito/) rather than rejected. T-003."""
+    with pytest.raises(pydantic.ValidationError):
+        AitoProjectCreate(description="d", client_id="x" * 51, client_name="ACME")
+
+
+def test_project_create_accepts_a_client_id_at_the_column_cap():
+    payload = AitoProjectCreate(description="d", client_id="x" * 50, client_name="ACME")
+    assert payload.client_id == "x" * 50
+
+
+def test_project_update_rejects_a_client_id_over_the_column_cap():
+    """Same bound as AitoProjectCreate, on the other write path. No
+    character-class pattern (unlike quote_id) — see the field comment for why
+    an opaque Zoho contact id gets a length bound only."""
+    with pytest.raises(pydantic.ValidationError):
+        AitoProjectUpdate(client_id="x" * 51)
+
+
+def test_project_update_accepts_a_client_id_at_the_column_cap():
+    payload = AitoProjectUpdate(client_id="x" * 50)
+    assert payload.client_id == "x" * 50
+
+
+def _minimal_project_response(**overrides) -> AitoProjectResponse:
+    now = datetime.now(timezone.utc)
+    fields = {
+        "id": 1,
+        "description": "d",
+        "column": "devis",
+        "position": 0,
+        "status": "active",
+        "client_id": None,
+        "client_name": None,
+        "client_phone": None,
+        "client_email": None,
+        "client_is_company": None,
+        "client_social_network": None,
+        "client_social_handle": None,
+        "quote_id": None,
+        "quote_number": None,
+        "quote_date": None,
+        "quote_total": None,
+        "quote_url": None,
+        "quote_salesperson": None,
+        "quote_status": None,
+        "quote_accepted_at": None,
+        "created_by": None,
+        "quote_sync_state": "idle",
+        "quote_invoiced": False,
+        "flag": None,
+        "quote_sync_error": None,
+        "quote_status_block": None,
+        "quote_status_remote": None,
+        "task_count": 0,
+        "tasks_total": 0.0,
+        "task_services": [],
+        "steps_total": 0,
+        "steps_done": 0,
+        "task_steps": [],
+        "task_pending": [],
+        "move_lock": None,
+        "shipping_island": None,
+        "shipping_service": None,
+        "shipping_first_name": None,
+        "shipping_last_name": None,
+        "shipping_phone": None,
+        "shipping_price": None,
+        "shipping_service_name": None,
+        "version": 1,
+        "created_at": now,
+        "updated_at": now,
+    }
+    fields.update(overrides)
+    return AitoProjectResponse(**fields)
+
+
+def test_project_response_still_reads_back_an_over_length_client_id():
+    """AitoProjectResponse.client_id is its own independent field — NOT
+    inherited from AitoProjectCreate/AitoProjectUpdate — precisely so a row
+    already carrying a value longer than the T-003 write-side cap (stored
+    before this task, or by any future path that bypasses it) keeps
+    serialising as-is instead of 500ing out of GET /aito/. This pins that
+    invariant so nobody later 'tidies' the bound onto a shared base, which is
+    exactly the failure this file's other max_length comments document."""
+    over_length = "x" * 60
+    response = _minimal_project_response(client_id=over_length)
+    assert response.client_id == over_length
+
+
+@pytest.mark.asyncio
+async def test_create_project_rejects_a_client_id_over_the_column_cap(async_client):
+    """End-to-end proof on the create route: the request never reaches a DB
+    write, so nothing is persisted."""
+    r = await _create(async_client, client_id="x" * 51)
+    assert r.status_code == 422
+    assert (await async_client.get("/api/v1/aito/")).json() == []
+
+
+@pytest.mark.asyncio
+async def test_create_project_accepts_a_client_id_at_the_column_cap(async_client):
+    r = await _create(async_client, client_id="x" * 50)
+    assert r.status_code == 201, r.text
+    assert r.json()["client_id"] == "x" * 50
+
+
+@pytest.mark.asyncio
+async def test_update_project_rejects_a_client_id_over_the_column_cap(async_client):
+    """End-to-end proof on the update route: the stored client_id is
+    untouched by the rejected request."""
+    a = (await _create(async_client)).json()
+    r = await async_client.patch(f"/api/v1/aito/{a['id']}", json={"client_id": "x" * 51})
+    assert r.status_code == 422
+    unchanged = (await async_client.get("/api/v1/aito/")).json()[0]
+    assert unchanged["client_id"] == "z1"
+
+
+@pytest.mark.asyncio
+async def test_update_project_accepts_a_client_id_at_the_column_cap(async_client):
+    a = (await _create(async_client)).json()
+    r = await async_client.patch(f"/api/v1/aito/{a['id']}", json={"client_id": "x" * 50})
+    assert r.status_code == 200
+    assert r.json()["client_id"] == "x" * 50
 
 
 @pytest.mark.asyncio
@@ -2515,6 +2644,77 @@ async def test_quote_pdf_maps_zoho_failure_to_502(async_client, db_session, monk
 
     response = await async_client.get(f"/api/v1/aito/{project.id}/quote.pdf")
     assert response.status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_quote_pdf_ordinary_filename_header_is_unchanged(async_client, db_session, monkeypatch):
+    """Pin the header byte-for-byte for a normal quote_number, so the control-
+    character guard cannot quietly reshape the common case."""
+    project = AitoProject(description="Trophy", board_column="devis", quote_id="EST-7", quote_number="DEV26-2462")
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+
+    async def fake_pdf(db, estimate_id):
+        return b"%PDF-1.4 body"
+
+    monkeypatch.setattr(zoho_service, "get_estimate_pdf", fake_pdf)
+
+    response = await async_client.get(f"/api/v1/aito/{project.id}/quote.pdf")
+    assert response.status_code == 200
+    assert response.headers["content-disposition"] == build_content_disposition("DEV26-2462.pdf", disposition="inline")
+
+
+@pytest.mark.asyncio
+async def test_quote_pdf_fallback_filename_header_is_unchanged(async_client, db_session, monkeypatch):
+    """When quote_number is absent, the filename falls back to quote_id — pin
+    that header too, since it takes the same code path as the fix."""
+    project = AitoProject(description="Trophy", board_column="devis", quote_id="EST-7")
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+
+    async def fake_pdf(db, estimate_id):
+        return b"%PDF-1.4 body"
+
+    monkeypatch.setattr(zoho_service, "get_estimate_pdf", fake_pdf)
+
+    response = await async_client.get(f"/api/v1/aito/{project.id}/quote.pdf")
+    assert response.status_code == 200
+    assert response.headers["content-disposition"] == build_content_disposition("EST-7.pdf", disposition="inline")
+
+
+@pytest.mark.asyncio
+async def test_quote_pdf_strips_control_characters_from_the_filename(async_client, db_session, monkeypatch):
+    """A quote_number containing CR/LF (or other C0 controls, or DEL) must not
+    reach Content-Disposition raw. Over the wire, h11 refuses to send a header
+    value containing a bare CR/LF and aborts the response outright; this
+    in-process ASGI test client skips that wire-level check, so what it can
+    pin directly is the header's own content — proving the controls never
+    reach it rather than reproducing the h11 abort itself."""
+    project = AitoProject(
+        description="Trophy",
+        board_column="devis",
+        quote_id="EST-7",
+        quote_number="A\r\nX-Injected: 1\x00\x07\x1b\x7f",
+    )
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+
+    async def fake_pdf(db, estimate_id):
+        return b"%PDF-1.4 body"
+
+    monkeypatch.setattr(zoho_service, "get_estimate_pdf", fake_pdf)
+
+    response = await async_client.get(f"/api/v1/aito/{project.id}/quote.pdf")
+    assert response.status_code == 200
+    header = response.headers["content-disposition"]
+    assert header == build_content_disposition("AX-Injected: 1.pdf", disposition="inline")
+    assert "\r" not in header
+    assert "\n" not in header
+    assert "\x00" not in header
+    assert "\x7f" not in header
 
 
 @pytest.mark.asyncio
