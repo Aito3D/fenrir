@@ -27,6 +27,7 @@ import {
 import { api } from '../../api/client';
 import type {
   CalculatorFilament,
+  CalculatorFilamentSyncResult,
   CalculatorPrinter,
   CalculatorDefaults,
   ZohoFilamentProduct,
@@ -133,11 +134,31 @@ function mockDefaultsHandler(defaults: CalculatorDefaults = baseDefaults) {
   server.use(http.get('/api/v1/calculator/defaults', () => HttpResponse.json(defaults)));
 }
 
-/** Render CalculatorFilamentsPanel with canUpdate, seeded with `filaments`. */
-async function renderFilamentsPanel(filaments: CalculatorFilament[] = [baseFilament, bambuAbsGf]): Promise<void> {
-  server.use(http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(filaments)));
+/** Render CalculatorFilamentsPanel with canUpdate, seeded with `filaments`.
+ *
+ *  Zoho reports itself configured by default. The panel's /zoho/status query
+ *  gates both the sync button and the form's product search, so the helper
+ *  waits for it to settle — otherwise every caller races a second render.
+ *  The seed array is read on each request, so a test can mutate it in place
+ *  and assert that a refetch picked the change up. */
+async function renderFilamentsPanel(
+  filaments: CalculatorFilament[] = [baseFilament, bambuAbsGf],
+  zohoConfigured = true,
+): Promise<void> {
+  server.use(
+    http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(filaments)),
+    http.get('/api/v1/zoho/status', () =>
+      HttpResponse.json({
+        configured: zohoConfigured,
+        reachable: null,
+        default_contact_id: '',
+        default_contact_name: '',
+      }),
+    ),
+  );
   render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
   await screen.findByRole('button', { name: 'Add filament' });
+  if (zohoConfigured) await screen.findByRole('button', { name: 'Sync prices' });
 }
 
 /** The form's Zoho search box. The add/edit form holds four comboboxes (Zoho
@@ -477,6 +498,137 @@ describe('CalculatorFilamentsPanel filament form (Zoho link)', () => {
     await userEvent.click(screen.getByRole('button', { name: /save/i }));
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ margin_pct: 25 }));
     expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('sale_price_per_kg');
+  });
+});
+
+describe('CalculatorFilamentsPanel Zoho price sync', () => {
+  beforeEach(() => {
+    mockDefaultsHandler();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** A sync chunk with the boring fields filled in. */
+  const chunk = (over: Partial<CalculatorFilamentSyncResult>): CalculatorFilamentSyncResult => ({
+    processed: 0,
+    total: 0,
+    updated: 0,
+    unchanged: 0,
+    skipped_no_price: 0,
+    missing: 0,
+    next_after_id: null,
+    ...over,
+  });
+
+  it('loops sync chunks until next_after_id is null and shows the summary', async () => {
+    const sync = vi
+      .spyOn(api, 'syncCalculatorFilamentsFromZoho')
+      .mockResolvedValueOnce(chunk({ processed: 25, total: 30, updated: 20, unchanged: 5, next_after_id: 187 }))
+      .mockResolvedValueOnce(chunk({ processed: 5, total: 30, updated: 3, unchanged: 1, skipped_no_price: 1 }));
+
+    await renderFilamentsPanel();
+    await userEvent.click(screen.getByRole('button', { name: 'Sync prices' }));
+
+    await waitFor(() => expect(sync).toHaveBeenCalledTimes(2));
+    // Chunk 2 resumes from the id chunk 1 reported, NOT from a running offset.
+    expect(sync).toHaveBeenNthCalledWith(1, 0, 25);
+    expect(sync).toHaveBeenNthCalledWith(2, 187, 25);
+    // Counts are accumulated across chunks, not taken from the last one.
+    expect(await screen.findByText(/23 updated/)).toBeInTheDocument();
+    expect(screen.getByText(/6 unchanged/)).toBeInTheDocument();
+    expect(screen.getByText(/1 without a dealer price/)).toBeInTheDocument();
+    // The button goes back to offering a sync once the walk is done.
+    expect(screen.getByRole('button', { name: 'Sync prices' })).toBeEnabled();
+  });
+
+  it('hides the sync button and the product search when Zoho is not configured', async () => {
+    // Spied as well as stubbed in MSW so the absence is asserted after the
+    // status query has actually answered, not merely before it started.
+    const status = vi.spyOn(api, 'getZohoStatus').mockResolvedValue({
+      configured: false,
+      reachable: null,
+      default_contact_id: '',
+      default_contact_name: '',
+    });
+    await renderFilamentsPanel([baseFilament], false);
+    await waitFor(() => expect(status).toHaveBeenCalled());
+
+    // Positive evidence the panel itself rendered before asserting absences.
+    expect(await screen.findByRole('cell', { name: 'PLA' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sync prices' })).toBeNull();
+    // The same gate hides the form's Zoho product search.
+    await userEvent.click(screen.getByRole('button', { name: 'Add filament' }));
+    expect(screen.queryByRole('combobox', { name: /zoho product/i })).toBeNull();
+  });
+
+  it('stops and reports when a chunk fails, keeping earlier chunks', async () => {
+    const rows = [{ ...baseFilament }];
+    const sync = vi
+      .spyOn(api, 'syncCalculatorFilamentsFromZoho')
+      .mockResolvedValueOnce(chunk({ processed: 25, total: 30, updated: 25, next_after_id: 187 }))
+      .mockRejectedValueOnce(new Error('502'));
+
+    await renderFilamentsPanel(rows);
+    // Chunk 1 committed server-side before chunk 2 blew up; the refetch after
+    // the failure must still show that work.
+    rows[0] = { ...baseFilament, material: 'PETG' };
+    await userEvent.click(screen.getByRole('button', { name: 'Sync prices' }));
+
+    expect(await screen.findByText(/sync stopped: 502/i)).toBeInTheDocument();
+    expect(sync).toHaveBeenCalledTimes(2);
+    expect(await screen.findByRole('cell', { name: 'PETG' })).toBeInTheDocument();
+    // No summary is claimed for a run that never finished.
+    expect(screen.queryByText(/updated ·/)).toBeNull();
+  });
+
+  it('keeps the progress readable when the row count drifts mid-walk', async () => {
+    // `total` is a fresh COUNT on every chunk, so deletions mid-walk can push
+    // it below what has already been processed. "50 / 12" would be nonsense.
+    let releaseLast: (result: CalculatorFilamentSyncResult) => void = () => {};
+    const lastChunk = new Promise<CalculatorFilamentSyncResult>((resolve) => {
+      releaseLast = resolve;
+    });
+    vi.spyOn(api, 'syncCalculatorFilamentsFromZoho')
+      .mockResolvedValueOnce(chunk({ processed: 25, total: 30, updated: 25, next_after_id: 187 }))
+      .mockResolvedValueOnce(chunk({ processed: 25, total: 12, updated: 25, next_after_id: 210 }))
+      .mockReturnValueOnce(lastChunk);
+
+    await renderFilamentsPanel();
+    await userEvent.click(screen.getByRole('button', { name: 'Sync prices' }));
+
+    expect(await screen.findByRole('button', { name: '50 / 50' })).toBeInTheDocument();
+    releaseLast(chunk({ processed: 3, total: 12, updated: 3 }));
+    expect(await screen.findByText(/53 updated/)).toBeInTheDocument();
+  });
+
+  it('accepts a final chunk that processed nothing', async () => {
+    // The lookahead sentinel row was deleted between chunks, so the last
+    // request finds nothing left to do. That is a clean finish, not an error.
+    const sync = vi
+      .spyOn(api, 'syncCalculatorFilamentsFromZoho')
+      .mockResolvedValueOnce(chunk({ processed: 25, total: 25, updated: 25, next_after_id: 187 }))
+      .mockResolvedValueOnce(chunk({ processed: 0, total: 25 }));
+
+    await renderFilamentsPanel();
+    await userEvent.click(screen.getByRole('button', { name: 'Sync prices' }));
+
+    expect(await screen.findByText(/25 updated/)).toBeInTheDocument();
+    expect(screen.queryByText(/sync stopped/i)).toBeNull();
+    expect(sync).toHaveBeenCalledTimes(2);
+  });
+
+  it('labels the price column as printing cost', async () => {
+    await renderFilamentsPanel();
+    expect(await screen.findByRole('button', { name: /printing cost per kg/i })).toBeInTheDocument();
+    expect(screen.queryByText('calculator.salePerKg')).toBeNull();
+  });
+
+  it('marks the rows that are linked to a Zoho product', async () => {
+    await renderFilamentsPanel([baseFilament, linkedFilament]);
+    const badges = await screen.findAllByTitle(linkedFilament.zoho_item_name!);
+    expect(badges).toHaveLength(1);
+    expect(badges[0]).toHaveTextContent('Zoho');
   });
 });
 

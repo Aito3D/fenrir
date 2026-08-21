@@ -6,12 +6,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronUp, Loader2, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Loader2, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import {
   api,
   type CalculatorDefaults,
   type CalculatorFilament,
   type CalculatorFilamentCreate,
+  type CalculatorFilamentSyncResult,
   type CalculatorPrinter,
   type CalculatorPrinterCreate,
   type ZohoFilamentProduct,
@@ -400,6 +401,10 @@ function FilamentForm({
 
 type FilamentSortKey = 'name' | 'brand' | 'material' | 'cost' | 'sale' | 'margin' | 'difficulty';
 
+/** Rows per sync request. Small enough that one chunk stays well inside the
+ *  request timeout even when every row needs a Zoho lookup. */
+const SYNC_CHUNK_SIZE = 25;
+
 export function CalculatorFilamentsPanel({
   selectedFilamentId,
   canUpdate,
@@ -434,6 +439,62 @@ export function CalculatorFilamentsPanel({
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
   const currency = settings?.currency || 'USD';
   const currencySymbol = getCurrencySymbol(currency);
+
+  // Gates both the sync button and the form's product search. Same key and
+  // shape as ZohoSettings/ImportQuoteDrawer so the three share one cache entry.
+  const { data: zohoStatus } = useQuery({
+    queryKey: ['zoho-status', { probe: false }],
+    queryFn: () => api.getZohoStatus(),
+    staleTime: 300_000,
+  });
+  const zohoConfigured = zohoStatus?.configured ?? false;
+
+  const [syncProgress, setSyncProgress] = useState<{ done: number; total: number } | null>(null);
+  const [syncSummary, setSyncSummary] = useState<CalculatorFilamentSyncResult | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  // Chunking is client-driven and pages by id (keyset), not by offset: each
+  // request commits its own work, so a failure partway through leaves the
+  // earlier chunks applied and `next_after_id` is where a retry resumes.
+  // Paging by id rather than offset means a filament deleted mid-run cannot
+  // shift the remaining rows and cause one to be silently skipped.
+  const runSync = async () => {
+    setSyncSummary(null);
+    setSyncError(null);
+    setSyncProgress({ done: 0, total: 0 });
+    const totals = { processed: 0, total: 0, updated: 0, unchanged: 0, skipped_no_price: 0, missing: 0 };
+    let afterId: number | null = 0;
+    try {
+      while (afterId !== null) {
+        const chunk: CalculatorFilamentSyncResult = await api.syncCalculatorFilamentsFromZoho(
+          afterId,
+          SYNC_CHUNK_SIZE,
+        );
+        totals.processed += chunk.processed;
+        totals.updated += chunk.updated;
+        totals.unchanged += chunk.unchanged;
+        totals.skipped_no_price += chunk.skipped_no_price;
+        totals.missing += chunk.missing;
+        totals.total = chunk.total;
+        // `total` is a fresh COUNT on every chunk, so rows added or deleted
+        // mid-walk make it drift. Never let the denominator fall behind what
+        // has already been processed — "50 / 12" would read as a bug.
+        setSyncProgress({ done: totals.processed, total: Math.max(chunk.total, totals.processed) });
+        // A last chunk can legitimately report processed: 0 — its lookahead
+        // sentinel row was deleted in between. Only next_after_id ends the walk.
+        afterId = chunk.next_after_id;
+      }
+      setSyncSummary({ ...totals, next_after_id: null });
+      queryClient.invalidateQueries({ queryKey: ['calculatorFilaments'] });
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : String(error));
+      // The chunks that did land are already committed server-side; refetch so
+      // the table shows the partial result instead of the pre-sync prices.
+      queryClient.invalidateQueries({ queryKey: ['calculatorFilaments'] });
+    } finally {
+      setSyncProgress(null);
+    }
+  };
 
   const saveMutation = useMutation({
     mutationFn: (data: CalculatorFilamentCreate) =>
@@ -513,13 +574,40 @@ export function CalculatorFilamentsPanel({
           </span>
         </h2>
         {!editing && canUpdate && (
-          <Button size="sm" onClick={() => setEditing('new')}>
-            <Plus className="w-4 h-4" />
-            {t('calculator.addFilament')}
-          </Button>
+          <div className="flex items-center gap-2">
+            {zohoConfigured && (
+              <Button size="sm" variant="secondary" onClick={runSync} disabled={syncProgress !== null}>
+                {syncProgress !== null ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                {syncProgress !== null
+                  ? t('calculator.syncProgress', { done: syncProgress.done, total: syncProgress.total })
+                  : t('calculator.syncZohoPrices')}
+              </Button>
+            )}
+            <Button size="sm" onClick={() => setEditing('new')}>
+              <Plus className="w-4 h-4" />
+              {t('calculator.addFilament')}
+            </Button>
+          </div>
         )}
       </CardHeader>
       <CardContent>
+        {syncSummary && (
+          <p className="mb-3 text-xs text-bambu-gray">
+            {t('calculator.syncSummary', {
+              updated: syncSummary.updated,
+              unchanged: syncSummary.unchanged,
+              skipped: syncSummary.skipped_no_price,
+              missing: syncSummary.missing,
+            })}
+          </p>
+        )}
+        {syncError && (
+          <p className="mb-3 text-xs text-status-error">{t('calculator.syncFailed', { error: syncError })}</p>
+        )}
         {editing && canUpdate ? (
           <FilamentForm
             initial={editing === 'new' ? undefined : editing}
@@ -527,9 +615,7 @@ export function CalculatorFilamentsPanel({
             defaultMargin={defaults?.default_margin_over_cost_pct ?? 50}
             currency={currency}
             currencySymbol={currencySymbol}
-            // Task 11 replaces this with the /zoho/status query that also
-            // gates the sync button; until then the search is always offered.
-            zohoConfigured
+            zohoConfigured={zohoConfigured}
             existingFilaments={filaments}
             isSaving={saveMutation.isPending}
             onSubmit={(data) => saveMutation.mutate(data)}
@@ -572,7 +658,7 @@ export function CalculatorFilamentsPanel({
                       <SortHeader label={t('calculator.brand')} active={sortKey === 'brand'} dir={sortDir} onClick={() => toggleSort('brand')} align="left" />
                       <SortHeader label={t('calculator.material')} active={sortKey === 'material'} dir={sortDir} onClick={() => toggleSort('material')} align="left" />
                       <SortHeader label={t('calculator.costPerKg', { currency: currencySymbol })} active={sortKey === 'cost'} dir={sortDir} onClick={() => toggleSort('cost')} />
-                      <SortHeader label={t('calculator.salePerKg', { currency: currencySymbol })} active={sortKey === 'sale'} dir={sortDir} onClick={() => toggleSort('sale')} />
+                      <SortHeader label={t('calculator.printingCostPerKg', { currency: currencySymbol })} active={sortKey === 'sale'} dir={sortDir} onClick={() => toggleSort('sale')} />
                       <SortHeader label={t('calculator.marginOverCost')} active={sortKey === 'margin'} dir={sortDir} onClick={() => toggleSort('margin')} />
                       <SortHeader label={t('calculator.difficulty')} active={sortKey === 'difficulty'} dir={sortDir} onClick={() => toggleSort('difficulty')} />
                       <th></th>
@@ -585,6 +671,14 @@ export function CalculatorFilamentsPanel({
                           {f.brand || '—'}
                           {f.id === selectedFilamentId && (
                             <span className="ml-2 text-xs text-bambu-green" title={t('calculator.inUse')}>●</span>
+                          )}
+                          {f.zoho_item_id && (
+                            <span
+                              className="ml-2 text-[10px] uppercase tracking-wide text-bambu-green"
+                              title={f.zoho_item_name ?? undefined}
+                            >
+                              Zoho
+                            </span>
                           )}
                         </td>
                         <td className={`${tdCls} text-white`}>{f.material}</td>
