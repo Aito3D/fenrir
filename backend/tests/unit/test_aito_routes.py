@@ -1,18 +1,30 @@
 """Aito board routes: required client, move reindexing, soft delete, one-shot import."""
 
 import json
+import math
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pydantic
 import pytest
 from sqlalchemy import event, select
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
-from backend.app.schemas.aito import AitoProjectImportItem
+from backend.app.schemas.aito import (
+    AitoProjectCreate,
+    AitoProjectImportItem,
+    AitoProjectResponse,
+    AitoProjectUpdate,
+    AitoShippingInput,
+    AitoTaskCreate,
+    AitoTaskResponse,
+    AitoTaskUpdate,
+)
 from backend.app.services.aito_board_rules import SERVICES, summarise
 from backend.app.services.zoho import ZohoUpstreamError, zoho_service
+from backend.app.utils.http import build_content_disposition
 
 
 async def _create(client, **overrides):
@@ -726,6 +738,315 @@ async def test_create_project_rejects_a_negative_cost(async_client):
     assert r.status_code == 422
 
 
+# --- money/quantity fields must reject the non-standard `Infinity`/`NaN` -----
+#
+# Starlette's request body is parsed with plain json.loads, which (unlike the
+# JSON spec) accepts the `Infinity`/`-Infinity`/`NaN` tokens, and Pydantic v2
+# admits them into a plain `ge=0` float constraint (inf >= 0 is True) — see
+# schemas/aito.py's `allow_inf_nan=False` on every money/quantity field this
+# task touched. The schema-level tests below construct the models directly:
+# that is exactly the surface this task changed, and it is deterministic
+# (no HTTP stack, no persistence, no cross-cutting middleware involved).
+#
+# httpx's `json=` kwarg cannot be used to reproduce the wire request: httpx
+# serialises with a strict json.dumps and raises ValueError for a bare
+# float('inf')/float('nan') client-side, before any request is even built. A
+# raw body string is the only way to reproduce what Starlette's own
+# permissive json.loads actually accepts on the wire, matching the auditor's
+# repro exactly — used below for the one end-to-end test.
+@pytest.mark.parametrize("value", [math.inf, math.nan])
+@pytest.mark.parametrize(
+    "field",
+    [
+        "scan_cost",
+        "modelisation_cost",
+        "usinage_cost",
+        "impression_cost",
+        "impression_weight_g",
+    ],
+)
+def test_task_create_rejects_non_finite_money_fields(field, value):
+    with pytest.raises(pydantic.ValidationError):
+        AitoTaskCreate(title="t", **{field: value})
+
+
+@pytest.mark.parametrize("value", [math.inf, math.nan])
+def test_task_create_rejects_non_finite_discount_pct(value):
+    with pytest.raises(pydantic.ValidationError):
+        AitoTaskCreate(title="t", impression_discount_pct=value)
+
+
+@pytest.mark.parametrize("value", [math.inf, math.nan])
+@pytest.mark.parametrize(
+    "field",
+    ["scan_cost", "modelisation_cost", "usinage_cost", "impression_cost", "impression_weight_g"],
+)
+def test_task_update_rejects_non_finite_money_fields(field, value):
+    """AitoTaskUpdate inherits its cost fields from AitoTaskBase without
+    redeclaring them, so the update path (PATCH /aito/tasks/{id}) is closed
+    by the very same constraint as create — a poisoned PATCH would otherwise
+    leave the hole open even after create was fixed."""
+    with pytest.raises(pydantic.ValidationError):
+        AitoTaskUpdate(**{field: value})
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["scan_cost", "modelisation_cost", "usinage_cost", "impression_cost", "impression_weight_g"],
+)
+def test_task_response_still_accepts_infinite_money_fields(field):
+    """Regression guard for the loop-1 defect: T-001's `allow_inf_nan=False`
+    was first added directly on `AitoTaskBase`, which `AitoTaskResponse` also
+    inherits — so a row that BASE already accepted and persisted with, say,
+    `impression_cost = inf` (see test_create_project_with_infinite_task_cost_
+    does_not_persist's own docstring: BASE returned 201 and stored it) would
+    raise ValidationError the moment `_task_to_response` (routes/aito.py)
+    tried to build a response model from that row, 500ing
+    `GET /aito/{id}/tasks` for existing data.
+
+    `math.inf` only, not `math.nan`: verified directly against the
+    `refactor-base` tag's schemas/aito.py before writing this test — on a
+    plain `ge=0` field (no `allow_inf_nan` at all, BASE never had it),
+    Pydantic's own `ge` comparison already rejects `nan` (nan >= 0 is
+    False), so `nan` was NEVER accepted here, at BASE or after either fix.
+    `inf` passes `ge=0` on its own merits and was the value BASE actually
+    accepted — that is the one this task's fix must keep accepting.
+
+    This must construct cleanly, exactly as it did at BASE, and round-trip
+    the value out as JSON `null` (Pydantic's standard non-finite-float
+    encoding) rather than raising."""
+    model = AitoTaskResponse(
+        id=1,
+        project_id=1,
+        position=0,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        title="t",
+        **{field: math.inf},
+    )
+    assert getattr(model, field) == math.inf
+    assert json.loads(model.model_dump_json())[field] is None
+
+
+@pytest.mark.parametrize("value", [math.inf, math.nan])
+def test_task_response_rejects_non_finite_discount_pct_same_as_base(value):
+    """`impression_discount_pct` carries `gt=0, le=100` alongside
+    `allow_inf_nan=False`. Verified directly against `refactor-base`: unlike
+    the plain `ge=0` fields above, BOTH `inf` (fails `le=100`) and `nan`
+    (also fails the bound comparison) were ALREADY rejected there, with no
+    `allow_inf_nan` in play at all — so moving `allow_inf_nan=False` off
+    `AitoTaskBase` for this field changes nothing observable for
+    `AitoTaskResponse`; the `le=100` bound alone was always the effective
+    guard. This pins that non-difference so a future change to the bound
+    does not silently reopen the base-class hole for this field without
+    anyone noticing, the way T-001 opened it for the plain `ge=0` fields."""
+    with pytest.raises(pydantic.ValidationError):
+        AitoTaskResponse(
+            id=1,
+            project_id=1,
+            position=0,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            title="t",
+            impression_discount_pct=value,
+        )
+
+
+@pytest.mark.parametrize("value", [math.inf, math.nan])
+def test_shipping_input_rejects_non_finite_price(value):
+    with pytest.raises(pydantic.ValidationError):
+        AitoShippingInput(shipping_price=value)
+
+
+@pytest.mark.parametrize("value", [math.inf, math.nan])
+def test_project_update_rejects_non_finite_shipping_price(value):
+    """AitoProjectUpdate inherits shipping_price from AitoShippingInput
+    without redeclaring it, so PATCH /aito/{id} is closed the same way."""
+    with pytest.raises(pydantic.ValidationError):
+        AitoProjectUpdate(shipping_price=value)
+
+
+@pytest.mark.parametrize("value", [math.inf, math.nan])
+def test_project_create_rejects_non_finite_quote_total(value):
+    with pytest.raises(pydantic.ValidationError):
+        AitoProjectCreate(
+            description="d",
+            client_id="c1",
+            client_name="ACME",
+            quote_total=value,
+        )
+
+
+def test_project_create_rejects_a_client_id_over_the_column_cap():
+    """AitoProject.client_id is a String(50) column; SQLite does not enforce
+    VARCHAR length, so an unbounded value would be stored (and echoed back on
+    every GET /aito/) rather than rejected. T-003."""
+    with pytest.raises(pydantic.ValidationError):
+        AitoProjectCreate(description="d", client_id="x" * 51, client_name="ACME")
+
+
+def test_project_create_accepts_a_client_id_at_the_column_cap():
+    payload = AitoProjectCreate(description="d", client_id="x" * 50, client_name="ACME")
+    assert payload.client_id == "x" * 50
+
+
+def test_project_update_rejects_a_client_id_over_the_column_cap():
+    """Same bound as AitoProjectCreate, on the other write path. No
+    character-class pattern (unlike quote_id) — see the field comment for why
+    an opaque Zoho contact id gets a length bound only."""
+    with pytest.raises(pydantic.ValidationError):
+        AitoProjectUpdate(client_id="x" * 51)
+
+
+def test_project_update_accepts_a_client_id_at_the_column_cap():
+    payload = AitoProjectUpdate(client_id="x" * 50)
+    assert payload.client_id == "x" * 50
+
+
+def _minimal_project_response(**overrides) -> AitoProjectResponse:
+    now = datetime.now(timezone.utc)
+    fields = {
+        "id": 1,
+        "description": "d",
+        "column": "devis",
+        "position": 0,
+        "status": "active",
+        "client_id": None,
+        "client_name": None,
+        "client_phone": None,
+        "client_email": None,
+        "client_is_company": None,
+        "client_social_network": None,
+        "client_social_handle": None,
+        "quote_id": None,
+        "quote_number": None,
+        "quote_date": None,
+        "quote_total": None,
+        "quote_url": None,
+        "quote_salesperson": None,
+        "quote_status": None,
+        "quote_accepted_at": None,
+        "created_by": None,
+        "quote_sync_state": "idle",
+        "quote_invoiced": False,
+        "flag": None,
+        "quote_sync_error": None,
+        "quote_status_block": None,
+        "quote_status_remote": None,
+        "task_count": 0,
+        "tasks_total": 0.0,
+        "task_services": [],
+        "steps_total": 0,
+        "steps_done": 0,
+        "task_steps": [],
+        "task_pending": [],
+        "move_lock": None,
+        "shipping_island": None,
+        "shipping_service": None,
+        "shipping_first_name": None,
+        "shipping_last_name": None,
+        "shipping_phone": None,
+        "shipping_price": None,
+        "shipping_service_name": None,
+        "version": 1,
+        "created_at": now,
+        "updated_at": now,
+    }
+    fields.update(overrides)
+    return AitoProjectResponse(**fields)
+
+
+def test_project_response_still_reads_back_an_over_length_client_id():
+    """AitoProjectResponse.client_id is its own independent field — NOT
+    inherited from AitoProjectCreate/AitoProjectUpdate — precisely so a row
+    already carrying a value longer than the T-003 write-side cap (stored
+    before this task, or by any future path that bypasses it) keeps
+    serialising as-is instead of 500ing out of GET /aito/. This pins that
+    invariant so nobody later 'tidies' the bound onto a shared base, which is
+    exactly the failure this file's other max_length comments document."""
+    over_length = "x" * 60
+    response = _minimal_project_response(client_id=over_length)
+    assert response.client_id == over_length
+
+
+@pytest.mark.asyncio
+async def test_create_project_rejects_a_client_id_over_the_column_cap(async_client):
+    """End-to-end proof on the create route: the request never reaches a DB
+    write, so nothing is persisted."""
+    r = await _create(async_client, client_id="x" * 51)
+    assert r.status_code == 422
+    assert (await async_client.get("/api/v1/aito/")).json() == []
+
+
+@pytest.mark.asyncio
+async def test_create_project_accepts_a_client_id_at_the_column_cap(async_client):
+    r = await _create(async_client, client_id="x" * 50)
+    assert r.status_code == 201, r.text
+    assert r.json()["client_id"] == "x" * 50
+
+
+@pytest.mark.asyncio
+async def test_update_project_rejects_a_client_id_over_the_column_cap(async_client):
+    """End-to-end proof on the update route: the stored client_id is
+    untouched by the rejected request."""
+    a = (await _create(async_client)).json()
+    r = await async_client.patch(f"/api/v1/aito/{a['id']}", json={"client_id": "x" * 51})
+    assert r.status_code == 422
+    unchanged = (await async_client.get("/api/v1/aito/")).json()[0]
+    assert unchanged["client_id"] == "z1"
+
+
+@pytest.mark.asyncio
+async def test_update_project_accepts_a_client_id_at_the_column_cap(async_client):
+    a = (await _create(async_client)).json()
+    r = await async_client.patch(f"/api/v1/aito/{a['id']}", json={"client_id": "x" * 50})
+    assert r.status_code == 200
+    assert r.json()["client_id"] == "x" * 50
+
+
+@pytest.mark.asyncio
+async def test_create_project_with_infinite_task_cost_does_not_persist(async_client):
+    """End-to-end proof that the schema fix closes the hole the audit found:
+    at BASE (before `allow_inf_nan=False`) this exact request returned 201
+    and the row persisted with `impression_cost` stored as `inf` — Pydantic
+    v2 then serialises a non-finite float to JSON `null` on the way back out,
+    which is how the corruption stayed invisible in the response.
+
+    Post-fix, Pydantic rejects the body before the route handler — and
+    therefore before any DB write — ever runs, so nothing is persisted
+    (asserted below by re-listing the board). That is the security property
+    this task owns.
+
+    What this test deliberately does NOT assert is a clean HTTP 422. FastAPI's
+    default `RequestValidationError` handler builds its response body with
+    `jsonable_encoder(exc.errors())`, which does not sanitise a non-finite
+    float carried in a validation error's own `input` field
+    (`jsonable_encoder(float("inf")) == float("inf")`), and Starlette's
+    `JSONResponse.render` then calls `json.dumps(..., allow_nan=False)`,
+    which RAISES on that float — the attempt to report "you sent an invalid
+    number" crashes trying to echo the number back. In this app that crash
+    propagates out of `call_next` inside `auth_middleware`'s (main.py)
+    auth-disabled fast path, whose broad `except Exception` fails closed and
+    reports a misleading 503 "Authentication service temporarily
+    unavailable" instead. This is a PRE-EXISTING, framework-level bug: the
+    identical crash reproduces on unmodified code by sending `Infinity` to
+    `impression_time_min` (a plain `int` field this task never touched), so
+    it predates this fix and is out of T-001's scope (schemas/aito.py cannot
+    fix error-response serialisation in FastAPI/Starlette or exception
+    handling in main.py's middleware) — reported separately rather than
+    fixed here.
+    """
+    raw = (
+        '{"description": "t001-infinity-should-not-persist", "client_id": "z1", "client_name": "ACME", '
+        '"client_phone": "+33 6 12 34 56 78", '
+        '"tasks": [{"title": "t", "impression_cost": Infinity}]}'
+    )
+    r = await async_client.post("/api/v1/aito/", content=raw, headers={"Content-Type": "application/json"})
+    assert r.status_code != 201
+    board = (await async_client.get("/api/v1/aito/")).json()
+    assert not any(p["description"] == "t001-infinity-should-not-persist" for p in board)
+
+
 @pytest.mark.asyncio
 async def test_create_project_accepts_client_fields_and_description_at_the_cap(async_client):
     """The caps mirror ZohoContactCreate's (name/email/phone) plus a generous
@@ -839,6 +1160,45 @@ async def test_delete_task_removes_only_that_task(async_client):
     assert (await async_client.delete(f"/api/v1/aito/tasks/{tasks[0]['id']}")).status_code == 204
     remaining = (await async_client.get(f"/api/v1/aito/{project_id}/tasks")).json()
     assert [t["title"] for t in remaining] == ["Deux"]
+
+
+@pytest.mark.asyncio
+async def test_task_writes_404_once_the_parent_project_is_trashed(async_client):
+    """T-002 (user-approved behavior change): a trashed project's tasks can
+    still be READ (list_tasks stays unfiltered — see
+    test_task_reads_still_work_on_a_trashed_project below) but can no longer
+    be WRITTEN. Before this fix add_task/update_task/delete_task all
+    succeeded (201/200/204) against a soft-deleted project, letting priced
+    work be added to a card nobody can see, which then rides onto the live
+    Zoho estimate when the project is restored."""
+    project_id = (await _create(async_client, tasks=[_task(title="Un")])).json()["id"]
+    task_id = (await async_client.get(f"/api/v1/aito/{project_id}/tasks")).json()[0]["id"]
+
+    assert (await async_client.delete(f"/api/v1/aito/{project_id}")).status_code == 204
+
+    add = await async_client.post(f"/api/v1/aito/{project_id}/tasks", json=_task(title="Deux"))
+    assert add.status_code == 404, add.text
+
+    update = await async_client.patch(f"/api/v1/aito/tasks/{task_id}", json={"scan_cost": 9000.0})
+    assert update.status_code == 404, update.text
+
+    delete = await async_client.delete(f"/api/v1/aito/tasks/{task_id}")
+    assert delete.status_code == 404, delete.text
+
+
+@pytest.mark.asyncio
+async def test_task_reads_still_work_on_a_trashed_project(async_client):
+    """Pinning the deliberate asymmetry: only the WRITE endpoints gate on the
+    parent's status. list_tasks does not call `_get_task_or_404` and must
+    keep serving a trashed project's tasks — a client reading a card between
+    a trash and a restore must not itself break."""
+    project_id = (await _create(async_client, tasks=[_task(title="Un")])).json()["id"]
+
+    assert (await async_client.delete(f"/api/v1/aito/{project_id}")).status_code == 204
+
+    listed = await async_client.get(f"/api/v1/aito/{project_id}/tasks")
+    assert listed.status_code == 200
+    assert [t["title"] for t in listed.json()] == ["Un"]
 
 
 _TASK_DESCRIPTION_FIELDS = [
@@ -2284,6 +2644,77 @@ async def test_quote_pdf_maps_zoho_failure_to_502(async_client, db_session, monk
 
     response = await async_client.get(f"/api/v1/aito/{project.id}/quote.pdf")
     assert response.status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_quote_pdf_ordinary_filename_header_is_unchanged(async_client, db_session, monkeypatch):
+    """Pin the header byte-for-byte for a normal quote_number, so the control-
+    character guard cannot quietly reshape the common case."""
+    project = AitoProject(description="Trophy", board_column="devis", quote_id="EST-7", quote_number="DEV26-2462")
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+
+    async def fake_pdf(db, estimate_id):
+        return b"%PDF-1.4 body"
+
+    monkeypatch.setattr(zoho_service, "get_estimate_pdf", fake_pdf)
+
+    response = await async_client.get(f"/api/v1/aito/{project.id}/quote.pdf")
+    assert response.status_code == 200
+    assert response.headers["content-disposition"] == build_content_disposition("DEV26-2462.pdf", disposition="inline")
+
+
+@pytest.mark.asyncio
+async def test_quote_pdf_fallback_filename_header_is_unchanged(async_client, db_session, monkeypatch):
+    """When quote_number is absent, the filename falls back to quote_id — pin
+    that header too, since it takes the same code path as the fix."""
+    project = AitoProject(description="Trophy", board_column="devis", quote_id="EST-7")
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+
+    async def fake_pdf(db, estimate_id):
+        return b"%PDF-1.4 body"
+
+    monkeypatch.setattr(zoho_service, "get_estimate_pdf", fake_pdf)
+
+    response = await async_client.get(f"/api/v1/aito/{project.id}/quote.pdf")
+    assert response.status_code == 200
+    assert response.headers["content-disposition"] == build_content_disposition("EST-7.pdf", disposition="inline")
+
+
+@pytest.mark.asyncio
+async def test_quote_pdf_strips_control_characters_from_the_filename(async_client, db_session, monkeypatch):
+    """A quote_number containing CR/LF (or other C0 controls, or DEL) must not
+    reach Content-Disposition raw. Over the wire, h11 refuses to send a header
+    value containing a bare CR/LF and aborts the response outright; this
+    in-process ASGI test client skips that wire-level check, so what it can
+    pin directly is the header's own content — proving the controls never
+    reach it rather than reproducing the h11 abort itself."""
+    project = AitoProject(
+        description="Trophy",
+        board_column="devis",
+        quote_id="EST-7",
+        quote_number="A\r\nX-Injected: 1\x00\x07\x1b\x7f",
+    )
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+
+    async def fake_pdf(db, estimate_id):
+        return b"%PDF-1.4 body"
+
+    monkeypatch.setattr(zoho_service, "get_estimate_pdf", fake_pdf)
+
+    response = await async_client.get(f"/api/v1/aito/{project.id}/quote.pdf")
+    assert response.status_code == 200
+    header = response.headers["content-disposition"]
+    assert header == build_content_disposition("AX-Injected: 1.pdf", disposition="inline")
+    assert "\r" not in header
+    assert "\n" not in header
+    assert "\x00" not in header
+    assert "\x7f" not in header
 
 
 @pytest.mark.asyncio

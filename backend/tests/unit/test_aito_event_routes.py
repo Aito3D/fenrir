@@ -101,6 +101,31 @@ async def test_events_404_for_an_unknown_project(async_client):
 
 
 @pytest.mark.asyncio
+async def test_add_note_404s_for_an_unknown_project(async_client):
+    response = await async_client.post("/api/v1/aito/99999/events", json={"note": "hi"})
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Project not found"
+
+
+@pytest.mark.asyncio
+async def test_add_note_still_works_on_a_trashed_project(async_client):
+    """Unlike the task-write endpoints (T-002's `_get_active_project_or_404`),
+    add_note fetches the project with a plain `db.get` and only checks for
+    existence, not `status == "active"`. So a note can still be appended
+    after a project is soft-deleted — the same deliberate asymmetry as
+    `list_tasks` (test_task_reads_still_work_on_a_trashed_project in
+    test_aito_routes.py). Pinning this so a future move onto the shared
+    helper doesn't silently start 404ing here too."""
+    project_id = (await _create(async_client)).json()["id"]
+
+    assert (await async_client.delete(f"/api/v1/aito/{project_id}")).status_code == 204
+
+    response = await async_client.post(f"/api/v1/aito/{project_id}/events", json={"note": "still here"})
+    assert response.status_code == 201
+    assert response.json()["note"] == "still here"
+
+
+@pytest.mark.asyncio
 async def test_a_backfilled_old_timestamp_high_id_event_is_still_reachable(async_client, db_session):
     """The backfill migration (_backfill_aito_events in core/database.py) gives
     a pre-existing project's synthesised 'project.created' row a freshly

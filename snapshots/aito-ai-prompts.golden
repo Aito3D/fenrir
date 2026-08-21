@@ -1,0 +1,99 @@
+### exit: 0
+### stdout:
+{
+ "constants": {
+  "DEFAULT_MODEL": "mistralai/mistral-small",
+  "OPENROUTER_URL": "https://openrouter.ai/api/v1/chat/completions",
+  "PROOFREAD_MAX_CHARS": 2000,
+  "PROOFREAD_MODEL": "mistralai/mistral-small-2603",
+  "TIMEOUT_S": 8.0
+ },
+ "errors": [
+  "OpenRouterNotConfiguredError",
+  "OpenRouterUpstreamError"
+ ],
+ "proofread_system_prompt": "Tu es correcteur orthographique pour un atelier de fabrication 3D. Corrige l'orthographe, les accents, la grammaire, la ponctuation et les majuscules du texte fourni, en français. Ne reformule pas, n'ajoute rien, ne supprime rien, ne traduis pas : garde les mêmes mots, le même ordre et le même sens. Laisse tels quels les nombres, les unités, les références, les noms propres et les termes techniques. Si le texte est déjà correct, renvoie-le à l'identique. Réponds uniquement par le texte corrigé, sans guillemets, sans commentaire, sans explication.",
+ "service_fields": [
+  [
+   "scan_cost",
+   "scan_description",
+   "scan 3D"
+  ],
+  [
+   "modelisation_cost",
+   "modelisation_description",
+   "modélisation 3D"
+  ],
+  [
+   "impression_cost",
+   "impression_description",
+   "impression 3D"
+  ],
+  [
+   "usinage_cost",
+   "usinage_description",
+   "usinage"
+  ]
+ ],
+ "system_prompt": "Tu rédiges des résumés de projets pour un atelier de fabrication 3D en français. À partir de la liste des tâches, écris 1 à 2 phrases courtes et factuelles décrivant le travail à réaliser. Écris tous les nombres en chiffres (« 3 pièces », « 2 supports »), jamais en toutes lettres. Pas de prix, pas de formule de politesse, pas de liste à puces : uniquement le résumé.",
+ "task_lines": [
+  "Tâche 1: aucun service",
+  "Tâche 2: aucun service",
+  "Capot: impression 3D (noir, 42 g, x3)",
+  "Capot: impression 3D",
+  "Capot: impression 3D (0 g)",
+  "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX: impression 3D",
+  "Multi: impression 3D — spaced"
+ ],
+ "task_lines_empty": [],
+ "unquote": [
+  [
+   "\"Capot\"",
+   "Capot",
+   "Capot"
+  ],
+  [
+   "\"Capot\"",
+   "\"Capot\"",
+   "\"Capot\""
+  ],
+  [
+   "«Capot»",
+   "Capot",
+   "Capot"
+  ],
+  [
+   "“Capot”",
+   "Capot",
+   "Capot"
+  ],
+  [
+   "'Capot'",
+   "Capot",
+   "Capot"
+  ],
+  [
+   "\"",
+   "\"",
+   "\""
+  ],
+  [
+   "Capot",
+   "Capot",
+   "Capot"
+  ],
+  [
+   "\" Capot \"",
+   "Capot",
+   "Capot"
+  ],
+  [
+   "\"Capot",
+   "Capot",
+   "\"Capot"
+  ]
+ ]
+}
+
+### stderr:
+

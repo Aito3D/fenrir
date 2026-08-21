@@ -88,6 +88,18 @@ router = APIRouter(prefix="/aito", tags=["aito"])
 # than merely matching the country-code-dash shape formatPhone produces.
 _SHIPPING_PHONE_RE = re.compile(r"^\+\d{1,4}-\d{4,14}$")
 
+# quote_number is client-supplied (schemas.aito, max_length=50, no pattern) and
+# flows straight into a Content-Disposition filename in get_quote_pdf. ASCII
+# control characters survive build_content_disposition's own stripping (it only
+# drops non-ASCII, quotes, and backslashes). A handful of them (CR, LF, and a
+# few other C0 controls) make h11 refuse to send the response at all, so for
+# those this guard turns an aborted response into a normal one. The rest
+# (TAB, ESC, DEL, and most of the remaining C0 range) are accepted by h11 as-is
+# today, so for those this guard changes a working response's filename instead
+# — see BASELINE-CHANGELOG.md for the full split and why stripping all of them
+# is still correct either way.
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
+
 
 _SHIPPING_COLUMNS = (
     "shipping_island",
@@ -1514,6 +1526,7 @@ async def get_quote_pdf(
         logger.warning("Aito quote PDF failed for project %s: %s", project_id, e)
         raise HTTPException(status_code=502, detail=str(e)) from e
     filename = f"{project.quote_number or project.quote_id}.pdf"
+    filename = _CONTROL_CHARS_RE.sub("", filename)
     return Response(
         content=pdf,
         media_type="application/pdf",
@@ -1523,7 +1536,9 @@ async def get_quote_pdf(
         # quote_number is client-supplied and unrestricted, and Starlette
         # encodes response headers as latin-1 — a curly quote, em dash, or any
         # other non-Latin-1 character in it would raise UnicodeEncodeError and
-        # turn this into an unhandled 500.
+        # turn this into an unhandled 500. Control characters are stripped
+        # above (_CONTROL_CHARS_RE) rather than here: they are ASCII, so the
+        # helper's own non-ASCII stripping never touches them.
         headers={"Content-Disposition": build_content_disposition(filename, disposition="inline")},
     )
 
@@ -1787,7 +1802,19 @@ def _reject_ticks_without_acceptance(quote_status: str | None, fields: dict) -> 
 
 
 async def _get_task_or_404(db: AsyncSession, task_id: int) -> AitoTask:
-    task = (await db.execute(select(AitoTask).where(AitoTask.id == task_id))).scalar_one_or_none()
+    """Only used by the task WRITE endpoints (update_task, delete_task) — the
+    join on AitoProject.status gates writes on a trashed project's tasks.
+    list_tasks (the read path) does not call this helper and stays
+    unfiltered on purpose: reading tasks on a trashed project must keep
+    working. See BASELINE-CHANGELOG.md T-002.
+    """
+    task = (
+        await db.execute(
+            select(AitoTask)
+            .join(AitoProject, AitoTask.project_id == AitoProject.id)
+            .where(AitoTask.id == task_id, AitoProject.status == "active")
+        )
+    ).scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
@@ -1809,9 +1836,7 @@ async def add_task(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
-    project = (await db.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await _get_active_project_or_404(db, project_id)
     task_fields = payload.model_dump()
     _reject_ticks_without_acceptance(project.quote_status, task_fields)
     if (

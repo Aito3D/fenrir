@@ -1,96 +1,87 @@
 [
- {
-  "id": "aito-openapi",
-  "cmd": "./venv/bin/python3 -c \"import json; from backend.app.main import app; spec = app.openapi(); paths = {k: v for k, v in spec['paths'].items() if '/aito' in k}; print(json.dumps(paths, sort_keys=True, indent=1))\" 2>/dev/null",
-  "timeout": 90,
-  "scrub": [
-   "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
-  ],
-  "files": []
- },
- {
-  "id": "aito-pydantic-schemas",
-  "cmd": "./venv/bin/python3 -c \"import json, inspect; import backend.app.schemas.aito as m; from pydantic import BaseModel; out = {n: c.model_json_schema() for n, c in sorted(vars(m).items()) if inspect.isclass(c) and issubclass(c, BaseModel) and c.__module__ == m.__name__}; print(json.dumps(out, sort_keys=True))\" 2>/dev/null",
-  "timeout": 90,
-  "scrub": [
-   "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
-  ],
-  "files": []
- },
- {
-  "id": "aito-ddl",
-  "cmd": "./venv/bin/python3 -c \"import backend.app.main; from sqlalchemy.schema import CreateTable; from sqlalchemy.dialects import sqlite; from backend.app.core.database import Base; [print(str(CreateTable(t).compile(dialect=sqlite.dialect())).strip() + ';') for n, t in sorted(Base.metadata.tables.items()) if n.startswith('aito')]\" 2>/dev/null",
-  "timeout": 90,
-  "scrub": [
-   "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
-  ],
-  "files": []
- },
- {
-  "id": "aito-board-rules-py",
-  "cmd": "./venv/bin/python3 -c \"import json; from backend.app.services.aito_board_rules import evaluate; cases = json.load(open('frontend/src/__tests__/fixtures/aitoBoardRules.cases.json'))['evaluate']; print(json.dumps([list(evaluate(c.get('quote_status'), c['stored_column'], c.get('pending', []))) for c in cases]))\" 2>/dev/null",
-  "timeout": 60,
-  "scrub": [],
-  "files": []
- },
- {
-  "id": "aito-board-rules-ts",
-  "cmd": "mkdir -p /tmp/bambuddy-refactor-probe && frontend/node_modules/.bin/rolldown frontend/src/utils/aitoBoardRules.ts --format cjs --file /tmp/bambuddy-refactor-probe/aitoBoardRules.cjs >/dev/null 2>&1 && node tools/probe_boardrules.cjs",
-  "timeout": 60,
-  "scrub": [],
-  "files": []
- },
- {
-  "id": "aito-route-perms",
-  "cmd": "grep -oE 'RequirePermissionIfAuthEnabled\\([^)]*\\)' backend/app/api/routes/aito.py | sort | uniq -c | sed 's/^ *//'",
-  "timeout": 30,
-  "scrub": [],
-  "files": []
- },
- {
-  "id": "aito-event-depths",
-  "cmd": "./venv/bin/python3 -c \"from backend.app.services.aito_events import kinds_for_depth, COALESCE_WINDOW; print({d: kinds_for_depth(d) for d in ['story', 'detail', 'everything']}); print(COALESCE_WINDOW)\" 2>/dev/null",
-  "timeout": 60,
-  "scrub": [],
-  "files": []
- },
- {
-  "id": "aito-quote-money",
-  "cmd": "./venv/bin/python3 tools/probe_quote_money.py",
-  "timeout": 120,
-  "scrub": [
-   "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
-  ],
-  "files": []
- },
- {
-  "id": "aito-frontend-pure",
-  "cmd": "mkdir -p /tmp/bambuddy-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_aito_frontend_entry.ts --format cjs --file /tmp/bambuddy-refactor-probe/aitoFrontend.cjs >/dev/null 2>&1 && node tools/probe_aito_frontend.cjs",
-  "timeout": 120,
-  "scrub": [],
-  "files": []
- },
- {
-  "id": "calc-pricing",
-  "cmd": "mkdir -p /tmp/bambuddy-refactor-probe && frontend/node_modules/.bin/rolldown frontend/src/utils/pricing.ts --format cjs --file /tmp/bambuddy-refactor-probe/pricing.cjs >/dev/null 2>&1 && node tools/probe_calc_pricing.cjs",
-  "timeout": 60,
-  "scrub": [],
-  "files": []
- },
- {
-  "id": "camera-grid-layout",
-  "cmd": "mkdir -p /tmp/bambuddy-refactor-probe && frontend/node_modules/.bin/rolldown frontend/src/components/cameraGridLayout.ts --format cjs --file /tmp/bambuddy-refactor-probe/cameraGridLayout.cjs >/dev/null 2>&1 && node tools/probe_camera_layout.cjs",
-  "timeout": 60,
-  "scrub": [],
-  "files": []
- },
- {
-  "id": "camera-openapi",
-  "cmd": "./venv/bin/python3 -c \"import json; from backend.app.main import app; spec = app.openapi(); paths = {k: v for k, v in spec['paths'].items() if 'camera' in k}; print(json.dumps(paths, sort_keys=True, indent=1))\" 2>/dev/null",
-  "timeout": 90,
-  "scrub": [
-   "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
-  ],
-  "files": []
- }
+  {
+    "id": "aito-openapi",
+    "cmd": "./venv/bin/python3 -c \"import json; from backend.app.main import app; spec = app.openapi(); paths = {k: v for k, v in spec['paths'].items() if '/aito' in k}; print(json.dumps(paths, sort_keys=True, indent=1))\" 2>/dev/null",
+    "timeout": 90,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
+    "files": []
+  },
+  {
+    "id": "aito-pydantic-schemas",
+    "cmd": "./venv/bin/python3 -c \"import json, inspect; import backend.app.schemas.aito as m; from pydantic import BaseModel; out = {n: c.model_json_schema() for n, c in sorted(vars(m).items()) if inspect.isclass(c) and issubclass(c, BaseModel) and c.__module__ == m.__name__}; print(json.dumps(out, sort_keys=True))\" 2>/dev/null",
+    "timeout": 90,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
+    "files": []
+  },
+  {
+    "id": "aito-ddl",
+    "cmd": "./venv/bin/python3 -c \"import backend.app.main; from sqlalchemy.schema import CreateTable; from sqlalchemy.dialects import sqlite; from backend.app.core.database import Base; [print(str(CreateTable(t).compile(dialect=sqlite.dialect())).strip() + ';') for n, t in sorted(Base.metadata.tables.items()) if n.startswith('aito')]\" 2>/dev/null",
+    "timeout": 90,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
+    "files": []
+  },
+  {
+    "id": "aito-board-rules-py",
+    "cmd": "./venv/bin/python3 -c \"import json; from backend.app.services.aito_board_rules import evaluate; cases = json.load(open('frontend/src/__tests__/fixtures/aitoBoardRules.cases.json'))['evaluate']; print(json.dumps([list(evaluate(c.get('quote_status'), c['stored_column'], c.get('pending', []))) for c in cases]))\" 2>/dev/null",
+    "timeout": 60,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "aito-board-rules-ts",
+    "cmd": "mkdir -p /tmp/bambuddy-refactor-probe && frontend/node_modules/.bin/rolldown frontend/src/utils/aitoBoardRules.ts --format cjs --file /tmp/bambuddy-refactor-probe/aitoBoardRules.cjs >/dev/null 2>&1 && node tools/probe_boardrules.cjs",
+    "timeout": 60,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "aito-route-perms",
+    "cmd": "grep -oE 'RequirePermissionIfAuthEnabled\\([^)]*\\)' backend/app/api/routes/aito.py | sort | uniq -c | sed 's/^ *//'",
+    "timeout": 30,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "aito-event-depths",
+    "cmd": "./venv/bin/python3 -c \"from backend.app.services.aito_events import kinds_for_depth, COALESCE_WINDOW; print({d: kinds_for_depth(d) for d in ['story', 'detail', 'everything']}); print(COALESCE_WINDOW)\" 2>/dev/null",
+    "timeout": 60,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "aito-quote-money",
+    "cmd": "./venv/bin/python3 tools/probe_quote_money.py",
+    "timeout": 120,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
+    "files": []
+  },
+  {
+    "id": "aito-frontend-pure",
+    "cmd": "mkdir -p /tmp/bambuddy-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_aito_frontend_entry.ts --format cjs --file /tmp/bambuddy-refactor-probe/aitoFrontend.cjs >/dev/null 2>&1 && node tools/probe_aito_frontend.cjs",
+    "timeout": 120,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "aito-ai-prompts",
+    "cmd": "./venv/bin/python3 tools/probe_aito_ai.py",
+    "timeout": 60,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "aito-status-comments",
+    "cmd": "./venv/bin/python3 tools/probe_aito_status.py",
+    "timeout": 60,
+    "scrub": [],
+    "files": []
+  }
 ]

@@ -99,17 +99,32 @@ export function AiTextField({
       setSettling(false);
     }, AITO_AI_SETTLE_MS);
   };
-  useEffect(
-    () => () => {
+  // `useMutation`'s callbacks are invoked by query-core's `Mutation.execute`
+  // whenever the answer lands, whether or not this component is still around
+  // to render the result — the options it runs are only refreshed by an
+  // effect, so once unmounted they are a stale closure over the last props
+  // this field ever had (see AiTextField's onSuccess below).
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    // Re-arms the flag on every effect setup, not just at the initial render:
+    // React 19 StrictMode (dev only) runs setup | cleanup | setup for every
+    // effect, so without this the flag is left `false` after the first
+    // discarded setup and every future `onSuccess` bails out for good.
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
       if (settleTimer.current) clearTimeout(settleTimer.current);
-    },
-    [],
-  );
+    };
+  }, []);
 
   const mutation = useMutation({
     mutationFn: (text: string) => api.proofreadAitoText(text),
     onSuccess: (data, sent) => {
       settledRef.current.add(data.text);
+      // The field is gone — applying the correction now would run it through
+      // whatever `onChange` last closed over, which is stale the moment this
+      // component stopped rendering.
+      if (!mountedRef.current) return;
       // Someone kept typing while this was in flight: their text wins.
       if (valueRef.current.trim() !== sent) return;
       if (data.text === sent) return;
