@@ -452,6 +452,40 @@ def test_round_trip_keeps_rising_rank_tasks_apart():
     assert [t["title"] for t in preview["tasks"]] == ["Une", "Deux"]
 
 
+def test_round_trip_preserves_quantity_and_discount_on_every_service():
+    """The governing rule: whatever aito_quote_export writes,
+    aito_quote_import must read back unchanged."""
+    original = [
+        task(
+            title="Support",
+            scan_cost=10000.0,
+            scan_quantity=2,
+            scan_discount_pct=5.0,
+            modelisation_cost=20000.0,
+            modelisation_quantity=4,
+            impression_cost=1500.0,
+            impression_quantity=3,
+            impression_discount_pct=10.0,
+            usinage_cost=36000.0,
+            usinage_quantity=3,
+            usinage_discount_pct=15.0,
+        )
+    ]
+    preview = build_preview(as_estimate(build_line_items(original, [], CATALOGUE)), None, "https://x")
+    rebuilt = preview["tasks"][0]
+
+    assert rebuilt["scan_cost"] == 10000
+    assert rebuilt["scan_quantity"] == 2
+    assert rebuilt["scan_discount_pct"] == 5.0
+    assert rebuilt["modelisation_quantity"] == 4
+    assert rebuilt["modelisation_discount_pct"] is None
+    assert rebuilt["impression_quantity"] == 3
+    assert rebuilt["impression_discount_pct"] == 10.0
+    assert rebuilt["usinage_cost"] == 36000
+    assert rebuilt["usinage_quantity"] == 3
+    assert rebuilt["usinage_discount_pct"] == 15.0
+
+
 from backend.app.services.aito_quote_export import (  # noqa: E402
     Catalogue,
     ExportShipping,

@@ -579,27 +579,30 @@ def _build_task(group: list[ParsedLine]) -> dict:
 
     task: dict = {
         "title": title,
-        "scan_cost": None,
-        "modelisation_cost": None,
-        "usinage_cost": None,
         "impression_printer_id": None,
         "impression_filament_id": None,
         "impression_weight_g": weight,
         "impression_time_min": minutes,
-        "impression_quantity": max(1, round(impression.quantity)) if impression else None,
         "impression_color": color[:_COLOR_MAX] if color else None,
-        "impression_cost": None,
-        # Adopted, not derived: the next push rebuilds the whole line_items
-        # array, so a discount left behind here would wipe the real quote's.
-        # `impression_cost` stays the PRE-discount rate x quantity
-        # (_line_amount's inclusive branch never subtracts the discount) —
-        # the two fields must not double-count.
-        "impression_discount_pct": impression.discount_pct if impression else None,
     }
+    # Every service starts absent. A quote line fills its three fields in
+    # below; a service the quote never mentioned keeps None for all of them,
+    # which is exactly "not part of this job".
+    for service in SERVICE_RANK:
+        task[f"{service}_cost"] = None
+        task[f"{service}_quantity"] = None
+        task[f"{service}_discount_pct"] = None
     for service in SERVICE_RANK:
         task[f"{service}_description"] = "\n".join(_dedupe(descriptions[service])) or None
     for line in ordered:
+        # Adopted, not derived: the next push rebuilds the whole line_items
+        # array, so a discount left behind here would wipe the real quote's.
+        # `<service>_cost` stays the PRE-discount rate x quantity
+        # (_line_amount's inclusive branch never subtracts the discount) —
+        # the two fields must not double-count.
         task[_COST_FIELD[line.service]] = line.amount
+        task[f"{line.service}_quantity"] = max(1, round(line.quantity))
+        task[f"{line.service}_discount_pct"] = line.discount_pct
     return task
 
 
