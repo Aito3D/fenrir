@@ -163,7 +163,7 @@ export default {
     serviceCost: 'コスト',
     serviceUnitCost: '単価',
     discount: '割引',
-    printingTotal: '印刷合計',
+    serviceTotal: '明細合計',
     done: '完了',
     stepPending: '未完了',
     markDone: '完了にする',

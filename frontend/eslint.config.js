@@ -54,7 +54,6 @@ export default defineConfig([
       '**/components/HMSErrorModal.tsx',
       '**/components/aito/SocialInput.tsx',
       '**/components/aito/TaskEditor.tsx',
-      '**/components/aito/servicePriceFields.tsx',
     ],
     rules: {
       'react-refresh/only-export-components': 'off',

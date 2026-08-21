@@ -164,7 +164,7 @@ export default {
     serviceCost: "Вартість",
     serviceUnitCost: "Вартість за одиницю",
     discount: "Знижка",
-    printingTotal: "Разом друк",
+    serviceTotal: "Разом за рядком",
     done: "Готово",
     stepPending: "Очікує",
     markDone: "Позначити виконаним",

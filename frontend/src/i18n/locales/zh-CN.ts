@@ -163,7 +163,7 @@ export default {
     serviceCost: '成本',
     serviceUnitCost: '单价',
     discount: '折扣',
-    printingTotal: '打印总计',
+    serviceTotal: '行合计',
     done: '已完成',
     stepPending: '未完成',
     markDone: '标记为已完成',

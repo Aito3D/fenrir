@@ -163,7 +163,7 @@ export default {
     serviceCost: '비용',
     serviceUnitCost: '단가',
     discount: '할인',
-    printingTotal: '인쇄 합계',
+    serviceTotal: '항목 합계',
     done: '완료',
     stepPending: '미완료',
     markDone: '완료로 표시',

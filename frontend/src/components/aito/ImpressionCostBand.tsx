@@ -140,7 +140,7 @@ export function ImpressionCostBand({
       {lineTotal !== null && (
         <div className="ml-auto text-right">
           <Money currency={currency} value={lineTotal} className="text-lg font-semibold text-bambu-green" />
-          <div className="text-[0.7rem] uppercase tracking-wide text-bambu-gray">{t('aito.printingTotal')}</div>
+          <div className="text-[0.7rem] uppercase tracking-wide text-bambu-gray">{t('aito.serviceTotal')}</div>
           {/* The per-piece rate the discount actually bought, spelled out so
               nobody divides the total by the quantity by hand. */}
           {discountedUnit !== null && (

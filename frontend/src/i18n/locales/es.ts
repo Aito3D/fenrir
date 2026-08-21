@@ -163,7 +163,7 @@ export default {
     serviceCost: 'Coste',
     serviceUnitCost: 'Coste unitario',
     discount: 'Descuento',
-    printingTotal: 'Total impresión',
+    serviceTotal: 'Total de línea',
     done: 'Hecho',
     stepPending: 'Pendiente',
     markDone: 'Marcar como hecho',

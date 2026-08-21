@@ -164,7 +164,7 @@ describe('TaskStepFields', () => {
         onChange={vi.fn()}
       />,
     );
-    const totalRow = screen.getByText('Printing total').parentElement!;
+    const totalRow = screen.getByText('Line total').parentElement!;
     expect(totalRow).toHaveTextContent(formatMoney(900, 'USD'));
   });
 
@@ -183,7 +183,7 @@ describe('TaskStepFields', () => {
         onChange={vi.fn()}
       />,
     );
-    const totalRow = screen.getByText('Printing total').parentElement!;
+    const totalRow = screen.getByText('Line total').parentElement!;
     expect(totalRow).toHaveTextContent(formatMoney(800, 'USD'));
     expect(totalRow).toHaveTextContent(`${formatMoney(200, 'USD')} per part`);
   });
@@ -199,7 +199,72 @@ describe('TaskStepFields', () => {
         onChange={vi.fn()}
       />,
     );
-    expect(screen.getByText('Printing total').parentElement!).not.toHaveTextContent('per part');
+    expect(screen.getByText('Line total').parentElement!).not.toHaveTextContent('per part');
+  });
+
+  it('machining: a unit price times the quantity is what gets stored', () => {
+    const onChange = vi.fn();
+    // usinageCost: 0 seeds the chip open (0 !== null) without implying a
+    // discount or a rescale — quantity defaults to 1, so unit === total.
+    render(<TaskStepFields task={{ ...emptyTaskDraft(), usinageCost: 0 }} onChange={onChange} />);
+
+    fireEvent.change(screen.getByLabelText(/machining cost/i), { target: { value: '12000' } });
+    expect(onChange.mock.calls.at(-1)?.[0].usinageCost).toBe(12000);
+  });
+
+  it('machining: editing the quantity rescales the stored cost so the unit price holds', () => {
+    const onChange = vi.fn();
+    const task = { ...emptyTaskDraft(), usinageCost: 12000, usinageQuantity: 1 };
+    render(<TaskStepFields task={task} onChange={onChange} />);
+
+    // Only the machining block is on screen (no other service is priced), so
+    // the generic "Quantity" label is unambiguous here — same convention the
+    // printing quantity test above relies on.
+    fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '3' } });
+    const next = onChange.mock.calls.at(-1)?.[0];
+    expect(next.usinageQuantity).toBe(3);
+    expect(next.usinageCost).toBe(36000);
+  });
+
+  it('machining: clearing the unit price disables the service rather than zeroing it', () => {
+    const onChange = vi.fn();
+    const task = { ...emptyTaskDraft(), usinageCost: 12000, usinageQuantity: 3 };
+    render(<TaskStepFields task={task} onChange={onChange} />);
+
+    fireEvent.change(screen.getByLabelText(/machining cost/i), { target: { value: '' } });
+    expect(onChange.mock.calls.at(-1)?.[0].usinageCost).toBeNull();
+  });
+
+  it('machining: the footer states the discounted line total and the per-part rate', () => {
+    // 12000/unit x 3 stored as 36000; less 10% the line is 32400, and spread
+    // back over 3 parts that is 10800 apiece.
+    const task = {
+      ...emptyTaskDraft(),
+      usinageCost: 36000,
+      usinageQuantity: 3,
+      usinageDiscountPct: 10,
+    };
+    render(<TaskStepFields task={task} onChange={vi.fn()} />);
+
+    // Not `toHaveTextContent`: jest-dom normalizes whitespace before
+    // comparing, which folds `formatMoney`'s thin-space (U+202F) thousands
+    // separator into a plain space and breaks a literal match against a
+    // four-digit figure. Reading `textContent` directly compares the same
+    // raw string the component actually renders.
+    const footer = screen.getByTestId('service-footer-usinage');
+    expect(footer.textContent).toContain(formatMoney(32400, 'USD'));
+    expect(footer.textContent).toContain(`${formatMoney(10800, 'USD')} per part`);
+  });
+
+  it('scan: the same ServicePriceFooter states the line total and per-part rate', () => {
+    // Undiscounted, so the line total and the unit rate coincide once
+    // divided back by quantity — 900 stored over 3 units is 300 apiece.
+    const task = { ...emptyTaskDraft(), scanCost: 900, scanQuantity: 3 };
+    render(<TaskStepFields task={task} onChange={vi.fn()} />);
+
+    const footer = screen.getByTestId('service-footer-scan');
+    expect(footer).toHaveTextContent(formatMoney(900, 'USD'));
+    expect(footer).toHaveTextContent(`${formatMoney(300, 'USD')} per part`);
   });
 
   it('typing 0 emits 0, which is a real free step', async () => {
