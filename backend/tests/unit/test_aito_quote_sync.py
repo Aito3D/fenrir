@@ -22,6 +22,7 @@ from backend.app.services.aito_quote_sync import (
     _deferred_reasons,
     _requeue_marker,
     _update_quote,
+    _write_back_rounded_costs,
     load_export_shipping,
     run_sync_once,
     sync_project,
@@ -1404,6 +1405,30 @@ async def test_impression_cost_is_written_back_to_what_the_quote_can_express(db_
     # 2401 over 2 units cannot be expressed at price_precision 0; the project
     # adopts the achievable figure so the two sides never disagree.
     assert task_row.impression_cost == 2400
+
+
+@pytest.mark.asyncio
+async def test_write_back_rounds_every_services_cost(db_session):
+    """A line is rate x quantity at price_precision 0, so 2401 over 2 units
+    is unrepresentable on ANY service, not just printing."""
+    project = await _project_with_quote(
+        db_session,
+        usinage_cost=2401.0,
+        usinage_quantity=2,
+        scan_cost=1000.0,
+        scan_quantity=4,
+        impression_cost=2401.0,
+        impression_quantity=2,
+    )
+
+    await _write_back_rounded_costs(db_session, project.id)
+    task_row = (await db_session.execute(select(AitoTask).where(AitoTask.project_id == project.id))).scalar_one()
+
+    # 2401 / 2 = 1200.5 -> rate 1200 (banker's rounding on .5) x 2 = 2400
+    assert task_row.usinage_cost == round(2401.0 / 2) * 2
+    assert task_row.impression_cost == round(2401.0 / 2) * 2
+    # An exactly-divisible cost is left alone.
+    assert task_row.scan_cost == 1000.0
 
 
 @pytest.mark.asyncio
