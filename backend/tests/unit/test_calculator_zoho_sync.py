@@ -41,7 +41,7 @@ def zoho_catalogue(monkeypatch):
         # some price un-updated or double-applied). Offset from 1000 so none
         # collides with ``_create``'s default cost_per_kg (which would land
         # on "unchanged" instead of "updated").
-        *[_product(f"D{index}", 1100.0 + index * 100) for index in range(5)],
+        *[_product(f"D{index}", 1100.0 + index * 100) for index in range(6)],
     ]
 
     async def configured(db):
@@ -72,10 +72,10 @@ async def _create(async_client, **overrides):
 @pytest.mark.asyncio
 async def test_sync_updates_cost_and_recomputes_printing_cost(async_client, zoho_catalogue):
     created = await _create(async_client, zoho_item_id="A", material="ABS-GF")
-    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"offset": 0, "limit": 25})
+    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
     assert resp.status_code == 200
     assert resp.json()["updated"] == 1
-    assert resp.json()["next_offset"] is None
+    assert resp.json()["next_after_id"] is None
 
     row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
     assert row["id"] == created["id"]
@@ -92,7 +92,7 @@ async def test_sync_uses_the_stored_spool_weight(async_client, zoho_catalogue):
     3000 / 1.0 = 3000 (the catalogue's weight, which must lose).
     """
     await _create(async_client, zoho_item_id="C", material="PA6-CF", spool_weight_kg=0.5)
-    await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"offset": 0, "limit": 25})
+    await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
     row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
     assert row["cost_per_kg"] == 6000.0
 
@@ -100,7 +100,7 @@ async def test_sync_uses_the_stored_spool_weight(async_client, zoho_catalogue):
 @pytest.mark.asyncio
 async def test_zero_dealer_price_is_skipped_not_written(async_client, zoho_catalogue):
     await _create(async_client, zoho_item_id="B", material="PETG")
-    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"offset": 0, "limit": 25})
+    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
     assert resp.json()["skipped_no_price"] == 1
     assert resp.json()["updated"] == 0
     row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
@@ -118,7 +118,7 @@ async def test_subcent_result_is_skipped_not_written_as_zero(async_client, zoho_
     (``cost_per_kg`` is ``gt=0``).
     """
     await _create(async_client, zoho_item_id="TINY", material="PETG")
-    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"offset": 0, "limit": 25})
+    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
     assert resp.json()["skipped_no_price"] == 1
     assert resp.json()["updated"] == 0
     row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
@@ -129,7 +129,7 @@ async def test_subcent_result_is_skipped_not_written_as_zero(async_client, zoho_
 async def test_filament_list_still_responds_after_a_subcent_sync(async_client, zoho_catalogue):
     """Regression guard: the list endpoint must stay readable after a sync."""
     await _create(async_client, zoho_item_id="TINY", material="PETG")
-    await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"offset": 0, "limit": 25})
+    await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
     resp = await async_client.get("/api/v1/calculator/filaments/")
     assert resp.status_code == 200
 
@@ -137,7 +137,7 @@ async def test_filament_list_still_responds_after_a_subcent_sync(async_client, z
 @pytest.mark.asyncio
 async def test_item_missing_from_zoho_is_counted_and_left_alone(async_client, zoho_catalogue):
     await _create(async_client, zoho_item_id="GONE", material="PETG")
-    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"offset": 0, "limit": 25})
+    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
     assert resp.json()["missing"] == 1
     row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
     assert row["cost_per_kg"] == 1000.0
@@ -147,7 +147,7 @@ async def test_item_missing_from_zoho_is_counted_and_left_alone(async_client, zo
 @pytest.mark.asyncio
 async def test_unchanged_price_is_counted_separately(async_client, zoho_catalogue):
     await _create(async_client, zoho_item_id="A", cost_per_kg=2000.0, material="ABS-GF")
-    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"offset": 0, "limit": 25})
+    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
     assert resp.json()["unchanged"] == 1
     assert resp.json()["updated"] == 0
 
@@ -155,10 +155,10 @@ async def test_unchanged_price_is_counted_separately(async_client, zoho_catalogu
 @pytest.mark.asyncio
 async def test_unlinked_filaments_are_never_touched(async_client, zoho_catalogue):
     await _create(async_client, material="PLA")  # no zoho_item_id
-    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"offset": 0, "limit": 25})
+    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
     assert resp.json()["total"] == 0
     assert resp.json()["processed"] == 0
-    assert resp.json()["next_offset"] is None
+    assert resp.json()["next_after_id"] is None
 
 
 @pytest.mark.asyncio
@@ -173,14 +173,14 @@ async def test_chunking_walks_every_row_exactly_once(async_client, zoho_catalogu
     """
     created = [await _create(async_client, zoho_item_id=f"D{index}", material=f"MAT{index}") for index in range(5)]
 
-    seen, offset, guard = 0, 0, 0
-    while offset is not None and guard < 10:
+    seen, after_id, guard = 0, 0, 0
+    while after_id is not None and guard < 10:
         body = (
-            await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"offset": offset, "limit": 2})
+            await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": after_id, "limit": 2})
         ).json()
         assert body["total"] == 5
         seen += body["updated"]
-        offset = body["next_offset"]
+        after_id = body["next_after_id"]
         guard += 1
 
     assert seen == 5
@@ -193,11 +193,119 @@ async def test_chunking_walks_every_row_exactly_once(async_client, zoho_catalogu
 
 
 @pytest.mark.asyncio
+async def test_deleting_an_already_synced_row_mid_run_does_not_skip_a_later_row(async_client, zoho_catalogue):
+    """The bug that motivated keyset paging.
+
+    Offset paging re-queries "all linked rows, ordered by id" fresh on every
+    chunk and slices it in Python by position. Deleting an already-processed
+    row shifts every later row's *position* left by one, so the next chunk's
+    offset window silently lands one row short of where it should — skipping
+    a row while still reporting "sync complete". Keyset paging asks for
+    "id > the last id I actually processed", which a deletion of an earlier
+    row cannot shift.
+    """
+    created = [await _create(async_client, zoho_item_id=f"D{index}", material=f"MAT{index}") for index in range(6)]
+
+    after_id, guard = 0, 0
+    first_chunk = True
+    while guard < 10:
+        body = (
+            await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": after_id, "limit": 2})
+        ).json()
+        guard += 1
+        if first_chunk:
+            # Delete the first row this chunk already synced — a row that is
+            # done, not one still waiting to be processed.
+            first_synced_id = created[0]["id"]
+            resp = await async_client.delete(f"/api/v1/calculator/filaments/{first_synced_id}")
+            assert resp.status_code == 200
+            first_chunk = False
+        after_id = body["next_after_id"]
+        if after_id is None:
+            break
+
+    rows = {row["id"]: row for row in (await async_client.get("/api/v1/calculator/filaments/")).json()}
+    assert len(rows) == 5  # the deleted row is gone, the other 5 remain
+    for index, filament in enumerate(created):
+        if filament["id"] == created[0]["id"]:
+            continue  # deleted; nothing left to assert
+        expected_price = 1100.0 + index * 100
+        assert filament["id"] in rows, f"row {filament['id']} (D{index}) was skipped by the chunked walk"
+        assert rows[filament["id"]]["cost_per_kg"] == expected_price
+
+
+@pytest.mark.asyncio
+async def test_row_added_mid_run_with_higher_id_is_picked_up_by_a_later_chunk(async_client, zoho_catalogue):
+    """A row added between chunks of the SAME walk, with a higher id than
+    anything queued so far, must still be reached once the walk continues.
+    """
+    first = await _create(async_client, zoho_item_id="D0", material="MAT0")
+    second = await _create(async_client, zoho_item_id="D1", material="MAT1")
+
+    # limit=1 with 2 rows already present guarantees the walk isn't done yet:
+    # next_after_id comes back non-null.
+    body = (await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 1})).json()
+    assert body["updated"] == 1
+    assert body["next_after_id"] is not None
+
+    # Added after chunk 1 committed, with an id higher than "second" (still
+    # unprocessed) and "first" (already processed).
+    added = await _create(async_client, zoho_item_id="D2", material="MAT2")
+
+    after_id, guard = body["next_after_id"], 0
+    while after_id is not None and guard < 10:
+        body = (
+            await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": after_id, "limit": 25})
+        ).json()
+        after_id = body["next_after_id"]
+        guard += 1
+
+    rows = {row["id"]: row for row in (await async_client.get("/api/v1/calculator/filaments/")).json()}
+    assert rows[first["id"]]["cost_per_kg"] == 1100.0
+    assert rows[second["id"]]["cost_per_kg"] == 1200.0
+    assert rows[added["id"]]["cost_per_kg"] == 1300.0  # picked up despite being added mid-walk
+
+
+@pytest.mark.asyncio
+async def test_after_id_beyond_the_highest_id_returns_nothing_to_process(async_client, zoho_catalogue):
+    await _create(async_client, zoho_item_id="A", material="ABS-GF")
+    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 999_999, "limit": 25})
+    body = resp.json()
+    assert body["processed"] == 0
+    assert body["next_after_id"] is None
+    assert body["total"] == 1  # progress bar still sees the linked filament
+
+
+@pytest.mark.asyncio
+async def test_exact_multiple_of_limit_terminates_without_an_extra_empty_request(async_client, zoho_catalogue):
+    """4 linked filaments at limit=2 must finish in exactly 2 requests, not 3.
+
+    Fetching ``limit + 1`` rows per chunk is what lets the route know a chunk
+    is the last one without a trailing request that processes nothing.
+    """
+    for index in range(4):
+        await _create(async_client, zoho_item_id=f"D{index}", material=f"MAT{index}")
+
+    after_id, requests = 0, 0
+    while True:
+        body = (
+            await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": after_id, "limit": 2})
+        ).json()
+        requests += 1
+        assert body["processed"] > 0  # never an empty trailing chunk
+        after_id = body["next_after_id"]
+        if after_id is None:
+            break
+
+    assert requests == 2
+
+
+@pytest.mark.asyncio
 async def test_counts_sum_to_processed(async_client, zoho_catalogue):
     await _create(async_client, zoho_item_id="A", material="ABS-GF")
     await _create(async_client, zoho_item_id="B", material="PETG")
     await _create(async_client, zoho_item_id="GONE", material="PLA")
-    body = (await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"offset": 0, "limit": 25})).json()
+    body = (await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})).json()
     assert body["updated"] + body["unchanged"] + body["skipped_no_price"] + body["missing"] == body["processed"]
 
 
@@ -207,5 +315,5 @@ async def test_sync_is_unavailable_when_zoho_is_not_configured(async_client, mon
         return False
 
     monkeypatch.setattr(zoho_service, "is_configured", unconfigured)
-    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"offset": 0, "limit": 25})
+    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
     assert resp.status_code == 503

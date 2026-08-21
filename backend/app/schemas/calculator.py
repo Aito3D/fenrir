@@ -244,9 +244,16 @@ class ZohoFilamentProduct(BaseModel):
 
 
 class CalculatorFilamentSyncRequest(BaseModel):
-    """One chunk of the Zoho price sync."""
+    """One chunk of the Zoho price sync.
 
-    offset: int = Field(default=0, ge=0, description="Index into the id-ordered list of linked filaments")
+    Keyset paging by id, not offset: an offset would silently skip a row
+    when a linked filament is deleted mid-run (the chunk boundary shifts
+    under the caller), and would still report success.
+    """
+
+    after_id: int = Field(
+        default=0, ge=0, description="Sync filaments with id greater than this; 0 starts from the beginning"
+    )
     limit: int = Field(default=25, ge=1, le=200, description="Chunk size")
 
 
@@ -259,4 +266,6 @@ class CalculatorFilamentSyncResponse(BaseModel):
     unchanged: int = Field(description="Zoho price matched the stored cost")
     skipped_no_price: int = Field(description="Zoho dealer price was 0; nothing written")
     missing: int = Field(description="Linked item no longer in the Zoho catalogue; link and price kept")
-    next_offset: int | None = Field(default=None, description="Offset for the next chunk; null when finished")
+    next_after_id: int | None = Field(
+        default=None, description="Pass as after_id for the next chunk; null when finished"
+    )

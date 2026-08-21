@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -166,9 +166,13 @@ async def sync_calculator_filaments_from_zoho(
 ):
     """Refresh one chunk of linked filaments from their Zoho dealer prices.
 
-    Chunking is client-driven: the caller loops until ``next_offset`` is null.
-    Each chunk commits its own work, so a mid-run Zoho failure leaves earlier
-    chunks applied and a retry resumes from the offset it reports.
+    Chunking is keyset paging by id, client-driven: the caller loops, passing
+    each response's ``next_after_id`` back as the next request's ``after_id``,
+    until it comes back null. Unlike offset paging, a filament deleted (or
+    added) between chunks cannot shift the window and skip a row — the next
+    chunk is always "ids greater than the last one processed". Each chunk
+    commits its own work, so a mid-run Zoho failure leaves earlier chunks
+    applied and a retry resumes from the id it reports.
 
     Prices only. Brand, material, margin and difficulty are never rewritten from
     Zoho, so a rename upstream cannot clobber a hand-corrected filament.
@@ -181,15 +185,26 @@ async def sync_calculator_filaments_from_zoho(
         logger.warning("Zoho filament catalogue unavailable during sync: %s", exc)
         raise HTTPException(status_code=502, detail="Could not reach Zoho") from exc
 
-    # Ordering by id is load-bearing: offset paging over an unordered query
-    # would skip or repeat rows between chunks.
-    result = await db.execute(
-        select(CalculatorFilament).where(CalculatorFilament.zoho_item_id.is_not(None)).order_by(CalculatorFilament.id)
+    total_result = await db.execute(
+        select(func.count()).select_from(CalculatorFilament).where(CalculatorFilament.zoho_item_id.is_not(None))
     )
-    linked = result.scalars().all()
+    total = total_result.scalar_one()
 
-    total = len(linked)
-    chunk = linked[payload.offset : payload.offset + payload.limit]
+    # order_by(id) is load-bearing for correctness here, not just presentation:
+    # the WHERE clause below ("id > after_id") depends on a stable id ordering
+    # to define "the next page" at all. Fetching limit + 1 rows tells us
+    # whether another chunk exists without a wasted, empty final request when
+    # total is an exact multiple of limit.
+    result = await db.execute(
+        select(CalculatorFilament)
+        .where(CalculatorFilament.zoho_item_id.is_not(None), CalculatorFilament.id > payload.after_id)
+        .order_by(CalculatorFilament.id)
+        .limit(payload.limit + 1)
+    )
+    fetched = result.scalars().all()
+    has_more = len(fetched) > payload.limit
+    chunk = fetched[: payload.limit]
+
     by_item_id = {product.item_id: product for product in catalogue}
     now = datetime.now(timezone.utc)
 
@@ -222,11 +237,11 @@ async def sync_calculator_filaments_from_zoho(
 
     await db.commit()
 
-    next_offset = payload.offset + payload.limit
+    next_after_id = chunk[-1].id if has_more and chunk else None
     logger.info(
-        "Zoho filament sync chunk %s-%s: %s updated, %s unchanged, %s without a dealer price, %s missing",
-        payload.offset,
-        payload.offset + len(chunk),
+        "Zoho filament sync chunk after=%s limit=%s: %s updated, %s unchanged, %s without a dealer price, %s missing",
+        payload.after_id,
+        payload.limit,
         updated,
         unchanged,
         skipped_no_price,
@@ -239,7 +254,7 @@ async def sync_calculator_filaments_from_zoho(
         unchanged=unchanged,
         skipped_no_price=skipped_no_price,
         missing=missing,
-        next_offset=next_offset if next_offset < total else None,
+        next_after_id=next_after_id,
     )
 
 
