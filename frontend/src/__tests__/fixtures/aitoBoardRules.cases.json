@@ -9240,6 +9240,90 @@
       "total": 1400.0
     },
     {
+      "count": 1,
+      "name": "a discounted usinage reduces the total, not the steps",
+      "pending": [
+        "scan",
+        "usinage"
+      ],
+      "services": [
+        "scan",
+        "usinage"
+      ],
+      "steps_by_task": [
+        {
+          "done": [],
+          "services": [
+            "scan",
+            "usinage"
+          ],
+          "title": ""
+        }
+      ],
+      "steps_done": 0,
+      "steps_total": 2,
+      "tasks": [
+        {
+          "impression_cost": null,
+          "impression_discount_pct": null,
+          "impression_done": false,
+          "modelisation_cost": null,
+          "modelisation_done": false,
+          "scan_cost": 500.0,
+          "scan_done": false,
+          "title": "",
+          "usinage_cost": 1000.0,
+          "usinage_done": false
+        }
+      ],
+      "total": 1400.0
+    },
+    {
+      "count": 1,
+      "name": "each service applies its own discount",
+      "pending": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "services": [
+        "scan",
+        "modelisation",
+        "impression",
+        "usinage"
+      ],
+      "steps_by_task": [
+        {
+          "done": [],
+          "services": [
+            "scan",
+            "modelisation",
+            "impression",
+            "usinage"
+          ],
+          "title": ""
+        }
+      ],
+      "steps_done": 0,
+      "steps_total": 4,
+      "tasks": [
+        {
+          "impression_cost": 100.0,
+          "impression_discount_pct": 10.0,
+          "impression_done": false,
+          "modelisation_cost": 100.0,
+          "modelisation_done": false,
+          "scan_cost": 100.0,
+          "scan_done": false,
+          "title": "",
+          "usinage_cost": 100.0,
+          "usinage_done": false
+        }
+      ],
+      "total": 310.0
+    },
+    {
       "count": 3,
       "name": "three tasks, ten steps, three done",
       "pending": [

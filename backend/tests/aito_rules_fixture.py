@@ -41,8 +41,9 @@ class _Task:
         for service in SERVICES:
             setattr(self, f"{service}_cost", kwargs.get(f"{service}_cost"))
             setattr(self, f"{service}_done", kwargs.get(f"{service}_done", False))
+            setattr(self, f"{service}_quantity", kwargs.get(f"{service}_quantity"))
+            setattr(self, f"{service}_discount_pct", kwargs.get(f"{service}_discount_pct"))
         self.title = kwargs.get("title", "")
-        self.impression_discount_pct = kwargs.get("impression_discount_pct")
 
 
 def _powerset(items: tuple[str, ...]) -> list[list[str]]:
@@ -116,6 +117,31 @@ _SUMMARISE_SHAPES: tuple[tuple[str, list[dict[str, Any]]], ...] = (
         # is 1400 — and the discount must not touch the step count.
         "a discounted impression reduces the total, not the steps",
         [{"scan_cost": 500.0, "impression_cost": 1000.0, "impression_discount_pct": 10.0}],
+    ),
+    (
+        # Machining is quoted per unit now, and its cost is stored
+        # pre-discount exactly as printing's is. 1000 at 10% plus an
+        # undiscounted 500 scan is 1400, and the discount must not touch the
+        # step count.
+        "a discounted usinage reduces the total, not the steps",
+        [{"scan_cost": 500.0, "usinage_cost": 1000.0, "usinage_discount_pct": 10.0}],
+    ),
+    (
+        # Every service discounted at a different rate, to pin that each one
+        # reads its OWN percent rather than sharing impression's.
+        "each service applies its own discount",
+        [
+            {
+                "scan_cost": 100.0,
+                "scan_discount_pct": 50.0,
+                "modelisation_cost": 100.0,
+                "modelisation_discount_pct": 25.0,
+                "impression_cost": 100.0,
+                "impression_discount_pct": 10.0,
+                "usinage_cost": 100.0,
+                "usinage_discount_pct": 5.0,
+            }
+        ],
     ),
     (
         # The design doc's headline example, pinned exactly: three tasks
