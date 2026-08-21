@@ -163,7 +163,7 @@ export default {
     serviceCost: 'Maliyet',
     serviceUnitCost: 'Birim maliyet',
     discount: 'İndirim',
-    printingTotal: 'Baskı toplamı',
+    serviceTotal: 'Satır toplamı',
     done: 'Tamamlandı',
     stepPending: 'Bekliyor',
     markDone: 'Tamamlandı olarak işaretle',

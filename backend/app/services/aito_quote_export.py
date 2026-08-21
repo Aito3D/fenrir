@@ -51,8 +51,15 @@ class ExportTask:
     # Percent, not amount — the shop's Books org discounts at item level and
     # stores "10.00%" on the line. None means no discount, and 0 is treated
     # the same: a literal "0%" would put a pointless discount column on the
-    # PDF. Impression only; the other services have no discount concept.
+    # PDF. Every service carries its own now; `<service>_cost` stays the
+    # PRE-discount total, so the two never double-count.
+    scan_quantity: int | None = None
+    modelisation_quantity: int | None = None
+    usinage_quantity: int | None = None
+    scan_discount_pct: float | None = None
+    modelisation_discount_pct: float | None = None
     impression_discount_pct: float | None = None
+    usinage_discount_pct: float | None = None
     # Optional per-service free text, emitted as that line's leading `Info:`
     # row. None = no Info row at all. Defaults keep older call sites and test
     # helpers valid while the fields roll out.
@@ -86,6 +93,28 @@ def cost_of(task: ExportTask, service: str) -> float | None:
         "modelisation": task.modelisation_cost,
         "impression": task.impression_cost,
         "usinage": task.usinage_cost,
+    }[service]
+
+
+def quantity_of(task: ExportTask, service: str) -> int | None:
+    """The task's unit count for one service. None reads as 1."""
+    return {
+        "scan": task.scan_quantity,
+        "modelisation": task.modelisation_quantity,
+        "impression": task.impression_quantity,
+        "usinage": task.usinage_quantity,
+    }[service]
+
+
+def discount_of(task: ExportTask, service: str) -> float | None:
+    """The task's percent discount for one service, or None for no discount.
+    0 is normalised to None by the callers that build an ExportTask — a
+    literal "0%" would put a pointless discount column on the PDF."""
+    return {
+        "scan": task.scan_discount_pct,
+        "modelisation": task.modelisation_discount_pct,
+        "impression": task.impression_discount_pct,
+        "usinage": task.usinage_discount_pct,
     }[service]
 
 
@@ -264,17 +293,18 @@ class Catalogue:
         )
 
 
-def impression_rate_quantity(task: ExportTask) -> tuple[float, int]:
-    """(rate, quantity) for the Impression3D line.
+def rate_quantity(task: ExportTask, service: str) -> tuple[float, int]:
+    """(rate, quantity) for one service's line.
 
-    ``impression_cost`` is the total for ALL units (the calculator reports
-    ``total_ttc_qty``), but a line item is ``rate x quantity`` at
-    ``price_precision: 0``. So the rate is the rounded per-unit figure, and
-    ``rate * quantity`` is the total the quote can actually express — which
-    the caller writes back to the task so the two sides never disagree.
+    ``<service>_cost`` is the PRE-discount total for ALL units, but a line
+    item is ``rate x quantity`` at ``price_precision: 0``. So the rate is the
+    rounded per-unit figure, and ``rate * quantity`` is the total the quote
+    can actually express — which the caller writes back to the task
+    (``aito_quote_sync._write_back_rounded_costs``) so the two sides never
+    disagree.
     """
-    quantity = max(1, int(task.impression_quantity or 1))
-    return round((task.impression_cost or 0) / quantity), quantity
+    quantity = max(1, int(quantity_of(task, service) or 1))
+    return round((cost_of(task, service) or 0) / quantity), quantity
 
 
 def _existing_island(description: str | None) -> str | None:
@@ -375,16 +405,12 @@ def build_line_items(
     for task_row, services in emitted:
         header = task_row.title.strip()[:_TITLE_MAX] if (task_row.title or "").strip() else None
         for service in services:
-            discount = None
-            if service == "impression":
-                rate, quantity = impression_rate_quantity(task_row)
-                # "10%" not "10.00%": Books accepts either and echoes back the
-                # long form; `:g` drops a float's trailing zeros so a
-                # round-tripped 10.0 does not drift to "10.0%".
-                if task_row.impression_discount_pct:
-                    discount = f"{task_row.impression_discount_pct:g}%"
-            else:
-                rate, quantity = cost_of(task_row, service), 1
+            rate, quantity = rate_quantity(task_row, service)
+            # "10%" not "10.00%": Books accepts either and echoes back the
+            # long form; `:g` drops a float's trailing zeros so a
+            # round-tripped 10.0 does not drift to "10.0%".
+            pct = discount_of(task_row, service)
+            discount = f"{pct:g}%" if pct else None
             lines.append(
                 {
                     "item_id": catalogue.item_id(service),

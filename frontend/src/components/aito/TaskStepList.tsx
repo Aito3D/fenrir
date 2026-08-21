@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Box, Check, Layers, Palette } from 'lucide-react';
 import { AITO_SERVICE_LABEL_KEYS, serviceDotCls, taskSteps } from './services';
+import type { ServiceId } from './services';
 import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
 import { useCurrency } from '../../hooks/useCurrency';
@@ -14,6 +15,12 @@ const DESCRIPTION_FIELD = {
   impression: 'impressionDescription',
   usinage: 'usinageDescription',
 } as const;
+
+const QUANTITY_FIELD: Record<Exclude<ServiceId, 'impression'>, 'scanQuantity' | 'modelisationQuantity' | 'usinageQuantity'> = {
+  scan: 'scanQuantity',
+  modelisation: 'modelisationQuantity',
+  usinage: 'usinageQuantity',
+};
 
 export interface TaskStepListProps {
   task: TaskDraft;
@@ -64,29 +71,44 @@ export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
     staleTime: 60_000,
   });
 
-  // Each entry is [icon, accessible field name, value]. Absent values are left
-  // out entirely rather than rendered blank.
-  //
-  // Quantity is the exception that always renders: ×1 used to be suppressed as
-  // a default not worth stating, which left the reader to infer "no quantity
-  // shown" means one — an inference the line is supposed to spare them. How
-  // many of the part this step prints is what the meta line is FOR, and a
-  // one-off is an answer. 0 stays hidden: that is not a job, and "×0" explains
-  // nothing.
-  const impressionMeta: { key: string; icon: typeof Layers; label: string; value: string }[] = [];
-  if (task.impression.quantity >= 1) {
-    impressionMeta.push({ key: 'quantity', icon: Layers, label: t('aito.quantity'), value: `×${task.impression.quantity}` });
-  }
+  // material/color stay computed HERE, at component level, rather than inside
+  // metaFor below: both depend on the filament query (material) or a task
+  // field that only printing has (color), and moving either into a function
+  // called once per step would still leave them evaluated once overall — but
+  // would make that misleading, since they'd read as per-service values.
   const material = needsFilamentName
     ? (filaments?.find((f) => f.id === task.impression.filamentId)?.name ?? '')
     : '';
-  if (material !== '') {
-    impressionMeta.push({ key: 'material', icon: Box, label: t('aito.material'), value: material });
-  }
   const color = task.impression.color.trim();
-  if (color !== '') {
-    impressionMeta.push({ key: 'color', icon: Palette, label: t('aito.color'), value: color });
-  }
+
+  // Each entry is [icon, accessible field name, value]. Absent values are left
+  // out entirely rather than rendered blank.
+  //
+  // Printing is the exception that always states its count, ×1 included: its
+  // line also carries material and colour, so ×1 there is one answer among
+  // several rather than a lone restatement of the default. The other three
+  // services state a count only from 2 up — a bare "×1" under a scan step
+  // would be the whole line, and it would say nothing the reader did not
+  // already assume. 0 is hidden everywhere: that is not a job.
+  const metaFor = (service: ServiceId): { key: string; icon: typeof Layers; label: string; value: string }[] => {
+    if (service !== 'impression') {
+      const quantity = task[QUANTITY_FIELD[service]];
+      return quantity >= 2
+        ? [{ key: 'quantity', icon: Layers, label: t('aito.quantity'), value: `×${quantity}` }]
+        : [];
+    }
+    const meta: { key: string; icon: typeof Layers; label: string; value: string }[] = [];
+    if (task.impression.quantity >= 1) {
+      meta.push({ key: 'quantity', icon: Layers, label: t('aito.quantity'), value: `×${task.impression.quantity}` });
+    }
+    if (material !== '') {
+      meta.push({ key: 'material', icon: Box, label: t('aito.material'), value: material });
+    }
+    if (color !== '') {
+      meta.push({ key: 'color', icon: Palette, label: t('aito.color'), value: color });
+    }
+    return meta;
+  };
 
   if (steps.length === 0) {
     return <p className="text-sm text-bambu-gray">{t('aito.noSteps')}</p>;
@@ -97,6 +119,7 @@ export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
       {steps.map(({ service, cost, done }) => {
         const label = t(AITO_SERVICE_LABEL_KEYS[service]);
         const description = task[DESCRIPTION_FIELD[service]].trim();
+        const meta = metaFor(service);
         const row = (
           <>
             {/* The checkbox IS the affordance now. The old design put a "Done"
@@ -158,22 +181,22 @@ export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
               // nothing. The step and its price still render.
               <span className="w-full flex items-center gap-3 px-1.5 py-1 -mx-1.5">{row}</span>
             )}
-            {/* The part's physical identity, on its own line under the printing
-                step: quantity, material, colour, each present only when set.
+            {/* The part's physical identity, on its own line under the step:
+                quantity always, plus material and colour under printing only.
                 Icon + value rather than pills — the panel's whole visual
                 argument is restraint, and this line must never outweigh the
                 step it describes. Shares the description's gutter exactly (see
                 its comment below), so both sub-lines start under the step
                 label in either canTick state. */}
-            {service === 'impression' && impressionMeta.length > 0 && (
+            {meta.length > 0 && (
               <p
-                data-testid="step-meta-impression"
+                data-testid={`step-meta-${service}`}
                 className="flex items-start gap-3 pr-1.5 pb-1 text-xs text-bambu-gray-light"
               >
                 {canTick && <span aria-hidden="true" className="w-4 flex-shrink-0" />}
                 <span aria-hidden="true" className="w-0.5 flex-shrink-0" />
                 <span className="min-w-0 flex-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                  {impressionMeta.map(({ key, icon: Icon, label, value }) => (
+                  {meta.map(({ key, icon: Icon, label, value }) => (
                     // The icon is decoration; the field name is carried as
                     // sr-only text so the line doesn't read as a bare string of
                     // values, and as a title for pointer users.

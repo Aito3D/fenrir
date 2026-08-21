@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import cases from '../fixtures/aitoBoardRules.cases.json';
-import { evaluate, summariseTasks, SERVICES, STAGES } from '../../utils/aitoBoardRules';
+import { evaluate, summariseTasks, netCost, SERVICES, STAGES } from '../../utils/aitoBoardRules';
 import type { ServiceId, TaskLike } from '../../utils/aitoBoardRules';
 import type { AitoColumnId } from '../../api/client';
 
@@ -33,7 +33,10 @@ function toTaskLike(row: Record<string, number | boolean | string | null>): Task
     modelisationCost: row.modelisation_cost as number | null,
     impressionCost: row.impression_cost as number | null,
     usinageCost: row.usinage_cost as number | null,
+    scanDiscountPct: (row.scan_discount_pct as number | null | undefined) ?? null,
+    modelisationDiscountPct: (row.modelisation_discount_pct as number | null | undefined) ?? null,
     impressionDiscountPct: (row.impression_discount_pct as number | null | undefined) ?? null,
+    usinageDiscountPct: (row.usinage_discount_pct as number | null | undefined) ?? null,
     done: {
       scan: row.scan_done === true,
       modelisation: row.modelisation_done === true,
@@ -52,7 +55,7 @@ describe('the board-rules contract', () => {
     // Guards against an empty or truncated fixture quietly passing the loop
     // below by iterating zero times.
     expect(evaluateCases).toHaveLength(8 * 7 * 16);
-    expect(summariseCases).toHaveLength(10);
+    expect(summariseCases).toHaveLength(12);
   });
 
   it('stages every service exactly once', () => {
@@ -107,3 +110,43 @@ function blank(): TaskLike {
     done: { scan: false, modelisation: false, impression: false, usinage: false },
   };
 }
+
+const bare = (over: Partial<TaskLike> = {}): TaskLike => ({
+  scanCost: null,
+  modelisationCost: null,
+  impressionCost: null,
+  usinageCost: null,
+  done: { scan: false, modelisation: false, impression: false, usinage: false },
+  ...over,
+});
+
+describe('netCost', () => {
+  it('is null for an absent service', () => {
+    expect(netCost(bare(), 'usinage')).toBeNull();
+  });
+
+  it('keeps a free step at zero rather than reading it as absent', () => {
+    expect(netCost(bare({ usinageCost: 0 }), 'usinage')).toBe(0);
+  });
+
+  it('passes an undiscounted cost through', () => {
+    expect(netCost(bare({ usinageCost: 1000 }), 'usinage')).toBe(1000);
+  });
+
+  it("applies the service's own discount", () => {
+    expect(netCost(bare({ usinageCost: 1000, usinageDiscountPct: 10 }), 'usinage')).toBe(900);
+  });
+
+  it('reads each service independently', () => {
+    const task = bare({
+      scanCost: 100,
+      scanDiscountPct: 50,
+      usinageCost: 100,
+      usinageDiscountPct: 25,
+      impressionCost: 100,
+    });
+    expect(netCost(task, 'scan')).toBe(50);
+    expect(netCost(task, 'usinage')).toBe(75);
+    expect(netCost(task, 'impression')).toBe(100);
+  });
+});

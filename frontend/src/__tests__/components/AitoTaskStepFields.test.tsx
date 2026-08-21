@@ -86,7 +86,10 @@ describe('TaskStepFields', () => {
     render(<TaskStepFields task={{ ...emptyTaskDraft(), impressionCost: 500 }} onChange={vi.fn()} />);
     const topRow = within(screen.getByTestId('impression-grid'));
     expect(topRow.getByLabelText(/printing cost/i)).toBeInTheDocument();
-    expect(topRow.getByLabelText('Quantity')).toBeInTheDocument();
+    // Qualified accessible name, not the bare visible "Quantity" label — see
+    // QuantityInput's doc on why (two services priced at once would
+    // otherwise share one ambiguous "Quantity" name).
+    expect(topRow.getByLabelText('Printing Quantity')).toBeInTheDocument();
   });
 
   it('printing: the cost input edits the UNIT price — stored cost stays unit × quantity', () => {
@@ -119,7 +122,7 @@ describe('TaskStepFields', () => {
     );
     // No calculator configured (nothing mocked here), so no repricing can
     // interfere: 500 apiece × 3 must become a stored total of 1500.
-    fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText('Printing Quantity'), { target: { value: '3' } });
     const next = onChange.mock.calls.at(-1)?.[0];
     expect(next.impression.quantity).toBe(3);
     expect(next.impressionCost).toBe(1500);
@@ -133,8 +136,8 @@ describe('TaskStepFields', () => {
     // All four are reachable straight away (nothing is mocked here, and
     // there is no disclosure to open).
     const topRow = within(screen.getByTestId('impression-grid'));
-    topRow.getByLabelText('Quantity');
-    const discount = topRow.getByLabelText('Discount');
+    topRow.getByLabelText('Printing Quantity');
+    const discount = topRow.getByLabelText('Printing Discount');
     // Material (the filament select, moved out of the calculator) and color
     // are on screen too — before it, in DOM order.
     const material = screen.getByRole('combobox', { name: /material/i });
@@ -153,7 +156,7 @@ describe('TaskStepFields', () => {
         onChange={onChange}
       />,
     );
-    await user.selectOptions(screen.getByLabelText('Discount'), '');
+    await user.selectOptions(screen.getByLabelText('Printing Discount'), '');
     expect(onChange.mock.calls.at(-1)?.[0].impressionDiscountPct).toBeNull();
   });
 
@@ -164,7 +167,7 @@ describe('TaskStepFields', () => {
         onChange={vi.fn()}
       />,
     );
-    const totalRow = screen.getByText('Printing total').parentElement!;
+    const totalRow = screen.getByText('Line total').parentElement!;
     expect(totalRow).toHaveTextContent(formatMoney(900, 'USD'));
   });
 
@@ -183,12 +186,17 @@ describe('TaskStepFields', () => {
         onChange={vi.fn()}
       />,
     );
-    const totalRow = screen.getByText('Printing total').parentElement!;
+    const totalRow = screen.getByText('Line total').parentElement!;
     expect(totalRow).toHaveTextContent(formatMoney(800, 'USD'));
     expect(totalRow).toHaveTextContent(`${formatMoney(200, 'USD')} per part`);
   });
 
-  it('printing: no per-part line without a discount — the cost field already says it', () => {
+  it('printing: states the per-part rate even with no discount set', () => {
+    // 1000 stored over 4 parts, no discount: the line total and the unit
+    // rate are the same figure the Cost input already shows, but the band
+    // now states it anyway — the three plain service blocks (see the
+    // scan/machining tests above) state theirs unconditionally, and a rate
+    // that only sometimes appears reads as one that only sometimes applies.
     render(
       <TaskStepFields
         task={{
@@ -199,7 +207,74 @@ describe('TaskStepFields', () => {
         onChange={vi.fn()}
       />,
     );
-    expect(screen.getByText('Printing total').parentElement!).not.toHaveTextContent('per part');
+    expect(screen.getByText('Line total').parentElement!).toHaveTextContent(
+      `${formatMoney(250, 'USD')} per part`,
+    );
+  });
+
+  it('machining: a unit price times the quantity is what gets stored', () => {
+    const onChange = vi.fn();
+    // usinageCost: 0 seeds the chip open (0 !== null) without implying a
+    // discount or a rescale — quantity defaults to 1, so unit === total.
+    render(<TaskStepFields task={{ ...emptyTaskDraft(), usinageCost: 0 }} onChange={onChange} />);
+
+    fireEvent.change(screen.getByLabelText(/machining cost/i), { target: { value: '12000' } });
+    expect(onChange.mock.calls.at(-1)?.[0].usinageCost).toBe(12000);
+  });
+
+  it('machining: editing the quantity rescales the stored cost so the unit price holds', () => {
+    const onChange = vi.fn();
+    const task = { ...emptyTaskDraft(), usinageCost: 12000, usinageQuantity: 1 };
+    render(<TaskStepFields task={task} onChange={onChange} />);
+
+    // Qualified accessible name ("Machining Quantity"), not the bare visible
+    // "Quantity" label — see QuantityInput's doc: two services priced at
+    // once would otherwise share one ambiguous "Quantity" name.
+    fireEvent.change(screen.getByLabelText('Machining Quantity'), { target: { value: '3' } });
+    const next = onChange.mock.calls.at(-1)?.[0];
+    expect(next.usinageQuantity).toBe(3);
+    expect(next.usinageCost).toBe(36000);
+  });
+
+  it('machining: clearing the unit price disables the service rather than zeroing it', () => {
+    const onChange = vi.fn();
+    const task = { ...emptyTaskDraft(), usinageCost: 12000, usinageQuantity: 3 };
+    render(<TaskStepFields task={task} onChange={onChange} />);
+
+    fireEvent.change(screen.getByLabelText(/machining cost/i), { target: { value: '' } });
+    expect(onChange.mock.calls.at(-1)?.[0].usinageCost).toBeNull();
+  });
+
+  it('machining: the footer states the discounted line total and the per-part rate', () => {
+    // 12000/unit x 3 stored as 36000; less 10% the line is 32400, and spread
+    // back over 3 parts that is 10800 apiece.
+    const task = {
+      ...emptyTaskDraft(),
+      usinageCost: 36000,
+      usinageQuantity: 3,
+      usinageDiscountPct: 10,
+    };
+    render(<TaskStepFields task={task} onChange={vi.fn()} />);
+
+    // Not `toHaveTextContent`: jest-dom normalizes whitespace before
+    // comparing, which folds `formatMoney`'s thin-space (U+202F) thousands
+    // separator into a plain space and breaks a literal match against a
+    // four-digit figure. Reading `textContent` directly compares the same
+    // raw string the component actually renders.
+    const footer = screen.getByTestId('service-footer-usinage');
+    expect(footer.textContent).toContain(formatMoney(32400, 'USD'));
+    expect(footer.textContent).toContain(`${formatMoney(10800, 'USD')} per part`);
+  });
+
+  it('scan: the same ServicePriceFooter states the line total and per-part rate', () => {
+    // Undiscounted, so the line total and the unit rate coincide once
+    // divided back by quantity — 900 stored over 3 units is 300 apiece.
+    const task = { ...emptyTaskDraft(), scanCost: 900, scanQuantity: 3 };
+    render(<TaskStepFields task={task} onChange={vi.fn()} />);
+
+    const footer = screen.getByTestId('service-footer-scan');
+    expect(footer).toHaveTextContent(formatMoney(900, 'USD'));
+    expect(footer).toHaveTextContent(`${formatMoney(300, 'USD')} per part`);
   });
 
   it('typing 0 emits 0, which is a real free step', async () => {

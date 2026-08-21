@@ -40,14 +40,24 @@ export interface TaskDraft {
   usinageCost: number | null;
   impression: ImpressionDraft;
   /** Frozen total for a saved task; recomputed while the task is being edited.
-   *  Stored PRE-discount: `impressionDiscountPct` below is applied on top by
-   *  the totals (summariseTasks) and by the quote line itself, never baked
-   *  in here — the two must not double-count. */
+   *  Stored PRE-discount: `netCost` (utils/aitoBoardRules.ts) is the one place
+   *  `impressionDiscountPct` below is applied on top — never baked in here —
+   *  so the two must not double-count. */
   impressionCost: number | null;
   /** Percent discount on the printing service (the quote line's "10%"), or
    *  null for none. Top-level beside `impressionCost` — it modifies the cost,
    *  not the print parameters. */
   impressionDiscountPct: number | null;
+  /** Per-service unit count, floor 1 — there is no null state, mirroring
+   *  `impression.quantity`. The stored `<service>Cost` is unit x quantity. */
+  scanQuantity: number;
+  modelisationQuantity: number;
+  usinageQuantity: number;
+  /** Percent discount per service, or null for none. Top-level beside the
+   *  costs — a discount modifies the price, not the service's parameters. */
+  scanDiscountPct: number | null;
+  modelisationDiscountPct: number | null;
+  usinageDiscountPct: number | null;
   /** One flag per service, keyed by the same ids the backend and
    *  AITO_SERVICE_LABEL_KEYS use. A flag is only meaningful when its cost is
    *  not null — the backend clears it otherwise, and refuses to set it. */
@@ -79,6 +89,12 @@ export function emptyTaskDraft(): TaskDraft {
     impression: { printerId: null, filamentId: null, weightG: null, timeMin: null, quantity: 1, color: '' },
     impressionCost: null,
     impressionDiscountPct: null,
+    scanQuantity: 1,
+    modelisationQuantity: 1,
+    usinageQuantity: 1,
+    scanDiscountPct: null,
+    modelisationDiscountPct: null,
+    usinageDiscountPct: null,
     done: { scan: false, modelisation: false, impression: false, usinage: false },
   };
 }
@@ -89,7 +105,10 @@ export function emptyTaskDraft(): TaskDraft {
  *  The new-project drawer round-trips its drafts through localStorage under a
  *  key (`aito.newProjectDraft.v1`) that is not bumped when `TaskDraft` gains a
  *  field — and it has gained several: the four per-service descriptions, `uid`,
- *  `impressionDiscountPct`. A blob written before any of those restores a task
+ *  `impressionDiscountPct`, and the six per-service quantity/discount fields
+ *  (`scanQuantity`, `modelisationQuantity`, `usinageQuantity`,
+ *  `scanDiscountPct`, `modelisationDiscountPct`, `usinageDiscountPct`). A
+ *  blob written before any of those restores a task
  *  missing them, and the fields are read UNGUARDED all over the drawer
  *  (`TaskStepList` does `task[DESCRIPTION_FIELD[service]].trim()` on every
  *  render, `tasksSignature` the same) — so the drawer threw
@@ -141,12 +160,25 @@ export function normaliseTaskDraft(raw: unknown): TaskDraft {
       weightG: num(impression.weightG),
       timeMin: num(impression.timeMin),
       // Quantity is the one number with no null state — 1 is the floor the
-      // whole pricing path assumes.
-      quantity: num(impression.quantity) ?? 1,
+      // whole pricing path assumes. `Math.max(1, ...)`, not just `?? 1`: an
+      // explicit stored `0` (a legacy or hand-edited blob) must also floor to
+      // 1, or `taskDraftToTaskCreate` sends `..._quantity: 0` and the
+      // backend's `ge=1` rejects the create with a 422 — the exact failure
+      // this function exists to prevent.
+      quantity: Math.max(1, num(impression.quantity) ?? 1),
       color: str(impression.color),
     },
     impressionCost: num(task.impressionCost),
     impressionDiscountPct: num(task.impressionDiscountPct),
+    // `Math.max(1, ...)`, not just `?? 1` — see the identical note on
+    // `impression.quantity` above: an explicit stored `0` must still floor to
+    // 1, not pass through to a `ge=1` 422 on create.
+    scanQuantity: Math.max(1, num(task.scanQuantity) ?? 1),
+    modelisationQuantity: Math.max(1, num(task.modelisationQuantity) ?? 1),
+    usinageQuantity: Math.max(1, num(task.usinageQuantity) ?? 1),
+    scanDiscountPct: num(task.scanDiscountPct),
+    modelisationDiscountPct: num(task.modelisationDiscountPct),
+    usinageDiscountPct: num(task.usinageDiscountPct),
     done: {
       scan: bool(done.scan),
       modelisation: bool(done.modelisation),
@@ -242,6 +274,12 @@ export function taskDraftFromAitoTask(task: AitoTask): TaskDraft {
     },
     impressionCost: task.impression_cost,
     impressionDiscountPct: task.impression_discount_pct ?? null,
+    scanQuantity: task.scan_quantity ?? 1,
+    modelisationQuantity: task.modelisation_quantity ?? 1,
+    usinageQuantity: task.usinage_quantity ?? 1,
+    scanDiscountPct: task.scan_discount_pct ?? null,
+    modelisationDiscountPct: task.modelisation_discount_pct ?? null,
+    usinageDiscountPct: task.usinage_discount_pct ?? null,
     done: {
       scan: task.scan_done,
       modelisation: task.modelisation_done,
@@ -276,6 +314,12 @@ export function taskDraftToTaskCreate(t: TaskDraft): AitoTaskCreate {
     impression_color: t.impression.color.trim() || null,
     impression_cost: t.impressionCost,
     impression_discount_pct: t.impressionDiscountPct,
+    scan_quantity: t.scanQuantity,
+    modelisation_quantity: t.modelisationQuantity,
+    usinage_quantity: t.usinageQuantity,
+    scan_discount_pct: t.scanDiscountPct,
+    modelisation_discount_pct: t.modelisationDiscountPct,
+    usinage_discount_pct: t.usinageDiscountPct,
     scan_done: t.done.scan,
     modelisation_done: t.done.modelisation,
     impression_done: t.done.impression,

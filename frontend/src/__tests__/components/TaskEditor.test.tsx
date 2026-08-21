@@ -863,7 +863,9 @@ describe('TaskRow', () => {
     const quantityOneCost = (onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft[])[0].impressionCost as number;
 
     onChangeSpy.mockClear();
-    const quantityInput = screen.getByLabelText('Quantity');
+    // Qualified accessible name, not the bare visible "Quantity" label — see
+    // QuantityInput's doc.
+    const quantityInput = screen.getByLabelText('Printing Quantity');
     fireEvent.change(quantityInput, { target: { value: '2' } });
 
     await waitFor(() => {
@@ -930,7 +932,9 @@ describe('TaskRow', () => {
     };
     render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
 
-    const quantityInput = await screen.findByLabelText('Quantity');
+    // Qualified accessible name, not the bare visible "Quantity" label — see
+    // QuantityInput's doc.
+    const quantityInput = await screen.findByLabelText('Printing Quantity');
     // Wait for the reference-data queries to resolve first: firing the edit
     // while they are still pending hits ImpressionFields' `referenceDataLoading`
     // guard, which reports the edit with no computed cost at all — leaving
@@ -984,8 +988,10 @@ describe('TaskRow', () => {
     // One grid holds both halves: the part's identity and its price.
     const grid = within(screen.getByTestId('impression-grid'));
     grid.getByLabelText(/printing cost/i);
-    grid.getByLabelText('Quantity');
-    grid.getByLabelText('Discount');
+    // Qualified accessible names, not the bare visible labels — see
+    // QuantityInput's/DiscountSelect's docs.
+    grid.getByLabelText('Printing Quantity');
+    grid.getByLabelText('Printing Discount');
     grid.getByRole('combobox', { name: /material/i });
     grid.getByLabelText('Colour');
   });
@@ -1171,8 +1177,16 @@ describe('TaskRow', () => {
 
   it('printing: the band still carries the total when nothing can be computed', async () => {
     // A hand-typed cost and no printer — an imported quote looks exactly like
-    // this. The old layout left half the block empty here.
-    const task = { ...emptyTaskDraft(), impressionCost: 9000 };
+    // this. The old layout left half the block empty here. Quantity is 3 (not
+    // the emptyTaskDraft default of 1) so the total (9000) and the per-part
+    // rate (now stated unconditionally — see Task 11 — as 9000/3 = 3000) are
+    // distinct figures: getByText keeps its original meaning of "exactly one
+    // $9,000.00 node", rather than being weakened to "at least one".
+    const task = {
+      ...emptyTaskDraft(),
+      impression: { ...emptyTaskDraft().impression, quantity: 3 },
+      impressionCost: 9000,
+    };
     render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
 
     const band = within(await screen.findByTestId('impression-band'));

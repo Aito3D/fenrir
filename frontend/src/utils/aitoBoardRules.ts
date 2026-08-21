@@ -1,4 +1,4 @@
-import type { AitoColumnId } from '../api/client';
+import type { AitoColumnId, AitoTaskCreate } from '../api/client';
 
 /** The Aito board's rules, mirrored from
  *  backend/app/services/aito_board_rules.py.
@@ -87,11 +87,15 @@ export interface TaskLike {
   /** Optional so every existing cost/done literal still compiles; absent
    *  reads as '' — the mirror's fallback name, same as a task with none. */
   title?: string;
-  /** Percent discount on the impression service. `impressionCost` is stored
-   *  PRE-discount, so the total applies this here — mirroring `summarise` in
+  /** Percent discount for each service. `<service>Cost` is stored
+   *  PRE-discount, so the total applies this here — mirroring `net_cost` in
    *  backend/app/services/aito_board_rules.py. Optional: absent (or null)
-   *  means no discount. */
+   *  means no discount, which is what keeps every existing cost/done literal
+   *  in the test suite compiling. */
+  scanDiscountPct?: number | null;
+  modelisationDiscountPct?: number | null;
   impressionDiscountPct?: number | null;
+  usinageDiscountPct?: number | null;
 }
 
 const COST_KEYS: Record<ServiceId, keyof TaskLike> = {
@@ -105,6 +109,64 @@ const COST_KEYS: Record<ServiceId, keyof TaskLike> = {
  *  `0` is a real cost — a step quoted free. */
 export function taskCost(task: TaskLike, service: ServiceId): number | null {
   return task[COST_KEYS[service]] as number | null;
+}
+
+const DISCOUNT_KEYS: Record<ServiceId, keyof TaskLike> = {
+  scan: 'scanDiscountPct',
+  modelisation: 'modelisationDiscountPct',
+  impression: 'impressionDiscountPct',
+  usinage: 'usinageDiscountPct',
+};
+
+/** The service's cost as the quote will state it: the stored PRE-discount
+ *  cost less that service's own percent. `null` when the service is absent
+ *  from the job — `0` is a step quoted free and passes straight through, so
+ *  callers must test for null and never for falsiness.
+ *
+ *  Exact mirror of `net_cost` in backend/app/services/aito_board_rules.py,
+ *  pinned by the shared contract fixture. */
+export function netCost(task: TaskLike, service: ServiceId): number | null {
+  const cost = taskCost(task, service);
+  if (cost === null) return null;
+  const pct = (task[DISCOUNT_KEYS[service]] as number | null | undefined) ?? 0;
+  return cost * (1 - pct / 100);
+}
+
+/** Adapts a snake_case `AitoTaskCreate` wire task — a preview task from a
+ *  Zoho quote, or the payload about to be posted for one — to the canonical
+ *  `TaskLike` shape the rest of this module operates on, so callers can
+ *  delegate to `taskCost`/`netCost`/`summariseTasks` instead of
+ *  re-implementing their null-cost and per-service discount rules.
+ *  `*_done` defaults to `false` server-side (`_build_task` in
+ *  services/aito_quote_import.py never sets it) and is carried through
+ *  rather than hand-set — a preview or optimistic task is never actually
+ *  ticked, but there is no reason to assert that here too.
+ *
+ *  The single home for this conversion: `ImportQuoteDrawer.tsx` and
+ *  `AitoPage.tsx` (optimistic placeholder creation) both need it, and having
+ *  two copies is exactly how one of them drifted and stopped applying
+ *  discounts to an optimistic card's total. */
+export function toTaskLike(task: AitoTaskCreate): TaskLike {
+  return {
+    scanCost: task.scan_cost,
+    modelisationCost: task.modelisation_cost,
+    impressionCost: task.impression_cost,
+    usinageCost: task.usinage_cost,
+    done: {
+      scan: task.scan_done ?? false,
+      modelisation: task.modelisation_done ?? false,
+      impression: task.impression_done ?? false,
+      usinage: task.usinage_done ?? false,
+    },
+    // `AitoTaskCreate.title` is nullable (a quote line can be untitled);
+    // `TaskLike.title` is optional-string, not nullable, so null collapses
+    // to undefined here.
+    title: task.title ?? undefined,
+    scanDiscountPct: task.scan_discount_pct,
+    modelisationDiscountPct: task.modelisation_discount_pct,
+    impressionDiscountPct: task.impression_discount_pct,
+    usinageDiscountPct: task.usinage_discount_pct,
+  };
 }
 
 /** The whole rule set: `[column, moveLock]`.
@@ -190,13 +252,7 @@ export function summariseTasks(tasks: readonly TaskLike[]): TaskSummary {
       if (cost === null) continue;
       enabled.add(service);
       taskServices.push(service);
-      if (service === 'impression') {
-        // Pre-discount cost, discounted here — the card's total must say
-        // what the quote will actually say. Mirrors the backend exactly.
-        total += cost * (1 - (task.impressionDiscountPct ?? 0) / 100);
-      } else {
-        total += cost;
-      }
+      total += netCost(task, service) as number;
       stepsTotal += 1;
       if (task.done[service]) {
         stepsDone += 1;

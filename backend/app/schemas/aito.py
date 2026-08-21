@@ -201,6 +201,15 @@ class AitoTaskBase(BaseModel):
     impression_cost: float | None = Field(default=None, ge=0)
     # gt=0: a 0% discount is expressed as null, never stored — see the model.
     impression_discount_pct: float | None = Field(default=None, gt=0, le=100)
+    # ge=1: there is no zero-unit line. None reads as 1.
+    scan_quantity: int | None = Field(default=None, ge=1)
+    modelisation_quantity: int | None = Field(default=None, ge=1)
+    usinage_quantity: int | None = Field(default=None, ge=1)
+    # gt=0 for the same reason impression_discount_pct uses it: a 0% discount
+    # is expressed as null, never stored.
+    scan_discount_pct: float | None = Field(default=None, gt=0, le=100)
+    modelisation_discount_pct: float | None = Field(default=None, gt=0, le=100)
+    usinage_discount_pct: float | None = Field(default=None, gt=0, le=100)
     scan_done: bool = False
     modelisation_done: bool = False
     impression_done: bool = False

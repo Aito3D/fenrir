@@ -34,6 +34,7 @@ from backend.app.models.aito_task import AitoTask
 from backend.app.models.calculator import CalculatorFilament
 from backend.app.services.aito_events import record
 from backend.app.services.aito_quote_export import (
+    SERVICES,
     Catalogue,
     ExportShipping,
     ExportTask,
@@ -323,7 +324,13 @@ async def load_export_tasks(db: AsyncSession, project_id: int) -> list[ExportTas
             impression_time_min=row.impression_time_min,
             impression_color=row.impression_color,
             material=materials.get(row.impression_filament_id),
+            scan_quantity=row.scan_quantity,
+            modelisation_quantity=row.modelisation_quantity,
+            usinage_quantity=row.usinage_quantity,
+            scan_discount_pct=row.scan_discount_pct,
+            modelisation_discount_pct=row.modelisation_discount_pct,
             impression_discount_pct=row.impression_discount_pct,
+            usinage_discount_pct=row.usinage_discount_pct,
         )
         for row in rows
     ]
@@ -507,7 +514,7 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
             "line_items": line_items,
         },
     )
-    await _write_back_rounded_impression(db, project.id)
+    await _write_back_rounded_costs(db, project.id)
     # `project.quote_status` may have been decided by a completely different
     # session (routes/aito.py's set_quote_status) while create_estimate's
     # network call above was in flight; this session never sees that commit
@@ -560,21 +567,22 @@ def _is_locked(estimate: dict) -> bool:
     return bool(estimate.get("is_transaction_created")) or float(estimate.get("invoiced_amount") or 0) > 0
 
 
-async def _write_back_rounded_impression(db: AsyncSession, project_id: int) -> None:
-    """Adopt the total the quote can actually express.
+async def _write_back_rounded_costs(db: AsyncSession, project_id: int) -> None:
+    """Adopt the total the quote can actually express, for every service.
 
-    impression_cost is a total for all units but a line is rate x quantity at
-    price_precision 0, so 2401 over 2 units is unrepresentable. Writing the
-    achievable figure back here means the project and the quote agree
-    immediately — rather than agreeing a tick later, as a visible jitter, when
-    the Phase 2 poller pulls the quote's number back.
+    ``<service>_cost`` is a pre-discount total for all units but a line is
+    rate x quantity at price_precision 0, so 2401 over 2 units is
+    unrepresentable. Writing the achievable figure back here means the project
+    and the quote agree immediately — rather than agreeing a tick later, as a
+    visible jitter, when the Phase 2 poller pulls the quote's number back.
     """
     rows = (await db.execute(select(AitoTask).where(AitoTask.project_id == project_id))).scalars().all()
     for row in rows:
-        if row.impression_cost is None:
-            continue
-        quantity = max(1, int(row.impression_quantity or 1))
-        row.impression_cost = round(row.impression_cost / quantity) * quantity
+        for service in SERVICES:
+            if getattr(row, f"{service}_cost") is None:
+                continue
+            quantity = max(1, int(getattr(row, f"{service}_quantity") or 1))
+            setattr(row, f"{service}_cost", round(getattr(row, f"{service}_cost") / quantity) * quantity)
 
 
 # A snapshotted pre-trash status -> the status a restore puts Books back into.
@@ -947,7 +955,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         shipping=load_export_shipping(project, catalogue),
     )
     updated = await zoho_service.update_estimate_lines(db, project.quote_id, line_items)
-    await _write_back_rounded_impression(db, project.id)
+    await _write_back_rounded_costs(db, project.id)
     # `project.quote_status` was loaded before this call's own get_estimate,
     # let alone this update_estimate_lines round trip -- and nothing in
     # between refreshes it (expire_on_commit=False). An Accept/Decline

@@ -2,12 +2,14 @@ import { useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import { AiTextField } from './AiTextField';
-import { ImpressionFields, rowLabelCls } from './ImpressionFields';
+import { ImpressionFields } from './ImpressionFields';
+import { rowLabelCls, DiscountSelect, QuantityInput, ServicePriceFooter } from './servicePriceFields';
 import { Money } from '../calculator/shared';
 import { inputCls, focusRingCls } from '../formStyles';
 import { useCurrency } from '../../hooks/useCurrency';
 import { taskTotal } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
+import { netCost } from '../../utils/aitoBoardRules';
 
 /** One numeric cost input for a step. Empty means the step does not exist, not
  *  that it is free — clearing the field must emit `null`, never `0`; once that
@@ -98,19 +100,41 @@ interface ServiceDef {
   /** Every service also owns a free-text description field. Impression's is
    *  the one behind the note reveal; the rest are always visible. */
   descKey: 'scanDescription' | 'modelisationDescription' | 'usinageDescription' | 'impressionDescription';
+  /** The plain services own a quantity and a discount beside their cost.
+   *  Impression's live elsewhere — its quantity is a calculator input inside
+   *  `impression`, and its discount is read directly — so it declares
+   *  neither and never goes through `renderPlainService`. */
+  qtyKey?: 'scanQuantity' | 'modelisationQuantity' | 'usinageQuantity';
+  discountKey?: 'scanDiscountPct' | 'modelisationDiscountPct' | 'usinageDiscountPct';
 }
 
 /** Chip order, and the draft fields each service owns. */
 const SERVICE_DEFS: ServiceDef[] = [
-  { id: 'scan', labelKey: 'aito.serviceScan3D', costKey: 'scanCost', descKey: 'scanDescription' },
+  {
+    id: 'scan',
+    labelKey: 'aito.serviceScan3D',
+    costKey: 'scanCost',
+    descKey: 'scanDescription',
+    qtyKey: 'scanQuantity',
+    discountKey: 'scanDiscountPct',
+  },
   {
     id: 'modelisation',
     labelKey: 'aito.serviceModelisation3D',
     costKey: 'modelisationCost',
     descKey: 'modelisationDescription',
+    qtyKey: 'modelisationQuantity',
+    discountKey: 'modelisationDiscountPct',
   },
   { id: 'impression', labelKey: 'aito.serviceImpression3D', costKey: 'impressionCost', descKey: 'impressionDescription' },
-  { id: 'usinage', labelKey: 'aito.serviceUsinage', costKey: 'usinageCost', descKey: 'usinageDescription' },
+  {
+    id: 'usinage',
+    labelKey: 'aito.serviceUsinage',
+    costKey: 'usinageCost',
+    descKey: 'usinageDescription',
+    qtyKey: 'usinageQuantity',
+    discountKey: 'usinageDiscountPct',
+  },
 ];
 
 const SERVICE_BY_ID = Object.fromEntries(SERVICE_DEFS.map((s) => [s.id, s])) as Record<ServiceId, ServiceDef>;
@@ -189,21 +213,87 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
     }
   };
 
-  /** Scan, Modélisation and Usinage: a cost and a description over the pair of
-   *  draft fields named in SERVICE_DEFS, and nothing else. Impression is not
-   *  one of these — it is spelled out below, because none of what it adds
-   *  (print parameters, the unit↔total conversion, a discount, the note
-   *  reveal) generalises. */
+  /** Scan, Modélisation and Usinage: a unit price, how many units, an optional
+   *  discount, the resulting line total, and a description — over the draft
+   *  fields named in SERVICE_DEFS. Impression is not one of these: it is
+   *  spelled out below, because none of what it adds (print parameters, the
+   *  calculator's computed price, the note reveal) generalises.
+   *
+   *  The input is the UNIT price; the draft stores unit x quantity, which is
+   *  what every reader downstream (netCost, the quote line, the board total)
+   *  already speaks. Editing the quantity rescales the stored cost so the unit
+   *  price holds — 500 apiece x 3 is 1500, not 500 spread ever thinner —
+   *  exactly as the impression block does it. */
   const renderPlainService = (svc: ServiceDef) => {
     const label = t(svc.labelKey);
+    const qtyKey = svc.qtyKey as NonNullable<ServiceDef['qtyKey']>;
+    const discountKey = svc.discountKey as NonNullable<ServiceDef['discountKey']>;
+    const stored = task[svc.costKey];
+    const quantity = Math.max(1, task[qtyKey]);
+    const pct = task[discountKey];
+    const unitCost = stored === null ? null : round2(stored / quantity);
+    // Through `netCost`, never by re-spelling `cost * (1 - pct / 100)` here:
+    // that rule has ONE definition (utils/aitoBoardRules.ts, mirrored in
+    // backend/app/services/aito_board_rules.py and pinned by the shared
+    // contract fixture), and a fifth copy of it is how the block and the card
+    // start disagreeing about what a task costs.
+    const net = netCost(task, svc.id);
+    const lineTotal = net === null ? null : round2(net);
+    const unitRate = lineTotal === null ? null : round2(lineTotal / quantity);
     return (
       <StepBlock title={label}>
-        <CostInput
-          id={`${reactId}-${svc.id}`}
-          label={label}
-          value={task[svc.costKey]}
-          onChange={(next) => onChange({ ...task, [svc.costKey]: next })}
-          autoFocus={autoFocusService === svc.id}
+        <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2">
+          <label htmlFor={`${reactId}-${svc.id}`} className={rowLabelCls}>
+            {t('aito.serviceUnitCost')}
+          </label>
+          <CostInput
+            id={`${reactId}-${svc.id}`}
+            label={label}
+            value={unitCost}
+            onChange={(unit) =>
+              onChange({ ...task, [svc.costKey]: unit === null ? null : round2(unit * quantity) })
+            }
+            autoFocus={autoFocusService === svc.id}
+          />
+
+          <label htmlFor={`${reactId}-${svc.id}-quantity`} className={rowLabelCls}>
+            {t('aito.quantity')}
+          </label>
+          <QuantityInput
+            id={`${reactId}-${svc.id}-quantity`}
+            value={task[qtyKey]}
+            // Qualifies the ACCESSIBLE name only ("Usinage Quantity") — the
+            // visible label above stays the bare "Quantity" text. Two
+            // services priced at once is the common case (chips seed open
+            // from every non-null cost), and a bare "Quantity" name would be
+            // ambiguous between them; see QuantityInput's doc.
+            ariaLabel={`${label} ${t('aito.quantity')}`}
+            onChange={(next) =>
+              onChange({
+                ...task,
+                [qtyKey]: next,
+                // Rescale so the UNIT price holds. `stored` is null when the
+                // service is unpriced, and there is nothing to rescale then.
+                [svc.costKey]: stored === null ? null : round2((stored / quantity) * next),
+              })
+            }
+          />
+
+          <label htmlFor={`${reactId}-${svc.id}-discount`} className={rowLabelCls}>
+            {t('aito.discount')}
+          </label>
+          <DiscountSelect
+            id={`${reactId}-${svc.id}-discount`}
+            value={pct}
+            ariaLabel={`${label} ${t('aito.discount')}`}
+            onChange={(next) => onChange({ ...task, [discountKey]: next })}
+          />
+        </div>
+        <ServicePriceFooter
+          lineTotal={lineTotal}
+          unitRate={unitRate}
+          currency={currency}
+          testId={`service-footer-${svc.id}`}
         />
         <StepDescriptionInput
           label={label}
@@ -222,16 +312,15 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
   // written; the block below reads them.
   const quantity = Math.max(1, task.impression.quantity);
   const unitCost = task.impressionCost === null ? null : round2(task.impressionCost / quantity);
-  const lineTotal =
-    task.impressionCost === null
-      ? null
-      : round2(task.impressionCost * (1 - (task.impressionDiscountPct ?? 0) / 100));
-  // The discounted per-piece rate, for the band to state beside the total —
-  // and ONLY when a discount is set: without one it is the Cost input's own
-  // value, and the band would just be echoing the field above it. Derived
-  // from `lineTotal` rather than re-applying the percentage to `unitCost`, so
-  // the two figures can never round apart.
-  const discountedUnit = lineTotal === null || !task.impressionDiscountPct ? null : round2(lineTotal / quantity);
+  // Through `netCost`, never by re-spelling `cost * (1 - pct / 100)` here —
+  // same reasoning as `renderPlainService` above, which is exactly how this
+  // block and the card started disagreeing about what impression costs.
+  const impressionNet = netCost(task, 'impression');
+  const lineTotal = impressionNet === null ? null : round2(impressionNet);
+  // The per-piece rate the line actually charges, for the band to state
+  // beside the total. Derived from `lineTotal` rather than re-applying the
+  // percentage to `unitCost`, so the two figures can never round apart.
+  const unitRate = lineTotal === null ? null : round2(lineTotal / quantity);
 
   return (
     <fieldset disabled={disabled} className="space-y-3">
@@ -315,41 +404,19 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
               </>
             }
             lineTotal={lineTotal}
-            discountedUnit={discountedUnit}
+            unitRate={unitRate}
             unitCost={unitCost}
             discountField={
               <>
                 <label htmlFor={`${reactId}-impression-discount`} className={rowLabelCls}>
                   {t('aito.discount')}
                 </label>
-                {/* Fixed-width, not flex-1: a discount is two digits and a
-                    sign at most — same reasoning as the quantity input above
-                    (a little wider, `w-24` not `w-20`, to fit "30%" plus the
-                    select's own disclosure arrow). Bare `inputCls` (`w-full`)
-                    would otherwise fill the whole field column for "—" or
-                    "30%". */}
-                <div className="max-w-24">
-                  <select
-                    id={`${reactId}-impression-discount`}
-                    value={task.impressionDiscountPct ?? ''}
-                    onChange={(e) =>
-                      onChange({
-                        ...task,
-                        impressionDiscountPct: e.target.value === '' ? null : Number(e.target.value),
-                      })
-                    }
-                    className={inputCls}
-                  >
-                    {/* An em dash, not "0%": no discount means no discount
-                        column on the quote's PDF at all. */}
-                    <option value="">—</option>
-                    {[5, 10, 15, 20, 25, 30].map((pct) => (
-                      <option key={pct} value={pct}>
-                        {pct}%
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <DiscountSelect
+                  id={`${reactId}-impression-discount`}
+                  value={task.impressionDiscountPct}
+                  ariaLabel={`${t('aito.serviceImpression3D')} ${t('aito.discount')}`}
+                  onChange={(impressionDiscountPct) => onChange({ ...task, impressionDiscountPct })}
+                />
               </>
             }
             noteField={

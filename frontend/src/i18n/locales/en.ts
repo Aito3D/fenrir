@@ -166,7 +166,7 @@ export default {
     serviceCost: 'Cost',
     serviceUnitCost: 'Unit cost',
     discount: 'Discount',
-    printingTotal: 'Printing total',
+    serviceTotal: 'Line total',
     done: 'Done',
     stepPending: 'Pending',
     markDone: 'Mark done',

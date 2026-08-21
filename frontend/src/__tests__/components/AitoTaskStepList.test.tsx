@@ -271,4 +271,38 @@ describe('TaskStepList', () => {
       await waitFor(() => expect(hits.count).toBe(0));
     });
   });
+
+  // Every service now carries a per-unit quantity (Task 8), so the panel's
+  // meta line — previously printing-only — has to surface it for the other
+  // three too. Printing keeps stating ×1 (see the describe block above);
+  // scan/modelisation/usinage deliberately do not, because their meta line
+  // would otherwise be nothing but that lone ×1.
+  describe('unit count under the other services', () => {
+    it('shows the unit count under a machining step quoted for several parts', () => {
+      render(<TaskStepList task={task({ usinageCost: 36000, usinageQuantity: 3 })} onChange={vi.fn()} canTick />);
+      expect(screen.getByTestId('step-meta-usinage')).toHaveTextContent('×3');
+    });
+
+    it('shows no meta line under a one-off machining step', () => {
+      render(<TaskStepList task={task({ usinageCost: 12000, usinageQuantity: 1 })} onChange={vi.fn()} canTick />);
+      expect(screen.queryByTestId('step-meta-usinage')).toBeNull();
+    });
+
+    it('still shows ×1 under a printing step, which carries material and colour too', () => {
+      render(
+        <TaskStepList
+          task={task({ impressionCost: 500, impression: { ...emptyTaskDraft().impression, quantity: 1 } })}
+          onChange={vi.fn()}
+          canTick
+        />,
+      );
+      expect(screen.getByTestId('step-meta-impression')).toHaveTextContent('×1');
+    });
+
+    it('states a machining step at its discounted price', () => {
+      render(<TaskStepList task={task({ usinageCost: 1000, usinageDiscountPct: 10 })} onChange={vi.fn()} canTick />);
+      // netCost: 1000 less 10% is 900.
+      expect(screen.getByText(/900/)).toBeInTheDocument();
+    });
+  });
 });

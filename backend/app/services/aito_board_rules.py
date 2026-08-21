@@ -96,6 +96,26 @@ class TaskSummary:
     steps_by_task: tuple[TaskSteps, ...] = ()
 
 
+def net_cost(task: Any, service: str) -> float | None:
+    """The service's cost as the quote will state it.
+
+    ``<service>_cost`` is stored PRE-discount (unit x quantity — see
+    AitoTask), so the percent lands here rather than in the stored figure:
+    the two must never double-count. Returns None when the service is absent
+    from the job; ``0`` is a step quoted free and passes straight through, so
+    callers must test the result for None and never for falsiness.
+
+    ``getattr`` with a default on the discount because this module is
+    duck-typed over anything exposing the cost/done pairs — the contract
+    fixture's ``_Task`` and older callers may not carry every attribute.
+    """
+    cost = getattr(task, f"{service}_cost", None)
+    if cost is None:
+        return None
+    pct = getattr(task, f"{service}_discount_pct", None) or 0
+    return cost * (1 - pct / 100)
+
+
 def summarise(tasks: Iterable[Any]) -> TaskSummary:
     """Count, total, enabled services and pending services in one pass.
 
@@ -122,17 +142,7 @@ def summarise(tasks: Iterable[Any]) -> TaskSummary:
                 continue
             enabled.add(service)
             task_services.append(service)
-            if service == "impression":
-                # The impression cost is stored PRE-discount (see
-                # AitoTask.impression_discount_pct); the total a card shows
-                # must match what the quote will actually say, so the
-                # discount lands here. Other services have no discount.
-                # getattr default: fixture duck-types and older callers may
-                # not carry the attribute.
-                pct = getattr(task, "impression_discount_pct", None) or 0
-                total += cost * (1 - pct / 100)
-            else:
-                total += cost
+            total += net_cost(task, service)
             steps_total += 1
             if getattr(task, f"{service}_done"):
                 steps_done += 1

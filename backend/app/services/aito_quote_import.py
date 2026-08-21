@@ -218,6 +218,25 @@ def _line_amount(line: dict, *, inclusive: bool, precision: int) -> float:
     if inclusive:
         amount = float(line.get("rate") or 0) * quantity
     else:
+        # UNVERIFIED ASSUMPTION, tax-exclusive branch only: `item_total` is
+        # generally Zoho's POST-discount line figure, unlike `rate` in the
+        # inclusive branch above (which the docstring's claim is deliberately
+        # scoped to). If that holds, a line carrying a percent discount would
+        # have `amount` already net of it — and `_build_task` below separately
+        # adopts `line.discount_pct` onto `<service>_discount_pct`, which every
+        # reader (`net_cost`) then applies AGAIN on top of `<service>_cost`,
+        # double-counting the discount.
+        #
+        # Unreachable today: `aito_quote_sync.py` always posts
+        # `is_inclusive_tax: True` for quotes this app creates, so this branch
+        # only ever runs against a quote built by hand in Books. Scan,
+        # modelisation and usinage adopted no discount before this change, so
+        # a hand-made tax-exclusive quote with a percent line discount on any
+        # of those three was harmless; now that all four services carry a
+        # discount, it would silently under-charge on import. Do not "fix" by
+        # subtracting the discount back out here without confirming Zoho's
+        # actual `item_total` semantics on a real tax-exclusive org — guessing
+        # wrong corrupts real money in the other direction.
         taxes = sum(float(tax.get("tax_amount") or 0) for tax in (line.get("line_item_taxes") or []))
         amount = float(line.get("item_total") or 0) + taxes
     # Clamp: an Aito cost is validated ge=0, and a stray negative (a discount
@@ -579,27 +598,30 @@ def _build_task(group: list[ParsedLine]) -> dict:
 
     task: dict = {
         "title": title,
-        "scan_cost": None,
-        "modelisation_cost": None,
-        "usinage_cost": None,
         "impression_printer_id": None,
         "impression_filament_id": None,
         "impression_weight_g": weight,
         "impression_time_min": minutes,
-        "impression_quantity": max(1, round(impression.quantity)) if impression else None,
         "impression_color": color[:_COLOR_MAX] if color else None,
-        "impression_cost": None,
-        # Adopted, not derived: the next push rebuilds the whole line_items
-        # array, so a discount left behind here would wipe the real quote's.
-        # `impression_cost` stays the PRE-discount rate x quantity
-        # (_line_amount's inclusive branch never subtracts the discount) —
-        # the two fields must not double-count.
-        "impression_discount_pct": impression.discount_pct if impression else None,
     }
+    # Every service starts absent. A quote line fills its three fields in
+    # below; a service the quote never mentioned keeps None for all of them,
+    # which is exactly "not part of this job".
+    for service in SERVICE_RANK:
+        task[f"{service}_cost"] = None
+        task[f"{service}_quantity"] = None
+        task[f"{service}_discount_pct"] = None
     for service in SERVICE_RANK:
         task[f"{service}_description"] = "\n".join(_dedupe(descriptions[service])) or None
     for line in ordered:
+        # Adopted, not derived: the next push rebuilds the whole line_items
+        # array, so a discount left behind here would wipe the real quote's.
+        # `<service>_cost` stays the PRE-discount rate x quantity
+        # (_line_amount's inclusive branch never subtracts the discount) —
+        # the two fields must not double-count.
         task[_COST_FIELD[line.service]] = line.amount
+        task[f"{line.service}_quantity"] = max(1, round(line.quantity))
+        task[f"{line.service}_discount_pct"] = line.discount_pct
     return task
 
 

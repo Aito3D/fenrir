@@ -21,12 +21,13 @@ export interface ImpressionCostBandProps {
   /** The figure the quote line will carry — unit × quantity, less the
    *  discount. `null` renders no amount: an absent cost is not a zero cost. */
   lineTotal: number | null;
-  /** What ONE part costs once the discount is taken off, or `null` when no
-   *  discount is set. Undiscounted, the Cost input already states the unit
-   *  price and repeating it here would be noise — but a discount only ever
-   *  showed up in the total, leaving the operator to divide by the quantity
-   *  in their head to quote a per-piece rate. */
-  discountedUnit: number | null;
+  /** What ONE part costs at the line's final price — the total divided back
+   *  by the quantity. Stated whenever there is a total, discount or not: the
+   *  three plain service blocks state theirs unconditionally, and a per-part
+   *  rate that appears only sometimes reads as a rate that only sometimes
+   *  applies. Derived from `lineTotal` rather than by re-applying the
+   *  percentage to the unit cost, so the two figures can never round apart. */
+  unitRate: number | null;
   currency: string;
 }
 
@@ -43,7 +44,7 @@ export function ImpressionCostBand({
   result,
   notConfigured,
   lineTotal,
-  discountedUnit,
+  unitRate,
   currency,
 }: ImpressionCostBandProps) {
   const { t } = useTranslation();
@@ -140,12 +141,14 @@ export function ImpressionCostBand({
       {lineTotal !== null && (
         <div className="ml-auto text-right">
           <Money currency={currency} value={lineTotal} className="text-lg font-semibold text-bambu-green" />
-          <div className="text-[0.7rem] uppercase tracking-wide text-bambu-gray">{t('aito.printingTotal')}</div>
-          {/* The per-piece rate the discount actually bought, spelled out so
-              nobody divides the total by the quantity by hand. */}
-          {discountedUnit !== null && (
+          <div className="text-[0.7rem] uppercase tracking-wide text-bambu-gray">{t('aito.serviceTotal')}</div>
+          {/* The per-piece rate the line actually charges, spelled out so
+              nobody divides the total by the quantity by hand — stated
+              whether or not a discount applies, same as the three plain
+              service blocks' footer. */}
+          {unitRate !== null && (
             <div className="text-xs text-bambu-gray">
-              <Money currency={currency} value={discountedUnit} className="text-bambu-gray-light" />{' '}
+              <Money currency={currency} value={unitRate} className="text-bambu-gray-light" />{' '}
               {t('aito.perPart')}
             </div>
           )}

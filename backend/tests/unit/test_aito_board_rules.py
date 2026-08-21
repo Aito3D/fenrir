@@ -2,7 +2,7 @@
 
 import pytest
 
-from backend.app.services.aito_board_rules import evaluate, summarise
+from backend.app.services.aito_board_rules import evaluate, net_cost, summarise
 
 
 class _Task:
@@ -84,3 +84,62 @@ def test_a_null_cost_is_not_a_step_even_when_its_flag_is_set():
 
 def test_no_tasks_means_nothing_pending():
     assert summarise([]).pending == ()
+
+
+class _T:
+    """Duck-types what the rule engine reads off an AitoTask."""
+
+    def __init__(self, **kwargs):
+        for service in ("scan", "modelisation", "impression", "usinage"):
+            setattr(self, f"{service}_cost", kwargs.get(f"{service}_cost"))
+            setattr(self, f"{service}_done", kwargs.get(f"{service}_done", False))
+            setattr(self, f"{service}_quantity", kwargs.get(f"{service}_quantity"))
+            setattr(self, f"{service}_discount_pct", kwargs.get(f"{service}_discount_pct"))
+        self.title = kwargs.get("title", "")
+
+
+def test_net_cost_is_none_for_an_absent_service():
+    assert net_cost(_T(), "usinage") is None
+
+
+def test_net_cost_keeps_a_free_step_at_zero():
+    """0 is quoted-free, a real step — not absent."""
+    assert net_cost(_T(usinage_cost=0.0), "usinage") == 0.0
+
+
+def test_net_cost_passes_an_undiscounted_cost_through():
+    assert net_cost(_T(usinage_cost=1000.0), "usinage") == 1000.0
+
+
+def test_net_cost_applies_the_services_own_discount():
+    assert net_cost(_T(usinage_cost=1000.0, usinage_discount_pct=10.0), "usinage") == 900.0
+
+
+def test_net_cost_reads_each_service_independently():
+    task = _T(
+        scan_cost=100.0,
+        scan_discount_pct=50.0,
+        usinage_cost=100.0,
+        usinage_discount_pct=25.0,
+        impression_cost=100.0,
+    )
+    assert net_cost(task, "scan") == 50.0
+    assert net_cost(task, "usinage") == 75.0
+    assert net_cost(task, "impression") == 100.0
+
+
+def test_net_cost_tolerates_a_task_missing_the_discount_attribute():
+    """Duck-typed fixtures and older callers may not carry it."""
+
+    class _Bare:
+        usinage_cost = 400.0
+
+    assert net_cost(_Bare(), "usinage") == 400.0
+
+
+def test_summarise_discounts_a_non_printing_service():
+    """500 scan + 1000 usinage at 10% is 1400, and the discount must not
+    touch the step count."""
+    result = summarise([_T(scan_cost=500.0, usinage_cost=1000.0, usinage_discount_pct=10.0)])
+    assert result.total == 1400.0
+    assert result.steps_total == 2

@@ -163,7 +163,7 @@ export default {
     serviceCost: 'Стоимость',
     serviceUnitCost: 'Стоимость за единицу',
     discount: 'Скидка',
-    printingTotal: 'Итого печать',
+    serviceTotal: 'Итого по строке',
     done: 'Готово',
     stepPending: 'Ожидает',
     markDone: 'Отметить как готово',

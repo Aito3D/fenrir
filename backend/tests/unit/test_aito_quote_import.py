@@ -613,6 +613,58 @@ def test_flat_amount_discount_is_not_adopted():
     assert preview["tasks"][0]["impression_discount_pct"] is None
 
 
+def test_import_reads_quantity_and_discount_off_a_machining_line():
+    """Task 4 made the exporter uniform across all four services; the
+    importer must read quantity and discount off every service's line, not
+    just impression's."""
+    estimate = {
+        "estimate_id": "e1",
+        "estimate_number": "DEV26-9003",
+        "is_inclusive_tax": True,
+        "price_precision": 0,
+        "line_items": [
+            {
+                "item_order": 1,
+                "sku": "U3DIMP",
+                "description": "Info: fraisage alu",
+                "rate": 12000,
+                "quantity": 3,
+                "discount": "10.00%",
+            },
+        ],
+    }
+    preview = build_preview(estimate, None, "https://x")
+    task = preview["tasks"][0]
+    assert task["usinage_cost"] == 36000
+    assert task["usinage_quantity"] == 3
+    assert task["usinage_discount_pct"] == 10.0
+
+
+def test_import_leaves_an_absent_service_null_for_all_three_fields():
+    """A service the quote never mentioned must come back None for cost,
+    quantity AND discount — never zero or a default quantity of 1."""
+    estimate = {
+        "estimate_id": "e1",
+        "estimate_number": "DEV26-9004",
+        "is_inclusive_tax": True,
+        "price_precision": 0,
+        "line_items": [
+            {
+                "item_order": 1,
+                "sku": "U3DIMP",
+                "description": "",
+                "rate": 1000,
+                "quantity": 1,
+            },
+        ],
+    }
+    task = build_preview(estimate, None, "https://x")["tasks"][0]
+    assert task["scan_cost"] is None
+    assert task["scan_quantity"] is None
+    assert task["scan_discount_pct"] is None
+    assert task["usinage_discount_pct"] is None
+
+
 def _line(sku: str, rate: float, *, description: str = "", header_name: str | None = None, **extra) -> dict:
     """One line item in the shape `parse_lines` reads."""
     line = {"sku": sku, "rate": rate, "quantity": 1, "description": description, **extra}

@@ -66,7 +66,16 @@ def _task_lines(tasks: list[dict]) -> list[str]:
         # Bounds what we ship to the paid API — a pathological draft must not
         # blow up the prompt (and the bill).
         title = ((task.get("title") or "").strip() or f"Tâche {index + 1}")[:500]
-        services = [name for cost_field, _, name in _SERVICE_FIELDS if task.get(cost_field) is not None]
+        # The count rides on the service name, so a machining-only project
+        # does not lose "3 pièces" from the summary. Printing's own quantity
+        # stays here too rather than being stated twice in its detail group
+        # below (which now carries only colour and weight).
+        services = []
+        for cost_field, _, name in _SERVICE_FIELDS:
+            if task.get(cost_field) is None:
+                continue
+            quantity = task.get(f"{cost_field.removesuffix('_cost')}_quantity")
+            services.append(f"{name} x{quantity}" if quantity and quantity > 1 else name)
         parts = [f"{title}: {', '.join(services) if services else 'aucun service'}"]
         if task.get("impression_cost") is not None:
             details = []
@@ -74,8 +83,6 @@ def _task_lines(tasks: list[dict]) -> list[str]:
                 details.append(str(task["impression_color"]))
             if task.get("impression_weight_g") is not None:
                 details.append(f"{task['impression_weight_g']:g} g")
-            if task.get("impression_quantity") not in (None, 1):
-                details.append(f"x{task['impression_quantity']}")
             if details:
                 parts.append(f"({', '.join(details)})")
         # Per-service free text, bounded like the title — these are the only

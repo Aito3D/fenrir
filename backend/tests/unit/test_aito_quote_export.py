@@ -151,7 +151,8 @@ def test_enabled_services_includes_zero_cost_and_excludes_none():
 from backend.app.services.aito_quote_export import (  # noqa: E402
     Catalogue,
     build_line_items,
-    impression_rate_quantity,
+    discount_of,
+    rate_quantity,
 )
 
 CATALOGUE = Catalogue(
@@ -228,9 +229,9 @@ def test_each_service_line_carries_only_its_own_description():
 
 
 def test_impression_rate_is_the_total_divided_by_quantity():
-    assert impression_rate_quantity(task(impression_cost=2400, impression_quantity=2)) == (1200, 2)
-    assert impression_rate_quantity(task(impression_cost=2401, impression_quantity=2)) == (1200, 2)
-    assert impression_rate_quantity(task(impression_cost=500, impression_quantity=None)) == (500, 1)
+    assert rate_quantity(task(impression_cost=2400, impression_quantity=2), "impression") == (1200, 2)
+    assert rate_quantity(task(impression_cost=2401, impression_quantity=2), "impression") == (1200, 2)
+    assert rate_quantity(task(impression_cost=500, impression_quantity=None), "impression") == (500, 1)
 
 
 def test_foreign_lines_are_preserved_by_id_after_the_aito_block():
@@ -451,6 +452,40 @@ def test_round_trip_keeps_rising_rank_tasks_apart():
     assert [t["title"] for t in preview["tasks"]] == ["Une", "Deux"]
 
 
+def test_round_trip_preserves_quantity_and_discount_on_every_service():
+    """The governing rule: whatever aito_quote_export writes,
+    aito_quote_import must read back unchanged."""
+    original = [
+        task(
+            title="Support",
+            scan_cost=10000.0,
+            scan_quantity=2,
+            scan_discount_pct=5.0,
+            modelisation_cost=20000.0,
+            modelisation_quantity=4,
+            impression_cost=1500.0,
+            impression_quantity=3,
+            impression_discount_pct=10.0,
+            usinage_cost=36000.0,
+            usinage_quantity=3,
+            usinage_discount_pct=15.0,
+        )
+    ]
+    preview = build_preview(as_estimate(build_line_items(original, [], CATALOGUE)), None, "https://x")
+    rebuilt = preview["tasks"][0]
+
+    assert rebuilt["scan_cost"] == 10000
+    assert rebuilt["scan_quantity"] == 2
+    assert rebuilt["scan_discount_pct"] == 5.0
+    assert rebuilt["modelisation_quantity"] == 4
+    assert rebuilt["modelisation_discount_pct"] is None
+    assert rebuilt["impression_quantity"] == 3
+    assert rebuilt["impression_discount_pct"] == 10.0
+    assert rebuilt["usinage_cost"] == 36000
+    assert rebuilt["usinage_quantity"] == 3
+    assert rebuilt["usinage_discount_pct"] == 15.0
+
+
 from backend.app.services.aito_quote_export import (  # noqa: E402
     Catalogue,
     ExportShipping,
@@ -607,3 +642,71 @@ def test_shipping_item_id_raises_for_an_unresolved_service():
 
     with pytest.raises(KeyError):
         SHIPPING_CATALOGUE.shipping_item_id("marquises")
+
+
+def test_rate_quantity_divides_the_stored_total_for_any_service():
+    """`<service>_cost` is the pre-discount total; a Books line is
+    rate x quantity at price_precision 0."""
+    t = task(usinage_cost=36000.0, usinage_quantity=3)
+    assert rate_quantity(t, "usinage") == (12000, 3)
+
+
+def test_rate_quantity_rounds_an_unrepresentable_total():
+    """2401 over 2 units cannot be expressed, so the rate rounds -- 1200.5
+    lands exactly on a rounding tie, and round() goes to the even neighbour
+    (see test_halfway_rates_use_bankers_rounding), giving an achievable
+    total of 2400, one XPF short of the original."""
+    t = task(usinage_cost=2401.0, usinage_quantity=2)
+    rate, quantity = rate_quantity(t, "usinage")
+    assert (rate, quantity) == (1200, 2)
+
+
+def test_rate_quantity_treats_a_null_quantity_as_one():
+    t = task(scan_cost=5000.0)
+    assert rate_quantity(t, "scan") == (5000, 1)
+
+
+def test_discount_of_reads_each_service_independently():
+    t = task(
+        scan_cost=1.0,
+        scan_discount_pct=50.0,
+        usinage_cost=1.0,
+        usinage_discount_pct=10.0,
+        impression_cost=1.0,
+    )
+    assert discount_of(t, "scan") == 50.0
+    assert discount_of(t, "usinage") == 10.0
+    assert discount_of(t, "impression") is None
+
+
+def test_build_line_items_emits_quantity_and_discount_on_a_machining_line():
+    t = task(title="Support", usinage_cost=36000.0, usinage_quantity=3, usinage_discount_pct=10.0)
+    lines = build_line_items([t], [], CATALOGUE)
+    usinage = next(line for line in lines if line["item_id"] == CATALOGUE.usinage_item_id)
+    assert usinage["rate"] == 12000
+    assert usinage["quantity"] == 3
+    assert usinage["discount"] == "10%"
+    assert usinage["header_name"] == "Support"
+
+
+def test_build_line_items_omits_a_zero_discount():
+    """A literal '0%' would put a pointless discount column on the PDF."""
+    t = task(usinage_cost=1000.0, usinage_discount_pct=None)
+    lines = build_line_items([t], [], CATALOGUE)
+    usinage = next(line for line in lines if line["item_id"] == CATALOGUE.usinage_item_id)
+    assert "discount" not in usinage
+
+
+def test_build_line_items_still_emits_printing_the_same_way():
+    """Regression guard: generalising must not change the impression line."""
+    t = task(
+        impression_cost=1500.0,
+        impression_quantity=3,
+        impression_discount_pct=10.0,
+        material="PETG",
+    )
+    lines = build_line_items([t], [], CATALOGUE)
+    impression = next(line for line in lines if line["item_id"] == CATALOGUE.impression_item_id)
+    assert impression["rate"] == 500
+    assert impression["quantity"] == 3
+    assert impression["discount"] == "10%"

@@ -15,37 +15,12 @@ import { focusRingCls, inputCls, labelCls } from '../formStyles';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import type { ZohoQuotePreview } from '../../api/client';
-import { SERVICES, summariseTasks, taskCost } from '../../utils/aitoBoardRules';
-import type { TaskLike } from '../../utils/aitoBoardRules';
+import { SERVICES, summariseTasks, taskCost, toTaskLike } from '../../utils/aitoBoardRules';
 
 export interface ImportQuoteDrawerProps {
   onClose: () => void;
   onImport: (payload: { description: string; preview: ZohoQuotePreview }) => void;
   submitting?: boolean;
-}
-
-/** Adapts a preview task's snake_case `AitoTaskCreate` shape to the canonical
- *  `TaskLike` `aitoBoardRules.ts` operates on, so this drawer can delegate to
- *  `taskCost`/`summariseTasks` instead of re-implementing their null-cost and
- *  impression-discount rules. `*_done` defaults to `false` server-side
- *  (`_build_task` in services/aito_quote_import.py never sets it) and is
- *  carried through rather than hand-set — a preview task is never actually
- *  ticked, but there is no reason to assert that here too. */
-function toTaskLike(task: AitoTaskCreate): TaskLike {
-  return {
-    scanCost: task.scan_cost,
-    modelisationCost: task.modelisation_cost,
-    impressionCost: task.impression_cost,
-    usinageCost: task.usinage_cost,
-    done: {
-      scan: task.scan_done ?? false,
-      modelisation: task.modelisation_done ?? false,
-      impression: task.impression_done ?? false,
-      usinage: task.usinage_done ?? false,
-    },
-    title: task.title ?? undefined,
-    impressionDiscountPct: task.impression_discount_pct,
-  };
 }
 
 /** Which services a preview task has enabled, in canonical order. */
@@ -56,12 +31,12 @@ function servicesOf(task: AitoTaskCreate): string[] {
 
 /** What the quote charges for one preview task.
  *
- *  `impression_cost` arrives PRE-discount — `_build_task` in
- *  services/aito_quote_import.py adopts the line's percent into
- *  `impression_discount_pct` rather than baking it into the cost, so the two
+ *  Every service's cost arrives PRE-discount — `_build_task` in
+ *  services/aito_quote_import.py adopts each line's percent into its own
+ *  `<service>_discount_pct` rather than baking it into the cost, so the two
  *  never double-count. `summariseTasks` (utils/aitoBoardRules.ts) already
- *  applies that same discount rule, so a single-task summary gives this
- *  preview its total without restating it. */
+ *  applies that same discount rule for all four services, so a single-task
+ *  summary gives this preview its total without restating it. */
 function taskTotal(task: AitoTaskCreate): number {
   return summariseTasks([toTaskLike(task)]).total;
 }
