@@ -223,3 +223,21 @@ class CalculatorInsightsResponse(BaseModel):
     time_accuracy: TimeAccuracyInsights
     power_by_printer: list[PowerDrawEntry]
     usage_by_printer: list[DailyUsageEntry]
+
+
+class ZohoFilamentProduct(BaseModel):
+    """A Zoho filament item offered in the add-filament search."""
+
+    item_id: str
+    name: str
+    sku: str
+    brand: str
+    material: str
+    colour: str
+    spool_weight_kg: float
+    weight_inferred: bool = Field(description="True when the item name carried no weight and 1 kg was assumed")
+    dealer_price: float
+    cost_per_kg: float
+    has_price: bool = Field(description="False when the Zoho dealer price is 0; cost must not be filled from it")
+
+    model_config = {"from_attributes": True}

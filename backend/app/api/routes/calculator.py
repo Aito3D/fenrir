@@ -22,8 +22,11 @@ from backend.app.schemas.calculator import (
     CalculatorPrinterCreate,
     CalculatorPrinterResponse,
     CalculatorPrinterUpdate,
+    ZohoFilamentProduct,
 )
+from backend.app.services import zoho_filaments
 from backend.app.services.calculator_insights import calculator_insights_service
+from backend.app.services.zoho import zoho_service
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +130,29 @@ async def delete_calculator_filament(
     await db.commit()
     logger.info("Deleted calculator filament: %s", name)
     return {"message": f"Filament '{name}' deleted"}
+
+
+@router.get("/zoho-filaments", response_model=list[ZohoFilamentProduct])
+async def search_zoho_filaments(
+    q: str = Query(default="", max_length=100, description="Free-text search over brand, material, colour and SKU"),
+    limit: int = Query(default=25, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_READ),
+):
+    """Zoho products in the Filaments category, for linking to a calculator filament.
+
+    Results are per Zoho item — colour included — because dealer prices differ
+    between colours of the same material (Bambu ABS-GF is 1866 in Blue and 3208
+    in Black), so which colour the user picks decides the price.
+    """
+    if not await zoho_service.is_configured(db):
+        raise HTTPException(status_code=503, detail="Zoho is not configured")
+    try:
+        catalogue = await zoho_filaments.fetch_catalogue(db)
+    except Exception as exc:
+        logger.warning("Zoho filament catalogue unavailable: %s", exc)
+        raise HTTPException(status_code=502, detail="Could not reach Zoho") from exc
+    return zoho_filaments.search_catalogue(catalogue, q, limit)
 
 
 # --- Printers ---
