@@ -1177,15 +1177,20 @@ describe('TaskRow', () => {
 
   it('printing: the band still carries the total when nothing can be computed', async () => {
     // A hand-typed cost and no printer — an imported quote looks exactly like
-    // this. The old layout left half the block empty here.
-    const task = { ...emptyTaskDraft(), impressionCost: 9000 };
+    // this. The old layout left half the block empty here. Quantity is 3 (not
+    // the emptyTaskDraft default of 1) so the total (9000) and the per-part
+    // rate (now stated unconditionally — see Task 11 — as 9000/3 = 3000) are
+    // distinct figures: getByText keeps its original meaning of "exactly one
+    // $9,000.00 node", rather than being weakened to "at least one".
+    const task = {
+      ...emptyTaskDraft(),
+      impression: { ...emptyTaskDraft().impression, quantity: 3 },
+      impressionCost: 9000,
+    };
     render(<ControlledTaskRow initial={task} onChangeSpy={vi.fn()} />);
 
     const band = within(await screen.findByTestId('impression-band'));
-    // Quantity defaults to 1, so the per-part rate (now stated unconditionally
-    // — see Task 11) divides back to the exact same figure as the total: two
-    // matches, not one. The total renders first, so index 0 is it.
-    expect(band.getAllByText(formatMoney(9000, 'USD').replace(/\s+/g, ' '))[0]).toBeInTheDocument();
+    band.getByText(formatMoney(9000, 'USD').replace(/\s+/g, ' '));
     expect(band.queryByRole('img', { name: 'Where the money goes' })).not.toBeInTheDocument();
     // No split, and no instructions in its place either: the band states what
     // it knows and stays quiet about what it doesn't. The operator filling
