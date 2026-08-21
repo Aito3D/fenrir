@@ -96,42 +96,37 @@ async def test_no_api_key_is_not_configured():
     async def get_setting(db, key):
         return ""
 
-    with patch("backend.app.api.routes.settings.get_setting", get_setting):
-        with pytest.raises(OpenRouterNotConfiguredError):
-            await proofread_text(None, "capot")
+    with patch("backend.app.api.routes.settings.get_setting", get_setting), pytest.raises(OpenRouterNotConfiguredError):
+        await proofread_text(None, "capot")
 
 
 @pytest.mark.asyncio
 async def test_non_200_is_an_upstream_error(configured):
     client, _ = build_client(status_code=429, payload={})
-    with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
-        with pytest.raises(OpenRouterUpstreamError):
-            await proofread_text(None, "capot")
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client), pytest.raises(OpenRouterUpstreamError):
+        await proofread_text(None, "capot")
 
 
 @pytest.mark.asyncio
 async def test_transport_failure_is_an_upstream_error(configured):
     client, _ = build_client(raises=httpx.ConnectError("no route"))
-    with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
-        with pytest.raises(OpenRouterUpstreamError):
-            await proofread_text(None, "capot")
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client), pytest.raises(OpenRouterUpstreamError):
+        await proofread_text(None, "capot")
 
 
 @pytest.mark.asyncio
 async def test_empty_answer_is_an_upstream_error(configured):
     """Never return "": the field would be blanked by its own spell-check."""
     client, _ = build_client(payload=chat_payload("   "))
-    with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
-        with pytest.raises(OpenRouterUpstreamError):
-            await proofread_text(None, "capot")
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client), pytest.raises(OpenRouterUpstreamError):
+        await proofread_text(None, "capot")
 
 
 @pytest.mark.asyncio
 async def test_unexpected_payload_is_an_upstream_error(configured):
     client, _ = build_client(payload={"error": "nope"})
-    with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
-        with pytest.raises(OpenRouterUpstreamError):
-            await proofread_text(None, "capot")
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client), pytest.raises(OpenRouterUpstreamError):
+        await proofread_text(None, "capot")
 
 
 @pytest.mark.asyncio

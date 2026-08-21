@@ -2760,3 +2760,73 @@ No code, comment, or test changed as part of writing this entry. `_unquote` and
 `proofread_text` are unchanged from commit `cad0f792c`. `tools/snapshot.py verify` is
 unaffected — none of the 11 probes touch `openrouter.py`'s runtime behavior or
 `AitoProofreadResponse`'s schema (`min_length` was not added).
+
+## ActivityRail note-rollback depth — 2026-08-20 — user-approved behavior change (approval given RETROACTIVELY)
+
+*(Note on ids: this campaign's task ids restart every few iterations and collide across
+dates — there is already an unrelated `## T-007 — 2026-08-12` entry above, about a Zoho
+shipping-rate locale bug. This entry is titled by component and dated, not by id, so the two
+are never confused; the underlying task was also labelled T-007, in loop-2.)*
+
+**This entry was written after the fact.** Commit `0684e98d9` ("refactor(loop-2): T-002,
+T-007, T-008 — trashed-project task writes, note rollback depth, PDF blob leak
+(user-approved behavior change)") shipped T-007 — `frontend/src/components/aito/history/
+ActivityRail.tsx`'s `addNote` mutation now carries `depth` in its variables and keys both
+`onMutate` and `onError` on that captured value, instead of on the component's current
+`depth` state — with no changelog entry, on the commit's own stated rationale: "T-007 and
+T-008 are contract-neutral bug fixes and carry no entry by design." The commit's subject
+line carries "(user-approved behavior change)", but that marker covered only T-002 of the
+commit's three items; T-007 and T-008 were explicitly called out in the same commit body as
+needing none. The marker overstated what had actually been approved.
+
+Why BASE was wrong: `onMutate` and `onError` both closed over the component's `depth` state
+directly, keying the optimistic-note cache write and its rollback on `['aito-events',
+projectId, depth]` read at whatever moment each callback happened to run — not on the depth
+that was current when the mutation was fired. TanStack Query refreshes a PENDING mutation's
+options on every re-render of the component that owns it — confirmed in `node_modules/
+@tanstack/query-core@5.90.20/build/modern/mutationObserver.js`: `else if
+(this.#currentMutation?.state.status === "pending") this.#currentMutation.setOptions
+(this.options)`. So if the operator moved the depth control while a note `POST` was still in
+flight, and that POST then failed, `onError` ran with the NEW `depth` closed over by the
+freshly-rebuilt options — filtering the placeholder out of the cache entry for the depth the
+control had moved TO, a cache entry that never held it — while the optimistic row the
+mutation had actually written, under the OLD depth's cache entry, was never touched.
+
+The user-visible consequence: the operator gets the "note failed" toast and their typed text
+back, so nothing looks wrong in the moment — but switching the rail back to the depth it was
+on when they hit send still shows the failed note sitting in the timeline as though it were
+real, with a negative placeholder id, until something unrelated invalidates that query. In a
+feature whose whole purpose is an accountability timeline — what happened, and when — a note
+the server REJECTED remaining visible as though it were accepted is exactly the wrong kind of
+wrong.
+
+Fixed by capturing `depth` in the mutation's variables at `mutate()`-time (passed alongside
+the existing `body` and `optimistic` fields) and reading `mutationDepth` off those variables
+in both `onMutate` and `onError`, instead of reading the component's live `depth` state in
+either. Both callbacks now key the same cache entry regardless of what the depth control does
+while the request is in flight.
+
+Empirical proof the output moves, performed by the blind verifier that caught this: it
+staged `refactor-base`'s `frontend/` into a scratch tree, dropped in HEAD's
+`AitoActivityRail.test.tsx` unmodified, and ran it — the test FAILS against BASE at line 247,
+`expected false, received true`, with the failed note still present in `['aito-events', 12,
+'detail']`.
+
+This is the FOURTH change in this campaign shipped without an entry on the reasoning that a
+bug fix restoring intended behavior is not an observable change — after T-005 (2026-08-19,
+`AiTextField` unmount guard), T-004 (2026-08-20, PDF filename control-character strip), and
+T-009 (2026-08-20, proofread quote-pair reply). It is also the first of the four that TWO
+verification passes actively CLEARED before a third caught it: commit `0684e98d9` sits in
+`loop-2`, an iteration that had already PASSED verification twice, with the iteration-5
+verifier examining T-007 specifically and judging it "contract-neutral… repair of a broken
+state, not movement of a valid output," before iteration-6's verifier FAILED the range on
+this same item. That judgement was wrong, and how it was overturned is worth recording in
+its own right: after the third failure, a mechanical test replaced the judgement call — does
+any input produce a different response body, status, rendered text, or persisted value than
+at BASE? For this change the answer is unambiguously yes, and the rule caught what two
+rounds of reasoning had waved through.
+
+The user was shown this finding — the mechanism, the reproduction, and the two-pass miss —
+and approved the change as shipped on 2026-08-20. No code, comment, or test changed as part
+of writing this entry; `ActivityRail.tsx` is unchanged from commit `0684e98d9`.
+`tools/snapshot.py verify` is unaffected by this entry (documentation only).
