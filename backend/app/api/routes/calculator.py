@@ -1,6 +1,7 @@
 """API routes for the 3D print pricing calculator (filaments, printers, defaults)."""
 
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
@@ -17,6 +18,8 @@ from backend.app.schemas.calculator import (
     CalculatorDefaultsUpdate,
     CalculatorFilamentCreate,
     CalculatorFilamentResponse,
+    CalculatorFilamentSyncRequest,
+    CalculatorFilamentSyncResponse,
     CalculatorFilamentUpdate,
     CalculatorInsightsResponse,
     CalculatorPrinterCreate,
@@ -153,6 +156,86 @@ async def search_zoho_filaments(
         logger.warning("Zoho filament catalogue unavailable: %s", exc)
         raise HTTPException(status_code=502, detail="Could not reach Zoho") from exc
     return zoho_filaments.search_catalogue(catalogue, q, limit)
+
+
+@router.post("/filaments/zoho-sync", response_model=CalculatorFilamentSyncResponse)
+async def sync_calculator_filaments_from_zoho(
+    payload: CalculatorFilamentSyncRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_UPDATE),
+):
+    """Refresh one chunk of linked filaments from their Zoho dealer prices.
+
+    Chunking is client-driven: the caller loops until ``next_offset`` is null.
+    Each chunk commits its own work, so a mid-run Zoho failure leaves earlier
+    chunks applied and a retry resumes from the offset it reports.
+
+    Prices only. Brand, material, margin and difficulty are never rewritten from
+    Zoho, so a rename upstream cannot clobber a hand-corrected filament.
+    """
+    if not await zoho_service.is_configured(db):
+        raise HTTPException(status_code=503, detail="Zoho is not configured")
+    try:
+        catalogue = await zoho_filaments.fetch_catalogue(db)
+    except Exception as exc:
+        logger.warning("Zoho filament catalogue unavailable during sync: %s", exc)
+        raise HTTPException(status_code=502, detail="Could not reach Zoho") from exc
+
+    # Ordering by id is load-bearing: offset paging over an unordered query
+    # would skip or repeat rows between chunks.
+    result = await db.execute(
+        select(CalculatorFilament).where(CalculatorFilament.zoho_item_id.is_not(None)).order_by(CalculatorFilament.id)
+    )
+    linked = result.scalars().all()
+
+    total = len(linked)
+    chunk = linked[payload.offset : payload.offset + payload.limit]
+    by_item_id = {product.item_id: product for product in catalogue}
+    now = datetime.now(timezone.utc)
+
+    updated = unchanged = skipped_no_price = missing = 0
+    for filament in chunk:
+        product = by_item_id.get(filament.zoho_item_id or "")
+        if product is None:
+            missing += 1
+            continue
+        if not product.has_price:
+            skipped_no_price += 1
+            continue
+
+        # The filament's own stored weight wins: re-deriving it from the Zoho
+        # name on every sync would let an upstream rename re-scale the price.
+        weight = filament.spool_weight_kg or product.spool_weight_kg or 1.0
+        new_cost = round(product.dealer_price / weight, 2)
+        filament.zoho_synced_at = now
+        if abs(new_cost - filament.cost_per_kg) < 0.005:
+            unchanged += 1
+            continue
+        filament.cost_per_kg = new_cost
+        filament.sale_price_per_kg = derive_sale_price(new_cost, filament.margin_pct)
+        updated += 1
+
+    await db.commit()
+
+    next_offset = payload.offset + payload.limit
+    logger.info(
+        "Zoho filament sync chunk %s-%s: %s updated, %s unchanged, %s without a dealer price, %s missing",
+        payload.offset,
+        payload.offset + len(chunk),
+        updated,
+        unchanged,
+        skipped_no_price,
+        missing,
+    )
+    return CalculatorFilamentSyncResponse(
+        processed=len(chunk),
+        total=total,
+        updated=updated,
+        unchanged=unchanged,
+        skipped_no_price=skipped_no_price,
+        missing=missing,
+        next_offset=next_offset if next_offset < total else None,
+    )
 
 
 # --- Printers ---

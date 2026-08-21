@@ -241,3 +241,22 @@ class ZohoFilamentProduct(BaseModel):
     has_price: bool = Field(description="False when the Zoho dealer price is 0; cost must not be filled from it")
 
     model_config = {"from_attributes": True}
+
+
+class CalculatorFilamentSyncRequest(BaseModel):
+    """One chunk of the Zoho price sync."""
+
+    offset: int = Field(default=0, ge=0, description="Index into the id-ordered list of linked filaments")
+    limit: int = Field(default=25, ge=1, le=200, description="Chunk size")
+
+
+class CalculatorFilamentSyncResponse(BaseModel):
+    """Outcome of one sync chunk. The four outcome counts sum to ``processed``."""
+
+    processed: int = Field(description="Filaments examined in this chunk")
+    total: int = Field(description="Linked filaments overall, for progress display")
+    updated: int = Field(description="Cost per kg changed")
+    unchanged: int = Field(description="Zoho price matched the stored cost")
+    skipped_no_price: int = Field(description="Zoho dealer price was 0; nothing written")
+    missing: int = Field(description="Linked item no longer in the Zoho catalogue; link and price kept")
+    next_offset: int | None = Field(default=None, description="Offset for the next chunk; null when finished")
