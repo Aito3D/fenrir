@@ -16,6 +16,12 @@ const DESCRIPTION_FIELD = {
   usinage: 'usinageDescription',
 } as const;
 
+const QUANTITY_FIELD: Record<Exclude<ServiceId, 'impression'>, 'scanQuantity' | 'modelisationQuantity' | 'usinageQuantity'> = {
+  scan: 'scanQuantity',
+  modelisation: 'modelisationQuantity',
+  usinage: 'usinageQuantity',
+};
+
 export interface TaskStepListProps {
   task: TaskDraft;
   onChange: (next: TaskDraft) => void;
@@ -74,12 +80,6 @@ export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
     ? (filaments?.find((f) => f.id === task.impression.filamentId)?.name ?? '')
     : '';
   const color = task.impression.color.trim();
-
-  const QUANTITY_FIELD: Record<Exclude<ServiceId, 'impression'>, 'scanQuantity' | 'modelisationQuantity' | 'usinageQuantity'> = {
-    scan: 'scanQuantity',
-    modelisation: 'modelisationQuantity',
-    usinage: 'usinageQuantity',
-  };
 
   // Each entry is [icon, accessible field name, value]. Absent values are left
   // out entirely rather than rendered blank.

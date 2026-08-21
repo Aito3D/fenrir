@@ -302,6 +302,26 @@ describe('per-service quantity and discount', () => {
     expect(draft.usinageDiscountPct).toBeNull();
   });
 
+  it('normaliseTaskDraft floors an explicit 0 quantity to 1, top-level and impression alike', () => {
+    // `num(x) ?? 1` alone lets a stored 0 pass straight through, and
+    // `taskDraftToTaskCreate` would then send `..._quantity: 0`, which the
+    // backend's `ge=1` rejects with a 422 — a create that fails until the
+    // operator clears localStorage, exactly what this function exists to
+    // prevent. Legacy/hand-edited blobs are the one place a 0 can appear:
+    // every in-app writer already floors at 1.
+    const legacy = {
+      scanQuantity: 0,
+      modelisationQuantity: 0,
+      usinageQuantity: 0,
+      impression: { quantity: 0 },
+    };
+    const draft = normaliseTaskDraft(legacy);
+    expect(draft.scanQuantity).toBe(1);
+    expect(draft.modelisationQuantity).toBe(1);
+    expect(draft.usinageQuantity).toBe(1);
+    expect(draft.impression.quantity).toBe(1);
+  });
+
   it('taskDraftFromAitoTask reads a null quantity as one', () => {
     const draft = taskDraftFromAitoTask({
       ...row,

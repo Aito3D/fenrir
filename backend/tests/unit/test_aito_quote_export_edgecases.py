@@ -179,7 +179,12 @@ def test_discount_formats_drop_trailing_zeros_but_keep_real_decimals():
     assert _impression_line(_task(impression_cost=100, impression_discount_pct=100.0))["discount"] == "100%"
 
 
-def test_discount_never_lands_on_non_impression_lines():
+def test_a_services_discount_does_not_leak_onto_another_line():
+    """A service with no discount of its own must not inherit a sibling
+    service's percent — each line's ``discount`` is sourced from that
+    service's own ``<service>_discount_pct``, never shared across services on
+    the same task. (All four services can carry a discount now; this pins
+    isolation between them, not that discounts are impression-only.)"""
     task = _task(scan_cost=500, impression_cost=100, impression_discount_pct=10.0)
     lines = build_line_items([task], [], CATALOGUE)
     by_item = {line["item_id"]: line for line in lines}

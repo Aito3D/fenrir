@@ -312,10 +312,11 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
   // written; the block below reads them.
   const quantity = Math.max(1, task.impression.quantity);
   const unitCost = task.impressionCost === null ? null : round2(task.impressionCost / quantity);
-  const lineTotal =
-    task.impressionCost === null
-      ? null
-      : round2(task.impressionCost * (1 - (task.impressionDiscountPct ?? 0) / 100));
+  // Through `netCost`, never by re-spelling `cost * (1 - pct / 100)` here —
+  // same reasoning as `renderPlainService` above, which is exactly how this
+  // block and the card started disagreeing about what impression costs.
+  const impressionNet = netCost(task, 'impression');
+  const lineTotal = impressionNet === null ? null : round2(impressionNet);
   // The per-piece rate the line actually charges, for the band to state
   // beside the total. Derived from `lineTotal` rather than re-applying the
   // percentage to `unitCost`, so the two figures can never round apart.

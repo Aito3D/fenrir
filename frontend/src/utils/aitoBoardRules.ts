@@ -1,4 +1,4 @@
-import type { AitoColumnId } from '../api/client';
+import type { AitoColumnId, AitoTaskCreate } from '../api/client';
 
 /** The Aito board's rules, mirrored from
  *  backend/app/services/aito_board_rules.py.
@@ -122,6 +122,43 @@ export function netCost(task: TaskLike, service: ServiceId): number | null {
   if (cost === null) return null;
   const pct = (task[DISCOUNT_KEYS[service]] as number | null | undefined) ?? 0;
   return cost * (1 - pct / 100);
+}
+
+/** Adapts a snake_case `AitoTaskCreate` wire task — a preview task from a
+ *  Zoho quote, or the payload about to be posted for one — to the canonical
+ *  `TaskLike` shape the rest of this module operates on, so callers can
+ *  delegate to `taskCost`/`netCost`/`summariseTasks` instead of
+ *  re-implementing their null-cost and per-service discount rules.
+ *  `*_done` defaults to `false` server-side (`_build_task` in
+ *  services/aito_quote_import.py never sets it) and is carried through
+ *  rather than hand-set — a preview or optimistic task is never actually
+ *  ticked, but there is no reason to assert that here too.
+ *
+ *  The single home for this conversion: `ImportQuoteDrawer.tsx` and
+ *  `AitoPage.tsx` (optimistic placeholder creation) both need it, and having
+ *  two copies is exactly how one of them drifted and stopped applying
+ *  discounts to an optimistic card's total. */
+export function toTaskLike(task: AitoTaskCreate): TaskLike {
+  return {
+    scanCost: task.scan_cost,
+    modelisationCost: task.modelisation_cost,
+    impressionCost: task.impression_cost,
+    usinageCost: task.usinage_cost,
+    done: {
+      scan: task.scan_done ?? false,
+      modelisation: task.modelisation_done ?? false,
+      impression: task.impression_done ?? false,
+      usinage: task.usinage_done ?? false,
+    },
+    // `AitoTaskCreate.title` is nullable (a quote line can be untitled);
+    // `TaskLike.title` is optional-string, not nullable, so null collapses
+    // to undefined here.
+    title: task.title ?? undefined,
+    scanDiscountPct: task.scan_discount_pct,
+    modelisationDiscountPct: task.modelisation_discount_pct,
+    impressionDiscountPct: task.impression_discount_pct,
+    usinageDiscountPct: task.usinage_discount_pct,
+  };
 }
 
 /** The whole rule set: `[column, moveLock]`.

@@ -218,6 +218,25 @@ def _line_amount(line: dict, *, inclusive: bool, precision: int) -> float:
     if inclusive:
         amount = float(line.get("rate") or 0) * quantity
     else:
+        # UNVERIFIED ASSUMPTION, tax-exclusive branch only: `item_total` is
+        # generally Zoho's POST-discount line figure, unlike `rate` in the
+        # inclusive branch above (which the docstring's claim is deliberately
+        # scoped to). If that holds, a line carrying a percent discount would
+        # have `amount` already net of it — and `_build_task` below separately
+        # adopts `line.discount_pct` onto `<service>_discount_pct`, which every
+        # reader (`net_cost`) then applies AGAIN on top of `<service>_cost`,
+        # double-counting the discount.
+        #
+        # Unreachable today: `aito_quote_sync.py` always posts
+        # `is_inclusive_tax: True` for quotes this app creates, so this branch
+        # only ever runs against a quote built by hand in Books. Scan,
+        # modelisation and usinage adopted no discount before this change, so
+        # a hand-made tax-exclusive quote with a percent line discount on any
+        # of those three was harmless; now that all four services carry a
+        # discount, it would silently under-charge on import. Do not "fix" by
+        # subtracting the discount back out here without confirming Zoho's
+        # actual `item_total` semantics on a real tax-exclusive org — guessing
+        # wrong corrupts real money in the other direction.
         taxes = sum(float(tax.get("tax_amount") or 0) for tax in (line.get("line_item_taxes") or []))
         amount = float(line.get("item_total") or 0) + taxes
     # Clamp: an Aito cost is validated ge=0, and a stray negative (a discount

@@ -29,6 +29,7 @@ import { useBoardSync } from '../hooks/useBoardSync';
 import { useQuotePendingPoll } from '../hooks/useQuotePendingPoll';
 import { useAitoPageMutations } from '../hooks/useAitoPageMutations';
 import { placeholderProject } from '../utils/aitoOptimistic';
+import { toTaskLike } from '../utils/aitoBoardRules';
 
 // Shared with SortableCard so the dropped card and the neighbours closing
 // the gap around it settle on the same curve.
@@ -447,23 +448,12 @@ export function AitoPage() {
                 quote_status: preview.quote.status,
                 // Wire shape (what `preview.tasks` already is — see
                 // ZohoQuotePreview) -> `TaskLike`, the shape `summariseTasks`
-                // reads everywhere else in the mirror.
-                tasks: preview.tasks.map((task) => ({
-                  scanCost: task.scan_cost,
-                  modelisationCost: task.modelisation_cost,
-                  impressionCost: task.impression_cost,
-                  usinageCost: task.usinage_cost,
-                  done: {
-                    scan: task.scan_done ?? false,
-                    modelisation: task.modelisation_done ?? false,
-                    impression: task.impression_done ?? false,
-                    usinage: task.usinage_done ?? false,
-                  },
-                  // `AitoTaskCreate.title` is nullable (a quote line can be
-                  // untitled); `TaskLike.title` is optional-string, not
-                  // nullable, so null collapses to undefined here.
-                  title: task.title ?? undefined,
-                })),
+                // reads everywhere else in the mirror. `toTaskLike` is the
+                // one conversion shared with `ImportQuoteDrawer.tsx` — see
+                // its doc comment in aitoBoardRules.ts for why a second copy
+                // here previously let this optimistic total drift from the
+                // real one.
+                tasks: preview.tasks.map(toTaskLike),
               }),
             });
           }}

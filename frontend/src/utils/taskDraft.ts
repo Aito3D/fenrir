@@ -160,15 +160,22 @@ export function normaliseTaskDraft(raw: unknown): TaskDraft {
       weightG: num(impression.weightG),
       timeMin: num(impression.timeMin),
       // Quantity is the one number with no null state — 1 is the floor the
-      // whole pricing path assumes.
-      quantity: num(impression.quantity) ?? 1,
+      // whole pricing path assumes. `Math.max(1, ...)`, not just `?? 1`: an
+      // explicit stored `0` (a legacy or hand-edited blob) must also floor to
+      // 1, or `taskDraftToTaskCreate` sends `..._quantity: 0` and the
+      // backend's `ge=1` rejects the create with a 422 — the exact failure
+      // this function exists to prevent.
+      quantity: Math.max(1, num(impression.quantity) ?? 1),
       color: str(impression.color),
     },
     impressionCost: num(task.impressionCost),
     impressionDiscountPct: num(task.impressionDiscountPct),
-    scanQuantity: num(task.scanQuantity) ?? 1,
-    modelisationQuantity: num(task.modelisationQuantity) ?? 1,
-    usinageQuantity: num(task.usinageQuantity) ?? 1,
+    // `Math.max(1, ...)`, not just `?? 1` — see the identical note on
+    // `impression.quantity` above: an explicit stored `0` must still floor to
+    // 1, not pass through to a `ge=1` 422 on create.
+    scanQuantity: Math.max(1, num(task.scanQuantity) ?? 1),
+    modelisationQuantity: Math.max(1, num(task.modelisationQuantity) ?? 1),
+    usinageQuantity: Math.max(1, num(task.usinageQuantity) ?? 1),
     scanDiscountPct: num(task.scanDiscountPct),
     modelisationDiscountPct: num(task.modelisationDiscountPct),
     usinageDiscountPct: num(task.usinageDiscountPct),
