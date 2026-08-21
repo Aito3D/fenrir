@@ -78,6 +78,40 @@ def test_task_lines_carry_enabled_service_descriptions():
     assert "ignorée : service désactivé" not in lines[0]
 
 
+def test_task_lines_states_the_count_for_a_non_printing_service():
+    lines = _task_lines([{"title": "Support", "usinage_cost": 1000.0, "usinage_quantity": 3}])
+    assert lines == ["Support: usinage x3"]
+
+
+def test_task_lines_omits_a_count_of_one():
+    lines = _task_lines([{"title": "Support", "usinage_cost": 1000.0, "usinage_quantity": 1}])
+    assert lines == ["Support: usinage"]
+
+
+def test_task_lines_omits_a_null_count():
+    lines = _task_lines([{"title": "Support", "usinage_cost": 1000.0}])
+    assert lines == ["Support: usinage"]
+
+
+def test_task_lines_states_printings_count_exactly_once():
+    # Printing already has a detail group (colour, weight); its count must
+    # land on the service name like every other service and NOT be repeated
+    # in the parenthesised group too.
+    lines = _task_lines(
+        [
+            {
+                "title": "Capot",
+                "impression_cost": 120.0,
+                "impression_quantity": 3,
+                "impression_color": "bleu",
+                "impression_weight_g": 210.0,
+            }
+        ]
+    )
+    assert lines == ["Capot: impression 3D x3 (bleu, 210 g)"]
+    assert lines[0].count("x3") == 1
+
+
 def test_system_prompt_demands_digit_numbers():
     from backend.app.services.openrouter import _SYSTEM_PROMPT
 
