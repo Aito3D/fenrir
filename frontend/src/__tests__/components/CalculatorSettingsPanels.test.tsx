@@ -597,9 +597,51 @@ describe('CalculatorFilamentsPanel Zoho price sync', () => {
     await renderFilamentsPanel();
     await userEvent.click(screen.getByRole('button', { name: 'Sync prices' }));
 
-    expect(await screen.findByRole('button', { name: '50 / 50' })).toBeInTheDocument();
+    const progress = await screen.findByRole('button', { name: '50 / 50' });
+    expect(progress).toBeInTheDocument();
+    // A second run started on top of the first would double-commit every
+    // remaining row, so the button stays shut until the walk finishes.
+    expect(progress).toBeDisabled();
     releaseLast(chunk({ processed: 3, total: 12, updated: 3 }));
     expect(await screen.findByText(/53 updated/)).toBeInTheDocument();
+  });
+
+  it('seeds the progress denominator from the linked rows on screen', async () => {
+    // Until the first chunk answers — seconds on a real catalogue — the only
+    // count available is the one already in the table. "0 / 0" reads as broken.
+    let releaseFirst: (result: CalculatorFilamentSyncResult) => void = () => {};
+    const firstChunk = new Promise<CalculatorFilamentSyncResult>((resolve) => {
+      releaseFirst = resolve;
+    });
+    vi.spyOn(api, 'syncCalculatorFilamentsFromZoho').mockReturnValueOnce(firstChunk);
+
+    // Two rows listed, one of them linked to Zoho — only the linked one syncs.
+    await renderFilamentsPanel([baseFilament, linkedFilament]);
+    await userEvent.click(screen.getByRole('button', { name: 'Sync prices' }));
+
+    expect(await screen.findByRole('button', { name: '0 / 1' })).toBeInTheDocument();
+    // The server's own COUNT takes over from the first chunk onwards.
+    releaseFirst(chunk({ processed: 1, total: 9, updated: 1 }));
+    expect(await screen.findByText(/1 updated/)).toBeInTheDocument();
+  });
+
+  it('stops instead of looping when a chunk does not advance the cursor', async () => {
+    // Nothing today returns a non-advancing cursor (the backend pages
+    // WHERE id > after_id), but an unguarded loop would fire hundreds of
+    // COUNT-plus-commit requests behind a disabled button with no way out.
+    const sync = vi
+      .spyOn(api, 'syncCalculatorFilamentsFromZoho')
+      .mockResolvedValue(chunk({ processed: 3, total: 3, updated: 3, next_after_id: 5 }));
+
+    await renderFilamentsPanel();
+    await userEvent.click(screen.getByRole('button', { name: 'Sync prices' }));
+
+    expect(await screen.findByText(/sync stopped: sync did not advance past id 5/i)).toBeInTheDocument();
+    // Bounded: the first chunk sets the cursor to 5, the second returns 5 again
+    // and is rejected. Never a third.
+    expect(sync).toHaveBeenCalledTimes(2);
+    // And the operator can act again rather than staring at a stuck spinner.
+    expect(await screen.findByRole('button', { name: 'Sync prices' })).toBeEnabled();
   });
 
   it('accepts a final chunk that processed nothing', async () => {

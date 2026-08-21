@@ -461,7 +461,10 @@ export function CalculatorFilamentsPanel({
   const runSync = async () => {
     setSyncSummary(null);
     setSyncError(null);
-    setSyncProgress({ done: 0, total: 0 });
+    // Seed the denominator from what we already know is linked, so the button
+    // never sits at "0 / 0" for the seconds the first chunk takes; the server's
+    // own COUNT takes over from that chunk onwards.
+    setSyncProgress({ done: 0, total: filaments.filter((f) => f.zoho_item_id).length });
     const totals = { processed: 0, total: 0, updated: 0, unchanged: 0, skipped_no_price: 0, missing: 0 };
     let afterId: number | null = 0;
     try {
@@ -482,7 +485,17 @@ export function CalculatorFilamentsPanel({
         setSyncProgress({ done: totals.processed, total: Math.max(chunk.total, totals.processed) });
         // A last chunk can legitimately report processed: 0 — its lookahead
         // sentinel row was deleted in between. Only next_after_id ends the walk.
+        const prev = afterId;
         afterId = chunk.next_after_id;
+        // The cursor must strictly increase (the backend pages WHERE id >
+        // after_id), and nothing today returns otherwise. But if it ever did,
+        // this loop would hammer the server with hundreds of COUNT-plus-commit
+        // requests a second behind a disabled button with no way out. Throwing
+        // hands it to the catch below: the operator gets a truthful stop and
+        // the partial work is refetched, instead of a hung tab.
+        if (afterId !== null && afterId <= prev) {
+          throw new Error(`sync did not advance past id ${prev}`);
+        }
       }
       setSyncSummary({ ...totals, next_after_id: null });
       queryClient.invalidateQueries({ queryKey: ['calculatorFilaments'] });
