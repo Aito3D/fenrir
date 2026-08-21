@@ -326,6 +326,11 @@ export function ImpressionFields({
           <QuantityInput
             id={`${reactId}-quantity`}
             value={value.quantity}
+            // This component only ever renders the Impression3D block, so
+            // its own service label is a constant here rather than a prop
+            // threaded down from TaskStepFields — see QuantityInput's doc on
+            // why the accessible name needs qualifying at all.
+            ariaLabel={`${t('aito.serviceImpression3D')} ${t('aito.quantity')}`}
             onChange={(quantity) => handleChange({ ...value, quantity })}
           />
         </GridRow>

@@ -863,7 +863,9 @@ describe('TaskRow', () => {
     const quantityOneCost = (onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft[])[0].impressionCost as number;
 
     onChangeSpy.mockClear();
-    const quantityInput = screen.getByLabelText('Quantity');
+    // Qualified accessible name, not the bare visible "Quantity" label — see
+    // QuantityInput's doc.
+    const quantityInput = screen.getByLabelText('Printing Quantity');
     fireEvent.change(quantityInput, { target: { value: '2' } });
 
     await waitFor(() => {
@@ -930,7 +932,9 @@ describe('TaskRow', () => {
     };
     render(<ControlledTaskRow initial={task} onChangeSpy={onChangeSpy} />);
 
-    const quantityInput = await screen.findByLabelText('Quantity');
+    // Qualified accessible name, not the bare visible "Quantity" label — see
+    // QuantityInput's doc.
+    const quantityInput = await screen.findByLabelText('Printing Quantity');
     // Wait for the reference-data queries to resolve first: firing the edit
     // while they are still pending hits ImpressionFields' `referenceDataLoading`
     // guard, which reports the edit with no computed cost at all — leaving
@@ -984,8 +988,10 @@ describe('TaskRow', () => {
     // One grid holds both halves: the part's identity and its price.
     const grid = within(screen.getByTestId('impression-grid'));
     grid.getByLabelText(/printing cost/i);
-    grid.getByLabelText('Quantity');
-    grid.getByLabelText('Discount');
+    // Qualified accessible names, not the bare visible labels — see
+    // QuantityInput's/DiscountSelect's docs.
+    grid.getByLabelText('Printing Quantity');
+    grid.getByLabelText('Printing Discount');
     grid.getByRole('combobox', { name: /material/i });
     grid.getByLabelText('Colour');
   });

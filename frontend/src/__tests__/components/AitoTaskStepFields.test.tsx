@@ -86,7 +86,10 @@ describe('TaskStepFields', () => {
     render(<TaskStepFields task={{ ...emptyTaskDraft(), impressionCost: 500 }} onChange={vi.fn()} />);
     const topRow = within(screen.getByTestId('impression-grid'));
     expect(topRow.getByLabelText(/printing cost/i)).toBeInTheDocument();
-    expect(topRow.getByLabelText('Quantity')).toBeInTheDocument();
+    // Qualified accessible name, not the bare visible "Quantity" label — see
+    // QuantityInput's doc on why (two services priced at once would
+    // otherwise share one ambiguous "Quantity" name).
+    expect(topRow.getByLabelText('Printing Quantity')).toBeInTheDocument();
   });
 
   it('printing: the cost input edits the UNIT price — stored cost stays unit × quantity', () => {
@@ -119,7 +122,7 @@ describe('TaskStepFields', () => {
     );
     // No calculator configured (nothing mocked here), so no repricing can
     // interfere: 500 apiece × 3 must become a stored total of 1500.
-    fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText('Printing Quantity'), { target: { value: '3' } });
     const next = onChange.mock.calls.at(-1)?.[0];
     expect(next.impression.quantity).toBe(3);
     expect(next.impressionCost).toBe(1500);
@@ -133,8 +136,8 @@ describe('TaskStepFields', () => {
     // All four are reachable straight away (nothing is mocked here, and
     // there is no disclosure to open).
     const topRow = within(screen.getByTestId('impression-grid'));
-    topRow.getByLabelText('Quantity');
-    const discount = topRow.getByLabelText('Discount');
+    topRow.getByLabelText('Printing Quantity');
+    const discount = topRow.getByLabelText('Printing Discount');
     // Material (the filament select, moved out of the calculator) and color
     // are on screen too — before it, in DOM order.
     const material = screen.getByRole('combobox', { name: /material/i });
@@ -153,7 +156,7 @@ describe('TaskStepFields', () => {
         onChange={onChange}
       />,
     );
-    await user.selectOptions(screen.getByLabelText('Discount'), '');
+    await user.selectOptions(screen.getByLabelText('Printing Discount'), '');
     expect(onChange.mock.calls.at(-1)?.[0].impressionDiscountPct).toBeNull();
   });
 
@@ -217,10 +220,10 @@ describe('TaskStepFields', () => {
     const task = { ...emptyTaskDraft(), usinageCost: 12000, usinageQuantity: 1 };
     render(<TaskStepFields task={task} onChange={onChange} />);
 
-    // Only the machining block is on screen (no other service is priced), so
-    // the generic "Quantity" label is unambiguous here — same convention the
-    // printing quantity test above relies on.
-    fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '3' } });
+    // Qualified accessible name ("Machining Quantity"), not the bare visible
+    // "Quantity" label — see QuantityInput's doc: two services priced at
+    // once would otherwise share one ambiguous "Quantity" name.
+    fireEvent.change(screen.getByLabelText('Machining Quantity'), { target: { value: '3' } });
     const next = onChange.mock.calls.at(-1)?.[0];
     expect(next.usinageQuantity).toBe(3);
     expect(next.usinageCost).toBe(36000);

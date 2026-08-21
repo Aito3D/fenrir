@@ -26,20 +26,37 @@ const DISCOUNT_STEPS: readonly number[] = [5, 10, 15, 20, 25, 30];
  *  three digits' worth of content.
  *
  *  Floors at 1 and reports an integer: there is no zero-unit line and no
- *  half-part, and every consumer divides a stored total by this number. */
+ *  half-part, and every consumer divides a stored total by this number.
+ *
+ *  `ariaLabel`, when given, qualifies the ACCESSIBLE name only — the
+ *  visible `<label>` a caller places beside this input stays the bare
+ *  "Quantity" text, so the narrow label column doesn't widen for a longer
+ *  qualified phrase (French's "Modélisation3D Quantité" would wrap it). A
+ *  page with more than one service priced at once (the common case: chips
+ *  seed open from every non-null cost) would otherwise render two fields
+ *  both accessibly named "Quantity", indistinguishable except by `id` — the
+ *  same split `CostInput` already draws between its visible placeholder and
+ *  its qualified `aria-label`. Optional: a caller rendering a single
+ *  instance (this file's own tests) has nothing to disambiguate against, and
+ *  the bare `<label htmlFor>` already names it. Built by the CALLER, not
+ *  here — this module stays layout-and-control only and does not import a
+ *  service label map. */
 export function QuantityInput({
   id,
   value,
   onChange,
+  ariaLabel,
 }: {
   id: string;
   value: number;
   onChange: (next: number) => void;
+  ariaLabel?: string;
 }) {
   return (
     <div className="max-w-20">
       <input
         id={id}
+        aria-label={ariaLabel}
         type="number"
         min={1}
         step={1}
@@ -59,20 +76,26 @@ export function QuantityInput({
  *  Reports `null` for the empty option, never `0`: no discount means no
  *  discount COLUMN on the quote's PDF at all, and a literal "0%" would put one
  *  there. `max-w-24` — wide enough for "30%" plus the select's own disclosure
- *  arrow — for the same reason QuantityInput is capped. */
+ *  arrow — for the same reason QuantityInput is capped.
+ *
+ *  `ariaLabel` follows the same optional, caller-built, accessible-name-only
+ *  convention documented on `QuantityInput` above. */
 export function DiscountSelect({
   id,
   value,
   onChange,
+  ariaLabel,
 }: {
   id: string;
   value: number | null;
   onChange: (next: number | null) => void;
+  ariaLabel?: string;
 }) {
   return (
     <div className="max-w-24">
       <select
         id={id}
+        aria-label={ariaLabel}
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
         className={inputCls}

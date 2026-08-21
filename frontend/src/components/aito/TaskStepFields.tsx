@@ -262,6 +262,12 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
           <QuantityInput
             id={`${reactId}-${svc.id}-quantity`}
             value={task[qtyKey]}
+            // Qualifies the ACCESSIBLE name only ("Usinage Quantity") — the
+            // visible label above stays the bare "Quantity" text. Two
+            // services priced at once is the common case (chips seed open
+            // from every non-null cost), and a bare "Quantity" name would be
+            // ambiguous between them; see QuantityInput's doc.
+            ariaLabel={`${label} ${t('aito.quantity')}`}
             onChange={(next) =>
               onChange({
                 ...task,
@@ -279,6 +285,7 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
           <DiscountSelect
             id={`${reactId}-${svc.id}-discount`}
             value={pct}
+            ariaLabel={`${label} ${t('aito.discount')}`}
             onChange={(next) => onChange({ ...task, [discountKey]: next })}
           />
         </div>
@@ -408,6 +415,7 @@ export function TaskStepFields({ task, onChange, disabled = false }: TaskStepFie
                 <DiscountSelect
                   id={`${reactId}-impression-discount`}
                   value={task.impressionDiscountPct}
+                  ariaLabel={`${t('aito.serviceImpression3D')} ${t('aito.discount')}`}
                   onChange={(impressionDiscountPct) => onChange({ ...task, impressionDiscountPct })}
                 />
               </>
