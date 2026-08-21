@@ -31,6 +31,18 @@ class AitoTask(Base):
     scan_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
     modelisation_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
     usinage_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Per-service quantity and percent discount, mirroring the impression pair
+    # below. NULL quantity reads as 1 and NULL discount as none — so rows
+    # predating this migration need no backfill. `<service>_cost` stays the
+    # PRE-discount total (unit x quantity); the discount is applied by readers
+    # (aito_board_rules.net_cost), never baked in, so the two never
+    # double-count.
+    scan_quantity: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    modelisation_quantity: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    usinage_quantity: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    scan_discount_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    modelisation_discount_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    usinage_discount_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     impression_printer_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     impression_filament_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     impression_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)

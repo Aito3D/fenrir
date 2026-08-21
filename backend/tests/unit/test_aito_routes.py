@@ -2752,3 +2752,68 @@ async def test_ordinary_estimate_ids_still_pass(async_client):
         r = await _create(async_client, quote_id=quote_id, quote_number=f"QT-{quote_id}")
         assert r.status_code == 201, r.text
         assert r.json()["quote_id"] == quote_id
+
+
+@pytest.mark.asyncio
+async def test_task_round_trips_per_service_quantity_and_discount(async_client):
+    """All four services carry a quantity and a percent discount."""
+    r = await _create(
+        async_client,
+        tasks=[
+            _task(
+                title="Support",
+                scan_cost=5000.0,
+                scan_quantity=2,
+                modelisation_cost=8000.0,
+                modelisation_discount_pct=5.0,
+                usinage_cost=36000.0,
+                usinage_quantity=3,
+                usinage_discount_pct=10.0,
+            )
+        ],
+    )
+    assert r.status_code == 201, r.text
+    project_id = r.json()["id"]
+
+    tasks = (await async_client.get(f"/api/v1/aito/{project_id}/tasks")).json()
+    task = tasks[0]
+    assert task["usinage_quantity"] == 3
+    assert task["usinage_discount_pct"] == 10.0
+    assert task["scan_quantity"] == 2
+    assert task["scan_discount_pct"] is None
+    assert task["modelisation_quantity"] is None
+    assert task["modelisation_discount_pct"] == 5.0
+
+
+@pytest.mark.asyncio
+async def test_task_quantity_and_discount_default_to_null(async_client):
+    """A task that names neither reads back null for both — null quantity
+    means one, null discount means none."""
+    r = await _create(async_client, tasks=[_task(usinage_cost=1000.0)])
+    assert r.status_code == 201, r.text
+    project_id = r.json()["id"]
+
+    task = (await async_client.get(f"/api/v1/aito/{project_id}/tasks")).json()[0]
+    assert task["usinage_quantity"] is None
+    assert task["usinage_discount_pct"] is None
+
+
+@pytest.mark.asyncio
+async def test_task_rejects_a_zero_quantity(async_client):
+    """ge=1: there is no zero-unit line."""
+    r = await _create(async_client, tasks=[_task(usinage_cost=1000.0, usinage_quantity=0)])
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_task_rejects_a_zero_percent_discount(async_client):
+    """gt=0: no discount is expressed as null, never as 0 — a literal '0%'
+    would put a pointless discount column on the client's PDF."""
+    r = await _create(async_client, tasks=[_task(usinage_cost=1000.0, usinage_discount_pct=0.0)])
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_task_rejects_a_discount_over_one_hundred(async_client):
+    r = await _create(async_client, tasks=[_task(usinage_cost=1000.0, usinage_discount_pct=101.0)])
+    assert r.status_code == 422

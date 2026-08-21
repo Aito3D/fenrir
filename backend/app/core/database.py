@@ -4825,6 +4825,15 @@ async def run_migrations(conn):
     # stops wiping them.
     await _safe_execute(conn, "ALTER TABLE aito_tasks ADD COLUMN impression_discount_pct FLOAT")
 
+    # Migration: per-service quantity and percent discount on the other three
+    # services (2026-08-20), so machining and the rest can be quoted per unit
+    # exactly as printing already is. Nullable, no backfill: a NULL quantity
+    # reads as 1 and a NULL discount as none, which is what every existing row
+    # already means.
+    for _service in ("scan", "modelisation", "usinage"):
+        await _safe_execute(conn, f"ALTER TABLE aito_tasks ADD COLUMN {_service}_quantity INTEGER")
+        await _safe_execute(conn, f"ALTER TABLE aito_tasks ADD COLUMN {_service}_discount_pct FLOAT")
+
     # Migration: per-service descriptions on Aito tasks (2026-08-03). The
     # task's single description moves onto its first enabled service — gated
     # on the new columns not having existed, and on the legacy column still
