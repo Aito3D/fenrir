@@ -116,12 +116,22 @@ Three independently testable pieces:
   with `item_id`, `name`, `sku`, `brand`, `material`, `colour`,
   `spool_weight_kg`, `weight_inferred`, `dealer_price`, `cost_per_kg`,
   `has_price`. Returns `503` when Zoho is not configured.
-- `POST /filaments/zoho-sync` — `CALCULATOR_UPDATE`. Body `{offset, limit}`.
-  Processes one chunk of linked filaments and returns
-  `{processed, total, updated, unchanged, skipped_no_price, missing, next_offset}`.
-  `next_offset` is `null` on the final chunk. Chunks walk filaments where
-  `zoho_item_id IS NOT NULL` **ordered by `id`** — a stable ordering is required
-  or offset-based paging will skip or repeat rows.
+- `POST /filaments/zoho-sync` — `CALCULATOR_UPDATE`. Body `{after_id, limit}`,
+  where `after_id: 0` starts from the beginning. Processes one chunk of linked
+  filaments and returns
+  `{processed, total, updated, unchanged, skipped_no_price, missing, next_after_id}`.
+  `next_after_id` is `null` on the final chunk.
+
+  Paging is **keyset, not offset**:
+  `WHERE zoho_item_id IS NOT NULL AND id > after_id ORDER BY id LIMIT limit + 1`,
+  fetching one extra row to detect whether another chunk follows without paying
+  for an empty final request. `total` comes from a separate `COUNT`.
+
+  Offset paging was the original design and was rejected during implementation:
+  deleting a filament mid-run shifts the remaining rows down, so one row is
+  never synced while the client still sees "complete" — it keeps a stale price
+  silently. Keyset paging is immune to rows shifting, and it makes
+  `ORDER BY id` load-bearing for correctness rather than decorative.
 
 `CalculatorFilamentCreate` / `Update` / `Response` gain the six new columns.
 `sale_price_per_kg` is dropped from the *create* and *update* inputs (the server
@@ -130,7 +140,7 @@ every existing consumer reads it.
 
 Chunking is driven by the client looping sequential requests, not by a background
 job. Each chunk commits its own work, so progress is real and a retry resumes
-from the last offset.
+from the last reported `next_after_id`.
 
 ### Frontend
 
@@ -182,7 +192,8 @@ gate rejects English placeholders.
 |---|---|
 | Zoho not configured | Search bar and Sync button hidden; endpoints return `503` |
 | Zoho unreachable during search | Search shows an error row; the rest of the form still works |
-| Zoho fails mid-sync | The chunk errors, the progress bar stops with a message, earlier chunks stay committed, retry resumes from the offset |
+| Zoho fails mid-sync | The chunk errors, the progress bar stops with a message, earlier chunks stay committed, retry resumes from the reported `next_after_id` |
+| A filament is deleted mid-sync | Keyset paging means the remaining rows do not shift; every surviving linked filament is still synced |
 | Dealer price is 0 | Never written; counted as `skipped_no_price` |
 | Linked item deleted from Zoho | Counted as `missing`; the filament keeps its last price and its link |
 | Link duplicates an existing brand + material | Warn, do not block — duplicates already exist (SUNLU/ASA appears twice) |
@@ -197,7 +208,8 @@ gate rejects English placeholders.
   This is the highest-value test in the feature.
 - Catalogue pagination, `active`-only filtering, TTL behaviour, and
   failed-refresh-returns-stale-cache.
-- Sync chunk arithmetic: offsets, `next_offset` termination, counts summing to
+- Sync chunk arithmetic: keyset cursors, `next_after_id` termination, a row
+  deleted mid-run not causing a skip, counts summing to
   `processed`.
 - Zero dealer price never overwrites an existing cost.
 - The `sale_price_per_kg == cost × (1 + margin)` invariant after create, update
