@@ -124,6 +124,29 @@ async def test_failed_refresh_with_cold_cache_raises(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_malformed_item_is_skipped_and_does_not_destroy_the_warm_cache(monkeypatch):
+    """A single item with a non-numeric dealer price must not blow up the
+    whole refresh — it used to propagate a ValueError straight out of
+    fetch_catalogue, bypassing the stale-cache fallback entirely."""
+    monkeypatch.setattr(zoho_service, "list_items_page", _fake_request([PAGE_1], []))
+    await zoho_filaments.fetch_catalogue(None)
+    zoho_filaments._cache_at = None  # force the next call to refresh
+
+    good = _item("1", "Bambu Lab - ABS-GF - Bleu (Blue) - 1.75mm - 1kg", 1866.0, "B50-B0-1.75-1000-SPL")
+    malformed = _item("99", "Bambu Lab - PLA - Rouge (Red) - 1.75mm - 1kg", "N/A", "BAD-SKU")
+
+    async def flaky_page(db, **kwargs):
+        return [good, malformed], False
+
+    monkeypatch.setattr(zoho_service, "list_items_page", flaky_page)
+    catalogue = await zoho_filaments.fetch_catalogue(None)
+
+    # the refresh succeeds (no exception), the malformed record is dropped,
+    # and the good record from the same batch still comes through
+    assert [p.item_id for p in catalogue] == ["1"]
+
+
+@pytest.mark.asyncio
 async def test_search_matches_all_terms_across_fields(monkeypatch):
     monkeypatch.setattr(zoho_service, "list_items_page", _fake_request([PAGE_1, PAGE_2], []))
     catalogue = await zoho_filaments.fetch_catalogue(None)

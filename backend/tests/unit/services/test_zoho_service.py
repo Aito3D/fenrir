@@ -730,6 +730,45 @@ async def test_get_estimate_pdf_rejects_a_200_that_is_not_a_pdf(async_client, db
 
 
 @pytest.mark.asyncio
+async def test_list_items_page_sends_the_category_filter_and_extracts_has_more_page(db_session, monkeypatch):
+    """The filament catalogue relies on this seam to page through
+    ``cf_nature_du_produit=Filaments`` server-side rather than Zoho's
+    ``search_text``, which also matches item descriptions."""
+    captured = {}
+
+    async def fake_request(db, method, path, **kwargs):
+        captured["method"] = method
+        captured["path"] = path
+        captured["params"] = kwargs.get("params")
+        return {
+            "items": [{"item_id": "1", "name": "Bambu Lab - PLA - Rouge - 1.75mm - 1kg"}],
+            "page_context": {"has_more_page": True},
+        }
+
+    monkeypatch.setattr(zoho_service, "_request", fake_request)
+    items, has_more = await zoho_service.list_items_page(db_session, category="Filaments", page=2, per_page=200)
+
+    assert captured["method"] == "GET"
+    assert captured["path"] == "/items"
+    assert captured["params"] == {"cf_nature_du_produit": "Filaments", "page": 2, "per_page": 200}
+    assert "search_text" not in captured["params"]
+    assert items == [{"item_id": "1", "name": "Bambu Lab - PLA - Rouge - 1.75mm - 1kg"}]
+    assert has_more is True
+
+
+@pytest.mark.asyncio
+async def test_list_items_page_has_more_page_defaults_false_when_page_context_is_absent(db_session, monkeypatch):
+    async def fake_request(db, method, path, **kwargs):
+        return {"items": []}
+
+    monkeypatch.setattr(zoho_service, "_request", fake_request)
+    items, has_more = await zoho_service.list_items_page(db_session, category="Filaments", page=1, per_page=200)
+
+    assert items == []
+    assert has_more is False
+
+
+@pytest.mark.asyncio
 async def test_get_shipping_catalogue_fetches_once_then_serves_the_cache(db_session, monkeypatch):
     calls = []
 

@@ -128,7 +128,10 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
     Cached for ``_CACHE_TTL`` so opening the add-filament form costs no Zoho
     call. A failed refresh returns the previous cache; a failed refresh with no
     cache at all RE-RAISES, because answering "there are no filaments" would be
-    indistinguishable from a genuinely empty catalogue.
+    indistinguishable from a genuinely empty catalogue. A malformed individual
+    item (e.g. a non-numeric dealer price) is logged and skipped rather than
+    failing the whole refresh — one bad Zoho record must not blank the
+    catalogue or fall back to the stale cache.
     """
     global _cache, _cache_at
 
@@ -148,13 +151,24 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
             if not has_more:
                 break
             page += 1
+
+        mapped: list[FilamentProduct] = []
+        for item in items:
+            if (item.get("status") or "active") != "active":
+                continue
+            try:
+                mapped.append(_map_item(item))
+            except Exception:
+                # One malformed record (e.g. a non-numeric dealer price) must
+                # not blank the entire catalogue — skip it and keep going.
+                logger.warning("Skipping malformed Zoho filament item %s", item.get("item_id"), exc_info=True)
     except Exception:
         if _cache is not None:
             logger.warning("Zoho filament catalogue refresh failed; serving the cached copy", exc_info=True)
             return _cache
         raise
 
-    _cache = [_map_item(item) for item in items if (item.get("status") or "active") == "active"]
+    _cache = mapped
     _cache_at = now
     return _cache
 
