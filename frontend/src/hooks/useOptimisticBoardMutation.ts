@@ -49,6 +49,16 @@ export interface OptimisticBoardOptions<TData, TVars> {
   /** Which card to flash if this reverts. Omit for a write with no card of its
    *  own (adding a note, for instance). */
   flashId?: (vars: TVars) => number | null;
+  /** Runs at the very start of `onMutate`, BEFORE the optimistic cache write.
+   *
+   *  For the side effects that have to happen while the board still looks the
+   *  way the user left it — the Done celebration reads the archived card's
+   *  position here, and one line later the transform takes that card off the
+   *  board. Deliberately not `mutationFn`: every board writer shares the
+   *  `aito-board` scope, so a queued write's `mutationFn` can run seconds
+   *  after the click, while `onMutate` is what the user actually sees
+   *  happen. */
+  onMutate?: (vars: TVars) => void;
   onSuccess?: (data: TData, vars: TVars) => void;
   onError?: (error: unknown, vars: TVars) => void;
 }
@@ -82,6 +92,9 @@ export function useOptimisticBoardMutation<TData, TVars>(
     scope: { id: 'aito-board' },
     mutationFn: options.mutationFn,
     onMutate: async (vars) => {
+      // First, and synchronously: after the await below, the DOM this may want
+      // to measure is a render away from being stale.
+      options.onMutate?.(vars);
       await queryClient.cancelQueries({ queryKey: ['aito-projects'] });
       const previous = queryClient.getQueryData<AitoProject[]>(['aito-projects']);
       queryClient.setQueryData<AitoProject[]>(['aito-projects'], options.transform(previous, vars));

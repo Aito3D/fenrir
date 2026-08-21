@@ -113,7 +113,12 @@ export function HoldButton({
   ariaPressed,
   children,
 }: {
-  onHold: () => void;
+  /** Fires once the hold completes. Receives the button's own rect at that
+   *  moment — for the callers that need to start something WHERE the gesture
+   *  finished (the Done celebration), rather than guessing at a position from
+   *  the viewport. `null` if the button has already left the DOM. Every other
+   *  caller ignores the argument. */
+  onHold: (origin: DOMRect | null) => void;
   durationMs: HoldDurationMs;
   label: string;
   hint: string;
@@ -188,7 +193,7 @@ export function HoldButton({
       setCompleted(true);
       if (completeTimerRef.current) clearTimeout(completeTimerRef.current);
       completeTimerRef.current = setTimeout(() => setCompleted(false), 700);
-      onHold();
+      onHold(buttonRef.current?.getBoundingClientRect() ?? null);
     }, durationMs);
   };
 

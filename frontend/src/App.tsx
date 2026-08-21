@@ -49,6 +49,14 @@ const CalculatorPage = lazyWithReload(() => import('./pages/CalculatorPage').the
 const CalculatorQuotePage = lazyWithReload(() => import('./pages/CalculatorQuotePage').then(m => ({ default: m.CalculatorQuotePage })));
 const ProjectsPage = lazyWithReload(() => import('./pages/ProjectsPage').then(m => ({ default: m.ProjectsPage })));
 const AitoPage = lazyWithReload(() => import('./pages/AitoPage').then(m => ({ default: m.AitoPage })));
+// Design bench for the Done celebration, dev-only in the literal sense: the
+// ternary is what keeps it out of production, not the route guard below.
+// `import.meta.env.DEV` is replaced by `false` at build time, so the whole
+// dynamic import folds away and no chunk is emitted — guarding only the route
+// would still have left the import reachable and the chunk on disk.
+const AitoFxDemoPage = import.meta.env.DEV
+  ? lazyWithReload(() => import('./pages/AitoFxDemoPage'))
+  : () => null;
 const ProjectDetailPage = lazyWithReload(() => import('./pages/ProjectDetailPage').then(m => ({ default: m.ProjectDetailPage })));
 const FileManagerPage = lazyWithReload(() => import('./pages/FileManagerPage').then(m => ({ default: m.FileManagerPage })));
 const LibraryTrashPage = lazyWithReload(() => import('./pages/LibraryTrashPage').then(m => ({ default: m.LibraryTrashPage })));
@@ -208,6 +216,12 @@ const router = createBrowserRouter(
 
       {/* Login page */}
       <Route path="/login" element={<LoginPage />} />
+
+      {/* Design bench for the Done celebration. Dev-only and deliberately
+          OUTSIDE ProtectedRoute: it renders fixture cards and talks to no
+          endpoint, so requiring a session would only mean logging in again on
+          whichever port the worktree's Vite happens to have taken. */}
+      {import.meta.env.DEV && <Route path="/aito/fx" element={<AitoFxDemoPage />} />}
 
       {/* Camera page - standalone, no layout, no WebSocket (doesn't need real-time updates) */}
       <Route path="/camera/:printerId" element={<CameraPage />} />
