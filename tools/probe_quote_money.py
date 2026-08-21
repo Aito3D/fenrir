@@ -33,8 +33,8 @@ from backend.app.services.aito_quote_export import (
     enabled_services,
     format_time,
     format_weight,
-    impression_rate_quantity,
     is_foreign,
+    rate_quantity,
 )
 from backend.app.services.aito_quote_import import (
     parse_description,
@@ -157,7 +157,7 @@ out["per_task"] = {
         "cost_of": {s: cost_of(t, s) for s in SERVICES},
         "description_of": {s: description_of(t, s) for s in SERVICES},
         "build_description": {s: build_description(s, t) for s in SERVICES},
-        "impression_rate_quantity": list(impression_rate_quantity(t)),
+        "impression_rate_quantity": list(rate_quantity(t, "impression")),
     }
     for name, t in sorted(TASKS.items())
 }
