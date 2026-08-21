@@ -18,8 +18,15 @@ const mockFilaments = [
     brand: 'Sunlu',
     material: 'PA6-CF',
     cost_per_kg: 3731,
-    sale_price_per_kg: 5597,
+    // Derived server-side: round(3731 * 1.50, 2).
+    sale_price_per_kg: 5596.5,
+    margin_pct: 50,
     difficulty_pct: 150,
+    zoho_item_id: null,
+    zoho_item_name: null,
+    zoho_sku: null,
+    spool_weight_kg: null,
+    zoho_synced_at: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
   },
@@ -97,7 +104,7 @@ const referencePricingInputs = {
   stuff_amount: 0,
   stuff_markup_pct: 20,
 };
-const referencePricingFilament = { cost_per_kg: 3731, sale_price_per_kg: 5597, difficulty_pct: 150 };
+const referencePricingFilament = { cost_per_kg: 3731, sale_price_per_kg: 5596.5, difficulty_pct: 150 };
 const referencePricingPrinter = {
   purchase_price: 347000,
   lifetime_years: 2,
@@ -364,7 +371,7 @@ describe('CalculatorPage', () => {
     render(<CalculatorPage />);
 
     // Same reference case as above, rendered as USD: prefixed symbol, two decimals
-    await screen.findByText('$2 031.48');
+    await screen.findByText('$2 031.44');
     expect(screen.queryByText(/FCFP/)).not.toBeInTheDocument();
   });
 
@@ -515,7 +522,13 @@ describe('CalculatorPage', () => {
           material: 'PLA',
           cost_per_kg: 2000,
           sale_price_per_kg: 3000,
+          margin_pct: 50,
           difficulty_pct: 100,
+          zoho_item_id: null,
+          zoho_item_name: null,
+          zoho_sku: null,
+          spool_weight_kg: null,
+          zoho_synced_at: null,
           created_at: '2026-01-01T00:00:00Z',
           updated_at: '2026-01-01T00:00:00Z',
         },
@@ -621,7 +634,13 @@ describe('CalculatorPage', () => {
       material: 'PLA',
       cost_per_kg: 2000,
       sale_price_per_kg: 3000,
+      margin_pct: 50,
       difficulty_pct: 100,
+      zoho_item_id: null,
+      zoho_item_name: null,
+      zoho_sku: null,
+      spool_weight_kg: null,
+      zoho_synced_at: null,
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-01T00:00:00Z',
     };

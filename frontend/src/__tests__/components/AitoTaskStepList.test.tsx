@@ -136,7 +136,8 @@ describe('TaskStepList', () => {
         http.get('*/api/v1/calculator/filaments/', () => {
           if (hits) hits.count += 1;
           return HttpResponse.json([
-            { id: 7, name: 'PLA Basique', brand: '', material: 'PLA', cost_per_kg: 3731, sale_price_per_kg: 5597, difficulty_pct: 100 },
+            // sale_price_per_kg is derived server-side: round(3731 * 1.50, 2).
+            { id: 7, name: 'PLA Basique', brand: '', material: 'PLA', cost_per_kg: 3731, sale_price_per_kg: 5596.5, margin_pct: 50, difficulty_pct: 100 },
           ]);
         }),
       );

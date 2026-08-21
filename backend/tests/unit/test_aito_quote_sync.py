@@ -4175,8 +4175,9 @@ async def test_material_resolves_from_the_calculator_filament_the_drawer_picked(
     from backend.app.models.calculator import CalculatorFilament
     from backend.app.services.aito_quote_sync import load_export_tasks
 
+    # sale_price_per_kg is derived: round(cost_per_kg * (1 + margin_pct / 100), 2).
     filament = CalculatorFilament(
-        name="SUNLU PETG", brand="SUNLU", material="PETG", cost_per_kg=20, sale_price_per_kg=80
+        name="SUNLU PETG", brand="SUNLU", material="PETG", cost_per_kg=20, sale_price_per_kg=80, margin_pct=300
     )
     project = AitoProject(description="Helice", board_column="devis", position=0, client_id="C1")
     db_session.add_all([filament, project])

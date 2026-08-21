@@ -28,8 +28,15 @@ const filaments = [{
   brand: 'Generic',
   material: 'PLA',
   cost_per_kg: 20,
+  // Derived server-side: round(20 * 1.25, 2).
   sale_price_per_kg: 25,
+  margin_pct: 25,
   difficulty_pct: 100,
+  zoho_item_id: null,
+  zoho_item_name: null,
+  zoho_sku: null,
+  spool_weight_kg: null,
+  zoho_synced_at: null,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
 }];
