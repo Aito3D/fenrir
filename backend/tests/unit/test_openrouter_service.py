@@ -184,3 +184,34 @@ async def test_summarize_upstream_error(db_session, monkeypatch):
     monkeypatch.setattr(openrouter.httpx, "AsyncClient", _FailingClient)
     with pytest.raises(OpenRouterUpstreamError):
         await summarize_tasks(db_session, TASKS)
+
+
+class _TruncatedResponse:
+    status_code = 200
+
+    def json(self):
+        return {"choices": [{"message": {"content": "Résumé du proj"}, "finish_reason": "length"}]}
+
+
+@pytest.mark.asyncio
+async def test_summarize_returns_truncated_content_instead_of_raising(db_session, monkeypatch):
+    """summarize_tasks runs against a hard-coded 200-token budget, so hitting
+    it is common, not exceptional — unlike proofread_text, a truncated
+    summary is still returned as the summary rather than treated as an
+    upstream failure. This is BASE behavior (pre-dating the proofread
+    truncation guard) and must not regress just because the two callers
+    share the `_chat` helper.
+    """
+    from backend.app.api.routes.settings import set_setting
+
+    await set_setting(db_session, "openrouter_api_key", "sk-or-test")
+    await db_session.commit()
+
+    class _TruncatedClient(_FakeClient):
+        async def post(self, url, headers=None, json=None):
+            return _TruncatedResponse()
+
+    monkeypatch.setattr(openrouter.httpx, "AsyncClient", _TruncatedClient)
+    summary, model = await summarize_tasks(db_session, TASKS)
+    assert summary == "Résumé du proj"
+    assert model == "mistralai/mistral-small"

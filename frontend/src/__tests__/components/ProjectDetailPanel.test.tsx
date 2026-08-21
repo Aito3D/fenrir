@@ -2456,6 +2456,28 @@ describe('ProjectDetailPanel visual parity: quote status tone matches its actual
     expect(statusValue.className).toContain('text-bambu-gray-light');
     expect(statusValue.className).not.toContain('bambu-green');
   });
+
+  // `quote_status` is a closed union in the type, but that's a compile-time
+  // promise about what Zoho is SUPPOSED to send — the value actually comes
+  // off the wire with no runtime validation, so a status colliding with an
+  // inherited Object.prototype member must not resolve to that member. Same
+  // bug class as ACTOR_FALLBACK_KEY and SYNC_LABEL_KEY above: quoteStatus.ts
+  // guards both quoteStatusLabelKey and quoteStatusTone with Object.hasOwn
+  // for exactly this reason, but 'on_hold' above never exercises it (it is
+  // unmapped in both the guarded and the unguarded reading). Without the
+  // guard, `LABEL_KEYS['toString']` would resolve to the inherited
+  // `Object.prototype.toString` function and `STATUS_TONE['toString']` to
+  // `Object.prototype.toString` as well, instead of both falling through to
+  // the unmapped-status behaviour (raw string, neutral tone).
+  it('falls back to the raw string and neutral tone, rather than crashing, when quote_status collides with an Object.prototype member', () => {
+    show({ quote_number: 'DEV26-2462', quote_status: 'toString' as unknown as AitoProject['quote_status'] });
+    const pill = screen.getByTestId('panel-quote-status-pill');
+    expect(pill.className).toContain('text-bambu-gray-light');
+    expect(pill.className).not.toContain('bambu-green');
+    const statusValue = within(quoteCard()).getByText('toString');
+    expect(statusValue.className).toContain('text-bambu-gray-light');
+    expect(statusValue.className).not.toContain('bambu-green');
+  });
 });
 
 describe('ProjectDetailPanel visual parity: footer buttons', () => {

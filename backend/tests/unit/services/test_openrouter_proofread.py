@@ -96,39 +96,101 @@ async def test_no_api_key_is_not_configured():
     async def get_setting(db, key):
         return ""
 
-    with patch("backend.app.api.routes.settings.get_setting", get_setting):
-        with pytest.raises(OpenRouterNotConfiguredError):
-            await proofread_text(None, "capot")
+    with patch("backend.app.api.routes.settings.get_setting", get_setting), pytest.raises(OpenRouterNotConfiguredError):
+        await proofread_text(None, "capot")
 
 
 @pytest.mark.asyncio
 async def test_non_200_is_an_upstream_error(configured):
     client, _ = build_client(status_code=429, payload={})
-    with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
-        with pytest.raises(OpenRouterUpstreamError):
-            await proofread_text(None, "capot")
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client), pytest.raises(OpenRouterUpstreamError):
+        await proofread_text(None, "capot")
 
 
 @pytest.mark.asyncio
 async def test_transport_failure_is_an_upstream_error(configured):
     client, _ = build_client(raises=httpx.ConnectError("no route"))
-    with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
-        with pytest.raises(OpenRouterUpstreamError):
-            await proofread_text(None, "capot")
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client), pytest.raises(OpenRouterUpstreamError):
+        await proofread_text(None, "capot")
 
 
 @pytest.mark.asyncio
 async def test_empty_answer_is_an_upstream_error(configured):
     """Never return "": the field would be blanked by its own spell-check."""
     client, _ = build_client(payload=chat_payload("   "))
-    with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
-        with pytest.raises(OpenRouterUpstreamError):
-            await proofread_text(None, "capot")
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client), pytest.raises(OpenRouterUpstreamError):
+        await proofread_text(None, "capot")
 
 
 @pytest.mark.asyncio
 async def test_unexpected_payload_is_an_upstream_error(configured):
     client, _ = build_client(payload={"error": "nope"})
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client), pytest.raises(OpenRouterUpstreamError):
+        await proofread_text(None, "capot")
+
+
+@pytest.mark.asyncio
+async def test_truncated_completion_is_an_upstream_error(configured):
+    """finish_reason "length" means the model's answer was cut off mid-sentence.
+
+    Returning that truncated string as a 200 would let the caller swap it into
+    the field, silently deleting whatever came after the cut. It must instead
+    raise, so the caller leaves the user's original text alone.
+    """
+    payload = {"choices": [{"message": {"content": "Capot avec 3 pi"}, "finish_reason": "length"}]}
+    client, _ = build_client(payload=payload)
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client), pytest.raises(OpenRouterUpstreamError):
+        await proofread_text(None, "capot avec 3 pieces")
+
+
+@pytest.mark.asyncio
+async def test_pinned_quote_correction_still_strips_to_the_bare_word(configured):
+    """Pin: a normal quoted correction still strips to the bare word, unchanged
+    by the emptiness fallback below."""
+    client, _ = build_client(payload=chat_payload('"Capot"'))
     with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
-        with pytest.raises(OpenRouterUpstreamError):
-            await proofread_text(None, "capot")
+        corrected, _ = await proofread_text(None, "capot")
+    assert corrected == "Capot"
+
+
+@pytest.mark.asyncio
+async def test_reply_that_is_only_a_quote_pair_keeps_the_original_text(configured):
+    """A reply of exactly `""` strips to "" in _unquote, which would otherwise
+    blank the field (T-009). The caller must get its own text back instead."""
+    client, _ = build_client(payload=chat_payload('""'))
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
+        corrected, _ = await proofread_text(None, "capot")
+    assert corrected == "capot"
+
+
+@pytest.mark.asyncio
+async def test_reply_that_is_a_guillemet_pair_with_only_whitespace_inside_keeps_the_original(configured):
+    """Same failure mode, other quote style, whitespace instead of nothing
+    between the pair — `.strip()` still empties it."""
+    client, _ = build_client(payload=chat_payload("«  »"))
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
+        corrected, _ = await proofread_text(None, "capot")
+    assert corrected == "capot"
+
+
+@pytest.mark.asyncio
+async def test_reply_that_is_a_curly_quote_pair_with_nothing_inside_keeps_the_original(configured):
+    """A third quote style from the pair list, same degenerate shape."""
+    client, _ = build_client(payload=chat_payload("“”"))
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
+        corrected, _ = await proofread_text(None, "capot")
+    assert corrected == "capot"
+
+
+@pytest.mark.asyncio
+async def test_max_tokens_is_sized_conservatively_for_a_long_source(configured):
+    """A 2000-char French source tokenises well under 2 chars/token, so a budget
+    of len(source)//2 caps the answer before it can finish a dense sentence.
+    max_tokens must instead scale from a conservative (smaller) chars-per-token
+    ratio, leaving real headroom above the character count.
+    """
+    source = "é" * 2000
+    client, sent = build_client(payload=chat_payload("é" * 2000))
+    with patch("backend.app.services.openrouter.httpx.AsyncClient", client):
+        await proofread_text(None, source)
+    assert sent[0]["max_tokens"] > len(source) // 2 + 120

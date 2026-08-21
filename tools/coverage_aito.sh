@@ -1,11 +1,15 @@
 #!/bin/bash
 # Aito campaign coverage gate: runs the FULL suites, but measures coverage over
 # the campaign SCOPE only (Aito frontend + Aito backend).
+# Campaign 5 (2026-08-19): added backend/app/services/openrouter.py — the AI
+# proofread/summary backend, imported only by routes/aito.py, so it is Aito-only
+# code that powers AiTextField/AiSummaryPanel and belongs in the Aito scope.
 # Run from repo root: bash tools/coverage_aito.sh [frontend|backend|both]
 # The include lists below ARE the scope definition for coverage. Non-glob
 # entries are existence-checked so a rename fails loudly instead of silently
 # dropping a file from the gate.
 set -u
+set -o pipefail
 cd "$(dirname "$0")/.." || exit 1
 WHICH="${1:-both}"
 
@@ -36,6 +40,7 @@ BE_FILES=(
   backend/app/services/aito_quote_sync.py
   backend/app/services/aito_shipping.py
   backend/app/services/aito_zoho_comments.py
+  backend/app/services/openrouter.py
 )
 
 missing=0
@@ -59,7 +64,8 @@ if [ "$WHICH" = both ] || [ "$WHICH" = backend ]; then
     'backend/app/api/routes/aito.py' \
     'backend/app/schemas/aito.py' \
     'backend/app/models/aito_*.py' \
-    'backend/app/services/aito_*.py' || rc=1
+    'backend/app/services/aito_*.py' \
+    'backend/app/services/openrouter.py' || rc=1
 fi
 
 if [ "$WHICH" = both ] || [ "$WHICH" = frontend ]; then

@@ -21,6 +21,7 @@ import { placeholderProject } from '../../utils/aitoOptimistic';
 import { api } from '../../api/client';
 import type { AitoProject, ZohoQuotePreview, ZohoQuoteShipping } from '../../api/client';
 import { flashRevert } from '../../hooks/useRevertFlash';
+import { defaultClientDraft } from '../../utils/clientDraft';
 
 // `flashRevert` is imported as a direct binding by useOptimisticBoardMutation,
 // so vi.spyOn on the module namespace would patch an object nobody reads.
@@ -186,5 +187,126 @@ describe('deleteMutation — onError', () => {
     });
     expect(flashRevert).toHaveBeenCalledWith(7);
     expect(await screen.findByText('Could not delete this project')).toBeInTheDocument();
+  });
+});
+
+// createMutation's onError also runs a `queryClient.setQueryData(['aito-projects'],
+// (prev) => prev?.filter((p) => p.id !== placeholder.id) ?? prev)` on top of the
+// wrapper's own rollback (useOptimisticBoardMutation restores `context.previous`
+// — the PRE-transform snapshot from onMutate, which never contained the
+// placeholder — synchronously before calling this callback). This test proves
+// that filter is a no-op: the asserted end state (the pre-mutate snapshot,
+// verbatim) is what the wrapper alone already produces, so the filter changes
+// nothing whether it runs or not. It must pass unchanged before AND after the
+// filter is deleted from useAitoPageMutations.ts.
+describe('createMutation — onError', () => {
+  beforeEach(() => __resetBoardSync());
+
+  it('rolls back to the pre-create snapshot (no placeholder ever lands in it) and shows the create-failed toast', async () => {
+    vi.spyOn(api, 'createAitoProject').mockRejectedValue(new Error('nope'));
+    const existing = { id: 3, description: 'Existing card', column: 'devis', position: 0 } as AitoProject;
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    client.setQueryData(['aito-projects'], [existing]);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>
+        <ToastProvider>{children}</ToastProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAitoPageMutations(), { wrapper });
+
+    const placeholder = placeholderProject({
+      description: 'New card',
+      client_id: null,
+      client_name: 'Walk-in',
+      client_phone: null,
+      client_email: null,
+      client_is_company: false,
+    });
+
+    act(() => {
+      result.current.createMutation.mutate({
+        description: 'New card',
+        draft: defaultClientDraft('walkin', 'Walk-in'),
+        tasks: [],
+        shipping: null,
+        placeholder,
+      });
+    });
+
+    await waitFor(() => {
+      expect(client.getQueryData<AitoProject[]>(['aito-projects'])).toEqual([existing]);
+    });
+    // Confirms the wrapper's rollback already excludes the placeholder — the
+    // very thing the (now-deleted) filter claimed to be doing.
+    expect(
+      client.getQueryData<AitoProject[]>(['aito-projects'])?.some((p) => p.id === placeholder.id),
+    ).toBe(false);
+    expect(await screen.findByText('Could not create the project. Please try again.')).toBeInTheDocument();
+  });
+});
+
+// Same proof for importMutation's onError, which carries the identical
+// placeholder-filter on top of the wrapper's rollback.
+describe('importMutation — onError', () => {
+  beforeEach(() => __resetBoardSync());
+
+  it('rolls back to the pre-import snapshot (no placeholder ever lands in it) and shows the create-failed toast', async () => {
+    vi.spyOn(api, 'createAitoProject').mockRejectedValue(new Error('nope'));
+    const existing = { id: 4, description: 'Existing card', column: 'devis', position: 0 } as AitoProject;
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    client.setQueryData(['aito-projects'], [existing]);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>
+        <ToastProvider>{children}</ToastProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAitoPageMutations(), { wrapper });
+
+    const preview: ZohoQuotePreview = {
+      quote: {
+        id: 'e10',
+        number: 'DEV26-9002',
+        date: '2026-07-29',
+        status: 'draft',
+        total: 500,
+        currency_code: 'XPF',
+        url: 'https://books.zoho.com/estimates/e10',
+        salesperson: null,
+      },
+      client: { id: 'z2', name: 'Import Client', phone: null, email: null, is_company: null },
+      suggested_description: 'Import card',
+      tasks: [],
+      skipped_lines: [],
+      shipping: null,
+      existing_project_id: null,
+    };
+    const placeholder = placeholderProject({
+      description: preview.suggested_description,
+      client_id: preview.client.id,
+      client_name: preview.client.name,
+      client_phone: preview.client.phone,
+      client_email: preview.client.email,
+      client_is_company: preview.client.is_company,
+      quote_status: preview.quote.status,
+      tasks: preview.tasks,
+    });
+
+    act(() => {
+      result.current.importMutation.mutate({ description: preview.suggested_description, preview, placeholder });
+    });
+
+    await waitFor(() => {
+      expect(client.getQueryData<AitoProject[]>(['aito-projects'])).toEqual([existing]);
+    });
+    expect(
+      client.getQueryData<AitoProject[]>(['aito-projects'])?.some((p) => p.id === placeholder.id),
+    ).toBe(false);
+    expect(await screen.findByText('Could not create the project. Please try again.')).toBeInTheDocument();
   });
 });

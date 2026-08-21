@@ -3,6 +3,48 @@
 User-approved behavior changes made during the refactor campaign, each an
 explicit exception to the campaign's zero-functionality-change rule.
 
+## T-003 — 2026-08-20 — user-approved behavior change
+
+`AitoProjectCreate.client_id` (`Field(min_length=1)`) and `AitoProjectUpdate.client_id`
+(`str | None = None`) carried no upper bound, unlike every sibling identifier field in the
+same module (`quote_id`: `max_length=50, pattern=r"^[A-Za-z0-9_-]+$"`; `client_name`:
+`max_length=200`). The backing column is `String(50)` (`models/aito_project.py`) and SQLite
+does not enforce VARCHAR length, so an over-length value was silently stored and echoed back
+in `AitoProjectResponse.client_id` on every `GET /api/v1/aito/`.
+
+Fixed by adding `max_length=50` to `client_id` on both `AitoProjectCreate` and
+`AitoProjectUpdate`, matching the column. The auditor's finding also suggested reusing
+`quote_id`'s `^[A-Za-z0-9_-]+$` character-class pattern; the user explicitly **declined**
+that half — a Zoho contact id is opaque and, unlike `quote_id`, is never interpolated into a
+URL path or trusted as a filesystem-adjacent token, so a character-class restriction would
+only risk rejecting a real Zoho client id already in use, for no corresponding safety
+benefit. Only the length bound was added.
+
+Consumer enumeration for both schemas (including composition, not just inheritance) before
+the change: grepped `backend/app/` for `AitoProjectCreate` and `AitoProjectUpdate`. Both
+names appear only as (a) the class definitions themselves, (b) FastAPI request-body
+parameters on `POST /api/v1/aito/` and `PATCH /api/v1/aito/{id}` in `routes/aito.py`, and (c)
+comments in `routes/zoho.py` and `services/aito_quote_import.py` referencing the shape by
+name, not by import/composition. Neither class is imported or constructed anywhere else in
+`backend/`, and neither is composed as a field type (`x: AitoProjectCreate` /
+`list[AitoProjectCreate]`) on any other schema — unlike the `AitoTaskCreate` composition
+found during T-001/T-009. `AitoProjectResponse.client_id` is its own independently-declared
+field (`client_id: str | None` with no `max_length`), not inherited from either write schema,
+so it keeps reading back an already-stored over-length value unchanged rather than raising —
+confirmed with a test that constructs `AitoProjectResponse` directly with a 60-character
+`client_id` and asserts it still validates.
+
+Observable change, quoting the approved description verbatim: "a client_id longer than 50
+characters is currently accepted and stored, and would start returning 422."
+
+Snapshot fallout: `aito-pydantic-schemas` mismatched (pydantic's `model_json_schema()` emits
+`maxLength` in JSON Schema, unlike `allow_inf_nan`) and was re-recorded — confirmed by
+diffing golden vs. current JSON Schema output that the only two fields that changed were
+`AitoProjectCreate.properties.client_id` and `AitoProjectUpdate.properties.client_id`, each
+gaining `"maxLength": 50` and nothing else. `aito-openapi` was unaffected: that probe only
+captures `spec["paths"]`, where request bodies appear as a `$ref` to the components schema,
+not the inlined schema itself. `SURFACE.md` did not move (no schema class added or removed).
+
 ## T-012 — 2026-08-11 — user-approved behavior change
 
 `useProjectPatchMutation`'s three consumers (`ProjectDetailPanel`'s description
@@ -1999,3 +2041,792 @@ feeds them, so no probe recorded a change. `SURFACE.md` is also unaffected:
 `def`/`class` or export was added). Backend coverage over the Aito scope
 remains at or above the 98.09%/95.07% baseline — see the combined
 verification run covering T-001 and T-003 together.
+
+## T-006 — 2026-08-19 — user-approved behavior change
+
+`proofread_text` sized `max_tokens` from a CHARACTER count using a fixed
+2-chars-per-token ratio (`min(1000, len(source) // 2 + 120)`), and `_chat`
+returned `response.json()["choices"][0]["message"]["content"].strip()`
+without ever looking at `finish_reason`. French prose dense in accents,
+digits and references can tokenise under 2 chars/token, so a long, dense
+field (up to `PROOFREAD_MAX_CHARS` = 2000 chars, the request schema's own
+cap) could hit the 1000-token ceiling before the model finished the
+sentence — the completion still came back as a normal 200, differed from
+`sent`, and `AiTextField` swapped it straight into the field, silently
+deleting whatever came after the cut.
+
+Two changes, both approved: (1) `max_tokens` is now sized from a
+conservative (i.e. token-dense) estimate of 1.5 chars/token instead of 2
+(`int(len(source) / 1.5) + 120`), giving real headroom for dense French text
+without an arbitrary hard cap — the schema's own `PROOFREAD_MAX_CHARS` bound
+already limits the worst case. (2) `_chat` now raises
+`OpenRouterUpstreamError` when the chosen completion's `finish_reason ==
+"length"`, i.e. the model was cut off before finishing, instead of returning
+the truncated text as a valid answer.
+
+Observable change, quoting the approved description verbatim: the caller
+(`proofread_text`'s route) already treats `OpenRouterUpstreamError` as a
+silent no-op that leaves the user's text alone with no error surfaced in the
+UI — that silence is intentional and approved, not a follow-up gap. Callers
+affected: any proofread request whose upstream completion is truncated
+(`finish_reason == "length"`) now gets no correction applied (previously: a
+truncated correction silently replaced the field's full text). Callers NOT
+affected: any completion that finishes normally (`finish_reason` anything
+other than `"length"`, including absent), which is unaffected by either
+change beyond a larger `max_tokens` budget in the outgoing request;
+`summarize_tasks`, which does not go through this code path's `max_tokens`
+formula and was not touched by change (1).
+
+`tools/snapshot.py verify` shows 11/11 probes matching before and after —
+`aito-ai-prompts` pins `openrouter.py`'s constants, prompt text,
+`_task_lines` and `_unquote`, none of which changed; it does not probe
+`_chat` or `proofread_text`'s `max_tokens` sizing or `finish_reason`
+handling, so neither approved change touched a golden. `SURFACE.md` is also
+unaffected: `bash tools/gen_surface_aito.sh` produces a byte-identical file
+(no `def`/`class`/export was added or removed).
+
+### Correction — 2026-08-19, same day, after the blind verifier ran
+
+The paragraph above, as originally committed (`8fb761324`), understated the
+blast radius of change (2). The `finish_reason == "length"` guard was placed
+inside `_chat`, the helper SHARED by `proofread_text` AND `summarize_tasks`
+(`_chat(..., max_tokens=200)` at the summarize call site), with no
+caller-specific gating. "Callers NOT affected" above claimed `summarize_tasks`
+"was not touched" — true only of change (1)'s `max_tokens` formula, and
+false of change (2): `summarize_tasks` was fully affected by the new
+`finish_reason` guard, exactly like `proofread_text`. Only change (1) — the
+approved one — was scoped to the proofread path; change (2) — approved for
+proofread only — silently applied to both.
+
+Concretely: BEFORE this campaign, a summarize call whose completion was cut
+off by the hard-coded `max_tokens=200` budget returned the truncated summary
+string as-is (BASE behavior, unchanged since before this campaign). AS
+COMMITTED in `8fb761324`, the same truncated completion instead raised
+`OpenRouterUpstreamError` out of `summarize_tasks`, which propagates to a
+502 at `POST /api/v1/aito/projects/{id}/summarize`
+(`backend/app/api/routes/aito.py`), which `AiSummaryPanel.tsx` catches by
+flipping to its `failed` state and substituting a locally-built
+`buildFallbackSummary(...)` string in place of the model's (truncated but
+real) output — a different, unapproved, user-visible change on a caller
+`summarize_tasks` runs against a user-configurable model with a fixed
+200-token cap, where hitting that cap is plausibly common rather than rare.
+
+The blind verifier reproduced this directly (feeding a
+`finish_reason: "length"` payload to `summarize_tasks` and observing BASE
+return the summary while HEAD raised) and failed the iteration on it. Per
+the user's instruction, the guard was narrowed to the proofread path only:
+`_chat` gained an opt-in `raise_on_truncation: bool = False` parameter
+(default preserves BASE behavior for every existing caller), and only
+`proofread_text` passes `raise_on_truncation=True`. `summarize_tasks` is
+unchanged from BASE for both the `max_tokens` formula (never touched, see
+above) and `finish_reason` handling (now, again, not checked at all) —
+a truncated summary is once more returned as the summary. Proofread's
+observable behavior, including the ordering where a truncated AND empty
+completion reports "OpenRouter truncated its answer (finish_reason=length)"
+rather than "OpenRouter returned an empty answer", is byte-identical to what
+`8fb761324` committed. A regression test
+(`test_summarize_returns_truncated_content_instead_of_raising` in
+`backend/tests/unit/test_openrouter_service.py`) now pins the split: it was
+run against the unnarrowed `_chat` first and failed (raised
+`OpenRouterUpstreamError` instead of returning content), then passed after
+the narrowing. `tools/snapshot.py verify` remains 11/11 after the narrowing.
+
+## T-001 — 2026-08-19 — user-approved behavior change
+
+Every money/quantity `float` field on `AitoTaskBase`, `AitoShippingInput` and
+`AitoProjectCreate` used a plain `ge=0` (or `gt=0, le=100`) constraint, which
+admits `float('inf')` — `inf >= 0` is `True` — and Starlette parses the
+request body with plain `json.loads`, which (unlike the JSON spec) accepts
+the non-standard `Infinity`/`NaN` literals. A request carrying
+`"shipping_price": Infinity` or `"impression_cost": Infinity` was accepted
+and persisted with the row storing `inf`; Pydantic v2 then serialises a
+non-finite float back out as JSON `null`, which is how the corruption stayed
+invisible in the response (`tasks_total`, `shipping_price`, the task's own
+cost all read back as `null`, not an error). `services/aito_board_rules.py`
+accumulates task costs into `TaskSummary.total`, so one poisoned task made
+the whole project's `tasks_total` non-finite too.
+
+Fixed by adding `allow_inf_nan=False` to every field the audit named:
+`scan_cost`, `modelisation_cost`, `usinage_cost`, `impression_cost`,
+`impression_weight_g`, `impression_discount_pct` (on `AitoTaskBase`),
+`shipping_price` (on `AitoShippingInput`) and `quote_total` (on
+`AitoProjectCreate`). The update-path schemas needed no separate change:
+`AitoTaskUpdate` inherits `AitoTaskBase`'s cost fields, and
+`AitoProjectUpdate` inherits `AitoShippingInput`'s `shipping_price`, without
+redeclaring either — so PATCH `/aito/tasks/{id}` and PATCH `/aito/{id}` are
+closed by the very same constraint (`AitoProjectUpdate` has no `quote_total`
+field at all; it is create-only). `impression_discount_pct`'s existing
+`gt=0, le=100` bounds already rejected `NaN` (`nan > 0` is `False` in
+Python) and `inf` (`inf <= 100` is `False`), so `allow_inf_nan=False` there
+is redundant but harmless, added for consistency with the rest of the
+approval's field list.
+
+Observable change, quoting the approved description verbatim: "a request
+sending Infinity or NaN for a cost or shipping price is currently accepted
+and stored, and will start returning 422." In practice, end-to-end the
+response is not a clean 422 today: FastAPI's default
+`RequestValidationError` handler builds its body with
+`jsonable_encoder(exc.errors())`, which does not sanitise a non-finite float
+carried in a validation error's own `input` field, and Starlette's
+`JSONResponse.render` then calls `json.dumps(..., allow_nan=False)`, which
+raises on that float — the attempt to report "you sent an invalid number"
+crashes trying to echo the number back. In this app that crash currently
+surfaces as a misleading 503 ("Authentication service temporarily
+unavailable") via `auth_middleware`'s broad `except Exception` around
+`call_next` in its auth-disabled fast path (main.py). This is a
+PRE-EXISTING, framework-level bug — the identical crash reproduces on
+unmodified BASE code by sending `Infinity` to `impression_time_min` (a
+plain `int` field this task never touched) — so it predates this fix and is
+out of T-001's scope (`schemas/aito.py` cannot fix error-response
+serialisation in FastAPI/Starlette or exception handling in a shared
+middleware). What this fix does guarantee, and what the added tests prove:
+the request is rejected before the route handler runs, so nothing is ever
+persisted — the security-relevant half of the audit finding. The exact HTTP
+status code returned for this one input shape is a separate, follow-up
+finding.
+
+`tools/snapshot.py verify` showed 11/11 probes matching both BEFORE and
+AFTER the change — `allow_inf_nan` is a validation-only Pydantic
+constructor argument with no JSON Schema representation, so neither
+`aito-pydantic-schemas` (which serialises `model_json_schema()`) nor
+`aito-openapi` (which serialises the routes' schemas) recorded any diff; no
+probe was re-recorded. `SURFACE.md` is also unaffected:
+`bash tools/gen_surface_aito.sh` produces a byte-identical file (no
+`def`/`class`/export was added or removed). Backend coverage over the Aito
+scope (the 13 `backend/app/**/aito*.py` source files) measured identically
+before and after this change — 98.07% statements / 94.93% branches in both
+cases, with `schemas/aito.py` itself unchanged at 98.27% — because
+`allow_inf_nan` is enforced inside pydantic-core's Rust validator and adds
+no new Python-visible statement or branch for `coverage.py` to count; the
+new tests exercise it via the resulting `ValidationError`, not via a
+source-level branch.
+
+## T-005 — 2026-08-19 — user-approved behavior change (approval given RETROACTIVELY)
+
+**This entry was written after the fact.** Iteration 1's blind verifier
+FAILED the iteration because commit `260375eeb` ("refactor(loop-1): T-005
+AiTextField unmount guard on proofread onSuccess") made an observable
+behavior change with no backing entry in this file. The change itself was
+not reverted or altered — the user reviewed it after the fact and approved
+it retroactively; this entry exists solely to bring the record into line
+with what already shipped, not to introduce anything new.
+
+`frontend/src/components/aito/AiTextField.tsx`'s proofread mutation's
+`onSuccess` swapped a returned correction into the field via `onChange`
+whenever the (possibly stale) `sent` text still matched the field's current
+value, but never checked whether the field itself was still mounted.
+`TaskRow.tsx:262` mounts `TaskStepFields` (and therefore `AiTextField`)
+behind `!collapsed`, so an operator who blurs a field (starting an up-to-8s
+`POST /aito/proofread`) and then deletes or simply collapses that task row
+unmounts the field mid-request. When the response then landed, `onChange`
+still ran — through the parent's last-rendered, by-then-stale closure —
+against the PRE-delete task array. `useProjectTasks` saw that array grow
+relative to its own current state, took its append branch, and put the
+already-removed row back on screen, which then got POSTed as a brand-new
+task: a duplicate of an already-persisted task that the Zoho sync worker
+went on to push onto the client's quote as a genuine, unwanted duplicate
+line.
+
+Fixed by adding a `mountedRef` (set `true` on creation, flipped to `false`
+in the component's existing unmount cleanup effect) and returning early
+from `onSuccess` when it is `false`, before either the `sent`-still-matches
+check or the `onChange` call:
+
+    settledRef.current.add(data.text);
+    if (!mountedRef.current) return;
+    if (valueRef.current.trim() !== sent) return;
+    ...
+    onChange(data.text);
+
+Observable change: BEFORE, a proofread correction that resolved after its
+`AiTextField` had unmounted was still applied, via the stale parent
+closure, and could resurrect an already-deleted task as a duplicate.
+AFTER, that correction is silently dropped — nothing is shown to the user,
+and no `onChange` fires for a field that is no longer there. A correction
+that resolves while the field is still mounted is completely unaffected.
+
+Confirmed via a new test in the accompanying test file,
+`does not apply a correction that lands after the field has unmounted`.
+The blind verifier itself reproduced the bug empirically as part of
+flagging this change: it staged BASE's `frontend/` into a scratch tree,
+dropped in HEAD's test file unmodified, and ran it — the new test FAILS
+against BASE with `AssertionError: expected 6 to be 5`, confirming BASE
+really did fire the extra, unwanted `onChange` this fix suppresses.
+
+
+### Correction — 2026-08-19, iteration-1 blind verifier run #3, after this
+### iteration's own commits landed
+
+**Both corrections below were written after the fact**, following the same
+pattern as the T-006 Correction above: the underlying fixes were made in a
+new commit on top of `8fb761324`/`4d9e71eea` (not by amending them), and
+these paragraphs bring the record for the two entries above into line with
+what actually shipped, rather than silently rewriting history.
+
+**T-005, above:** the paragraph "Observable change: ... A correction that
+resolves while the field is still mounted is completely unaffected" was
+false in a development build. The fix added a `mountedRef` that starts
+`true` and was flipped to `false` in `AiTextField`'s existing unmount-cleanup
+effect — but nothing ever flipped it back to `true`. `frontend/src/main.tsx`
+wraps the whole app in root-level `<StrictMode>`, and React 19's development
+runtime runs every effect as `setup | cleanup | setup` on first commit (a
+deliberate double-invoke, to surface exactly this class of bug). The
+cleanup half of that sequence set `mountedRef.current = false` on the FIRST,
+discarded setup, and nothing in the component ever set it back to `true` —
+so from that point on, in `npm run dev`, `onSuccess` read `mountedRef.current
+=== false` for the field's entire remaining lifetime and returned early on
+every single response, for every `AiTextField` on the page. No proofread
+correction was ever applied to any Aito task field in a development build;
+only the production bundle (which strips `<StrictMode>`'s double-invoking
+behavior) worked as the entry above described.
+
+Fixed by moving the `mountedRef.current = true` assignment into the START of
+the same effect, so a StrictMode-driven re-setup re-arms the flag exactly as
+the cleanup half disarmed it:
+
+    useEffect(() => {
+      mountedRef.current = true;
+      return () => {
+        mountedRef.current = false;
+        ...
+      };
+    }, []);
+
+This is the standard shape for this exact hazard and changes nothing about
+the fix's actual intent (dropping a correction that lands after a genuine
+unmount) — it only repairs whether the flag is live across StrictMode's
+extra setup/cleanup pair, which it never was before.
+
+The gap that let this ship: `frontend/src/__tests__/utils.tsx`'s shared
+`render` helper does not put `<StrictMode>` at the root of the tree handed
+to `ReactDOM`, so none of the 13 existing `AiTextField` tests (which all go
+through that helper) ever double-invoked an effect, even though the app
+itself does. A new test,
+`still applies a correction under root-level StrictMode (dev double-effects)`
+in `frontend/src/__tests__/components/AitoAiTextField.test.tsx`, builds its
+own minimal tree with `<QueryClientProvider>` wrapped directly in
+`<StrictMode>` (bypassing the shared helper for this one case, on purpose)
+and asserts the correction is applied. Run against the code as originally
+committed, it failed: `expected the element to have value: Capot avec 3
+pièces, Received: capot avec 3 pieces` (the raw, uncorrected text — proving
+`onSuccess` really did bail out under root-level StrictMode). It passes
+after the `useEffect` fix above. The other 13 tests in that file, and the
+shared helper itself, are unchanged.
+
+**T-001, above:** the paragraph beginning "Fixed by adding `allow_inf_nan=
+False` to every field the audit named" listed the update-path consequences
+it had worked out (`AitoTaskUpdate` inheriting from `AitoTaskBase`,
+`AitoProjectUpdate` inheriting from `AitoShippingInput`) but never checked
+`AitoTaskResponse`, which ALSO inherits `AitoTaskBase` — the one inheritor
+of that class that is a READ path, not a write path. This file already
+carried the precedent for exactly this hazard, in the comment on
+`AitoTaskCreate`'s `max_length` description caps (originally at
+`schemas/aito.py:205-208`, before this correction's edits shifted line
+numbers below it): those caps were deliberately placed on
+`AitoTaskCreate`/`AitoTaskUpdate` rather than on `AitoTaskBase`, specifically
+because `AitoTaskResponse` also inherits `AitoTaskBase` and a bound placed
+there would make reading back an already-over-the-cap stored row raise
+instead of just refusing to write a new one over it. `allow_inf_nan=False`
+was placed on `AitoTaskBase` anyway, violating the file's own precedent one
+class down.
+
+Concretely: a task row that already stored a non-finite cost — which BASE
+accepted and persisted, and which this very entry's own opening paragraph
+documents ("A request carrying ... `Infinity` was accepted and persisted
+with the row storing `inf`") — made `AitoTaskResponse(**row_fields)` raise
+`ValidationError` the moment `_task_to_response`
+(`backend/app/api/routes/aito.py:392`) tried to build a response model from
+it, turning `GET /api/v1/aito/{id}/tasks` into a 500 for that project instead
+of reading the field back as `null`, which is what BASE did and what the
+rest of this entry's own reasoning (the "Pydantic v2 then serialises a
+non-finite float back out as JSON `null`" sentence, two paragraphs up) says
+should still happen. This was never part of the approved change: the
+approval quoted verbatim above covers only "a request sending Infinity or
+NaN ... will start returning 422" — a write-path guarantee — and says
+nothing about reads of rows already on disk.
+
+Fixed by following the file's own precedent exactly: `allow_inf_nan=False`
+was removed from the six affected fields on `AitoTaskBase` (`scan_cost`,
+`modelisation_cost`, `usinage_cost`, `impression_cost`,
+`impression_weight_g`, `impression_discount_pct`) and redeclared on
+`AitoTaskCreate` and `AitoTaskUpdate` individually, alongside those classes'
+existing `max_length` redeclarations for the same reason. The write path is
+unaffected — `AitoTaskCreate` and `AitoTaskUpdate` still reject a non-finite
+value exactly as before, and the existing T-001 tests for both still pass
+unmodified. `AitoTaskResponse` now constructs from a non-finite stored value
+exactly as it did at BASE, and round-trips it out as JSON `null`.
+
+The other seven fields the original entry named were re-audited individually
+against this same question — "does any response/read schema inherit the
+class this field's constraint sits on?" — rather than assuming the one named
+field was the only casualty:
+
+- `modelisation_cost`, `usinage_cost`, `impression_cost`,
+  `impression_weight_g` (`AitoTaskBase`): same defect as `impression_cost`
+  above (all four are inherited by `AitoTaskResponse`); same fix, moved to
+  `AitoTaskCreate`/`AitoTaskUpdate` alongside it.
+- `impression_discount_pct` (`AitoTaskBase`): inherited by
+  `AitoTaskResponse` the same way, so moved for consistency with the other
+  five — but its pre-existing `gt=0, le=100` bounds already reject both
+  `inf` (fails `le=100`) and `nan` (fails the same comparison) with no
+  `allow_inf_nan` involved at all, verified directly against the
+  `refactor-base` tag's schema before and after this fix. Read and write
+  paths for this one field are therefore byte-identical to BASE either way;
+  moving it closes the structural hole for consistency, not because it was
+  ever observably exploitable.
+- `shipping_price` (`AitoShippingInput`): inherited only by
+  `AitoProjectCreate` and `AitoProjectUpdate`, both write-only schemas.
+  `AitoProjectResponse` (`schemas/aito.py:482`) is declared as a standalone
+  `BaseModel`, not as a subclass of `AitoShippingInput`, `AitoProjectCreate`
+  or anything else that carries the constraint — its own `shipping_price:
+  float | None` field is unconstrained, exactly as it was before T-001. Safe
+  as originally placed; no read schema is affected.
+- `quote_total` (`AitoProjectCreate`): declared directly on
+  `AitoProjectCreate`, which nothing else in this module inherits from.
+  `AitoProjectResponse`'s own `quote_total: float | None` is likewise a
+  separate, unconstrained field. Safe as originally placed; no read schema
+  is affected.
+
+New tests in `backend/tests/unit/test_aito_routes.py`:
+`test_task_response_still_accepts_infinite_money_fields` (constructs
+`AitoTaskResponse` directly with `impression_cost`/etc. `= math.inf` for
+each of the five plain-`ge=0` fields, asserts it succeeds and round-trips as
+JSON `null`) and `test_task_response_rejects_non_finite_discount_pct_same_as
+_base` (pins that `impression_discount_pct` rejects both `inf` and `nan` on
+`AitoTaskResponse`, unaffected by either arrangement of the constraint, as
+verified against `refactor-base`). Run against the code as originally
+committed (`allow_inf_nan=False` still on `AitoTaskBase`), the five
+`_infinite_money_fields` cases failed with
+`pydantic_core._pydantic_core.ValidationError: ... Input should be a finite
+number`, confirming the regression; they pass after the fix. The existing
+write-path tests (`test_task_create_rejects_non_finite_money_fields`,
+`test_task_update_rejects_non_finite_money_fields`,
+`test_task_create_rejects_non_finite_discount_pct`,
+`test_shipping_input_rejects_non_finite_price`,
+`test_project_update_rejects_non_finite_shipping_price`,
+`test_project_create_rejects_non_finite_quote_total`) were re-run unmodified
+and still pass — the write-side guarantee this task was approved for is
+intact.
+
+`tools/snapshot.py verify` shows 11/11 probes matching after both fixes in
+this correction — `allow_inf_nan`'s presence or absence has no JSON Schema
+representation (same reasoning as the original T-001 entry above), and
+nothing about `AiTextField`'s public shape, props or rendered DOM changed.
+
+## T-002 — 2026-08-19 — user-approved behavior change
+
+`add_task` (`POST /aito/{project_id}/tasks`) resolved its parent project with
+a bare `select(AitoProject).where(AitoProject.id == project_id)` — no status
+filter — unlike every other project-scoped write in this file, which goes
+through `_get_active_project_or_404` (adds `AitoProject.status == "active"`).
+`update_task` (`PATCH /aito/tasks/{task_id}`) and `delete_task`
+(`DELETE /aito/tasks/{task_id}`) both resolved their task via
+`_get_task_or_404`, which filtered on the task's own id alone and never
+consulted the parent project's status at all. Confirmed against the app
+before this fix: after soft-deleting a project (`DELETE /aito/{id}`, 204,
+sets `status = "deleted"`), `POST /{id}/tasks` still returned 201,
+`PATCH /tasks/{tid}` still returned 200, and `DELETE /tasks/{tid}` still
+returned 204. Each write also calls `_mark_pending_if_ours`
+(unconditionally, regardless of status), which requeues the trashed project
+for the Zoho sync worker. `list_projects` excludes deleted rows from the
+board, so a priced task could be added or a cost changed on a card nobody
+can see, and that edit rides onto the live Zoho estimate once the project is
+later restored.
+
+Consumer enumeration performed before touching either helper:
+
+- `_get_task_or_404` had exactly two callers in the whole codebase (grepped
+  across `backend/`, not just this file): `update_task` (line ~1622) and
+  `delete_task` (line ~1701). Both are WRITE endpoints. **No read endpoint
+  calls this helper** — `list_tasks` (`GET /{project_id}/tasks`) queries
+  `AitoTask` directly by `project_id` with no status join at all, and does
+  not go through `_get_task_or_404`. Gating the helper on the parent's
+  status therefore only affects the two write endpoints; it cannot touch a
+  read path, because none exists among its callers. This was the exact
+  "enumerate every consumer" check the campaign's standing rule calls for,
+  and it came back negative for a read-path hit — confirmed independently
+  with a new regression test (below) that pins the read path still working
+  after the fix.
+- `_get_active_project_or_404` already had seven callers before this change
+  (`send_quote_email`, `reorder_tasks`, and four other project-level write
+  routes), all pre-existing and already status-filtered; `add_task` is now
+  an eighth, using the same helper rather than duplicating its logic. None
+  of the seven existing callers were touched — `add_task` only stopped
+  inlining its own weaker check and started calling the shared helper that
+  already existed for this exact purpose.
+
+Fix: `add_task` now resolves its parent via `project = await
+_get_active_project_or_404(db, project_id)` instead of its own unfiltered
+query. `_get_task_or_404` now joins `AitoProject` and filters on
+`AitoProject.status == "active"` in addition to the task's own id, so both
+`update_task` and `delete_task` 404 when the parent project is not active.
+`list_tasks` was not touched.
+
+Observable change, quoting the approved description verbatim: "adding,
+editing or deleting a task on a trashed project currently succeeds and would
+start returning 404, so any client that edits tasks between a trash and a
+restore would break." Confirmed exactly as scoped: `POST /{id}/tasks`,
+`PATCH /tasks/{tid}` and `DELETE /tasks/{tid}` against a trashed project's
+task now 404; `GET /{id}/tasks` against the same trashed project is
+unaffected and still returns 200 with the task list.
+
+New tests in `backend/tests/unit/test_aito_routes.py`:
+`test_task_writes_404_once_the_parent_project_is_trashed` (soft-deletes a
+project, then asserts `add_task`/`update_task`/`delete_task` all 404) and
+`test_task_reads_still_work_on_a_trashed_project` (pins that `list_tasks`
+still returns 200 with the task's data on the same trashed project, so a
+future change cannot silently gate the read path too). Run against the
+code as it stood before this fix (verified via `git apply -R` on this
+commit's diff to `backend/app/api/routes/aito.py`, then `git apply` to
+restore it — no `git stash` used, per the campaign's shared-stash hazard),
+`test_task_writes_404_once_the_parent_project_is_trashed` failed at its
+first assertion: `add_task` returned 201 instead of 404
+(`assert 201 == 404`). It passes after the fix. The read-path pin test
+passes both before and after the fix, as expected — it does not by itself
+prove anything about the fix (a test that passes on both sides of a change
+proves nothing about that change), but it does prevent a future regression
+from gating the read path silently.
+
+`tools/snapshot.py verify` showed 11/11 probes matching both before and
+after this change (re-verified independently by reverting/reapplying the
+diff the same way as the test proof above). `aito-route-perms` and
+`aito-openapi` were checked specifically, per this task's instructions —
+neither route's permission decorator, path, method, status code, or request/
+response schema changed; only an internal WHERE-clause filter did, which is
+invisible to both probes. No probe needed re-recording.
+`bash tools/gen_surface_aito.sh` produced a byte-identical `SURFACE.md` — no
+route, request/response model, or exported name was added or removed.
+
+### Correction — 2026-08-20, iteration-2 blind verifier run, read-path
+### consequence found by a third verification pass
+
+**This correction does not change or revert the fix above; it documents a
+consequence of it that the original T-001 entry did not enumerate.**
+
+`AitoTaskCreate` is not only the write-path schema `T-001` was approved to
+harden — it is also composed into a response model.
+`backend/app/api/routes/zoho.py:291` declares:
+
+    class ZohoQuotePreview(BaseModel):
+        tasks: list[AitoTaskCreate]
+
+and `zoho.py:313` serves `GET /api/v1/zoho/estimates/{estimate_id}/preview`
+with `response_model=ZohoQuotePreview`. That is a direct use of
+`AitoTaskCreate` itself (not `AitoTaskResponse`, which only inherits
+`AitoTaskBase`), so the `allow_inf_nan=False` constraints this task added at
+`schemas/aito.py:221-228` (`scan_cost`, `modelisation_cost`, `usinage_cost`,
+`impression_weight_g`, `impression_cost`, `impression_discount_pct`) now sit
+directly on this response path too. BEFORE this task, a non-finite value on
+one of those fields serialised out of this endpoint as JSON `null` (200).
+AFTER, the same value raises `ResponseValidationError` inside FastAPI while
+building the response, and the endpoint 500s instead.
+
+Reachability was checked, not assumed — this is producible from real
+estimate data reaching `preview_estimate`, not only by hand-crafting a
+request body:
+
+- `_line_amount({'quantity': 1e200, 'rate': 1e200}, inclusive=True,
+  precision=2)` returns `inf`.
+- `parse_weight_g('9'*310 + ' g')` returns `inf` — the weight regex's `\d+`
+  is unbounded, so an absurdly long digit run in a Zoho line description
+  overflows a Python `float` on conversion.
+
+Both functions live in `backend/app/services/aito_quote_import.py` and both
+feed fields on the `AitoTaskCreate` instances this endpoint builds and
+returns.
+
+Severity is LOW, and the record should say so plainly rather than let the
+mechanism above read as alarming:
+
+- it needs a magnitude past roughly `1.8e308` arriving from Zoho Books —
+  not an operational input for a quantity, rate, or weight field;
+- the hazard CLASS is pre-existing, not introduced by this task.
+  `AitoTaskCreate` already carried `max_length=10_000` on its four
+  `*_description` fields at BASE, and an 11,000-character Zoho line
+  description already 500s this same `preview_estimate` endpoint today, on
+  unmodified BASE code — `AitoTaskCreate` was already a write schema leaking
+  into a response before this task touched it;
+- `backend/app/api/routes/zoho.py` is OUT of this campaign's scope, so no
+  fix to the response model itself was made or attempted here.
+
+Also worth recording honestly: the T-001 entry above states that the
+remaining, unconstrained fields were re-audited against the question "does
+any response/read schema INHERIT the class this field's constraint sits
+on?" That audit was inheritance-only, checking `AitoTaskResponse`'s
+inheritance of `AitoTaskBase`, and by its own framing could not have caught
+a schema that is instead composed directly into a response model's field
+type, which is what `ZohoQuotePreview.tasks: list[AitoTaskCreate]` does. Two
+verification passes over this task saw `ZohoQuotePreview`'s use of
+`AitoTaskCreate` and judged it unreachable in practice; a third pass found
+the reachability path documented above.
+
+The user was shown this finding and approved it on 2026-08-20, choosing to
+record it here rather than change code — consistent with `routes/zoho.py`
+being out of this campaign's scope. The proper fix — giving
+`ZohoQuotePreview` its own response model instead of reusing
+`AitoTaskCreate`, a write schema, on a read path — is left as follow-up
+work for whoever owns `backend/app/api/routes/zoho.py`.
+
+## Tooling repair — 2026-08-20 — sanctioned fix to frozen campaign machinery
+
+`tools/` is frozen for the duration of this campaign, but `tools/coverage_aito.sh` — the
+campaign's coverage gate — was shown to the user to be silently unable to fail. Both of its
+suite invocations pipe through `tail` for output trimming:
+
+```
+./venv/bin/python3 -m pytest ... 2>&1 | tail -6  || rc=1
+( cd frontend && npx vitest run ... 2>&1 | tail -40 ) || rc=1
+```
+
+A pipeline's exit status is its LAST command's, so each `|| rc=1` was reading `tail`'s exit
+status — which is (almost) always 0 — never pytest's or vitest's. This has two consequences,
+the second worse than the first: (1) the script cannot report a suite failure through its
+exit code, so both guards were dead; and (2) a flaky run reports a DEPRESSED coverage number
+alongside a success exit, indistinguishable from a real ratchet breach. This actually
+happened: a verifier's frontend run read 95.48% with `aitoOptimistic.ts` at 73%, while a
+direct re-run of the same code gave the true 96.84%.
+
+The user reviewed this defect and explicitly authorised repairing it — this specific fix, to
+this specific script, on 2026-08-20 — as a sanctioned exception to `tools/` being otherwise
+off-limits.
+
+The fix: added `set -o pipefail` next to the script's existing `set -u`. Before applying it,
+every pipeline in the script was inventoried (there are exactly two — the pytest|tail and
+vitest|tail lines above; every other `|` in the file is part of a `||` logical-or, not a
+pipe). Both `tail -6` and `tail -40` must read their entire input to know the last N lines,
+so neither closes its pipe early the way `head` would — there is no risk of `pipefail`
+turning a merely-truncated-early read into a false failure. No other pipeline in the script
+(no tolerant grep, no early-closing head) exists that `pipefail` would newly break. No scope
+file list, include glob, coverage flag, reporter, or `cov_filter.py` invocation was touched —
+only error propagation changed.
+
+Expected consequence, not a bug: with the guards now live, `bash tools/coverage_aito.sh
+frontend` will exit non-zero on any run where a documented load-flake fires (PrintModal,
+ModelViewerModal, StatsPageUserFilter1894, LoginPage, CalculatorPage — all out of campaign
+scope, all pass when re-run alone). The script's own `--coverage.reportOnFailure=true`
+comment already exists precisely so a full coverage report is still produced on such a
+failing run; a non-zero exit alongside a valid report is the intended shape now, not
+something to work around.
+
+## T-004 — 2026-08-20 — user-approved behavior change (correction to an entry omitted at commit time)
+
+**This entry was written after the fact.** Commit `cad0f792c` ("refactor(loop-5): T-003,
+T-004, T-009 — bound client_id, strip control chars from the PDF filename, stop a
+quote-pair reply blanking a field") shipped T-004 — `_CONTROL_CHARS_RE = re.compile(r"[\x00-
+\x1f\x7f]")` in `backend/app/api/routes/aito.py`, stripped from the quote PDF filename
+before it reaches `build_content_disposition` in `get_quote_pdf` — with no changelog entry,
+on the stated rationale that the guard only "turns an aborted response into a normal one,
+not the other way around." A blind verifier in a later iteration FAILED the range on this
+item: that rationale is true for only 5 of the 33 characters the regex strips, and false for
+the other 28. The mis-reasoning originated in the orchestrator's brief for the task, not in
+anything the implementing worker invented; the guard itself is unaffected by any of this and
+was already, and remains, correct.
+
+The split, checked against h11's actual header-value grammar (`field_value =
+([^\x00\s]+(?:[ \t]+[^\x00\s]+)*)?`, from `h11/_abnf.py`):
+
+- **5 characters are REJECTED by h11**: `\x00`, `\x0a` (LF), `\x0b` (VT), `\x0c` (FF), `\x0d`
+  (CR). For these, BASE's response really is aborted outright — h11 refuses to send a header
+  value containing them — and the fix genuinely turns a broken response into a working one.
+  There is no observable change here anyone could depend on.
+- **28 characters are ACCEPTED by h11**: `\x01`–`\x08`, `\x09` (TAB), `\x0e`–`\x1f`
+  (including `\x1b` ESC), and `\x7f` (DEL). For these, BASE returns a normal `200` and the
+  fix changes that working response's header content. Demonstrated directly with
+  `quote_number = "AB\x07CD"`:
+  - BASE: `200`, `Content-Disposition: inline; filename="AB\x07CD.pdf";
+    filename*=UTF-8''AB%07CD.pdf`
+  - HEAD: `200`, `Content-Disposition: inline; filename="ABCD.pdf";
+    filename*=UTF-8''ABCD.pdf`
+
+  Reachable in production: `quote_number` is `Field(default=None, max_length=50)` with no
+  pattern (`schemas/aito.py`), and `AitoProjectCreate(quote_number="AB\x01CD")` validates
+  without error — nothing upstream of `get_quote_pdf` rejects or sanitizes this value first.
+
+So T-004 is an observable behavior change for 28 of the 33 stripped characters, not merely a
+fix for an already-broken response, and it needed an entry in this file from the start.
+
+The user was shown this 5-vs-28 split, together with the `AB\x07CD` before/after evidence
+above, on 2026-08-20, and approved keeping the full `[\x00-\x1f\x7f]` strip as originally
+shipped — choosing to document the change here rather than narrow the regex to just the
+5 h11-rejects-outright characters. The regex itself, `_CONTROL_CHARS_RE`, is unchanged from
+commit `cad0f792c` and no test was added or altered; the existing
+`test_quote_pdf_strips_control_characters_from_the_filename`
+(`backend/tests/unit/test_aito_routes.py`) already pins all four of `\x00`, `\x07`, `\x1b`,
+and `\x7f` being stripped, spanning both halves of the split.
+
+Why the full strip is correct regardless of the split: a control character has no legitimate
+place in a downloaded filename. TAB and DEL both corrupt the name a browser ends up saving
+the file under; ESC (`\x1b`) can drive terminal escape sequences in any context where the
+filename is later echoed to a terminal (e.g. a shell script or log viewer that prints
+`Content-Disposition` verbatim). Stripping only the 5 that h11 rejects outright and leaving
+the other 28 in place would still hand a client-controlled control character straight into a
+filename a browser writes to disk, for no benefit beyond a paper-thin "BASE technically
+returned a 200" argument.
+
+Out of scope, unfixed, left as a known follow-up: `backend/app/utils/http.py`'s
+`build_content_disposition` — the shared helper used across roughly eight call sites — has
+the same gap (it strips only non-ASCII, quotes, and backslashes, never C0/DEL) and is not
+touched by this fix. `get_quote_pdf` is the only call site patched. The shared helper is the
+better long-term home for this guard, since fixing it there would close the gap for every
+caller at once instead of one call site at a time; that consolidation was not undertaken here
+because `backend/app/utils/http.py` was out of this task's scope.
+
+## T-009 — 2026-08-20 — user-approved behavior change (approval given RETROACTIVELY)
+
+**This entry was written after the fact.** Commit `cad0f792c` ("refactor(loop-5): T-003,
+T-004, T-009 — bound client_id, strip control chars from the PDF filename, stop a
+quote-pair reply blanking a field") shipped T-009's fix to `proofread_text`
+(`backend/app/services/openrouter.py`) with no changelog entry, on the stated rationale
+that it "restores a documented contract" — the function's own docstring already promised
+"never returns \"\"". Iteration 5's blind verifier FAILED the range on this item: the
+docstring promise is true, but the endpoint's 200 response body still moved for a real,
+reachable class of upstream replies, and that is what needed an entry regardless of whether
+the change also happens to be a bug fix. The user was shown the finding and approved the
+change as shipped, on 2026-08-20.
+
+`_unquote(corrected, source)` strips one layer of quote punctuation the model wrapped its
+answer in, but does not special-case a reply that IS the quote pair with nothing inside it —
+`corrected[1:-1].strip()` on a 2-character input returns `""`. BASE:
+
+    return _unquote(corrected, source), PROOFREAD_MODEL
+
+HEAD:
+
+    unquoted = _unquote(corrected, source)
+    ...
+    return unquoted or source, PROOFREAD_MODEL
+
+Measured against the shipped `_unquote` with `source = 'capot avec 3 pieces'`, five reply
+shapes that are each exactly a quote pair:
+
+    reply '""'   -> BASE returns ''  | HEAD returns 'capot avec 3 pieces'
+    reply '«»'   -> BASE returns ''  | HEAD returns 'capot avec 3 pieces'
+    reply '« »'  -> BASE returns ''  | HEAD returns 'capot avec 3 pieces'
+    reply '“”'   -> BASE returns ''  | HEAD returns 'capot avec 3 pieces'
+    reply "''"   -> BASE returns ''  | HEAD returns 'capot avec 3 pieces'
+
+So `POST /api/v1/aito/proofread` answered `200 {"text": ""}` at BASE for any of these five
+reply shapes, and answers `200 {"text": "<the operator's own text>"}` at HEAD — the
+endpoint's OUTPUT genuinely moved, not just an internal implementation detail. `_chat`'s
+empty-answer guard does not intercept this: the raw model reply is two non-empty characters,
+and the emptiness is produced afterward, by `_unquote`'s own stripping. `AitoProofreadResponse
+.text` carries no `min_length`, so the schema layer does not stop `""` from serialising out
+either.
+
+Why this was reachable and why it mattered: `AiTextField.onSuccess` applies `data.text` via
+`onChange` whenever the response differs from what the field last sent — its ONLY skip
+condition is `data.text === sent`, an exact-string equality guard, not an emptiness check. A
+`""` response therefore always fails that equality (the operator's text is never itself
+empty — the request schema rejects a blank field before this endpoint is even called) and
+gets applied, wiping the task title or description the operator had just typed on blur —
+text that is printed on the client's quote — for no reason evident to the operator, since a
+proofread call is not something they see complete.
+
+Why `source` (returning the operator's own text unchanged) was chosen, over two rejected
+alternatives:
+- Returning the quote-pair string verbatim (e.g. `'""'` or `'« »'`) would put
+  punctuation-only garbage directly into the field.
+- Raising `OpenRouterUpstreamError` would mislabel this: the model DID answer — a
+  degenerate one — so treating it as an upstream failure conflates a local post-processing
+  artifact (`_unquote` stripping a pair down to nothing) with an actual upstream problem, and
+  would add a spurious 502 the caller's existing silent-no-op handling for that error class
+  was never designed to absorb quietly for this cause.
+- `source` was chosen specifically because it makes `AiTextField.onSuccess`'s existing
+  `data.text === sent` equality guard fire and skip `onChange` entirely — the field does not
+  even flicker, and the observable result is indistinguishable from "nothing needed
+  correcting", which is the true semantic content of a quote-pair-only reply.
+
+**This is the third instance, in this campaign, of an entry omitted at commit time on the
+same mis-reasoning** — "it's a bug fix restoring a documented contract, so it doesn't need an
+entry" — after T-005 (2026-08-19, `AiTextField` unmount guard) and T-004 (2026-08-20, PDF
+filename control-character strip). All three times a blind verifier proved the change also
+moved observable output, and none of the three fixes has been reverted or altered — the
+reasoning was always wrong about whether an entry was needed, never about whether the fix
+itself was correct. The mis-reasoning originated in the orchestrator's brief each time, not
+with the worker implementing the fix; it is recorded here, a third time, because the
+repetition itself is the useful part of this record, not any one instance of it.
+
+Also worth recording for consistency: this change sits in the same function as, and is
+adjacent to, T-006 (2026-08-19, above) — another degenerate-reply case in `proofread_text`,
+where a truncated (`finish_reason == "length"`) completion is turned into a raised
+`OpenRouterUpstreamError` instead of a silently-applied partial correction. T-006 was
+recorded as a user-approved behavior change at commit time, without needing a blind verifier
+to catch the omission. That T-009's own entry only exists now, after the same kind of
+after-the-fact correction as T-005 and T-004, is itself part of what this entry is
+documenting — the same file, the same function, two adjacent degenerate-reply fixes, treated
+inconsistently at commit time for no principled reason.
+
+No code, comment, or test changed as part of writing this entry. `_unquote` and
+`proofread_text` are unchanged from commit `cad0f792c`. `tools/snapshot.py verify` is
+unaffected — none of the 11 probes touch `openrouter.py`'s runtime behavior or
+`AitoProofreadResponse`'s schema (`min_length` was not added).
+
+## ActivityRail note-rollback depth — 2026-08-20 — user-approved behavior change (approval given RETROACTIVELY)
+
+*(Note on ids: this campaign's task ids restart every few iterations and collide across
+dates — there is already an unrelated `## T-007 — 2026-08-12` entry above, about a Zoho
+shipping-rate locale bug. This entry is titled by component and dated, not by id, so the two
+are never confused; the underlying task was also labelled T-007, in loop-2.)*
+
+**This entry was written after the fact.** Commit `0684e98d9` ("refactor(loop-2): T-002,
+T-007, T-008 — trashed-project task writes, note rollback depth, PDF blob leak
+(user-approved behavior change)") shipped T-007 — `frontend/src/components/aito/history/
+ActivityRail.tsx`'s `addNote` mutation now carries `depth` in its variables and keys both
+`onMutate` and `onError` on that captured value, instead of on the component's current
+`depth` state — with no changelog entry, on the commit's own stated rationale: "T-007 and
+T-008 are contract-neutral bug fixes and carry no entry by design." The commit's subject
+line carries "(user-approved behavior change)", but that marker covered only T-002 of the
+commit's three items; T-007 and T-008 were explicitly called out in the same commit body as
+needing none. The marker overstated what had actually been approved.
+
+Why BASE was wrong: `onMutate` and `onError` both closed over the component's `depth` state
+directly, keying the optimistic-note cache write and its rollback on `['aito-events',
+projectId, depth]` read at whatever moment each callback happened to run — not on the depth
+that was current when the mutation was fired. TanStack Query refreshes a PENDING mutation's
+options on every re-render of the component that owns it — confirmed in `node_modules/
+@tanstack/query-core@5.90.20/build/modern/mutationObserver.js`: `else if
+(this.#currentMutation?.state.status === "pending") this.#currentMutation.setOptions
+(this.options)`. So if the operator moved the depth control while a note `POST` was still in
+flight, and that POST then failed, `onError` ran with the NEW `depth` closed over by the
+freshly-rebuilt options — filtering the placeholder out of the cache entry for the depth the
+control had moved TO, a cache entry that never held it — while the optimistic row the
+mutation had actually written, under the OLD depth's cache entry, was never touched.
+
+The user-visible consequence: the operator gets the "note failed" toast and their typed text
+back, so nothing looks wrong in the moment — but switching the rail back to the depth it was
+on when they hit send still shows the failed note sitting in the timeline as though it were
+real, with a negative placeholder id, until something unrelated invalidates that query. In a
+feature whose whole purpose is an accountability timeline — what happened, and when — a note
+the server REJECTED remaining visible as though it were accepted is exactly the wrong kind of
+wrong.
+
+Fixed by capturing `depth` in the mutation's variables at `mutate()`-time (passed alongside
+the existing `body` and `optimistic` fields) and reading `mutationDepth` off those variables
+in both `onMutate` and `onError`, instead of reading the component's live `depth` state in
+either. Both callbacks now key the same cache entry regardless of what the depth control does
+while the request is in flight.
+
+Empirical proof the output moves, performed by the blind verifier that caught this: it
+staged `refactor-base`'s `frontend/` into a scratch tree, dropped in HEAD's
+`AitoActivityRail.test.tsx` unmodified, and ran it — the test FAILS against BASE at line 247,
+`expected false, received true`, with the failed note still present in `['aito-events', 12,
+'detail']`.
+
+This is the FOURTH change in this campaign shipped without an entry on the reasoning that a
+bug fix restoring intended behavior is not an observable change — after T-005 (2026-08-19,
+`AiTextField` unmount guard), T-004 (2026-08-20, PDF filename control-character strip), and
+T-009 (2026-08-20, proofread quote-pair reply). It is also the first of the four that TWO
+verification passes actively CLEARED before a third caught it: commit `0684e98d9` sits in
+`loop-2`, an iteration that had already PASSED verification twice, with the iteration-5
+verifier examining T-007 specifically and judging it "contract-neutral… repair of a broken
+state, not movement of a valid output," before iteration-6's verifier FAILED the range on
+this same item. That judgement was wrong, and how it was overturned is worth recording in
+its own right: after the third failure, a mechanical test replaced the judgement call — does
+any input produce a different response body, status, rendered text, or persisted value than
+at BASE? For this change the answer is unambiguously yes, and the rule caught what two
+rounds of reasoning had waved through.
+
+The user was shown this finding — the mechanism, the reproduction, and the two-pass miss —
+and approved the change as shipped on 2026-08-20. No code, comment, or test changed as part
+of writing this entry; `ActivityRail.tsx` is unchanged from commit `0684e98d9`.
+`tools/snapshot.py verify` is unaffected by this entry (documentation only).

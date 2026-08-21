@@ -148,4 +148,74 @@ describe('PdfPrintButton — blocked popup fallback', () => {
       vi.useRealTimers();
     }
   });
+
+  it('still revokes the object URL after unmounting inside the load-timeout window, before the iframe ever settles', async () => {
+    // Regression test for the leak this task fixes: closing the detail
+    // panel between clicking print and the iframe's `load` firing (or the
+    // 3s IFRAME_LOAD_TIMEOUT_MS elapsing) used to leave the object URL with
+    // no revoke scheduled at all — neither the timer path nor `onload`
+    // reaches `cleanup`, since both bail on `mountedRef` first. Plain
+    // `render` (no StrictMode) is enough here: this is testing a single
+    // mount's effect cleanup running once via RTL's `unmount()`, not
+    // double-invoked dev-mode effect setup.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const fetchPdf = vi.fn().mockResolvedValue(new Blob(['%PDF-']));
+      globalThis.URL.createObjectURL = vi.fn(() => 'blob:fake');
+      const revoke = vi.fn();
+      globalThis.URL.revokeObjectURL = revoke;
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+
+      const { unmount } = render(
+        <PdfPrintButton fetchPdf={fetchPdf} label="Print quote" failureMessage="Could not fetch the PDF" />
+      );
+
+      await user.click(screen.getByRole('button', { name: /print quote/i }));
+      await waitFor(() => expect(document.querySelector('iframe')).not.toBeNull());
+
+      // Unmount well inside the 3s window, before `load` ever fires and
+      // before the fallback timer has had a chance to escalate.
+      unmount();
+      expect(revoke).not.toHaveBeenCalled();
+
+      // Must not revoke early either: a dialog could still plausibly be
+      // reading the URL right after unmount, which is exactly why the fix
+      // uses the same delayed REVOKE_DELAY_MS rather than an immediate
+      // revoke. Advancing only past the load-timeout (but not the 60s
+      // delay) must not have revoked it yet.
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(revoke).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(revoke).toHaveBeenCalledTimes(1);
+      expect(revoke).toHaveBeenCalledWith('blob:fake');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reports a failure and revokes the object URL when the iframe cannot be attached after the blob URL was created', async () => {
+    // Distinct from a fetchPdf() rejection: this throws after
+    // URL.createObjectURL has already succeeded and pendingUrlRef has been
+    // set, so the catch arm must both revoke the URL and clear the ref
+    // (otherwise the unmount cleanup would later try to revoke it again).
+    // `appendChild` is mocked only after the initial render (which itself
+    // appends the RTL container to the body) so it only ever intercepts the
+    // component's own `document.body.appendChild(element)` call.
+    const fetchPdf = vi.fn().mockResolvedValue(new Blob(['%PDF-']));
+    globalThis.URL.createObjectURL = vi.fn(() => 'blob:fake');
+    const revoke = vi.fn();
+    globalThis.URL.revokeObjectURL = revoke;
+    const user = userEvent.setup();
+    render(<PdfPrintButton fetchPdf={fetchPdf} label="Print quote" failureMessage="Could not fetch the PDF" />);
+    vi.spyOn(document.body, 'appendChild').mockImplementation(() => {
+      throw new Error('append blocked');
+    });
+
+    await user.click(screen.getByRole('button', { name: /print quote/i }));
+
+    expect(await screen.findByText('Could not fetch the PDF')).toBeInTheDocument();
+    expect(revoke).toHaveBeenCalledTimes(1);
+    expect(revoke).toHaveBeenCalledWith('blob:fake');
+  });
 });

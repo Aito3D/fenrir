@@ -141,6 +141,27 @@ describe('InvoiceCard', () => {
     expect(await screen.findByText('disputed')).toBeInTheDocument();
   });
 
+  // `status` is typed as a plain `string` on AitoInvoice — there is no
+  // runtime validation against Books' actual vocabulary — so a status that
+  // happens to collide with an inherited Object.prototype member must not
+  // resolve to that member. invoiceStatusLabelKey and invoiceStatusTone both
+  // guard their map lookups with Object.hasOwn for exactly this reason (see
+  // invoiceStatus.test.ts for the direct unit-level pin); 'disputed' above
+  // never exercises that guard, since it is unmapped either way. Without it,
+  // `statusKey` would resolve to the inherited `Object.prototype.toString`
+  // function, and `statusKey ? t(statusKey) : invoice.status` would pass that
+  // function into i18next's `t`, which throws (`Cannot read properties of
+  // undefined (reading 'join')`) rather than rendering anything at all.
+  it('falls back to the raw string and neutral tone, rather than crashing, when status collides with an Object.prototype member', async () => {
+    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue({ ...INVOICE, status: 'toString' });
+
+    render(<InvoiceCard project={project} />);
+
+    const statusValue = await screen.findByText('toString');
+    expect(statusValue.className).toContain('text-bambu-gray-light');
+    expect(statusValue.className).not.toContain('bambu-green');
+  });
+
   it('offers a print button', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
 

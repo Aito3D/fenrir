@@ -113,12 +113,23 @@ async def _setting(db: AsyncSession, key: str) -> str:
     return await get_setting(db, key) or ""
 
 
-async def _chat(api_key: str, model: str, system: str, user: str, max_tokens: int) -> str:
+async def _chat(
+    api_key: str, model: str, system: str, user: str, max_tokens: int, *, raise_on_truncation: bool = False
+) -> str:
     """One chat completion, returned as its stripped message content.
 
     Every failure mode — transport, non-200, unexpected payload, empty answer —
     raises OpenRouterUpstreamError, so callers have exactly two error cases to
     handle (this one and "no key") whatever they asked the model for.
+
+    `raise_on_truncation` is an opt-in: only proofread_text sets it. A
+    truncated correction is a sentence cut off mid-thought, and swapping it
+    straight into the field it came from would silently drop whatever came
+    after the cut — so that caller treats finish_reason=="length" as another
+    upstream failure. summarize_tasks runs its own draft-to-summary call
+    against a hard-coded 200-token budget, where hitting the cap is common,
+    not exceptional, and BASE always returned the (possibly truncated)
+    summary rather than raising — that behavior is unchanged here.
     """
     payload = {
         "model": model,
@@ -140,9 +151,17 @@ async def _chat(api_key: str, model: str, system: str, user: str, max_tokens: in
     if response.status_code != 200:
         raise OpenRouterUpstreamError(f"OpenRouter returned {response.status_code}")
     try:
-        content = response.json()["choices"][0]["message"]["content"].strip()
+        choice = response.json()["choices"][0]
+        content = choice["message"]["content"].strip()
     except (KeyError, IndexError, TypeError, ValueError, AttributeError) as e:
         raise OpenRouterUpstreamError("OpenRouter returned an unexpected payload") from e
+    if raise_on_truncation and choice.get("finish_reason") == "length":
+        # The model hit max_tokens before finishing: `content` is a sentence
+        # cut off mid-thought, not a correction. Returning it as a normal
+        # answer would let a caller swap it straight into the field it came
+        # from. Raise instead, so the caller treats this like any other
+        # upstream failure and leaves the user's original text untouched.
+        raise OpenRouterUpstreamError("OpenRouter truncated its answer (finish_reason=length)")
     if not content:
         raise OpenRouterUpstreamError("OpenRouter returned an empty answer")
     return content
@@ -194,6 +213,23 @@ async def proofread_text(db: AsyncSession, text: str) -> tuple[str, str]:
         PROOFREAD_MODEL,
         _PROOFREAD_SYSTEM_PROMPT,
         source,
-        max_tokens=min(1000, len(source) // 2 + 120),
+        # Tokens, sized from a CHARACTER count, so this has to assume a
+        # worst-case (i.e. token-dense) ratio rather than a typical one:
+        # French prose heavy in accents, digits and references can tokenise
+        # under 2 chars/token, so len(source)//2 was not enough headroom and
+        # a long, dense field would come back truncated. 1.5 chars/token is
+        # conservative for French; PROOFREAD_MAX_CHARS already bounds the
+        # worst case, so no further cap is needed here.
+        max_tokens=int(len(source) / 1.5) + 120,
+        raise_on_truncation=True,
     )
-    return _unquote(corrected, source), PROOFREAD_MODEL
+    unquoted = _unquote(corrected, source)
+    # A reply that is exactly a quote pair (`""`, `«  »`) passes _unquote's
+    # len>=2 check and strips to "". That is not an upstream failure — the
+    # model did answer — so raising here would mislabel it; and returning the
+    # quote characters themselves would put punctuation-only garbage in the
+    # field. `source` is guaranteed non-empty (the request schema rejects a
+    # blank field before this is ever called), so falling back to it is the
+    # same outcome as "nothing needed correcting": the caller sees its own
+    # text unchanged, exactly as if the model had echoed it back.
+    return unquoted or source, PROOFREAD_MODEL

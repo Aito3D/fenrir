@@ -1,0 +1,1255 @@
+### exit: 0
+### stdout:
+{
+ "adoption": [
+  {
+   "from": "accepted",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "accepted",
+   "to": "accepted"
+  },
+  {
+   "from": "accepted",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "declined",
+   "to": "declined"
+  },
+  {
+   "from": "accepted",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "draft",
+   "to": "draft"
+  },
+  {
+   "from": "accepted",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "expired",
+   "to": "expired"
+  },
+  {
+   "from": "accepted",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "sent",
+   "to": "sent"
+  },
+  {
+   "from": "accepted",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "viewed",
+   "to": "viewed"
+  },
+  {
+   "from": "accepted",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": null,
+   "to": null
+  },
+  {
+   "from": "accepted",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "accepted",
+   "to": "invoiced"
+  },
+  {
+   "from": "accepted",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "accepted",
+   "to": ""
+  },
+  {
+   "from": "accepted",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "accepted",
+   "to": "ACCEPTED"
+  },
+  {
+   "from": "declined",
+   "stamp_cleared": false,
+   "stamp_moved": true,
+   "status_after": "accepted",
+   "to": "accepted"
+  },
+  {
+   "from": "declined",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "declined",
+   "to": "declined"
+  },
+  {
+   "from": "declined",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "draft",
+   "to": "draft"
+  },
+  {
+   "from": "declined",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "expired",
+   "to": "expired"
+  },
+  {
+   "from": "declined",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "sent",
+   "to": "sent"
+  },
+  {
+   "from": "declined",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "viewed",
+   "to": "viewed"
+  },
+  {
+   "from": "declined",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": null,
+   "to": null
+  },
+  {
+   "from": "declined",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "declined",
+   "to": "invoiced"
+  },
+  {
+   "from": "declined",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "declined",
+   "to": ""
+  },
+  {
+   "from": "declined",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "declined",
+   "to": "ACCEPTED"
+  },
+  {
+   "from": "draft",
+   "stamp_cleared": false,
+   "stamp_moved": true,
+   "status_after": "accepted",
+   "to": "accepted"
+  },
+  {
+   "from": "draft",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "declined",
+   "to": "declined"
+  },
+  {
+   "from": "draft",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "draft",
+   "to": "draft"
+  },
+  {
+   "from": "draft",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "expired",
+   "to": "expired"
+  },
+  {
+   "from": "draft",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "sent",
+   "to": "sent"
+  },
+  {
+   "from": "draft",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "viewed",
+   "to": "viewed"
+  },
+  {
+   "from": "draft",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": null,
+   "to": null
+  },
+  {
+   "from": "draft",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "draft",
+   "to": "invoiced"
+  },
+  {
+   "from": "draft",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "draft",
+   "to": ""
+  },
+  {
+   "from": "draft",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "draft",
+   "to": "ACCEPTED"
+  },
+  {
+   "from": "expired",
+   "stamp_cleared": false,
+   "stamp_moved": true,
+   "status_after": "accepted",
+   "to": "accepted"
+  },
+  {
+   "from": "expired",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "declined",
+   "to": "declined"
+  },
+  {
+   "from": "expired",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "draft",
+   "to": "draft"
+  },
+  {
+   "from": "expired",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "expired",
+   "to": "expired"
+  },
+  {
+   "from": "expired",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "sent",
+   "to": "sent"
+  },
+  {
+   "from": "expired",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "viewed",
+   "to": "viewed"
+  },
+  {
+   "from": "expired",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": null,
+   "to": null
+  },
+  {
+   "from": "expired",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "expired",
+   "to": "invoiced"
+  },
+  {
+   "from": "expired",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "expired",
+   "to": ""
+  },
+  {
+   "from": "expired",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "expired",
+   "to": "ACCEPTED"
+  },
+  {
+   "from": "sent",
+   "stamp_cleared": false,
+   "stamp_moved": true,
+   "status_after": "accepted",
+   "to": "accepted"
+  },
+  {
+   "from": "sent",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "declined",
+   "to": "declined"
+  },
+  {
+   "from": "sent",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "draft",
+   "to": "draft"
+  },
+  {
+   "from": "sent",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "expired",
+   "to": "expired"
+  },
+  {
+   "from": "sent",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "sent",
+   "to": "sent"
+  },
+  {
+   "from": "sent",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "viewed",
+   "to": "viewed"
+  },
+  {
+   "from": "sent",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": null,
+   "to": null
+  },
+  {
+   "from": "sent",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "sent",
+   "to": "invoiced"
+  },
+  {
+   "from": "sent",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "sent",
+   "to": ""
+  },
+  {
+   "from": "sent",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "sent",
+   "to": "ACCEPTED"
+  },
+  {
+   "from": "viewed",
+   "stamp_cleared": false,
+   "stamp_moved": true,
+   "status_after": "accepted",
+   "to": "accepted"
+  },
+  {
+   "from": "viewed",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "declined",
+   "to": "declined"
+  },
+  {
+   "from": "viewed",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "draft",
+   "to": "draft"
+  },
+  {
+   "from": "viewed",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "expired",
+   "to": "expired"
+  },
+  {
+   "from": "viewed",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "sent",
+   "to": "sent"
+  },
+  {
+   "from": "viewed",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "viewed",
+   "to": "viewed"
+  },
+  {
+   "from": "viewed",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": null,
+   "to": null
+  },
+  {
+   "from": "viewed",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "viewed",
+   "to": "invoiced"
+  },
+  {
+   "from": "viewed",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "viewed",
+   "to": ""
+  },
+  {
+   "from": "viewed",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "viewed",
+   "to": "ACCEPTED"
+  },
+  {
+   "from": null,
+   "stamp_cleared": false,
+   "stamp_moved": true,
+   "status_after": "accepted",
+   "to": "accepted"
+  },
+  {
+   "from": null,
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "declined",
+   "to": "declined"
+  },
+  {
+   "from": null,
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "draft",
+   "to": "draft"
+  },
+  {
+   "from": null,
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "expired",
+   "to": "expired"
+  },
+  {
+   "from": null,
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "sent",
+   "to": "sent"
+  },
+  {
+   "from": null,
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "viewed",
+   "to": "viewed"
+  },
+  {
+   "from": null,
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": null,
+   "to": null
+  },
+  {
+   "from": null,
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": null,
+   "to": "invoiced"
+  },
+  {
+   "from": null,
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": null,
+   "to": ""
+  },
+  {
+   "from": null,
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": null,
+   "to": "ACCEPTED"
+  },
+  {
+   "from": "invoiced",
+   "stamp_cleared": false,
+   "stamp_moved": true,
+   "status_after": "accepted",
+   "to": "accepted"
+  },
+  {
+   "from": "invoiced",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "declined",
+   "to": "declined"
+  },
+  {
+   "from": "invoiced",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "draft",
+   "to": "draft"
+  },
+  {
+   "from": "invoiced",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "expired",
+   "to": "expired"
+  },
+  {
+   "from": "invoiced",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "sent",
+   "to": "sent"
+  },
+  {
+   "from": "invoiced",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "viewed",
+   "to": "viewed"
+  },
+  {
+   "from": "invoiced",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": null,
+   "to": null
+  },
+  {
+   "from": "invoiced",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "invoiced",
+   "to": "invoiced"
+  },
+  {
+   "from": "invoiced",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "invoiced",
+   "to": ""
+  },
+  {
+   "from": "invoiced",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "invoiced",
+   "to": "ACCEPTED"
+  },
+  {
+   "from": "",
+   "stamp_cleared": false,
+   "stamp_moved": true,
+   "status_after": "accepted",
+   "to": "accepted"
+  },
+  {
+   "from": "",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "declined",
+   "to": "declined"
+  },
+  {
+   "from": "",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "draft",
+   "to": "draft"
+  },
+  {
+   "from": "",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "expired",
+   "to": "expired"
+  },
+  {
+   "from": "",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "sent",
+   "to": "sent"
+  },
+  {
+   "from": "",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "viewed",
+   "to": "viewed"
+  },
+  {
+   "from": "",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": null,
+   "to": null
+  },
+  {
+   "from": "",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "",
+   "to": "invoiced"
+  },
+  {
+   "from": "",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "",
+   "to": ""
+  },
+  {
+   "from": "",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "",
+   "to": "ACCEPTED"
+  },
+  {
+   "from": "ACCEPTED",
+   "stamp_cleared": false,
+   "stamp_moved": true,
+   "status_after": "accepted",
+   "to": "accepted"
+  },
+  {
+   "from": "ACCEPTED",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "declined",
+   "to": "declined"
+  },
+  {
+   "from": "ACCEPTED",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "draft",
+   "to": "draft"
+  },
+  {
+   "from": "ACCEPTED",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "expired",
+   "to": "expired"
+  },
+  {
+   "from": "ACCEPTED",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "sent",
+   "to": "sent"
+  },
+  {
+   "from": "ACCEPTED",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "viewed",
+   "to": "viewed"
+  },
+  {
+   "from": "ACCEPTED",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": null,
+   "to": null
+  },
+  {
+   "from": "ACCEPTED",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "ACCEPTED",
+   "to": "invoiced"
+  },
+  {
+   "from": "ACCEPTED",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "ACCEPTED",
+   "to": ""
+  },
+  {
+   "from": "ACCEPTED",
+   "stamp_cleared": false,
+   "stamp_moved": false,
+   "status_after": "ACCEPTED",
+   "to": "ACCEPTED"
+  }
+ ],
+ "comment_constants": {
+  "COMMENT_REFRESH_INTERVAL_s": 14400.0,
+  "COMMENT_UTC_OFFSET_SETTING_KEY": "zoho_comment_utc_offset_hours",
+  "DEFAULT_COMMENT_UTC_OFFSET_HOURS": -10,
+  "ECHO_WINDOW_s": 600.0
+ },
+ "comment_timestamp": [
+  {
+   "comment": {
+    "date": "2026-08-19",
+    "time": "14:30"
+   },
+   "offset": -10,
+   "value": "2026-08-20T00:30:00"
+  },
+  {
+   "comment": {
+    "date": "2026-08-19",
+    "time": "14:30"
+   },
+   "offset": 0,
+   "value": "2026-08-19T14:30:00"
+  },
+  {
+   "comment": {
+    "date": "2026-08-19",
+    "time": "14:30"
+   },
+   "offset": 2,
+   "value": "2026-08-19T12:30:00"
+  },
+  {
+   "comment": {
+    "date": "2026-08-19",
+    "time": "14:30"
+   },
+   "offset": -5.5,
+   "value": "2026-08-19T20:00:00"
+  },
+  {
+   "comment": {
+    "date": "2026-08-19",
+    "time": "02:30 PM"
+   },
+   "offset": -10,
+   "value": "2026-08-20T00:30:00"
+  },
+  {
+   "comment": {
+    "date": "2026-08-19",
+    "time": "02:30 PM"
+   },
+   "offset": 0,
+   "value": "2026-08-19T14:30:00"
+  },
+  {
+   "comment": {
+    "date": "2026-08-19",
+    "time": "02:30 PM"
+   },
+   "offset": 2,
+   "value": "2026-08-19T12:30:00"
+  },
+  {
+   "comment": {
+    "date": "2026-08-19",
+    "time": "02:30 PM"
+   },
+   "offset": -5.5,
+   "value": "2026-08-19T20:00:00"
+  },
+  {
+   "comment": {
+    "date": "2026-08-19",
+    "time": ""
+   },
+   "offset": -10,
+   "value": "2026-08-19T10:00:00"
+  },
+  {
+   "comment": {
+    "date": "2026-08-19",
+    "time": ""
+   },
+   "offset": 0,
+   "value": "2026-08-19T00:00:00"
+  },
+  {
+   "comment": {
+    "date": "2026-08-19",
+    "time": ""
+   },
+   "offset": 2,
+   "value": "2026-08-18T22:00:00"
+  },
+  {
+   "comment": {
+    "date": "2026-08-19",
+    "time": ""
+   },
+   "offset": -5.5,
+   "value": "2026-08-19T05:30:00"
+  },
+  {
+   "comment": {
+    "date": "2026-08-19"
+   },
+   "offset": -10,
+   "value": "2026-08-19T10:00:00"
+  },
+  {
+   "comment": {
+    "date": "2026-08-19"
+   },
+   "offset": 0,
+   "value": "2026-08-19T00:00:00"
+  },
+  {
+   "comment": {
+    "date": "2026-08-19"
+   },
+   "offset": 2,
+   "value": "2026-08-18T22:00:00"
+  },
+  {
+   "comment": {
+    "date": "2026-08-19"
+   },
+   "offset": -5.5,
+   "value": "2026-08-19T05:30:00"
+  },
+  {
+   "comment": {
+    "date": "",
+    "time": ""
+   },
+   "offset": -10,
+   "value": "<UTCNOW-FALLBACK>"
+  },
+  {
+   "comment": {
+    "date": "",
+    "time": ""
+   },
+   "offset": 0,
+   "value": "<UTCNOW-FALLBACK>"
+  },
+  {
+   "comment": {
+    "date": "",
+    "time": ""
+   },
+   "offset": 2,
+   "value": "<UTCNOW-FALLBACK>"
+  },
+  {
+   "comment": {
+    "date": "",
+    "time": ""
+   },
+   "offset": -5.5,
+   "value": "<UTCNOW-FALLBACK>"
+  },
+  {
+   "comment": {
+    "date": "19/08/2026",
+    "time": "14:30"
+   },
+   "offset": -10,
+   "value": "<UTCNOW-FALLBACK>"
+  },
+  {
+   "comment": {
+    "date": "19/08/2026",
+    "time": "14:30"
+   },
+   "offset": 0,
+   "value": "<UTCNOW-FALLBACK>"
+  },
+  {
+   "comment": {
+    "date": "19/08/2026",
+    "time": "14:30"
+   },
+   "offset": 2,
+   "value": "<UTCNOW-FALLBACK>"
+  },
+  {
+   "comment": {
+    "date": "19/08/2026",
+    "time": "14:30"
+   },
+   "offset": -5.5,
+   "value": "<UTCNOW-FALLBACK>"
+  }
+ ],
+ "map_comment": [
+  {
+   "in": {
+    "description": ""
+   },
+   "out": {
+    "actor_class": "system",
+    "detail": {
+     "text": ""
+    },
+    "kind": "zoho.comment"
+   }
+  },
+  {
+   "in": {
+    "description": "   "
+   },
+   "out": {
+    "actor_class": "system",
+    "detail": {
+     "text": ""
+    },
+    "kind": "zoho.comment"
+   }
+  },
+  {
+   "in": {
+    "description": "The estimate has been viewed by the customer."
+   },
+   "out": {
+    "actor_class": "client",
+    "detail": {
+     "text": "The estimate has been viewed by the customer."
+    },
+    "kind": "quote.viewed"
+   }
+  },
+  {
+   "in": {
+    "description": "Estimate accepted by customer"
+   },
+   "out": {
+    "actor_class": "client",
+    "detail": {
+     "text": "Estimate accepted by customer"
+    },
+    "kind": "quote.accepted"
+   }
+  },
+  {
+   "in": {
+    "description": "Estimate declined by the customer."
+   },
+   "out": {
+    "actor_class": "client",
+    "detail": {
+     "text": "Estimate declined by the customer."
+    },
+    "kind": "quote.declined"
+   }
+  },
+  {
+   "in": {
+    "description": "This estimate has expired."
+   },
+   "out": {
+    "actor_class": "client",
+    "detail": {
+     "text": "This estimate has expired."
+    },
+    "kind": "quote.expired"
+   }
+  },
+  {
+   "in": {
+    "description": "Estimate sent to the customer via email"
+   },
+   "out": {
+    "actor_class": "system",
+    "detail": {
+     "text": "Estimate sent to the customer via email"
+    },
+    "kind": "zoho.comment"
+   }
+  },
+  {
+   "in": {
+    "description": "some free-form note from the accountant"
+   },
+   "out": {
+    "actor_class": "system",
+    "detail": {
+     "text": "some free-form note from the accountant"
+    },
+    "kind": "zoho.comment"
+   }
+  },
+  {
+   "in": {},
+   "out": {
+    "actor_class": "system",
+    "detail": {
+     "text": ""
+    },
+    "kind": "zoho.comment"
+   }
+  }
+ ],
+ "quote_status_values": [
+  "accepted",
+  "declined",
+  "draft",
+  "expired",
+  "sent",
+  "viewed"
+ ],
+ "should_pull": [
+  {
+   "checked_ago_s": null,
+   "pull": true,
+   "remote": null,
+   "watermark": null
+  },
+  {
+   "checked_ago_s": 0.0,
+   "pull": false,
+   "remote": null,
+   "watermark": null
+  },
+  {
+   "checked_ago_s": 14400.0,
+   "pull": true,
+   "remote": null,
+   "watermark": null
+  },
+  {
+   "checked_ago_s": 14401.0,
+   "pull": true,
+   "remote": null,
+   "watermark": null
+  },
+  {
+   "checked_ago_s": null,
+   "pull": true,
+   "remote": null,
+   "watermark": "watermark-A"
+  },
+  {
+   "checked_ago_s": 0.0,
+   "pull": false,
+   "remote": null,
+   "watermark": "watermark-A"
+  },
+  {
+   "checked_ago_s": 14400.0,
+   "pull": true,
+   "remote": null,
+   "watermark": "watermark-A"
+  },
+  {
+   "checked_ago_s": 14401.0,
+   "pull": true,
+   "remote": null,
+   "watermark": "watermark-A"
+  },
+  {
+   "checked_ago_s": null,
+   "pull": true,
+   "remote": "",
+   "watermark": null
+  },
+  {
+   "checked_ago_s": 0.0,
+   "pull": false,
+   "remote": "",
+   "watermark": null
+  },
+  {
+   "checked_ago_s": 14400.0,
+   "pull": true,
+   "remote": "",
+   "watermark": null
+  },
+  {
+   "checked_ago_s": 14401.0,
+   "pull": true,
+   "remote": "",
+   "watermark": null
+  },
+  {
+   "checked_ago_s": null,
+   "pull": true,
+   "remote": "",
+   "watermark": "watermark-A"
+  },
+  {
+   "checked_ago_s": 0.0,
+   "pull": false,
+   "remote": "",
+   "watermark": "watermark-A"
+  },
+  {
+   "checked_ago_s": 14400.0,
+   "pull": true,
+   "remote": "",
+   "watermark": "watermark-A"
+  },
+  {
+   "checked_ago_s": 14401.0,
+   "pull": true,
+   "remote": "",
+   "watermark": "watermark-A"
+  },
+  {
+   "checked_ago_s": null,
+   "pull": true,
+   "remote": "2026-08-19T00:00:00",
+   "watermark": null
+  },
+  {
+   "checked_ago_s": 0.0,
+   "pull": true,
+   "remote": "2026-08-19T00:00:00",
+   "watermark": null
+  },
+  {
+   "checked_ago_s": 14400.0,
+   "pull": true,
+   "remote": "2026-08-19T00:00:00",
+   "watermark": null
+  },
+  {
+   "checked_ago_s": 14401.0,
+   "pull": true,
+   "remote": "2026-08-19T00:00:00",
+   "watermark": null
+  },
+  {
+   "checked_ago_s": null,
+   "pull": true,
+   "remote": "2026-08-19T00:00:00",
+   "watermark": "watermark-A"
+  },
+  {
+   "checked_ago_s": 0.0,
+   "pull": true,
+   "remote": "2026-08-19T00:00:00",
+   "watermark": "watermark-A"
+  },
+  {
+   "checked_ago_s": 14400.0,
+   "pull": true,
+   "remote": "2026-08-19T00:00:00",
+   "watermark": "watermark-A"
+  },
+  {
+   "checked_ago_s": 14401.0,
+   "pull": true,
+   "remote": "2026-08-19T00:00:00",
+   "watermark": "watermark-A"
+  },
+  {
+   "checked_ago_s": null,
+   "pull": true,
+   "remote": "watermark-A",
+   "watermark": null
+  },
+  {
+   "checked_ago_s": 0.0,
+   "pull": true,
+   "remote": "watermark-A",
+   "watermark": null
+  },
+  {
+   "checked_ago_s": 14400.0,
+   "pull": true,
+   "remote": "watermark-A",
+   "watermark": null
+  },
+  {
+   "checked_ago_s": 14401.0,
+   "pull": true,
+   "remote": "watermark-A",
+   "watermark": null
+  },
+  {
+   "checked_ago_s": null,
+   "pull": true,
+   "remote": "watermark-A",
+   "watermark": "watermark-A"
+  },
+  {
+   "checked_ago_s": 0.0,
+   "pull": false,
+   "remote": "watermark-A",
+   "watermark": "watermark-A"
+  },
+  {
+   "checked_ago_s": 14400.0,
+   "pull": true,
+   "remote": "watermark-A",
+   "watermark": "watermark-A"
+  },
+  {
+   "checked_ago_s": 14401.0,
+   "pull": true,
+   "remote": "watermark-A",
+   "watermark": "watermark-A"
+  }
+ ]
+}
+
+### stderr:
+Refusing to adopt unknown quote status 'invoiced' on project 1 (keeping 'accepted')
+Refusing to adopt unknown quote status '' on project 1 (keeping 'accepted')
+Refusing to adopt unknown quote status 'ACCEPTED' on project 1 (keeping 'accepted')
+Refusing to adopt unknown quote status 'invoiced' on project 1 (keeping 'declined')
+Refusing to adopt unknown quote status '' on project 1 (keeping 'declined')
+Refusing to adopt unknown quote status 'ACCEPTED' on project 1 (keeping 'declined')
+Refusing to adopt unknown quote status 'invoiced' on project 1 (keeping 'draft')
+Refusing to adopt unknown quote status '' on project 1 (keeping 'draft')
+Refusing to adopt unknown quote status 'ACCEPTED' on project 1 (keeping 'draft')
+Refusing to adopt unknown quote status 'invoiced' on project 1 (keeping 'expired')
+Refusing to adopt unknown quote status '' on project 1 (keeping 'expired')
+Refusing to adopt unknown quote status 'ACCEPTED' on project 1 (keeping 'expired')
+Refusing to adopt unknown quote status 'invoiced' on project 1 (keeping 'sent')
+Refusing to adopt unknown quote status '' on project 1 (keeping 'sent')
+Refusing to adopt unknown quote status 'ACCEPTED' on project 1 (keeping 'sent')
+Refusing to adopt unknown quote status 'invoiced' on project 1 (keeping 'viewed')
+Refusing to adopt unknown quote status '' on project 1 (keeping 'viewed')
+Refusing to adopt unknown quote status 'ACCEPTED' on project 1 (keeping 'viewed')
+Refusing to adopt unknown quote status 'invoiced' on project 1 (keeping None)
+Refusing to adopt unknown quote status '' on project 1 (keeping None)
+Refusing to adopt unknown quote status 'ACCEPTED' on project 1 (keeping None)
+Refusing to adopt unknown quote status 'invoiced' on project 1 (keeping 'invoiced')
+Refusing to adopt unknown quote status '' on project 1 (keeping 'invoiced')
+Refusing to adopt unknown quote status 'ACCEPTED' on project 1 (keeping 'invoiced')
+Refusing to adopt unknown quote status 'invoiced' on project 1 (keeping '')
+Refusing to adopt unknown quote status '' on project 1 (keeping '')
+Refusing to adopt unknown quote status 'ACCEPTED' on project 1 (keeping '')
+Refusing to adopt unknown quote status 'invoiced' on project 1 (keeping 'ACCEPTED')
+Refusing to adopt unknown quote status '' on project 1 (keeping 'ACCEPTED')
+Refusing to adopt unknown quote status 'ACCEPTED' on project 1 (keeping 'ACCEPTED')
+/Users/paultheis/Documents/Code/bambuddy-refactor/tools/probe_aito_status.py:81: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  parseable = abs((got - datetime.utcnow()).total_seconds()) > 60
+Unparseable Zoho comment timestamp ''; falling back to now
+Unparseable Zoho comment timestamp ''; falling back to now
+Unparseable Zoho comment timestamp ''; falling back to now
+Unparseable Zoho comment timestamp ''; falling back to now
+Unparseable Zoho comment timestamp '19/08/2026 14:30'; falling back to now
+Unparseable Zoho comment timestamp '19/08/2026 14:30'; falling back to now
+Unparseable Zoho comment timestamp '19/08/2026 14:30'; falling back to now
+Unparseable Zoho comment timestamp '19/08/2026 14:30'; falling back to now
+

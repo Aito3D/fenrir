@@ -60,6 +60,14 @@ export function PdfPrintButton({
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const timeoutRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
+  // Tracks the object URL for the print currently in flight, from the
+  // moment it is created until `cleanup` below has taken over its revoke
+  // (its own REVOKE_DELAY_MS backstop). Only one print can be in flight at
+  // a time — the button is `disabled` for the whole span between click and
+  // settle — so a single ref, mirroring frameRef, is enough; it is not a
+  // set. If unmount happens while this is still non-null, nobody has yet
+  // scheduled that URL's revoke, so the unmount cleanup below must.
+  const pendingUrlRef = useRef<string | null>(null);
 
   // The fallback timer (and the iframe it may act on) must not outlive the
   // component: closing the detail panel within IFRAME_LOAD_TIMEOUT_MS of
@@ -88,10 +96,25 @@ export function PdfPrintButton({
         frameRef.current.remove();
         frameRef.current = null;
       }
+      // If the print in flight never made it to `cleanup` — the timer path
+      // and `onload` both bail on `mountedRef` before reaching it — nothing
+      // has scheduled this URL's revoke yet, and it would otherwise pin the
+      // whole PDF in memory for the tab's lifetime. Give it the same
+      // delayed revoke `cleanup` would have, rather than revoking now: the
+      // reasoning above (a dialog may still be reading it) applies here
+      // too, since this fires before that dialog has had a chance to open.
+      if (pendingUrlRef.current) {
+        const orphanedUrl = pendingUrlRef.current;
+        pendingUrlRef.current = null;
+        window.setTimeout(() => {
+          URL.revokeObjectURL(orphanedUrl);
+        }, REVOKE_DELAY_MS);
+      }
     };
   }, []);
 
   const cleanup = (frame: HTMLIFrameElement, url: string) => {
+    if (pendingUrlRef.current === url) pendingUrlRef.current = null;
     window.setTimeout(() => {
       frame.remove();
       URL.revokeObjectURL(url);
@@ -140,6 +163,7 @@ export function PdfPrintButton({
       const blob = await fetchPdf();
       if (!mountedRef.current) return;
       url = URL.createObjectURL(blob);
+      pendingUrlRef.current = url;
       frame = document.createElement('iframe');
       frame.style.position = 'fixed';
       frame.style.width = '0';
@@ -180,7 +204,10 @@ export function PdfPrintButton({
     } catch {
       showToast(failureMessage, 'error');
       if (frame) frame.remove();
-      if (url) URL.revokeObjectURL(url);
+      if (url) {
+        if (pendingUrlRef.current === url) pendingUrlRef.current = null;
+        URL.revokeObjectURL(url);
+      }
       setBusy(false);
     }
   };

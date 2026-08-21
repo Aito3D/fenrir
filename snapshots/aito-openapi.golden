@@ -190,6 +190,71 @@
    ]
   }
  },
+ "/api/v1/aito/proofread": {
+  "post": {
+   "description": "Spell-check one task field's French, on blur. Registered before the\n/{project_id} routes for the same reason /summarize is \u2014 a literal segment\nafter a parametric route would 422 instead of matching.",
+   "operationId": "proofread_field_api_v1_aito_proofread_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/AitoProofreadRequest"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AitoProofreadResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Proofread Field",
+   "tags": [
+    "aito"
+   ]
+  }
+ },
  "/api/v1/aito/shipping/services": {
   "get": {
    "description": "The five air-freight services, their islands and their Books rates.\n\nRegistered before the /{project_id} routes on purpose \u2014 a literal segment\nafter a parametric route would 422 instead of matching (FastAPI would try\nto parse \"shipping\" as a project_id). Same reason /summarize sits where it\ndoes.\n\nThe island list is app data and is always served; only the rates need\nZoho.",

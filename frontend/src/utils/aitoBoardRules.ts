@@ -17,7 +17,15 @@ import type { AitoColumnId, AitoTaskCreate } from '../api/client';
 
 export type MoveLock = 'quote' | 'waiting' | 'declined' | 'steps' | null;
 
-/** Board order, left to right. */
+/** Board order, left to right. Mirrors `COLUMN_ORDER` in
+ *  backend/app/services/aito_board_rules.py — a silent divergence here would
+ *  put a card in a different column on the server than the client drew it in.
+ *
+ *  Nothing in this codebase imports it: it exists for the column order itself
+ *  to be a checked contract rather than something that could quietly drift,
+ *  and a snapshot test pins its value for exactly that reason. That is
+ *  expected, not dead code — do not remove it on the grounds that it has no
+ *  importer. */
 export const COLUMN_ORDER: readonly AitoColumnId[] = [
   'devis',
   'waiting',
