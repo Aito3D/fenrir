@@ -4697,7 +4697,7 @@ async def run_migrations(conn):
     # dealer price drives cost per kg. margin_pct becomes the stored input and
     # sale_price_per_kg becomes derived output, so the margin is backfilled from
     # the sale price that was previously typed by hand.
-    await _safe_execute(conn, "ALTER TABLE calculator_filaments ADD COLUMN margin_pct FLOAT DEFAULT 50.0")
+    await _safe_execute(conn, "ALTER TABLE calculator_filaments ADD COLUMN margin_pct FLOAT")
     await _safe_execute(conn, "ALTER TABLE calculator_filaments ADD COLUMN zoho_item_id VARCHAR(50)")
     await _safe_execute(conn, "ALTER TABLE calculator_filaments ADD COLUMN zoho_item_name VARCHAR(255)")
     await _safe_execute(conn, "ALTER TABLE calculator_filaments ADD COLUMN zoho_sku VARCHAR(100)")

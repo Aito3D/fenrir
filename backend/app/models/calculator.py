@@ -21,7 +21,7 @@ class CalculatorFilament(Base):
     # Derived output, never user input: always cost_per_kg * (1 + margin_pct/100).
     # Kept as a stored column because pricing.ts, archives and quotes all read it.
     sale_price_per_kg: Mapped[float] = mapped_column(Float)
-    margin_pct: Mapped[float] = mapped_column(Float, default=50.0, nullable=True)
+    margin_pct: Mapped[float] = mapped_column(Float, default=50.0)
     difficulty_pct: Mapped[float] = mapped_column(Float, default=100.0)  # e.g. 150 = 1.5× for abrasive filaments
     # Zoho link. NULL zoho_item_id means a hand-entered filament that sync skips.
     zoho_item_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
