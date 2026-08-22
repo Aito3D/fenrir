@@ -5048,6 +5048,17 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN client_social_network VARCHAR(20)")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN client_social_handle VARCHAR(100)")
 
+    # Migration: the Finish column's "client has been told to collect" mark.
+    # One nullable timestamp; NULL means nobody has been told, which is the
+    # right reading for every existing row and needs no backfill.
+    #
+    # Deliberately NOT backfilled for cards already sitting in Done, tempting
+    # as it looks: those projects were archived under the old rules, where
+    # nobody was ever asked, so stamping a contact time would invent a fact
+    # and a date. The gate only fires on the Finish -> Done transition, so a
+    # legacy Done card stays draggable back to Finish either way.
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN client_contacted_at DATETIME")
+
     await _backfill_aito_events(conn)
 
     # Migration: heal the 'invoiced' quote statuses the sync worker stored

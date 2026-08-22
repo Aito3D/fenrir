@@ -3,16 +3,18 @@ import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useTranslation } from 'react-i18next';
-import { Check, Plane, Send, ThumbsUp } from 'lucide-react';
+import { Check, Phone, Plane, Send, ThumbsUp } from 'lucide-react';
 import { CardView } from './CardView';
 import { HoldButton } from './HoldButton';
 import type { ColumnMeta } from './columns';
 import type { AitoProject } from '../../api/client';
 import { useColumnMoveMutation } from '../../hooks/useColumnMoveMutation';
+import { useContactedMutation } from '../../hooks/useContactedMutation';
 import { useQuoteStatusMutation } from '../../hooks/useQuoteStatusMutation';
 import { useColumnReflow } from '../../hooks/useColumnReflow';
 import { useIsReverting } from '../../hooks/useRevertFlash';
 import { isPlaceholder } from '../../utils/aitoOptimistic';
+import { needsClientContact } from '../../utils/aitoBoard';
 
 function SortableCard({
   project,
@@ -81,11 +83,21 @@ function SortableCard({
   // column itself is off the board. The getter is read at click time, before
   // the optimistic move takes the card off the board.
   const markDone = useColumnMoveMutation(project, 'done', () => cardRef.current?.getBoundingClientRect() ?? null);
+  // The step BEFORE markDone, in the same slot. Unconditional, like every
+  // hook here: the card re-renders with the contact recorded the instant the
+  // optimistic write lands, and a gate above this line would change the hook
+  // order on that exact render.
+  const markContacted = useContactedMutation(project);
 
   // A card that just snapped back. The ring lives on this wrapper rather than
   // on CardView so the DragOverlay clone — which renders CardView directly —
   // never inherits it.
   const reverting = useIsReverting(project.id);
+
+  // Which of the footer slot's two steps is live. Read from the same helper
+  // CardView paints from, so the button and the card's cyan alert can never
+  // disagree about whether this client still needs telling.
+  const awaitingContact = needsClientContact(project) && !placeholder;
 
   return (
     <div
@@ -148,7 +160,34 @@ function SortableCard({
                 <ThumbsUp className="relative w-3.5 h-3.5" />
               </HoldButton>
             )}
-            {project.column === 'finish' && project.move_lock === null && (
+            {awaitingContact && project.move_lock === null && (
+              // Step one of two, in the slot Done will take once it is done.
+              // ONE button, not two: the project cannot be archived until the
+              // client has been told (the server 409s the move), so a Done
+              // button here would be a button that can only fail. Making the
+              // slot advance is what turns the rule into something you can
+              // see rather than something you find out by being refused.
+              //
+              // The same `move_lock === null` half of the gate as Done below,
+              // deliberately: a declined quote sits in Done with a lock and
+              // must offer neither step.
+              <HoldButton
+                onHold={() => markContacted.mutate(true)}
+                durationMs={500}
+                disabled={markContacted.isPending}
+                label={t('aito.markContacted')}
+                hint={t('aito.holdToConfirm')}
+                progress="perimeter"
+                // Cyan, matching the card's own alert — the button and the
+                // halo are one signal, and a green button here would read as
+                // "finish it", which is precisely the thing that is not
+                // allowed yet.
+                className="p-1 -m-1 text-cyan-400 hover:bg-cyan-400/10 focus-visible:ring-cyan-400/40 data-[holding=true]:text-cyan-300"
+              >
+                <Phone className="relative w-3.5 h-3.5" />
+              </HoldButton>
+            )}
+            {project.column === 'finish' && !awaitingContact && project.move_lock === null && (
               // Both halves of the gate matter. The column is where the card
               // has to be; `move_lock === null` is the rules' own release, and
               // it is what keeps this off a declined quote — those sit in Done

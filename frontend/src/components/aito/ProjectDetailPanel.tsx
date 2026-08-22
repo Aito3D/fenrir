@@ -26,6 +26,7 @@ import { useBoardSync } from '../../hooks/useBoardSync';
 import { stagesWithWork } from './services';
 import { StageRail } from './StageRail';
 import { TaskEditor } from './TaskEditor';
+import { ContactedControl } from './ContactedControl';
 import { FlagControl } from './FlagControl';
 import { AITO_CARD_VT_NAME } from '../../hooks/useCardMorph';
 import { sendAitoPresence, useAitoViewers } from '../../hooks/useAitoPresence';
@@ -36,6 +37,7 @@ import { useProjectTasks } from '../../hooks/useProjectTasks';
 import { api, ApiError, type AitoEvent, type AitoProject, type AitoProjectUpdate } from '../../api/client';
 import { Money } from '../calculator/shared';
 import { ageAnchor, agingColorCls } from '../../utils/aitoAging';
+import { isFinished } from '../../utils/aitoBoard';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import { elapsedDays, parseUTCDate } from '../../utils/date';
 import { formatMoney } from '../../utils/pricing';
@@ -411,7 +413,19 @@ function PanelHeader({
               or island label squeezes "Marquer urgent" out of shape. */}
           {canUpdate && (
             <span className="flex-shrink-0">
-              <FlagControl project={project} />
+              {/* One slot, two controls, chosen by whether the work is over.
+                  A finished project has no use for a production flag — see
+                  `isFinished` — so showing the flag editor there would be
+                  offering a control for a decision that no longer applies.
+                  What matters on a finished card is whether the client has
+                  been told, which is also what gates archiving it. The flag
+                  itself is untouched throughout and its editor comes straight
+                  back if work reappears and the card leaves Finish. */}
+              {isFinished(project.column) ? (
+                <ContactedControl project={project} />
+              ) : (
+                <FlagControl project={project} />
+              )}
             </span>
           )}
         </div>

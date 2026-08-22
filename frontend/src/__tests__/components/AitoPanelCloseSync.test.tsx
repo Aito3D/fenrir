@@ -38,6 +38,7 @@ const project: AitoProject = {
   quote_sync_state: 'idle',
   quote_invoiced: false,
   flag: null,
+  client_contacted_at: null,
   quote_sync_error: null,
   quote_status_block: null,
   quote_status_remote: null,

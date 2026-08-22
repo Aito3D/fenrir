@@ -99,6 +99,24 @@ class AitoProject(Base):
     # silently dropping it would make the board lie in the one direction that
     # costs money.
     flag: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # When the client was told the job is ready to collect (or that it has
+    # shipped). NULL means nobody has told them yet, which is why this is a
+    # timestamp and not a boolean: the card shows how long they have been
+    # waiting on that call, and the timeline records the moment.
+    #
+    # It GATES Finish -> Done — see `move_project`, which 409s the archive of
+    # an uncontacted project. The gate lives on the server because two
+    # surfaces offer that transition (the board card's hold button and the
+    # detail panel footer), plus every caller that reaches the endpoint
+    # another way: a rule enforced only in a button is a convention.
+    #
+    # Unlike `flag`, this one IS cleared automatically, and only in
+    # `_apply_rules`: work reappearing on a finished project (a task added, a
+    # step re-opened) sends the card back to a production column, and what the
+    # client was told is no longer true. Retracting it there means they must
+    # be told again before the job can be closed a second time. Moving between
+    # Finish and Done never clears it — nothing about the work changed.
+    client_contacted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     quote_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     quote_sync_failures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # The estimate's last_modified_time as Zoho reported it on our last write.

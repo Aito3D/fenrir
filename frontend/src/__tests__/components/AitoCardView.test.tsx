@@ -33,6 +33,7 @@ const project: AitoProject = {
   quote_sync_state: 'idle',
   quote_invoiced: false,
   flag: null,
+  client_contacted_at: null,
   quote_sync_error: null,
   quote_status_block: null,
   quote_status_remote: null,
@@ -827,5 +828,82 @@ describe('CardView — live viewer badge', () => {
     act(() => setAitoPresenceState({ [String(project.id)]: ['marie'] }));
     expect(() => render(<CardView project={project} overlay />)).not.toThrow();
     expect(screen.getByTestId('aito-card-viewers')).toBeInTheDocument();
+  });
+});
+
+describe('CardView — board flags go quiet once the work is over', () => {
+  // The flag stays in the database throughout: these assert what the card
+  // PAINTS, never what the project holds. A card sent back to a work column
+  // shows its flag again, which is the last case below.
+  it('paints no flag halo on a card sitting in Finish', () => {
+    render(<CardView project={{ ...project, column: 'finish', flag: 'urgent' }} onExpand={vi.fn()} />);
+    const card = document.querySelector('[data-aito-card]')!.className;
+    expect(card).not.toContain('flag-urgent');
+    expect(card).not.toContain('animate-flag-halo');
+  });
+
+  it('paints no flag halo on a card in the Done archive', () => {
+    render(<CardView project={{ ...project, column: 'done', flag: 'sav' }} onExpand={vi.fn()} />);
+    expect(document.querySelector('[data-aito-card]')!.className).not.toContain('flag-sav');
+  });
+
+  it('does not dim a paused card once it is finished', () => {
+    // Pause is the flag whose whole treatment is a retreat, so it fails
+    // differently from the other two: not a halo left on, but a finished card
+    // still rendering at 60% opacity for no reason a reader could name.
+    render(<CardView project={{ ...project, column: 'finish', flag: 'pause' }} onExpand={vi.fn()} />);
+    expect(document.querySelector('[data-aito-card]')!.className).not.toContain('flag-pause-edge');
+  });
+
+  it('names no flag for assistive tech on a finished card', () => {
+    render(<CardView project={{ ...project, column: 'finish', flag: 'urgent' }} onExpand={vi.fn()} />);
+    expect(screen.queryByTestId('aito-card-flag')).not.toBeInTheDocument();
+  });
+
+  it('paints the flag again as soon as the card is back in production', () => {
+    render(<CardView project={{ ...project, column: 'print', flag: 'urgent' }} onExpand={vi.fn()} />);
+    expect(document.querySelector('[data-aito-card]')!.className).toContain('flag-urgent');
+    expect(screen.getByTestId('aito-card-flag')).toBeInTheDocument();
+  });
+});
+
+describe('CardView — the client still has to be told', () => {
+  const finished = { ...project, column: 'finish' as const, move_lock: null };
+
+  it('marks a finished card whose client has not been told', () => {
+    render(<CardView project={{ ...finished, client_contacted_at: null }} onExpand={vi.fn()} />);
+    expect(document.querySelector('[data-aito-card]')!.className).toContain('contact-pending');
+    expect(screen.getByTestId('aito-card-contact')).toBeInTheDocument();
+  });
+
+  it('turns the client icon and name cyan while nobody has been told', () => {
+    // The alert is laid on the thing you have to act on — the client — and
+    // costs the card no height, which is why it is not a banner.
+    render(<CardView project={{ ...finished, client_contacted_at: null }} onExpand={vi.fn()} />);
+    expect(screen.getByTestId('aito-card-client').className).toContain('text-cyan-400');
+    expect(screen.getByTestId('aito-card-client-icon').getAttribute('class')).toContain('text-cyan-400');
+  });
+
+  it('goes back to an ordinary card once the client has been told', () => {
+    render(
+      <CardView project={{ ...finished, client_contacted_at: '2026-08-20T09:00:00Z' }} onExpand={vi.fn()} />,
+    );
+    expect(document.querySelector('[data-aito-card]')!.className).not.toContain('contact-pending');
+    expect(screen.queryByTestId('aito-card-contact')).not.toBeInTheDocument();
+    expect(screen.getByTestId('aito-card-client').className).not.toContain('text-cyan-400');
+  });
+
+  it('says nothing about contacting on a card that is still being worked on', () => {
+    render(<CardView project={{ ...project, column: 'print', client_contacted_at: null }} onExpand={vi.fn()} />);
+    expect(screen.queryByTestId('aito-card-contact')).not.toBeInTheDocument();
+    expect(document.querySelector('[data-aito-card]')!.className).not.toContain('contact-pending');
+  });
+
+  it('says nothing about contacting on an archived card', () => {
+    // Done is the archive. A legacy project archived before this feature
+    // existed has no contact recorded and never will, so shouting at the
+    // operator about every one of them would make the archive unreadable.
+    render(<CardView project={{ ...project, column: 'done', client_contacted_at: null }} onExpand={vi.fn()} />);
+    expect(screen.queryByTestId('aito-card-contact')).not.toBeInTheDocument();
   });
 });

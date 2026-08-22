@@ -1,5 +1,6 @@
 [
   {
+    "client_contacted_at": null,
     "client_email": null,
     "client_id": "C2",
     "client_is_company": null,
@@ -56,6 +57,7 @@
     "version": 0
   },
   {
+    "client_contacted_at": null,
     "client_email": null,
     "client_id": "C1",
     "client_is_company": null,
@@ -100,6 +102,7 @@
     "version": 0
   },
   {
+    "client_contacted_at": null,
     "client_email": null,
     "client_id": "C4",
     "client_is_company": null,
@@ -156,6 +159,7 @@
     "version": 0
   },
   {
+    "client_contacted_at": null,
     "client_email": null,
     "client_id": "C3",
     "client_is_company": null,
@@ -225,6 +229,7 @@
     "version": 0
   },
   {
+    "client_contacted_at": null,
     "client_email": null,
     "client_id": "C5",
     "client_is_company": null,

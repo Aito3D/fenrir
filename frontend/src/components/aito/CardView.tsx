@@ -8,6 +8,7 @@ import { useAitoViewers } from '../../hooks/useAitoPresence';
 import { formatElapsedTime, parseUTCDate } from '../../utils/date';
 import { prefersReducedMotion } from '../../utils/motion';
 import { ageAnchor, agingTextCls } from '../../utils/aitoAging';
+import { isFinished, needsClientContact } from '../../utils/aitoBoard';
 
 export interface CardViewProps {
   project: AitoProject;
@@ -219,6 +220,19 @@ export function CardView({
     .filter(Boolean)
     .join(' · ');
 
+  // Two derived states the card's whole surface reads from, computed once so
+  // the icon, the name, the shell class and the footer cannot end up
+  // disagreeing about which one is live. They are mutually exclusive by
+  // construction: a flag paints only while the project is still work, and the
+  // contact alert only once it no longer is.
+  // The flag this card should PAINT, which is not always the flag it holds:
+  // null once the work is over. Narrowed to a value rather than a boolean so
+  // the two lookups below index it directly — a `flagShown` boolean would
+  // leave TypeScript unable to see that `project.flag` is non-null and force
+  // an assertion at each site.
+  const paintedFlag = isFinished(project.column) ? null : project.flag;
+  const awaitingContact = needsClientContact(project);
+
   return (
     <div
       data-testid="aito-card-shell"
@@ -257,7 +271,13 @@ export function CardView({
           overlay
             ? 'rotate-1 scale-[1.02] border-bambu-green/40 shadow-2xl cursor-grabbing'
             : 'border-bambu-dark-tertiary card-shadow transition-[border-color,box-shadow,transform,opacity] duration-150 hover:-translate-y-0.5 hover:border-bambu-green/40 hover:shadow-lg motion-reduce:hover:translate-y-0'
-        } ${placeholder ? 'opacity-60' : ''} ${project.flag ? FLAG_CARD_CLS[project.flag] : ''}`}
+        } ${placeholder ? 'opacity-60' : ''} ${
+          // The flag paints only while the project is still work. On a
+          // finished card the flag stays in the database untouched and simply
+          // goes unrendered — see `isFinished`. What replaces it in Finish is
+          // the one thing still outstanding there: telling the client.
+          paintedFlag ? FLAG_CARD_CLS[paintedFlag] : ''
+        } ${awaitingContact ? 'contact-pending' : ''}`}
       >
         <div className="flex items-center gap-2 px-3 pt-2.5">
           {/* `aria-hidden` with the label carried in text beside it, so the
@@ -265,13 +285,20 @@ export function CardView({
               matching the panel. strokeWidth 2.5 to match the medium weight
               of the name. */}
           <ClientIcon
-            className={`w-3.5 h-3.5 flex-shrink-0 ${project.client_name ? 'text-white' : 'text-bambu-gray'}`}
+            data-testid="aito-card-client-icon"
+            // Still the client glyph, never a telephone: the footer's contact
+            // button is already a phone, and the same icon twice on one card
+            // reads as a repetition rather than as an alert.
+            className={`w-3.5 h-3.5 flex-shrink-0 ${
+              awaitingContact ? 'text-cyan-400' : project.client_name ? 'text-white' : 'text-bambu-gray'
+            }`}
             strokeWidth={2.5}
             aria-hidden="true"
           />
           <p
+            data-testid="aito-card-client"
             className={`flex-1 min-w-0 text-sm font-semibold tracking-[-0.01em] truncate ${
-              project.client_name ? 'text-white' : 'text-bambu-gray'
+              awaitingContact ? 'text-cyan-400' : project.client_name ? 'text-white' : 'text-bambu-gray'
             }`}
           >
             <span className="sr-only">
@@ -286,9 +313,9 @@ export function CardView({
               would make the flag purely visual rather than merely non-textual.
               Keep the testid on it — the tests assert the signal still exists,
               not that it is painted. */}
-          {project.flag && (
+          {paintedFlag && (
             <span data-testid="aito-card-flag" className="sr-only">
-              {t(FLAG_LABEL_KEY[project.flag])}
+              {t(FLAG_LABEL_KEY[paintedFlag])}
             </span>
           )}
           {/* Live presence: someone else has this card's panel open right
@@ -377,14 +404,37 @@ export function CardView({
 
             <div className="px-3 pb-2 flex items-center justify-between gap-2">
               <div className="flex items-baseline gap-2 min-w-0">
-                {/* Replaces the edge progress bar: the same done/total fact,
-                    read as a number instead of a sliver of fill along the
-                    card's bottom border. Omitted at zero — a project with no
-                    steps yet has nothing to count. */}
-                {project.steps_total > 0 && (
-                  <span className="text-xs text-bambu-gray tabular-nums flex-shrink-0">
-                    {t('aito.stepsCount', { done: project.steps_done, total: project.steps_total })}
+                {/* One slot, two facts, whichever is the live one.
+                    Normally the done/total step count — the same fact the old
+                    edge progress bar carried, read as a number instead of a
+                    sliver of fill along the card's bottom border, and omitted
+                    at zero because a project with no steps has nothing to
+                    count.
+                    On a finished card waiting on a phone call it is that call
+                    instead: there are no steps left to report, and the one
+                    thing outstanding is that nobody has rung the client.
+                    REPLACING the count rather than sitting beside it is what
+                    keeps the card exactly as tall as it was — a Finish column
+                    is long, and a banner per card would cost a screenful of
+                    scrolling. */}
+                {awaitingContact ? (
+                  <span
+                    data-testid="aito-card-contact"
+                    className="text-xs font-semibold text-cyan-400 tabular-nums flex-shrink-0"
+                  >
+                    {/* No age here on purpose. The name row already shows this
+                        card's elapsed time, three lines up and to the right,
+                        and putting a second relative date in the footer made
+                        one card read "To contact · 3 days ago" beside its own
+                        "3 days ago". The cyan carries the urgency. */}
+                    {t('aito.awaitingContact')}
                   </span>
+                ) : (
+                  project.steps_total > 0 && (
+                    <span className="text-xs text-bambu-gray tabular-nums flex-shrink-0">
+                      {t('aito.stepsCount', { done: project.steps_done, total: project.steps_total })}
+                    </span>
+                  )
                 )}
                 {footerNote && <span className="text-xs text-bambu-gray truncate">{footerNote}</span>}
                 {project.quote_number && (

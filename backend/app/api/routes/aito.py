@@ -2,7 +2,7 @@
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -19,6 +19,7 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.user import User
 from backend.app.schemas.aito import (
+    AitoContactedUpdate,
     AitoEventPage,
     AitoEventResponse,
     AitoFlagUpdate,
@@ -109,6 +110,14 @@ _SHIPPING_COLUMNS = (
     "shipping_phone",
     "shipping_price",
 )
+
+# The columns where the work itself is over: Finish (done, awaiting the
+# client) and Done (archived). ONE set, three consumers — the contacted
+# route's guard, the auto-clear in `_apply_rules`, and the Finish -> Done
+# gate — because "which columns count as finished" open-coded at each site is
+# how they start disagreeing. Mirrored in frontend/src/utils/aitoBoard.ts as
+# `isFinished`.
+_FINISHED_COLUMNS: frozenset[str] = frozenset({"finish", "done"})
 
 # kind -> event, spelled out rather than f-string-built, so every kind in
 # services/aito_events.KINDS stays greppable from its call site.
@@ -355,6 +364,9 @@ def _to_response(p: AitoProject, summary: TaskSummary, shipping_names: dict[str,
         # nullable, so an in-memory AitoProject that never went through a DB
         # flush already reads as None, which is exactly "no flag".
         flag=p.flag,
+        # Nullable like `flag`, and for the same reason needs no coercion: an
+        # unflushed in-memory row reads None, which IS "nobody told them yet".
+        client_contacted_at=p.client_contacted_at,
         # Mirrors quote_invoiced above: in-memory rows that never flushed
         # read None.
         version=p.version or 0,
@@ -533,6 +545,33 @@ async def _apply_rules(db: AsyncSession, project: AitoProject, summary: TaskSumm
     column, _ = evaluate(project.quote_status, project.board_column, summary.pending)
     if column == project.board_column:
         return
+
+    # Work has reappeared on a project the client was told was ready — a task
+    # added, a step re-opened — so what they were told is no longer true.
+    # Retract it, which re-closes the Done gate: they have to be told again
+    # before the job can be closed a second time.
+    #
+    # This is the ONLY place the contact is cleared automatically, because
+    # this is the only place the rules relocate a card. Note the guard is on
+    # the DESTINATION leaving the finished columns, not on the source: Finish
+    # -> Done and Done -> Finish never reach here (they are the manual move
+    # `move_project` owns), and a card arriving IN Finish is the moment the
+    # contact becomes relevant, not the moment it becomes false.
+    if column not in _FINISHED_COLUMNS and project.client_contacted_at is not None:
+        project.client_contacted_at = None
+        await record(
+            db,
+            project.id,
+            "project.contacted.cleared",
+            actor_class="user" if actor else "system",
+            actor_name=actor,
+            subject_type="project",
+            subject_id=project.id,
+            # Distinguishes this from a person taking the contact back by
+            # hand, which records the same kind with no cause — the same
+            # convention `stage.changed` uses below.
+            detail={"cause": "rule"},
+        )
 
     source = project.board_column
     destination_rows = await _active_in_column(db, column, exclude_id=project.id)
@@ -2170,6 +2209,28 @@ async def move_project(
         ):
             raise HTTPException(status_code=409, detail="This project's column is set by its quote and task steps")
 
+        # The client has to be told before a job can be archived. Enforced
+        # HERE rather than only by the two buttons that offer this transition
+        # (the board card's hold button and the detail panel footer): those
+        # are two places to keep in agreement, plus every caller that reaches
+        # this endpoint another way — an API key, a script, a future surface.
+        # A rule that lives in a button is a convention; this is the rule.
+        #
+        # Today's board cannot bypass it by dragging — `allowedColumns`
+        # (frontend/src/utils/aitoBoard.ts) permits a drop only into a card's
+        # own column, and Done is not even a rendered droppable — but that is
+        # a property of the current UI, not of the transition.
+        #
+        # One direction only. Done -> Finish stays open whatever this says,
+        # because every project archived before this feature existed has no
+        # contact recorded and never will — gating the way out of the archive
+        # too would strand all of them there.
+        if payload.column == "done" and project.client_contacted_at is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Tell the client the project is ready before archiving it",
+            )
+
     source_column = project.board_column
     destination = await _active_in_column(db, payload.column, exclude_id=project.id)
     # The client's `position` is an index into the DISPLAYED order, which puts
@@ -2426,6 +2487,75 @@ async def set_project_flag(
             )
         await db.commit()
         await _broadcast_changed("flag", project.id, _actor(current_user))
+        await db.refresh(project)
+
+    return await _project_response(db, project)
+
+
+@router.patch("/{project_id}/contacted", response_model=AitoProjectResponse)
+async def set_project_contacted(
+    project_id: int,
+    payload: AitoContactedUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Record — or take back — the fact that the client has been told the job
+    is ready to collect.
+
+    Its own route rather than a field on `AitoProjectUpdate`, for the identical
+    reason `set_project_flag` is: `update_project` ends with an unconditional
+    `_mark_pending_if_ours`, and Zoho has no field for this. Queueing an
+    estimate push here would carry nothing, churn `quote_sync_state` on locked
+    quotes where writes are already known to be unsafe, and fill the timeline
+    with `sync.queued` noise from a purely local act.
+
+    Refused outside Finish and Done: "the client can come and collect" is not a
+    statement anyone can make about a job still on a printer, and allowing it
+    early would let someone pre-open the Done gate on work that is not
+    finished. Done is included so a card dragged back from the archive can
+    still have a mistaken contact corrected.
+
+    Reuses `Permission.AITO_UPDATE` — a new permission would need adding to the
+    API-key classification lists and the role defaults, and "may edit an Aito
+    card" is the right authority for this.
+    """
+    project = await _get_active_project_or_404(db, project_id)
+
+    # The DERIVED column, not the stored one: a card whose last step was just
+    # unticked is still stored in 'finish' until the rules relocate it, and
+    # that stale row must not be marked contactable.
+    summary = await _summary_for(db, project.id)
+    column, _ = evaluate(project.quote_status, project.board_column, summary.pending)
+    if column not in _FINISHED_COLUMNS:
+        raise HTTPException(
+            status_code=409,
+            detail="A client can only be marked as contacted once the project is finished",
+        )
+
+    # Idempotent, like `set_project_flag`: re-sending the state the row already
+    # holds is a 200 with no event, so a double-tap does not spam the timeline
+    # with a non-decision. Note this compares PRESENCE, not equality — the
+    # payload carries a bool and the column a timestamp, so re-marking an
+    # already-contacted project must not restamp the time and reset the "how
+    # long have they been waiting" clock.
+    if payload.contacted != (project.client_contacted_at is not None):
+        # Naive UTC, matching every other DATETIME on this row — `created_at`
+        # is `func.now()` (SQLite CURRENT_TIMESTAMP, naive) and
+        # `quote_accepted_at` is stamped the same way in
+        # services/aito_quote_status.py. A tz-aware value here would compare
+        # wrong against all of them.
+        project.client_contacted_at = datetime.now(timezone.utc).replace(tzinfo=None) if payload.contacted else None
+        await record(
+            db,
+            project.id,
+            "project.contacted.set" if payload.contacted else "project.contacted.cleared",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=project.id,
+        )
+        await db.commit()
+        await _broadcast_changed("contacted", project.id, _actor(current_user))
         await db.refresh(project)
 
     return await _project_response(db, project)

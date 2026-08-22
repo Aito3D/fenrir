@@ -43,6 +43,7 @@ const card = (over: Partial<AitoProject> = {}): AitoProject => ({
   quote_sync_state: 'idle',
   quote_invoiced: false,
   flag: null,
+  client_contacted_at: null,
   quote_sync_error: null,
   quote_status_block: null,
   quote_status_remote: null,
@@ -282,12 +283,14 @@ describe('board card actions — accept quote', () => {
 
 describe('board card actions — mark as done', () => {
   it('offers mark-as-done on a released card in Finish', () => {
-    renderColumn(card({ column: 'finish', move_lock: null }));
+    renderColumn(card({ column: 'finish', move_lock: null, client_contacted_at: '2026-08-20T09:00:00Z' }));
     expect(screen.getByRole('button', { name: /mark project as done/i })).toBeEnabled();
   });
 
   it('glows the Done action when the quote is invoiced', () => {
-    renderColumn(card({ column: 'finish', move_lock: null, quote_invoiced: true, flag: null }));
+    renderColumn(
+      card({ column: 'finish', move_lock: null, quote_invoiced: true, flag: null, client_contacted_at: '2026-08-20T09:00:00Z' }),
+    );
     const done = screen.getByRole('button', { name: /mark project as done/i });
     expect(done.className).toContain('animate-invoiced-pulse');
     // The swap must actually replace the base color: `text-bambu-green` and
@@ -298,7 +301,9 @@ describe('board card actions — mark as done', () => {
   });
 
   it('does not glow when the quote is not invoiced', () => {
-    renderColumn(card({ column: 'finish', move_lock: null, quote_invoiced: false, flag: null }));
+    renderColumn(
+      card({ column: 'finish', move_lock: null, quote_invoiced: false, flag: null, client_contacted_at: '2026-08-20T09:00:00Z' }),
+    );
     const done = screen.getByRole('button', { name: /mark project as done/i });
     expect(done.className).not.toContain('animate-invoiced-pulse');
     expect(done.className).toContain('text-bambu-green/70');
@@ -334,7 +339,7 @@ describe('board card actions — mark as done', () => {
     vi.spyOn(api, 'moveAitoProject').mockImplementation(() => new Promise(() => {}));
     try {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-      renderColumn(card({ column: 'finish', move_lock: null }));
+      renderColumn(card({ column: 'finish', move_lock: null, client_contacted_at: '2026-08-20T09:00:00Z' }));
       const button = screen.getByRole('button', { name: /mark project as done/i });
 
       await user.pointer({ keys: '[MouseLeft>]', target: button });
@@ -367,16 +372,90 @@ describe('board card actions — mark as done', () => {
   });
 
   it('shows a check on a Finish card with no shipping', () => {
-    renderColumn(card({ column: 'finish', move_lock: null, shipping_island: null }));
+    renderColumn(
+      card({ column: 'finish', move_lock: null, shipping_island: null, client_contacted_at: '2026-08-20T09:00:00Z' }),
+    );
     const done = screen.getByRole('button', { name: /mark project as done/i });
     expect(done.querySelector('.lucide-check')).toBeTruthy();
     expect(done.querySelector('.lucide-plane')).toBeFalsy();
   });
 
   it('shows a plane on a Finish card that has shipping', () => {
-    renderColumn(card({ column: 'finish', move_lock: null, shipping_island: 'rangiroa' }));
+    renderColumn(
+      card({ column: 'finish', move_lock: null, shipping_island: 'rangiroa', client_contacted_at: '2026-08-20T09:00:00Z' }),
+    );
     const done = screen.getByRole('button', { name: /mark project as done/i });
     expect(done.querySelector('.lucide-plane')).toBeTruthy();
     expect(done.querySelector('.lucide-check')).toBeFalsy();
+  });
+});
+
+describe('board card actions — the client has to be told before the job is closed', () => {
+  // One slot in the card footer, two steps. Which one it shows IS the gate
+  // made visible: the server refuses Finish -> Done on an uncontacted project
+  // (see backend test_aito_contacted.py), and offering a Done button that
+  // could only 409 would be a button that lies.
+  const finished = (over: Partial<AitoProject> = {}) =>
+    card({ column: 'finish', move_lock: null, client_contacted_at: null, ...over });
+
+  it('offers the contact button, not Done, while nobody has told the client', () => {
+    renderColumn(finished());
+    expect(screen.getByRole('button', { name: /mark client as contacted/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
+  });
+
+  it('offers Done, not the contact button, once the client has been told', () => {
+    renderColumn(finished({ client_contacted_at: '2026-08-20T09:00:00Z' }));
+    expect(screen.getByRole('button', { name: /mark project as done/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /mark client as contacted/i })).not.toBeInTheDocument();
+  });
+
+  it('does not offer the contact button outside Finish', () => {
+    for (const column of ['devis', 'waiting', 'scan', 'model', 'print', 'done'] as const) {
+      const { unmount } = renderColumn(card({ column, client_contacted_at: null, move_lock: null }));
+      expect(screen.queryByRole('button', { name: /mark client as contacted/i })).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('does not offer the contact button on a card the rules have locked', () => {
+    // Same second half of the gate the Done button uses: a declined quote sits
+    // with a move_lock and must offer neither step.
+    renderColumn(finished({ move_lock: 'declined' }));
+    expect(screen.queryByRole('button', { name: /mark client as contacted/i })).not.toBeInTheDocument();
+  });
+
+  it('fires the contact mutation only once the 500ms hold completes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Held open by hand for the same reason the mark-as-sent test above does:
+    // a settled promise makes "still pending" indistinguishable from "done".
+    const spy = vi.spyOn(api, 'setAitoProjectContacted').mockImplementation(() => new Promise(() => {}));
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderColumn(finished());
+      const button = screen.getByRole('button', { name: /mark client as contacted/i });
+
+      await user.pointer({ keys: '[MouseLeft>]', target: button });
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(spy).not.toHaveBeenCalled();
+
+      // Crosses the 500ms threshold, which fires the mutation from a raw timer
+      // callback rather than a testing-library-wrapped event — hence `act`.
+      // The extra async flush is what react-query's own scheduling needs
+      // before `mutationFn` has actually run; without it the spy is still
+      // empty and the test reads as "the hold never fired".
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(spy).toHaveBeenCalledWith(12, true);
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
   });
 });

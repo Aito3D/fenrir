@@ -4004,6 +4004,16 @@ export interface AitoProject {
    *  Drives the card's halo and sorts the card to the top of its column
    *  (display only — stored `position` is never rewritten). */
   flag: AitoFlag | null;
+  /** When the client was told the job is ready to collect (or that it has
+   *  shipped), or null when nobody has told them yet.
+   *
+   *  While it is null on a card in Finish, the card paints the cyan
+   *  "to be contacted" state and its footer button is the contact button
+   *  rather than Done — the project genuinely cannot be archived until this
+   *  is set, and the server refuses the move (409) whichever route asks.
+   *  Cleared automatically when work reappears and the rules send the card
+   *  back to a production column. */
+  client_contacted_at: string | null;
   /** The last push failure, or null. Only meaningful when quote_sync_state
    *  is 'error'; stale/ignored otherwise. */
   quote_sync_error: string | null;
@@ -7530,6 +7540,15 @@ export const api = {
     request<AitoProject>(`/aito/${id}/flag`, {
       method: 'PATCH',
       body: JSON.stringify({ flag }),
+    }),
+  /** Record — or take back — the fact that the client has been told the job is
+   *  ready. Sends a bool, never a timestamp: WHEN is the server's fact to
+   *  stamp, and a browser clock that is wrong would otherwise skew both the
+   *  card's waiting time and the timeline. */
+  setAitoProjectContacted: (id: number, contacted: boolean) =>
+    request<AitoProject>(`/aito/${id}/contacted`, {
+      method: 'PATCH',
+      body: JSON.stringify({ contacted }),
     }),
   deleteAitoProject: (id: number) =>
     request<void>(`/aito/${id}`, { method: 'DELETE' }),

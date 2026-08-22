@@ -396,6 +396,7 @@ async def test_finish_to_done_is_allowed_when_unlocked(async_client):
     p = await _create_accepted(async_client)
     t = (await _add_task(async_client, p["id"], scan_cost=1200.0)).json()
     await async_client.patch(f"/api/v1/aito/tasks/{t['id']}", json={"scan_done": True})
+    await _mark_contacted(async_client, p["id"])
 
     r = await async_client.patch(f"/api/v1/aito/{p['id']}/move", json={"column": "done", "position": 0})
     assert r.status_code == 200
@@ -412,6 +413,7 @@ async def test_move_renumbers_the_column_left_behind(async_client):
     card left behind, not just append the mover to its new column."""
     p1 = await _create_accepted(async_client, description="p1")  # finish, position 0
     p2 = await _create_accepted(async_client, description="p2")  # finish, position 1
+    await _mark_contacted(async_client, p1["id"])
 
     r = await async_client.patch(f"/api/v1/aito/{p1['id']}/move", json={"column": "done", "position": 0})
     assert r.status_code == 200
@@ -611,6 +613,7 @@ async def test_update_never_touches_column_or_position(async_client):
     # quote_status="accepted" with no tasks lands the card in 'finish' unlocked,
     # so the Finish -> Done move below is legal under the cross-column guard.
     a = await _create_accepted(async_client)
+    await _mark_contacted(async_client, a["id"])
     await async_client.patch(f"/api/v1/aito/{a['id']}/move", json={"column": "done", "position": 0})
     r = await async_client.patch(
         f"/api/v1/aito/{a['id']}", json={"description": "moved then edited", "column": "devis", "position": 7}
@@ -930,6 +933,7 @@ def _minimal_project_response(**overrides) -> AitoProjectResponse:
         "quote_sync_state": "idle",
         "quote_invoiced": False,
         "flag": None,
+        "client_contacted_at": None,
         "quote_sync_error": None,
         "quote_status_block": None,
         "quote_status_remote": None,
@@ -1768,6 +1772,7 @@ async def test_moving_a_project_does_not_mark_it_pending(async_client, db_sessio
     a same-column move never enters the branch that could regress and start
     marking the project pending on move."""
     p = await _create_accepted(async_client)  # lands unlocked in 'finish', no tasks
+    await _mark_contacted(async_client, p["id"])
     project = (await db_session.execute(select(AitoProject).where(AitoProject.id == p["id"]))).scalar_one()
     project.quote_sync_state = "idle"
     project.quote_sync_failures = 3
@@ -1853,6 +1858,13 @@ async def test_create_records_the_authenticated_creator(async_client):
 
 async def _add_task(client, project_id, **fields):
     return await client.post(f"/api/v1/aito/{project_id}/tasks", json=fields)
+
+
+async def _mark_contacted(client, project_id):
+    """Open the Finish -> Done gate. Archiving now requires that the client
+    has been told the job is ready — see test_aito_contacted.py — so every
+    test that drives a card into Done has to pass through here first."""
+    return await client.patch(f"/api/v1/aito/{project_id}/contacted", json={"contacted": True})
 
 
 async def _create_accepted(client, **overrides):

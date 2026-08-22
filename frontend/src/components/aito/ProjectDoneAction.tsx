@@ -47,7 +47,14 @@ export function ProjectDoneAction({ project }: { project: AitoProject }) {
   // the instant the optimistic write lands, and a gate above the hook would
   // change the hook order on that exact render. Same rule QuoteStatusActions
   // follows for its own `accepted` early return.
-  if (project.column !== 'finish' || project.move_lock !== null) return null;
+  // The third half of the gate, and the one that keeps this button honest: a
+  // project whose client has not been told cannot be archived — `move_project`
+  // 409s it — so offering the pill here would be offering a button that can
+  // only fail. The panel's own way to record the contact is `ContactedControl`
+  // in the header row, which is what appears in its place.
+  if (project.column !== 'finish' || project.move_lock !== null || project.client_contacted_at === null) {
+    return null;
+  }
 
   return (
     <HoldButton

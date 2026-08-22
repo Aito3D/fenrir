@@ -65,6 +65,7 @@ const project = {
   quote_number: 'QT-2026-001',
   quote_status: null,
   flag: null,
+  client_contacted_at: null,
   task_count: 0,
   tasks_total: 0,
   task_services: [],

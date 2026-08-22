@@ -405,6 +405,9 @@ export function placeholderProject(fields: {
     // A fresh placeholder carries no flag: it is a workshop signal set by hand
     // after the fact, never implied by how a card was created.
     flag: null,
+    // A brand-new card is nowhere near Finish, so nobody has been told
+    // anything about it yet.
+    client_contacted_at: null,
     quote_sync_error: null,
     quote_status_block: null,
     quote_status_remote: null,
