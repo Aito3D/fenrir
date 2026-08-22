@@ -745,6 +745,190 @@ describe('CalculatorFilamentsPanel Zoho price sync', () => {
     expect(sync).toHaveBeenCalledTimes(2);
   });
 
+  // T-075: the walk is a plain async loop with no AbortController, so it
+  // keeps running (and keeps issuing chunk requests) even after the panel
+  // that started it unmounts — CalculatorPage unmounts this panel on every
+  // tab switch. The in-flight guard and live progress must survive that, or
+  // the operator can start a second overlapping walk. (Its completed summary
+  // is a separate, narrower story — see "does not show a completed sync
+  // summary after an unmount/remount" below: the walk keeps running and
+  // keeps committing chunks either way, but only the guard/progress are
+  // shared across mounts, so a completion the original mount is no longer
+  // around to hear about is not reported on this later, different mount.)
+  it('keeps the guard and progress alive across an unmount/remount and blocks a second overlapping walk', async () => {
+    server.use(
+      http.get('/api/v1/calculator/filaments/', () => HttpResponse.json([baseFilament, linkedFilament])),
+      http.get('/api/v1/zoho/status', () =>
+        HttpResponse.json({ configured: true, reachable: null, default_contact_id: '', default_contact_name: '' }),
+      ),
+    );
+    // Chunk 1 is held open under our control so the panel can be unmounted
+    // while it is still in flight; chunk 2 resolves immediately once asked
+    // for and finishes the walk.
+    let releaseChunk1: (result: CalculatorFilamentSyncResult) => void = () => {};
+    const chunk1 = new Promise<CalculatorFilamentSyncResult>((resolve) => {
+      releaseChunk1 = resolve;
+    });
+    const sync = vi
+      .spyOn(api, 'syncCalculatorFilamentsFromZoho')
+      .mockReturnValueOnce(chunk1)
+      .mockResolvedValueOnce(chunk({ processed: 1, total: 9, updated: 1 }));
+
+    const { rerender } = render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
+    await screen.findByRole('button', { name: 'Add filament' });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Sync prices' }));
+    await waitFor(() => expect(sync).toHaveBeenCalledTimes(1));
+
+    // Switch away — mirrors CalculatorPage unmounting this panel on a tab
+    // change — while chunk 1 is still pending.
+    rerender(<div />);
+    // ...and back, before the walk has finished.
+    rerender(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
+    await screen.findByRole('button', { name: 'Add filament' });
+
+    // Attempt to start a second walk from the remount, via a selector that
+    // matches the sync button under either label (idle "Sync prices" or a
+    // live "N / M") so this step runs identically whether or not the guard
+    // survived. This is the actual reported failure, checked first and on
+    // the request count, not the UI: a second walk would immediately issue
+    // its own first chunk request (afterId 0), so if the guard had been
+    // lost, the call count would grow past 1 right here — before either of
+    // the UI assertions below even run.
+    const button = screen.getByRole('button', { name: /sync prices|\d+\s*\/\s*\d+/i });
+    await userEvent.click(button);
+    expect(sync).toHaveBeenCalledTimes(1);
+
+    // (a) The guard survived the remount, visibly too: the button still
+    // reads as in-progress and is disabled, not a fresh idle "Sync prices".
+    expect(button).toBeDisabled();
+    expect(button).toHaveAccessibleName(/^\d+\s*\/\s*\d+$/);
+
+    // Let the walk finish: chunk 1 resolves and the loop fetches chunk 2 (the
+    // only second call this test allows) — the walk that started on the
+    // first mount runs to completion exactly as it would have if nothing had
+    // been unmounted; nothing here aborts it. The completed summary itself
+    // belongs to the (now gone) first mount's own state and is not this
+    // test's concern (see the narrowed summary test below) — what this test
+    // guards is that the shared guard/progress correctly release once that
+    // walk is done, re-enabling the button on the panel that is actually on
+    // screen.
+    releaseChunk1(chunk({ processed: 0, total: 9, next_after_id: 187 }));
+    expect(await screen.findByRole('button', { name: 'Sync prices' })).toBeEnabled();
+    expect(sync).toHaveBeenCalledTimes(2);
+    expect(sync).toHaveBeenNthCalledWith(2, 187, 25);
+  });
+
+  // T-075 fix-up: the walk had no AbortController and no request timeout, so
+  // a chunk request that never settles (a real network black hole, not a
+  // server error) left the session-scoped guard stuck forever — the button
+  // stayed disabled for the rest of the page session. A per-chunk timeout
+  // ends the walk with a normal sync error and releases the guard instead.
+  // Driven entirely with vitest fake timers — never a wall-clock sleep, never
+  // msw's `delay()`.
+  it('ends a chunk request that never settles with a sync error and re-enables the button', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      // Gated on nothing the test ever resolves: this promise simply never
+      // settles, standing in for a request that hangs indefinitely.
+      const sync = vi
+        .spyOn(api, 'syncCalculatorFilamentsFromZoho')
+        .mockReturnValueOnce(new Promise<CalculatorFilamentSyncResult>(() => {}));
+
+      await renderFilamentsPanel();
+      await user.click(screen.getByRole('button', { name: 'Sync prices' }));
+      await waitFor(() => expect(sync).toHaveBeenCalledTimes(1));
+
+      // Comfortably inside the timeout budget: still in flight, no error yet.
+      await vi.advanceTimersByTimeAsync(59_000);
+      expect(screen.queryByText(/sync stopped/i)).toBeNull();
+      expect(screen.getByRole('button', { name: /\d+\s*\/\s*\d+/ })).toBeDisabled();
+
+      // Cross the per-chunk timeout.
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      expect(await screen.findByText(/sync stopped: sync request timed out/i)).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: 'Sync prices' })).toBeEnabled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // T-075 fix-up: the first attempt kept summary/error in the same
+  // session-scoped cache as the guard, so an error from a walk that failed
+  // entirely off-screen would still appear on the next mount, for the rest
+  // of the page session, with no way to dismiss it. The user narrowed this
+  // back to BASE semantics: only the in-flight guard/progress survive an
+  // unmount — a walk's terminal outcome (summary or error) does not outlive
+  // the mount that was watching it.
+  it('does not surface a sync error that happened while the panel was unmounted (narrowed to BASE semantics)', async () => {
+    server.use(
+      http.get('/api/v1/calculator/filaments/', () => HttpResponse.json([linkedFilament])),
+      http.get('/api/v1/zoho/status', () =>
+        HttpResponse.json({ configured: true, reachable: null, default_contact_id: '', default_contact_name: '' }),
+      ),
+    );
+    let rejectChunk: (error: Error) => void = () => {};
+    const chunk1 = new Promise<CalculatorFilamentSyncResult>((_resolve, reject) => {
+      rejectChunk = reject;
+    });
+    const sync = vi.spyOn(api, 'syncCalculatorFilamentsFromZoho').mockReturnValueOnce(chunk1);
+
+    const { rerender } = render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
+    await screen.findByRole('button', { name: 'Add filament' });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Sync prices' }));
+    await waitFor(() => expect(sync).toHaveBeenCalledTimes(1));
+
+    // Unmount, then the walk fails while nothing is listening.
+    rerender(<div />);
+    rejectChunk(new Error('502'));
+    // Come back — the failure happened entirely off-screen. BASE semantics
+    // say a remount after the walk has ended shows a clean panel.
+    rerender(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
+
+    // Positive evidence the panel actually remounted, the walk's rejection
+    // was processed, and the guard was released — before asserting the
+    // error is absent (never assert only an absence).
+    expect(await screen.findByRole('button', { name: 'Sync prices' })).toBeEnabled();
+    expect(screen.queryByText(/sync stopped/i)).toBeNull();
+  });
+
+  // The completed-summary half of the same narrowing.
+  it('does not show a completed sync summary after an unmount/remount', async () => {
+    server.use(
+      http.get('/api/v1/calculator/filaments/', () => HttpResponse.json([linkedFilament])),
+      http.get('/api/v1/zoho/status', () =>
+        HttpResponse.json({ configured: true, reachable: null, default_contact_id: '', default_contact_name: '' }),
+      ),
+    );
+    const sync = vi
+      .spyOn(api, 'syncCalculatorFilamentsFromZoho')
+      .mockResolvedValueOnce(chunk({ processed: 9, total: 9, updated: 9 }));
+
+    const { rerender } = render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
+    await screen.findByRole('button', { name: 'Add filament' });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Sync prices' }));
+    // Let the walk complete while still mounted, so the summary is proven to
+    // exist before it is unmounted away.
+    expect(await screen.findByText(/9 updated/)).toBeInTheDocument();
+    expect(sync).toHaveBeenCalledTimes(1);
+
+    // Unmount after the walk has already ended, then come back.
+    rerender(<div />);
+    rerender(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
+
+    // Positive evidence the panel re-rendered cleanly (button present and
+    // enabled, i.e. no guard/progress state bled through either) before
+    // asserting the summary is gone.
+    expect(await screen.findByRole('button', { name: 'Sync prices' })).toBeEnabled();
+    expect(screen.queryByText(/9 updated/)).toBeNull();
+    // No second walk was ever started by the remount.
+    expect(sync).toHaveBeenCalledTimes(1);
+  });
+
   it('labels the price column as printing cost', async () => {
     await renderFilamentsPanel();
     expect(await screen.findByRole('button', { name: /printing cost per kg/i })).toBeInTheDocument();

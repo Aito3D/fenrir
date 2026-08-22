@@ -18,7 +18,7 @@ from a couple of prints is noise dressed up as truth.
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.archive import PrintArchive
@@ -138,6 +138,30 @@ class CalculatorInsightsService:
         }
 
     async def _time_accuracy(self, db: AsyncSession, since: datetime) -> dict:
+        # These extra predicates are a pure row-count optimization: they only
+        # exclude rows that `_resolve_duration` + the accuracy-band check
+        # below would discard anyway, so the Python fold that follows is
+        # untouched and sees the exact same (duration, estimate) pairs it
+        # always did. Two cases are pushed to SQL because they're exact
+        # integer/IEEE-754 float mirrors of the Python arithmetic:
+        #   - duration_seconds is usable (truthy) directly, no timestamp math;
+        #   - the accuracy ratio and its [50, 200] band, using `col * 1.0 / col`
+        #     to force float division exactly like Python's `int / int`.
+        # Rows needing the started_at/completed_at fallback (duration_seconds
+        # null or 0) are always fetched and still resolved/banded in Python,
+        # since replicating that elapsed-time fallback in SQL would risk
+        # timezone/precision drift this task explicitly warns against.
+        duration_usable = and_(
+            PrintLogEntry.duration_seconds.isnot(None),
+            PrintLogEntry.duration_seconds != 0,
+        )
+        duration_missing = or_(
+            PrintLogEntry.duration_seconds.is_(None),
+            PrintLogEntry.duration_seconds == 0,
+        )
+        accuracy_in_band = (PrintArchive.print_time_seconds * 1.0 / PrintLogEntry.duration_seconds * 100).between(
+            _ACCURACY_BAND_LO, _ACCURACY_BAND_HI
+        )
         rows = await db.execute(
             select(
                 PrintLogEntry.duration_seconds,
@@ -151,6 +175,16 @@ class CalculatorInsightsService:
                 PrintLogEntry.status == "completed",
                 PrintLogEntry.created_at >= since,
                 PrintArchive.print_time_seconds.isnot(None),
+                # `not estimate_seconds` in the fold below also drops 0.
+                PrintArchive.print_time_seconds != 0,
+                or_(
+                    and_(duration_usable, accuracy_in_band),
+                    and_(
+                        duration_missing,
+                        PrintLogEntry.started_at.isnot(None),
+                        PrintLogEntry.completed_at.isnot(None),
+                    ),
+                ),
             )
         )
 
@@ -193,6 +227,24 @@ class CalculatorInsightsService:
         the plug powers only the printer; a plug also feeding a dryer or light
         inflates the figure (the outlier band catches the worst of it).
         """
+        # Same technique as `_time_accuracy`: only pre-filter rows that the
+        # Python fold below would discard anyway, for the duration_seconds-
+        # usable case where the arithmetic is an exact SQL mirror of the
+        # Python expressions (`hours = actual/3600`, `implied_watts =
+        # energy_kwh*1000/hours`, both forced to float division to match
+        # Python's automatic int/int promotion). Rows needing the
+        # started_at/completed_at fallback are always fetched, unresolved,
+        # and handled by the unchanged Python loop.
+        duration_usable = and_(
+            PrintLogEntry.duration_seconds.isnot(None),
+            PrintLogEntry.duration_seconds != 0,
+        )
+        duration_missing = or_(
+            PrintLogEntry.duration_seconds.is_(None),
+            PrintLogEntry.duration_seconds == 0,
+        )
+        hours_expr = PrintLogEntry.duration_seconds * 1.0 / 3600
+        implied_watts_expr = PrintLogEntry.energy_kwh * 1000 / hours_expr
         rows = await db.execute(
             select(
                 PrintLogEntry.energy_kwh,
@@ -205,6 +257,18 @@ class CalculatorInsightsService:
                 PrintLogEntry.printer_id.isnot(None),
                 PrintLogEntry.created_at >= since,
                 PrintLogEntry.status.in_(("completed", *_FAILED_STATUSES)),
+                or_(
+                    and_(
+                        duration_usable,
+                        PrintLogEntry.duration_seconds.between(_MIN_POWER_SECONDS, _MAX_PRINT_SECONDS),
+                        implied_watts_expr.between(_WATTS_BAND_LO, _WATTS_BAND_HI),
+                    ),
+                    and_(
+                        duration_missing,
+                        PrintLogEntry.started_at.isnot(None),
+                        PrintLogEntry.completed_at.isnot(None),
+                    ),
+                ),
             )
         )
 

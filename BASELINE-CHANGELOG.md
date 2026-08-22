@@ -2942,3 +2942,133 @@ fail as expected (the pre-rotation catalogue landed in `_cache`). Reverting the 
 `test_truncated_fetch_serves_the_stale_cache_when_warm` fail as expected (no `RuntimeError` was
 raised, and the partial 1-item list overwrote the 4-item warm cache instead of being discarded
 in favor of it).
+
+## T-074 — 2026-08-22 — user-approved behavior change
+
+T-074: `search_zoho_filaments` (`GET /calculator/zoho-filaments`) and
+`sync_calculator_filaments_from_zoho` (`POST /calculator/filaments/zoho-sync`) each caught
+every exception `fetch_catalogue` could raise — a genuinely unreachable Zoho, T-073's
+truncation-at-`_MAX_PAGES` guard, and `fetch_catalogue`'s own "None of the N active Zoho
+filament items could be mapped" mapping-failure guard (plus any stray `TypeError`/`AttributeError`
+from `_map_item`) — in one `except Exception` block, logged a one-line `logger.warning(...)`
+with no `exc_info`, and always raised `HTTPException(502, "Could not reach Zoho")`. A mapping or
+programming bug inside the catalogue service was therefore indistinguishable, both to the
+caller and in the logs, from Zoho's network genuinely being down, and the log carried no stack
+trace to tell them apart after the fact.
+
+Fixed by giving `backend/app/services/zoho_filaments.py` a dedicated
+`ZohoFilamentMappingError(RuntimeError)`, raised only by the "every active item failed to map"
+guard; the truncation guard (T-073) continues to raise a plain `RuntimeError`, unchanged. Both
+routes now catch `ZohoFilamentMappingError` first — logging at `ERROR` with `exc_info=True` and
+raising `HTTPException(500, "Zoho filament catalogue could not be mapped")` — before falling
+through to the existing `except Exception` branch, which now also logs with `exc_info=True` but
+keeps its `HTTPException(502, "Could not reach Zoho")` detail string unchanged for every other
+failure, including T-073's truncation `RuntimeError`. This is a **behavior change**: a mapping
+failure inside the catalogue service now returns 500 with a different detail instead of the
+previous 502 "Could not reach Zoho". user-approved 2026-08-22: "A mapping failure inside the
+catalogue service would return 500 with a different detail instead of the current 502 'Could not
+reach Zoho'."
+
+`SURFACE.md` moved: `ZohoFilamentMappingError(RuntimeError)` is a new public class in
+`backend/app/services/zoho_filaments.py`, picked up by `gen_surface_calc.sh`'s
+`^(def|class|async def) [a-zA-Z]` grep over that file's "Calculator backend callables" section.
+Regenerated and committed alongside this entry.
+
+Mutation-tested: reverting the `except zoho_filaments.ZohoFilamentMappingError` branch in both
+routes (folding mapping failures back into the generic `except Exception` 502 branch) made
+`test_mapping_failure_is_reported_as_internal_server_error` and
+`test_sync_mapping_failure_returns_500_not_bad_gateway` fail as expected (502 instead of 500) —
+`test_truncated_catalogue_is_still_reported_as_bad_gateway_not_internal_error` and its sync
+counterpart still passed, confirming the truncation path was untouched by the revert. Reverting
+`exc_info=True` on all four `logger.warning`/`logger.error` calls made
+`test_upstream_failure_logs_a_stack_trace`, `test_mapping_failure_is_reported_as_internal_server_error`,
+`test_sync_upstream_failure_returns_502_and_logs_a_stack_trace` and
+`test_sync_mapping_failure_returns_500_not_bad_gateway` all fail as expected (`record.exc_info`
+was `None`). Both mutations were reverted afterward and the full suite re-verified green.
+
+## T-075 (calculator) — 2026-08-22 — user-approved behavior change
+
+Fix-up to the T-075 Zoho price-sync fix (`frontend/src/components/CalculatorSettingsPanels.tsx`),
+after independent verification found the first attempt shipped a third, unapproved user-visible
+change alongside the approved one.
+
+The reported bug: `CalculatorFilamentsPanel`'s `runSync` chunk walk had no `AbortController` and
+its guard/progress lived in local `useState`, so `CalculatorPage` unmounting the panel on a tab
+switch (or any remount) discarded the guard while the walk itself kept running and kept issuing
+chunk POSTs. An operator could tab away and back mid-walk, see an idle "Sync Zoho prices" button
+with no progress, and click it again — starting a second overlapping walk over the same rows.
+
+The first attempt fixed that, but did so by moving the walk's *entire* state — in-flight guard,
+live progress, the completed summary, and any error — into the app-lifetime `QueryClient` cache
+(`gcTime`/`staleTime: Infinity`). That over-fixed it: a completed summary or a failed walk's error
+text then persisted across tab switches **and** page navigation for the rest of the page session,
+with no dismissal path, and a chunk request that never settled (no timeout, no abort) left the
+button disabled for the same unbounded window. The user was shown all three effects and decided:
+keep the guard/progress survival (the reported bug), narrow the summary/error persistence back to
+the pre-fix (BASE) behavior, and add a per-chunk timeout so a stalled request cannot wedge the
+button.
+
+This fix-up:
+- Keeps only the in-flight guard and live `{ done, total }` progress in the shared `QueryClient`
+  cache (`ZOHO_SYNC_PROGRESS_KEY`), unchanged from the first attempt: a remount mid-walk still
+  shows live progress and still refuses to start a second walk (the actually-reported bug stays
+  fixed).
+- **Narrows the completed summary and any sync error back to ordinary component `useState`**,
+  exactly as the panel had them before T-075 shipped. Because `runSync`'s closure belongs to the
+  mount that started it, a walk that ends while its panel is unmounted has nothing to write into a
+  now-defunct closure's setters, so the panel's summary/error simply cannot outlive the mount that
+  is watching them — restoring the invariant "unmount after the walk ends ⇒ next mount shows no
+  summary and no error" without any special-casing. Direct, user-approved consequence, quoted from
+  the brief: "an error that occurs while the panel is unmounted is again not shown on return."
+- Adds a **60-second per-chunk timeout** (`SYNC_CHUNK_TIMEOUT_MS`, via a small `withTimeout`
+  helper that races the chunk request against a `setTimeout` and never touches or aborts the
+  underlying request itself): a chunk that never settles now ends the walk with the same
+  `catch`/`finally` path as any other sync failure — a normal "Sync stopped: sync request timed
+  out" error and a released guard — instead of leaving the button disabled for the rest of the
+  page session. 60 s was chosen against the backend's own budget: `zoho.py`'s
+  `httpx.AsyncClient(timeout=10.0)` bounds each individual Zoho HTTP call, and a chunk only
+  triggers more than one of those when the 10-minute filament-catalogue cache
+  (`zoho_filaments.py`, `_CACHE_TTL`) is cold, in which case `fetch_catalogue` pages the catalogue
+  in up to `_MAX_PAGES` (20) page fetches — a real but rare worst case of several tens of seconds.
+  60 s comfortably covers that case (and any ordinary slow network) without being so tight that a
+  slow-but-healthy sync is misreported as hung. Unmount never aborts the walk — it is only ever
+  ended early by this timeout (or by a genuine request failure/success), so every remaining chunk
+  still gets written even if the panel that started the sync is long gone, exactly as before this
+  fix-up.
+- This is itself a **user-approved behavior change**: quoting the brief, "a Zoho price sync whose
+  chunk request never settles now ends with a sync error and re-enables the button, instead of
+  leaving it disabled for the page session."
+
+No `SURFACE.md` change: `withTimeout` and `SYNC_CHUNK_PROGRESS_KEY`/`ZOHO_SYNC_PROGRESS_KEY` are
+module-scope but not exported; the file's only exports (`CalculatorFilamentsPanel`,
+`CalculatorPrintersPanel`, `CalculatorDefaultsPanel`, `MARGIN_STEPS`) are unchanged.
+
+Tests: updated `CalculatorSettingsPanels.test.tsx`'s "keeps the guard and progress alive across an
+unmount/remount..." test — its guard/progress/second-click assertions are unchanged, but its final
+step no longer expects the completed summary to reappear on the remounted panel once the
+background-continuing walk finishes (that expectation belonged to the reverted design; the
+narrowed design cannot and should not route a finished walk's summary into a different mount's
+state). Replaced "surfaces a sync error after a remount even though it failed while the panel was
+unmounted" (which asserted exactly the unapproved persistence) with "does not surface a sync error
+that happened while the panel was unmounted (narrowed to BASE semantics)", asserting positive
+evidence of a clean remount (`Sync prices` present and enabled) before asserting the error text is
+absent. Added "does not show a completed sync summary after an unmount/remount" (the same
+narrowing for the success path) and "ends a chunk request that never settles with a sync error and
+re-enables the button" (the new timeout, driven entirely by vitest fake timers — `vi.useFakeTimers
+({ shouldAdvanceTime: true })` plus `vi.advanceTimersByTimeAsync`, never `msw`'s `delay()` or a
+wall-clock sleep). No test was deleted.
+
+Mutation-tested: reverting the narrowing (moving `syncSummary`/`syncError` back into a
+session-scoped store instead of component `useState`) made "does not show a completed sync summary
+after an unmount/remount" fail as expected (`expected <p>...9 updated...</p> to be null`, i.e. the
+stale summary reappeared). Reverting the timeout (calling
+`api.syncCalculatorFilamentsFromZoho` directly instead of through `withTimeout`) made "ends a chunk
+request that never settles with a sync error and re-enables the button" fail as expected (the
+`findByText(/sync stopped/i)` wait timed out — the walk never ended). Both mutations were reverted
+afterward; `CalculatorSettingsPanels.test.tsx` re-verified at 51/51 passing, 3 consecutive clean
+runs.
+
+Frontend: `npx tsc -b --noEmit` clean, `npx eslint .` clean. `tools/coverage_calc.sh frontend`:
+statements 90.69% (985/1086), at/above the 90.58% (972/1073) ratchet (two unrelated documented
+load flakes, `PrintModal.test.tsx` and `StatsPageUserFilter1894.test.tsx`, both re-verified passing
+alone). `tools/snapshot.py verify`: 10/10, nothing moved.

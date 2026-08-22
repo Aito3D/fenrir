@@ -1,5 +1,7 @@
 """Tests for the chunked Zoho price sync."""
 
+import logging
+
 import pytest
 
 from backend.app.services import zoho_filaments
@@ -419,3 +421,84 @@ async def test_sync_is_unavailable_when_zoho_is_not_configured(async_client, mon
     monkeypatch.setattr(zoho_service, "is_configured", unconfigured)
     resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
     assert resp.status_code == 503
+
+
+# --- T-074: distinguish an unreachable Zoho from a mapping bug ---------------
+
+
+@pytest.mark.asyncio
+async def test_sync_upstream_failure_returns_502_and_logs_a_stack_trace(async_client, monkeypatch, caplog):
+    async def configured(db):
+        return True
+
+    async def boom(db, *, refresh=True):
+        raise RuntimeError("zoho down")
+
+    monkeypatch.setattr(zoho_service, "is_configured", configured)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", boom)
+
+    with caplog.at_level(logging.WARNING, logger="backend.app.api.routes.calculator"):
+        resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
+
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == "Could not reach Zoho"
+    records = [r for r in caplog.records if r.name == "backend.app.api.routes.calculator"]
+    assert records, "expected the route to log the failure"
+    assert records[-1].exc_info is not None
+
+
+@pytest.mark.asyncio
+async def test_sync_mapping_failure_returns_500_not_bad_gateway(async_client, monkeypatch, caplog):
+    """Same distinction as the search endpoint (T-074): a mapping/programming
+    bug inside fetch_catalogue must not be told to the operator as "Zoho is
+    unreachable"."""
+
+    async def configured(db):
+        return True
+
+    async def boom(db, *, refresh=True):
+        raise zoho_filaments.ZohoFilamentMappingError("none of the 2 active items could be mapped")
+
+    monkeypatch.setattr(zoho_service, "is_configured", configured)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", boom)
+
+    with caplog.at_level(logging.ERROR, logger="backend.app.api.routes.calculator"):
+        resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] != "Could not reach Zoho"
+    records = [r for r in caplog.records if r.name == "backend.app.api.routes.calculator"]
+    assert records, "expected the route to log the failure"
+    assert records[-1].exc_info is not None
+
+
+@pytest.mark.asyncio
+async def test_sync_truncated_catalogue_is_still_reported_as_bad_gateway_not_internal_error(async_client, monkeypatch):
+    """T-073's approved contract survives T-074: a catalogue truncated at
+    _MAX_PAGES still returns 502 from the sync route, not the new 500."""
+
+    async def configured(db):
+        return True
+
+    async def always_more_page(db, *, category, page, per_page):
+        item = {
+            "item_id": f"item-{page}",
+            "name": "Bambu Lab - PLA - X - 1.75mm - 1kg",
+            "sku": "SKU",
+            "brand": "Bambu Lab",
+            "status": "active",
+            "cf_nature_du_produit": "Filaments",
+            "cf_prix_dealer_usd_unformatted": 100.0,
+        }
+        return [item], True  # never signals has_more=False
+
+    monkeypatch.setattr(zoho_service, "is_configured", configured)
+    monkeypatch.setattr(zoho_service, "list_items_page", always_more_page)
+    monkeypatch.setattr(zoho_filaments, "_MAX_PAGES", 1)
+    zoho_filaments.reset_cache()
+    try:
+        resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "Could not reach Zoho"
+    finally:
+        zoho_filaments.reset_cache()

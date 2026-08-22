@@ -433,6 +433,56 @@ type FilamentSortKey = 'name' | 'brand' | 'material' | 'cost' | 'sale' | 'margin
  *  request timeout even when every row needs a Zoho lookup. */
 const SYNC_CHUNK_SIZE = 25;
 
+/** Per-chunk request budget (T-075). The backend's own Zoho calls are capped
+ *  at 10 s each (see `zoho.py`'s `httpx.AsyncClient(timeout=10.0)`), and a
+ *  chunk only ever triggers more than one of those when the 10-minute
+ *  catalogue cache is cold, in which case `fetch_catalogue` pages it in up to
+ *  `_MAX_PAGES` (20) page fetches — a real but rare worst case of a few tens
+ *  of seconds. 60 s comfortably covers that case (and any ordinary slow
+ *  network) while still bounding how long a chunk that will genuinely never
+ *  settle can wedge the sync button. Ending on a timeout is exactly the
+ *  existing failure path below — same catch, same guard release.
+ */
+const SYNC_CHUNK_TIMEOUT_MS = 60_000;
+
+/** Rejects with a timeout error if `promise` has not settled within `ms`,
+ *  otherwise resolves/rejects exactly as `promise` does. Never touches
+ *  `promise` itself — a timeout does not cancel or abort the underlying
+ *  request, it only stops the walk from waiting on it forever. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('sync request timed out')), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+/** Where the walk's in-flight guard/progress lives. CalculatorPage
+ *  mounts/unmounts this panel per tab switch, but the walk itself is a plain
+ *  async loop that keeps running regardless — parking the guard in the
+ *  QueryClient's cache instead of component state means a remount reattaches
+ *  to whatever is already there rather than losing it, and a second mount
+ *  cannot start an overlapping walk. The QueryClient itself is created once
+ *  for the app's lifetime (App.tsx), so this is effectively session-scoped,
+ *  not component-scoped.
+ *
+ *  The completed summary and any error are deliberately NOT kept here: they
+ *  live in this component's own state below, exactly as before T-075, so a
+ *  walk that ended while the panel was unmounted reports nothing on remount
+ *  and a fresh mount always starts clean — only the live progress and the
+ *  "a walk is running" guard survive a remount. */
+const ZOHO_SYNC_PROGRESS_KEY = ['calculatorFilamentZohoSyncProgress'] as const;
+
+type ZohoSyncProgress = { done: number; total: number } | null;
+
 export function CalculatorFilamentsPanel({
   selectedFilamentId,
   canUpdate,
@@ -477,7 +527,23 @@ export function CalculatorFilamentsPanel({
   });
   const zohoConfigured = zohoStatus?.configured ?? false;
 
-  const [syncProgress, setSyncProgress] = useState<{ done: number; total: number } | null>(null);
+  // Backed by the QueryClient cache (see ZOHO_SYNC_PROGRESS_KEY above), not
+  // useState, so this survives the panel unmounting mid-walk. `queryFn` only
+  // matters for the very first observer in the app session — after that,
+  // every update is a direct `setQueryData` push from `runSync` below, and
+  // `staleTime`/`gcTime: Infinity` keep React Query from ever refetching or
+  // discarding it on its own.
+  const { data: syncProgress = null } = useQuery<ZohoSyncProgress>({
+    queryKey: ZOHO_SYNC_PROGRESS_KEY,
+    queryFn: () => queryClient.getQueryData<ZohoSyncProgress>(ZOHO_SYNC_PROGRESS_KEY) ?? null,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+
+  // Unlike the guard/progress above, the completed summary and any error are
+  // ordinary component state: a walk that finishes (or fails) while the panel
+  // is unmounted has nothing listening for it, and a remount starts clean —
+  // matching the panel's pre-T-075 behavior for these two.
   const [syncSummary, setSyncSummary] = useState<CalculatorFilamentSyncResult | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
 
@@ -487,19 +553,29 @@ export function CalculatorFilamentsPanel({
   // Paging by id rather than offset means a filament deleted mid-run cannot
   // shift the remaining rows and cause one to be silently skipped.
   const runSync = async () => {
+    // Belt and braces: the button is already disabled while a walk is live,
+    // but this is what actually stops a second walk from starting, from any
+    // mount — the button's `disabled` prop is just what makes that visible.
+    if (queryClient.getQueryData<ZohoSyncProgress>(ZOHO_SYNC_PROGRESS_KEY)) return;
     setSyncSummary(null);
     setSyncError(null);
     // Seed the denominator from what we already know is linked, so the button
     // never sits at "0 / 0" for the seconds the first chunk takes; the server's
     // own COUNT takes over from that chunk onwards.
-    setSyncProgress({ done: 0, total: filaments.filter((f) => f.zoho_item_id).length });
+    queryClient.setQueryData<ZohoSyncProgress>(ZOHO_SYNC_PROGRESS_KEY, {
+      done: 0,
+      total: filaments.filter((f) => f.zoho_item_id).length,
+    });
     const totals = { processed: 0, total: 0, updated: 0, unchanged: 0, skipped_no_price: 0, missing: 0 };
     let afterId: number | null = 0;
     try {
       while (afterId !== null) {
-        const chunk: CalculatorFilamentSyncResult = await api.syncCalculatorFilamentsFromZoho(
-          afterId,
-          SYNC_CHUNK_SIZE,
+        // T-075: a chunk that never settles (network black hole — nothing
+        // guards against that on the browser's own `fetch`) would otherwise
+        // leave this loop, and therefore the guard above, stuck forever.
+        const chunk: CalculatorFilamentSyncResult = await withTimeout(
+          api.syncCalculatorFilamentsFromZoho(afterId, SYNC_CHUNK_SIZE),
+          SYNC_CHUNK_TIMEOUT_MS,
         );
         totals.processed += chunk.processed;
         totals.updated += chunk.updated;
@@ -510,7 +586,10 @@ export function CalculatorFilamentsPanel({
         // `total` is a fresh COUNT on every chunk, so rows added or deleted
         // mid-walk make it drift. Never let the denominator fall behind what
         // has already been processed — "50 / 12" would read as a bug.
-        setSyncProgress({ done: totals.processed, total: Math.max(chunk.total, totals.processed) });
+        queryClient.setQueryData<ZohoSyncProgress>(ZOHO_SYNC_PROGRESS_KEY, {
+          done: totals.processed,
+          total: Math.max(chunk.total, totals.processed),
+        });
         // A last chunk can legitimately report processed: 0 — its lookahead
         // sentinel row was deleted in between. Only next_after_id ends the walk.
         const prev = afterId;
@@ -528,12 +607,14 @@ export function CalculatorFilamentsPanel({
       setSyncSummary({ ...totals, next_after_id: null });
       queryClient.invalidateQueries({ queryKey: ['calculatorFilaments'] });
     } catch (error) {
-      setSyncError(error instanceof Error ? error.message : String(error));
       // The chunks that did land are already committed server-side; refetch so
       // the table shows the partial result instead of the pre-sync prices.
+      setSyncError(error instanceof Error ? error.message : String(error));
       queryClient.invalidateQueries({ queryKey: ['calculatorFilaments'] });
     } finally {
-      setSyncProgress(null);
+      // Always releases the guard — success, a reported failure, or a chunk
+      // that timed out all end the walk the same way.
+      queryClient.setQueryData<ZohoSyncProgress>(ZOHO_SYNC_PROGRESS_KEY, null);
     }
   };
 

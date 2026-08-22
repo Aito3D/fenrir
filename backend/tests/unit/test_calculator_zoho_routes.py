@@ -1,5 +1,6 @@
 """Tests for the calculator's Zoho filament search endpoint."""
 
+import logging
 from unittest.mock import patch
 
 import pytest
@@ -97,6 +98,93 @@ async def test_upstream_failure_is_reported_as_bad_gateway(async_client, monkeyp
     monkeypatch.setattr(zoho_filaments, "fetch_catalogue", boom)
     resp = await async_client.get("/api/v1/calculator/zoho-filaments", params={"q": "pla"})
     assert resp.status_code == 502
+
+
+# --- T-074: distinguish an unreachable Zoho from a mapping bug ---------------
+
+
+@pytest.mark.asyncio
+async def test_upstream_failure_logs_a_stack_trace(async_client, monkeypatch, caplog):
+    """The 502 path must log with exc_info=True — a one-line warning with no
+    stack is the only trace an operator gets otherwise."""
+
+    async def configured(db):
+        return True
+
+    async def boom(db, *, refresh=True):
+        raise RuntimeError("zoho down")
+
+    monkeypatch.setattr(zoho_service, "is_configured", configured)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", boom)
+
+    with caplog.at_level(logging.WARNING, logger="backend.app.api.routes.calculator"):
+        resp = await async_client.get("/api/v1/calculator/zoho-filaments", params={"q": "pla"})
+
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == "Could not reach Zoho"
+    records = [r for r in caplog.records if r.name == "backend.app.api.routes.calculator"]
+    assert records, "expected the route to log the failure"
+    assert records[-1].exc_info is not None
+
+
+@pytest.mark.asyncio
+async def test_mapping_failure_is_reported_as_internal_server_error(async_client, monkeypatch, caplog):
+    """A ZohoFilamentMappingError (a programming/mapping bug, not an
+    unreachable Zoho) must surface as a 500 with a detail distinct from the
+    "Could not reach Zoho" 502 — folding it into the latter tells the
+    operator the network is down when Zoho is actually fine."""
+
+    async def configured(db):
+        return True
+
+    async def boom(db, *, refresh=True):
+        raise zoho_filaments.ZohoFilamentMappingError("none of the 3 active items could be mapped")
+
+    monkeypatch.setattr(zoho_service, "is_configured", configured)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", boom)
+
+    with caplog.at_level(logging.ERROR, logger="backend.app.api.routes.calculator"):
+        resp = await async_client.get("/api/v1/calculator/zoho-filaments", params={"q": "pla"})
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] != "Could not reach Zoho"
+    records = [r for r in caplog.records if r.name == "backend.app.api.routes.calculator"]
+    assert records, "expected the route to log the failure"
+    assert records[-1].exc_info is not None
+
+
+@pytest.mark.asyncio
+async def test_truncated_catalogue_is_still_reported_as_bad_gateway_not_internal_error(async_client, monkeypatch):
+    """T-073's approved contract: a catalogue truncated at _MAX_PAGES must
+    keep returning 502, never get folded into T-074's new 500 branch. Runs
+    through the REAL fetch_catalogue (not a route-level stub) so this proves
+    the actual exception _MAX_PAGES raises today is still routed to 502."""
+
+    async def configured(db):
+        return True
+
+    async def always_more_page(db, *, category, page, per_page):
+        item = {
+            "item_id": f"item-{page}",
+            "name": "Bambu Lab - PLA - X - 1.75mm - 1kg",
+            "sku": "SKU",
+            "brand": "Bambu Lab",
+            "status": "active",
+            "cf_nature_du_produit": "Filaments",
+            "cf_prix_dealer_usd_unformatted": 100.0,
+        }
+        return [item], True  # never signals has_more=False
+
+    monkeypatch.setattr(zoho_service, "is_configured", configured)
+    monkeypatch.setattr(zoho_service, "list_items_page", always_more_page)
+    monkeypatch.setattr(zoho_filaments, "_MAX_PAGES", 1)
+    zoho_filaments.reset_cache()
+    try:
+        resp = await async_client.get("/api/v1/calculator/zoho-filaments", params={"q": "pla"})
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "Could not reach Zoho"
+    finally:
+        zoho_filaments.reset_cache()
 
 
 class TestZohoFilamentSearchRequiresCalculatorUpdate:

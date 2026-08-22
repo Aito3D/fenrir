@@ -25,6 +25,19 @@ _WEIGHT_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*kg\b", re.IGNORECASE)
 
 _SEGMENT_SEPARATOR = " - "
 
+
+class ZohoFilamentMappingError(RuntimeError):
+    """Every active item in a non-empty batch failed to map into a
+    :class:`FilamentProduct`.
+
+    Distinct from the plain ``RuntimeError`` a truncated or unreachable fetch
+    raises (T-073's "Could not reach Zoho" 502 contract): this one signals a
+    mapping/programming bug in ``_map_item`` rather than an upstream problem,
+    so callers such as ``backend/app/api/routes/calculator.py`` can surface it
+    as a 500 instead of folding it into "Zoho is unreachable" (T-074).
+    """
+
+
 FILAMENT_CATEGORY = "Filaments"
 _PAGE_SIZE = 200
 _MAX_PAGES = 20  # 256 items today; a runaway-loop backstop, not a real limit
@@ -237,7 +250,9 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
                 # and NONE of them mapped, which is a mapping failure, not an
                 # empty catalogue. Route it through the same stale-cache-or-raise
                 # handling as a fetch failure.
-                raise RuntimeError(f"None of the {len(active_items)} active Zoho filament items could be mapped")
+                raise ZohoFilamentMappingError(
+                    f"None of the {len(active_items)} active Zoho filament items could be mapped"
+                )
         except Exception:
             if _cache is not None:
                 logger.warning("Zoho filament catalogue refresh failed; serving the cached copy", exc_info=True)

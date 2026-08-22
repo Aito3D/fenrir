@@ -42,6 +42,7 @@ async def update_calculator_printer(
 class CalculatorInsightsService:
 class FilamentProduct:
 class ParsedName:
+class ZohoFilamentMappingError(RuntimeError):
 def derive_sale_price(cost_per_kg: float, margin_pct: float) -> float:
 def parse_filament_name(name: str) -> ParsedName:
 def reset_cache() -> None:
