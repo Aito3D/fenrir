@@ -1425,7 +1425,8 @@ describe('FileManagerPage', () => {
   // when a real name match was found.
   describe('open in calculator', () => {
     const calcFilaments = [
-      { id: 1, name: 'PLA basique', brand: '', material: 'PLA', cost_per_kg: 3731, sale_price_per_kg: 5597, difficulty_pct: 150 },
+      // sale_price_per_kg is derived server-side: round(3731 * 1.50, 2).
+      { id: 1, name: 'PLA basique', brand: '', material: 'PLA', cost_per_kg: 3731, sale_price_per_kg: 5596.5, margin_pct: 50, difficulty_pct: 150 },
     ];
     const calcPrinters = [
       { id: 1, name: 'H2S', purchase_price: 347000, lifetime_years: 2, daily_usage_hours: 5, power_watts: 400, repair_rate_pct: 30 },

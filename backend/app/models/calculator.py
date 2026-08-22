@@ -18,8 +18,20 @@ class CalculatorFilament(Base):
     brand: Mapped[str] = mapped_column(String(100), default="")
     material: Mapped[str] = mapped_column(String(100), default="")
     cost_per_kg: Mapped[float] = mapped_column(Float)
+    # Derived output, never user input: always cost_per_kg * (1 + margin_pct/100).
+    # Kept as a stored column because pricing.ts, archives and quotes all read it.
     sale_price_per_kg: Mapped[float] = mapped_column(Float)
+    margin_pct: Mapped[float] = mapped_column(Float, default=50.0)
     difficulty_pct: Mapped[float] = mapped_column(Float, default=100.0)  # e.g. 150 = 1.5× for abrasive filaments
+    # Zoho link. NULL zoho_item_id means a hand-entered filament that sync skips.
+    zoho_item_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Denormalized so the panel can name the linked product without a Zoho call.
+    zoho_item_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    zoho_sku: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Divisor used to turn the per-spool dealer price into a per-kg cost. Stored
+    # so a re-sync reproduces the same arithmetic even if the Zoho name changes.
+    spool_weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    zoho_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

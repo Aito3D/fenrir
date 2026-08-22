@@ -274,8 +274,9 @@ describe('StatsPage', () => {
 
     it('sums the calculator filament line over slim entries when configured', async () => {
       const calcFilaments = [
-        { id: 1, name: 'PLA basic', material: 'PLA', cost_per_kg: 15, sale_price_per_kg: 20, difficulty_pct: 100 },
-        { id: 2, name: 'PETG basic', material: 'PETG', cost_per_kg: 22, sale_price_per_kg: 30, difficulty_pct: 100 },
+        // sale_price_per_kg is derived server-side: round(cost_per_kg * (1 + margin_pct / 100), 2).
+        { id: 1, name: 'PLA basic', material: 'PLA', cost_per_kg: 15, sale_price_per_kg: 20, margin_pct: 33.33, difficulty_pct: 100 },
+        { id: 2, name: 'PETG basic', material: 'PETG', cost_per_kg: 22, sale_price_per_kg: 30, margin_pct: 36.36, difficulty_pct: 100 },
       ];
       const calcDefaults = {
         id: 1,

@@ -14,6 +14,9 @@ interface NumberFieldProps {
   min?: string;
   max?: string;
   required?: boolean;
+  /** Renders the value without letting it be typed over — for a field the
+   *  form derives (printing cost) or another system owns (a Zoho-linked cost). */
+  readOnly?: boolean;
   /** Unit suffix rendered inside the field ("g", "min", "$"), so the unit
    *  stays in eyeline while typing instead of living in the label. */
   unit?: string;
@@ -34,6 +37,7 @@ export function NumberField({
   min = '0',
   max,
   required,
+  readOnly,
   unit,
 }: NumberFieldProps) {
   const inputProps = {
@@ -45,6 +49,7 @@ export function NumberField({
     min,
     max,
     required,
+    readOnly,
     value,
     placeholder,
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value),
@@ -70,12 +75,17 @@ export function NumberField({
         >
           <input
             {...inputProps}
-            className="w-full min-w-0 px-3 py-2 bg-transparent text-white placeholder-bambu-gray no-spinner focus:outline-none"
+            className={`w-full min-w-0 px-3 py-2 bg-transparent text-white placeholder-bambu-gray no-spinner focus:outline-none ${
+              readOnly ? 'opacity-70 cursor-default' : ''
+            }`}
           />
           <span className="select-none pr-3 text-xs text-bambu-gray whitespace-nowrap">{unit}</span>
         </div>
       ) : (
-        <input {...inputProps} className={error ? inputErrorCls : inputCls} />
+        <input
+          {...inputProps}
+          className={`${error ? inputErrorCls : inputCls} ${readOnly ? 'opacity-70 cursor-default' : ''}`}
+        />
       )}
       {error && <p className="text-xs text-status-error mt-1">{error}</p>}
     </div>

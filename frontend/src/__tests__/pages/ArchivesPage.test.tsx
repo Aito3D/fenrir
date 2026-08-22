@@ -543,7 +543,8 @@ describe('ArchivesPage', () => {
 
   describe('suggested price from the calculator', () => {
     const calcFilaments = [
-      { id: 1, name: 'PLA basique', brand: '', material: 'PLA basique', cost_per_kg: 3731, sale_price_per_kg: 5597, difficulty_pct: 150 },
+      // sale_price_per_kg is derived server-side: round(3731 * 1.50, 2).
+      { id: 1, name: 'PLA basique', brand: '', material: 'PLA basique', cost_per_kg: 3731, sale_price_per_kg: 5596.5, margin_pct: 50, difficulty_pct: 150 },
     ];
     const calcPrinters = [
       {

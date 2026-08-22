@@ -6,7 +6,7 @@ FILAMENT_PAYLOAD = {
     "brand": "SUNLU",
     "material": "PA6-CF",
     "cost_per_kg": 3731.0,
-    "sale_price_per_kg": 5597.0,
+    "margin_pct": 50.0,
     "difficulty_pct": 150.0,
 }
 PRINTER_PAYLOAD = {
@@ -35,7 +35,7 @@ class TestCalculatorFilaments:
         assert created["material"] == "PA6-CF"
         assert created["name"] == "SUNLU PA6-CF"  # derived display label
         assert created["cost_per_kg"] == 3731.0
-        assert created["sale_price_per_kg"] == 5597.0
+        assert created["sale_price_per_kg"] == 5596.5
         assert created["difficulty_pct"] == 150.0
 
         resp = await async_client.get("/api/v1/calculator/filaments/")
@@ -71,13 +71,13 @@ class TestCalculatorFilaments:
 
     @pytest.mark.asyncio
     async def test_update(self, async_client):
+        # sale_price_per_kg is server-derived and no longer patchable directly;
+        # exercise a field that is still a plain settable column.
         created = (await async_client.post("/api/v1/calculator/filaments/", json=FILAMENT_PAYLOAD)).json()
-        resp = await async_client.patch(
-            f"/api/v1/calculator/filaments/{created['id']}", json={"sale_price_per_kg": 6000.0}
-        )
+        resp = await async_client.patch(f"/api/v1/calculator/filaments/{created['id']}", json={"difficulty_pct": 200.0})
         assert resp.status_code == 200
         updated = resp.json()
-        assert updated["sale_price_per_kg"] == 6000.0
+        assert updated["difficulty_pct"] == 200.0
         assert updated["cost_per_kg"] == 3731.0  # unchanged
 
     @pytest.mark.asyncio
@@ -118,6 +118,138 @@ class TestCalculatorFilaments:
     async def test_delete_missing_returns_404(self, async_client):
         resp = await async_client.delete("/api/v1/calculator/filaments/9999")
         assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_sale_price_is_derived_from_margin(self, async_client):
+        resp = await async_client.post(
+            "/api/v1/calculator/filaments/",
+            json={"brand": "SUNLU", "material": "PETG", "cost_per_kg": 1000.0, "margin_pct": 75.0},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["sale_price_per_kg"] == 1750.0
+        assert resp.json()["margin_pct"] == 75.0
+
+    @pytest.mark.asyncio
+    async def test_client_supplied_sale_price_is_ignored(self, async_client):
+        """Printing cost is server-derived; a stale client value must not win."""
+        resp = await async_client.post(
+            "/api/v1/calculator/filaments/",
+            json={
+                "brand": "SUNLU",
+                "material": "PETG",
+                "cost_per_kg": 1000.0,
+                "margin_pct": 50.0,
+                "sale_price_per_kg": 99999.0,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["sale_price_per_kg"] == 1500.0
+
+    @pytest.mark.asyncio
+    async def test_patching_cost_recomputes_sale_price(self, async_client):
+        created = (
+            await async_client.post(
+                "/api/v1/calculator/filaments/",
+                json={"brand": "SUNLU", "material": "PETG", "cost_per_kg": 1000.0, "margin_pct": 50.0},
+            )
+        ).json()
+        resp = await async_client.patch(f"/api/v1/calculator/filaments/{created['id']}", json={"cost_per_kg": 2000.0})
+        assert resp.status_code == 200
+        assert resp.json()["sale_price_per_kg"] == 3000.0
+
+    @pytest.mark.asyncio
+    async def test_patching_margin_recomputes_sale_price(self, async_client):
+        created = (
+            await async_client.post(
+                "/api/v1/calculator/filaments/",
+                json={"brand": "SUNLU", "material": "PETG", "cost_per_kg": 1000.0, "margin_pct": 50.0},
+            )
+        ).json()
+        resp = await async_client.patch(f"/api/v1/calculator/filaments/{created['id']}", json={"margin_pct": 0.0})
+        assert resp.status_code == 200
+        assert resp.json()["sale_price_per_kg"] == 1000.0
+        assert resp.json()["margin_pct"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_zoho_link_round_trips(self, async_client):
+        resp = await async_client.post(
+            "/api/v1/calculator/filaments/",
+            json={
+                "brand": "Bambu Lab",
+                "material": "ABS-GF",
+                "cost_per_kg": 1866.0,
+                "margin_pct": 25.0,
+                "zoho_item_id": "66407000008022673",
+                "zoho_item_name": "Bambu Lab - ABS-GF - Bleu (Blue) - 1.75mm - 1kg",
+                "zoho_sku": "B50-B0-1.75-1000-SPL",
+                "spool_weight_kg": 1.0,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["zoho_item_id"] == "66407000008022673"
+        assert body["zoho_item_name"] == "Bambu Lab - ABS-GF - Bleu (Blue) - 1.75mm - 1kg"
+        assert body["zoho_sku"] == "B50-B0-1.75-1000-SPL"
+        assert body["spool_weight_kg"] == 1.0
+        assert body["sale_price_per_kg"] == 2332.5
+
+    @pytest.mark.asyncio
+    async def test_unlinking_clears_every_zoho_column(self, async_client):
+        created = (
+            await async_client.post(
+                "/api/v1/calculator/filaments/",
+                json={
+                    "brand": "Bambu Lab",
+                    "material": "ABS-GF",
+                    "cost_per_kg": 1866.0,
+                    "margin_pct": 25.0,
+                    "zoho_item_id": "66407000008022673",
+                    "zoho_item_name": "Bambu Lab - ABS-GF - Bleu (Blue) - 1.75mm - 1kg",
+                    "zoho_sku": "B50-B0-1.75-1000-SPL",
+                    "spool_weight_kg": 1.0,
+                },
+            )
+        ).json()
+        resp = await async_client.patch(
+            f"/api/v1/calculator/filaments/{created['id']}",
+            json={
+                "zoho_item_id": None,
+                "zoho_item_name": None,
+                "zoho_sku": None,
+                "spool_weight_kg": None,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["zoho_item_id"] is None
+        assert resp.json()["zoho_sku"] is None
+
+    @pytest.mark.asyncio
+    async def test_zero_spool_weight_is_rejected(self, async_client):
+        """The UI must not be able to submit it; the API is the backstop."""
+        resp = await async_client.post(
+            "/api/v1/calculator/filaments/",
+            json={**FILAMENT_PAYLOAD, "zoho_item_id": "1", "spool_weight_kg": 0},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_seeded_example_filament_satisfies_the_derived_sale_invariant(self, async_client):
+        """A fresh install must not ship a row that already breaks the invariant.
+
+        The seed writes ``sale_price_per_kg`` directly (it builds the ORM object
+        rather than going through the create route), so nothing else enforces
+        ``sale == round(cost * (1 + margin/100), 2)`` for it. 3731 at the
+        default 50% margin is 5596.5, not the 5597 that was originally typed.
+        """
+        from backend.app.api.routes.calculator import derive_sale_price
+        from backend.app.core.database import seed_calculator_defaults
+
+        await seed_calculator_defaults()
+
+        rows = (await async_client.get("/api/v1/calculator/filaments/")).json()
+        assert rows, "the seed should have created the example filament"
+        for row in rows:
+            assert row["sale_price_per_kg"] == derive_sale_price(row["cost_per_kg"], row["margin_pct"])
 
 
 class TestCalculatorPrinters:

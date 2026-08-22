@@ -3763,8 +3763,17 @@ export interface CalculatorFilament {
   brand: string;
   material: string;
   cost_per_kg: number;
+  /** Derived server-side: cost_per_kg * (1 + margin_pct / 100). Never sent on write. */
   sale_price_per_kg: number;
+  margin_pct: number;
   difficulty_pct: number;
+  /** null for a hand-entered filament; the Zoho sync skips those. */
+  zoho_item_id: string | null;
+  zoho_item_name: string | null;
+  zoho_sku: string | null;
+  /** Divisor used to turn the per-spool dealer price into a per-kg cost. */
+  spool_weight_kg: number | null;
+  zoho_synced_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -3773,11 +3782,44 @@ export interface CalculatorFilamentCreate {
   brand: string;
   material: string;
   cost_per_kg: number;
-  sale_price_per_kg: number;
+  margin_pct: number;
   difficulty_pct: number;
+  zoho_item_id?: string | null;
+  zoho_item_name?: string | null;
+  zoho_sku?: string | null;
+  spool_weight_kg?: number | null;
 }
 
 export type CalculatorFilamentUpdate = Partial<CalculatorFilamentCreate>;
+
+/** A Zoho product in the Filaments category, offered in the add-filament search. */
+export interface ZohoFilamentProduct {
+  item_id: string;
+  name: string;
+  sku: string;
+  brand: string;
+  material: string;
+  colour: string;
+  spool_weight_kg: number;
+  /** True when the item name carried no weight and 1 kg was assumed. */
+  weight_inferred: boolean;
+  dealer_price: number;
+  cost_per_kg: number;
+  /** False when the Zoho dealer price is 0; cost must not be filled from it. */
+  has_price: boolean;
+}
+
+/** Outcome of one sync chunk. The four outcome counts sum to `processed`. */
+export interface CalculatorFilamentSyncResult {
+  processed: number;
+  total: number;
+  updated: number;
+  unchanged: number;
+  skipped_no_price: number;
+  missing: number;
+  /** Pass as `after_id` for the next chunk; null when the last chunk is done. */
+  next_after_id: number | null;
+}
 
 export interface CalculatorPrinter {
   id: number;
@@ -7277,6 +7319,15 @@ export const api = {
     }),
   deleteCalculatorFilament: (id: number) =>
     request<{ message: string }>(`/calculator/filaments/${id}`, { method: 'DELETE' }),
+  searchZohoFilaments: (q: string, limit = 25) =>
+    request<ZohoFilamentProduct[]>(
+      `/calculator/zoho-filaments?q=${encodeURIComponent(q)}&limit=${limit}`,
+    ),
+  syncCalculatorFilamentsFromZoho: (afterId: number, limit: number) =>
+    request<CalculatorFilamentSyncResult>('/calculator/filaments/zoho-sync', {
+      method: 'POST',
+      body: JSON.stringify({ after_id: afterId, limit }),
+    }),
   getCalculatorPrinters: () => request<CalculatorPrinter[]>('/calculator/printers/'),
   createCalculatorPrinter: (data: CalculatorPrinterCreate) =>
     request<CalculatorPrinter>('/calculator/printers/', {

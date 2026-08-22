@@ -1,9 +1,10 @@
 """API routes for the 3D print pricing calculator (filaments, printers, defaults)."""
 
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,13 +18,18 @@ from backend.app.schemas.calculator import (
     CalculatorDefaultsUpdate,
     CalculatorFilamentCreate,
     CalculatorFilamentResponse,
+    CalculatorFilamentSyncRequest,
+    CalculatorFilamentSyncResponse,
     CalculatorFilamentUpdate,
     CalculatorInsightsResponse,
     CalculatorPrinterCreate,
     CalculatorPrinterResponse,
     CalculatorPrinterUpdate,
+    ZohoFilamentProduct,
 )
+from backend.app.services import zoho_filaments
 from backend.app.services.calculator_insights import calculator_insights_service
+from backend.app.services.zoho import zoho_service
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +42,21 @@ router = APIRouter(prefix="/calculator", tags=["calculator"])
 def _filament_display_name(brand: str, material: str) -> str:
     """Display label stored in the ``name`` column, derived from brand + material."""
     return f"{brand.strip()} {material.strip()}".strip()
+
+
+# Fields the UI is allowed to null out explicitly; everything else treats an
+# explicit JSON null as "leave unchanged" because no other column is nullable.
+_NULLABLE_FILAMENT_FIELDS = frozenset({"zoho_item_id", "zoho_item_name", "zoho_sku", "spool_weight_kg"})
+
+
+def derive_sale_price(cost_per_kg: float, margin_pct: float) -> float:
+    """The printing cost per kg shown to the user.
+
+    The single place this arithmetic lives — the create route, the patch route
+    and the Zoho sync all call it, so the stored invariant
+    ``sale_price_per_kg == cost_per_kg * (1 + margin_pct/100)`` cannot drift.
+    """
+    return round(cost_per_kg * (1 + margin_pct / 100.0), 2)
 
 
 @router.get("/filaments/", response_model=list[CalculatorFilamentResponse])
@@ -55,7 +76,11 @@ async def create_calculator_filament(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_UPDATE),
 ):
     """Create a calculator filament."""
-    filament = CalculatorFilament(**data.model_dump(), name=_filament_display_name(data.brand, data.material))
+    filament = CalculatorFilament(
+        **data.model_dump(),
+        name=_filament_display_name(data.brand, data.material),
+        sale_price_per_kg=derive_sale_price(data.cost_per_kg, data.margin_pct),
+    )
     db.add(filament)
     await db.commit()
     await db.refresh(filament)
@@ -76,11 +101,29 @@ async def update_calculator_filament(
     if not filament:
         raise HTTPException(status_code=404, detail="Calculator filament not found")
 
-    # exclude_none: no column is nullable, so an explicit JSON null means
-    # "leave unchanged" rather than crashing the name derivation below.
-    for key, value in update_data.model_dump(exclude_unset=True, exclude_none=True).items():
+    linked_item_id_before = filament.zoho_item_id
+
+    # exclude_unset: an absent key means "leave unchanged". An explicit null is
+    # only honoured for the Zoho columns, which is how unlinking works; for the
+    # non-nullable columns a null would crash the name derivation below.
+    for key, value in update_data.model_dump(exclude_unset=True).items():
+        if value is None and key not in _NULLABLE_FILAMENT_FIELDS:
+            continue
         setattr(filament, key, value)
+
+    # The sync stamp belongs to the link it was made under, so unlinking (or
+    # re-pointing the row at a different product) clears it. The settings panel
+    # reads a non-null zoho_synced_at as proof the cost came from a Zoho dealer
+    # price and reconstructs that price as cost * spool_weight — a stamp left
+    # over from a PREVIOUS link would make a hand-typed cost read-only and let
+    # a spool-weight correction silently rescale it. Enforced server-side
+    # rather than by asking the client for a fifth explicit null
+    # (zoho_synced_at is deliberately absent from the update schema: only the
+    # sync may ever set it), so no future caller can forget it.
+    if filament.zoho_item_id != linked_item_id_before:
+        filament.zoho_synced_at = None
     filament.name = _filament_display_name(filament.brand, filament.material)
+    filament.sale_price_per_kg = derive_sale_price(filament.cost_per_kg, filament.margin_pct)
 
     await db.commit()
     await db.refresh(filament)
@@ -104,6 +147,129 @@ async def delete_calculator_filament(
     await db.commit()
     logger.info("Deleted calculator filament: %s", name)
     return {"message": f"Filament '{name}' deleted"}
+
+
+@router.get("/zoho-filaments", response_model=list[ZohoFilamentProduct])
+async def search_zoho_filaments(
+    q: str = Query(default="", max_length=100, description="Free-text search over brand, material, colour and SKU"),
+    limit: int = Query(default=25, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_READ),
+):
+    """Zoho products in the Filaments category, for linking to a calculator filament.
+
+    Results are per Zoho item — colour included — because dealer prices differ
+    between colours of the same material (Bambu ABS-GF is 1866 in Blue and 3208
+    in Black), so which colour the user picks decides the price.
+    """
+    if not await zoho_service.is_configured(db):
+        raise HTTPException(status_code=503, detail="Zoho is not configured")
+    try:
+        catalogue = await zoho_filaments.fetch_catalogue(db)
+    except Exception as exc:
+        logger.warning("Zoho filament catalogue unavailable: %s", exc)
+        raise HTTPException(status_code=502, detail="Could not reach Zoho") from exc
+    return zoho_filaments.search_catalogue(catalogue, q, limit)
+
+
+@router.post("/filaments/zoho-sync", response_model=CalculatorFilamentSyncResponse)
+async def sync_calculator_filaments_from_zoho(
+    payload: CalculatorFilamentSyncRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_UPDATE),
+):
+    """Refresh one chunk of linked filaments from their Zoho dealer prices.
+
+    Chunking is keyset paging by id, client-driven: the caller loops, passing
+    each response's ``next_after_id`` back as the next request's ``after_id``,
+    until it comes back null. Unlike offset paging, a filament deleted (or
+    added) between chunks cannot shift the window and skip a row — the next
+    chunk is always "ids greater than the last one processed". Each chunk
+    commits its own work, so a mid-run Zoho failure leaves earlier chunks
+    applied and a retry resumes from the id it reports.
+
+    Prices only. Brand, material, margin and difficulty are never rewritten from
+    Zoho, so a rename upstream cannot clobber a hand-corrected filament.
+    """
+    if not await zoho_service.is_configured(db):
+        raise HTTPException(status_code=503, detail="Zoho is not configured")
+    try:
+        catalogue = await zoho_filaments.fetch_catalogue(db)
+    except Exception as exc:
+        logger.warning("Zoho filament catalogue unavailable during sync: %s", exc)
+        raise HTTPException(status_code=502, detail="Could not reach Zoho") from exc
+
+    total_result = await db.execute(
+        select(func.count()).select_from(CalculatorFilament).where(CalculatorFilament.zoho_item_id.is_not(None))
+    )
+    total = total_result.scalar_one()
+
+    # order_by(id) is load-bearing for correctness here, not just presentation:
+    # the WHERE clause below ("id > after_id") depends on a stable id ordering
+    # to define "the next page" at all. Fetching limit + 1 rows tells us
+    # whether another chunk exists without a wasted, empty final request when
+    # total is an exact multiple of limit.
+    result = await db.execute(
+        select(CalculatorFilament)
+        .where(CalculatorFilament.zoho_item_id.is_not(None), CalculatorFilament.id > payload.after_id)
+        .order_by(CalculatorFilament.id)
+        .limit(payload.limit + 1)
+    )
+    fetched = result.scalars().all()
+    has_more = len(fetched) > payload.limit
+    chunk = fetched[: payload.limit]
+
+    by_item_id = {product.item_id: product for product in catalogue}
+    now = datetime.now(timezone.utc)
+
+    updated = unchanged = skipped_no_price = missing = 0
+    for filament in chunk:
+        product = by_item_id.get(filament.zoho_item_id or "")
+        if product is None:
+            missing += 1
+            continue
+
+        # The filament's own stored weight wins: re-deriving it from the Zoho
+        # name on every sync would let an upstream rename re-scale the price.
+        weight = filament.spool_weight_kg or product.spool_weight_kg or 1.0
+        new_cost = round(product.dealer_price / weight, 2)
+
+        # Guard the value about to be written, not just the upstream flag: a
+        # tiny dealer price over a large stored weight can round to 0.0 even
+        # when ``product.has_price`` is true, and a zero cost is never written.
+        if not product.has_price or new_cost <= 0:
+            skipped_no_price += 1
+            continue
+
+        filament.zoho_synced_at = now
+        if abs(new_cost - filament.cost_per_kg) < 0.005:
+            unchanged += 1
+            continue
+        filament.cost_per_kg = new_cost
+        filament.sale_price_per_kg = derive_sale_price(new_cost, filament.margin_pct)
+        updated += 1
+
+    await db.commit()
+
+    next_after_id = chunk[-1].id if has_more and chunk else None
+    logger.info(
+        "Zoho filament sync chunk after=%s limit=%s: %s updated, %s unchanged, %s without a dealer price, %s missing",
+        payload.after_id,
+        payload.limit,
+        updated,
+        unchanged,
+        skipped_no_price,
+        missing,
+    )
+    return CalculatorFilamentSyncResponse(
+        processed=len(chunk),
+        total=total,
+        updated=updated,
+        unchanged=unchanged,
+        skipped_no_price=skipped_no_price,
+        missing=missing,
+        next_after_id=next_after_id,
+    )
 
 
 # --- Printers ---
