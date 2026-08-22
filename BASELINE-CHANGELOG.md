@@ -2887,3 +2887,58 @@ Mutation-tested: reverting the `le`/`allow_inf_nan` additions on `CalculatorFila
 
 user-approved 2026-08-21: "An API client that posts a non-finite number for a calculator money
 field currently gets 200 and a null back; it would start getting 422."
+
+## T-068 — 2026-08-22 — user-approved behavior change
+
+T-068: `GET /calculator/zoho-filaments` now requires `calculator:update` instead of `calculator:read` — its response carries Zoho's confidential dealer-side pricing (dealer_price, cost_per_kg, sku, spool_weight_kg) and its only caller (ZohoFilamentSearch, rendered only inside the update-gated FilamentForm) already needs `calculator:update`. This matches every other Zoho item/contact/estimate route, which requires a write permission (AITO_CREATE) rather than a read one. user-approved 2026-08-22: "an API client or user holding only calculator:read (the default Viewers role) would start getting 403 from GET /api/v1/calculator/zoho-filaments instead of the Zoho product list."
+
+## T-072, T-073 — 2026-08-22 — T-073 is a user-approved behavior change
+
+T-072: `reset_cache()` did not cancel or invalidate a `fetch_catalogue` refresh that was
+already in flight when it ran, so a Zoho credential rotation landing mid-fetch let the
+pre-rotation catalogue publish into the module cache right after the reset and serve every
+caller (the add-filament search, the price sync) for a full 10-minute `_CACHE_TTL` window
+under the NEW credentials. Fixed with a module-level generation counter (`_generation`)
+bumped by `reset_cache()`: `fetch_catalogue` now captures the generation only after it holds
+the (also `reset_cache()`-rebuilt) `_refresh_lock` and re-checks freshness inside it, and only
+publishes into `_cache`/`_cache_at` if that generation still matches when the Zoho walk
+finishes — a superseded refresh still resolves for its own caller but is never written into
+the shared cache. The `asyncio.Lock` additionally collapses concurrent refreshes (e.g. two
+browser tabs opening the add-filament search on a cold cache) into a single Zoho walk; it is
+rebuilt (not reused) by `reset_cache()` specifically so a lock that happened to block on one
+asyncio event loop is never awaited from a different one later, which is what pytest-asyncio's
+per-test event loops would otherwise risk. No externally visible behavior changes for T-072:
+the function's signature, its return values, and every existing success/failure path are
+unchanged — only the internal publish-vs-discard decision after a race is different, and that
+race previously mis-published.
+
+T-073: the paged fetch inside `fetch_catalogue` fell out of its `while page <= _MAX_PAGES` loop
+silently when the page bound was hit with Zoho's `has_more` still `True`, and the partial item
+list gathered so far was cached as a complete catalogue for the full TTL — with no log, flag,
+or error. Every calculator filament linked to an item past page 20 would then be reported as
+"missing" (the schema's documented meaning is "Linked item no longer in the Zoho catalogue" —
+a wrong diagnosis inviting an operator to unlink good rows) and the add-filament search would
+simply never find those products. Fixed by detecting the page-bound exit (via the `while`
+loop's `else` clause, which only runs when the loop is *not* exited via `break`), logging an
+`ERROR` naming `_MAX_PAGES` and the total item count fetched, and raising instead of falling
+through to caching — routing the truncation through the exact same stale-cache-or-raise
+handling an ordinary Zoho fetch failure already uses. This is a **behavior change**: if a usable
+cached catalogue exists it is still served (the stale-cache branch, unchanged for callers); only
+with no usable cache does `fetch_catalogue` now raise, which `GET /calculator/zoho-filaments`
+and `POST /calculator/filaments/zoho-sync` already turn into a 502 for any other refresh
+failure. Before this fix, hitting `_MAX_PAGES` returned 200 with a silently truncated catalogue
+instead. user-approved 2026-08-22: "If the catalogue ever exceeds 20 pages, the filament search
+and price sync would start returning 502 instead of quietly operating on the first 4000 items."
+
+`fetch_catalogue`'s public signature (`async def fetch_catalogue(db, *, refresh: bool = True) ->
+list[FilamentProduct]`) is unchanged; `SURFACE.md` was regenerated and is byte-identical to the
+committed copy.
+
+Mutation-tested: reverting the `generation == _generation` publish guard back to an
+unconditional publish made `test_reset_cache_during_inflight_fetch_does_not_publish_stale_catalogue`
+fail as expected (the pre-rotation catalogue landed in `_cache`). Reverting the truncation
+`else`-clause guard (restoring the old loop with no `else` branch) made both
+`test_truncated_fetch_is_not_cached_and_raises_with_cold_cache` and
+`test_truncated_fetch_serves_the_stale_cache_when_warm` fail as expected (no `RuntimeError` was
+raised, and the partial 1-item list overwrote the 4-item warm cache instead of being discarded
+in favor of it).

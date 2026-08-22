@@ -108,8 +108,8 @@ settings.py
 ## Permission gates on calculator routes
 ```regen: grep -hoE "RequirePermissionIfAuthEnabled\(Permission\.[A-Z_]+\)" backend/app/api/routes/calculator.py | sort | uniq -c | sed "s/^ *//"```
 ```
-5 RequirePermissionIfAuthEnabled(Permission.CALCULATOR_READ)
-8 RequirePermissionIfAuthEnabled(Permission.CALCULATOR_UPDATE)
+4 RequirePermissionIfAuthEnabled(Permission.CALCULATOR_READ)
+9 RequirePermissionIfAuthEnabled(Permission.CALCULATOR_UPDATE)
 ```
 
 ## calculator_* table DDL

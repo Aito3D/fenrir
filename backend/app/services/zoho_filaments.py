@@ -7,6 +7,7 @@ empty for every filament. Everything in this module exists to turn that name
 string into a trustworthy cost per kg.
 """
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass
@@ -31,6 +32,22 @@ _CACHE_TTL = timedelta(minutes=10)
 
 _cache: list["FilamentProduct"] | None = None
 _cache_at: datetime | None = None
+
+# T-072: bumped every time reset_cache() runs. A refresh started before a
+# reset (e.g. one parked on a slow Zoho page fetch while the operator rotates
+# credentials in Settings) captures the generation that was current when it
+# began its walk of Zoho; if that no longer matches by the time the walk
+# finishes, the reset happened in the meantime and the result must not be
+# published, or the previous org's catalogue would resurface for a full
+# _CACHE_TTL window under the new credentials.
+_generation = 0
+
+# T-072: collapses concurrent refreshes (e.g. two browser tabs both opening
+# the add-filament search on a cold cache) into a single Zoho walk. Rebuilt
+# by reset_cache() rather than reused so a lock that happened to block on one
+# asyncio event loop can never be awaited from a different one later — the
+# test suite runs each async test on its own loop.
+_refresh_lock = asyncio.Lock()
 
 
 @dataclass(frozen=True)
@@ -99,9 +116,11 @@ def reset_cache() -> None:
     organization does not keep serving the previous org's filaments for the
     rest of the TTL window. Tests call it to isolate each case.
     """
-    global _cache, _cache_at
+    global _cache, _cache_at, _generation, _refresh_lock
     _cache = None
     _cache_at = None
+    _generation += 1
+    _refresh_lock = asyncio.Lock()
 
 
 def _map_item(item: dict) -> FilamentProduct:
@@ -140,7 +159,10 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
     non-empty batch fails to map, that is treated as a refresh failure too
     (same stale-cache-or-raise handling) rather than silently caching an
     empty list — a systemic mapping bug must not look identical to "Zoho
-    genuinely has no active filaments".
+    genuinely has no active filaments". A paged fetch that hits _MAX_PAGES
+    while Zoho still has more to give is treated the same way (T-073):
+    caching a silently truncated catalogue for the TTL would make every
+    filament past the cut-off look "missing" rather than merely unfetched.
     """
     global _cache, _cache_at
 
@@ -149,48 +171,89 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
     if _cache is not None and (fresh or not refresh):
         return _cache
 
-    try:
-        items: list[dict] = []
-        page = 1
-        while page <= _MAX_PAGES:
-            batch, has_more = await zoho_service.list_items_page(
-                db, category=FILAMENT_CATEGORY, page=page, per_page=_PAGE_SIZE
-            )
-            items.extend(batch)
-            if not has_more:
-                break
-            page += 1
-
-        active_items = [item for item in items if (item.get("status") or "active") == "active"]
-        mapped: list[FilamentProduct] = []
-        for item in active_items:
-            try:
-                mapped.append(_map_item(item))
-            except Exception as exc:
-                # One malformed record (e.g. a non-numeric dealer price) must
-                # not blank the entire catalogue — skip it and keep going. The
-                # item_id and exception are logged explicitly so a systematic
-                # mapping bug is visible instead of looking like routine bad
-                # upstream data.
-                logger.warning("Skipping malformed Zoho filament item %s: %s", item.get("item_id"), exc, exc_info=True)
-
-        if active_items and not mapped:
-            # Legitimate empties (no items at all, or all filtered out as
-            # inactive) fall through below with an empty `mapped` and no
-            # active_items — this branch only fires when items WERE active
-            # and NONE of them mapped, which is a mapping failure, not an
-            # empty catalogue. Route it through the same stale-cache-or-raise
-            # handling as a fetch failure.
-            raise RuntimeError(f"None of the {len(active_items)} active Zoho filament items could be mapped")
-    except Exception:
-        if _cache is not None:
-            logger.warning("Zoho filament catalogue refresh failed; serving the cached copy", exc_info=True)
+    async with _refresh_lock:
+        # Re-check inside the lock: another coroutine may have already done
+        # the refresh this call was about to do while it waited its turn —
+        # collapsing what would otherwise be one Zoho walk per waiter into
+        # one for the whole herd.
+        now = datetime.now(timezone.utc)
+        fresh = _cache_at is not None and now - _cache_at < _CACHE_TTL
+        if _cache is not None and (fresh or not refresh):
             return _cache
-        raise
 
-    _cache = mapped
-    _cache_at = now
-    return _cache
+        # T-072: captured only now — after the lock is held and the
+        # freshness re-check above — so a reset_cache() that landed while
+        # this call was queued on the lock is already reflected here. This
+        # call is racing the CURRENT generation, not a snapshot taken before
+        # it ever queued.
+        generation = _generation
+
+        try:
+            items: list[dict] = []
+            page = 1
+            while page <= _MAX_PAGES:
+                batch, has_more = await zoho_service.list_items_page(
+                    db, category=FILAMENT_CATEGORY, page=page, per_page=_PAGE_SIZE
+                )
+                items.extend(batch)
+                if not has_more:
+                    break
+                page += 1
+            else:
+                # The while/else `else` only runs when the loop exits by
+                # exhausting its condition rather than by `break` — i.e. the
+                # page bound was hit and `has_more` was still True. Zoho had
+                # more pages than _MAX_PAGES allows for; the partial list
+                # gathered so far must not be cached as if it were complete
+                # (T-073, user-approved: the search and price-sync routes
+                # return 502 in this case rather than quietly truncating).
+                logger.error(
+                    "Zoho filament catalogue fetch exceeded %d pages (%d items fetched so far); "
+                    "refusing to cache a truncated catalogue",
+                    _MAX_PAGES,
+                    len(items),
+                )
+                raise RuntimeError(f"Zoho filament catalogue exceeded {_MAX_PAGES} pages ({len(items)} items fetched)")
+
+            active_items = [item for item in items if (item.get("status") or "active") == "active"]
+            mapped: list[FilamentProduct] = []
+            for item in active_items:
+                try:
+                    mapped.append(_map_item(item))
+                except Exception as exc:
+                    # One malformed record (e.g. a non-numeric dealer price) must
+                    # not blank the entire catalogue — skip it and keep going. The
+                    # item_id and exception are logged explicitly so a systematic
+                    # mapping bug is visible instead of looking like routine bad
+                    # upstream data.
+                    logger.warning(
+                        "Skipping malformed Zoho filament item %s: %s", item.get("item_id"), exc, exc_info=True
+                    )
+
+            if active_items and not mapped:
+                # Legitimate empties (no items at all, or all filtered out as
+                # inactive) fall through below with an empty `mapped` and no
+                # active_items — this branch only fires when items WERE active
+                # and NONE of them mapped, which is a mapping failure, not an
+                # empty catalogue. Route it through the same stale-cache-or-raise
+                # handling as a fetch failure.
+                raise RuntimeError(f"None of the {len(active_items)} active Zoho filament items could be mapped")
+        except Exception:
+            if _cache is not None:
+                logger.warning("Zoho filament catalogue refresh failed; serving the cached copy", exc_info=True)
+                return _cache
+            raise
+
+        if generation == _generation:
+            _cache = mapped
+            _cache_at = now
+        # else: reset_cache() fired while this refresh was in flight (e.g. a
+        # Zoho credential rotation). This walk belongs to a superseded
+        # generation and publishing it would resurrect the pre-rotation
+        # catalogue for a full _CACHE_TTL window, so the freshly mapped list
+        # is handed back to THIS caller only — it is never written into the
+        # module cache.
+        return mapped
 
 
 def _score(product: FilamentProduct, terms: list[str]) -> int:

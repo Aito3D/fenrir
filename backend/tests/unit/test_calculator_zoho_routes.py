@@ -1,5 +1,7 @@
 """Tests for the calculator's Zoho filament search endpoint."""
 
+from unittest.mock import patch
+
 import pytest
 
 from backend.app.services import zoho_filaments
@@ -95,3 +97,93 @@ async def test_upstream_failure_is_reported_as_bad_gateway(async_client, monkeyp
     monkeypatch.setattr(zoho_filaments, "fetch_catalogue", boom)
     resp = await async_client.get("/api/v1/calculator/zoho-filaments", params={"q": "pla"})
     assert resp.status_code == 502
+
+
+class TestZohoFilamentSearchRequiresCalculatorUpdate:
+    """T-068: this endpoint returns Zoho's confidential dealer pricing, so it must
+    require calculator:update (the same permission every other mutation on this
+    router uses), not calculator:read — the default Viewers role only holds the
+    latter and must not be able to enumerate the supplier catalogue.
+    """
+
+    @pytest.fixture
+    async def calculator_read_only_setup(self):
+        """Create a user with calculator:read but NOT calculator:update, return JWT."""
+        from backend.app.core.auth import create_access_token, get_password_hash
+        from backend.app.core.database import async_session
+        from backend.app.models.group import Group
+        from backend.app.models.user import User
+
+        async with async_session() as db:
+            group = Group(name="CalcReadOnly", permissions=["calculator:read"])
+            db.add(group)
+            user = User(
+                username="calcreaduser",
+                password_hash=get_password_hash("testpass123"),
+                role="user",
+            )
+            db.add(user)
+            await db.commit()
+            await db.refresh(group)
+            await db.refresh(user)
+
+            from sqlalchemy import text
+
+            await db.execute(
+                text("INSERT INTO user_groups (user_id, group_id) VALUES (:uid, :gid)"),
+                {"uid": user.id, "gid": group.id},
+            )
+            await db.commit()
+
+        return create_access_token(data={"sub": "calcreaduser"})
+
+    @pytest.fixture
+    async def calculator_update_setup(self):
+        """Create a user with calculator:update, return JWT."""
+        from backend.app.core.auth import create_access_token, get_password_hash
+        from backend.app.core.database import async_session
+        from backend.app.models.group import Group
+        from backend.app.models.user import User
+
+        async with async_session() as db:
+            group = Group(name="CalcUpdate", permissions=["calculator:update"])
+            db.add(group)
+            user = User(
+                username="calcupdateuser",
+                password_hash=get_password_hash("testpass123"),
+                role="user",
+            )
+            db.add(user)
+            await db.commit()
+            await db.refresh(group)
+            await db.refresh(user)
+
+            from sqlalchemy import text
+
+            await db.execute(
+                text("INSERT INTO user_groups (user_id, group_id) VALUES (:uid, :gid)"),
+                {"uid": user.id, "gid": group.id},
+            )
+            await db.commit()
+
+        return create_access_token(data={"sub": "calcupdateuser"})
+
+    @pytest.mark.asyncio
+    async def test_calculator_read_only_caller_gets_403(self, async_client, zoho_ready, calculator_read_only_setup):
+        with patch("backend.app.core.auth.is_auth_enabled", return_value=True):
+            resp = await async_client.get(
+                "/api/v1/calculator/zoho-filaments",
+                params={"q": "pla"},
+                headers={"Authorization": f"Bearer {calculator_read_only_setup}"},
+            )
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_calculator_update_caller_gets_200(self, async_client, zoho_ready, calculator_update_setup):
+        with patch("backend.app.core.auth.is_auth_enabled", return_value=True):
+            resp = await async_client.get(
+                "/api/v1/calculator/zoho-filaments",
+                params={"q": "pla"},
+                headers={"Authorization": f"Bearer {calculator_update_setup}"},
+            )
+        assert resp.status_code == 200

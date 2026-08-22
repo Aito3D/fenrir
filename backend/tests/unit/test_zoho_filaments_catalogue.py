@@ -1,5 +1,8 @@
 """Tests for fetching, caching and searching the Zoho filament catalogue."""
 
+import asyncio
+import logging
+
 import pytest
 
 from backend.app.services import zoho_filaments
@@ -222,3 +225,137 @@ async def test_empty_search_returns_the_head_of_the_catalogue(monkeypatch):
     monkeypatch.setattr(zoho_service, "list_items_page", _fake_request([PAGE_1], []))
     catalogue = await zoho_filaments.fetch_catalogue(None)
     assert len(zoho_filaments.search_catalogue(catalogue, "  ", limit=2)) == 2
+
+
+# --- T-072: the refresh lock collapses concurrent fetches --------------------
+
+
+@pytest.mark.asyncio
+async def test_concurrent_fetches_collapse_into_a_single_zoho_walk(monkeypatch):
+    """Two callers racing a cold cache must not each walk Zoho: the second one
+    queues on the refresh lock while the first is mid-fetch and, once it
+    wakes up holding the lock, re-checks freshness and returns the catalogue
+    the first call just published instead of re-fetching from Zoho."""
+    gate = asyncio.Event()
+    entered = asyncio.Event()
+    calls = []
+
+    async def gated_page(db, **kwargs):
+        calls.append(1)
+        entered.set()
+        await gate.wait()
+        return PAGE_1, False
+
+    monkeypatch.setattr(zoho_service, "list_items_page", gated_page)
+
+    first = asyncio.create_task(zoho_filaments.fetch_catalogue(None))
+    await entered.wait()  # first call is parked inside list_items_page, holding the lock
+
+    second = asyncio.create_task(zoho_filaments.fetch_catalogue(None))
+    await asyncio.sleep(0)  # let the second call queue on the lock
+
+    gate.set()  # release the first call; it publishes and releases the lock
+    first_result = await first
+    second_result = await second
+
+    assert len(calls) == 1  # only ONE Zoho walk served both callers
+    assert [p.item_id for p in second_result] == [p.item_id for p in first_result]
+
+
+# --- T-072: reset_cache() during an in-flight fetch --------------------------
+
+
+@pytest.mark.asyncio
+async def test_reset_cache_during_inflight_fetch_does_not_publish_stale_catalogue(monkeypatch):
+    """Auditor's repro: a Zoho credential rotation calls reset_cache() while a
+    refresh that started under the OLD credentials is still parked mid-fetch.
+    That refresh must still resolve for its own caller, but it must not land
+    in the module cache afterwards — or the previous org's catalogue would
+    serve every other caller for a full _CACHE_TTL window post-rotation."""
+    gate = asyncio.Event()
+    entered = asyncio.Event()
+
+    async def gated_page(db, **kwargs):
+        entered.set()
+        await gate.wait()
+        return PAGE_1, False
+
+    monkeypatch.setattr(zoho_service, "list_items_page", gated_page)
+
+    task = asyncio.create_task(zoho_filaments.fetch_catalogue(None))
+    await entered.wait()  # the fetch is now parked inside list_items_page
+
+    zoho_filaments.reset_cache()  # the rotation lands mid-fetch
+    gate.set()
+    old_org_result = await task
+
+    # the in-flight caller still gets its answer...
+    assert [p.item_id for p in old_org_result] == ["1", "2", "3", "4"]
+    # ...but it must NOT have been published into the module cache.
+    assert zoho_filaments._cache is None
+    assert zoho_filaments._cache_at is None
+
+    # A subsequent fetch must go back to Zoho — not serve the resurrected,
+    # pre-rotation catalogue.
+    calls = []
+
+    async def new_org_page(db, **kwargs):
+        calls.append(1)
+        return PAGE_2, False
+
+    monkeypatch.setattr(zoho_service, "list_items_page", new_org_page)
+    fresh = await zoho_filaments.fetch_catalogue(None)
+    assert len(calls) == 1
+    assert [p.item_id for p in fresh] == ["5"]  # PAGE_2's inactive item is dropped
+
+
+# --- T-073: a paged fetch that hits _MAX_PAGES must not cache a partial list -
+
+
+@pytest.mark.asyncio
+async def test_truncated_fetch_is_not_cached_and_raises_with_cold_cache(monkeypatch, caplog):
+    """If Zoho still reports has_more=True after _MAX_PAGES pages, the partial
+    list gathered so far must not be cached as a complete catalogue — it must
+    go through the same stale-cache-or-raise handling as any other failure."""
+    monkeypatch.setattr(zoho_filaments, "_MAX_PAGES", 2)
+
+    async def always_more_page(db, *, category, page, per_page):
+        n = 3 if page == 1 else 5
+        batch = [_item(str(100 + page * 10 + i), "Bambu Lab - PLA - X - 1.75mm - 1kg", 100.0) for i in range(n)]
+        return batch, True  # never signals has_more=False
+
+    monkeypatch.setattr(zoho_service, "list_items_page", always_more_page)
+
+    with caplog.at_level(logging.ERROR, logger="backend.app.services.zoho_filaments"), pytest.raises(RuntimeError):
+        await zoho_filaments.fetch_catalogue(None)
+
+    assert zoho_filaments._cache is None
+    assert zoho_filaments._cache_at is None
+
+    error_records = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(error_records) == 1
+    # the log names the page count (_MAX_PAGES) and the total item count
+    # fetched before the loop gave up, as the fix requires.
+    assert error_records[0].args == (2, 8)
+
+
+@pytest.mark.asyncio
+async def test_truncated_fetch_serves_the_stale_cache_when_warm(monkeypatch):
+    """Same truncation, but with a warm cache present: the stale catalogue is
+    served (same as any other refresh failure) rather than raising, and the
+    module cache is left holding the last GOOD catalogue, not the partial
+    one gathered before truncation was detected."""
+    monkeypatch.setattr(zoho_service, "list_items_page", _fake_request([PAGE_1], []))
+    warm = await zoho_filaments.fetch_catalogue(None)
+    zoho_filaments._cache_at = None  # force the next call to refresh
+
+    monkeypatch.setattr(zoho_filaments, "_MAX_PAGES", 1)
+
+    async def always_more_page(db, **kwargs):
+        return PAGE_2, True  # never signals has_more=False
+
+    monkeypatch.setattr(zoho_service, "list_items_page", always_more_page)
+
+    result = await zoho_filaments.fetch_catalogue(None)
+    assert [p.item_id for p in result] == [p.item_id for p in warm]
+    assert zoho_filaments._cache is warm

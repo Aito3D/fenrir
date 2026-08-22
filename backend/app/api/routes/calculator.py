@@ -155,7 +155,7 @@ async def search_zoho_filaments(
     q: str = Query(default="", max_length=100, description="Free-text search over brand, material, colour and SKU"),
     limit: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_READ),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_UPDATE),
 ):
     """Zoho products in the Filaments category, for linking to a calculator filament.
 

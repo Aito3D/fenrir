@@ -1,7 +1,7 @@
 ### exit: 0
 ### stdout:
-5 RequirePermissionIfAuthEnabled(Permission.CALCULATOR_READ)
-8 RequirePermissionIfAuthEnabled(Permission.CALCULATOR_UPDATE)
+4 RequirePermissionIfAuthEnabled(Permission.CALCULATOR_READ)
+9 RequirePermissionIfAuthEnabled(Permission.CALCULATOR_UPDATE)
 
 ### stderr:
 
