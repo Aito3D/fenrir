@@ -36,6 +36,10 @@ def zoho_catalogue(monkeypatch):
         # A dealer price so small that dividing by even a 1 kg spool rounds to
         # 0.0 per kg, while ``has_price`` (dealer_price > 0) is still True.
         _product("TINY", 0.001),
+        # A dealer price so large it overflows float division into inf once
+        # divided by the tiny stored spool weight the matching test uses.
+        # ``new_cost <= 0`` does not catch this (``inf <= 0`` is False).
+        _product("HUGE", 1.5e308),
         # Distinct item ids at distinct prices so a chunking test can prove
         # every row was visited exactly once (a repeat or a skip would leave
         # some price un-updated or double-applied). Offset from 1000 so none
@@ -123,6 +127,24 @@ async def test_subcent_result_is_skipped_not_written_as_zero(async_client, zoho_
     assert resp.json()["updated"] == 0
     row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
     assert row["cost_per_kg"] == 1000.0  # untouched
+
+
+@pytest.mark.asyncio
+async def test_overflowing_result_is_skipped_not_written_as_inf(async_client, zoho_catalogue):
+    """A dealer price divided by a near-zero stored spool weight overflows to inf.
+
+    ``product.has_price`` is True and ``new_cost <= 0`` is False for inf (it
+    is neither less than nor equal to 0), so a guard that only checks those
+    two things writes ``inf`` into ``cost_per_kg`` and counts it as
+    ``updated`` — reopening, via this second write path, the exact hole the
+    create/update schemas were fixed to close.
+    """
+    await _create(async_client, zoho_item_id="HUGE", material="PETG", spool_weight_kg=0.001)
+    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
+    assert resp.json()["skipped_no_price"] == 1
+    assert resp.json()["updated"] == 0
+    row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
+    assert row["cost_per_kg"] == 1000.0  # untouched, not inf
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,28 @@
 """Tests for the pricing calculator API routes."""
 
+import json
+
 import pytest
+
+
+async def _post_non_standard_json(async_client, url, payload):
+    """POST a body containing a bare ``Infinity``/``-Infinity``/``NaN`` literal.
+
+    ``httpx``'s own ``json=`` kwarg refuses to serialize those (it calls
+    ``json.dumps(..., allow_nan=False)``), but Python's ``json.dumps`` with its
+    OWN default (``allow_nan=True``) happily emits the bare literal — which is
+    exactly what "any Python API client" producing this payload looks like, per
+    the audit evidence. Building the body by hand and posting it as raw content
+    reproduces that real-world request.
+    """
+    body = json.dumps(payload)
+    return await async_client.post(url, content=body, headers={"Content-Type": "application/json"})
+
+
+async def _patch_non_standard_json(async_client, url, payload):
+    body = json.dumps(payload)
+    return await async_client.patch(url, content=body, headers={"Content-Type": "application/json"})
+
 
 FILAMENT_PAYLOAD = {
     "brand": "SUNLU",
@@ -45,6 +67,46 @@ class TestCalculatorFilaments:
     async def test_create_rejects_negative_cost(self, async_client):
         resp = await async_client.post("/api/v1/calculator/filaments/", json={**FILAMENT_PAYLOAD, "cost_per_kg": -5})
         assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_infinite_cost(self, async_client):
+        """``float("inf") > 0`` is True, so ``gt=0`` alone lets it through.
+
+        Without the fix this used to return 200 with the row stored as inf
+        and every later read serializing it back as ``null`` — silently
+        breaking every downstream cost computation with no error anywhere.
+        """
+        resp = await _post_non_standard_json(
+            async_client, "/api/v1/calculator/filaments/", {**FILAMENT_PAYLOAD, "cost_per_kg": float("inf")}
+        )
+        assert resp.status_code == 422
+        assert (await async_client.get("/api/v1/calculator/filaments/")).json() == []
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_negative_infinite_cost(self, async_client):
+        resp = await _post_non_standard_json(
+            async_client, "/api/v1/calculator/filaments/", {**FILAMENT_PAYLOAD, "cost_per_kg": float("-inf")}
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_nan_cost(self, async_client):
+        resp = await _post_non_standard_json(
+            async_client, "/api/v1/calculator/filaments/", {**FILAMENT_PAYLOAD, "cost_per_kg": float("nan")}
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_cost_above_ceiling(self, async_client):
+        """A finite-but-astronomical cost must not slip through either.
+
+        ``derive_sale_price`` multiplies this by ``1 + margin_pct / 100``, so
+        an unbounded finite value can still overflow to inf downstream even
+        though ``allow_inf_nan=False`` alone would accept it.
+        """
+        resp = await async_client.post("/api/v1/calculator/filaments/", json={**FILAMENT_PAYLOAD, "cost_per_kg": 1e308})
+        assert resp.status_code == 422
+        assert (await async_client.get("/api/v1/calculator/filaments/")).json() == []
 
     @pytest.mark.asyncio
     async def test_create_rejects_empty_material(self, async_client):
@@ -100,6 +162,17 @@ class TestCalculatorFilaments:
         assert updated["brand"] == "SUNLU"
         assert updated["cost_per_kg"] == 3731.0
         assert updated["name"] == "SUNLU PA6-CF"
+
+    @pytest.mark.asyncio
+    async def test_update_rejects_infinite_cost(self, async_client):
+        created = (await async_client.post("/api/v1/calculator/filaments/", json=FILAMENT_PAYLOAD)).json()
+        resp = await _patch_non_standard_json(
+            async_client, f"/api/v1/calculator/filaments/{created['id']}", {"cost_per_kg": float("inf")}
+        )
+        assert resp.status_code == 422
+        # And the row is untouched, not silently poisoned.
+        row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
+        assert row["cost_per_kg"] == 3731.0
 
     @pytest.mark.asyncio
     async def test_update_missing_returns_404(self, async_client):
@@ -278,6 +351,38 @@ class TestCalculatorPrinters:
             assert resp.status_code == 422, bad
 
     @pytest.mark.asyncio
+    async def test_create_rejects_infinite_purchase_price(self, async_client):
+        resp = await _post_non_standard_json(
+            async_client, "/api/v1/calculator/printers/", {**PRINTER_PAYLOAD, "purchase_price": float("inf")}
+        )
+        assert resp.status_code == 422
+        assert (await async_client.get("/api/v1/calculator/printers/")).json() == []
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_infinite_power_watts(self, async_client):
+        resp = await _post_non_standard_json(
+            async_client, "/api/v1/calculator/printers/", {**PRINTER_PAYLOAD, "power_watts": float("inf")}
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_purchase_price_above_ceiling(self, async_client):
+        resp = await async_client.post(
+            "/api/v1/calculator/printers/", json={**PRINTER_PAYLOAD, "purchase_price": 1e308}
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_update_rejects_infinite_purchase_price(self, async_client):
+        created = (await async_client.post("/api/v1/calculator/printers/", json=PRINTER_PAYLOAD)).json()
+        resp = await _patch_non_standard_json(
+            async_client, f"/api/v1/calculator/printers/{created['id']}", {"purchase_price": float("inf")}
+        )
+        assert resp.status_code == 422
+        row = (await async_client.get("/api/v1/calculator/printers/")).json()[0]
+        assert row["purchase_price"] == 347000.0
+
+    @pytest.mark.asyncio
     async def test_update(self, async_client):
         created = (await async_client.post("/api/v1/calculator/printers/", json=PRINTER_PAYLOAD)).json()
         resp = await async_client.patch(f"/api/v1/calculator/printers/{created['id']}", json={"lifetime_years": 4.0})
@@ -339,4 +444,38 @@ class TestCalculatorDefaults:
     @pytest.mark.asyncio
     async def test_patch_rejects_negative(self, async_client):
         resp = await async_client.patch("/api/v1/calculator/defaults", json={"electricity_tariff": -1})
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_patch_rejects_infinite_electricity_tariff(self, async_client):
+        resp = await _patch_non_standard_json(
+            async_client, "/api/v1/calculator/defaults", {"electricity_tariff": float("inf")}
+        )
+        assert resp.status_code == 422
+        assert (await async_client.get("/api/v1/calculator/defaults")).json()["electricity_tariff"] == 120.0
+
+    @pytest.mark.asyncio
+    async def test_patch_rejects_electricity_tariff_above_ceiling(self, async_client):
+        resp = await async_client.patch("/api/v1/calculator/defaults", json={"electricity_tariff": 1e308})
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_patch_rejects_infinite_labor_rate(self, async_client):
+        resp = await _patch_non_standard_json(
+            async_client, "/api/v1/calculator/defaults", {"labor_rate_per_hour": float("inf")}
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_patch_rejects_infinite_consumables_packaging_flat(self, async_client):
+        resp = await _patch_non_standard_json(
+            async_client, "/api/v1/calculator/defaults", {"consumables_packaging_flat": float("inf")}
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_patch_rejects_infinite_base_fee_flat(self, async_client):
+        resp = await _patch_non_standard_json(
+            async_client, "/api/v1/calculator/defaults", {"base_fee_flat": float("inf")}
+        )
         assert resp.status_code == 422

@@ -1,6 +1,7 @@
 """API routes for the 3D print pricing calculator (filaments, printers, defaults)."""
 
 import logging
+import math
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -236,8 +237,11 @@ async def sync_calculator_filaments_from_zoho(
 
         # Guard the value about to be written, not just the upstream flag: a
         # tiny dealer price over a large stored weight can round to 0.0 even
-        # when ``product.has_price`` is true, and a zero cost is never written.
-        if not product.has_price or new_cost <= 0:
+        # when ``product.has_price`` is true, and a zero cost is never
+        # written. ``isfinite`` matters too: a sub-denormal weight parsed out
+        # of a Zoho item name can divide a normal dealer price into inf,
+        # which ``new_cost <= 0`` does not catch (``inf <= 0`` is False).
+        if not product.has_price or new_cost <= 0 or not math.isfinite(new_cost):
             skipped_no_price += 1
             continue
 

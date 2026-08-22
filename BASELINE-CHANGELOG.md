@@ -2830,3 +2830,60 @@ The user was shown this finding — the mechanism, the reproduction, and the two
 and approved the change as shipped on 2026-08-20. No code, comment, or test changed as part
 of writing this entry; `ActivityRail.tsx` is unchanged from commit `0684e98d9`.
 `tools/snapshot.py verify` is unaffected by this entry (documentation only).
+
+## T-071 — 2026-08-21 — user-approved behavior change
+
+T-071: `cost_per_kg`, `purchase_price`, `power_watts`, `electricity_tariff`, `labor_rate_per_hour`,
+`consumables_packaging_flat` and `base_fee_flat` no longer accept `Infinity`/`-Infinity`/`NaN` or an
+absurd finite magnitude (new `le=1e8` ceiling) on create/update. Before this fix, `float('inf')`
+satisfied every `gt=0` bound in `backend/app/schemas/calculator.py` (`inf > 0` is `True`), so a POST
+with a non-finite `cost_per_kg` returned 200, stored `inf` in the row, and every later `GET` silently
+serialized that field back as JSON `null` — computePricing then multiplied by `null`, so the filament
+line of a quote silently priced at 0 with no error anywhere, and the poisoned row could not be
+repaired through the UI (the edit form's Save stayed disabled because `String(inf)` round-trips as
+`"null"`). An equivalent finite-overflow path existed too: `derive_sale_price(1e308, 1000)` overflows
+to `inf` downstream even though `1e308 > 0` is a valid `gt=0` input, hence the new upper bound rather
+than relying on non-finite rejection alone. A second write path had the same hole: the Zoho price sync
+(`routes/calculator.py`) computed `new_cost = dealer_price / weight` and guarded only `new_cost <= 0`
+— `inf <= 0` is `False`, so a sub-denormal spool weight parsed from a Zoho item name could divide a
+normal dealer price into `inf` and have it written, uncaught by that guard. Fixed by adding
+`math.isfinite(new_cost)` to that guard as well.
+
+The `allow_inf_nan=False`/`le=` ceiling was added to `CalculatorFilamentCreate` and
+`CalculatorPrinterCreate` (not to `CalculatorFilamentBase`/`CalculatorPrinterBase`, which the
+task briefing suggested): those Base classes are also the parent of the Response schemas, and
+tightening them there would have changed a SECOND, unapproved thing — a pre-existing
+out-of-range row already in the database would 500 on every `GET` instead of rendering the
+`null` it does today. Verified empirically both ways (`CalculatorFilamentResponse.model_validate`
+on a fake row with `cost_per_kg=inf` succeeds unchanged before and after this fix). Only the
+write-side schemas carry the new constraint, so existing rows keep reading exactly as before;
+only new writes of a non-finite or overflow value are rejected.
+
+A second, unplanned fix was required in `backend/app/main.py` to actually deliver the promised
+422: FastAPI's default `RequestValidationError` handler echoes the rejected value back in
+`errors()[i]["input"]`, and Starlette's `JSONResponse` renders with `allow_nan=False` — so a
+request that fails validation *because* its value is non-finite makes that very serialization
+step raise, turning the intended 422 into an unhandled exception (observed as a 503 from this
+app's auth-gateway middleware, which fails closed on any exception raised while auth is
+disabled). This is a **pre-existing** bug, not something this task introduced — confirmed by
+posting `margin_pct: Infinity` against the unmodified `le=1000` bound that predates T-071 and
+getting the identical 503 crash. Since the task's own approved statement promised "422", and
+without this fix the actual result was a 503 (a materially worse regression than the original
+200+null bug — the whole endpoint breaks, not just one field), a narrow `RequestValidationError`
+handler was added that is byte-identical to FastAPI's default for every other validation error
+and differs only by setting `allow_nan=True`, which is what makes the crashing case render
+instead of raising. This is a shared-file touch outside the task's stated file list
+(`backend/app/schemas/calculator.py`, `backend/app/api/routes/calculator.py`); it was necessary
+to make the approved change actually behave as promised rather than a strict scope violation.
+
+Mutation-tested: reverting the `le`/`allow_inf_nan` additions on `CalculatorFilamentCreate` and
+`CalculatorPrinterCreate` made `test_create_rejects_infinite_cost`,
+`test_create_rejects_cost_above_ceiling`, `test_create_rejects_infinite_purchase_price` and
+`test_create_rejects_purchase_price_above_ceiling` fail as expected; reverting the
+`math.isfinite(new_cost)` guard in the Zoho sync route made
+`test_overflowing_result_is_skipped_not_written_as_inf` fail as expected; reverting the new
+`RequestValidationError` handler in `main.py` made every non-finite-input test in
+`test_calculator_routes.py` fail with 503 instead of 422, as expected.
+
+user-approved 2026-08-21: "An API client that posts a non-finite number for a calculator money
+field currently gets 200 and a null back; it would start getting 422."

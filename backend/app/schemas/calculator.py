@@ -1,6 +1,20 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+# Applied to every schema that accepts a user-supplied money/rate float: without
+# it, ``float("inf")`` satisfies every ``gt``/``ge`` bound (inf > 0 is True) and
+# is stored as-is, then serialized back as JSON ``null`` for a field the
+# response model declares non-optional. NaN is already rejected by those same
+# bounds (nan > 0 is False), but this makes the rejection explicit rather than
+# incidental.
+_FINITE_ONLY = ConfigDict(allow_inf_nan=False)
+
+# A generous but finite ceiling on unbounded money/rate fields. ``gt=0`` alone
+# does not stop overflow: a finite-but-astronomical input (e.g. 1e308) can
+# still overflow to inf downstream (see derive_sale_price), so these fields
+# also need an upper bound, not just a lower one.
+_MONEY_CEILING = 100_000_000.0
 
 
 class CalculatorFilamentBase(BaseModel):
@@ -8,6 +22,13 @@ class CalculatorFilamentBase(BaseModel):
 
     ``sale_price_per_kg`` is deliberately absent: it is derived server-side from
     ``cost_per_kg`` and ``margin_pct`` and only ever appears in responses.
+
+    Deliberately NOT given ``_FINITE_ONLY``/a ceiling on ``cost_per_kg``: this
+    class is also the parent of ``CalculatorFilamentResponse``, which reads
+    back whatever is already in the database. Tightening it here would turn a
+    pre-existing out-of-range row into a 500 on every ``GET`` instead of the
+    ``null`` it renders today; the write-side schemas below carry the new
+    constraint instead, so only new writes are rejected.
     """
 
     brand: str = Field(default="", max_length=100, description="Filament brand (optional)")
@@ -28,7 +49,9 @@ class CalculatorFilamentBase(BaseModel):
 class CalculatorFilamentCreate(CalculatorFilamentBase):
     """Schema for creating a calculator filament."""
 
-    pass
+    model_config = _FINITE_ONLY
+
+    cost_per_kg: float = Field(..., gt=0, le=_MONEY_CEILING, description="Purchase cost per kg (app currency)")
 
 
 class CalculatorFilamentUpdate(BaseModel):
@@ -42,9 +65,11 @@ class CalculatorFilamentUpdate(BaseModel):
     itself whenever ``zoho_item_id`` changes, so no caller has to remember to.
     """
 
+    model_config = _FINITE_ONLY
+
     brand: str | None = Field(default=None, max_length=100)
     material: str | None = Field(default=None, min_length=1, max_length=100)
-    cost_per_kg: float | None = Field(default=None, gt=0)
+    cost_per_kg: float | None = Field(default=None, gt=0, le=_MONEY_CEILING)
     margin_pct: float | None = Field(default=None, ge=0, le=1000)
     difficulty_pct: float | None = Field(default=None, ge=100, le=1000)
     zoho_item_id: str | None = Field(default=None, max_length=50)
@@ -67,7 +92,13 @@ class CalculatorFilamentResponse(CalculatorFilamentBase):
 
 
 class CalculatorPrinterBase(BaseModel):
-    """Base schema for calculator printers."""
+    """Base schema for calculator printers.
+
+    Deliberately NOT given ``_FINITE_ONLY``/ceilings on its money fields: see
+    the equivalent note on ``CalculatorFilamentBase`` — this class also backs
+    ``CalculatorPrinterResponse``, and tightening it here would turn a
+    pre-existing out-of-range row into a 500 on every ``GET``.
+    """
 
     name: str = Field(..., min_length=1, max_length=100, description="Printer name")
     purchase_price: float = Field(..., gt=0, description="Purchase price (app currency)")
@@ -82,17 +113,22 @@ class CalculatorPrinterBase(BaseModel):
 class CalculatorPrinterCreate(CalculatorPrinterBase):
     """Schema for creating a calculator printer."""
 
-    pass
+    model_config = _FINITE_ONLY
+
+    purchase_price: float = Field(..., gt=0, le=_MONEY_CEILING, description="Purchase price (app currency)")
+    power_watts: float = Field(..., gt=0, le=_MONEY_CEILING, description="Power draw in watts")
 
 
 class CalculatorPrinterUpdate(BaseModel):
     """Schema for updating a calculator printer (all fields optional)."""
 
+    model_config = _FINITE_ONLY
+
     name: str | None = Field(default=None, min_length=1, max_length=100)
-    purchase_price: float | None = Field(default=None, gt=0)
+    purchase_price: float | None = Field(default=None, gt=0, le=_MONEY_CEILING)
     lifetime_years: float | None = Field(default=None, gt=0)
     daily_usage_hours: float | None = Field(default=None, gt=0, le=24)
-    power_watts: float | None = Field(default=None, gt=0)
+    power_watts: float | None = Field(default=None, gt=0, le=_MONEY_CEILING)
     repair_rate_pct: float | None = Field(default=None, ge=0, le=100)
 
 
@@ -114,9 +150,11 @@ class CalculatorPrinterResponse(CalculatorPrinterBase):
 class CalculatorDefaultsUpdate(BaseModel):
     """Schema for updating calculator defaults (all fields optional)."""
 
-    electricity_tariff: float | None = Field(default=None, ge=0)
-    labor_rate_per_hour: float | None = Field(default=None, ge=0)
-    consumables_packaging_flat: float | None = Field(default=None, ge=0)
+    model_config = _FINITE_ONLY
+
+    electricity_tariff: float | None = Field(default=None, ge=0, le=_MONEY_CEILING)
+    labor_rate_per_hour: float | None = Field(default=None, ge=0, le=_MONEY_CEILING)
+    consumables_packaging_flat: float | None = Field(default=None, ge=0, le=_MONEY_CEILING)
     failure_rate_pct: float | None = Field(default=None, ge=0, le=1000)
     prototype_rate_pct: float | None = Field(default=None, ge=0, le=1000)
     ads_rate_pct: float | None = Field(default=None, ge=0, le=1000)
@@ -126,7 +164,7 @@ class CalculatorDefaultsUpdate(BaseModel):
     default_difficulty_pct: float | None = Field(default=None, ge=100, le=1000)
     default_margin_over_cost_pct: float | None = Field(default=None, ge=0, le=1000)
     stuff_markup_pct: float | None = Field(default=None, ge=0, le=1000)
-    base_fee_flat: float | None = Field(default=None, ge=0)
+    base_fee_flat: float | None = Field(default=None, ge=0, le=_MONEY_CEILING)
 
 
 class CalculatorDefaultsResponse(BaseModel):

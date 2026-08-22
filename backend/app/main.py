@@ -11,10 +11,13 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import delete, or_, select, text
+from starlette.responses import Response
 
 from backend.app.api.routes import (
     aito,
@@ -8632,6 +8635,26 @@ app = FastAPI(
     version=APP_VERSION,
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def _finite_safe_validation_exception_handler(request: Request, exc: RequestValidationError) -> Response:
+    """The same 422 FastAPI's own default handler returns, minus a crash.
+
+    FastAPI's default handler echoes the rejected value back in
+    ``errors()[i]["input"]``, and Starlette's ``JSONResponse`` renders with
+    ``allow_nan=False`` — so a request that fails validation *because* its
+    value is ``inf``/``-inf``/``nan`` (e.g. a calculator money field given
+    ``Infinity``, T-071) makes that very serialization step raise instead of
+    responding, turning the intended 422 into an unhandled exception (which
+    surfaces as a 503 from the auth gateway below, or a bare 500 elsewhere).
+    Byte-identical to the framework default for every other validation
+    error — ``allow_nan=True`` only changes anything for this one
+    previously-crashing case.
+    """
+    content = {"detail": jsonable_encoder(exc.errors())}
+    body = json.dumps(content, ensure_ascii=False, allow_nan=True, separators=(",", ":")).encode("utf-8")
+    return Response(content=body, status_code=422, media_type="application/json")
 
 
 # =============================================================================

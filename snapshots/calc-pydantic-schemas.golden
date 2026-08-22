@@ -106,6 +106,7 @@
    "base_fee_flat": {
     "anyOf": [
      {
+      "maximum": 100000000.0,
       "minimum": 0,
       "type": "number"
      },
@@ -119,6 +120,7 @@
    "consumables_packaging_flat": {
     "anyOf": [
      {
+      "maximum": 100000000.0,
       "minimum": 0,
       "type": "number"
      },
@@ -160,6 +162,7 @@
    "electricity_tariff": {
     "anyOf": [
      {
+      "maximum": 100000000.0,
       "minimum": 0,
       "type": "number"
      },
@@ -215,6 +218,7 @@
    "labor_rate_per_hour": {
     "anyOf": [
      {
+      "maximum": 100000000.0,
       "minimum": 0,
       "type": "number"
      },
@@ -272,7 +276,7 @@
   "type": "object"
  },
  "CalculatorFilamentBase": {
-  "description": "Base schema for calculator filaments.\n\n``sale_price_per_kg`` is deliberately absent: it is derived server-side from\n``cost_per_kg`` and ``margin_pct`` and only ever appears in responses.",
+  "description": "Base schema for calculator filaments.\n\n``sale_price_per_kg`` is deliberately absent: it is derived server-side from\n``cost_per_kg`` and ``margin_pct`` and only ever appears in responses.\n\nDeliberately NOT given ``_FINITE_ONLY``/a ceiling on ``cost_per_kg``: this\nclass is also the parent of ``CalculatorFilamentResponse``, which reads\nback whatever is already in the database. Tightening it here would turn a\npre-existing out-of-range row into a 500 on every ``GET`` instead of the\n``null`` it renders today; the write-side schemas below carry the new\nconstraint instead, so only new writes are rejected.",
   "properties": {
    "brand": {
     "default": "",
@@ -388,6 +392,7 @@
    "cost_per_kg": {
     "description": "Purchase cost per kg (app currency)",
     "exclusiveMinimum": 0,
+    "maximum": 100000000.0,
     "title": "Cost Per Kg",
     "type": "number"
    },
@@ -723,6 +728,7 @@
     "anyOf": [
      {
       "exclusiveMinimum": 0,
+      "maximum": 100000000.0,
       "type": "number"
      },
      {
@@ -1164,7 +1170,7 @@
   "type": "object"
  },
  "CalculatorPrinterBase": {
-  "description": "Base schema for calculator printers.",
+  "description": "Base schema for calculator printers.\n\nDeliberately NOT given ``_FINITE_ONLY``/ceilings on its money fields: see\nthe equivalent note on ``CalculatorFilamentBase`` \u2014 this class also backs\n``CalculatorPrinterResponse``, and tightening it here would turn a\npre-existing out-of-range row into a 500 on every ``GET``.",
   "properties": {
    "daily_usage_hours": {
     "description": "Average daily usage in hours",
@@ -1243,12 +1249,14 @@
    "power_watts": {
     "description": "Power draw in watts",
     "exclusiveMinimum": 0,
+    "maximum": 100000000.0,
     "title": "Power Watts",
     "type": "number"
    },
    "purchase_price": {
     "description": "Purchase price (app currency)",
     "exclusiveMinimum": 0,
+    "maximum": 100000000.0,
     "title": "Purchase Price",
     "type": "number"
    },
@@ -1390,6 +1398,7 @@
     "anyOf": [
      {
       "exclusiveMinimum": 0,
+      "maximum": 100000000.0,
       "type": "number"
      },
      {
@@ -1403,6 +1412,7 @@
     "anyOf": [
      {
       "exclusiveMinimum": 0,
+      "maximum": 100000000.0,
       "type": "number"
      },
      {
