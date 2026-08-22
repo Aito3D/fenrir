@@ -136,7 +136,7 @@ from backend.app.services.spoolman_tracking import (
     store_print_data as _store_spoolman_print_data,
 )
 from backend.app.services.tasmota import tasmota_service
-from backend.app.utils.ams_drying import is_drying_active, temperature_alarm_suppressed
+from backend.app.utils.ams_drying import has_filament_loaded, is_drying_active, temperature_alarm_suppressed
 from backend.app.utils.fts_routing import extruder_for_inlet, slot_extruder as resolve_slot_extruder
 from backend.app.utils.print_jobs import is_internal_printer_job
 
@@ -7181,29 +7181,20 @@ async def _save_ams_drying_latch(db, latch: dict[str, datetime]) -> None:
 def _ams_has_filament(ams_data: dict) -> bool:
     """True if this AMS unit has at least one tray slot holding filament.
 
-    Bambu firmware reports loaded slots via `tray_exist_bits`, a per-AMS hex
-    bitmap (one bit per tray slot — bit set = spool present). Empty AMS units
-    still report sensor readings, but those readings are ambient and not
-    actionable: no filament to dry, no humidity to push down. #1619 — gate
-    humidity/temperature alarms on this check so empty units don't generate
-    hourly noise. Sensor history still records regardless so the UI charts
-    stay continuous.
+    Empty AMS units still report sensor readings, but those readings are ambient
+    and not actionable: no filament to dry, no humidity to push down. #1619 —
+    gate humidity/temperature alarms on this check so empty units don't generate
+    hourly noise. Sensor history still records regardless so the UI charts stay
+    continuous.
 
-    Fallback path inspects the `tray` array's `tray_type` fields for setups
-    where `tray_exist_bits` is missing (some early-connection pushall shapes).
+    The judgement itself lives in ``has_filament_loaded``, shared with every path
+    that publishes a drying command so an AMS Bambuddy will not alarm about is
+    also one it will not heat. Reading it through the shared helper is what
+    brought the per-tray ``exists`` flag into this gate: ``tray_exist_bits`` is
+    one bitmask for the whole printer, so consulting it here directly reported a
+    loaded AMS-A as evidence that an empty HT-A next to it had filament in it.
     """
-    bits = ams_data.get("tray_exist_bits")
-    if isinstance(bits, str) and bits.strip():
-        try:
-            return int(bits, 16) > 0
-        except ValueError:
-            pass
-    trays = ams_data.get("tray")
-    if isinstance(trays, list):
-        return any(
-            isinstance(t, dict) and isinstance(t.get("tray_type"), str) and t["tray_type"].strip() for t in trays
-        )
-    return False
+    return has_filament_loaded(ams_data)
 
 
 async def record_ams_history():

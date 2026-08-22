@@ -6,9 +6,11 @@ path would refuse is never silently published by the scheduled path.
 """
 
 from backend.app.services.printer_manager import drying_screen_only, supports_drying
+from backend.app.utils.ams_drying import has_filament_loaded
 
 SCREEN_ONLY_DETAIL = "This printer only supports AMS drying from its own screen"
 UNSUPPORTED_DETAIL = "Drying not supported for this printer model or firmware version"
+AMS_EMPTY_DETAIL = "AMS is empty — load a spool before starting drying"
 
 # Firmware dry_sf_reason codes, as surfaced by the AMS status payload.
 DRY_SF_REASON_MESSAGES = {
@@ -35,6 +37,21 @@ RETRACT_REASON_CODE = 3
 WAITING_REASON_POWER = "ams_power_required"
 WAITING_REASON_RETRACT = "ams_retract_filament"
 WAITING_REASON_BLOCKED = "ams_blocked"
+# Nothing loaded to dry. Like the power and retract reasons, this is something
+# the user fixes at the printer, so a scheduled row waits on it rather than
+# failing: put a spool in and the run it was scheduled for still happens.
+WAITING_REASON_EMPTY = "ams_empty"
+
+
+def ams_is_empty(unit: dict | None) -> bool:
+    """True when this AMS unit holds no filament and must not be heated.
+
+    A unit that is not in the live status at all is NOT reported as empty: no
+    AMS list yet is an absence of evidence, and refusing on it would turn a
+    printer that has not finished its first pushall into a printer that cannot
+    be told to dry. The firmware still rejects what it cannot do.
+    """
+    return unit is not None and not has_filament_loaded(unit)
 
 
 def check_drying_supported(model: str | None, firmware: str | None, *, require_firmware: bool = True) -> str | None:

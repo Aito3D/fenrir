@@ -283,6 +283,7 @@ describe('PrintersPage - drying start modes', () => {
 
   it.each([
     ['ams_retract_filament', 'Retract the filament at the AMS outlet to start drying'],
+    ['ams_empty', 'Load a spool — the AMS is empty, so drying is on hold'],
     ['ams_not_found', 'Waiting for the AMS to be detected'],
     ['printer_offline', 'Waiting for the printer to come online'],
     ['printer_busy', 'Waiting for the printer to be free'],

@@ -1051,6 +1051,7 @@ export default {
       cancelScheduled: '예약된 건조 취소',
       scheduleFailed: '건조 예약에 실패했습니다',
       retractFilament: '건조를 시작하려면 AMS 출구의 필라멘트를 빼내세요',
+      waitingAmsEmpty: '스풀을 넣어 주세요 — AMS가 비어 있어 건조가 보류 중입니다',
       waitingAmsNotFound: 'AMS 감지를 기다리는 중',
       waitingOffline: '프린터가 온라인 상태가 되기를 기다리는 중',
       waitingPrinterBusy: '프린터가 사용 가능해지기를 기다리는 중',

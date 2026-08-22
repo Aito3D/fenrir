@@ -86,3 +86,53 @@ def temperature_alarm_suppressed(
     if now - latched_at >= timedelta(minutes=grace_minutes):
         return False, None
     return True, latched_at
+
+
+def has_filament_loaded(ams_data: Any) -> bool:
+    """True when this AMS unit holds at least one spool.
+
+    An empty unit is not worth acting on: its humidity and temperature readings
+    are ambient, there is nothing to dry, and heating it is wasted power that
+    also spends the printer's shared drying power budget. Both the alarm
+    dispatch (#1619) and every path that publishes a drying command read this.
+
+    Three signals, in descending order of how much they can be trusted:
+
+    1. The per-tray ``exists`` flag. This is firmware's ``tray_exist_bits``
+       bitmask already resolved down to individual slots by
+       ``apply_tray_exist_bits`` — including the AMS-HT's bit-16 layout, which
+       does not follow the regular ``ams_id * 4`` formula. It is the only
+       per-unit-correct reading of that bitmask, so it wins outright.
+    2. The raw ``tray_exist_bits`` string on the unit dict. Present on shapes
+       that have not been through ``apply_tray_exist_bits`` yet. Note it is one
+       bitmask for the whole printer rather than for this unit, so a loaded AMS
+       elsewhere makes it non-zero here too — which is why (1) outranks it. It
+       is still better evidence than (3): a zero bitmask does mean every unit is
+       empty. Only strings are parsed; the int form is not seen on the wire and
+       would be indistinguishable from a garbage value.
+    3. A non-blank ``tray_type`` on any slot. Last resort, because an AMS-HT
+       keeps echoing the type of a spool that has been taken out (#2670), so on
+       its own this reads an emptied HT as loaded forever.
+
+    No signal at all — an early-connection pushall — reads as empty. There is no
+    evidence of filament, and the failure that costs something is heating a box
+    that has none.
+    """
+    if not isinstance(ams_data, Mapping):
+        return False
+
+    trays = ams_data.get("tray")
+    trays = [t for t in trays if isinstance(t, Mapping)] if isinstance(trays, list) else []
+
+    annotated = [t for t in trays if "exists" in t]
+    if annotated:
+        return any(bool(t.get("exists")) for t in annotated)
+
+    bits = ams_data.get("tray_exist_bits")
+    if isinstance(bits, str) and bits.strip():
+        try:
+            return int(bits, 16) > 0
+        except ValueError:
+            pass  # Garbage on the wire — fall through to the tray types
+
+    return any(isinstance(t.get("tray_type"), str) and t["tray_type"].strip() for t in trays)

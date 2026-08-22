@@ -2019,6 +2019,11 @@ async def start_drying(
     # filament field from the first loaded tray so the printer doesn't reject
     # the payload.
     target_ams = drying_preflight.find_ams_unit(live_state, ams_id)
+    if drying_preflight.ams_is_empty(target_ams):
+        # Heating a dry box with nothing in it achieves nothing and spends the
+        # printer's shared drying power budget, so say so rather than publish a
+        # cycle the user has to go and stop.
+        raise HTTPException(409, drying_preflight.AMS_EMPTY_DETAIL)
     blocking = drying_preflight.blocking_reason_codes(target_ams)
     if blocking:
         # Same pick the scheduled path makes, so both describe one blocked AMS

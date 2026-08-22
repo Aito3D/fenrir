@@ -1089,6 +1089,7 @@ export default {
       cancelScheduled: 'Annulla asciugatura pianificata',
       scheduleFailed: 'Pianificazione dell\'asciugatura non riuscita',
       retractFilament: 'Ritrarre il filamento dall\'uscita dell\'AMS per avviare l\'asciugatura',
+      waitingAmsEmpty: 'Carica una bobina: l\'AMS è vuoto, l\'asciugatura è in attesa',
       waitingAmsNotFound: 'In attesa del rilevamento dell\'AMS',
       waitingOffline: 'In attesa che la stampante torni online',
       waitingPrinterBusy: 'In attesa che la stampante sia libera',

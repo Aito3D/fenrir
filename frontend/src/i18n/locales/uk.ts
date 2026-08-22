@@ -1059,6 +1059,7 @@ export default {
       cancelScheduled: "Скасувати заплановане сушіння",
       scheduleFailed: "Не вдалося запланувати сушіння",
       retractFilament: "Витягніть філамент із виходу AMS, щоб почати сушіння",
+      waitingAmsEmpty: "Завантажте котушку — AMS порожній, сушіння призупинено",
       waitingAmsNotFound: "Очікування виявлення AMS",
       waitingOffline: "Очікування підключення принтера",
       waitingPrinterBusy: "Очікування звільнення принтера",

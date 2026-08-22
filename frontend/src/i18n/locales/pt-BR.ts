@@ -1089,6 +1089,7 @@ export default {
       cancelScheduled: 'Cancelar secagem agendada',
       scheduleFailed: 'Falha ao agendar a secagem',
       retractFilament: 'Recolha o filamento na saída do AMS para iniciar a secagem',
+      waitingAmsEmpty: 'Carregue um carretel — o AMS está vazio, a secagem está em espera',
       waitingAmsNotFound: 'Aguardando a detecção do AMS',
       waitingOffline: 'Aguardando a impressora ficar online',
       waitingPrinterBusy: 'Aguardando a impressora ficar livre',

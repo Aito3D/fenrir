@@ -1089,6 +1089,7 @@ export default {
       cancelScheduled: '取消預約乾燥',
       scheduleFailed: '預約乾燥失敗',
       retractFilament: '請退回AMS出口處的耗材後再開始乾燥',
+      waitingAmsEmpty: '請裝入料卷 — AMS 為空，烘乾已暫停',
       waitingAmsNotFound: '正在等待偵測到AMS',
       waitingOffline: '正在等待印表機上線',
       waitingPrinterBusy: '正在等待印表機空閒',

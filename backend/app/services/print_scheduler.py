@@ -56,6 +56,7 @@ from backend.app.services.printer_manager import (
     supports_drying_while_printing,
 )
 from backend.app.services.smart_plug_manager import smart_plug_manager
+from backend.app.utils.ams_drying import has_filament_loaded
 from backend.app.utils.color_utils import perceptual_color_distance
 from backend.app.utils.filament_types import canonical_filament_type
 from backend.app.utils.filename import derive_remote_filename
@@ -3740,7 +3741,29 @@ class PrintScheduler:
                     )
                     continue
 
-                # Nothing is drying. Close out a cycle we armed ourselves and
+                # Nothing is drying, and there is nothing in this unit to dry.
+                # An empty AMS still reports humidity, but that reading is the
+                # ambient air: heating it achieves nothing, wears the unit, and
+                # spends a drying power budget the printer shares with units
+                # that do have filament in them. Reported against an AMS-HT
+                # left empty, which auto-dried itself every time the room's
+                # humidity drifted over the threshold.
+                #
+                # Deliberately below the already-drying branch above: this
+                # decides whether to START heating. A cycle somebody began by
+                # hand on an empty unit is still tracked there so the queue's
+                # stop paths can reach it, and is never torn down from here.
+                if not has_filament_loaded(ams_data):
+                    # Drop the unit's history with it. The unproductive-cycle
+                    # count and cooldown judge one specific spool -- "drying
+                    # this is not moving the reading" -- and say nothing about
+                    # whichever spool goes in next. Keeping a suspension across
+                    # a spool change would silently deny drying to the new one.
+                    self._auto_dry_units.pop(unit_key, None)
+                    logger.debug("Auto-drying: printer %d AMS %d skipped — no filament loaded", pid, ams_id)
+                    continue
+
+                # Close out a cycle we armed ourselves and
                 # judge whether it achieved anything (#2770).
                 #
                 # "Achieved anything" is measured against the LOWEST reading any
@@ -4141,6 +4164,13 @@ class PrintScheduler:
             target = drying_preflight.find_ams_unit(state, row.ams_id)
             if target is None:
                 row.waiting_reason = "ams_not_found"
+                continue
+            if drying_preflight.ams_is_empty(target):
+                # The user emptied the box between scheduling the run and it
+                # coming due. Wait rather than fail: loading a spool is one
+                # action at the printer, and the run they scheduled still
+                # happens once they do it.
+                row.waiting_reason = drying_preflight.WAITING_REASON_EMPTY
                 continue
             blocking = drying_preflight.blocking_reason_codes(target)
             if blocking:
