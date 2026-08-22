@@ -1,0 +1,853 @@
+### exit: 0
+### stdout:
+{
+ "/api/v1/calculator/defaults": {
+  "get": {
+   "description": "Get the global calculator defaults (created on first access).",
+   "operationId": "get_calculator_defaults_api_v1_calculator_defaults_get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CalculatorDefaultsResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Calculator Defaults",
+   "tags": [
+    "calculator"
+   ]
+  },
+  "patch": {
+   "description": "Update the global calculator defaults.",
+   "operationId": "update_calculator_defaults_api_v1_calculator_defaults_patch",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/CalculatorDefaultsUpdate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CalculatorDefaultsResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Update Calculator Defaults",
+   "tags": [
+    "calculator"
+   ]
+  }
+ },
+ "/api/v1/calculator/filaments/": {
+  "get": {
+   "description": "List all calculator filaments.",
+   "operationId": "list_calculator_filaments_api_v1_calculator_filaments__get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/CalculatorFilamentResponse"
+        },
+        "title": "Response List Calculator Filaments Api V1 Calculator Filaments  Get",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "List Calculator Filaments",
+   "tags": [
+    "calculator"
+   ]
+  },
+  "post": {
+   "description": "Create a calculator filament.",
+   "operationId": "create_calculator_filament_api_v1_calculator_filaments__post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/CalculatorFilamentCreate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CalculatorFilamentResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Create Calculator Filament",
+   "tags": [
+    "calculator"
+   ]
+  }
+ },
+ "/api/v1/calculator/filaments/zoho-sync": {
+  "post": {
+   "description": "Refresh one chunk of linked filaments from their Zoho dealer prices.\n\nChunking is keyset paging by id, client-driven: the caller loops, passing\neach response's ``next_after_id`` back as the next request's ``after_id``,\nuntil it comes back null. Unlike offset paging, a filament deleted (or\nadded) between chunks cannot shift the window and skip a row \u2014 the next\nchunk is always \"ids greater than the last one processed\". Each chunk\ncommits its own work, so a mid-run Zoho failure leaves earlier chunks\napplied and a retry resumes from the id it reports.\n\nPrices only. Brand, material, margin and difficulty are never rewritten from\nZoho, so a rename upstream cannot clobber a hand-corrected filament.",
+   "operationId": "sync_calculator_filaments_from_zoho_api_v1_calculator_filaments_zoho_sync_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/CalculatorFilamentSyncRequest"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CalculatorFilamentSyncResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Sync Calculator Filaments From Zoho",
+   "tags": [
+    "calculator"
+   ]
+  }
+ },
+ "/api/v1/calculator/filaments/{filament_id}": {
+  "delete": {
+   "description": "Delete a calculator filament.",
+   "operationId": "delete_calculator_filament_api_v1_calculator_filaments__filament_id__delete",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "filament_id",
+     "required": true,
+     "schema": {
+      "title": "Filament Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Delete Calculator Filament",
+   "tags": [
+    "calculator"
+   ]
+  },
+  "patch": {
+   "description": "Update a calculator filament.",
+   "operationId": "update_calculator_filament_api_v1_calculator_filaments__filament_id__patch",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "filament_id",
+     "required": true,
+     "schema": {
+      "title": "Filament Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/CalculatorFilamentUpdate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CalculatorFilamentResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Update Calculator Filament",
+   "tags": [
+    "calculator"
+   ]
+  }
+ },
+ "/api/v1/calculator/insights": {
+  "get": {
+   "description": "Measured pricing signals (failure rates, tariff, spool costs, time accuracy).\n\nGated on CALCULATOR_READ alone by design: the aggregates are computed\nserver-side so a calculator-only user doesn't need archives/spool read\npermissions to benefit from them.",
+   "operationId": "get_calculator_insights_api_v1_calculator_insights_get",
+   "parameters": [
+    {
+     "in": "query",
+     "name": "days",
+     "required": false,
+     "schema": {
+      "default": 365,
+      "maximum": 3650,
+      "minimum": 7,
+      "title": "Days",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CalculatorInsightsResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Calculator Insights",
+   "tags": [
+    "calculator"
+   ]
+  }
+ },
+ "/api/v1/calculator/printers/": {
+  "get": {
+   "description": "List all calculator printers.",
+   "operationId": "list_calculator_printers_api_v1_calculator_printers__get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/CalculatorPrinterResponse"
+        },
+        "title": "Response List Calculator Printers Api V1 Calculator Printers  Get",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "List Calculator Printers",
+   "tags": [
+    "calculator"
+   ]
+  },
+  "post": {
+   "description": "Create a calculator printer.",
+   "operationId": "create_calculator_printer_api_v1_calculator_printers__post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/CalculatorPrinterCreate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CalculatorPrinterResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Create Calculator Printer",
+   "tags": [
+    "calculator"
+   ]
+  }
+ },
+ "/api/v1/calculator/printers/{printer_id}": {
+  "delete": {
+   "description": "Delete a calculator printer.",
+   "operationId": "delete_calculator_printer_api_v1_calculator_printers__printer_id__delete",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "printer_id",
+     "required": true,
+     "schema": {
+      "title": "Printer Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Delete Calculator Printer",
+   "tags": [
+    "calculator"
+   ]
+  },
+  "patch": {
+   "description": "Update a calculator printer.",
+   "operationId": "update_calculator_printer_api_v1_calculator_printers__printer_id__patch",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "printer_id",
+     "required": true,
+     "schema": {
+      "title": "Printer Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/CalculatorPrinterUpdate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CalculatorPrinterResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Update Calculator Printer",
+   "tags": [
+    "calculator"
+   ]
+  }
+ },
+ "/api/v1/calculator/zoho-filaments": {
+  "get": {
+   "description": "Zoho products in the Filaments category, for linking to a calculator filament.\n\nResults are per Zoho item \u2014 colour included \u2014 because dealer prices differ\nbetween colours of the same material (Bambu ABS-GF is 1866 in Blue and 3208\nin Black), so which colour the user picks decides the price.",
+   "operationId": "search_zoho_filaments_api_v1_calculator_zoho_filaments_get",
+   "parameters": [
+    {
+     "description": "Free-text search over brand, material, colour and SKU",
+     "in": "query",
+     "name": "q",
+     "required": false,
+     "schema": {
+      "default": "",
+      "description": "Free-text search over brand, material, colour and SKU",
+      "maxLength": 100,
+      "title": "Q",
+      "type": "string"
+     }
+    },
+    {
+     "in": "query",
+     "name": "limit",
+     "required": false,
+     "schema": {
+      "default": 25,
+      "maximum": 100,
+      "minimum": 1,
+      "title": "Limit",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/ZohoFilamentProduct"
+        },
+        "title": "Response Search Zoho Filaments Api V1 Calculator Zoho Filaments Get",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Search Zoho Filaments",
+   "tags": [
+    "calculator"
+   ]
+  }
+ }
+}
+
+### stderr:
+

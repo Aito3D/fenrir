@@ -1,0 +1,48 @@
+### exit: 0
+### stdout:
+{
+ "constants": {
+  "MIN_SAMPLE": 5,
+  "_ACCURACY_BAND_HI": 200.0,
+  "_ACCURACY_BAND_LO": 50.0,
+  "_FAILED_STATUSES": [
+   "failed",
+   "aborted"
+  ],
+  "_MAX_PRINT_SECONDS": 345600,
+  "_MIN_POWER_SECONDS": 300,
+  "_MIN_USAGE_DAYS": 14,
+  "_WATTS_BAND_HI": 3000.0,
+  "_WATTS_BAND_LO": 1.0
+ },
+ "resolve_duration": [
+  3600,
+  null,
+  7200,
+  null,
+  null,
+  -5,
+  null
+ ],
+ "split_materials": {
+  "'  '": [],
+  "''": [],
+  "'PLA'": [
+   "PLA"
+  ],
+  "'PLA,PETG'": [
+   "PETG",
+   "PLA"
+  ],
+  "'PLA; PETG ;ABS'": [
+   "PLA; PETG ;ABS"
+  ],
+  "'PLA;PETG'": [
+   "PLA;PETG"
+  ],
+  "None": []
+ }
+}
+
+### stderr:
+

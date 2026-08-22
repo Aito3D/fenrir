@@ -1,86 +1,71 @@
 [
   {
-    "id": "aito-openapi",
-    "cmd": "./venv/bin/python3 -c \"import json; from backend.app.main import app; spec = app.openapi(); paths = {k: v for k, v in spec['paths'].items() if '/aito' in k}; print(json.dumps(paths, sort_keys=True, indent=1))\" 2>/dev/null",
-    "timeout": 90,
-    "scrub": [
-      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
-    ],
-    "files": []
-  },
-  {
-    "id": "aito-pydantic-schemas",
-    "cmd": "./venv/bin/python3 -c \"import json, inspect; import backend.app.schemas.aito as m; from pydantic import BaseModel; out = {n: c.model_json_schema() for n, c in sorted(vars(m).items()) if inspect.isclass(c) and issubclass(c, BaseModel) and c.__module__ == m.__name__}; print(json.dumps(out, sort_keys=True))\" 2>/dev/null",
-    "timeout": 90,
-    "scrub": [
-      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
-    ],
-    "files": []
-  },
-  {
-    "id": "aito-ddl",
-    "cmd": "./venv/bin/python3 -c \"import backend.app.main; from sqlalchemy.schema import CreateTable; from sqlalchemy.dialects import sqlite; from backend.app.core.database import Base; [print(str(CreateTable(t).compile(dialect=sqlite.dialect())).strip() + ';') for n, t in sorted(Base.metadata.tables.items()) if n.startswith('aito')]\" 2>/dev/null",
-    "timeout": 90,
-    "scrub": [
-      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
-    ],
-    "files": []
-  },
-  {
-    "id": "aito-board-rules-py",
-    "cmd": "./venv/bin/python3 -c \"import json; from backend.app.services.aito_board_rules import evaluate; cases = json.load(open('frontend/src/__tests__/fixtures/aitoBoardRules.cases.json'))['evaluate']; print(json.dumps([list(evaluate(c.get('quote_status'), c['stored_column'], c.get('pending', []))) for c in cases]))\" 2>/dev/null",
-    "timeout": 60,
-    "scrub": [],
-    "files": []
-  },
-  {
-    "id": "aito-board-rules-ts",
-    "cmd": "mkdir -p /tmp/bambuddy-refactor-probe && frontend/node_modules/.bin/rolldown frontend/src/utils/aitoBoardRules.ts --format cjs --file /tmp/bambuddy-refactor-probe/aitoBoardRules.cjs >/dev/null 2>&1 && node tools/probe_boardrules.cjs",
-    "timeout": 60,
-    "scrub": [],
-    "files": []
-  },
-  {
-    "id": "aito-route-perms",
-    "cmd": "grep -oE 'RequirePermissionIfAuthEnabled\\([^)]*\\)' backend/app/api/routes/aito.py | sort | uniq -c | sed 's/^ *//'",
-    "timeout": 30,
-    "scrub": [],
-    "files": []
-  },
-  {
-    "id": "aito-event-depths",
-    "cmd": "./venv/bin/python3 -c \"from backend.app.services.aito_events import kinds_for_depth, COALESCE_WINDOW; print({d: kinds_for_depth(d) for d in ['story', 'detail', 'everything']}); print(COALESCE_WINDOW)\" 2>/dev/null",
-    "timeout": 60,
-    "scrub": [],
-    "files": []
-  },
-  {
-    "id": "aito-quote-money",
-    "cmd": "./venv/bin/python3 tools/probe_quote_money.py",
+    "id": "calc-openapi",
+    "cmd": "./venv/bin/python3 -c \"import json; from backend.app.main import app; spec = app.openapi(); paths = {k: v for k, v in spec['paths'].items() if '/calculator' in k}; print(json.dumps(paths, sort_keys=True, indent=1))\" 2>/dev/null",
     "timeout": 120,
-    "scrub": [
-      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
-    ],
+    "scrub": ["\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"],
     "files": []
   },
   {
-    "id": "aito-frontend-pure",
-    "cmd": "mkdir -p /tmp/bambuddy-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_aito_frontend_entry.ts --format cjs --file /tmp/bambuddy-refactor-probe/aitoFrontend.cjs >/dev/null 2>&1 && node tools/probe_aito_frontend.cjs",
+    "id": "calc-pydantic-schemas",
+    "cmd": "./venv/bin/python3 -c \"import json, inspect; import backend.app.schemas.calculator as m; from pydantic import BaseModel; out = {n: c.model_json_schema() for n, c in sorted(vars(m).items()) if inspect.isclass(c) and issubclass(c, BaseModel) and c.__module__ == m.__name__}; print(json.dumps(out, sort_keys=True, indent=1))\" 2>/dev/null",
+    "timeout": 120,
+    "scrub": ["\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"],
+    "files": []
+  },
+  {
+    "id": "calc-ddl",
+    "cmd": "./venv/bin/python3 -c \"import backend.app.main; from sqlalchemy.schema import CreateTable; from sqlalchemy.dialects import sqlite; from backend.app.core.database import Base; [print(str(CreateTable(t).compile(dialect=sqlite.dialect())).strip() + ';') for n, t in sorted(Base.metadata.tables.items()) if n.startswith('calculator_')]\" 2>/dev/null",
     "timeout": 120,
     "scrub": [],
     "files": []
   },
   {
-    "id": "aito-ai-prompts",
-    "cmd": "./venv/bin/python3 tools/probe_aito_ai.py",
+    "id": "calc-column-defaults",
+    "cmd": "./venv/bin/python3 -c \"import json, backend.app.main; from backend.app.models.calculator import CalculatorDefaults, CalculatorFilament, CalculatorPrinter; out = {}; [out.setdefault(M.__tablename__, {c.name: (repr(c.default.arg) if c.default is not None and getattr(c.default, 'is_scalar', False) else None, str(c.type), c.nullable) for c in M.__table__.columns}) for M in (CalculatorDefaults, CalculatorFilament, CalculatorPrinter)]; print(json.dumps(out, sort_keys=True, indent=1))\" 2>/dev/null",
+    "timeout": 120,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "calc-route-perms",
+    "cmd": "grep -oE 'RequirePermissionIfAuthEnabled\\([^)]*\\)' backend/app/api/routes/calculator.py | sort | uniq -c | sed 's/^ *//'",
     "timeout": 60,
     "scrub": [],
     "files": []
   },
   {
-    "id": "aito-status-comments",
-    "cmd": "./venv/bin/python3 tools/probe_aito_status.py",
+    "id": "calc-zoho-pure",
+    "cmd": "PYTHONPATH=. ./venv/bin/python3 tools/probe_calc_zoho.py",
+    "timeout": 120,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "calc-insights-pure",
+    "cmd": "PYTHONPATH=. ./venv/bin/python3 -c \"import json; from datetime import datetime; import backend.app.services.calculator_insights as m; d = datetime(2026,1,2,3,4,5); print(json.dumps({'constants': {k: getattr(m,k) for k in sorted(dir(m)) if k.isupper() or (k.startswith('_') and k[1:].isupper()) or k in ('MIN_SAMPLE',)}, 'resolve_duration': [m._resolve_duration(a,b,c) for a,b,c in [(3600,None,None),(0,None,None),(None,d,datetime(2026,1,2,5,4,5)),(None,d,None),(None,None,None),(-5,None,None),(None,datetime(2026,1,3,3,4,5),d)]], 'split_materials': {repr(s): m._split_materials(s) for s in ['PLA','PLA;PETG','PLA; PETG ;ABS','', None,'  ','PLA,PETG']}}, default=str, sort_keys=True, indent=1))\" 2>/dev/null",
+    "timeout": 120,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "calc-migration-sql",
+    "cmd": "./venv/bin/python3 -c \"import re,sys; s=open('backend/app/core/database.py').read(); i=s.index('# Migration: calculator filaments can be linked'); j=s.index('# Migration:', i+50); sys.stdout.write(s[i:j].rstrip()+chr(10))\"",
     "timeout": 60,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "calc-pricing",
+    "cmd": "mkdir -p /tmp/bambuddy-refactor-probe && frontend/node_modules/.bin/rolldown frontend/src/utils/pricing.ts --format cjs --file /tmp/bambuddy-refactor-probe/pricing.cjs >/dev/null 2>&1 && node tools/probe_calc_pricing.cjs",
+    "timeout": 120,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "calc-frontend-pure",
+    "cmd": "mkdir -p /tmp/bambuddy-refactor-probe && frontend/node_modules/.bin/rolldown tools/probe_calc_frontend_entry.ts --format cjs --file /tmp/bambuddy-refactor-probe/calcFrontend.cjs >/dev/null 2>&1 && node tools/probe_calc_frontend.cjs",
+    "timeout": 120,
     "scrub": [],
     "files": []
   }
