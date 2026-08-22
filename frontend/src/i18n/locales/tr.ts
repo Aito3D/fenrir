@@ -1089,6 +1089,7 @@ export default {
       cancelScheduled: 'Zamanlanmış kurutmayı iptal et',
       scheduleFailed: 'Kurutma zamanlanamadı',
       retractFilament: 'Kurutmayı başlatmak için AMS çıkışındaki filamenti geri çekin',
+      waitingAmsEmpty: 'Bir makara takın — AMS boş, kurutma beklemede',
       waitingAmsNotFound: 'AMS algılanması bekleniyor',
       waitingOffline: 'Yazıcının çevrimiçi olması bekleniyor',
       waitingPrinterBusy: 'Yazıcının boşalması bekleniyor',

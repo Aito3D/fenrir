@@ -22,10 +22,18 @@ def _utcnow_naive() -> datetime:
 DRYING_CAPABLE_FIRMWARE = "01.09.00.00"
 
 
-def _mock_state(ams_id=0, dry_time=0, dry_sf_reason=None, firmware=DRYING_CAPABLE_FIRMWARE):
+def _mock_state(ams_id=0, dry_time=0, dry_sf_reason=None, firmware=DRYING_CAPABLE_FIRMWARE, tray=None):
+    """A live status for one AMS unit, loaded unless the caller says otherwise.
+
+    ``tray`` carries firmware's ``exists`` presence flag because dispatch now
+    refuses to heat an empty unit; a unit with no tray array at all reads as
+    empty. Pass ``tray=[]`` for the emptied-box case.
+    """
     state = MagicMock()
     state.firmware_version = firmware
-    state.raw_data = {"ams": [{"id": ams_id, "dry_time": dry_time, "dry_sf_reason": dry_sf_reason or []}]}
+    if tray is None:
+        tray = [{"id": 0, "exists": True, "tray_type": "PLA"}]
+    state.raw_data = {"ams": [{"id": ams_id, "dry_time": dry_time, "dry_sf_reason": dry_sf_reason or [], "tray": tray}]}
     return state
 
 

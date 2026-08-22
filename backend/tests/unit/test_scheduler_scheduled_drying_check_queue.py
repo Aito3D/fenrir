@@ -34,7 +34,18 @@ def _utcnow_naive() -> datetime:
 def _state(dry_time=0):
     state = MagicMock()
     state.firmware_version = "01.09.00.00"
-    state.raw_data = {"ams": [{"id": 0, "dry_time": dry_time, "dry_sf_reason": []}]}
+    # `exists` is firmware's spool-presence flag: dispatch refuses to heat an
+    # empty unit, and a unit with no tray array reads as empty.
+    state.raw_data = {
+        "ams": [
+            {
+                "id": 0,
+                "dry_time": dry_time,
+                "dry_sf_reason": [],
+                "tray": [{"id": 0, "exists": True, "tray_type": "PLA"}],
+            }
+        ]
+    }
     return state
 
 

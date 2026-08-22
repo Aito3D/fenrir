@@ -1089,6 +1089,7 @@ export default {
       cancelScheduled: 'Annuler le séchage planifié',
       scheduleFailed: 'Échec de la planification du séchage',
       retractFilament: 'Rétractez le filament à la sortie de l\'AMS pour démarrer le séchage',
+      waitingAmsEmpty: 'Chargez une bobine — l\'AMS est vide, le séchage est en attente',
       waitingAmsNotFound: 'En attente de la détection de l\'AMS',
       waitingOffline: 'En attente de la connexion de l\'imprimante',
       waitingPrinterBusy: 'En attente de la disponibilité de l\'imprimante',

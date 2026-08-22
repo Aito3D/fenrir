@@ -40,6 +40,7 @@ const SCHEDULED_DRYINGS_KEY = ['scheduled-dryings'] as const;
 const WAITING_REASON_KEYS: Record<string, string> = {
   ams_power_required: 'printers.drying.powerRequired',
   ams_retract_filament: 'printers.drying.retractFilament',
+  ams_empty: 'printers.drying.waitingAmsEmpty',
   ams_blocked: 'printers.drying.cannotDryNow',
   ams_not_found: 'printers.drying.waitingAmsNotFound',
   printer_offline: 'printers.drying.waitingOffline',

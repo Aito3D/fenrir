@@ -1089,6 +1089,7 @@ export default {
       cancelScheduled: 'Geplante Trocknung abbrechen',
       scheduleFailed: 'Trocknung konnte nicht geplant werden',
       retractFilament: 'Filament am AMS-Ausgang zurückziehen, um die Trocknung zu starten',
+      waitingAmsEmpty: 'Spule einlegen — das AMS ist leer, das Trocknen wartet',
       waitingAmsNotFound: 'Warten, bis das AMS erkannt wird',
       waitingOffline: 'Warten, bis der Drucker online ist',
       waitingPrinterBusy: 'Warten, bis der Drucker frei ist',

@@ -29,10 +29,17 @@ def mqtt_send():
 
 @pytest.fixture
 def live_state():
-    """A connected printer on firmware new enough that only the model gates drying."""
+    """A connected printer on firmware new enough that only the model gates drying.
+
+    The tray carries firmware's ``exists`` presence flag: an AMS with nothing in
+    it is refused before the model check is reached, and these tests are about
+    the model check.
+    """
     state = MagicMock()
     state.firmware_version = "01.10.00.00"
-    state.raw_data = {"ams": [{"id": 0, "module_type": "n3f", "tray": []}]}
+    state.raw_data = {
+        "ams": [{"id": 0, "module_type": "n3f", "tray": [{"id": 0, "exists": True, "tray_type": "PLA"}]}]
+    }
     with patch(
         "backend.app.services.printer_manager.printer_manager.get_status",
         new=MagicMock(return_value=state),

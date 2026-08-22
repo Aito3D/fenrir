@@ -1089,6 +1089,7 @@ export default {
       cancelScheduled: '取消预约干燥',
       scheduleFailed: '预约干燥失败',
       retractFilament: '请退回AMS出口处的耗材后再开始干燥',
+      waitingAmsEmpty: '请装入料卷 — AMS 为空，烘干已暂停',
       waitingAmsNotFound: '正在等待检测到AMS',
       waitingOffline: '正在等待打印机上线',
       waitingPrinterBusy: '正在等待打印机空闲',

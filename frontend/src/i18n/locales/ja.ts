@@ -1088,6 +1088,7 @@ export default {
       cancelScheduled: '乾燥予約をキャンセル',
       scheduleFailed: '乾燥の予約に失敗しました',
       retractFilament: 'AMS出口のフィラメントを引き戻すと乾燥を開始できます',
+      waitingAmsEmpty: 'スプールを取り付けてください — AMSが空のため乾燥は保留中です',
       waitingAmsNotFound: 'AMSの検出待ち',
       waitingOffline: 'プリンターのオンライン復帰待ち',
       waitingPrinterBusy: 'プリンターが空くのを待機中',

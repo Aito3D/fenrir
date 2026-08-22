@@ -1097,6 +1097,7 @@ export default {
       cancelScheduled: 'Cancel scheduled drying',
       scheduleFailed: 'Failed to schedule drying',
       retractFilament: 'Retract the filament at the AMS outlet to start drying',
+      waitingAmsEmpty: 'Load a spool — the AMS is empty, so drying is on hold',
       waitingAmsNotFound: 'Waiting for the AMS to be detected',
       waitingOffline: 'Waiting for the printer to come online',
       waitingPrinterBusy: 'Waiting for the printer to be free',

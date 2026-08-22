@@ -1089,6 +1089,7 @@ export default {
       cancelScheduled: 'Cancelar secado programado',
       scheduleFailed: 'No se pudo programar el secado',
       retractFilament: 'Retire el filamento de la salida del AMS para iniciar el secado',
+      waitingAmsEmpty: 'Carga una bobina: el AMS está vacío, el secado está en espera',
       waitingAmsNotFound: 'Esperando a que se detecte el AMS',
       waitingOffline: 'Esperando a que la impresora se conecte',
       waitingPrinterBusy: 'Esperando a que la impresora esté libre',
