@@ -199,6 +199,40 @@ async def test_relinking_to_another_product_clears_the_sync_stamp(async_client, 
 
 
 @pytest.mark.asyncio
+async def test_a_patch_that_does_not_change_the_link_keeps_the_sync_stamp(async_client, zoho_catalogue):
+    """The false-positive direction of the clear-on-relink guard.
+
+    Clearing ``zoho_synced_at`` on every PATCH would be just as wrong as never
+    clearing it: the settings panel reads a non-null stamp as proof the cost is
+    Zoho-owned, so losing it makes the dealer price un-reconstructable and turns
+    a synced row's cost back into a hand-typed one until the next sync. The
+    middle case below is what the panel actually sends on every save of a linked
+    row — it resubmits the unchanged ``zoho_item_id`` alongside the edit — so a
+    guard keyed on anything but the VALUE would fire on ordinary saves.
+    """
+    created = await _create(async_client, zoho_item_id="A", material="ABS-GF")
+    await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
+    stamp = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]["zoho_synced_at"]
+    assert stamp is not None
+
+    edits = [
+        {"margin_pct": 75.0},  # margin only: the zoho_item_id key is absent
+        {"margin_pct": 100.0, "zoho_item_id": "A"},  # the panel's real payload
+        {"difficulty_pct": 200.0},  # difficulty only
+    ]
+    row = None
+    for edit in edits:
+        resp = await async_client.patch(f"/api/v1/calculator/filaments/{created['id']}", json=edit)
+        assert resp.status_code == 200
+        assert resp.json()["zoho_synced_at"] == stamp, f"{edit} must not clear the sync stamp"
+        # And it survives the read back, not just in the write's response.
+        row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
+        assert row["zoho_synced_at"] == stamp, f"{edit} must not clear the sync stamp"
+
+    assert row["zoho_item_id"] == "A"  # still linked throughout
+
+
+@pytest.mark.asyncio
 async def test_unlinked_filaments_are_never_touched(async_client, zoho_catalogue):
     await _create(async_client, material="PLA")  # no zoho_item_id
     resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})

@@ -158,3 +158,89 @@ async def test_migration_is_idempotent(raw_conn):
 
     margin = (await raw_conn.execute(text("SELECT margin_pct FROM calculator_filaments"))).scalar_one()
     assert margin == pytest.approx(50.0)
+
+
+# 11094.75 is exactly what a Zoho sync writes: round(8321.0625 / 0.75, 2). At
+# margin 50 the exact product is 16642.125 — a value sitting precisely on a
+# half-cent, which is where SQLite's ROUND (half-away-from-zero) and Python's
+# round (half-to-even, used by derive_sale_price) disagree by one cent.
+_HALF_CENT_COST = 11094.75
+_HALF_CENT_SALE = 16642.12  # what the route stores; SQLite would say 16642.13
+
+
+async def _insert_half_cent_row(conn):
+    await conn.execute(
+        text(
+            "INSERT INTO calculator_filaments (name, brand, material, cost_per_kg, "
+            "sale_price_per_kg, difficulty_pct) VALUES "
+            f"('Zoho PLA', 'Zoho', 'PLA', {_HALF_CENT_COST}, {_HALF_CENT_SALE}, 100.0)"
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_sub_cent_disagreement_with_sqlites_rounding_is_left_alone(raw_conn):
+    """The self-heal must not fight the route over half a cent.
+
+    ``derive_sale_price`` rounds half-to-even and stores 16642.12; SQLite's
+    ROUND rounds half-away-from-zero and would write 16642.13. That is a
+    disagreement about rounding mode, not drift, so the migration's tolerance
+    makes it a no-op.
+    """
+    await _drop_margin_pct(raw_conn)
+    await _insert_half_cent_row(raw_conn)
+
+    await run_migrations(raw_conn)
+
+    cost, margin, sale = (
+        await raw_conn.execute(text("SELECT cost_per_kg, margin_pct, sale_price_per_kg FROM calculator_filaments"))
+    ).one()
+    assert margin == pytest.approx(50.0)
+    assert cost == _HALF_CENT_COST
+    assert sale == _HALF_CENT_SALE, "a sub-cent rounding-mode disagreement must not be rewritten"
+
+
+@pytest.mark.asyncio
+async def test_the_sub_cent_row_does_not_oscillate_across_boots(raw_conn):
+    """``run_migrations`` runs on every boot, so a rewrite here is forever.
+
+    Before the tolerance, boot #1 wrote 16642.13, the next route write put
+    16642.12 back, boot #2 wrote 16642.13 again... A second run must change
+    nothing at all.
+    """
+    await _drop_margin_pct(raw_conn)
+    await _insert_half_cent_row(raw_conn)
+
+    columns = "cost_per_kg, margin_pct, sale_price_per_kg"
+    await run_migrations(raw_conn)
+    after_first = (await raw_conn.execute(text(f"SELECT {columns} FROM calculator_filaments"))).one()
+    await run_migrations(raw_conn)
+    after_second = (await raw_conn.execute(text(f"SELECT {columns} FROM calculator_filaments"))).one()
+
+    assert after_first == (_HALF_CENT_COST, pytest.approx(50.0), _HALF_CENT_SALE)
+    assert after_second == after_first, "the second boot must be a true no-op"
+
+
+@pytest.mark.asyncio
+async def test_genuine_drift_still_heals_despite_the_tolerance(raw_conn):
+    """The tolerance is one cent wide, not wide enough to hide real drift.
+
+    The user's real row 1 (cost 3731, sale 5597) is off by 0.13 from what its
+    backfilled margin derives, and must still be healed to 5596.87.
+    """
+    await _drop_margin_pct(raw_conn)
+    await raw_conn.execute(
+        text(
+            "INSERT INTO calculator_filaments (name, brand, material, cost_per_kg, "
+            "sale_price_per_kg, difficulty_pct) VALUES "
+            "('SUNLU PA6-CF', 'SUNLU', 'PA6-CF', 3731.0, 5597.0, 150.0)"
+        )
+    )
+
+    await run_migrations(raw_conn)
+
+    margin, sale = (
+        await raw_conn.execute(text("SELECT margin_pct, sale_price_per_kg FROM calculator_filaments"))
+    ).one()
+    assert margin == pytest.approx(50.01)
+    assert sale == pytest.approx(5596.87)

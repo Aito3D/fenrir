@@ -4726,12 +4726,25 @@ async def run_migrations(conn):
         # any row where it disagrees with cost + margin is drift (the sync's
         # "unchanged" branch can leave some behind), and the WHERE makes it a
         # no-op for every row that already agrees.
+        # Named once so the SET and the WHERE can never drift apart.
+        derived_sale = "ROUND(cost_per_kg * (1 + margin_pct / 100.0), 2)"
+        # The 0.011 tolerance (one cent, plus slack for binary float noise) is
+        # NOT arbitrary: SQLite's ROUND is half-AWAY-from-zero while the route's
+        # derive_sale_price (api/routes/calculator.py) uses Python's round,
+        # which is half-to-EVEN. On a value landing exactly on a half-cent the
+        # two disagree by 0.01 — e.g. cost 11094.75 at margin 50 is exactly
+        # 16642.125, which Python stores as 16642.12 and SQLite would rewrite to
+        # 16642.13. run_migrations runs on every boot, so an exact-inequality
+        # WHERE would flip such a row back and forth forever (~1% of realistic
+        # cost/margin combinations). A sub-cent disagreement is therefore a
+        # no-op; genuine drift, which is always larger (the backfilled
+        # SUNLU PA6-CF row is off by 0.13), still heals.
         await conn.execute(
             text(
                 "UPDATE calculator_filaments "
-                "SET sale_price_per_kg = ROUND(cost_per_kg * (1 + margin_pct / 100.0), 2) "
+                f"SET sale_price_per_kg = {derived_sale} "
                 "WHERE cost_per_kg > 0 AND margin_pct IS NOT NULL AND sale_price_per_kg IS NOT NULL "
-                "AND sale_price_per_kg != ROUND(cost_per_kg * (1 + margin_pct / 100.0), 2)"
+                f"AND ABS(sale_price_per_kg - {derived_sale}) > 0.011"
             )
         )
 
