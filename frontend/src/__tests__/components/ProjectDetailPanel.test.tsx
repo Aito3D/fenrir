@@ -42,6 +42,7 @@ const project: AitoProject = {
   quote_sync_state: 'idle',
   quote_invoiced: false,
   flag: null,
+  client_contacted_at: null,
   quote_sync_error: null,
   quote_status_block: null,
   quote_status_remote: null,
@@ -2030,7 +2031,7 @@ describe('ProjectDetailPanel mark as done', () => {
     within(screen.getByTestId('panel-footer')).queryByRole('button', { name: /mark project as done/i });
 
   it('offers it in the footer for a released card in Finish', () => {
-    show({ column: 'finish', move_lock: null, quote_status: 'accepted' });
+    show({ column: 'finish', move_lock: null, quote_status: 'accepted', client_contacted_at: '2026-08-20T09:00:00Z' });
     expect(doneButton()).toBeEnabled();
   });
 
@@ -2054,7 +2055,7 @@ describe('ProjectDetailPanel mark as done', () => {
     // renders nothing once accepted. Asserted rather than assumed: the two
     // blocks are styled alike, so a regression that put both on the bar would
     // read as one wide row of near-identical pills.
-    show({ column: 'finish', move_lock: null, quote_status: 'accepted' });
+    show({ column: 'finish', move_lock: null, quote_status: 'accepted', client_contacted_at: '2026-08-20T09:00:00Z' });
     const footer = screen.getByTestId('panel-footer');
     expect(within(footer).queryByRole('button', { name: /mark as sent|accept quote|decline quote/i }))
       .not.toBeInTheDocument();
@@ -2068,7 +2069,7 @@ describe('ProjectDetailPanel mark as done', () => {
     const move = vi.spyOn(api, 'moveAitoProject').mockImplementation(() => new Promise(() => {}));
     try {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-      show({ column: 'finish', move_lock: null, quote_status: 'accepted' });
+      show({ column: 'finish', move_lock: null, quote_status: 'accepted', client_contacted_at: '2026-08-20T09:00:00Z' });
       const button = doneButton()!;
 
       await user.pointer({ keys: '[MouseLeft>]', target: button });
@@ -2834,5 +2835,59 @@ describe('ProjectDetailPanel presence', () => {
 
     unmount();
     expect(send).toHaveBeenLastCalledWith({ type: 'aito_presence', project_id: null });
+  });
+});
+
+describe('ProjectDetailPanel — the header pill follows the project', () => {
+  // One slot in the header row, two controls. A finished project has no use
+  // for a production flag; what it has instead is a client who may or may not
+  // have been told, which is also what gates archiving it.
+  it('offers the flag control while the project is still being worked on', () => {
+    show({ column: 'print', move_lock: 'steps' });
+    expect(screen.getByTestId('flag-control')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /mark client as contacted/i })).not.toBeInTheDocument();
+  });
+
+  it('offers the contact control instead once the project is finished', () => {
+    show({ column: 'finish', move_lock: null, client_contacted_at: null });
+    expect(screen.queryByTestId('flag-control')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /mark client as contacted/i })).toBeInTheDocument();
+  });
+
+  it('offers no flag control in the Done archive either', () => {
+    show({ column: 'done', move_lock: null, client_contacted_at: '2026-08-20T09:00:00Z' });
+    expect(screen.queryByTestId('flag-control')).not.toBeInTheDocument();
+  });
+
+  it('lets a contact be taken back, which the card cannot', () => {
+    // The card's one action slot belongs to Done once the client has been
+    // told, so this panel control is the ONLY way to undo a mistaken mark.
+    show({ column: 'finish', move_lock: null, client_contacted_at: '2026-08-20T09:00:00Z' });
+    expect(screen.getByRole('button', { name: /undo contacted/i })).toBeInTheDocument();
+  });
+
+  it('keeps the flag control on a finished project the user may not edit', () => {
+    // `canUpdate` gates the whole slot, and always did. Pinned so the swap
+    // above cannot accidentally hand an unprivileged user a control the flag
+    // never gave them.
+    render(
+      <ProjectDetailPanel
+        canCreate
+        canUpdate={false}
+        canDelete
+        project={{ ...project, column: 'finish', move_lock: null, client_contacted_at: null }}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /mark client as contacted/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('flag-control')).not.toBeInTheDocument();
+  });
+});
+
+describe('ProjectDetailPanel — the footer cannot archive an untold job', () => {
+  it('offers no Done pill while the client has not been told', () => {
+    show({ column: 'finish', move_lock: null, quote_status: 'accepted', client_contacted_at: null });
+    expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
   });
 });

@@ -490,6 +490,18 @@ class AitoFlagUpdate(BaseModel):
     flag: AitoFlag | None
 
 
+class AitoContactedUpdate(BaseModel):
+    """Body of PATCH /aito/{id}/contacted.
+
+    A bool rather than the timestamp itself, deliberately: WHEN the client was
+    told is the server's fact to record, and letting a client post its own
+    time would put the card's age — and the Done gate — at the mercy of a
+    wrong clock in a browser.
+    """
+
+    contacted: bool
+
+
 class AitoTaskStepsResponse(BaseModel):
     """One task's steps, for the board card's per-task rows.
 
@@ -543,6 +555,12 @@ class AitoProjectResponse(BaseModel):
     # peers, pause sinks to the bottom, unflagged sits in between — without
     # rewriting stored `position` values.
     flag: AitoFlag | None
+    # When the client was told the job is ready — see the column comment on
+    # AitoProject.client_contacted_at. NULL means nobody has told them yet,
+    # and while it is NULL the project cannot be archived: `move_project`
+    # refuses Finish -> Done. The board card reads it to know whether to show
+    # the "call the client" state or the ordinary Done button.
+    client_contacted_at: datetime | None
     quote_sync_error: str | None
     # Why the status reconciler is blocked, if it is, and what Books read when
     # it was recorded — 'conflict' (both sides decided and differ) or

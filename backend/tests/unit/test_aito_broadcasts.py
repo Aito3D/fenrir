@@ -73,3 +73,30 @@ async def test_broadcast_failure_never_fails_the_request(async_client, monkeypat
     )
     response = await _create(async_client)
     assert response.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_marking_the_client_contacted_broadcasts(async_client, broadcast):
+    """Two operators work this board at once, and this mark decides whether
+    the other one's card shows a Done button at all — so it has to fan out
+    like every other mutation."""
+    project_id = (await _create(async_client)).json()["id"]
+    await async_client.post(f"/api/v1/aito/{project_id}/quote-status", json={"status": "accepted"})
+
+    await async_client.patch(f"/api/v1/aito/{project_id}/contacted", json={"contacted": True})
+
+    assert _actions(broadcast)[-1] == "contacted"
+
+
+@pytest.mark.asyncio
+async def test_re_marking_an_already_contacted_client_does_not_broadcast(async_client, broadcast):
+    """Idempotent, and silent about it — same stance as a repeated
+    quote-status transition or a no-op PATCH above."""
+    project_id = (await _create(async_client)).json()["id"]
+    await async_client.post(f"/api/v1/aito/{project_id}/quote-status", json={"status": "accepted"})
+    await async_client.patch(f"/api/v1/aito/{project_id}/contacted", json={"contacted": True})
+    before = len(_actions(broadcast))
+
+    await async_client.patch(f"/api/v1/aito/{project_id}/contacted", json={"contacted": True})
+
+    assert len(_actions(broadcast)) == before

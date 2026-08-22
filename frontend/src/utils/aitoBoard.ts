@@ -22,6 +22,30 @@ function arrayMove<T>(items: T[], from: number, to: number): T[] {
   return next;
 }
 
+/** The columns where the work itself is over: Finish (done, waiting on the
+ *  client) and Done (archived). Mirrors `_FINISHED_COLUMNS` in
+ *  routes/aito.py — the two must not drift.
+ *
+ *  What it decides here is presentational: a board flag is a production
+ *  signal, and "urgent" on a job that is finished says nothing anyone can act
+ *  on. So a finished card paints no flag and offers no way to set one. The
+ *  flag itself is never touched — the card is showing less, not holding less,
+ *  and it comes straight back the moment the card returns to a work column. */
+export function isFinished(column: ColumnId): boolean {
+  return column === 'finish' || column === 'done';
+}
+
+/** True when this project is finished and nobody has told the client yet.
+ *
+ *  Finish only, deliberately, and not `isFinished`: Done is the archive, and
+ *  every project archived before this feature existed has no contact recorded
+ *  and never will — alerting on all of them would make the archive unreadable
+ *  and say nothing true. The server draws the same line in `move_project`,
+ *  where the gate fires only on the way INTO Done. */
+export function needsClientContact(project: Pick<AitoProject, 'column' | 'client_contacted_at'>): boolean {
+  return project.column === 'finish' && project.client_contacted_at === null;
+}
+
 /** Display rank for a column. Urgent and SAV mean "look at this" and rise;
  *  pause means the opposite and sinks; unflagged sits between them.
  *

@@ -51,6 +51,7 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
     quote_sync_state: 'idle',
     quote_invoiced: false,
     flag: null,
+    client_contacted_at: null,
     quote_sync_error: null,
     quote_status_block: null,
     quote_status_remote: null,
@@ -322,7 +323,7 @@ describe('QuoteStatusActions', () => {
 
 describe('ProjectDoneAction — glyph swap in the panel footer', () => {
   it('shows a check on a Finish card with no shipping', () => {
-    render(<ProjectDoneAction project={makeProject({ column: 'finish', move_lock: null, shipping_island: null })} />);
+    render(<ProjectDoneAction project={makeProject({ column: 'finish', move_lock: null, shipping_island: null, client_contacted_at: '2026-08-20T09:00:00Z' })} />);
     const done = screen.getByRole('button', { name: /mark project as done/i });
     expect(done.querySelector('.lucide-check')).toBeTruthy();
     expect(done.querySelector('.lucide-plane')).toBeFalsy();
@@ -330,7 +331,7 @@ describe('ProjectDoneAction — glyph swap in the panel footer', () => {
 
   it('shows a plane on a Finish card that has shipping', () => {
     render(
-      <ProjectDoneAction project={makeProject({ column: 'finish', move_lock: null, shipping_island: 'rangiroa' })} />,
+      <ProjectDoneAction project={makeProject({ column: 'finish', move_lock: null, shipping_island: 'rangiroa', client_contacted_at: '2026-08-20T09:00:00Z' })} />,
     );
     const done = screen.getByRole('button', { name: /mark project as done/i });
     expect(done.querySelector('.lucide-plane')).toBeTruthy();

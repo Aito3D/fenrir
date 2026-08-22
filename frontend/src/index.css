@@ -1528,6 +1528,35 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
    teal-500, literal and never a token: a fixed semantic that must not follow
    the user's accent colour, exactly like amber and rose above. */
 .flag-pause-edge { border-color: #14b8a6; }
+/* A finished job nobody has rung the client about. Reuses the flag halo's own
+   keyframes — same gesture, same restraint — because it is the same statement:
+   "this one wants you". It cannot collide with any flag, because a card paints
+   a flag only while it is still work and this only once it is not (CardView's
+   `flagShown` / `awaitingContact`, mutually exclusive by construction).
+
+   cyan-400, literal and never a token: a fixed semantic that must not follow
+   the user's accent colour, exactly like the amber, rose and teal above. Cyan
+   rather than amber deliberately — amber already means "urgent" on this board,
+   and a colour that means two things means neither. The sky-400 of the Quote
+   column's header dot is close, but that is a column heading and this is a
+   card body, so the two never sit on the same object.
+
+   Unlayered like the halo above, so it beats the card's own
+   `hover:border-bambu-green/40` with no specificity padding — do not add any.
+   It needs the DOUBLED class for the same reason `.animate-flag-halo` does not:
+   the running animation outranks the later `.card-shadow`, but the
+   reduced-motion fallback below is a plain declaration and does not. */
+.contact-pending {
+  --flag-halo: 34 211 238;
+  border-color: rgb(34 211 238 / .85);
+  animation: flag-halo 3.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .contact-pending.contact-pending {
+    animation: none;
+    box-shadow: 0 0 9px -2px rgb(var(--flag-halo) / .42), var(--card-shadow);
+  }
+}
 /* The signal survives for anyone who has asked for less motion — as a static
    glow rather than a pulsing one, exactly like .animate-invoiced-pulse above.
    The class is repeated to outweigh the later `.card-shadow` (see above); the

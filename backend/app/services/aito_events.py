@@ -50,6 +50,15 @@ KINDS: dict[str, str] = {
     "project.sav.cleared": "story",
     "project.pause.set": "story",
     "project.pause.cleared": "story",
+    # Story, not detail, and for a reason the board flags do not share: this
+    # pair is the audit trail of the promise made to the client, and of the
+    # gate that lets a project be archived. "Who told them, and when" is
+    # exactly the question asked when a client rings up about a job they say
+    # nobody mentioned. The cleared row carries {"cause": "rule"} when the
+    # board retracted it because work reappeared, and no cause when a person
+    # took it back by hand.
+    "project.contacted.set": "story",
+    "project.contacted.cleared": "story",
     # detail: everything a person did by hand.
     "task.added": "detail",
     "task.updated": "detail",
