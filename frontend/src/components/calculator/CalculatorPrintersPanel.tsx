@@ -20,7 +20,7 @@ import {
 } from '../../utils/pricing';
 import { getCurrencySymbol } from '../../utils/currency';
 import { useToast } from '../../contexts/ToastContext';
-import { parseNum, tdCls, useSortToggle } from './calculatorSettingsShared';
+import { parseNum, settingsTdCls, useSortToggle } from './calculatorSettingsShared';
 import { SortHeader, SearchBox, CountBadge, NoMatches } from './CalculatorPanelParts';
 
 interface PrinterFormState {
@@ -264,19 +264,19 @@ export function CalculatorPrintersPanel({
                   <tbody>
                     {visible.map((p) => (
                       <tr key={p.id} className="border-b border-bambu-dark-tertiary/50 last:border-b-0 hover:bg-bambu-dark-tertiary/30 transition-colors">
-                        <td className={`${tdCls} text-white`}>
+                        <td className={`${settingsTdCls} text-white`}>
                           {p.name}
                           {p.id === selectedPrinterId && (
                             <span className="ml-2 text-xs text-bambu-green" title={t('calculator.inUse')}>●</span>
                           )}
                         </td>
-                        <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{formatMoney(p.purchase_price, currency, false)}</td>
-                        <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{p.power_watts.toLocaleString()}</td>
-                        <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{p.daily_usage_hours.toLocaleString()}</td>
-                        <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{Math.round(printerLifetimeHours(p)).toLocaleString()}</td>
-                        <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{printerDepreciationPerHour(p).toFixed(2)}</td>
-                        <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{printerRepairsPerHour(p).toFixed(2)}</td>
-                        <td className={`${tdCls} text-right`}>
+                        <td className={`${settingsTdCls} text-right text-bambu-gray-light tabular-nums`}>{formatMoney(p.purchase_price, currency, false)}</td>
+                        <td className={`${settingsTdCls} text-right text-bambu-gray-light tabular-nums`}>{p.power_watts.toLocaleString()}</td>
+                        <td className={`${settingsTdCls} text-right text-bambu-gray-light tabular-nums`}>{p.daily_usage_hours.toLocaleString()}</td>
+                        <td className={`${settingsTdCls} text-right text-bambu-gray-light tabular-nums`}>{Math.round(printerLifetimeHours(p)).toLocaleString()}</td>
+                        <td className={`${settingsTdCls} text-right text-bambu-gray-light tabular-nums`}>{printerDepreciationPerHour(p).toFixed(2)}</td>
+                        <td className={`${settingsTdCls} text-right text-bambu-gray-light tabular-nums`}>{printerRepairsPerHour(p).toFixed(2)}</td>
+                        <td className={`${settingsTdCls} text-right`}>
                           {canUpdate && (
                             <div className="flex gap-1 justify-end">
                               <Button variant="ghost" size="sm" onClick={() => setEditing(p)} aria-label={t('calculator.editPrinter')}>

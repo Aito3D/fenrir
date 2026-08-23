@@ -16,8 +16,9 @@
 
 import { useState } from 'react';
 
-/** Shared `<td>` class for the filament/printer profile tables. */
-const tdCls = 'px-3 py-2 text-sm whitespace-nowrap';
+/** Shared `<td>` class for the filament/printer profile tables (distinct
+ * from the right-aligned/tabular-nums tdCls in ../shared.tsx). */
+const settingsTdCls = 'px-3 py-2 text-sm whitespace-nowrap';
 
 const parseNum = (s: string): number | null => {
   if (s.trim() === '') return null;
@@ -47,4 +48,4 @@ function useSortToggle<K extends string>(initialKey: K): { sortKey: K; sortDir: 
 }
 
 export type { SortDir };
-export { parseNum, tdCls, useSortToggle };
+export { parseNum, settingsTdCls, useSortToggle };

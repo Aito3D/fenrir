@@ -32,6 +32,12 @@ import type {
   CalculatorDefaults,
   ZohoFilamentProduct,
 } from '../../api/client';
+// Pinned by name (not re-derived) so a wiring mistake — either panel
+// importing shared.tsx's right-aligned/tabular-nums `tdCls` instead of this
+// module's plain one, or vice versa — shows up as a real assertion failure
+// below rather than a test that trivially agrees with whatever the panel
+// happens to import (T-097).
+import { settingsTdCls } from '../../components/calculator/calculatorSettingsShared';
 
 const NOW = '2026-01-01T00:00:00Z';
 
@@ -935,6 +941,16 @@ describe('CalculatorFilamentsPanel Zoho price sync', () => {
     expect(screen.queryByText('calculator.salePerKg')).toBeNull();
   });
 
+  it('renders profile-table cells with calculatorSettingsShared\'s tdCls, not shared.tsx\'s (T-097)', async () => {
+    await renderFilamentsPanel([baseFilament]);
+    const materialCell = await screen.findByRole('cell', { name: 'PLA' });
+    // shared.tsx's tdCls adds "text-right ... tabular-nums" which this
+    // left-aligned material column never carries under either wiring, so an
+    // exact match (not just a substring) is what actually pins the source
+    // module — a mis-wire would append the extra classes to "text-white".
+    expect(materialCell.className).toBe(`${settingsTdCls} text-white`);
+  });
+
   it('marks the rows that are linked to a Zoho product', async () => {
     await renderFilamentsPanel([baseFilament, linkedFilament]);
     const badges = await screen.findAllByTitle(linkedFilament.zoho_item_name!);
@@ -1139,6 +1155,18 @@ describe('CalculatorPrintersPanel', () => {
     expect(screen.queryByText('Delete printer')).not.toBeInTheDocument();
     expect(screen.getByRole('cell', { name: /H2S/ })).toBeInTheDocument();
     expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  it('renders profile-table cells with calculatorSettingsShared\'s tdCls, not shared.tsx\'s (T-097)', async () => {
+    server.use(http.get('/api/v1/calculator/printers/', () => HttpResponse.json([basePrinter])));
+
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate />);
+
+    const nameCell = await screen.findByRole('cell', { name: 'H2S' });
+    // Exact match (not substring) so a mis-wire to shared.tsx's
+    // right-aligned/tabular-nums tdCls — which this left-aligned name
+    // column never legitimately carries — is caught.
+    expect(nameCell.className).toBe(`${settingsTdCls} text-white`);
   });
 });
 

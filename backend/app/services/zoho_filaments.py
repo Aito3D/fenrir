@@ -43,8 +43,37 @@ _PAGE_SIZE = 200
 _MAX_PAGES = 20  # 256 items today; a runaway-loop backstop, not a real limit
 _CACHE_TTL = timedelta(minutes=10)
 
+# T-094: how long a caller waits to acquire _refresh_lock before giving up on
+# an in-flight walk and answering with the stale cache (or a 502) instead.
+# The walk this lock guards is bounded only by _MAX_PAGES x a per-page retry
+# through zoho.py::_send's `httpx.AsyncClient(timeout=10.0)` — worst case
+# roughly 20 pages x 2 attempts x 10s = ~400s. That is far longer than the
+# frontend's 60s per-chunk budget, so waiting it out here would just mean
+# every waiter times out on the client side anyway, after first pinning a DB
+# connection for the whole wait. 20s keeps a comfortable margin under that
+# 60s budget (so the route can still answer before the client gives up) while
+# staying roughly 2x a single (possibly 401-retried) page fetch, so a normal,
+# healthy walk of a page or two is not punished by a waiter bailing early.
+_LOCK_ACQUIRE_TIMEOUT = 20.0
+
+# T-094/T-091: how long a cold-cache (no previous catalogue at all) failure
+# is remembered so a burst of callers arriving during a Zoho outage gets a
+# fast failure each instead of every one of them repeating the full paged
+# walk in turn behind _refresh_lock. Deliberately longer than
+# _LOCK_ACQUIRE_TIMEOUT so a caller that just timed out waiting for the lock
+# and retries lands on this fast path rather than starting its own walk, but
+# far shorter than _CACHE_TTL so a real recovery is only masked for seconds,
+# not minutes.
+_FAIL_COOLDOWN = timedelta(seconds=30)
+
 _cache: list["FilamentProduct"] | None = None
 _cache_at: datetime | None = None
+
+# T-094: set alongside a cold-cache failure (see the except branch in
+# fetch_catalogue) so the next caller can answer from this instead of
+# re-walking Zoho. Cleared on a successful refresh and by reset_cache().
+_fail_at: datetime | None = None
+_fail_exc: BaseException | None = None
 
 # T-072: bumped every time reset_cache() runs. A refresh started before a
 # reset (e.g. one parked on a slow Zoho page fetch while the operator rotates
@@ -129,11 +158,16 @@ def reset_cache() -> None:
     organization does not keep serving the previous org's filaments for the
     rest of the TTL window. Tests call it to isolate each case.
     """
-    global _cache, _cache_at, _generation, _refresh_lock
+    global _cache, _cache_at, _generation, _refresh_lock, _fail_at, _fail_exc
     _cache = None
     _cache_at = None
     _generation += 1
     _refresh_lock = asyncio.Lock()
+    # T-094: a failure recorded under the OLD credentials must not keep
+    # answering "Zoho is down" fast-path style once they have just been
+    # rotated to (presumably working) new ones.
+    _fail_at = None
+    _fail_exc = None
 
 
 def _map_item(item: dict) -> FilamentProduct:
@@ -176,15 +210,54 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
     while Zoho still has more to give is treated the same way (T-073):
     caching a silently truncated catalogue for the TTL would make every
     filament past the cut-off look "missing" rather than merely unfetched.
+
+    T-094: waiting for ``_refresh_lock`` is bounded by _LOCK_ACQUIRE_TIMEOUT —
+    a caller that queues behind a slow in-flight walk gets the stale cache
+    (or, cold, a raise) instead of parking indefinitely behind a walk that
+    can legitimately run for minutes. A cold-cache failure is also remembered
+    for _FAIL_COOLDOWN so a burst of callers arriving during a Zoho outage
+    fails fast instead of each repeating the whole paged walk in turn.
     """
-    global _cache, _cache_at
+    global _cache, _cache_at, _fail_at, _fail_exc
 
     now = datetime.now(timezone.utc)
     fresh = _cache_at is not None and now - _cache_at < _CACHE_TTL
     if _cache is not None and (fresh or not refresh):
         return _cache
 
-    async with _refresh_lock:
+    # T-094/T-091: a cold cache with a recent failure is served immediately —
+    # re-raising a fresh instance of whatever that failure was — rather than
+    # taking the lock and repeating a walk that is very likely to fail again
+    # the same way. type(...)(str(...)) rebuilds the exception (rather than
+    # reusing the stored instance) so the class — and therefore whether the
+    # route answers 500 or 502 — is preserved without dragging along a stale
+    # traceback from the original failure.
+    if _cache is None and _fail_at is not None and now - _fail_at < _FAIL_COOLDOWN:
+        raise type(_fail_exc)(str(_fail_exc)) from None
+
+    # Captured once, up front: reset_cache() rebinds the module-level
+    # _refresh_lock to a brand new Lock() (T-072), so re-reading the global
+    # at release time — after a reset landed mid-wait — would try to release
+    # a lock this call never acquired. `async with` avoided this by
+    # evaluating its context-manager expression once at entry; this local
+    # keeps that same guarantee now that acquire/release are explicit.
+    lock = _refresh_lock
+    try:
+        await asyncio.wait_for(lock.acquire(), timeout=_LOCK_ACQUIRE_TIMEOUT)
+    except asyncio.TimeoutError:
+        # The lock is held by a walk that has already run past a generous
+        # budget. Waiting it out would only mean this caller's own HTTP
+        # request times out on the client side anyway (see the constant's
+        # docstring above), after pinning a DB connection for the wait —
+        # answer now instead, from the stale cache if there is one.
+        if _cache is not None:
+            logger.warning(
+                "Zoho filament catalogue refresh lock busy past %.0fs; serving the cached copy", _LOCK_ACQUIRE_TIMEOUT
+            )
+            return _cache
+        raise RuntimeError("Zoho filament catalogue refresh is still in progress; try again shortly") from None
+
+    try:
         # Re-check inside the lock: another coroutine may have already done
         # the refresh this call was about to do while it waited its turn —
         # collapsing what would otherwise be one Zoho walk per waiter into
@@ -253,10 +326,15 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
                 raise ZohoFilamentMappingError(
                     f"None of the {len(active_items)} active Zoho filament items could be mapped"
                 )
-        except Exception:
+        except Exception as exc:
             if _cache is not None:
                 logger.warning("Zoho filament catalogue refresh failed; serving the cached copy", exc_info=True)
                 return _cache
+            # T-094/T-091: cold-cache failure — record it so a burst of
+            # concurrent callers doesn't repeat this whole walk one at a time
+            # behind the lock; see the pre-lock check above.
+            _fail_at = now
+            _fail_exc = exc
             raise
 
         if generation == _generation:
@@ -268,7 +346,11 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
         # catalogue for a full _CACHE_TTL window, so the freshly mapped list
         # is handed back to THIS caller only — it is never written into the
         # module cache.
+        _fail_at = None
+        _fail_exc = None
         return mapped
+    finally:
+        lock.release()
 
 
 def _score(product: FilamentProduct, terms: list[str]) -> int:

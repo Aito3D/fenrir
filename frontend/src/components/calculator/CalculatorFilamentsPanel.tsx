@@ -24,7 +24,7 @@ import { formatMoney, formatPct } from '../../utils/pricing';
 import { getCurrencySymbol } from '../../utils/currency';
 import { FILAMENT_BRANDS, FILAMENT_MATERIALS } from '../../utils/filamentOptions';
 import { useToast } from '../../contexts/ToastContext';
-import { parseNum, tdCls, useSortToggle } from './calculatorSettingsShared';
+import { parseNum, settingsTdCls, useSortToggle } from './calculatorSettingsShared';
 import { SortHeader, SearchBox, CountBadge, NoMatches } from './CalculatorPanelParts';
 
 /** Margin choices offered in the dropdown: 0 % to 200 % in 25 % steps. */
@@ -712,7 +712,7 @@ export function CalculatorFilamentsPanel({
                   <tbody>
                     {visible.map((f) => (
                       <tr key={f.id} className="border-b border-bambu-dark-tertiary/50 last:border-b-0 hover:bg-bambu-dark-tertiary/30 transition-colors">
-                        <td className={`${tdCls} text-white`}>
+                        <td className={`${settingsTdCls} text-white`}>
                           {f.brand || '—'}
                           {f.id === selectedFilamentId && (
                             <span className="ml-2 text-xs text-bambu-green" title={t('calculator.inUse')}>●</span>
@@ -726,14 +726,14 @@ export function CalculatorFilamentsPanel({
                             </span>
                           )}
                         </td>
-                        <td className={`${tdCls} text-white`}>{f.material}</td>
-                        <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{formatMoney(f.cost_per_kg, currency, false)}</td>
-                        <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>{formatMoney(f.sale_price_per_kg, currency, false)}</td>
-                        <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`}>
+                        <td className={`${settingsTdCls} text-white`}>{f.material}</td>
+                        <td className={`${settingsTdCls} text-right text-bambu-gray-light tabular-nums`}>{formatMoney(f.cost_per_kg, currency, false)}</td>
+                        <td className={`${settingsTdCls} text-right text-bambu-gray-light tabular-nums`}>{formatMoney(f.sale_price_per_kg, currency, false)}</td>
+                        <td className={`${settingsTdCls} text-right text-bambu-gray-light tabular-nums`}>
                           {formatPct(f.margin_pct / 100, 0)}
                         </td>
-                        <td className={`${tdCls} text-right text-bambu-gray-light tabular-nums`} title={t('calculator.difficultyTooltip')}>{formatPct(f.difficulty_pct / 100, 0)}</td>
-                        <td className={`${tdCls} text-right`}>
+                        <td className={`${settingsTdCls} text-right text-bambu-gray-light tabular-nums`} title={t('calculator.difficultyTooltip')}>{formatPct(f.difficulty_pct / 100, 0)}</td>
+                        <td className={`${settingsTdCls} text-right`}>
                           {canUpdate && (
                             <div className="flex gap-1 justify-end">
                               <Button variant="ghost" size="sm" onClick={() => setEditing(f)} aria-label={t('calculator.editFilament')}>

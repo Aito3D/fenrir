@@ -13,6 +13,11 @@ import { computePricing, formatMoney } from '../../utils/pricing';
 import { buildQuoteSummary } from '../../utils/quoteSummary';
 import { DEFAULT_STATE, num, splitDecimalHours } from '../../hooks/useCalculatorState';
 import { correctedTimeH } from '../../utils/calculatorInsights';
+// Pinned by name (not re-derived) so a wiring mistake in CalculatorBulkTable
+// or CalculatorDiscountTable — pointing at calculatorSettingsShared's
+// differently-styled tdCls instead of this one — shows up as a real
+// assertion failure below (T-097).
+import { tdCls } from '../../components/calculator/shared';
 
 const mockFilaments = [
   {
@@ -744,6 +749,18 @@ describe('CalculatorPage', () => {
     expect(screen.getByText('Potential profit')).toBeInTheDocument();
     // Break-even on the pre-tax price = the margin fraction (all margins at the end)
     expect(screen.getByText(/Break-even discount: 38\.1%/)).toBeInTheDocument();
+
+    // Both tables render their price cells with shared.tsx's tdCls (T-097),
+    // not calculatorSettingsShared.ts's — pin the wiring at the DOM level.
+    // Discount table is the first <table>, bulk the second (JSX order).
+    const [discountTable, bulkTable] = screen.getAllByRole('table');
+    const machineCostRow = within(discountTable).getByText('Machine cost w/ discount').closest('tr')!;
+    const machineCostDataCell = within(machineCostRow).getAllByRole('cell')[1]; // 0% column: colCls is empty
+    expect(machineCostDataCell.className).toBe(tdCls);
+
+    const bulkDataRows = within(bulkTable).getAllByRole('row').slice(1); // drop header row
+    const firstBulkPriceCell = within(bulkDataRows[0]).getAllByRole('cell')[1]; // [0] is the sticky qty cell
+    expect(firstBulkPriceCell.className).toBe(tdCls);
   });
 
   it('easy mode hides breakdown, bulk table and profit rows but keeps discounted prices', async () => {

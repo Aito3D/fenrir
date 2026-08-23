@@ -186,7 +186,12 @@ async def test_entirely_malformed_batch_with_cold_cache_raises(monkeypatch):
         return all_malformed, False
 
     monkeypatch.setattr(zoho_service, "list_items_page", flaky_page)
-    with pytest.raises(RuntimeError):
+    # T-101: this must be the specific mapping-failure subclass, not just
+    # "some RuntimeError" — a plain RuntimeError satisfies the parent-class
+    # assertion just as well, which is exactly what let a mutation at the
+    # raise site (ZohoFilamentMappingError -> RuntimeError) slip past every
+    # test in this file undetected.
+    with pytest.raises(zoho_filaments.ZohoFilamentMappingError):
         await zoho_filaments.fetch_catalogue(None)
 
 
@@ -359,3 +364,118 @@ async def test_truncated_fetch_serves_the_stale_cache_when_warm(monkeypatch):
     result = await zoho_filaments.fetch_catalogue(None)
     assert [p.item_id for p in result] == [p.item_id for p in warm]
     assert zoho_filaments._cache is warm
+
+
+# --- T-094: bounded lock acquisition ------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_lock_acquire_timeout_raises_promptly_with_cold_cache(monkeypatch):
+    """A caller queued behind an in-flight walk must not park indefinitely —
+    it must not wait past _LOCK_ACQUIRE_TIMEOUT, and with no stale cache to
+    fall back to it must raise (the route turns this into a 502) rather than
+    hang until the leader's walk (which can legitimately run for minutes)
+    eventually finishes."""
+    monkeypatch.setattr(zoho_filaments, "_LOCK_ACQUIRE_TIMEOUT", 0.02)
+
+    gate = asyncio.Event()
+    entered = asyncio.Event()
+
+    async def stuck_page(db, **kwargs):
+        entered.set()
+        await gate.wait()  # the leader is parked here for the whole test
+        return PAGE_1, False
+
+    monkeypatch.setattr(zoho_service, "list_items_page", stuck_page)
+
+    leader = asyncio.create_task(zoho_filaments.fetch_catalogue(None))
+    await entered.wait()  # the leader now holds _refresh_lock
+
+    with pytest.raises(RuntimeError):
+        # Must return on its own — nothing here waits on `gate`, so if this
+        # ever blocked on the leader instead of timing out on the lock
+        # acquisition, the test would hang rather than merely fail.
+        await zoho_filaments.fetch_catalogue(None)
+
+    gate.set()
+    await leader  # let the leader finish so no task is left pending
+
+
+@pytest.mark.asyncio
+async def test_lock_acquire_timeout_serves_the_stale_cache_when_warm(monkeypatch):
+    """Same as above, but with a warm cache present: the second caller gets
+    the stale catalogue immediately instead of either hanging or raising —
+    the user-approved "stale catalogue instead of waiting" half of the fix."""
+    monkeypatch.setattr(zoho_service, "list_items_page", _fake_request([PAGE_1], []))
+    warm = await zoho_filaments.fetch_catalogue(None)
+    zoho_filaments._cache_at = None  # force the next call to attempt a refresh
+
+    monkeypatch.setattr(zoho_filaments, "_LOCK_ACQUIRE_TIMEOUT", 0.02)
+
+    gate = asyncio.Event()
+    entered = asyncio.Event()
+
+    async def stuck_page(db, **kwargs):
+        entered.set()
+        await gate.wait()
+        return PAGE_1, False
+
+    monkeypatch.setattr(zoho_service, "list_items_page", stuck_page)
+
+    leader = asyncio.create_task(zoho_filaments.fetch_catalogue(None))
+    await entered.wait()
+
+    result = await zoho_filaments.fetch_catalogue(None)
+    assert [p.item_id for p in result] == [p.item_id for p in warm]
+
+    gate.set()
+    await leader
+
+
+# --- T-094/T-091: negative caching of a cold-cache failure --------------------
+
+
+@pytest.mark.asyncio
+async def test_cold_cache_failure_is_remembered_so_a_retry_skips_the_walk(monkeypatch):
+    """After a cold-cache failure, a second call within the cooldown must be
+    served the same failure immediately from the negative cache rather than
+    repeating the whole paged walk — this is what turned 4 concurrent cold
+    requests into 4 separate upstream walks in the auditor's repro."""
+    calls = []
+
+    async def boom(db, **kwargs):
+        calls.append(1)
+        raise RuntimeError("zoho down")
+
+    monkeypatch.setattr(zoho_service, "list_items_page", boom)
+
+    with pytest.raises(RuntimeError):
+        await zoho_filaments.fetch_catalogue(None)
+    assert len(calls) == 1
+
+    with pytest.raises(RuntimeError):
+        await zoho_filaments.fetch_catalogue(None)
+    # the second call must NOT have gone back to Zoho.
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_negative_cache_preserves_the_mapping_failure_exception_type(monkeypatch):
+    """The fast-fail path reconstructs the SAME exception class the original
+    walk raised. If it collapsed everything to a plain RuntimeError instead,
+    a persistent all-malformed batch would flip from the approved 500
+    contract to a 502 on every call after the first."""
+    all_malformed = [
+        _item("97", "Bambu Lab - PLA - Rouge (Red) - 1.75mm - 1kg", "N/A", "BAD-1"),
+    ]
+
+    async def flaky_page(db, **kwargs):
+        return all_malformed, False
+
+    monkeypatch.setattr(zoho_service, "list_items_page", flaky_page)
+
+    with pytest.raises(zoho_filaments.ZohoFilamentMappingError):
+        await zoho_filaments.fetch_catalogue(None)
+
+    with pytest.raises(zoho_filaments.ZohoFilamentMappingError):
+        await zoho_filaments.fetch_catalogue(None)

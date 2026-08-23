@@ -3072,3 +3072,104 @@ Frontend: `npx tsc -b --noEmit` clean, `npx eslint .` clean. `tools/coverage_cal
 statements 90.69% (985/1086), at/above the 90.58% (972/1073) ratchet (two unrelated documented
 load flakes, `PrintModal.test.tsx` and `StatsPageUserFilter1894.test.tsx`, both re-verified passing
 alone). `tools/snapshot.py verify`: 10/10, nothing moved.
+
+## T-094, T-101 — 2026-08-22 — T-094 is a user-approved behavior change
+
+T-094: `fetch_catalogue`'s `_refresh_lock` (T-072) wrapped the entire paged Zoho walk with no
+acquisition timeout. Each page goes through `zoho.py::_send`'s `httpx.AsyncClient(timeout=10.0)`
+with one 401-retry, so the critical section was bounded only at roughly `_MAX_PAGES(20) x 2 x 10s
+~= 400s` — far longer than the frontend's 60s per-chunk timeout budget. A second caller arriving
+during a cold-cache refresh queued behind the whole walk with no way out, pinning its
+`Depends(get_db)` pool connection for the wait. The failure path also recorded nothing on a
+cold-cache failure, so a burst of concurrent callers each repeated the full walk in turn instead
+of learning from the first one's failure — measured by the auditor as 4 concurrent cold requests
+producing 4 separate upstream walks.
+
+Fixed with the two auditor/user-approved halves:
+- **Bounded lock acquisition**: `asyncio.wait_for(lock.acquire(), timeout=_LOCK_ACQUIRE_TIMEOUT)`
+  (20.0s), `lock` captured once up front (not re-read from the module global at release time, so a
+  `reset_cache()` landing mid-wait — which rebinds `_refresh_lock` to a new `Lock()`, T-072/T-095 —
+  can never make the release target the wrong lock). On `asyncio.TimeoutError`, the stale cache is
+  returned if one exists, otherwise a plain `RuntimeError` is raised (the route's existing generic
+  `except Exception` branch turns this into a 502, matching T-073's contract for "Zoho isn't
+  answering"). 20s was chosen well under the 60s client budget (so the route still answers before
+  the client gives up) while staying roughly 2x a single (possibly 401-retried) page fetch, so a
+  healthy walk of a page or two is not punished by an early bail-out — and nowhere near the ~400s
+  pathological worst case, so waiters no longer pile up behind it.
+- **Negative caching**: a cold-cache failure (no `_cache` to fall back to) records `_fail_at` +
+  the failing exception (`_fail_exc`); the next call checks this *before* touching the lock at all
+  and, if still within `_FAIL_COOLDOWN` (30s), re-raises a fresh instance of the *same exception
+  class* immediately — no Zoho walk, no lock contention. The class is reconstructed
+  (`type(_fail_exc)(str(_fail_exc))`) rather than reusing the stored instance, so a persistent
+  all-malformed batch (`ZohoFilamentMappingError`, 500) is never silently downgraded to "Zoho is
+  unreachable" (502) by the fast path, and vice versa. 30s is deliberately longer than the 20s
+  lock-acquire timeout (so a caller that just timed out waiting for the lock and retries lands on
+  this fast path instead of starting its own walk) but far shorter than the 10-minute `_CACHE_TTL`
+  (a real recovery is only masked for seconds, not minutes). `reset_cache()` also clears
+  `_fail_at`/`_fail_exc` (a credential rotation must not keep answering "Zoho is down" under the
+  new, presumably-working credentials) — this does **not** touch the `_refresh_lock` rebind line
+  itself, which stays exactly as T-072 left it (T-095's territory).
+- The walk itself was deliberately left unbounded: bounding it would change what the *leader*
+  request gets back (turning a slow-but-eventually-successful walk into a failure), which is a
+  materially different, larger behavior change than the approved statement ("a second caller...
+  would get a fast 502/503 ... instead of waiting") calls for. The lock-acquisition timeout already
+  protects every other waiter; only the single in-flight leader can still run the full worst-case
+  duration, same as before this fix.
+
+user-approved 2026-08-22: "a second caller arriving during a cold-cache refresh would get a fast
+502/503 (or a stale catalogue) instead of waiting for the in-flight Zoho walk to finish."
+
+`SURFACE.md` moved: two new module-level constants, `_FAIL_COOLDOWN` and `_LOCK_ACQUIRE_TIMEOUT`,
+in `backend/app/services/zoho_filaments.py`, picked up by `gen_surface_calc.sh`'s
+`^_?[A-Z][A-Z0-9_]+ =` grep over that file's "Calculator backend module constants" section. No
+new module-level `def`/`class` was added (the pre-lock negative-cache check and lock handling were
+written inline rather than as new helpers), so the "Calculator backend callables" section is
+unchanged. Regenerated and committed alongside this entry.
+
+T-101: mutation-proven by the auditor that changing `raise ZohoFilamentMappingError(...)` (the
+"every active item failed to map" guard) to `raise RuntimeError(...)` left the full suite green —
+`test_zoho_filaments_catalogue.py`'s `test_entirely_malformed_batch_with_cold_cache_raises` only
+asserted `pytest.raises(RuntimeError)` (the parent class, satisfied by any subclass or the plain
+class alike), and both route-level mapping-failure tests (`test_calculator_zoho_routes.py`,
+`test_calculator_zoho_sync.py`) monkeypatched `zoho_filaments.fetch_catalogue` itself to raise
+`ZohoFilamentMappingError`, bypassing the service's own mapping-failure branch entirely. So T-074's
+approved "all items fail to map => 500" contract was pinned only by two halves that shared an
+unproven assumption: that the real service actually raises that specific subclass.
+
+Fixed by tightening `test_entirely_malformed_batch_with_cold_cache_raises`'s assertion to
+`pytest.raises(zoho_filaments.ZohoFilamentMappingError)`, and adding
+`test_mapping_failure_from_the_real_service_is_reported_as_internal_server_error` to
+`test_calculator_zoho_routes.py`, which stubs only `zoho_service.list_items_page` (an
+all-malformed batch) — never `fetch_catalogue` itself — so it proves the real service raising the
+subclass is what actually drives the route's 500 branch. The auditor's other referenced line
+(`test_zoho_filaments_catalogue.py`'s `test_failed_refresh_with_cold_cache_raises`) was
+deliberately left untouched: its `boom()` raises a plain `RuntimeError` simulating an unreachable
+Zoho, an entirely different failure mode (T-073/T-074's 502 contract) — tightening that assertion
+to the mapping subclass would have made the test permanently fail and would have been factually
+wrong, not a real gap.
+
+The critical regression guard for T-094 touching this same function: the pre-existing
+`test_truncated_catalogue_is_still_reported_as_bad_gateway_not_internal_error` (already stubbing
+`list_items_page` through the real `fetch_catalogue`, not `fetch_catalogue` itself) continues to
+pin the *other* direction — a catalogue truncated at `_MAX_PAGES` must still raise a plain
+`RuntimeError` (502), never `ZohoFilamentMappingError` (500) — and was re-verified against both new
+T-094 code paths (the bounded lock and the negative cache) to confirm neither accidentally routes
+the truncation raise through the mapping-error subclass.
+
+Mutation-tested: mutating the mapping-failure raise site to plain `RuntimeError` made
+`test_entirely_malformed_batch_with_cold_cache_raises`,
+`test_negative_cache_preserves_the_mapping_failure_exception_type`, and the new
+`test_mapping_failure_from_the_real_service_is_reported_as_internal_server_error` all fail as
+expected (502 instead of 500, or `RuntimeError` not matching the tightened `pytest.raises`).
+Mutating the truncation raise site to `ZohoFilamentMappingError` made
+`test_truncated_catalogue_is_still_reported_as_bad_gateway_not_internal_error` fail as expected
+(500 instead of 502). For T-094: removing the `asyncio.wait_for` around the lock acquisition made
+`test_lock_acquire_timeout_raises_promptly_with_cold_cache` hang indefinitely (no
+`pytest-timeout` plugin is installed in this project, so the run had to be killed manually — the
+mutation genuinely reintroduces the reported unbounded-wait bug). Removing the pre-lock
+negative-cache check made `test_cold_cache_failure_is_remembered_so_a_retry_skips_the_walk` fail as
+expected (`assert 2 == 1`, i.e. a second upstream walk happened). All mutations were reverted
+afterward and the full suite re-verified green (52/52 across the three Zoho filament test files,
+3 consecutive runs, no flakes).
+
+`ruff check`/`ruff format --check`: clean. `tools/snapshot.py verify`: 10/10, nothing moved.

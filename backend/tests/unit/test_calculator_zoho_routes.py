@@ -187,6 +187,42 @@ async def test_truncated_catalogue_is_still_reported_as_bad_gateway_not_internal
         zoho_filaments.reset_cache()
 
 
+@pytest.mark.asyncio
+async def test_mapping_failure_from_the_real_service_is_reported_as_internal_server_error(async_client, monkeypatch):
+    """T-101: the 500-vs-502 split above (test_mapping_failure_is_reported_as_
+    internal_server_error) only proves the route trusts whatever exception
+    type it's handed — it stubs fetch_catalogue itself, so it would pass just
+    as well if the real service never raised ZohoFilamentMappingError at all.
+    This stubs only list_items_page (the real fetch_catalogue does the actual
+    mapping and decides what to raise), the same way the truncation test
+    above proves the 502 direction through the real service."""
+
+    async def configured(db):
+        return True
+
+    async def all_malformed_page(db, *, category, page, per_page):
+        item = {
+            "item_id": "item-1",
+            "name": "Bambu Lab - PLA - X - 1.75mm - 1kg",
+            "sku": "SKU",
+            "brand": "Bambu Lab",
+            "status": "active",
+            "cf_nature_du_produit": "Filaments",
+            "cf_prix_dealer_usd_unformatted": "not-a-number",  # forces _map_item to raise
+        }
+        return [item], False
+
+    monkeypatch.setattr(zoho_service, "is_configured", configured)
+    monkeypatch.setattr(zoho_service, "list_items_page", all_malformed_page)
+    zoho_filaments.reset_cache()
+    try:
+        resp = await async_client.get("/api/v1/calculator/zoho-filaments", params={"q": "pla"})
+        assert resp.status_code == 500
+        assert resp.json()["detail"] == "Zoho filament catalogue could not be mapped"
+    finally:
+        zoho_filaments.reset_cache()
+
+
 class TestZohoFilamentSearchRequiresCalculatorUpdate:
     """T-068: this endpoint returns Zoho's confidential dealer pricing, so it must
     require calculator:update (the same permission every other mutation on this
