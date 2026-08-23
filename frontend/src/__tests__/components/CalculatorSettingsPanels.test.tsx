@@ -13,7 +13,7 @@
  */
 
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { http, HttpResponse } from 'msw';
@@ -981,6 +981,34 @@ describe('CalculatorFilamentsPanel permission gating (T-020)', () => {
 
     expect(screen.getByRole('cell', { name: 'PETG' })).toBeInTheDocument();
     expect(screen.queryByRole('cell', { name: 'PLA' })).not.toBeInTheDocument();
+  });
+
+  it('toggles sort direction on repeated header clicks (useSortToggle)', async () => {
+    server.use(http.get('/api/v1/calculator/filaments/', () => HttpResponse.json([baseFilament, bambuAbsGf])));
+    const user = userEvent.setup();
+
+    render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate={false} />);
+
+    await screen.findByRole('cell', { name: 'PLA' });
+
+    const materialColumnInOrder = () =>
+      screen
+        .getAllByRole('row')
+        .slice(1) // drop the header row
+        .map((row) => within(row).getAllByRole('cell')[1].textContent);
+
+    // Default sort is by name ascending: "Bambu Lab ABS-GF" sorts before
+    // "Sunlu PLA".
+    expect(materialColumnInOrder()).toEqual(['ABS-GF', 'PLA']);
+
+    // Selecting a different column (Material) starts it ascending — same
+    // order here, since ABS-GF < PLA too.
+    await user.click(screen.getByRole('button', { name: 'Material' }));
+    expect(materialColumnInOrder()).toEqual(['ABS-GF', 'PLA']);
+
+    // Clicking the now-active Material column again flips the direction.
+    await user.click(screen.getByRole('button', { name: 'Material' }));
+    expect(materialColumnInOrder()).toEqual(['PLA', 'ABS-GF']);
   });
 });
 

@@ -2,7 +2,7 @@
  * Tests for the CalculatorPage component.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
@@ -10,6 +10,8 @@ import { CalculatorPage } from '../../pages/CalculatorPage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { computePricing, formatMoney } from '../../utils/pricing';
+import { buildQuoteSummary } from '../../utils/quoteSummary';
+import { DEFAULT_STATE } from '../../hooks/useCalculatorState';
 
 const mockFilaments = [
   {
@@ -158,6 +160,14 @@ const measuredFailureTotal = collapseSpaces(
     'XPF',
   ),
 );
+
+// Expected clipboard payload for the "copy summary" tests below, built from
+// the exact same helper the totals card calls (buildQuoteSummary) fed the
+// same filament/printer/state the reference-case tests use (weight '40',
+// time '2' -> timeH '2'). Deriving it this way pins the real content instead
+// of a hand-typed string that could silently drift from the component.
+const summaryState = { ...DEFAULT_STATE, weight: '40', timeH: '2' };
+const expectedSummaryText = buildQuoteSummary(mockFilaments[0], mockPrinters[0], summaryState);
 
 function useCalculatorHandlers({ filaments = mockFilaments, printers = mockPrinters, currency = 'XPF' } = {}) {
   server.use(
@@ -1045,5 +1055,70 @@ describe('CalculatorPage', () => {
       },
       { timeout: 2000 },
     );
+  });
+
+  // navigator.clipboard is a global; stub-and-restore around each test so a
+  // leaked stub can't affect later tests in this file (or other files run
+  // in the same worker).
+  describe('totals card — copy summary button', () => {
+    let originalClipboard: PropertyDescriptor | undefined;
+
+    beforeEach(() => {
+      originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+      vi.mocked(localStorage.getItem).mockImplementation((key) =>
+        key === 'calculator-state' ? JSON.stringify({ weight: '40', time: '2' }) : null,
+      );
+    });
+
+    afterEach(() => {
+      if (originalClipboard) {
+        Object.defineProperty(navigator, 'clipboard', originalClipboard);
+      } else {
+        delete (navigator as { clipboard?: unknown }).clipboard;
+      }
+    });
+
+    it('writes the job summary to the clipboard and shows a success toast', async () => {
+      // userEvent.setup() installs its own clipboard stub on the view, which
+      // would clobber ours if defined first — so the stub must be set up
+      // *after* setup(), matching VirtualPrinterCard.test.tsx / PrinterInfoModal.test.tsx.
+      const user = userEvent.setup();
+      const writeTextMock = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: writeTextMock },
+        configurable: true,
+      });
+
+      render(<CalculatorPage />);
+      await screen.findByText('2 031 FCFP');
+
+      await user.click(screen.getByRole('button', { name: 'Copy summary' }));
+
+      await waitFor(() => {
+        expect(writeTextMock).toHaveBeenCalledWith(expectedSummaryText);
+      });
+      await screen.findByText('Summary copied to clipboard');
+    });
+
+    it('shows an error toast when the clipboard write is rejected', async () => {
+      const user = userEvent.setup();
+      const writeTextMock = vi.fn().mockRejectedValue(new Error('permission denied'));
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: writeTextMock },
+        configurable: true,
+      });
+
+      render(<CalculatorPage />);
+      await screen.findByText('2 031 FCFP');
+
+      await user.click(screen.getByRole('button', { name: 'Copy summary' }));
+
+      // Positive proof the real summary was attempted (not a vacuous reject).
+      await waitFor(() => {
+        expect(writeTextMock).toHaveBeenCalledWith(expectedSummaryText);
+      });
+      await screen.findByText('Copy failed — your browser blocked clipboard access');
+      expect(screen.queryByText('Summary copied to clipboard')).not.toBeInTheDocument();
+    });
   });
 });
