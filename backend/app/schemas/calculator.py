@@ -52,6 +52,12 @@ class CalculatorFilamentCreate(CalculatorFilamentBase):
     model_config = _FINITE_ONLY
 
     cost_per_kg: float = Field(..., gt=0, le=_MONEY_CEILING, description="Purchase cost per kg (app currency)")
+    spool_weight_kg: float | None = Field(
+        default=None,
+        ge=0.001,
+        le=100,
+        description="Spool weight used to derive cost per kg from the dealer price",
+    )
 
 
 class CalculatorFilamentUpdate(BaseModel):
@@ -75,7 +81,7 @@ class CalculatorFilamentUpdate(BaseModel):
     zoho_item_id: str | None = Field(default=None, max_length=50)
     zoho_item_name: str | None = Field(default=None, max_length=255)
     zoho_sku: str | None = Field(default=None, max_length=100)
-    spool_weight_kg: float | None = Field(default=None, gt=0, le=100)
+    spool_weight_kg: float | None = Field(default=None, ge=0.001, le=100)
 
 
 class CalculatorFilamentResponse(CalculatorFilamentBase):

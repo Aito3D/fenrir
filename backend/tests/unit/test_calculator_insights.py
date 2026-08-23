@@ -138,36 +138,110 @@ async def test_time_accuracy_with_band_clamp(async_client: AsyncClient, printer_
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_spool_costs_average_by_material(async_client: AsyncClient, db_session):
+    """T-089: below MIN_SAMPLE, a group is suppressed entirely, not shown with
+    a low ``sample``. PLA has exactly MIN_SAMPLE (5) priced, unarchived spools;
+    PETG has only one, so it must not appear in the response at all — a
+    single spool's cost is that spool's verbatim purchase price, not an
+    aggregate.
+    """
     db_session.add(Spool(material="PLA", cost_per_kg=20.0))
     db_session.add(Spool(material="pla", cost_per_kg=30.0))
-    db_session.add(Spool(material="PETG", cost_per_kg=18.0))
+    db_session.add(Spool(material="PLA", cost_per_kg=20.0))
+    db_session.add(Spool(material="pla", cost_per_kg=30.0))
+    db_session.add(Spool(material="PLA", cost_per_kg=20.0))  # 5th PLA spool: hits MIN_SAMPLE
+    db_session.add(Spool(material="PETG", cost_per_kg=18.0))  # below MIN_SAMPLE — suppressed
     db_session.add(Spool(material="ABS"))  # no cost — excluded
     db_session.add(Spool(material="PLA", cost_per_kg=99.0, archived_at=NOW))  # archived — excluded
     await db_session.commit()
 
     response = await async_client.get("/api/v1/calculator/insights")
     rows = {r["material"]: r for r in response.json()["spool_cost_by_material"]}
-    assert rows["PLA"]["avg_cost_per_kg"] == 25.0
-    assert rows["PLA"]["sample"] == 2
-    assert rows["PETG"]["avg_cost_per_kg"] == 18.0
+    assert rows["PLA"]["avg_cost_per_kg"] == 24.0
+    assert rows["PLA"]["sample"] == 5
+    assert "PETG" not in rows
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_spool_costs_by_material_below_min_sample_is_absent(async_client: AsyncClient, db_session):
+    """The MIN_SAMPLE boundary, one below: MIN_SAMPLE - 1 priced spools must
+    produce no row at all for that material."""
+    for _ in range(MIN_SAMPLE - 1):
+        db_session.add(Spool(material="PLA", cost_per_kg=20.0))
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    rows = {r["material"]: r for r in response.json()["spool_cost_by_material"]}
+    assert "PLA" not in rows
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_spool_costs_by_material_at_min_sample_is_present(async_client: AsyncClient, db_session):
+    """The MIN_SAMPLE boundary, exactly on it: MIN_SAMPLE priced spools must
+    produce a row."""
+    for _ in range(MIN_SAMPLE):
+        db_session.add(Spool(material="PLA", cost_per_kg=20.0))
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    rows = {r["material"]: r for r in response.json()["spool_cost_by_material"]}
+    assert rows["PLA"]["avg_cost_per_kg"] == 20.0
+    assert rows["PLA"]["sample"] == MIN_SAMPLE
 
 
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_spool_costs_average_by_brand(async_client: AsyncClient, db_session):
+    """T-089: same suppression, grouped by brand+material. Polymaker/PLA has
+    exactly MIN_SAMPLE (5); Bambu Lab/PLA has only one and must not appear —
+    that single spool's cost is its exact purchase price and supplier brand,
+    not an aggregate.
+    """
     db_session.add(Spool(material="PLA", brand="Polymaker", cost_per_kg=20.0))
     db_session.add(Spool(material="pla", brand="polymaker", cost_per_kg=30.0))
-    db_session.add(Spool(material="PLA", brand="Bambu Lab", cost_per_kg=28.0))
+    db_session.add(Spool(material="PLA", brand="Polymaker", cost_per_kg=20.0))
+    db_session.add(Spool(material="pla", brand="polymaker", cost_per_kg=30.0))
+    db_session.add(Spool(material="PLA", brand="Polymaker", cost_per_kg=20.0))  # 5th: hits MIN_SAMPLE
+    db_session.add(Spool(material="PLA", brand="Bambu Lab", cost_per_kg=28.0))  # below MIN_SAMPLE — suppressed
     db_session.add(Spool(material="PLA", cost_per_kg=15.0))  # no brand — excluded here
     db_session.add(Spool(material="PLA", brand="Polymaker", cost_per_kg=99.0, archived_at=NOW))  # archived
+
     await db_session.commit()
 
     response = await async_client.get("/api/v1/calculator/insights")
     rows = {(r["brand"], r["material"]): r for r in response.json()["spool_cost_by_brand"]}
-    assert rows[("POLYMAKER", "PLA")]["avg_cost_per_kg"] == 25.0
-    assert rows[("POLYMAKER", "PLA")]["sample"] == 2
-    assert rows[("BAMBU LAB", "PLA")]["avg_cost_per_kg"] == 28.0
-    assert ("POLYMAKER", "PLA") in rows and len(rows) == 2
+    assert rows[("POLYMAKER", "PLA")]["avg_cost_per_kg"] == 24.0
+    assert rows[("POLYMAKER", "PLA")]["sample"] == 5
+    assert ("BAMBU LAB", "PLA") not in rows
+    assert ("POLYMAKER", "PLA") in rows and len(rows) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_spool_costs_by_brand_below_min_sample_is_absent(async_client: AsyncClient, db_session):
+    """The MIN_SAMPLE boundary, one below, for the brand+material grouping."""
+    for _ in range(MIN_SAMPLE - 1):
+        db_session.add(Spool(material="PLA", brand="Polymaker", cost_per_kg=20.0))
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    rows = {(r["brand"], r["material"]): r for r in response.json()["spool_cost_by_brand"]}
+    assert ("POLYMAKER", "PLA") not in rows
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_spool_costs_by_brand_at_min_sample_is_present(async_client: AsyncClient, db_session):
+    """The MIN_SAMPLE boundary, exactly on it, for the brand+material grouping."""
+    for _ in range(MIN_SAMPLE):
+        db_session.add(Spool(material="PLA", brand="Polymaker", cost_per_kg=20.0))
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    rows = {(r["brand"], r["material"]): r for r in response.json()["spool_cost_by_brand"]}
+    assert rows[("POLYMAKER", "PLA")]["avg_cost_per_kg"] == 20.0
+    assert rows[("POLYMAKER", "PLA")]["sample"] == MIN_SAMPLE
 
 
 @pytest.mark.asyncio

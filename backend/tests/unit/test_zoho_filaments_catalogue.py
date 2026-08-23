@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -456,6 +457,51 @@ async def test_cold_cache_failure_is_remembered_so_a_retry_skips_the_walk(monkey
     with pytest.raises(RuntimeError):
         await zoho_filaments.fetch_catalogue(None)
     # the second call must NOT have gone back to Zoho.
+    assert len(calls) == 1
+
+
+class _ScriptedClock:
+    """Stands in for zoho_filaments' `datetime` name and hands back a scripted
+    sequence of `now()` values instead of the real wall clock, so a walk that
+    outlives _FAIL_COOLDOWN can be simulated without an actual sleep. Once the
+    script is down to its last value, every further call repeats it."""
+
+    def __init__(self, values):
+        self._values = list(values)
+
+    def now(self, tz=None):
+        return self._values.pop(0) if len(self._values) > 1 else self._values[0]
+
+
+@pytest.mark.asyncio
+async def test_cold_cache_failure_memo_survives_a_walk_slower_than_the_cooldown(monkeypatch):
+    """Regression: _fail_at must be stamped with the time the failure was
+    OBSERVED, not the time the walk began. A cold-cache walk that itself
+    takes longer than _FAIL_COOLDOWN must still protect the next caller from
+    repeating it — stamping the pre-walk time would write a memo that is
+    already expired the moment it lands."""
+    monkeypatch.setattr(zoho_filaments, "_FAIL_COOLDOWN", timedelta(seconds=5))
+
+    t_start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    t_fail = t_start + timedelta(seconds=10)  # the walk itself took 10s > the 5s cooldown
+    t_retry = t_fail + timedelta(seconds=1)  # well within 5s of the OBSERVED failure
+    monkeypatch.setattr(zoho_filaments, "datetime", _ScriptedClock([t_start, t_start, t_fail, t_retry]))
+
+    calls = []
+
+    async def boom(db, **kwargs):
+        calls.append(1)
+        raise RuntimeError("zoho down")
+
+    monkeypatch.setattr(zoho_service, "list_items_page", boom)
+
+    with pytest.raises(RuntimeError):
+        await zoho_filaments.fetch_catalogue(None)
+    assert len(calls) == 1
+
+    with pytest.raises(RuntimeError):
+        await zoho_filaments.fetch_catalogue(None)
+    # served from the negative-cache memo — must NOT have repeated the walk.
     assert len(calls) == 1
 
 

@@ -15,6 +15,7 @@ from backend.app.core.permissions import Permission
 from backend.app.models.calculator import CalculatorDefaults, CalculatorFilament, CalculatorPrinter
 from backend.app.models.user import User
 from backend.app.schemas.calculator import (
+    _MONEY_CEILING,
     CalculatorDefaultsResponse,
     CalculatorDefaultsUpdate,
     CalculatorFilamentCreate,
@@ -244,14 +245,25 @@ async def sync_calculator_filaments_from_zoho(
         # name on every sync would let an upstream rename re-scale the price.
         weight = filament.spool_weight_kg or product.spool_weight_kg or 1.0
         new_cost = round(product.dealer_price / weight, 2)
+        new_sale = derive_sale_price(new_cost, filament.margin_pct)
 
-        # Guard the value about to be written, not just the upstream flag: a
+        # Guard the values about to be written, not just the upstream flag: a
         # tiny dealer price over a large stored weight can round to 0.0 even
         # when ``product.has_price`` is true, and a zero cost is never
         # written. ``isfinite`` matters too: a sub-denormal weight parsed out
         # of a Zoho item name can divide a normal dealer price into inf,
         # which ``new_cost <= 0`` does not catch (``inf <= 0`` is False).
-        if not product.has_price or new_cost <= 0 or not math.isfinite(new_cost):
+        # The derived sale price is checked as well as new_cost itself: a
+        # cost within bounds can still blow past the ceiling (or overflow to
+        # inf) once the margin is applied, and either write would poison the
+        # row for every later PATCH, which re-derives off the stored value.
+        if (
+            not product.has_price
+            or new_cost <= 0
+            or new_cost > _MONEY_CEILING
+            or not math.isfinite(new_cost)
+            or not math.isfinite(new_sale)
+        ):
             skipped_no_price += 1
             continue
 
@@ -260,7 +272,7 @@ async def sync_calculator_filaments_from_zoho(
             unchanged += 1
             continue
         filament.cost_per_kg = new_cost
-        filament.sale_price_per_kg = derive_sale_price(new_cost, filament.margin_pct)
+        filament.sale_price_per_kg = new_sale
         updated += 1
 
     await db.commit()

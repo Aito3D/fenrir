@@ -150,6 +150,56 @@ async def test_overflowing_result_is_skipped_not_written_as_inf(async_client, zo
 
 
 @pytest.mark.asyncio
+async def test_derived_cost_beyond_the_money_ceiling_is_skipped_not_written(async_client, monkeypatch):
+    """T-090: the auditor's end-to-end 5e+307/inf reproduction.
+
+    ``spool_weight_kg`` now has a floor on the write side (T-090a), so this
+    reproduces the corruption from the OTHER, still-untrusted input: the
+    catalogue product's OWN ``spool_weight_kg``, which is parsed out of a
+    Zoho item name and never passes through the pydantic schema at all. A
+    filament created with no stored weight of its own falls back to it.
+
+    Before the fix, this chunk reported ``updated: 1`` and stored
+    ``cost_per_kg: 5e+307`` / ``sale_price_per_kg: null`` (``inf`` cannot be
+    serialized as JSON) — exactly the values the audit observed against the
+    real app.
+    """
+    catalogue = [
+        FilamentProduct(
+            item_id="CORRUPT",
+            name="Item CORRUPT",
+            sku="SKU-CORRUPT",
+            brand="Bambu Lab",
+            material="ABS-GF",
+            colour="Bleu (Blue)",
+            spool_weight_kg=1e-307,
+            weight_inferred=False,
+            dealer_price=5.0,
+            cost_per_kg=round(5.0 / 1e-307, 2),
+            has_price=True,
+        )
+    ]
+
+    async def configured(db):
+        return True
+
+    async def fetch(db, *, refresh=True):
+        return catalogue
+
+    monkeypatch.setattr(zoho_service, "is_configured", configured)
+    monkeypatch.setattr(zoho_filaments, "fetch_catalogue", fetch)
+
+    await _create(async_client, zoho_item_id="CORRUPT", material="ABS-GF", margin_pct=1000.0, spool_weight_kg=None)
+    resp = await async_client.post("/api/v1/calculator/filaments/zoho-sync", json={"after_id": 0, "limit": 25})
+    assert resp.json()["skipped_no_price"] == 1
+    assert resp.json()["updated"] == 0
+
+    row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
+    assert row["cost_per_kg"] == 1000.0  # untouched, not 5e+307
+    assert row["sale_price_per_kg"] == 11000.0  # untouched, not inf/null
+
+
+@pytest.mark.asyncio
 async def test_filament_list_still_responds_after_a_subcent_sync(async_client, zoho_catalogue):
     """Regression guard: the list endpoint must stay readable after a sync."""
     await _create(async_client, zoho_item_id="TINY", material="PETG")

@@ -354,7 +354,7 @@ class CalculatorInsightsService:
         return [
             {"material": material, "avg_cost_per_kg": round(avg_cost, 2), "sample": count}
             for material, avg_cost, count in rows.all()
-            if material
+            if material and count >= MIN_SAMPLE
         ]
 
     async def _spool_costs_by_brand(self, db: AsyncSession) -> list[dict]:
@@ -376,7 +376,7 @@ class CalculatorInsightsService:
         return [
             {"brand": brand, "material": material, "avg_cost_per_kg": round(avg_cost, 2), "sample": count}
             for brand, material, avg_cost, count in rows.all()
-            if brand and material
+            if brand and material and count >= MIN_SAMPLE
         ]
 
 

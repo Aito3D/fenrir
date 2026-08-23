@@ -332,14 +332,22 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
                 return _cache
             # T-094/T-091: cold-cache failure — record it so a burst of
             # concurrent callers doesn't repeat this whole walk one at a time
-            # behind the lock; see the pre-lock check above.
-            _fail_at = now
+            # behind the lock; see the pre-lock check above. Stamped with NOW
+            # (when the failure was observed), not the `now` captured before
+            # the walk began — the walk itself can run for minutes (bounded
+            # by _MAX_PAGES x retries x the httpx timeout), so re-using the
+            # pre-walk timestamp could write a memo that is already past
+            # _FAIL_COOLDOWN the moment it lands.
+            _fail_at = datetime.now(timezone.utc)
             _fail_exc = exc
             raise
 
         if generation == _generation:
             _cache = mapped
-            _cache_at = now
+            # Same reasoning as _fail_at above: stamped with the time the
+            # walk FINISHED, not the pre-walk `now`, so a slow successful
+            # walk does not shorten its own _CACHE_TTL window.
+            _cache_at = datetime.now(timezone.utc)
         # else: reset_cache() fired while this refresh was in flight (e.g. a
         # Zoho credential rotation). This walk belongs to a superseded
         # generation and publishing it would resurrect the pre-rotation

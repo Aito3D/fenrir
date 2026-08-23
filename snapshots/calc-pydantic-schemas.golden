@@ -422,8 +422,8 @@
    "spool_weight_kg": {
     "anyOf": [
      {
-      "exclusiveMinimum": 0,
       "maximum": 100,
+      "minimum": 0.001,
       "type": "number"
      },
      {
@@ -783,8 +783,8 @@
    "spool_weight_kg": {
     "anyOf": [
      {
-      "exclusiveMinimum": 0,
       "maximum": 100,
+      "minimum": 0.001,
       "type": "number"
      },
      {

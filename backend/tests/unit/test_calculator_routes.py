@@ -306,6 +306,31 @@ class TestCalculatorFilaments:
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
+    async def test_create_rejects_denormal_spool_weight(self, async_client):
+        """T-090: ``gt=0`` alone let a sub-gram denormal through.
+
+        ``1e-307`` is greater than 0 but divides an ordinary dealer price into
+        an astronomical (eventually overflowing) cost per kg downstream in the
+        Zoho sync, so the create route must reject it outright rather than
+        relying on the sync loop to catch the fallout later.
+        """
+        resp = await async_client.post(
+            "/api/v1/calculator/filaments/",
+            json={**FILAMENT_PAYLOAD, "zoho_item_id": "1", "spool_weight_kg": 1e-307},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_update_rejects_denormal_spool_weight(self, async_client):
+        create_resp = await async_client.post("/api/v1/calculator/filaments/", json=FILAMENT_PAYLOAD)
+        filament_id = create_resp.json()["id"]
+        resp = await async_client.patch(
+            f"/api/v1/calculator/filaments/{filament_id}",
+            json={"spool_weight_kg": 1e-307},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
     async def test_seeded_example_filament_satisfies_the_derived_sale_invariant(self, async_client):
         """A fresh install must not ship a row that already breaks the invariant.
 

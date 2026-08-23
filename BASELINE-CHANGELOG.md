@@ -3173,3 +3173,145 @@ afterward and the full suite re-verified green (52/52 across the three Zoho fila
 3 consecutive runs, no flakes).
 
 `ruff check`/`ruff format --check`: clean. `tools/snapshot.py verify`: 10/10, nothing moved.
+
+## T-094 fix — 2026-08-23 — negative-cache memo now stamped when the failure is observed
+
+Loop-7's blind verifier found that the negative cache described above did not actually protect a
+*slow* Zoho outage. Inside `_refresh_lock`, `now = datetime.now(timezone.utc)` was captured once,
+before the paged walk began; the `except` branch then wrote `_fail_at = now`, so the memo was
+timestamped with when the walk *started*, not when it *failed*. Since the walk itself is bounded
+only at roughly `_MAX_PAGES(20) x 2 x 10s ~= 400s` — far longer than `_FAIL_COOLDOWN`'s 30s — any
+cold-cache walk slow enough to actually need the memo wrote one that was already expired the
+instant it landed. Fails safe (never masks a recovery longer than intended), so this was a feature
+that silently didn't fire, not a correctness bug: the fast-outage case (loop-7's own repro, `boom()`
+raising immediately) was unaffected and its tests stayed green throughout.
+
+Fixed by re-reading the clock at the point each timestamp is actually meaningful, rather than
+reusing the pre-walk `now`: `_fail_at = datetime.now(timezone.utc)` in the failure branch, and
+`_cache_at = datetime.now(timezone.utc)` on the success branch (same class of bug — a slow
+*successful* walk would otherwise shorten its own `_CACHE_TTL` window). No new module-level name,
+no locking/generation-guard change, `_FAIL_COOLDOWN`'s value untouched.
+
+This does not change the approved behavior itself — the user already approved (2026-08-22) that a
+cold-cache failure is remembered for up to `_FAIL_COOLDOWN`; this only makes that hold for a walk
+slow enough to need it, which the fast-outage tests already exercised as working.
+
+New regression test `test_cold_cache_failure_memo_survives_a_walk_slower_than_the_cooldown` in
+`test_zoho_filaments_catalogue.py` monkeypatches the module's `datetime` name with a scripted clock
+(`_ScriptedClock`, no real sleeping) so a cold-cache walk can be simulated as taking longer than a
+monkeypatched, shortened `_FAIL_COOLDOWN` (5s) without slowing the suite down. Mutation-proven: with
+the pre-walk `now` restored (i.e. the original bug), the test fails with `assert 2 == 1` — the
+second call incorrectly falls outside the (mis-stamped) cooldown window and repeats the upstream
+walk; with the fix restored it passes at `1 == 1`. The two named T-094 regression tests
+(`test_cold_cache_failure_is_remembered_so_a_retry_skips_the_walk`,
+`test_negative_cache_preserves_the_mapping_failure_exception_type`) and the full
+`test_zoho_filaments_catalogue.py` file (21/21) were re-verified green. T-095 (the superseded-walk
+raise and the `_refresh_lock` rebind in `reset_cache()`) was left untouched, per that task's
+ownership.
+
+`ruff check`/`ruff format --check`: clean. `tools/snapshot.py verify`: 10/10, nothing moved.
+`SURFACE.md`: unchanged — no module-level constant added, renamed or removed.
+
+## T-089 fix — 2026-08-23 — spool-cost rows now suppressed under the MIN_SAMPLE floor (user-approved behavior change)
+
+Audit `audit-security` found that `_spool_costs` and `_spool_costs_by_brand` in
+`calculator_insights.py` were the only two aggregates in that file NOT gated by the module's
+`MIN_SAMPLE` (5) floor — their comprehensions were guarded only by `if material` /
+`if brand and material`. With a single priced, unarchived spool in the database,
+`GET /api/v1/calculator/insights` returned a `sample: 1` row whose `avg_cost_per_kg` was that one
+spool's verbatim purchase cost, and — for the by-brand grouping — its exact supplier brand. Since
+the route is gated only on `CALCULATOR_READ` (held by the default Viewers role), this was a
+per-record inventory cost disclosure dressed up as an aggregate, not a permission bug.
+
+The user approved exactly one remedy: apply the file's existing `MIN_SAMPLE` floor to both
+methods, the same way `_failure_rates`, `_power_draw` and `_daily_usage` already do it. The
+auditor's alternative suggestion — requiring `Permission.INVENTORY_READ` for the per-brand block
+— was offered and explicitly declined; no permission change was made.
+
+**User-visible effect:** the calculator's reality-check panel now shows no spool-cost row (by
+material, or by brand+material) for any group with fewer than 5 unarchived priced spools. Small
+inventories that saw a row today (based on 1-4 spools) will see none. Groups at or above 5 are
+unaffected — same average, same `sample` count as before.
+
+Fixed with a one-line guard added to each comprehension's filter (`count >= MIN_SAMPLE`), matching
+the existing idiom exactly; no new module-level name, no permission change, no other aggregate
+touched.
+
+New/updated tests in `test_calculator_insights.py`: `test_spool_costs_average_by_material` and
+`test_spool_costs_average_by_brand` were rewritten to seed exactly `MIN_SAMPLE` priced spools for
+the surviving group (previously 2) and assert the under-`MIN_SAMPLE` group is now **absent** from
+the response, not merely present with a low `sample`. Two new boundary tests per grouping —
+`test_spool_costs_by_{material,brand}_below_min_sample_is_absent` (`MIN_SAMPLE - 1` spools, row
+absent) and `test_spool_costs_by_{material,brand}_at_min_sample_is_present` (`MIN_SAMPLE` spools,
+row present with the right average) — pin the exact off-by-one boundary. Mutation-proven: reverting
+the `count >= MIN_SAMPLE` guard back to the pre-fix filter made both `*_below_min_sample_is_absent`
+tests fail (`assert ("POLYMAKER", "PLA") not in rows` / `assert "PLA" not in rows` — the single-spool
+row reappeared), confirming the tests actually exercise the floor rather than passing vacuously.
+`ruff check`/`ruff format --check`: clean. `tools/snapshot.py verify`: 10/10 after re-recording
+`calc-pydantic-schemas` (moved by T-090, see below) — `calc-insights-pure` (which pins this
+module's constants and pure helpers) did NOT move, confirming the fix is a local/inline guard, not
+a module-level signature change. `SURFACE.md`: unchanged — no new module-level def/class/constant.
+
+## T-090 fix — 2026-08-23 — Zoho filament sync no longer writes an unbounded derived price (user-approved behavior change)
+
+Audit `audit-security` found a hole in T-071 (shipped this same campaign): the sync's skip guard
+checked `math.isfinite(new_cost)` but never checked the *derived* `sale_price_per_kg` computed on
+the next lines, and the sync applied no upper ceiling of its own (unlike the write-side schemas,
+which gained `le=1e8` in T-071). Separately, `spool_weight_kg`'s `gt=0` bound admitted denormals
+like `1e-307`. End-to-end: `POST /calculator/filaments/` with `spool_weight_kg: 1e-307,
+margin_pct: 1000.0`, linked to an ordinary Zoho product priced at 5.0, then one sync chunk reported
+`updated: 1` and stored `cost_per_kg: 5e+307` / `sale_price_per_kg` serialized as JSON `null`
+(`inf` has no JSON representation) against a response schema that declares `sale_price_per_kg` as
+non-optional. The row was self-perpetuating: every later PATCH re-derives off the stored `5e+307`
+and writes `inf` again.
+
+The user approved both halves of the fix: (a) a client posting a spool weight below 1 g now gets a
+422 instead of a 200, and (b) a Zoho-linked filament whose derived cost exceeds the money ceiling
+is counted as `skipped_no_price` by the sync rather than having its price rewritten.
+
+**User-visible effect:** `POST`/`PATCH .../filaments/` now reject `spool_weight_kg` values below
+0.001 kg (1 g) with 422, where they were previously accepted. The Zoho sync now counts a filament
+as `skipped_no_price` (price left untouched) whenever the freshly-derived `cost_per_kg` would
+exceed the existing `_MONEY_CEILING` (1e8) or the derived `sale_price_per_kg` would not be finite,
+instead of writing the poisoned value and counting it as `updated`.
+
+Fixed in two files: `schemas/calculator.py` — `spool_weight_kg` changed from `gt=0` to `ge=0.001`
+on both `CalculatorFilamentCreate` (previously inherited unbounded from the base schema; now
+explicitly overridden there too, the same pattern `cost_per_kg` already uses) and
+`CalculatorFilamentUpdate`. `routes/calculator.py` — the sync loop now computes
+`new_sale = derive_sale_price(new_cost, filament.margin_pct)` *before* the guard, and the guard's
+condition gained `new_cost > _MONEY_CEILING or not math.isfinite(new_sale)`, reusing the existing
+`_MONEY_CEILING` constant imported from `schemas/calculator.py` (no second copy of `1e8`). The
+`filament.sale_price_per_kg = derive_sale_price(...)` write below was replaced with the
+already-computed `new_sale` to avoid a second derivation.
+
+Reproduced the auditor's exact 5e+307/inf scenario end-to-end BEFORE fixing (temporarily reverted
+both files to their pre-fix state in the worktree to confirm): `CREATE` returned 200 with
+`sale_price_per_kg: 11000.0`, `SYNC` returned `{'updated': 1, ...}`, and the subsequent `LIST`
+showed `cost_per_kg: 5e+307`, `sale_price_per_kg: null` — byte-for-byte the audit's reported
+values. After restoring the fix, the identical request sequence now 422s at `CREATE`.
+
+New tests: `test_create_rejects_denormal_spool_weight` / `test_update_rejects_denormal_spool_weight`
+in `test_calculator_routes.py` pin the 422 at `1e-307` on both the create and patch routes. Because
+the write-side floor closes the auditor's literal repro at the API boundary, a second, independent
+vector was added to `test_calculator_zoho_sync.py` —
+`test_derived_cost_beyond_the_money_ceiling_is_skipped_not_written` — which corrupts the
+*catalogue product's own* `spool_weight_kg` (parsed from a Zoho item name, never pydantic-validated)
+to `1e-307` instead, reproducing the identical `5e+307` overflow through the sync's other,
+still-untrusted input, and asserts `skipped_no_price: 1`, `updated: 0`, and the row's
+`cost_per_kg`/`sale_price_per_kg` left unchanged. Mutation-proven: reverting the guard to only
+`not product.has_price or new_cost <= 0 or not math.isfinite(new_cost)` (i.e. dropping the
+`new_cost > _MONEY_CEILING or not math.isfinite(new_sale)` clause) made
+`test_derived_cost_beyond_the_money_ceiling_is_skipped_not_written` fail exactly as expected,
+showing `updated: 1` and the poisoned `cost_per_kg: 5e+307` written to the row — the same failure
+mode the audit reported. All pre-existing `test_calculator_zoho_sync.py` /
+`test_calculator_routes.py` tests re-verified green (103/103 across the three
+`test_calculator_*.py` files).
+
+`ruff check`/`ruff format --check`: clean. Full backend suite: 11695 passed, 1 skipped. Scoped
+coverage (`tools/coverage_calc.sh backend`): 683/686 statements = 99.56% (no drop from the 681/684
+baseline; the 2 new statements are both covered). `tools/snapshot.py verify`: `calc-pydantic-schemas`
+moved as expected — `spool_weight_kg`'s JSON Schema gained `"minimum": 0.001` and lost
+`"exclusiveMinimum": 0` on both `CalculatorFilamentCreate` and `CalculatorFilamentUpdate` — and was
+re-recorded; all other 9 probes matched unchanged, including `calc-insights-pure`. `SURFACE.md`:
+unchanged — `_MONEY_CEILING` is imported/reused, not redefined; no new module-level def/class/constant.
