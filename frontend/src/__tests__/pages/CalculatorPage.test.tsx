@@ -162,6 +162,20 @@ const measuredFailureTotal = collapseSpaces(
   ),
 );
 
+// Global-defaults-edit scenario: saving a new electricity tariff (5000) on
+// the Defaults tab must recompute the Calculator tab's total using that new
+// tariff — not merely make the old total disappear (a blank or "NaN FCFP"
+// render would also satisfy that).
+const tariffUpdateTotal = collapseSpaces(
+  formatMoney(
+    computePricing(referencePricingInputs, referencePricingFilament, referencePricingPrinter, {
+      ...referencePricingDefaults,
+      electricity_tariff: 5000,
+    }).total_ttc,
+    'XPF',
+  ),
+);
+
 // Time-correction chip scenario: the reference case's 2 h slicer estimate
 // measured at 120% of actual (accuracy_pct) → the corrected wall-clock time
 // is shorter. Both the corrected field split and the resulting total are
@@ -1174,9 +1188,11 @@ describe('CalculatorPage', () => {
     await screen.findByText('Defaults saved');
 
     await user.click(screen.getByRole('tab', { name: 'Calculator' }));
-    await waitFor(() => {
-      expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument();
-    });
+    // Positive proof: the recomputed total matches computePricing() with the
+    // new electricity_tariff applied, not merely "the old total is gone".
+    await screen.findByText(tariffUpdateTotal);
+    // Secondary sanity check: the stale total must also be gone.
+    expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument();
   });
 
   it('persists inputs to localStorage (debounced)', async () => {

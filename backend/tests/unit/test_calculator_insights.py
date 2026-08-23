@@ -21,6 +21,7 @@ from backend.app.services.calculator_insights import (
     MIN_SAMPLE,
     _printer_names,
     _resolve_duration,
+    _split_materials,
     calculator_insights_service,
 )
 
@@ -664,3 +665,83 @@ async def test_power_draw_resolved_purely_from_timestamp_fallback(
     assert len(rows) == 1
     assert rows[0]["avg_watts"] == 200.0
     assert rows[0]["sample"] == 5
+
+
+# --- T-087 (reopened): `_resolve_duration` direct unit tests ----------------
+#
+# The route-level fallback tests above mix `duration_seconds` in with the
+# accuracy/watts band checks, which silently discard any row whose resolved
+# duration goes negative or otherwise out-of-band — so a broken clock-skew
+# guard or a broken zero-vs-None branch produces the same route output either
+# way. These call `_resolve_duration` directly so no downstream filtering can
+# mask a broken guard.
+
+
+def test_resolve_duration_returns_duration_seconds_as_is_when_truthy():
+    assert _resolve_duration(1234, None, None) == 1234
+
+
+def test_resolve_duration_returns_negative_duration_seconds_unchanged():
+    # Current behavior: a negative *stored* duration is not validated here —
+    # it is merely truthy, so it passes straight through unchanged.
+    assert _resolve_duration(-5, None, None) == -5
+
+
+def test_resolve_duration_falls_back_to_elapsed_when_duration_seconds_is_zero():
+    # duration_seconds == 0 is falsy, so this must take the fallback branch
+    # rather than returning 0 directly.
+    started = NOW - timedelta(seconds=100)
+    completed = NOW
+    assert _resolve_duration(0, started, completed) == 100
+
+
+def test_resolve_duration_falls_back_to_elapsed_when_duration_seconds_is_none():
+    started = NOW - timedelta(seconds=250)
+    completed = NOW
+    assert _resolve_duration(None, started, completed) == 250
+
+
+def test_resolve_duration_returns_none_when_elapsed_is_exactly_zero():
+    assert _resolve_duration(None, NOW, NOW) is None
+
+
+def test_resolve_duration_returns_none_when_elapsed_is_negative():
+    assert _resolve_duration(None, NOW, NOW - timedelta(seconds=10)) is None
+
+
+def test_resolve_duration_returns_none_when_started_at_missing():
+    assert _resolve_duration(None, None, NOW) is None
+
+
+def test_resolve_duration_returns_none_when_completed_at_missing():
+    assert _resolve_duration(None, NOW - timedelta(seconds=10), None) is None
+
+
+def test_resolve_duration_truncates_fractional_elapsed_seconds():
+    started = NOW
+    completed = NOW + timedelta(seconds=100, microseconds=999000)  # 100.999s
+    assert _resolve_duration(None, started, completed) == 100
+
+
+# --- `_split_materials` direct unit tests ------------------------------------
+#
+# Not touched by mutation (i)/(ii) above, but checked separately per the task
+# brief: a mutation that drops the `if part.strip()` filter (letting empty
+# segments through as `""`) also survives the whole file untouched, so it is
+# similarly only reachable via a direct test.
+
+
+def test_split_materials_returns_empty_list_for_none():
+    assert _split_materials(None) == []
+
+
+def test_split_materials_returns_empty_list_for_empty_string():
+    assert _split_materials("") == []
+
+
+def test_split_materials_splits_uppercases_dedupes_and_sorts():
+    assert _split_materials("pla, ABS,pla, petg") == ["ABS", "PETG", "PLA"]
+
+
+def test_split_materials_drops_empty_segments():
+    assert _split_materials("PLA,, ,PETG") == ["PETG", "PLA"]
