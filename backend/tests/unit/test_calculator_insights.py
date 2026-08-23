@@ -895,3 +895,221 @@ async def test_unknown_printer_falls_back_to_hash_id_label(async_client: AsyncCl
     assert usage_row["sample"] == 18
     assert usage_row["hours_per_day"] == 3.4
     assert usage_row["observed_days"] == 20
+
+
+# --- T-105: band/threshold constants — literal + behavioural pins ----------
+#
+# The differential tests above (and the reference implementations they
+# compare against) IMPORT these constants directly, so a change to a
+# constant shifts production and reference identically and neither side
+# notices — mutation-proven: `_ACCURACY_BAND_HI` 200.0 -> 150.0 leaves the
+# whole suite green. These tests pin each band two ways: a literal
+# assertion (fails on ANY edit, doesn't say why the number is right) and,
+# for every band, a behavioural pair through the aggregate's real output —
+# a row sitting exactly ON the bound is INCLUDED, one just outside is
+# EXCLUDED — with the fixture values hardcoded rather than derived from the
+# imported constant, so widening/narrowing the band changes what comes out
+# even if the literal assertion is "helpfully" updated to match.
+#
+# `_time_accuracy` and `_power_draw` pre-filter rows in SQL before the
+# Python fold (see calculator_insights.py), so every fixture row here sits
+# in-band on every OTHER dimension (duration, watts, accuracy) to avoid the
+# query silently dropping it for the wrong reason.
+
+
+def test_band_threshold_constants_have_expected_values():
+    assert _ACCURACY_BAND_LO == 50.0
+    assert _ACCURACY_BAND_HI == 200.0
+    assert _WATTS_BAND_LO == 1.0
+    assert _WATTS_BAND_HI == 3000.0
+    assert _MIN_POWER_SECONDS == 300
+    assert _MAX_PRINT_SECONDS == 4 * 24 * 3600
+
+
+# _ACCURACY_BAND_LO / _ACCURACY_BAND_HI, via `_time_accuracy` (`overall_pct`
+# has no MIN_SAMPLE-style gate, so a single in-band row is enough to appear).
+
+
+@pytest.mark.asyncio
+async def test_time_accuracy_lo_bound_is_inclusive(printer_factory, archive_factory, db_session):
+    since = NOW - timedelta(days=3650)
+    printer = await printer_factory()
+    archive = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)
+    # 3600 / 7200 * 100 = 50.0 exactly -- the low edge.
+    db_session.add(_run(printer.id, "completed", archive_id=archive.id, duration_seconds=7200))
+    await db_session.commit()
+
+    result = await calculator_insights_service._time_accuracy(db_session, since)
+    assert result["sample"] == 1
+    assert result["overall_pct"] == 50.0
+
+
+@pytest.mark.asyncio
+async def test_time_accuracy_just_below_lo_bound_is_excluded(printer_factory, archive_factory, db_session):
+    since = NOW - timedelta(days=3650)
+    printer = await printer_factory()
+    archive = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)
+    # 3600 / 7201 * 100 = 49.986...% -- just under the low edge.
+    db_session.add(_run(printer.id, "completed", archive_id=archive.id, duration_seconds=7201))
+    await db_session.commit()
+
+    result = await calculator_insights_service._time_accuracy(db_session, since)
+    assert result["sample"] == 0
+    assert result["overall_pct"] is None
+
+
+@pytest.mark.asyncio
+async def test_time_accuracy_hi_bound_is_inclusive(printer_factory, archive_factory, db_session):
+    since = NOW - timedelta(days=3650)
+    printer = await printer_factory()
+    archive = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)
+    # 3600 / 1800 * 100 = 200.0 exactly -- the high edge.
+    db_session.add(_run(printer.id, "completed", archive_id=archive.id, duration_seconds=1800))
+    await db_session.commit()
+
+    result = await calculator_insights_service._time_accuracy(db_session, since)
+    assert result["sample"] == 1
+    assert result["overall_pct"] == 200.0
+
+
+@pytest.mark.asyncio
+async def test_time_accuracy_just_above_hi_bound_is_excluded(printer_factory, archive_factory, db_session):
+    since = NOW - timedelta(days=3650)
+    printer = await printer_factory()
+    archive = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)
+    # 3600 / 1799 * 100 = 200.11...% -- just over the high edge.
+    db_session.add(_run(printer.id, "completed", archive_id=archive.id, duration_seconds=1799))
+    await db_session.commit()
+
+    result = await calculator_insights_service._time_accuracy(db_session, since)
+    assert result["sample"] == 0
+    assert result["overall_pct"] is None
+
+
+# _WATTS_BAND_LO / _WATTS_BAND_HI, via `_power_draw`. A printer only
+# appears in the output once its sample clears MIN_SAMPLE, so each test adds
+# 4 safely-mid-band baseline rows (200 W) and one boundary row: included ->
+# sample 5 with the printer present; excluded -> sample stuck at 4, printer
+# absent entirely.
+
+
+@pytest.mark.asyncio
+async def test_power_draw_watts_lo_bound_is_inclusive(printer_factory, db_session):
+    since = NOW - timedelta(days=3650)
+    printer = await printer_factory()
+    for _ in range(4):
+        db_session.add(_run(printer.id, "completed", duration_seconds=3600, energy_kwh=0.2))  # 200 W, mid-band
+    # 0.001 kWh over 1h -> 1.0 W exactly -- the low edge.
+    db_session.add(_run(printer.id, "completed", duration_seconds=3600, energy_kwh=0.001))
+    await db_session.commit()
+
+    result = await calculator_insights_service._power_draw(db_session, since)
+    assert len(result) == 1
+    assert result[0]["sample"] == 5
+
+
+@pytest.mark.asyncio
+async def test_power_draw_just_below_watts_lo_bound_is_excluded(printer_factory, db_session):
+    since = NOW - timedelta(days=3650)
+    printer = await printer_factory()
+    for _ in range(4):
+        db_session.add(_run(printer.id, "completed", duration_seconds=3600, energy_kwh=0.2))  # 200 W, mid-band
+    # 0.000999 kWh over 1h -> 0.999 W -- just under the low edge.
+    db_session.add(_run(printer.id, "completed", duration_seconds=3600, energy_kwh=0.000999))
+    await db_session.commit()
+
+    result = await calculator_insights_service._power_draw(db_session, since)
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_power_draw_watts_hi_bound_is_inclusive(printer_factory, db_session):
+    since = NOW - timedelta(days=3650)
+    printer = await printer_factory()
+    for _ in range(4):
+        db_session.add(_run(printer.id, "completed", duration_seconds=3600, energy_kwh=0.2))  # 200 W, mid-band
+    # 3.0 kWh over 1h -> 3000.0 W exactly -- the high edge.
+    db_session.add(_run(printer.id, "completed", duration_seconds=3600, energy_kwh=3.0))
+    await db_session.commit()
+
+    result = await calculator_insights_service._power_draw(db_session, since)
+    assert len(result) == 1
+    assert result[0]["sample"] == 5
+
+
+@pytest.mark.asyncio
+async def test_power_draw_just_above_watts_hi_bound_is_excluded(printer_factory, db_session):
+    since = NOW - timedelta(days=3650)
+    printer = await printer_factory()
+    for _ in range(4):
+        db_session.add(_run(printer.id, "completed", duration_seconds=3600, energy_kwh=0.2))  # 200 W, mid-band
+    # 3.001 kWh over 1h -> 3001.0 W -- just over the high edge.
+    db_session.add(_run(printer.id, "completed", duration_seconds=3600, energy_kwh=3.001))
+    await db_session.commit()
+
+    result = await calculator_insights_service._power_draw(db_session, since)
+    assert result == []
+
+
+# _MIN_POWER_SECONDS / _MAX_PRINT_SECONDS, via `_power_draw`. Same
+# 4-baseline + 1-boundary shape; the boundary row's `energy_kwh` is chosen
+# so its implied watts stay safely inside the watts band regardless of the
+# duration edge under test.
+
+
+@pytest.mark.asyncio
+async def test_power_draw_min_duration_bound_is_inclusive(printer_factory, db_session):
+    since = NOW - timedelta(days=3650)
+    printer = await printer_factory()
+    for _ in range(4):
+        db_session.add(_run(printer.id, "completed", duration_seconds=3600, energy_kwh=0.2))  # 200 W, mid-band
+    # duration_seconds = 300 (the low edge); 0.2 kWh over 300s -> 2400 W (in watts-band).
+    db_session.add(_run(printer.id, "completed", duration_seconds=300, energy_kwh=0.2))
+    await db_session.commit()
+
+    result = await calculator_insights_service._power_draw(db_session, since)
+    assert len(result) == 1
+    assert result[0]["sample"] == 5
+
+
+@pytest.mark.asyncio
+async def test_power_draw_just_below_min_duration_bound_is_excluded(printer_factory, db_session):
+    since = NOW - timedelta(days=3650)
+    printer = await printer_factory()
+    for _ in range(4):
+        db_session.add(_run(printer.id, "completed", duration_seconds=3600, energy_kwh=0.2))  # 200 W, mid-band
+    # duration_seconds = 299 -- just under the low edge.
+    db_session.add(_run(printer.id, "completed", duration_seconds=299, energy_kwh=0.2))
+    await db_session.commit()
+
+    result = await calculator_insights_service._power_draw(db_session, since)
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_power_draw_max_duration_bound_is_inclusive(printer_factory, db_session):
+    since = NOW - timedelta(days=3650)
+    printer = await printer_factory()
+    for _ in range(4):
+        db_session.add(_run(printer.id, "completed", duration_seconds=3600, energy_kwh=0.2))  # 200 W, mid-band
+    # duration_seconds = 345600 (4 days, the high edge); 10 kWh over 96h -> ~104.17 W (in watts-band).
+    db_session.add(_run(printer.id, "completed", duration_seconds=345600, energy_kwh=10))
+    await db_session.commit()
+
+    result = await calculator_insights_service._power_draw(db_session, since)
+    assert len(result) == 1
+    assert result[0]["sample"] == 5
+
+
+@pytest.mark.asyncio
+async def test_power_draw_just_above_max_duration_bound_is_excluded(printer_factory, db_session):
+    since = NOW - timedelta(days=3650)
+    printer = await printer_factory()
+    for _ in range(4):
+        db_session.add(_run(printer.id, "completed", duration_seconds=3600, energy_kwh=0.2))  # 200 W, mid-band
+    # duration_seconds = 345601 -- just over the high edge.
+    db_session.add(_run(printer.id, "completed", duration_seconds=345601, energy_kwh=10))
+    await db_session.commit()
+
+    result = await calculator_insights_service._power_draw(db_session, since)
+    assert result == []
