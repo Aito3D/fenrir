@@ -1272,6 +1272,19 @@ export default {
 
   // Archives page
   archives: {
+    media: {
+      title: 'Video della stampa',
+      download: 'Scarica i video della stampa',
+      searching: 'Ricerca dei video sulla stampante…',
+      searchFailed: 'Impossibile cercare i video sulla stampante.',
+      none: 'Non sono stati trovati timelapse o segmenti della videocamera IP per questa stampa.',
+      attachedTimelapse: 'Timelapse allegato',
+      printerFiles: 'File ancora presenti sulla stampante',
+      downloadSelected: 'Scarica selezionati',
+      printerMissing: 'La stampante non è più configurata',
+      timelapseUnavailable: 'Impossibile leggere la cartella dei timelapse',
+      ipcamUnavailable: 'Impossibile leggere la cartella della videocamera IP',
+    },
     title: 'Archivi di stampa',
     no3mfBanner: {
       title: 'Alcune stampe recenti non sono state archiviate con la miniatura',
@@ -1279,7 +1292,7 @@ export default {
       docsLink: 'Vedi passo 4 dell\'installazione',
       docsLinkInternalStorage: 'Perché succede',
       titleInternalStorage: 'Alcune stampe recenti sono rimaste nella memoria interna della stampante',
-      bodyInternalStorage: 'La stampante ha tenuto il file elaborato nella propria memoria interna anziché sulla scheda, quindi Bambuddy non aveva nulla da leggere via FTP. Il firmware della serie H2 e della P2S si comporta così, e «Salva i file inviati su memoria esterna» non lo cambia. Quelle stampe restano archiviate con nome e tempi, solo senza miniatura né metadati dello slicer.',
+      bodyInternalStorage: 'Bambu Studio ha messo il file elaborato nella memoria interna della stampante anziché sulla scheda, quindi Bambuddy non aveva nulla da leggere via FTP. Sulla serie H2 e sulla P2S il pulsante «Stampa» lo fa sempre: solo «Invia» offre una scelta, e anche quella è impostata su «Cache». Quelle stampe restano archiviate con nome e tempi, solo senza miniatura né metadati dello slicer. Per archivi completi, avvia la stampa da Bambuddy oppure elabora in OrcaSlicer, oppure in Bambu Studio usa «Invia» con «Esterna» e avvia la stampa dopo. Tutte richiedono una scheda o una chiavetta nella stampante.',
       titleNoExternalStorage: 'Alcune stampe recenti non sono state archiviate — nessuna memoria nella stampante',
       bodyNoExternalStorage: 'La stampante non rileva né scheda né chiavetta nel suo slot, quindi il file elaborato non aveva dove finire e Bambuddy nulla da leggere. Inseriscine una e la prossima stampa verrà archiviata per intero.',
       dismissLabel: 'Chiudi questo avviso',
@@ -3562,6 +3575,14 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    zipStarted_one: 'Download ZIP avviato per {{count}} file',
+    zipStarted_other: 'Download ZIP avviato per {{count}} file',
+    zipPartial: 'Download ZIP avviato con {{successful}} file su {{total}}; non è stato possibile recuperare gli altri',
+    downloadFailed: 'Download non riuscito: {{error}}',
+    unknownError: 'Errore sconosciuto',
+    shiftSelectHint: 'Maiusc-clic per selezionare un intervallo',
+    selectFile: 'Seleziona {{name}}',
+    deselectFile: 'Deseleziona {{name}}',
     title: 'Gestore file',
     storageUsed: 'Usato:',
     storageFree: 'Libero:',
@@ -3571,6 +3592,7 @@ export default {
     deleteFileConfirm: 'Eliminare "{{name}}"? Questa azione non può essere annullata.',
     deleteFilesConfirm: 'Eliminare {{count}} file selezionati? Questa azione non può essere annullata.',
     noFiles: 'Nessun file sulla stampante',
+    printerUnavailable: 'Il servizio file della stampante non è disponibile. Riprova quando la stampante è raggiungibile.',
     loadingFiles: 'Caricamento file...',
     failedToLoad: 'Caricamento file fallito',
     toast: {
@@ -4810,6 +4832,9 @@ export default {
     fromFileHint: 'Il designer ha modificato questo parametro nel file di origine. Il valore è {{value}}.',
     fromFilePrinterCoupled: 'stampante del designer',
     fromFilePrinterCoupledHint: 'Tarato per la stampante per cui è stato progettato questo file: sulla tua può essere errato o fuori intervallo.',
+    fromFileOverridesPreset: 'sovrascrive il profilo',
+    fromFileOverridesPresetHint:
+      'Il file imposta {{value}} mentre il profilo scelto usa {{preset}}. Selezionalo solo se deve prevalere il file.',
     useFromFile: 'Usa il valore del file di origine per {{option}}',
     otherFromFile: 'Altre impostazioni da questo file',
     loading: 'Caricamento impostazioni dello slicer…',
@@ -5389,6 +5414,7 @@ export default {
     externalSpool: 'Bobina esterna',
     profile: 'Profilo',
     kFactor: 'Fattore K',
+    kFactorShort: 'K',
     fill: 'Livello',
     configure: 'Configura',
     used: 'utilizzato',
@@ -5826,6 +5852,9 @@ export default {
     noProject: 'Nessun progetto',
     itemsPrinted: 'Elementi stampati',
     itemsPrintedHelp: 'Numero di elementi prodotti in questo job di stampa',
+    filamentUsed: 'Filamento usato (g)',
+    filamentUsedPlaceholder: 'es. 46.16',
+    filamentUsedHelp: 'Inseriscilo a mano quando una stampa è stata archiviata senza il suo 3MF, così da farla rientrare comunque nei totali del filamento. La riscansione di un archivio che ha il suo 3MF rilegge il valore dal file.',
     notes: 'Note',
     notesPlaceholder: 'Aggiungi note su questa stampa...',
     externalLink: 'Link esterno',
@@ -7328,7 +7357,7 @@ export default {
         skip: 'Non verificato — è necessaria una connessione MQTT attiva. Negli slicer più vecchi dove questa impostazione esiste solo nello slicer, la stampante non la segnala, quindi questo controllo passa anche se l\'opzione è disattivata — verifica manualmente il passo 4 dell\'installazione.',
         skip_unsupported_model: 'Questo modello ha uno slot SD ma nessun modo per attivare l\'opzione — il firmware attuale della serie P1 non mostra l\'interruttore in Bambu Studio e la stampante non ha uno schermo. Non c\'è nulla da correggere qui; alle stampe archiviate potrebbero mancare miniature e metadati dello slicer finché Bambu Lab non aggiungerà il supporto via firmware.',
         fail_no_media: 'L\'opzione è attiva, ma la stampante non rileva né scheda né chiavetta nel suo slot, quindi i file inviati non hanno dove andare. Inseriscine una e stampa di nuovo — fino ad allora ogni stampa archiviata sarà priva di miniatura e metadati dello slicer.',
-        warn_internal_storage: 'L\'opzione è attiva ed è presente una memoria, ma questa stampante ha comunque tenuto l\'ultima stampa nella propria memoria interna, che Bambuddy non può leggere. Il firmware della serie H2 e della P2S si comporta così e nessuna impostazione lo cambia. Le stampe vengono archiviate con nome e tempi, ma senza miniatura né metadati dello slicer.',
+        warn_internal_storage: 'L\'opzione è attiva ed è presente una memoria, ma l\'ultima stampa è comunque finita nella memoria interna della stampante, che Bambuddy non può leggere. Sulla serie H2 e sulla P2S il pulsante «Stampa» di Bambu Studio invia sempre lì, a prescindere da questa opzione. Le stampe vengono archiviate con nome e tempi, ma senza miniatura né metadati dello slicer. Per archivi completi, avvia le stampe da Bambuddy oppure elabora in OrcaSlicer, oppure in Bambu Studio usa «Invia» con «Esterna» e avvia la stampa dopo.',
       },
       port_rtsps: {
         title: 'Porta fotocamera ({{protocol}} {{port}})',

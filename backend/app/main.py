@@ -85,7 +85,6 @@ from backend.app.core.config import APP_VERSION, settings as app_settings
 from backend.app.core.database import async_session, engine, init_db
 from backend.app.core.tasks import spawn_background_task
 from backend.app.core.websocket import ws_manager
-from backend.app.models.smart_plug import SmartPlug
 from backend.app.services import print_dispatch_context
 from backend.app.services.archive import (
     ArchiveService,
@@ -99,12 +98,14 @@ from backend.app.services.bambu_ftp import (
     cache_3mf_download,
     clear_3mf_cache,
     download_file_async,
+    download_file_try_paths_async,
     ftps_handshake_blocked,
     get_cached_3mf,
     get_ftp_retry_settings,
     with_ftp_retry,
 )
 from backend.app.services.bambu_mqtt import PrinterState
+from backend.app.services.energy_plug import energy_plug_candidates, select_energy_reading
 from backend.app.services.github_backup import github_backup_service
 from backend.app.services.ha_sensor_manager import ha_sensor_manager
 from backend.app.services.homeassistant import homeassistant_service
@@ -116,7 +117,11 @@ from backend.app.services.notification_service import notification_service
 from backend.app.services.obico_detection import obico_detection_service
 from backend.app.services.print_cost_estimate import plate_scoped_run_estimate as _plate_scoped_run_estimate
 from backend.app.services.print_scheduler import scheduler as print_scheduler
-from backend.app.services.print_storage import external_storage_present, print_file_reachable_over_ftp
+from backend.app.services.print_storage import (
+    external_storage_present,
+    ftp_probe_paths,
+    print_file_reachable_over_ftp,
+)
 from backend.app.services.printer_manager import (
     init_printer_connections,
     parse_plate_id,
@@ -137,7 +142,9 @@ from backend.app.services.spoolman_tracking import (
 )
 from backend.app.services.tasmota import tasmota_service
 from backend.app.utils.ams_drying import has_filament_loaded, is_drying_active, temperature_alarm_suppressed
+from backend.app.utils.filament_types import printer_filament_type
 from backend.app.utils.fts_routing import extruder_for_inlet, slot_extruder as resolve_slot_extruder
+from backend.app.utils.local_time import utcnow_naive
 from backend.app.utils.print_jobs import is_internal_printer_job
 
 
@@ -910,21 +917,30 @@ async def _record_energy_start(archive, printer_id: int, db, *, context: str = "
     """
     _logger = logging.getLogger(__name__)
     try:
-        plug_result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
-        plug = plug_result.scalar_one_or_none()
-        if not plug:
+        candidates = await energy_plug_candidates(db, printer_id)
+        if not candidates:
             _logger.info("[ENERGY] No smart plug for printer %s (archive %s)", printer_id, archive.id)
             return False
-        energy = await _get_plug_energy(plug, db)
-        if not energy or energy.get("total") is None:
-            _logger.warning("[ENERGY] No 'total' in energy response for archive %s", archive.id)
+        selected = await select_energy_reading(candidates, _get_plug_energy, db)
+        if selected is None:
+            # Naming the plugs matters here: with several linked to one printer
+            # this is the difference between "the meter is offline" and "you
+            # linked only accessories" (#2859).
+            _logger.warning(
+                "[ENERGY] No plug on printer %s reports a lifetime energy counter for archive %s (tried: %s)",
+                printer_id,
+                archive.id,
+                ", ".join(plug.name for plug in candidates),
+            )
             return False
+        plug, energy = selected
         archive.energy_start_kwh = float(energy["total"])
         await db.commit()
         _logger.info(
-            "[ENERGY] Recorded starting energy%s for archive %s: %s kWh",
+            "[ENERGY] Recorded starting energy%s for archive %s from plug '%s': %s kWh",
             f" ({context})" if context else "",
             archive.id,
+            plug.name,
             energy["total"],
         )
         return True
@@ -2102,11 +2118,54 @@ async def on_ams_change(printer_id: int, ams_data: list):
                             continue
                         # Fingerprint mismatch — but check if tray now matches the
                         # assigned spool (e.g. auto-configure changed the tray).
+                        # Both sides are reduced to the type the slot can carry
+                        # before comparing: the assign path writes that rather
+                        # than the spool's raw material (#2902), so a spool whose
+                        # material is a product line — "PLA+", "HTPLA" — reports
+                        # back as "PLA" and would otherwise fail this check and
+                        # be auto-unlinked from the slot it was just assigned to.
+                        # Reducing the printer's side too keeps slots configured
+                        # by an older Bambuddy, still reporting "PLA+", matching.
                         spool = assignment.spool
                         if spool:
                             spool_color = (spool.rgba or "FFFFFFFF").upper()
-                            spool_type = (spool.material or "").upper()
-                            if _colors_similar(cur_color, spool_color) and cur_type.upper() == spool_type:
+                            # Two ways the assign path can have arrived at the
+                            # slot's type, so both count as "we wrote this".
+                            # The material column is one; the spool's preset is
+                            # the other, and it outranks the material when the
+                            # spool has one -- a spool whose material says PLA
+                            # and whose preset is "Bambu PLA Aero" puts
+                            # PLA-AERO in the slot (#2902). Read from the stored
+                            # preset name rather than resolving the preset,
+                            # because this runs on every AMS push and a cloud
+                            # lookup here would be both slow and unavailable on
+                            # the unauthenticated replay path.
+                            spool_types = {printer_filament_type(spool.material).upper()}
+                            if spool.slicer_filament_name:
+                                spool_types.add(printer_filament_type(spool.slicer_filament_name).upper())
+                            # An imported local preset stores its type outright,
+                            # which is what the assign path used -- and the name
+                            # above may be unset. One keyed read, and only on a
+                            # mismatch, which is rare.
+                            #
+                            # slicer_filament is free text up to fifty characters,
+                            # so the digits have to be checked against the range
+                            # of the integer primary key they are about to be
+                            # compared with. Postgres raises on an out-of-range
+                            # integer rather than simply not matching, and that
+                            # would poison this session and abandon the rest of
+                            # the cleanup pass.
+                            lp_ref = (spool.slicer_filament or "").strip()
+                            if lp_ref.isdigit() and int(lp_ref) <= 2147483647:
+                                from backend.app.models.local_preset import LocalPreset as _LP
+
+                                lp_type = await db.scalar(select(_LP.filament_type).where(_LP.id == int(lp_ref)))
+                                if lp_type:
+                                    spool_types.add(printer_filament_type(lp_type).upper())
+                            if (
+                                _colors_similar(cur_color, spool_color)
+                                and printer_filament_type(cur_type).upper() in spool_types
+                            ):
                                 logger.info(
                                     "Auto-unlink: spool %d AMS%d-T%d — fingerprint mismatch but tray matches spool, updating fp",
                                     assignment.spool_id,
@@ -2866,32 +2925,71 @@ async def _dispatch_user_print_email(
 def _load_objects_from_archive(archive, printer_id: int, logger) -> None:
     """Extract printable objects from an archive's 3MF file and store in printer state."""
     try:
-        from backend.app.services.archive import extract_printable_objects_from_3mf
+        from backend.app.services.archive import extract_printable_objects_from_archive
 
         client = printer_manager.get_client(printer_id)
         if not client:
             return
 
-        file_path = app_settings.base_dir / archive.file_path
-        if file_path.is_file() and str(file_path).endswith(".3mf"):
-            with open(file_path, "rb") as f:
-                threemf_data = f.read()
-            # Extract with positions for UI overlay, scoped to the plate that
-            # is printing — resolve_plate_id is the same resolver /cover uses,
-            # so the object list can't disagree with the thumbnail it is drawn
-            # over (#2522).
-            printable_objects, bbox_all = extract_printable_objects_from_3mf(
-                threemf_data,
-                plate_number=resolve_plate_id(client.state),
-                include_positions=True,
-            )
-            if printable_objects:
-                client.state.printable_objects = printable_objects
-                client.state.printable_objects_bbox_all = bbox_all
-                client.state.skipped_objects = []
-                logger.info("Loaded %s printable objects for printer %s", len(printable_objects), printer_id)
+        # Extract with positions for UI overlay, scoped to the plate that
+        # is printing — resolve_plate_id is the same resolver /cover uses,
+        # so the object list can't disagree with the thumbnail it is drawn
+        # over (#2522).
+        printable_objects, bbox_all = extract_printable_objects_from_archive(
+            app_settings.base_dir / archive.file_path,
+            plate_number=resolve_plate_id(client.state),
+        )
+        if printable_objects:
+            client.state.printable_objects = printable_objects
+            client.state.printable_objects_bbox_all = bbox_all
+            client.state.skipped_objects = []
+            logger.info("Loaded %s printable objects for printer %s", len(printable_objects), printer_id)
     except Exception as e:
         logger.debug("Failed to extract printable objects from archive: %s", e)
+
+
+async def _restore_printable_objects(printer_id: int, state, db, logger) -> None:
+    """Put the skip-objects list back after a restart mid-print.
+
+    ``PrinterState.printable_objects`` is in-memory only, and the only thing
+    that fills it is ``_load_objects_from_archive`` on the print-start paths —
+    which the #1304 guard suppresses on the first RUNNING push after startup.
+    Everything else this hook restores (the archive, the usage-tracking session,
+    the timelapse baseline) was already handled; the object list was not, so a
+    restart mid-print took skip-objects away for the rest of that print.
+
+    Nothing recovered it either: the printer card gates its Skip button on the
+    object count, and the one endpoint that can rebuild the list is reachable
+    only from the modal that button opens.
+
+    Anchored on ``subtask_id``, which the firmware mints per print, so a
+    leftover ``status="printing"`` row from a completion we never saw cannot
+    hand this print someone else's objects. Without one, nothing is loaded
+    rather than guessed — the reload path on ``GET /print/objects`` covers that
+    case on demand.
+    """
+    client = printer_manager.get_client(printer_id)
+    if client is None or client.state.printable_objects:
+        return
+
+    subtask_id = str(getattr(state, "subtask_id", "") or "").strip()
+    if subtask_id in ("", "0"):
+        return
+
+    from backend.app.models.archive import PrintArchive
+
+    archive = await db.scalar(
+        select(PrintArchive)
+        .where(
+            PrintArchive.printer_id == printer_id,
+            PrintArchive.status == "printing",
+            PrintArchive.subtask_id == subtask_id,
+        )
+        .order_by(PrintArchive.created_at.desc())
+        .limit(1)
+    )
+    if archive is not None:
+        _load_objects_from_archive(archive, printer_id, logger)
 
 
 async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
@@ -3636,16 +3734,67 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
         # retries, then the directory walk) is ~110 connections that cannot
         # succeed. Skip it and say why (#2780).
         storage = print_file_reachable_over_ftp(printer_manager.get_status(printer_id))
-        if not storage.reachable and not downloaded_filename:
-            logger.info(
-                "Skipping the 3MF lookup for printer %s: %s — the print file is not on storage "
-                "Bambuddy can read over FTPS, so no path would find it",
-                printer_id,
-                storage.reason,
-            )
 
         # Get FTP retry settings
         ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
+
+        # ...but "the printer put it on eMMC" is where it went, not whether we
+        # can read it. An H2D with a card in mirrors the job to /cache and
+        # serves it happily, and skipping on the URL alone cost that reporter
+        # every archive for two days (#2856). So ask the printer instead of
+        # guessing: the dispatch named the exact file, which is one connection
+        # walking five paths rather than the sweep's ~110. Only when the probe
+        # comes back empty does the verdict's reason stand.
+        if not storage.reachable and not downloaded_filename and storage.probe_filename:
+            if ftps_handshake_blocked(printer.ip_address):
+                logger.debug(
+                    "Not probing for %s on printer %s: its file service is not answering over TLS",
+                    storage.probe_filename,
+                    printer_id,
+                )
+            else:
+                probe_path = app_settings.archive_dir / "temp" / storage.probe_filename
+                probe_path.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    probe_hit = await download_file_try_paths_async(
+                        printer.ip_address,
+                        printer.access_code,
+                        ftp_probe_paths(storage.probe_filename),
+                        probe_path,
+                        socket_timeout=ftp_timeout,
+                        printer_model=printer.model,
+                    )
+                except Exception as e:
+                    logger.debug("3MF probe for %s failed: %s", storage.probe_filename, e)
+                    probe_hit = False
+                if probe_hit:
+                    downloaded_filename = storage.probe_filename
+                    temp_path = probe_path
+                    cache_3mf_download(printer_id, downloaded_filename, probe_path)
+                    # Naming the path, not just the file: a printer that keeps
+                    # uploads around for weeks can serve a same-named copy of an
+                    # earlier slice, and without the directory in the log that
+                    # mismatch is invisible rather than merely rare (#1820).
+                    logger.info(
+                        "Found %s at %s over FTPS for printer %s even though the printer reported %s",
+                        downloaded_filename,
+                        probe_hit,
+                        printer_id,
+                        storage.reason,
+                    )
+
+        if not storage.reachable and not downloaded_filename:
+            # Same opening words whether or not a probe ran, because that is
+            # the phrase support asks people to grep for — only the tail says
+            # which of the two happened.
+            logger.info(
+                "Skipping the 3MF lookup for printer %s: %s — %s",
+                printer_id,
+                storage.reason,
+                "no copy of it on external storage either"
+                if storage.probe_filename
+                else "the print file is not on storage Bambuddy can read over FTPS, so no path would find it",
+            )
 
         for try_filename in possible_names if not downloaded_filename and storage.reachable else []:
             if not try_filename.endswith(".3mf"):
@@ -3692,6 +3841,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                             max_retries=ftp_retry_count,
                             retry_delay=ftp_retry_delay,
                             operation_name=f"Download 3MF from {remote_path}",
+                            cooloff_ip=printer.ip_address,
                             non_retry_exceptions=(FileNotOnPrinterError,),
                         )
                     else:
@@ -3782,6 +3932,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                                     max_retries=ftp_retry_count,
                                     retry_delay=ftp_retry_delay,
                                     operation_name=f"Download 3MF from {remote_full_path}",
+                                    cooloff_ip=printer.ip_address,
                                 )
                             else:
                                 downloaded = await download_file_async(
@@ -3854,6 +4005,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                                         max_retries=ftp_retry_count,
                                         retry_delay=ftp_retry_delay,
                                         operation_name=f"Re-download 3MF from {remote_path}",
+                                        cooloff_ip=printer.ip_address,
                                         non_retry_exceptions=(FileNotOnPrinterError,),
                                     )
                                 else:
@@ -4856,6 +5008,7 @@ async def on_print_running_observed(printer_id: int, data: dict):
                 logger.info("[RESTART] Restored active Bambuddy print for printer %s", printer_id)
 
             await _restore_usage_tracking_session(printer_id, state, db, logger)
+            await _restore_printable_objects(printer_id, state, db, logger)
 
         result = await db.execute(select(Printer).where(Printer.id == printer_id))
         printer = result.scalar_one_or_none()
@@ -6477,17 +6630,23 @@ async def on_print_complete(printer_id: int, data: dict):
                     logger.info("[ENERGY-BG] No start kWh recorded for archive %s", archive_id)
                     return
 
-                plug_result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
-                plug = plug_result.scalar_one_or_none()
-                if plug is None:
+                candidates = await energy_plug_candidates(db, printer_id)
+                if not candidates:
                     logger.info("[ENERGY-BG] No smart plug for printer %s", printer_id)
                     return
 
-                energy = await _get_plug_energy(plug, db)
-                logger.info("[ENERGY-BG] Energy response: %s", energy)
-                if not energy or energy.get("total") is None:
-                    logger.warning("[ENERGY-BG] No 'total' in energy response")
+                # Same ordering as the start reading, so the delta below is
+                # against the counter that produced `starting_kwh` (#2859).
+                selected = await select_energy_reading(candidates, _get_plug_energy, db)
+                if selected is None:
+                    logger.warning(
+                        "[ENERGY-BG] No plug on printer %s reports a lifetime energy counter (tried: %s)",
+                        printer_id,
+                        ", ".join(plug.name for plug in candidates),
+                    )
                     return
+                plug, energy = selected
+                logger.info("[ENERGY-BG] Energy response from plug '%s': %s", plug.name, energy)
 
                 energy_used = round(energy["total"] - starting_kwh, 4)
                 logger.info("[ENERGY-BG] Per-print energy: %s kWh", energy_used)
@@ -7445,7 +7604,7 @@ async def record_ams_history():
                     setting = result.scalar_one_or_none()
                     retention_days = int(setting.value) if setting else AMS_HISTORY_RETENTION_DAYS
 
-                    cutoff = datetime.utcnow() - timedelta(days=retention_days)
+                    cutoff = utcnow_naive() - timedelta(days=retention_days)
                     result = await db.execute(delete(AMSSensorHistory).where(AMSSensorHistory.recorded_at < cutoff))
                     await db.commit()
                     if result.rowcount > 0:
@@ -7571,7 +7730,7 @@ async def record_printer_sensor_history():
                     setting = result.scalar_one_or_none()
                     retention_days = int(setting.value) if setting else PRINTER_SENSOR_HISTORY_RETENTION_DAYS
 
-                    cutoff = datetime.utcnow() - timedelta(days=retention_days)
+                    cutoff = utcnow_naive() - timedelta(days=retention_days)
                     cleanup = await db.execute(
                         delete(PrinterSensorHistory).where(PrinterSensorHistory.recorded_at < cutoff)
                     )
@@ -8089,6 +8248,16 @@ async def lifespan(app: FastAPI):
 
     await init_db()
 
+    # Browser download tokens expire after five minutes. Remove abandoned
+    # prepared ZIPs at startup as well as before each new preparation so a
+    # quiet appliance cannot retain an unusable bundle indefinitely.
+    try:
+        from backend.app.services.printer_media import prune_stale_printer_file_bundles
+
+        await prune_stale_printer_file_bundles()
+    except Exception as exc:
+        logging.warning("Failed to prune stale printer download bundles: %s", exc)
+
     # After migrations, so the is_env_managed column exists. Never raises --
     # a bad BAMBUDDY_OIDC_* value is logged and skipped rather than blocking
     # startup (see apply_env_oidc_provider).
@@ -8523,6 +8692,10 @@ async def lifespan(app: FastAPI):
     # L-2: Start periodic auth cleanup (stale TOTP + expired revoked JTIs)
     start_auth_cleanup()
 
+    from backend.app.services.printer_media import start_printer_download_cleanup
+
+    start_printer_download_cleanup()
+
     # Event-loop stall watchdog: dumps all thread stacks to stderr if the loop
     # freezes (#1486 — silent "container hangs after adding a printer" reports).
     from backend.app.services.loop_watchdog import start_loop_watchdog
@@ -8588,6 +8761,9 @@ async def lifespan(app: FastAPI):
 
     stop_expected_prints_cleanup()
     stop_auth_cleanup()
+    from backend.app.services.printer_media import stop_printer_download_cleanup
+
+    await stop_printer_download_cleanup()
     printer_manager.disconnect_all()
     await close_spoolman_client()
 

@@ -1281,6 +1281,19 @@ export default {
 
   // Archives page
   archives: {
+    media: {
+      title: 'Print videos',
+      download: 'Download print videos',
+      searching: 'Checking the printer for videos…',
+      searchFailed: 'Could not check the printer for videos.',
+      none: 'No timelapse or IP camera chunks were found for this print.',
+      attachedTimelapse: 'Attached timelapse',
+      printerFiles: 'Files still on the printer',
+      downloadSelected: 'Download selected',
+      printerMissing: 'Printer is no longer configured',
+      timelapseUnavailable: 'The timelapse directory could not be read',
+      ipcamUnavailable: 'The IP camera directory could not be read',
+    },
     title: 'Print Archives',
     no3mfBanner: {
       title: 'Some recent prints couldn\'t be archived with thumbnails',
@@ -1289,7 +1302,7 @@ export default {
       dismissLabel: 'Dismiss this notice',
       docsLinkInternalStorage: 'Why this happens',
       titleInternalStorage: 'Some recent prints stayed on the printer\'s internal storage',
-      bodyInternalStorage: 'The printer kept the sliced file on its own internal storage instead of the card, so there was nothing for Bambuddy to read over FTP. H2-series and P2S firmware does this, and "Store sent files on external storage" does not change it. Those prints are still archived with their name and timing, just without a thumbnail or slicer metadata.',
+      bodyInternalStorage: 'Bambu Studio put the sliced file on the printer\'s internal storage instead of the card, so there was nothing for Bambuddy to read over FTP. On H2-series and P2S its Print button always does that — only Send offers a choice, and that defaults to Cache too. Those prints are still archived with their name and timing, just without a thumbnail or slicer metadata. For complete archives, start the print from Bambuddy, or slice in OrcaSlicer — or in Bambu Studio use Send with External selected and start the print afterwards. All of them need a card or stick in the printer.',
       titleNoExternalStorage: 'Some recent prints couldn\'t be archived — no storage in the printer',
       bodyNoExternalStorage: 'The printer reports no card or stick in its slot, so the sliced file had nowhere to land and Bambuddy had nothing to read. Insert one and the next print will archive in full.',
     },
@@ -3608,6 +3621,14 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    zipStarted_one: 'Started ZIP download for {{count}} file',
+    zipStarted_other: 'Started ZIP download for {{count}} files',
+    zipPartial: 'ZIP download started with {{successful}} of {{total}} files; the rest could not be retrieved',
+    downloadFailed: 'Download failed: {{error}}',
+    unknownError: 'Unknown error',
+    shiftSelectHint: 'Shift-click to select a range',
+    selectFile: 'Select {{name}}',
+    deselectFile: 'Deselect {{name}}',
     title: 'File Manager',
     storageUsed: 'Used:',
     storageFree: 'Free:',
@@ -3617,6 +3638,7 @@ export default {
     deleteFileConfirm: 'Delete "{{name}}"? This cannot be undone.',
     deleteFilesConfirm: 'Delete {{count}} selected files? This cannot be undone.',
     noFiles: 'No files on printer',
+    printerUnavailable: 'The printer file service is unavailable. Try again when the printer is reachable.',
     loadingFiles: 'Loading files...',
     failedToLoad: 'Failed to load files',
     toast: {
@@ -4861,6 +4883,9 @@ export default {
     fromFileHint: 'The designer changed this in the source file. Its value is {{value}}.',
     fromFilePrinterCoupled: "designer's printer",
     fromFilePrinterCoupledHint: 'Tuned for the printer this file was designed for -- may be wrong or out of range on yours.',
+    fromFileOverridesPreset: 'overrides preset',
+    fromFileOverridesPresetHint:
+      'The file sets this to {{value}} where the preset you picked uses {{preset}}. Tick it only if the file should win.',
     useFromFile: "Use the source file's value for {{option}}",
     otherFromFile: 'Other settings from this file',
     loading: 'Loading slicer settings…',
@@ -5449,6 +5474,7 @@ export default {
     externalSpool: 'External Spool',
     profile: 'Profile',
     kFactor: 'K Factor',
+    kFactorShort: 'K',
     fill: 'Fill',
     configure: 'Configure',
     used: 'used',
@@ -5891,6 +5917,9 @@ export default {
     noProject: 'No project',
     itemsPrinted: 'Items Printed',
     itemsPrintedHelp: 'Number of items produced in this print job',
+    filamentUsed: 'Filament used (g)',
+    filamentUsedPlaceholder: 'e.g. 46.16',
+    filamentUsedHelp: 'Set this by hand when a print archived without its 3MF, so it still counts towards the filament totals. Rescanning an archive that has its 3MF reads the figure back from the file.',
     notes: 'Notes',
     notesPlaceholder: 'Add notes about this print...',
     externalLink: 'External Link',
@@ -7393,7 +7422,7 @@ export default {
         skip: 'Not checked — needs a live MQTT connection. On older slicers where this setting lives only in the slicer the printer never reports it, so this check will pass even when the option is off — verify install step 4 manually.',
         skip_unsupported_model: 'This model has an SD slot but no way to turn the option on — current P1-series firmware doesn\'t expose the toggle in Bambu Studio and the printer has no screen. Nothing to fix here; archived prints may lack thumbnails and slicer metadata until Bambu Lab adds firmware support.',
         fail_no_media: 'The option is on, but the printer reports no card or stick in its slot, so there is nowhere for sent files to go. Insert one and print again — until then every archived print will be missing its thumbnail and slicer metadata.',
-        warn_internal_storage: 'The option is on and storage is present, but this printer still kept the last print on its internal storage, which Bambuddy cannot read. H2-series and P2S firmware does this and no setting changes it. Prints archive with their name and timing, but without a thumbnail or slicer metadata.',
+        warn_internal_storage: 'The option is on and storage is present, but the last print still went to the printer\'s internal storage, which Bambuddy cannot read. On H2-series and P2S, Bambu Studio\'s Print button always sends there whatever this option is set to. Prints archive with their name and timing, but without a thumbnail or slicer metadata. For complete archives, start prints from Bambuddy or slice in OrcaSlicer — or in Bambu Studio use Send with External selected, then start the print.',
       },
       port_rtsps: {
         title: 'Camera port ({{protocol}} {{port}})',

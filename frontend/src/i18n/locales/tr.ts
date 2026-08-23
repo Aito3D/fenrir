@@ -1272,6 +1272,19 @@ export default {
 
   // Arşivler sayfası
   archives: {
+    media: {
+      title: 'Baskı videoları',
+      download: 'Baskı videolarını indir',
+      searching: 'Yazıcıda video aranıyor…',
+      searchFailed: 'Yazıcıdaki videolar kontrol edilemedi.',
+      none: 'Bu baskı için hızlandırılmış çekim veya IP kamera parçası bulunamadı.',
+      attachedTimelapse: 'Ekli hızlandırılmış çekim',
+      printerFiles: 'Yazıcıda kalan dosyalar',
+      downloadSelected: 'Seçilenleri indir',
+      printerMissing: 'Yazıcı artık yapılandırılmış değil',
+      timelapseUnavailable: 'Hızlandırılmış çekim dizini okunamadı',
+      ipcamUnavailable: 'IP kamera dizini okunamadı',
+    },
     title: 'Baskı Arşivleri',
     no3mfBanner: {
       title: 'Bazı son baskılar küçük resimlerle birlikte arşivlenemedi',
@@ -1279,7 +1292,7 @@ export default {
       docsLink: 'Kurulum adımı 4\'ü görüntüle',
       docsLinkInternalStorage: 'Bu neden oluyor',
       titleInternalStorage: 'Bazı son baskılar yazıcının dahili depolamasında kaldı',
-      bodyInternalStorage: 'Yazıcı dilimlenmiş dosyayı karta değil kendi dahili depolamasına yazdı, bu yüzden Bambuddy\'nin FTP üzerinden okuyacağı bir şey yoktu. H2 serisi ve P2S donanım yazılımı bunu yapar ve «Gönderilen dosyaları harici depolamada sakla» bunu değiştirmez. Bu baskılar adları ve süreleriyle yine arşivlenir, yalnızca küçük resim ve dilimleyici meta verileri olmadan.',
+      bodyInternalStorage: 'Bambu Studio dilimlenmiş dosyayı karta değil yazıcının dahili depolamasına yazdı, bu yüzden Bambuddy\'nin FTP üzerinden okuyacağı bir şey yoktu. H2 serisi ve P2S\'de «Yazdır» düğmesi bunu her zaman yapar; seçim yalnızca «Gönder» ile mümkündür ve orada da varsayılan «Önbellek»tir. Bu baskılar adları ve süreleriyle yine arşivlenir, yalnızca küçük resim ve dilimleyici meta verileri olmadan. Eksiksiz arşivler için baskıyı Bambuddy üzerinden başlatın ya da OrcaSlicer ile dilimleyin; Bambu Studio kullanacaksanız «Gönder» ile «Harici» seçip baskıyı sonrasında başlatın. Hepsi yazıcıda kart ya da bellek gerektirir.',
       titleNoExternalStorage: 'Bazı son baskılar arşivlenemedi — yazıcıda depolama yok',
       bodyNoExternalStorage: 'Yazıcı yuvasında kart veya bellek bildirmiyor, bu yüzden dilimlenmiş dosyanın ineceği bir yer ve Bambuddy\'nin okuyacağı bir şey yoktu. Bir tane takın, sonraki baskı eksiksiz arşivlenecek.',
       dismissLabel: 'Bu bildirimi kapat',
@@ -3577,6 +3590,14 @@ export default {
 
   // Yazıcı Dosya Yöneticisi modali (yazıcı dahili deposu)
   printerFiles: {
+    zipStarted_one: '{{count}} dosya için ZIP indirmesi başlatıldı',
+    zipStarted_other: '{{count}} dosya için ZIP indirmesi başlatıldı',
+    zipPartial: '{{total}} dosyanın {{successful}} tanesiyle ZIP indirmesi başlatıldı; kalan dosyalar alınamadı',
+    downloadFailed: 'İndirme başarısız: {{error}}',
+    unknownError: 'Bilinmeyen hata',
+    shiftSelectHint: 'Bir aralık seçmek için Shift tuşuyla tıklayın',
+    selectFile: '{{name}} öğesini seç',
+    deselectFile: '{{name}} seçimini kaldır',
     title: 'Dosya Yöneticisi',
     storageUsed: 'Kullanılan:',
     storageFree: 'Boş:',
@@ -3586,6 +3607,7 @@ export default {
     deleteFileConfirm: '"{{name}}" silinsin mi? Bu geri alınamaz.',
     deleteFilesConfirm: 'Seçilen {{count}} dosya silinsin mi? Bu geri alınamaz.',
     noFiles: 'Yazıcıda dosya yok',
+    printerUnavailable: 'Yazıcı dosya hizmeti kullanılamıyor. Yazıcıya erişilebildiğinde tekrar deneyin.',
     loadingFiles: 'Dosyalar yükleniyor...',
     failedToLoad: 'Dosyalar yüklenemedi',
     toast: {
@@ -4811,6 +4833,9 @@ export default {
     fromFileHint: 'Tasarımcı bunu kaynak dosyada değiştirdi. Değeri {{value}}.',
     fromFilePrinterCoupled: 'tasarımcının yazıcısı',
     fromFilePrinterCoupledHint: 'Bu dosyanın tasarlandığı yazıcıya göre ayarlanmıştır; sizinkinde yanlış veya aralık dışı olabilir.',
+    fromFileOverridesPreset: 'profili geçersiz kılar',
+    fromFileOverridesPresetHint:
+      'Dosya bunu {{value}} olarak ayarlıyor, seçtiğiniz profil ise {{preset}} kullanıyor. Yalnızca dosya öncelikli olacaksa işaretleyin.',
     useFromFile: '{{option}} için kaynak dosyadaki değeri kullan',
     otherFromFile: 'Bu dosyadaki diğer ayarlar',
     loading: 'Dilimleyici ayarları yükleniyor…',
@@ -5378,6 +5403,7 @@ export default {
     externalSpool: 'Harici Makara',
     profile: 'Profil',
     kFactor: 'K Faktörü',
+    kFactorShort: 'K',
     fill: 'Doldur',
     configure: 'Yapılandır',
     used: 'kullanılan',
@@ -5811,6 +5837,9 @@ export default {
     noProject: 'Proje yok',
     itemsPrinted: 'Yazdırılan Öğeler',
     itemsPrintedHelp: 'Bu baskı işinde üretilen öğe sayısı',
+    filamentUsed: 'Kullanılan filament (g)',
+    filamentUsedPlaceholder: 'ör. 46.16',
+    filamentUsedHelp: 'Bir baskı 3MF dosyası olmadan arşivlendiyse elle girin; böylece filament toplamlarına yine de dahil olur. 3MF dosyası olan bir arşiv yeniden tarandığında bu değer dosyadan yeniden okunur.',
     notes: 'Notlar',
     notesPlaceholder: 'Bu baskı hakkında notlar ekleyin...',
     externalLink: 'Harici Bağlantı',
@@ -7278,7 +7307,7 @@ export default {
         skip: 'Kontrol edilmedi — etkin bir MQTT bağlantısı gerekli. Bu ayarın yalnızca dilimleyicide bulunduğu eski dilimleyicilerde yazıcı bunu bildirmez, bu nedenle seçenek kapalı olsa bile bu kontrol geçer — kurulum adımı 4\'ü manuel olarak doğrulayın.',
         skip_unsupported_model: 'Bu modelde SD yuvası var ancak seçeneği açmanın bir yolu yok — mevcut P1 serisi bellenim, Bambu Studio\'da bu anahtarı göstermiyor ve yazıcının ekranı yok. Burada düzeltilecek bir şey yok; Bambu Lab bellenim desteği ekleyene kadar arşivlenen baskılarda küçük resimler ve dilimleyici meta verileri eksik olabilir.',
         fail_no_media: 'Seçenek açık, ancak yazıcı yuvasında kart veya bellek bildirmiyor, dolayısıyla gönderilen dosyaların gideceği bir yer yok. Bir tane takıp yeniden yazdırın — o zamana kadar arşivlenen her baskıda küçük resim ve dilimleyici meta verileri eksik olacak.',
-        warn_internal_storage: 'Seçenek açık ve depolama takılı, ancak bu yazıcı yine de son baskıyı Bambuddy\'nin okuyamadığı dahili depolamasında tuttu. H2 serisi ve P2S donanım yazılımı bunu yapar ve hiçbir ayar bunu değiştirmez. Baskılar adları ve süreleriyle arşivlenir, ancak küçük resim ve dilimleyici meta verileri olmadan.',
+        warn_internal_storage: 'Seçenek açık ve depolama takılı, ancak son baskı yine de Bambuddy\'nin okuyamadığı dahili depolamaya gitti. H2 serisi ve P2S\'de Bambu Studio\'nun «Yazdır» düğmesi bu ayardan bağımsız olarak her zaman oraya gönderir. Baskılar adları ve süreleriyle arşivlenir, ancak küçük resim ve dilimleyici meta verileri olmadan. Eksiksiz arşivler için baskıları Bambuddy üzerinden başlatın, OrcaSlicer ile dilimleyin ya da Bambu Studio\'da «Gönder» ile «Harici» seçip baskıyı sonrasında başlatın.',
       },
       port_rtsps: {
         title: 'Kamera portu ({{protocol}} {{port}})',

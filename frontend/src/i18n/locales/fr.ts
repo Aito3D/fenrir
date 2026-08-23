@@ -1272,6 +1272,19 @@ export default {
 
   // Archives page
   archives: {
+    media: {
+      title: 'Vidéos d’impression',
+      download: 'Télécharger les vidéos d’impression',
+      searching: 'Recherche de vidéos sur l’imprimante…',
+      searchFailed: 'Impossible de rechercher les vidéos sur l’imprimante.',
+      none: 'Aucun timelapse ni segment de caméra IP n’a été trouvé pour cette impression.',
+      attachedTimelapse: 'Timelapse joint',
+      printerFiles: 'Fichiers encore présents sur l’imprimante',
+      downloadSelected: 'Télécharger la sélection',
+      printerMissing: 'L’imprimante n’est plus configurée',
+      timelapseUnavailable: 'Impossible de lire le dossier des timelapses',
+      ipcamUnavailable: 'Impossible de lire le dossier de la caméra IP',
+    },
     title: 'Archives d\'impression',
     no3mfBanner: {
       title: 'Certaines impressions récentes n\'ont pas pu être archivées avec leur miniature',
@@ -1279,7 +1292,7 @@ export default {
       docsLink: 'Voir l\'étape 4 de l\'installation',
       docsLinkInternalStorage: 'Pourquoi cela arrive',
       titleInternalStorage: 'Certaines impressions récentes sont restées dans le stockage interne de l\'imprimante',
-      bodyInternalStorage: 'L\'imprimante a conservé le fichier tranché dans son propre stockage interne au lieu de la carte, Bambuddy n\'avait donc rien à lire en FTP. Le firmware des séries H2 et P2S fait cela, et « Stocker les fichiers envoyés sur stockage externe » n\'y change rien. Ces impressions restent archivées avec leur nom et leurs durées, simplement sans miniature ni métadonnées slicer.',
+      bodyInternalStorage: 'Bambu Studio a placé le fichier tranché dans le stockage interne de l\'imprimante au lieu de la carte, Bambuddy n\'avait donc rien à lire en FTP. Sur les séries H2 et P2S, son bouton « Imprimer » le fait toujours : seul « Envoyer » propose un choix, et il est lui aussi réglé sur « Cache » par défaut. Ces impressions restent archivées avec leur nom et leurs durées, simplement sans miniature ni métadonnées slicer. Pour des archives complètes, lancez l\'impression depuis Bambuddy ou tranchez dans OrcaSlicer, ou bien dans Bambu Studio utilisez « Envoyer » avec « Externe » puis lancez l\'impression. Toutes nécessitent une carte ou une clé dans l\'imprimante.',
       titleNoExternalStorage: 'Certaines impressions récentes n\'ont pas pu être archivées — aucun stockage dans l\'imprimante',
       bodyNoExternalStorage: 'L\'imprimante ne signale ni carte ni clé dans son emplacement, le fichier tranché n\'avait donc nulle part où atterrir et Bambuddy rien à lire. Insérez-en une et la prochaine impression sera archivée complètement.',
       dismissLabel: 'Ignorer ce message',
@@ -3563,6 +3576,14 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    zipStarted_one: 'Téléchargement ZIP de {{count}} fichier démarré',
+    zipStarted_other: 'Téléchargement ZIP de {{count}} fichiers démarré',
+    zipPartial: 'Le téléchargement ZIP a démarré avec {{successful}} fichiers sur {{total}} ; les autres n’ont pas pu être récupérés',
+    downloadFailed: 'Échec du téléchargement : {{error}}',
+    unknownError: 'Erreur inconnue',
+    shiftSelectHint: 'Maj-clic pour sélectionner une plage',
+    selectFile: 'Sélectionner {{name}}',
+    deselectFile: 'Désélectionner {{name}}',
     title: 'Gestionnaire de fichiers',
     storageUsed: 'Utilisé :',
     storageFree: 'Libre :',
@@ -3572,6 +3593,7 @@ export default {
     deleteFileConfirm: 'Supprimer "{{name}}" ?',
     deleteFilesConfirm: 'Supprimer les {{count}} fichiers sélectionnés ?',
     noFiles: 'Aucun fichier sur l\'imprimante',
+    printerUnavailable: 'Le service de fichiers de l\'imprimante est indisponible. Réessayez lorsque l\'imprimante est accessible.',
     loadingFiles: 'Chargement...',
     failedToLoad: 'Échec chargement fichiers',
     toast: {
@@ -4811,6 +4833,9 @@ export default {
     fromFileHint: 'Le concepteur a modifié ce paramètre dans le fichier source. Sa valeur est {{value}}.',
     fromFilePrinterCoupled: 'imprimante du concepteur',
     fromFilePrinterCoupledHint: "Réglé pour l'imprimante pour laquelle ce fichier a été conçu — peut être incorrect ou hors plage sur la vôtre.",
+    fromFileOverridesPreset: 'remplace le profil',
+    fromFileOverridesPresetHint:
+      'Le fichier impose {{value}} alors que le profil choisi utilise {{preset}}. À cocher uniquement si le fichier doit primer.',
     useFromFile: 'Utiliser la valeur du fichier source pour {{option}}',
     otherFromFile: 'Autres paramètres de ce fichier',
     loading: 'Chargement des paramètres du trancheur…',
@@ -5390,6 +5415,7 @@ export default {
     externalSpool: 'Bobine externe',
     profile: 'Profil',
     kFactor: 'Facteur K',
+    kFactorShort: 'K',
     fill: 'Remplir',
     configure: 'Configurer',
     used: 'utilisé',
@@ -5827,6 +5853,9 @@ export default {
     noProject: 'Aucun projet',
     itemsPrinted: 'Nombre de pièces',
     itemsPrintedHelp: 'Nombre d\'objets produits',
+    filamentUsed: 'Filament utilisé (g)',
+    filamentUsedPlaceholder: 'p. ex. 46.16',
+    filamentUsedHelp: 'À saisir à la main lorsqu\'une impression a été archivée sans son 3MF, afin qu\'elle compte quand même dans les totaux de filament. Une nouvelle analyse d\'une archive qui possède son 3MF relit la valeur depuis le fichier.',
     notes: 'Notes',
     notesPlaceholder: 'Notes sur l\'impression...',
     externalLink: 'Lien externe',
@@ -7329,7 +7358,7 @@ export default {
         skip: 'Non vérifié — une connexion MQTT active est requise. Sur les slicers plus anciens où ce paramètre n\'existe que dans le slicer, l\'imprimante ne le signale pas, donc cette vérification passe même si l\'option est désactivée — vérifiez l\'étape 4 de l\'installation manuellement.',
         skip_unsupported_model: 'Ce modèle a un emplacement SD mais aucun moyen d\'activer l\'option — le firmware actuel de la série P1 n\'affiche pas le bouton dans Bambu Studio et l\'imprimante n\'a pas d\'écran. Il n\'y a rien à corriger ici ; les impressions archivées peuvent manquer de miniatures et de métadonnées du slicer jusqu\'à ce que Bambu Lab l\'ajoute par firmware.',
         fail_no_media: 'L\'option est activée, mais l\'imprimante ne signale ni carte ni clé dans son emplacement : les fichiers envoyés n\'ont nulle part où aller. Insérez-en une et relancez une impression — d\'ici là, chaque impression archivée sera dépourvue de miniature et de métadonnées slicer.',
-        warn_internal_storage: 'L\'option est activée et un stockage est présent, mais cette imprimante a tout de même conservé la dernière impression dans son stockage interne, que Bambuddy ne peut pas lire. Le firmware des séries H2 et P2S fait cela et aucun réglage n\'y change rien. Les impressions sont archivées avec leur nom et leurs durées, mais sans miniature ni métadonnées slicer.',
+        warn_internal_storage: 'L\'option est activée et un stockage est présent, mais la dernière impression est tout de même allée dans le stockage interne de l\'imprimante, que Bambuddy ne peut pas lire. Sur les séries H2 et P2S, le bouton « Imprimer » de Bambu Studio y envoie toujours, quel que soit ce réglage. Les impressions sont archivées avec leur nom et leurs durées, mais sans miniature ni métadonnées slicer. Pour des archives complètes, lancez les impressions depuis Bambuddy ou tranchez dans OrcaSlicer, ou bien dans Bambu Studio utilisez « Envoyer » avec « Externe » puis lancez l\'impression.',
       },
       port_rtsps: {
         title: 'Port caméra ({{protocol}} {{port}})',

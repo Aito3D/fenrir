@@ -1272,6 +1272,19 @@ export default {
 
   // Archives page
   archives: {
+    media: {
+      title: '列印影片',
+      download: '下載列印影片',
+      searching: '正在檢查印表機中的影片…',
+      searchFailed: '無法檢查印表機中的影片。',
+      none: '找不到此列印工作的縮時攝影或 IP 攝影機影片片段。',
+      attachedTimelapse: '已附加的縮時攝影',
+      printerFiles: '仍保留在印表機上的檔案',
+      downloadSelected: '下載所選檔案',
+      printerMissing: '印表機已不在設定中',
+      timelapseUnavailable: '無法讀取縮時攝影目錄',
+      ipcamUnavailable: '無法讀取 IP 攝影機目錄',
+    },
     title: '列印歸檔',
     no3mfBanner: {
       title: '最近的一些列印未能附帶縮圖封存',
@@ -1279,7 +1292,7 @@ export default {
       docsLink: '檢視安裝步驟 4',
       docsLinkInternalStorage: '為什麼會這樣',
       titleInternalStorage: '最近有些列印留在了印表機的內部儲存中',
-      bodyInternalStorage: '印表機把切片檔案儲存在自己的內部儲存而不是記憶卡上，因此 Bambuddy 透過 FTP 讀不到任何東西。H2 系列與 P2S 韌體就是這樣，「將傳送的檔案儲存到外部儲存」也改變不了。這些列印仍會帶著名稱與時間歸檔，只是沒有縮圖與切片中繼資料。',
+      bodyInternalStorage: 'Bambu Studio 把切片檔案儲存到了印表機的內部儲存而不是記憶卡上，因此 Bambuddy 透過 FTP 讀不到任何東西。在 H2 系列與 P2S 上，「列印」按鈕總是這樣做，只有「傳送」才提供選擇，而它的預設值也是「快取」。這些列印仍會帶著名稱與時間歸檔，只是沒有縮圖與切片中繼資料。要取得完整歸檔，請從 Bambuddy 啟動列印，或改用 OrcaSlicer 切片；若要繼續用 Bambu Studio，請用「傳送」並選擇「外部儲存」，之後再啟動列印。以上都需要印表機中插有記憶卡或 USB 隨身碟。',
       titleNoExternalStorage: '最近有些列印無法歸檔 — 印表機中沒有儲存媒體',
       bodyNoExternalStorage: '印表機的插槽中未偵測到記憶卡或隨身碟，切片檔案無處存放，Bambuddy 也無從讀取。插入一個，下次列印就會完整歸檔。',
       dismissLabel: '關閉此通知',
@@ -3562,6 +3575,14 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    zipStarted_one: '已開始下載 {{count}} 個檔案的 ZIP',
+    zipStarted_other: '已開始下載 {{count}} 個檔案的 ZIP',
+    zipPartial: '已開始下載 ZIP，共 {{total}} 個檔案中成功取得 {{successful}} 個，其餘檔案無法取得',
+    downloadFailed: '下載失敗：{{error}}',
+    unknownError: '未知錯誤',
+    shiftSelectHint: '按住 Shift 點擊以選取範圍',
+    selectFile: '選取 {{name}}',
+    deselectFile: '取消選取 {{name}}',
     title: '檔案管理器',
     storageUsed: '已用：',
     storageFree: '剩餘：',
@@ -3571,6 +3592,7 @@ export default {
     deleteFileConfirm: '刪除"{{name}}"？此操作無法復原。',
     deleteFilesConfirm: '刪除 {{count}} 個選中的檔案？此操作無法復原。',
     noFiles: '印表機上沒有檔案',
+    printerUnavailable: '印表機檔案服務無法使用。請在可連線至印表機時重試。',
     loadingFiles: '載入檔案中...',
     failedToLoad: '載入檔案失敗',
     toast: {
@@ -4810,6 +4832,9 @@ export default {
     fromFileHint: '設計者在來源檔案中修改了此項，其值為 {{value}}。',
     fromFilePrinterCoupled: '設計者的印表機',
     fromFilePrinterCoupledHint: '針對該檔案設計時所用的印表機調校，在你的印表機上可能不正確或超出範圍。',
+    fromFileOverridesPreset: '覆寫預設',
+    fromFileOverridesPresetHint:
+      '檔案將其設為 {{value}}，而所選預設使用 {{preset}}。僅在應以檔案為準時才勾選。',
     useFromFile: '對 {{option}} 使用來源檔案中的值',
     otherFromFile: '此檔案中的其他設定',
     loading: '正在載入切片設定…',
@@ -5389,6 +5414,7 @@ export default {
     externalSpool: '外接耗材',
     profile: '設定',
     kFactor: 'K 值',
+    kFactorShort: 'K 值',
     fill: '填充',
     configure: '設定',
     used: '已使用',
@@ -5826,6 +5852,9 @@ export default {
     noProject: '無專案',
     itemsPrinted: '列印數量',
     itemsPrintedHelp: '此列印任務中生產的物品數量',
+    filamentUsed: '已用耗材 (g)',
+    filamentUsedPlaceholder: '例如 46.16',
+    filamentUsedHelp: '當列印工作在沒有 3MF 的情況下封存時，可手動填寫，使其仍計入耗材總量。重新掃描具有 3MF 的封存項目時，此數值會從檔案重新讀取。',
     notes: '備註',
     notesPlaceholder: '新增關於此列印的備註...',
     externalLink: '外部連結',
@@ -7327,7 +7356,7 @@ export default {
         skip: '未檢查 — 需要有效的 MQTT 連線。在該設定僅存在於切片機中的較舊切片機上，印表機不會回報此設定，因此即使選項已關閉，此檢查也會通過 — 請手動驗證安裝步驟 4。',
         skip_unsupported_model: '此型號有 SD 卡槽，但無法開啟該選項 — 目前 P1 系列韌體不會在 Bambu Studio 中顯示此開關，且印表機沒有螢幕。這裡無需修復；在 Bambu Lab 透過韌體加入支援之前，封存的列印可能缺少縮圖和切片中繼資料。',
         fail_no_media: '該選項已開啟，但印表機的插槽中未偵測到記憶卡或隨身碟，傳送的檔案無處存放。插入一個再列印一次 — 在此之前，每一次歸檔的列印都會缺少縮圖與切片中繼資料。',
-        warn_internal_storage: '該選項已開啟且儲存媒體在位，但這台印表機仍把上一次列印留在了 Bambuddy 無法讀取的內部儲存中。H2 系列與 P2S 韌體就是這樣，任何設定都改變不了。列印會帶著名稱與時間歸檔，但沒有縮圖與切片中繼資料。',
+        warn_internal_storage: '該選項已開啟且儲存媒體在位，但上一次列印仍進入了 Bambuddy 無法讀取的印表機內部儲存。在 H2 系列與 P2S 上，無論此選項如何設定，Bambu Studio 的「列印」按鈕總是傳送到那裡。列印會帶著名稱與時間歸檔，但沒有縮圖與切片中繼資料。要取得完整歸檔，請從 Bambuddy 啟動列印、改用 OrcaSlicer 切片，或在 Bambu Studio 中用「傳送」選擇「外部儲存」後再啟動列印。',
       },
       port_rtsps: {
         title: '攝影機連接埠（{{protocol}} {{port}}）',

@@ -1271,6 +1271,19 @@ export default {
 
   // Archives page
   archives: {
+    media: {
+      title: '印刷動画',
+      download: '印刷動画をダウンロード',
+      searching: 'プリンター上の動画を確認しています…',
+      searchFailed: 'プリンター上の動画を確認できませんでした。',
+      none: 'この印刷のタイムラプスまたは IP カメラの動画断片は見つかりませんでした。',
+      attachedTimelapse: '添付済みタイムラプス',
+      printerFiles: 'プリンターに残っているファイル',
+      downloadSelected: '選択項目をダウンロード',
+      printerMissing: 'プリンターは設定から削除されています',
+      timelapseUnavailable: 'タイムラプスディレクトリを読み取れませんでした',
+      ipcamUnavailable: 'IP カメラディレクトリを読み取れませんでした',
+    },
     title: '印刷アーカイブ',
     no3mfBanner: {
       title: '最近の一部の印刷でサムネイル付きのアーカイブができませんでした',
@@ -1278,7 +1291,7 @@ export default {
       docsLink: 'インストール手順4を参照',
       docsLinkInternalStorage: '原因について',
       titleInternalStorage: '最近の一部の印刷はプリンターの内部ストレージに残りました',
-      bodyInternalStorage: 'プリンターがスライス済みファイルをカードではなく自身の内部ストレージに保存したため、BambuddyがFTPで読み取れるものがありませんでした。H2シリーズとP2Sのファームウェアはこの動作をし、「送信ファイルを外部ストレージに保存」を変更しても変わりません。これらの印刷は名前と時間付きで引き続きアーカイブされますが、サムネイルとスライサーメタデータはありません。',
+      bodyInternalStorage: 'Bambu Studio がスライス済みファイルをカードではなくプリンターの内部ストレージに保存したため、Bambuddy が FTP で読み取れるものがありませんでした。H2 シリーズと P2S では「印刷」ボタンは常にそうなり、選択できるのは「送信」だけで、そちらも既定は「キャッシュ」です。これらの印刷は名前と時間付きでアーカイブされますが、サムネイルとスライサーのメタデータはありません。完全なアーカイブを残すには、Bambuddy から印刷を開始するか、OrcaSlicer でスライスしてください。Bambu Studio を使う場合は「送信」で「外部ストレージ」を選び、その後に印刷を開始します。いずれもプリンターにカードまたは USB メモリーが必要です。',
       titleNoExternalStorage: '最近の一部の印刷をアーカイブできませんでした — プリンターにストレージがありません',
       bodyNoExternalStorage: 'プリンターのスロットにカードもUSBメモリも検出されないため、スライス済みファイルの保存先がなく、Bambuddyが読み取るものもありませんでした。挿入すれば次の印刷は完全にアーカイブされます。',
       dismissLabel: 'この通知を閉じる',
@@ -3574,6 +3587,14 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    zipStarted_one: '{{count}} 個のファイルの ZIP ダウンロードを開始しました',
+    zipStarted_other: '{{count}} 個のファイルの ZIP ダウンロードを開始しました',
+    zipPartial: '{{total}} 個中 {{successful}} 個のファイルで ZIP ダウンロードを開始しました。残りは取得できませんでした',
+    downloadFailed: 'ダウンロードに失敗しました: {{error}}',
+    unknownError: '不明なエラー',
+    shiftSelectHint: 'Shift キーを押しながらクリックして範囲を選択',
+    selectFile: '{{name}} を選択',
+    deselectFile: '{{name}} の選択を解除',
     title: 'ファイル管理',
     storageUsed: '使用中:',
     storageFree: '空き:',
@@ -3583,6 +3604,7 @@ export default {
     deleteFileConfirm: '"{{name}}" を削除しますか？この操作は取り消せません。',
     deleteFilesConfirm: '選択した{{count}}件のファイルを削除しますか？元に戻せません。',
     noFiles: 'このディレクトリにファイルがありません',
+    printerUnavailable: 'プリンターのファイルサービスを利用できません。プリンターに接続できる状態で再試行してください。',
     loadingFiles: 'ファイルを読み込み中...',
     failedToLoad: 'ファイルの読み込みに失敗しました',
     toast: {
@@ -4822,6 +4844,9 @@ export default {
     fromFileHint: 'この項目は元ファイルで設計者が変更しています。値は {{value}} です。',
     fromFilePrinterCoupled: '設計者のプリンター',
     fromFilePrinterCoupledHint: 'このファイルが設計されたプリンター向けの値です。お使いのプリンターでは不適切または範囲外になる場合があります。',
+    fromFileOverridesPreset: 'プリセットを上書き',
+    fromFileOverridesPresetHint:
+      'ファイルはこれを {{value}} に設定していますが、選択したプリセットは {{preset}} です。ファイルを優先する場合のみチェックしてください。',
     useFromFile: '{{option}} に元ファイルの値を使用する',
     otherFromFile: 'このファイルのその他の設定',
     loading: 'スライサー設定を読み込んでいます…',
@@ -5401,6 +5426,7 @@ export default {
     externalSpool: '外部スプール',
     profile: 'プロファイル',
     kFactor: 'K値',
+    kFactorShort: 'K値',
     fill: '充填率',
     configure: '設定',
     used: '使用済み',
@@ -5838,6 +5864,9 @@ export default {
     noProject: 'プロジェクトなし',
     itemsPrinted: '印刷数',
     itemsPrintedHelp: 'この印刷ジョブで製造したアイテム数',
+    filamentUsed: '使用フィラメント (g)',
+    filamentUsedPlaceholder: '例: 46.16',
+    filamentUsedHelp: '3MF なしでアーカイブされた印刷は、手入力するとフィラメント合計に反映されます。3MF があるアーカイブを再スキャンすると、この値はファイルから読み直されます。',
     notes: 'メモ',
     notesPlaceholder: 'この印刷についてメモを追加...',
     externalLink: '外部リンク',
@@ -7340,7 +7369,7 @@ export default {
         skip: '未確認 — アクティブなMQTT接続が必要です。古いスライサーでこの設定がスライサー側のみに存在する場合、プリンターはそれを報告しないため、オプションが無効でもこのチェックは通過します — インストール手順4を手動で確認してください。',
         skip_unsupported_model: 'このモデルにはSDスロットがありますが、オプションを有効にする方法がありません — 現在のP1シリーズのファームウェアはBambu Studioにトグルを表示せず、プリンターに画面もありません。ここで修正すべきことはありません。Bambu Labがファームウェアで対応するまで、アーカイブされた印刷にはサムネイルやスライサーのメタデータが欠ける場合があります。',
         fail_no_media: 'オプションは有効ですが、プリンターのスロットにカードもUSBメモリも検出されないため、送信ファイルの保存先がありません。挿入して再度印刷してください。それまでアーカイブされる印刷にはサムネイルとスライサーメタデータがありません。',
-        warn_internal_storage: 'オプションは有効でストレージも装着されていますが、このプリンターは直近の印刷をBambuddyが読み取れない内部ストレージに保存しました。H2シリーズとP2Sのファームウェアはこの動作をし、どの設定でも変わりません。印刷は名前と時間付きでアーカイブされますが、サムネイルとスライサーメタデータはありません。',
+        warn_internal_storage: 'オプションは有効でストレージも装着されていますが、直近の印刷は Bambuddy が読み取れないプリンターの内部ストレージに保存されました。H2 シリーズと P2S では、この設定に関係なく Bambu Studio の「印刷」ボタンは常にそちらへ送信します。印刷は名前と時間付きでアーカイブされますが、サムネイルとスライサーのメタデータはありません。完全なアーカイブを残すには、Bambuddy から印刷を開始するか、OrcaSlicer でスライスするか、Bambu Studio で「送信」から「外部ストレージ」を選んだあとに印刷を開始してください。',
       },
       port_rtsps: {
         title: 'カメラポート ({{protocol}} {{port}})',

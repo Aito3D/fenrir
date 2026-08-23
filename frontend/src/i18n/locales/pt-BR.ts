@@ -1272,6 +1272,19 @@ export default {
 
   // Archives page
   archives: {
+    media: {
+      title: 'Vídeos da impressão',
+      download: 'Baixar vídeos da impressão',
+      searching: 'Procurando vídeos na impressora…',
+      searchFailed: 'Não foi possível procurar vídeos na impressora.',
+      none: 'Nenhum timelapse ou trecho da câmera IP foi encontrado para esta impressão.',
+      attachedTimelapse: 'Timelapse anexado',
+      printerFiles: 'Arquivos ainda presentes na impressora',
+      downloadSelected: 'Baixar selecionados',
+      printerMissing: 'A impressora não está mais configurada',
+      timelapseUnavailable: 'Não foi possível ler o diretório de timelapses',
+      ipcamUnavailable: 'Não foi possível ler o diretório da câmera IP',
+    },
     title: 'Arquivos de Impressão',
     no3mfBanner: {
       title: 'Algumas impressões recentes não puderam ser arquivadas com miniaturas',
@@ -1279,7 +1292,7 @@ export default {
       docsLink: 'Ver passo 4 da instalação',
       docsLinkInternalStorage: 'Por que isso acontece',
       titleInternalStorage: 'Algumas impressões recentes ficaram no armazenamento interno da impressora',
-      bodyInternalStorage: 'A impressora manteve o arquivo fatiado no próprio armazenamento interno em vez do cartão, então o Bambuddy não tinha nada para ler via FTP. O firmware da série H2 e da P2S faz isso, e «Armazenar arquivos enviados em armazenamento externo» não muda nada. Essas impressões continuam arquivadas com nome e tempos, apenas sem miniatura nem metadados do fatiador.',
+      bodyInternalStorage: 'O Bambu Studio colocou o arquivo fatiado no armazenamento interno da impressora em vez do cartão, então o Bambuddy não tinha nada para ler via FTP. Na série H2 e na P2S o botão «Imprimir» sempre faz isso: só «Enviar» oferece escolha, e ela também vem com «Cache» por padrão. Essas impressões continuam arquivadas com nome e tempos, apenas sem miniatura nem metadados do fatiador. Para arquivos completos, inicie a impressão pelo Bambuddy ou fatie no OrcaSlicer, ou então no Bambu Studio use «Enviar» com «Externo» e inicie a impressão depois. Todos precisam de um cartão ou pendrive na impressora.',
       titleNoExternalStorage: 'Algumas impressões recentes não puderam ser arquivadas — sem armazenamento na impressora',
       bodyNoExternalStorage: 'A impressora não detecta cartão nem pendrive no slot, então o arquivo fatiado não tinha onde ficar e o Bambuddy nada para ler. Insira um e a próxima impressão será arquivada por completo.',
       dismissLabel: 'Dispensar este aviso',
@@ -3562,6 +3575,14 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    zipStarted_one: 'Download ZIP iniciado para {{count}} arquivo',
+    zipStarted_other: 'Download ZIP iniciado para {{count}} arquivos',
+    zipPartial: 'Download ZIP iniciado com {{successful}} de {{total}} arquivos; não foi possível obter os demais',
+    downloadFailed: 'Falha no download: {{error}}',
+    unknownError: 'Erro desconhecido',
+    shiftSelectHint: 'Shift+clique para selecionar um intervalo',
+    selectFile: 'Selecionar {{name}}',
+    deselectFile: 'Desmarcar {{name}}',
     title: 'Gerenciador de Arquivos',
     storageUsed: 'Usado:',
     storageFree: 'Livre:',
@@ -3571,6 +3592,7 @@ export default {
     deleteFileConfirm: 'Excluir "{{name}}"? Isso não pode ser desfeito.',
     deleteFilesConfirm: 'Excluir {{count}} arquivos selecionados? Isso não pode ser desfeito.',
     noFiles: 'Nenhum arquivo na impressora',
+    printerUnavailable: 'O serviço de arquivos da impressora está indisponível. Tente novamente quando a impressora estiver acessível.',
     loadingFiles: 'Carregando arquivos...',
     failedToLoad: 'Falha ao carregar arquivos',
     toast: {
@@ -4810,6 +4832,9 @@ export default {
     fromFileHint: 'O designer alterou isto no arquivo de origem. O valor é {{value}}.',
     fromFilePrinterCoupled: 'impressora do designer',
     fromFilePrinterCoupledHint: 'Ajustado para a impressora para a qual este arquivo foi projetado — pode estar errado ou fora de faixa na sua.',
+    fromFileOverridesPreset: 'substitui o perfil',
+    fromFileOverridesPresetHint:
+      'O arquivo define {{value}} enquanto o perfil escolhido usa {{preset}}. Marque apenas se o arquivo deve prevalecer.',
     useFromFile: 'Usar o valor do arquivo de origem para {{option}}',
     otherFromFile: 'Outras configurações deste arquivo',
     loading: 'Carregando configurações do fatiador…',
@@ -5389,6 +5414,7 @@ export default {
     externalSpool: 'Carretel Externo',
     profile: 'Perfil',
     kFactor: 'Fator K',
+    kFactorShort: 'K',
     fill: 'Preencher',
     configure: 'Configurar',
     used: 'usado',
@@ -5826,6 +5852,9 @@ export default {
     noProject: 'Nenhum projeto',
     itemsPrinted: 'Itens Impressos',
     itemsPrintedHelp: 'Número de itens produzidos neste trabalho de impressão',
+    filamentUsed: 'Filamento usado (g)',
+    filamentUsedPlaceholder: 'ex.: 46.16',
+    filamentUsedHelp: 'Informe manualmente quando uma impressão for arquivada sem o 3MF, para que ela ainda conte nos totais de filamento. Reescanear um arquivo que tem o 3MF lê o valor novamente do arquivo.',
     notes: 'Notas',
     notesPlaceholder: 'Adicione notas sobre esta impressão...',
     externalLink: 'Link Externo',
@@ -7328,7 +7357,7 @@ export default {
         skip: 'Não verificado — é necessária uma conexão MQTT ativa. Em fatiadores mais antigos onde essa configuração existe apenas no fatiador, a impressora não a reporta, então esta verificação passa mesmo com a opção desligada — verifique o passo 4 da instalação manualmente.',
         skip_unsupported_model: 'Este modelo tem slot SD mas nenhuma forma de ativar a opção — o firmware atual da série P1 não mostra o botão no Bambu Studio e a impressora não tem tela. Não há nada a corrigir aqui; as impressões arquivadas podem ficar sem miniaturas e metadados do fatiador até que a Bambu Lab adicione suporte por firmware.',
         fail_no_media: 'A opção está ligada, mas a impressora não detecta cartão nem pendrive no slot, então os arquivos enviados não têm para onde ir. Insira um e imprima novamente — até lá, toda impressão arquivada ficará sem miniatura e sem metadados do fatiador.',
-        warn_internal_storage: 'A opção está ligada e há armazenamento presente, mas esta impressora ainda assim manteve a última impressão no armazenamento interno, que o Bambuddy não consegue ler. O firmware da série H2 e da P2S faz isso e nenhuma configuração muda. As impressões são arquivadas com nome e tempos, mas sem miniatura nem metadados do fatiador.',
+        warn_internal_storage: 'A opção está ligada e há armazenamento presente, mas a última impressão ainda assim foi para o armazenamento interno da impressora, que o Bambuddy não consegue ler. Na série H2 e na P2S o botão «Imprimir» do Bambu Studio sempre envia para lá, independentemente desta opção. As impressões são arquivadas com nome e tempos, mas sem miniatura nem metadados do fatiador. Para arquivos completos, inicie as impressões pelo Bambuddy ou fatie no OrcaSlicer, ou então no Bambu Studio use «Enviar» com «Externo» e inicie a impressão depois.',
       },
       port_rtsps: {
         title: 'Porta da câmera ({{protocol}} {{port}})',

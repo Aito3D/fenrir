@@ -1228,6 +1228,19 @@ export default {
     }
   },
   archives: {
+    media: {
+      title: '출력 동영상',
+      download: '출력 동영상 다운로드',
+      searching: '프린터에서 동영상을 확인하는 중…',
+      searchFailed: '프린터에서 동영상을 확인할 수 없습니다.',
+      none: '이 출력의 타임랩스 또는 IP 카메라 영상 조각을 찾지 못했습니다.',
+      attachedTimelapse: '첨부된 타임랩스',
+      printerFiles: '프린터에 남아 있는 파일',
+      downloadSelected: '선택 항목 다운로드',
+      printerMissing: '프린터가 더 이상 구성되어 있지 않습니다',
+      timelapseUnavailable: '타임랩스 디렉터리를 읽을 수 없습니다',
+      ipcamUnavailable: 'IP 카메라 디렉터리를 읽을 수 없습니다',
+    },
     title: '인쇄 아카이브',
     no3mfBanner: {
       title: '최근 일부 인쇄가 썸네일과 함께 아카이브되지 않았습니다',
@@ -1235,7 +1248,7 @@ export default {
       docsLink: '설치 단계 4 보기',
       docsLinkInternalStorage: '왜 이런 일이 생기나요',
       titleInternalStorage: '최근 일부 출력물이 프린터 내부 저장소에 남았습니다',
-      bodyInternalStorage: '프린터가 슬라이싱된 파일을 카드가 아니라 자체 내부 저장소에 보관해서 Bambuddy가 FTP로 읽을 것이 없었습니다. H2 시리즈와 P2S 펌웨어가 이렇게 동작하며 «보낸 파일을 외부 저장소에 저장»으로는 바뀌지 않습니다. 해당 출력물은 이름과 시간과 함께 계속 보관되지만 썸네일과 슬라이서 메타데이터는 없습니다.',
+      bodyInternalStorage: '슬라이싱된 파일을 Bambu Studio가 카드가 아니라 프린터 내부 저장소에 저장해서 Bambuddy가 FTP로 읽을 것이 없었습니다. H2 시리즈와 P2S에서는 «인쇄» 버튼이 항상 그렇게 동작하며, 선택할 수 있는 것은 «보내기»뿐인데 그것도 기본값이 «캐시»입니다. 해당 출력물은 이름과 시간과 함께 계속 보관되지만 썸네일과 슬라이서 메타데이터는 없습니다. 완전한 기록을 남기려면 Bambuddy에서 출력을 시작하거나 OrcaSlicer로 슬라이싱하세요. Bambu Studio를 쓴다면 «보내기»에서 «외부 저장소»를 고른 뒤 출력을 시작하면 됩니다. 모두 프린터에 카드나 USB 메모리가 필요합니다.',
       titleNoExternalStorage: '최근 일부 출력물을 보관하지 못했습니다 — 프린터에 저장소가 없습니다',
       bodyNoExternalStorage: '프린터 슬롯에 카드도 USB도 감지되지 않아 슬라이싱된 파일이 저장될 곳이 없었고 Bambuddy가 읽을 것도 없었습니다. 하나 넣으면 다음 출력물은 온전히 보관됩니다.',
       dismissLabel: '이 알림 닫기'
@@ -3418,6 +3431,14 @@ export default {
     all: '전체'
   },
   printerFiles: {
+    zipStarted_one: '{{count}}개 파일의 ZIP 다운로드를 시작했습니다',
+    zipStarted_other: '{{count}}개 파일의 ZIP 다운로드를 시작했습니다',
+    zipPartial: '{{total}}개 중 {{successful}}개 파일로 ZIP 다운로드를 시작했습니다. 나머지는 가져오지 못했습니다',
+    downloadFailed: '다운로드 실패: {{error}}',
+    unknownError: '알 수 없는 오류',
+    shiftSelectHint: 'Shift 키를 누른 채 클릭하여 범위 선택',
+    selectFile: '{{name}} 선택',
+    deselectFile: '{{name}} 선택 해제',
     title: '파일 관리자',
     storageUsed: '사용됨:',
     storageFree: '여유:',
@@ -3427,6 +3448,7 @@ export default {
     deleteFileConfirm: '"{{name}}"을(를) 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.',
     deleteFilesConfirm: '선택된 {{count}}개 파일을 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.',
     noFiles: '프린터에 파일 없음',
+    printerUnavailable: '프린터 파일 서비스를 사용할 수 없습니다. 프린터에 연결할 수 있을 때 다시 시도하세요.',
     loadingFiles: '파일 로딩 중...',
     failedToLoad: '파일 로드 실패',
     toast: {
@@ -4613,6 +4635,9 @@ export default {
     fromFileHint: '디자이너가 원본 파일에서 이 항목을 변경했습니다. 값은 {{value}}입니다.',
     fromFilePrinterCoupled: '디자이너의 프린터',
     fromFilePrinterCoupledHint: '이 파일이 설계된 프린터에 맞춘 값입니다. 사용 중인 프린터에서는 잘못되거나 범위를 벗어날 수 있습니다.',
+    fromFileOverridesPreset: '프리셋 덮어쓰기',
+    fromFileOverridesPresetHint:
+      '파일은 이 값을 {{value}}(으)로 설정하지만 선택한 프리셋은 {{preset}}을(를) 사용합니다. 파일을 우선할 때만 선택하세요.',
     useFromFile: '{{option}}에 원본 파일의 값 사용',
     otherFromFile: '이 파일의 기타 설정',
     loading: '슬라이서 설정을 불러오는 중…',
@@ -5170,6 +5195,7 @@ export default {
     externalSpool: '외부 스풀',
     profile: '프로필',
     kFactor: 'K 계수',
+    kFactorShort: 'K',
     fill: '채우기',
     configure: '구성',
     used: '사용됨',
@@ -5585,6 +5611,9 @@ export default {
     noProject: '프로젝트 없음',
     itemsPrinted: '인쇄된 항목',
     itemsPrintedHelp: '이 인쇄 작업에서 생산된 항목 수',
+    filamentUsed: '사용된 필라멘트 (g)',
+    filamentUsedPlaceholder: '예: 46.16',
+    filamentUsedHelp: '3MF 없이 보관된 인쇄는 직접 입력하면 필라멘트 합계에 반영됩니다. 3MF가 있는 보관 항목을 다시 스캔하면 이 값은 파일에서 다시 읽어옵니다.',
     notes: '메모',
     notesPlaceholder: '이 인쇄에 대한 메모 추가...',
     externalLink: '외부 링크',
@@ -7432,7 +7461,7 @@ export default {
         skip: '확인되지 않음 — 활성 MQTT 연결이 필요합니다. 이 설정이 슬라이서에만 존재하는 이전 슬라이서에서는 프린터가 보고하지 않으므로, 옵션이 꺼져 있어도 이 검사는 통과합니다 — 설치 단계 4를 수동으로 확인하세요.',
         skip_unsupported_model: '이 모델에는 SD 슬롯이 있지만 옵션을 켤 방법이 없습니다 — 현재 P1 시리즈 펌웨어는 Bambu Studio에 토글을 표시하지 않으며 프린터에 화면도 없습니다. 여기서 고칠 것은 없습니다. Bambu Lab이 펌웨어로 지원할 때까지 보관된 출력물에는 썸네일과 슬라이서 메타데이터가 없을 수 있습니다.',
         fail_no_media: '옵션은 켜져 있지만 프린터 슬롯에 카드도 USB도 감지되지 않아 보낸 파일이 갈 곳이 없습니다. 하나 넣고 다시 출력하세요. 그전까지는 보관되는 모든 출력물에 썸네일과 슬라이서 메타데이터가 없습니다.',
-        warn_internal_storage: '옵션이 켜져 있고 저장소도 있지만 이 프린터는 마지막 출력물을 Bambuddy가 읽을 수 없는 내부 저장소에 보관했습니다. H2 시리즈와 P2S 펌웨어가 이렇게 동작하며 어떤 설정으로도 바뀌지 않습니다. 출력물은 이름과 시간과 함께 보관되지만 썸네일과 슬라이서 메타데이터는 없습니다.',
+        warn_internal_storage: '옵션이 켜져 있고 저장소도 있지만 마지막 출력물은 Bambuddy가 읽을 수 없는 프린터 내부 저장소에 저장되었습니다. H2 시리즈와 P2S에서는 이 설정과 관계없이 Bambu Studio의 «인쇄» 버튼이 항상 그쪽으로 보냅니다. 출력물은 이름과 시간과 함께 보관되지만 썸네일과 슬라이서 메타데이터는 없습니다. 완전한 기록을 남기려면 Bambuddy에서 출력을 시작하거나, OrcaSlicer로 슬라이싱하거나, Bambu Studio에서 «보내기»로 «외부 저장소»를 고른 뒤 출력을 시작하세요.',
       },
       port_rtsps: {
         title: '카메라 포트 ({{protocol}} {{port}})',

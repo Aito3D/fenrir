@@ -1272,6 +1272,19 @@ export default {
 
   // Archives page
   archives: {
+    media: {
+      title: 'Druckvideos',
+      download: 'Druckvideos herunterladen',
+      searching: 'Der Drucker wird nach Videos durchsucht…',
+      searchFailed: 'Der Drucker konnte nicht nach Videos durchsucht werden.',
+      none: 'Für diesen Druck wurden keine Zeitraffer- oder IP-Kamera-Clips gefunden.',
+      attachedTimelapse: 'Angehängter Zeitraffer',
+      printerFiles: 'Noch auf dem Drucker vorhandene Dateien',
+      downloadSelected: 'Auswahl herunterladen',
+      printerMissing: 'Der Drucker ist nicht mehr konfiguriert',
+      timelapseUnavailable: 'Das Zeitrafferverzeichnis konnte nicht gelesen werden',
+      ipcamUnavailable: 'Das IP-Kamera-Verzeichnis konnte nicht gelesen werden',
+    },
     title: 'Druckarchiv',
     no3mfBanner: {
       title: 'Einige kürzliche Drucke konnten nicht mit Vorschaubild archiviert werden',
@@ -1279,7 +1292,7 @@ export default {
       docsLink: 'Installationsschritt 4 anzeigen',
       docsLinkInternalStorage: 'Warum das passiert',
       titleInternalStorage: 'Einige kürzliche Drucke blieben im internen Speicher des Druckers',
-      bodyInternalStorage: 'Der Drucker hat die geslicte Datei in seinem eigenen internen Speicher statt auf der Karte abgelegt, daher gab es für Bambuddy nichts über FTP zu lesen. Die Firmware der H2-Serie und des P2S macht das, und "Gesendete Dateien auf externem Speicher speichern" ändert daran nichts. Diese Drucke werden weiterhin mit Namen und Zeiten archiviert, nur ohne Vorschaubild und Slicer-Metadaten.',
+      bodyInternalStorage: 'Bambu Studio hat die geslicte Datei im internen Speicher des Druckers statt auf der Karte abgelegt, daher gab es für Bambuddy nichts über FTP zu lesen. Bei der H2-Serie und dem P2S macht die Schaltfläche "Drucken" das immer — nur "Senden" bietet eine Auswahl, und auch die steht standardmäßig auf "Cache". Diese Drucke werden weiterhin mit Namen und Zeiten archiviert, nur ohne Vorschaubild und Slicer-Metadaten. Für vollständige Archive den Druck aus Bambuddy starten oder in OrcaSlicer slicen — oder in Bambu Studio "Senden" mit "Extern" verwenden und den Druck danach starten. Alle setzen eine Karte oder einen Stick im Drucker voraus.',
       titleNoExternalStorage: 'Einige kürzliche Drucke konnten nicht archiviert werden — kein Speicher im Drucker',
       bodyNoExternalStorage: 'Der Drucker meldet weder Karte noch Stick im Steckplatz, daher hatte die geslicte Datei keinen Ablageort und Bambuddy nichts zu lesen. Legen Sie einen ein, dann wird der nächste Druck vollständig archiviert.',
       dismissLabel: 'Hinweis schließen',
@@ -3574,6 +3587,14 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    zipStarted_one: 'ZIP-Download für {{count}} Datei gestartet',
+    zipStarted_other: 'ZIP-Download für {{count}} Dateien gestartet',
+    zipPartial: 'ZIP-Download mit {{successful}} von {{total}} Dateien gestartet; die übrigen konnten nicht abgerufen werden',
+    downloadFailed: 'Download fehlgeschlagen: {{error}}',
+    unknownError: 'Unbekannter Fehler',
+    shiftSelectHint: 'Umschalttaste gedrückt halten, um einen Bereich auszuwählen',
+    selectFile: '{{name}} auswählen',
+    deselectFile: 'Auswahl von {{name}} aufheben',
     title: 'Dateimanager',
     storageUsed: 'Belegt:',
     storageFree: 'Frei:',
@@ -3583,6 +3604,7 @@ export default {
     deleteFileConfirm: '"{{name}}" löschen? Dies kann nicht rückgängig gemacht werden.',
     deleteFilesConfirm: '{{count}} ausgewählte Dateien löschen? Dies kann nicht rückgängig gemacht werden.',
     noFiles: 'Keine Dateien auf dem Drucker',
+    printerUnavailable: 'Der Dateidienst des Druckers ist nicht erreichbar. Versuchen Sie es erneut, wenn der Drucker verfügbar ist.',
     loadingFiles: 'Dateien werden geladen...',
     failedToLoad: 'Dateien konnten nicht geladen werden',
     toast: {
@@ -4822,6 +4844,9 @@ export default {
     fromFileHint: 'Der Designer hat dies in der Quelldatei geändert. Wert: {{value}}.',
     fromFilePrinterCoupled: 'Drucker des Designers',
     fromFilePrinterCoupledHint: 'Auf den Drucker abgestimmt, für den diese Datei erstellt wurde – auf Ihrem kann der Wert falsch oder außerhalb des Bereichs sein.',
+    fromFileOverridesPreset: 'überschreibt Preset',
+    fromFileOverridesPresetHint:
+      'Die Datei setzt hier {{value}}, das gewählte Preset verwendet {{preset}}. Nur aktivieren, wenn die Datei Vorrang haben soll.',
     useFromFile: 'Wert aus der Quelldatei für {{option}} verwenden',
     otherFromFile: 'Weitere Einstellungen aus dieser Datei',
     loading: 'Slicer-Einstellungen werden geladen…',
@@ -5401,6 +5426,7 @@ export default {
     externalSpool: 'Externe Spule',
     profile: 'Profil',
     kFactor: 'K-Faktor',
+    kFactorShort: 'K',
     fill: 'Füllstand',
     configure: 'Konfigurieren',
     used: 'verwendet',
@@ -5837,6 +5863,9 @@ export default {
     noProject: 'Kein Projekt',
     itemsPrinted: 'Gedruckte Teile',
     itemsPrintedHelp: 'Anzahl der in diesem Druckauftrag produzierten Teile',
+    filamentUsed: 'Verbrauchtes Filament (g)',
+    filamentUsedPlaceholder: 'z. B. 46.16',
+    filamentUsedHelp: 'Von Hand eintragen, wenn ein Druck ohne 3MF archiviert wurde, damit er in die Filament-Summen eingeht. Beim erneuten Einlesen eines Archivs mit 3MF wird der Wert wieder aus der Datei übernommen.',
     notes: 'Notizen',
     notesPlaceholder: 'Notizen zu diesem Druck hinzufügen...',
     externalLink: 'Externer Link',
@@ -7339,7 +7368,7 @@ export default {
         skip: 'Nicht geprüft — eine aktive MQTT-Verbindung ist erforderlich. Bei älteren Slicern, in denen diese Einstellung nur im Slicer existiert, meldet sie der Drucker nicht — diese Prüfung besteht auch dann, wenn die Option deaktiviert ist. Prüfen Sie Installationsschritt 4 in diesem Fall manuell.',
         skip_unsupported_model: 'Dieses Modell hat einen SD-Slot, aber keine Möglichkeit, die Option zu aktivieren — die aktuelle P1-Firmware zeigt den Schalter in Bambu Studio nicht an und der Drucker hat kein Display. Hier gibt es nichts zu beheben; archivierten Drucken fehlen möglicherweise Vorschaubilder und Slicer-Metadaten, bis Bambu Lab dies per Firmware unterstützt.',
         fail_no_media: 'Die Option ist aktiviert, aber der Drucker meldet weder Karte noch Stick im Steckplatz, daher können gesendete Dateien nirgends abgelegt werden. Legen Sie einen ein und drucken Sie erneut — bis dahin fehlen jedem archivierten Druck Vorschaubild und Slicer-Metadaten.',
-        warn_internal_storage: 'Die Option ist aktiviert und ein Speicher ist vorhanden, aber dieser Drucker hat den letzten Druck dennoch in seinem internen Speicher behalten, den Bambuddy nicht lesen kann. Die Firmware der H2-Serie und des P2S macht das, und keine Einstellung ändert daran etwas. Drucke werden mit Namen und Zeiten archiviert, aber ohne Vorschaubild und Slicer-Metadaten.',
+        warn_internal_storage: 'Die Option ist aktiviert und ein Speicher ist vorhanden, aber der letzte Druck landete dennoch im internen Speicher des Druckers, den Bambuddy nicht lesen kann. Bei der H2-Serie und dem P2S sendet die Schaltfläche "Drucken" in Bambu Studio unabhängig von dieser Option immer dorthin. Drucke werden mit Namen und Zeiten archiviert, aber ohne Vorschaubild und Slicer-Metadaten. Für vollständige Archive den Druck aus Bambuddy starten oder in OrcaSlicer slicen — oder in Bambu Studio "Senden" mit "Extern" verwenden und den Druck danach starten.',
       },
       port_rtsps: {
         title: 'Kameraport ({{protocol}} {{port}})',
