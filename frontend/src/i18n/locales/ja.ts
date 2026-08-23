@@ -8144,6 +8144,7 @@ export default {
     syncSummary:
       '{{updated}} 件更新 · {{unchanged}} 件変更なし · {{skipped}} 件は販売店価格なし · {{missing}} 件はZohoに見つかりません',
     syncFailed: '同期を停止しました: {{error}}',
+    syncTimedOut: '同期がタイムアウトしました。一部のチャンクは適用された可能性があります',
     zohoDuplicateWarning: '{{name}} のフィラメントは既に存在します',
     addFilament: 'フィラメントを追加',
     editFilament: 'フィラメントを編集',

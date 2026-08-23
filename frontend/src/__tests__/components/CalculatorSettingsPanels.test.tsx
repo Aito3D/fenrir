@@ -829,33 +829,67 @@ describe('CalculatorFilamentsPanel Zoho price sync', () => {
   // a chunk request that never settles (a real network black hole, not a
   // server error) left the session-scoped guard stuck forever — the button
   // stayed disabled for the rest of the page session. A per-chunk timeout
-  // ends the walk with a normal sync error and releases the guard instead.
+  // ends the walk and releases the guard instead.
   // Driven entirely with vitest fake timers — never a wall-clock sleep, never
   // msw's `delay()`.
-  it('ends a chunk request that never settles with a sync error and re-enables the button', async () => {
+  //
+  // T-096 fix-up: `withTimeout` never aborts the chunk request it gave up
+  // on — the request the test never resolves is still "running" server-side
+  // for the rest of this test, standing in for the real request that is
+  // still in flight past the client-side timeout. A timeout is therefore
+  // reported as indeterminate, not a flat failure, and the table is
+  // refetched a second time — after the abandoned request would have had the
+  // same worst-case window to land — so prices it committed after the first,
+  // immediate refetch are not left hidden.
+  it('reports a timed-out chunk as indeterminate, re-enables the button, and refetches again to pick up what the abandoned request commits', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const rows = [{ ...baseFilament }];
+      // Spied before the panel mounts so the initial listing fetch is
+      // counted too — every call after it must be an `invalidateQueries`
+      // refetch, not a coincidence of render timing.
+      const getFilaments = vi.spyOn(api, 'getCalculatorFilaments');
       // Gated on nothing the test ever resolves: this promise simply never
-      // settles, standing in for a request that hangs indefinitely.
+      // settles, standing in for a request that hangs indefinitely — and,
+      // per the never-abort contract above, is still pending at the end of
+      // this test too.
       const sync = vi
         .spyOn(api, 'syncCalculatorFilamentsFromZoho')
         .mockReturnValueOnce(new Promise<CalculatorFilamentSyncResult>(() => {}));
 
-      await renderFilamentsPanel();
+      await renderFilamentsPanel(rows);
+      const fetchesBeforeSync = getFilaments.mock.calls.length;
       await user.click(screen.getByRole('button', { name: 'Sync prices' }));
       await waitFor(() => expect(sync).toHaveBeenCalledTimes(1));
 
       // Comfortably inside the timeout budget: still in flight, no error yet.
       await vi.advanceTimersByTimeAsync(59_000);
-      expect(screen.queryByText(/sync stopped/i)).toBeNull();
+      expect(screen.queryByText(/timed out/i)).toBeNull();
       expect(screen.getByRole('button', { name: /\d+\s*\/\s*\d+/ })).toBeDisabled();
 
       // Cross the per-chunk timeout.
       await vi.advanceTimersByTimeAsync(2_000);
 
-      expect(await screen.findByText(/sync stopped: sync request timed out/i)).toBeInTheDocument();
+      // (b) Indeterminate wording — not the flat "sync stopped: <error>"
+      // failure message a genuine chunk error (tested above) still gets.
+      expect(await screen.findByText(/timed out; some chunks may have applied/i)).toBeInTheDocument();
+      expect(screen.queryByText(/^sync stopped/i)).toBeNull();
       expect(await screen.findByRole('button', { name: 'Sync prices' })).toBeEnabled();
+      // The immediate refetch on timeout has already landed, and only it —
+      // the abandoned request has not committed anything yet in this test.
+      expect(await screen.findByRole('cell', { name: 'PLA' })).toBeInTheDocument();
+      expect(getFilaments.mock.calls.length).toBe(fetchesBeforeSync + 1);
+
+      // The abandoned chunk request now finally commits, server-side, well
+      // after the client gave up on it — exactly the scenario `withTimeout`
+      // documents as possible.
+      rows[0] = { ...baseFilament, material: 'PETG' };
+
+      // (a) The second, later invalidation picks up that late commit.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(await screen.findByRole('cell', { name: 'PETG' })).toBeInTheDocument();
+      expect(getFilaments.mock.calls.length).toBe(fetchesBeforeSync + 2);
     } finally {
       vi.useRealTimers();
     }

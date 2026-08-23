@@ -8072,6 +8072,7 @@ export default {
     syncSummary:
       '{{updated}} güncellendi · {{unchanged}} değişmedi · {{skipped}} bayi fiyatı yok · {{missing}} Zoho\'da yok',
     syncFailed: 'Senkronizasyon durduruldu: {{error}}',
+    syncTimedOut: 'Senkronizasyon zaman aşımına uğradı; bazı parçalar yine de uygulanmış olabilir',
     zohoDuplicateWarning: '{{name}} için zaten bir filament var',
     addFilament: 'Filament ekle',
     editFilament: 'Filamenti düzenle',

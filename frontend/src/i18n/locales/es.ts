@@ -8153,6 +8153,7 @@ export default {
     syncSummary:
       '{{updated}} actualizados · {{unchanged}} sin cambios · {{skipped}} sin precio de distribuidor · {{missing}} no encontrados en Zoho',
     syncFailed: 'Sincronización detenida: {{error}}',
+    syncTimedOut: 'La sincronización agotó el tiempo; algunos bloques podrían haberse aplicado igualmente',
     zohoDuplicateWarning: 'Ya existe un filamento para {{name}}',
     addFilament: 'Añadir filamento',
     editFilament: 'Editar filamento',

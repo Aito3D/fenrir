@@ -38,8 +38,20 @@ PAGE_2 = [
 @pytest.fixture(autouse=True)
 def _clear_cache():
     zoho_filaments.reset_cache()
+    # T-095: reset_cache() itself deliberately no longer rebuilds
+    # _refresh_lock (a reset must not be able to manufacture a second
+    # concurrent walk in production, where the process lives on a single
+    # long-running event loop). This suite gives every test its own fresh
+    # event loop though, and a Lock only binds to whichever loop first
+    # contends it (asyncio's uncontended acquire() fast path never touches
+    # the loop) — so a lock a PREVIOUS test's concurrency scenario contended
+    # would otherwise leak forward and blow up the next contending test with
+    # "bound to a different event loop". Rebuilding it here is test-isolation
+    # bookkeeping only; it has no production equivalent.
+    zoho_filaments._refresh_lock = asyncio.Lock()
     yield
     zoho_filaments.reset_cache()
+    zoho_filaments._refresh_lock = asyncio.Lock()
 
 
 def _fake_request(pages, calls):
@@ -268,23 +280,28 @@ async def test_concurrent_fetches_collapse_into_a_single_zoho_walk(monkeypatch):
     assert [p.item_id for p in second_result] == [p.item_id for p in first_result]
 
 
-# --- T-072: reset_cache() during an in-flight fetch --------------------------
+# --- T-072/T-095: reset_cache() during an in-flight fetch --------------------
 
 
 @pytest.mark.asyncio
-async def test_reset_cache_during_inflight_fetch_does_not_publish_stale_catalogue(monkeypatch):
-    """Auditor's repro: a Zoho credential rotation calls reset_cache() while a
-    refresh that started under the OLD credentials is still parked mid-fetch.
-    That refresh must still resolve for its own caller, but it must not land
-    in the module cache afterwards — or the previous org's catalogue would
-    serve every other caller for a full _CACHE_TTL window post-rotation."""
+async def test_reset_cache_during_inflight_fetch_raises_instead_of_returning_stale_catalogue(monkeypatch):
+    """Auditor's repro (T-095): a Zoho credential rotation calls reset_cache()
+    while a refresh that started under the OLD credentials is still parked
+    mid-fetch, and flips the fake org's price 1000 -> 2000 mid-walk. The
+    superseded walk must not hand its pre-rotation catalogue back to its own
+    caller — a route consuming that value (e.g. the price sync) would write
+    the old organisation's prices into calculator_filaments and stamp them
+    freshly synced. It must raise instead, and NOT the mapping-failure
+    subclass (that would flip the route's answer from 502 to 500, T-074)."""
     gate = asyncio.Event()
     entered = asyncio.Event()
+
+    old_org_item = _item("1", "Bambu Lab - ABS-GF - Bleu (Blue) - 1.75mm - 1kg", 1000.0, "B50-B0-1.75-1000-SPL")
 
     async def gated_page(db, **kwargs):
         entered.set()
         await gate.wait()
-        return PAGE_1, False
+        return [old_org_item], False
 
     monkeypatch.setattr(zoho_service, "list_items_page", gated_page)
 
@@ -292,12 +309,15 @@ async def test_reset_cache_during_inflight_fetch_does_not_publish_stale_catalogu
     await entered.wait()  # the fetch is now parked inside list_items_page
 
     zoho_filaments.reset_cache()  # the rotation lands mid-fetch
+    old_org_item["cf_prix_dealer_usd_unformatted"] = 2000.0  # the new org's price, mid-walk
     gate.set()
-    old_org_result = await task
 
-    # the in-flight caller still gets its answer...
-    assert [p.item_id for p in old_org_result] == ["1", "2", "3", "4"]
-    # ...but it must NOT have been published into the module cache.
+    with pytest.raises(RuntimeError) as excinfo:
+        await task
+    # a plain RuntimeError -> the route's 502 branch, not the 500 one
+    assert not isinstance(excinfo.value, zoho_filaments.ZohoFilamentMappingError)
+
+    # nothing from the superseded walk landed in the module cache either.
     assert zoho_filaments._cache is None
     assert zoho_filaments._cache_at is None
 
@@ -313,6 +333,48 @@ async def test_reset_cache_during_inflight_fetch_does_not_publish_stale_catalogu
     fresh = await zoho_filaments.fetch_catalogue(None)
     assert len(calls) == 1
     assert [p.item_id for p in fresh] == ["5"]  # PAGE_2's inactive item is dropped
+
+
+@pytest.mark.asyncio
+async def test_reset_cache_mid_walk_does_not_permit_a_second_concurrent_walk(monkeypatch):
+    """Auditor's second finding: reset_cache() used to rebind _refresh_lock to
+    a brand new, unheld Lock(), so a caller arriving right after the reset
+    could acquire that new lock immediately and start its OWN Zoho walk while
+    the superseded one — still holding the OLD lock object — was also still
+    running. Two concurrent walks instead of one. With a single lock reused
+    across a reset, the second caller must queue behind the first exactly as
+    it would without the reset in between."""
+    gate = asyncio.Event()
+    entered = asyncio.Event()
+    page_fetches = []
+
+    async def gated_page(db, **kwargs):
+        page_fetches.append(1)
+        entered.set()
+        await gate.wait()
+        return PAGE_1, False
+
+    monkeypatch.setattr(zoho_service, "list_items_page", gated_page)
+
+    first = asyncio.create_task(zoho_filaments.fetch_catalogue(None))
+    await entered.wait()  # first call is parked mid-fetch, holding the lock
+
+    zoho_filaments.reset_cache()  # the rotation lands mid-fetch
+
+    second = asyncio.create_task(zoho_filaments.fetch_catalogue(None))
+    await asyncio.sleep(0)  # give the second call a chance to run
+
+    # The second call must still be queued behind the (single, shared) lock —
+    # not off running its own concurrent page fetch.
+    assert len(page_fetches) == 1
+
+    gate.set()
+    with pytest.raises(RuntimeError):
+        await first
+    second_result = await second
+
+    assert len(page_fetches) == 2  # the second call's OWN walk, run AFTER the first released
+    assert [p.item_id for p in second_result] == ["1", "2", "3", "4"]
 
 
 # --- T-073: a paged fetch that hits _MAX_PAGES must not cache a partial list -

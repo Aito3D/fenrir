@@ -1,5 +1,6 @@
 """Tests for the calculator's Zoho filament search endpoint."""
 
+import asyncio
 import logging
 from unittest.mock import patch
 
@@ -219,6 +220,53 @@ async def test_mapping_failure_from_the_real_service_is_reported_as_internal_ser
         resp = await async_client.get("/api/v1/calculator/zoho-filaments", params={"q": "pla"})
         assert resp.status_code == 500
         assert resp.json()["detail"] == "Zoho filament catalogue could not be mapped"
+    finally:
+        zoho_filaments.reset_cache()
+
+
+@pytest.mark.asyncio
+async def test_reset_cache_mid_request_is_reported_as_bad_gateway_not_internal_error(async_client, monkeypatch):
+    """T-095: a Zoho credential rotation calling reset_cache() while this
+    request's own walk is still mid-fetch must not surface the pre-rotation
+    catalogue as a 200, nor as a 500 (that would misreport a superseded walk
+    as a mapping bug) — it must come back as the same 502 any other
+    unreachable-Zoho failure gets, through the REAL fetch_catalogue (not a
+    route-level stub), proving the actual exception it raises today is still
+    routed to 502."""
+
+    async def configured(db):
+        return True
+
+    gate = asyncio.Event()
+    entered = asyncio.Event()
+
+    async def gated_page(db, *, category, page, per_page):
+        entered.set()
+        await gate.wait()
+        item = {
+            "item_id": "1",
+            "name": "Bambu Lab - PLA - X - 1.75mm - 1kg",
+            "sku": "SKU",
+            "brand": "Bambu Lab",
+            "status": "active",
+            "cf_nature_du_produit": "Filaments",
+            "cf_prix_dealer_usd_unformatted": 1000.0,
+        }
+        return [item], False
+
+    monkeypatch.setattr(zoho_service, "is_configured", configured)
+    monkeypatch.setattr(zoho_service, "list_items_page", gated_page)
+    zoho_filaments.reset_cache()
+    try:
+        request_task = asyncio.create_task(async_client.get("/api/v1/calculator/zoho-filaments", params={"q": "pla"}))
+        await entered.wait()  # the request's own walk is now parked mid-fetch
+
+        zoho_filaments.reset_cache()  # the rotation lands mid-request
+        gate.set()
+
+        resp = await request_task
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "Could not reach Zoho"
     finally:
         zoho_filaments.reset_cache()
 

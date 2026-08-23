@@ -380,13 +380,23 @@ const SYNC_CHUNK_SIZE = 25;
  */
 const SYNC_CHUNK_TIMEOUT_MS = 60_000;
 
-/** Rejects with a timeout error if `promise` has not settled within `ms`,
+/** Distinguishes a `withTimeout` timeout from any other chunk failure (T-096)
+ *  without matching on `message` text, which is only ever used for `instanceof`
+ *  checks below — the user-facing wording lives entirely in the i18n layer. */
+class SyncTimeoutError extends Error {
+  constructor() {
+    super('sync request timed out');
+    this.name = 'SyncTimeoutError';
+  }
+}
+
+/** Rejects with a `SyncTimeoutError` if `promise` has not settled within `ms`,
  *  otherwise resolves/rejects exactly as `promise` does. Never touches
  *  `promise` itself — a timeout does not cancel or abort the underlying
  *  request, it only stops the walk from waiting on it forever. */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('sync request timed out')), ms);
+    const timer = setTimeout(() => reject(new SyncTimeoutError()), ms);
     promise.then(
       (value) => {
         clearTimeout(timer);
@@ -480,6 +490,12 @@ export function CalculatorFilamentsPanel({
   // matching the panel's pre-T-075 behavior for these two.
   const [syncSummary, setSyncSummary] = useState<CalculatorFilamentSyncResult | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  // Set alongside `syncError` only when the walk ended via `withTimeout`
+  // (T-096): `withTimeout` never aborts the underlying request, so a timeout
+  // is not a real failure — the chunk may still commit after the walk gives
+  // up on it. Gates the indeterminate wording below instead of the flat
+  // "failed" one.
+  const [syncTimedOut, setSyncTimedOut] = useState(false);
 
   // Chunking is client-driven and pages by id (keyset), not by offset: each
   // request commits its own work, so a failure partway through leaves the
@@ -493,6 +509,7 @@ export function CalculatorFilamentsPanel({
     if (queryClient.getQueryData<ZohoSyncProgress>(ZOHO_SYNC_PROGRESS_KEY)) return;
     setSyncSummary(null);
     setSyncError(null);
+    setSyncTimedOut(false);
     // Seed the denominator from what we already know is linked, so the button
     // never sits at "0 / 0" for the seconds the first chunk takes; the server's
     // own COUNT takes over from that chunk onwards.
@@ -543,8 +560,21 @@ export function CalculatorFilamentsPanel({
     } catch (error) {
       // The chunks that did land are already committed server-side; refetch so
       // the table shows the partial result instead of the pre-sync prices.
+      const timedOut = error instanceof SyncTimeoutError;
+      setSyncTimedOut(timedOut);
       setSyncError(error instanceof Error ? error.message : String(error));
       queryClient.invalidateQueries({ queryKey: ['calculatorFilaments'] });
+      if (timedOut) {
+        // `withTimeout` never aborts the request that timed out, so it is
+        // still running server-side and may commit further prices after this
+        // walk has already given up and refetched above. Re-invalidate again
+        // once it has had the same worst-case window to land, so the table
+        // picks those up too instead of being stuck on whatever the
+        // immediate refetch caught mid-flight.
+        setTimeout(() => {
+          queryClient.invalidateQueries({ queryKey: ['calculatorFilaments'] });
+        }, SYNC_CHUNK_TIMEOUT_MS);
+      }
     } finally {
       // Always releases the guard — success, a reported failure, or a chunk
       // that timed out all end the walk the same way.
@@ -651,7 +681,9 @@ export function CalculatorFilamentsPanel({
           </p>
         )}
         {syncError && (
-          <p className="mb-3 text-xs text-status-error">{t('calculator.syncFailed', { error: syncError })}</p>
+          <p className="mb-3 text-xs text-status-error">
+            {syncTimedOut ? t('calculator.syncTimedOut') : t('calculator.syncFailed', { error: syncError })}
+          </p>
         )}
         {editing && canUpdate ? (
           <FilamentForm

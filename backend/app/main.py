@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import math
 import os
 import posixpath
 import secrets
@@ -8637,6 +8638,25 @@ app = FastAPI(
 )
 
 
+def _stringify_non_finite(value):
+    """Recursively replace non-finite floats with their ``str()`` form.
+
+    Leaves every other value (including finite floats) untouched, so this is
+    the identity transform for the overwhelming majority of validation
+    errors — it only ever changes something for the ``inf``/``-inf``/``nan``
+    case this handler exists to fix.
+    """
+    if isinstance(value, float):
+        return str(value) if (math.isnan(value) or math.isinf(value)) else value
+    if isinstance(value, dict):
+        return {key: _stringify_non_finite(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_stringify_non_finite(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_stringify_non_finite(item) for item in value)
+    return value
+
+
 @app.exception_handler(RequestValidationError)
 async def _finite_safe_validation_exception_handler(request: Request, exc: RequestValidationError) -> Response:
     """The same 422 FastAPI's own default handler returns, minus a crash.
@@ -8648,12 +8668,16 @@ async def _finite_safe_validation_exception_handler(request: Request, exc: Reque
     ``Infinity``, T-071) makes that very serialization step raise instead of
     responding, turning the intended 422 into an unhandled exception (which
     surfaces as a 503 from the auth gateway below, or a bare 500 elsewhere).
-    Byte-identical to the framework default for every other validation
-    error — ``allow_nan=True`` only changes anything for this one
-    previously-crashing case.
+
+    The fix keeps ``allow_nan=False`` (the framework-standard, RFC 8259
+    compliant encoder) and instead sanitises the payload first, replacing any
+    non-finite float — however deeply nested inside a list/dict ``input`` —
+    with its string form (``"inf"``/``"-inf"``/``"nan"``). Byte-identical to
+    the framework default for every other validation error, since the
+    sanitisation step is a no-op unless a non-finite float is present.
     """
-    content = {"detail": jsonable_encoder(exc.errors())}
-    body = json.dumps(content, ensure_ascii=False, allow_nan=True, separators=(",", ":")).encode("utf-8")
+    content = {"detail": _stringify_non_finite(jsonable_encoder(exc.errors()))}
+    body = json.dumps(content, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")
     return Response(content=body, status_code=422, media_type="application/json")
 
 

@@ -85,10 +85,15 @@ _fail_exc: BaseException | None = None
 _generation = 0
 
 # T-072: collapses concurrent refreshes (e.g. two browser tabs both opening
-# the add-filament search on a cold cache) into a single Zoho walk. Rebuilt
-# by reset_cache() rather than reused so a lock that happened to block on one
-# asyncio event loop can never be awaited from a different one later — the
-# test suite runs each async test on its own loop.
+# the add-filament search on a cold cache) into a single Zoho walk.
+#
+# T-095: deliberately NOT rebuilt by reset_cache() (it used to be, T-072).
+# Rebinding this to a fresh, unheld Lock() on every reset let a walk that was
+# already parked mid-fetch under the OLD generation, plus a brand new caller
+# arriving right after the reset, both hold a lock at the same time — two
+# concurrent Zoho walks instead of one. Reusing this single lock means a
+# reset can never manufacture a second walk: any caller racing a superseded
+# one queues behind it exactly as it would without a reset in the middle.
 _refresh_lock = asyncio.Lock()
 
 
@@ -158,11 +163,13 @@ def reset_cache() -> None:
     organization does not keep serving the previous org's filaments for the
     rest of the TTL window. Tests call it to isolate each case.
     """
-    global _cache, _cache_at, _generation, _refresh_lock, _fail_at, _fail_exc
+    global _cache, _cache_at, _generation, _fail_at, _fail_exc
     _cache = None
     _cache_at = None
     _generation += 1
-    _refresh_lock = asyncio.Lock()
+    # T-095: _refresh_lock is intentionally NOT rebuilt here — see its
+    # module-level docstring for why rebinding it let a reset manufacture a
+    # second concurrent walk.
     # T-094: a failure recorded under the OLD credentials must not keep
     # answering "Zoho is down" fast-path style once they have just been
     # rotated to (presumably working) new ones.
@@ -217,6 +224,13 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
     can legitimately run for minutes. A cold-cache failure is also remembered
     for _FAIL_COOLDOWN so a burst of callers arriving during a Zoho outage
     fails fast instead of each repeating the whole paged walk in turn.
+
+    T-095: if ``reset_cache()`` runs while this walk is in flight (e.g. a
+    Zoho credential rotation mid-fetch), the walk RAISES once it finishes
+    rather than handing its now-superseded catalogue back to the caller that
+    started it — that caller gets the same stale-cache-or-502 answer as any
+    other refresh failure instead of a freshly-labelled answer from the
+    pre-rotation organisation.
     """
     global _cache, _cache_at, _fail_at, _fail_exc
 
@@ -235,12 +249,13 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
     if _cache is None and _fail_at is not None and now - _fail_at < _FAIL_COOLDOWN:
         raise type(_fail_exc)(str(_fail_exc)) from None
 
-    # Captured once, up front: reset_cache() rebinds the module-level
-    # _refresh_lock to a brand new Lock() (T-072), so re-reading the global
-    # at release time — after a reset landed mid-wait — would try to release
-    # a lock this call never acquired. `async with` avoided this by
-    # evaluating its context-manager expression once at entry; this local
-    # keeps that same guarantee now that acquire/release are explicit.
+    # Captured once, up front, rather than re-reading the global at release
+    # time. reset_cache() no longer rebinds _refresh_lock (T-095), so this is
+    # not guarding against a rebind any more — but `_refresh_lock` is still a
+    # module global that another coroutine could in principle reassign, and
+    # `async with` avoided that class of problem by evaluating its
+    # context-manager expression once at entry; this local keeps that same
+    # guarantee now that acquire/release are explicit, at zero cost.
     lock = _refresh_lock
     try:
         await asyncio.wait_for(lock.acquire(), timeout=_LOCK_ACQUIRE_TIMEOUT)
@@ -342,18 +357,28 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
             _fail_exc = exc
             raise
 
-        if generation == _generation:
-            _cache = mapped
-            # Same reasoning as _fail_at above: stamped with the time the
-            # walk FINISHED, not the pre-walk `now`, so a slow successful
-            # walk does not shorten its own _CACHE_TTL window.
-            _cache_at = datetime.now(timezone.utc)
-        # else: reset_cache() fired while this refresh was in flight (e.g. a
-        # Zoho credential rotation). This walk belongs to a superseded
-        # generation and publishing it would resurrect the pre-rotation
-        # catalogue for a full _CACHE_TTL window, so the freshly mapped list
-        # is handed back to THIS caller only — it is never written into the
-        # module cache.
+        if generation != _generation:
+            # reset_cache() fired while this refresh was in flight (e.g. a
+            # Zoho credential rotation). This walk belongs to a superseded
+            # generation: handing its catalogue back to THIS caller — even
+            # without publishing it into the module cache — would still let
+            # the pre-rotation organisation's prices reach a caller such as
+            # sync_calculator_filaments_from_zoho, which writes whatever it
+            # gets straight into calculator_filaments and stamps it freshly
+            # synced (T-095, user-approved). Raise instead, mapped by the
+            # route to the same 502 any other unreachable-Zoho failure gets,
+            # so the caller answers from its own stale cache (if it has one)
+            # rather than from a rotated-away organisation's catalogue. A
+            # plain RuntimeError, not ZohoFilamentMappingError — this is not
+            # a mapping bug, and that subclass is reserved for the 500
+            # contract (T-074).
+            raise RuntimeError("Zoho filament catalogue refresh was superseded by a credential change; retry")
+
+        _cache = mapped
+        # Same reasoning as _fail_at above: stamped with the time the
+        # walk FINISHED, not the pre-walk `now`, so a slow successful
+        # walk does not shorten its own _CACHE_TTL window.
+        _cache_at = datetime.now(timezone.utc)
         _fail_at = None
         _fail_exc = None
         return mapped

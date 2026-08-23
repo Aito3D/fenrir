@@ -8145,6 +8145,7 @@ export default {
     syncSummary:
       '{{updated}} aktualisiert · {{unchanged}} unverändert · {{skipped}} ohne Händlerpreis · {{missing}} in Zoho fehlend',
     syncFailed: 'Synchronisierung gestoppt: {{error}}',
+    syncTimedOut: 'Synchronisierung abgelaufen; einige Blöcke wurden möglicherweise dennoch übernommen',
     zohoDuplicateWarning: 'Für {{name}} existiert bereits ein Filament',
     addFilament: 'Filament hinzufügen',
     editFilament: 'Filament bearbeiten',

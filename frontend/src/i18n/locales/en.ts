@@ -8198,6 +8198,7 @@ export default {
     syncSummary:
       '{{updated}} updated · {{unchanged}} unchanged · {{skipped}} without a dealer price · {{missing}} missing in Zoho',
     syncFailed: 'Sync stopped: {{error}}',
+    syncTimedOut: 'Sync timed out; some chunks may have applied',
     zohoDuplicateWarning: 'A filament for {{name}} already exists',
     addFilament: 'Add filament',
     editFilament: 'Edit filament',

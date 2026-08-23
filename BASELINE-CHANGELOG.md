@@ -3315,3 +3315,243 @@ moved as expected — `spool_weight_kg`'s JSON Schema gained `"minimum": 0.001` 
 `"exclusiveMinimum": 0` on both `CalculatorFilamentCreate` and `CalculatorFilamentUpdate` — and was
 re-recorded; all other 9 probes matched unchanged, including `calc-insights-pure`. `SURFACE.md`:
 unchanged — `_MONEY_CEILING` is imported/reused, not redefined; no new module-level def/class/constant.
+
+## T-095 — 2026-08-23 — a superseded Zoho walk now fails instead of returning the pre-rotation catalogue (user-approved behavior change)
+
+Audit `audit-robustness` found that the `_generation` guard added for T-072 only blocked the
+module cache WRITE when `reset_cache()` fired mid-walk (a Zoho credential rotation landing while a
+refresh was still parked on a paged fetch) — the superseded walk's freshly-mapped catalogue was
+still handed back to its own caller via `return mapped`, even though it belonged to the OLD
+organisation. Reproduced with a page fetch parked on an `asyncio.Event`, `reset_cache()` called
+mid-walk while flipping the fake org's dealer price 1000 -> 2000, then released: the superseded
+walk returned `cost_per_kg = 1000.0` (the pre-rotation org's price) with the module cache correctly
+left at `None`. `sync_calculator_filaments_from_zoho` consumes exactly that return value
+(`by_item_id = {product.item_id: product for product in catalogue}`) and writes
+`filament.cost_per_kg`, sets `filament.zoho_synced_at = now`, and commits — so an operator rotating
+Zoho credentials while a sync chunk was mid-walk could have up to `limit` rows of the OLD
+organisation's prices written into `calculator_filaments` and stamped as freshly synced, which is
+exactly what would stop anything from flagging them for correction.
+
+A second, related finding: `reset_cache()` rebound `_refresh_lock` to a brand new, unheld `Lock()`
+on every reset (a leftover from before T-094's bounded acquisition, originally there so a lock
+that blocked on one asyncio event loop could never be awaited from a different one — the test
+suite runs each async test on its own loop). This meant a caller arriving right after a reset could
+acquire the NEW lock immediately and start its own Zoho walk while the superseded walk — still
+holding the OLD lock object — was also still running: two concurrent walks instead of the one
+`_refresh_lock` exists to guarantee. The auditor measured this directly: 2 page fetches after a
+`reset_cache()` landing mid-walk, where 1 (the second caller queuing behind the first) was
+required.
+
+The user approved this exact framing: "a search or sync request that happens to be walking Zoho
+when someone saves new Zoho credentials would fail with 502 instead of answering from the previous
+organisation's catalogue."
+
+**User-visible effect:** if a Zoho credential/endpoint save (`reset_cache()`) lands while
+`/calculator/zoho-filaments` or `/calculator/filaments/zoho-sync` is mid-walk of a paged Zoho
+fetch, that in-flight request now fails with the same 502 "Could not reach Zoho" any other
+unreachable-Zoho failure gets (falling back to its own stale cache first, same as any other
+refresh failure), instead of succeeding with the pre-rotation organisation's catalogue. A second
+caller racing a reset that lands mid-walk now always queues behind the in-flight (superseded) walk
+rather than starting a concurrent second walk of its own.
+
+Fixed in `backend/app/services/zoho_filaments.py`:
+- The `if generation == _generation: _cache = mapped; ...` / `return mapped` branch was inverted:
+  `if generation != _generation:` now `raise RuntimeError("Zoho filament catalogue refresh was
+  superseded by a credential change; retry")` before ever reaching the cache-publish or return
+  lines. A **plain** `RuntimeError`, not the `ZohoFilamentMappingError` subclass — this is not a
+  mapping bug, and that subclass is reserved for T-074's 500 contract; both `search_zoho_filaments`
+  and `sync_calculator_filaments_from_zoho` in `routes/calculator.py` catch
+  `ZohoFilamentMappingError` first (-> 500) and everything else (-> 502), so the exception TYPE
+  alone decides the status code with no route change needed.
+- `reset_cache()` no longer rebinds `_refresh_lock` — the `global` statement dropped
+  `_refresh_lock`, and the `_refresh_lock = asyncio.Lock()` line inside it was removed. The single
+  module-level lock (created once at import) is now reused for the life of the process, so a reset
+  can never manufacture a second concurrent walk. The `lock = _refresh_lock` local capture in
+  `fetch_catalogue` (added for T-094 specifically to survive a mid-wait rebind) was deliberately
+  KEPT even though the rebind it was guarding against is gone — it is still cheap insurance against
+  any future reassignment of the module global, and removing it bought nothing.
+
+T-104 (an open task proposing a characterization test for the `reset_cache()` lock REBUILD) is now
+moot as originally scoped — the rebuild it would have characterized no longer exists — and should
+be re-scoped to "reset_cache() must not create a second concurrent walk" or retired.
+
+Test-suite-only consequence of removing the rebind: this repo's async tests each run on their OWN
+event loop (confirmed empirically — `asyncio.get_running_loop()` differs test-to-test despite a
+session-scoped `event_loop` fixture in `conftest.py`, which pytest-asyncio 1.3.0 no longer honors),
+and `asyncio.Lock` only binds to a loop the first time it is actually CONTENDED (the uncontended
+fast path in `Lock.acquire()` never touches `_get_loop()`). Reusing one `_refresh_lock` module
+singleton is exactly the correct, intended behavior for a real long-running single-event-loop
+process, but it meant a lock contended by one test's concurrency scenario would leak forward and
+raise "bound to a different event loop" the next time a DIFFERENT test's scenario contended it
+(observed directly: `test_lock_acquire_timeout_raises_promptly_with_cold_cache` followed by
+`test_lock_acquire_timeout_serves_the_stale_cache_when_warm` failed together, passed individually).
+Fixed as test-isolation bookkeeping only (no production equivalent) in the `_clear_cache` autouse
+fixture in `test_zoho_filaments_catalogue.py`: `zoho_filaments._refresh_lock = asyncio.Lock()` is
+now rebuilt directly by the fixture before and after every test in that file.
+
+New/changed tests in `test_zoho_filaments_catalogue.py`:
+- `test_reset_cache_during_inflight_fetch_raises_instead_of_returning_stale_catalogue` (replaces
+  the old `..._does_not_publish_stale_catalogue`, which asserted the now-superseded `return mapped`
+  behavior): reproduces the auditor's price-flip repro and asserts the superseded walk raises a
+  plain `RuntimeError` that is NOT a `ZohoFilamentMappingError`, that nothing lands in the module
+  cache, and that a subsequent fetch goes back to Zoho rather than resurrecting the pre-rotation
+  catalogue.
+- `test_reset_cache_mid_walk_does_not_permit_a_second_concurrent_walk`: reproduces the auditor's
+  2-concurrent-walks repro and asserts exactly 1 page fetch happens before the first (superseded)
+  walk releases the lock, and the second caller's own walk only starts after.
+
+New test in `test_calculator_zoho_routes.py`:
+- `test_reset_cache_mid_request_is_reported_as_bad_gateway_not_internal_error`: runs the SAME
+  scenario through the real route (`fetch_catalogue` un-stubbed, only `list_items_page` faked,
+  matching the existing pattern used by the T-073/T-101 real-service route tests) and asserts the
+  in-flight request comes back `502` / `"Could not reach Zoho"`, never `500`.
+
+Mutation-proven, each restored and re-verified green afterward:
+1. Reverted the `raise RuntimeError(...)` back to falling through to `return mapped` ->
+   `test_reset_cache_during_inflight_fetch_raises_instead_of_returning_stale_catalogue` AND
+   `test_reset_cache_mid_request_is_reported_as_bad_gateway_not_internal_error` both failed
+   (`assert 200 == 502` at the route level).
+2. Raised `ZohoFilamentMappingError` instead of the plain `RuntimeError` -> the route test failed
+   with `assert 500 == 502`, and the unit test's `not isinstance(..., ZohoFilamentMappingError)`
+   assertion also failed.
+3. Restored the `_refresh_lock = asyncio.Lock()` rebind inside `reset_cache()` ->
+   `test_reset_cache_mid_walk_does_not_permit_a_second_concurrent_walk` failed with
+   `assert 2 == 1` (both callers' page fetches ran before either released).
+
+Regression guard re-verified after the fix: the other three approved raise-path contracts are
+unchanged — `test_truncated_catalogue_is_still_reported_as_bad_gateway_not_internal_error` (502),
+`test_mapping_failure_is_reported_as_internal_server_error` +
+`test_mapping_failure_from_the_real_service_is_reported_as_internal_server_error` (500), and
+`test_lock_acquire_timeout_raises_promptly_with_cold_cache` +
+`test_lock_acquire_timeout_serves_the_stale_cache_when_warm` (502 / stale cache) all still pass.
+
+`ruff check`/`ruff format --check backend/`: clean. Full backend suite:
+11696 passed, 1 skipped, 1 failed (`test_library_slice_api.py::TestCrossClassSliceAllLoop::
+test_cross_class_arrange_survives_user_leaving_the_box_unticked`, a documented pre-existing flake
+unrelated to this file — re-ran alone and it passed). Scoped coverage
+(`tools/coverage_calc.sh backend`): 683/686 statements = 99.56%, matching the ratchet exactly (no
+drop). `tools/snapshot.py verify`: 10/10 probes matched, none moved — none exercise
+`fetch_catalogue`'s paging. `SURFACE.md`: unchanged (`bash tools/gen_surface_calc.sh` diffed clean)
+— a plain `RuntimeError` was used, no new exception class or module-level constant.
+
+## T-093, T-096 — 2026-08-23 — both are user-approved behavior changes
+
+T-093: the app-global `RequestValidationError` handler in `backend/app/main.py` (added by T-071)
+kept `allow_nan=True` to stop FastAPI's default handler crashing on a non-finite `input` value —
+but `json.dumps(..., allow_nan=True)` emits the bare Python literals `Infinity` / `-Infinity` /
+`NaN`, which are not valid JSON (RFC 8259). A strict parser (the frontend's
+`response.json().catch(() => ({}))` at `frontend/src/api/client.ts:136`) throws on that body,
+`detail` comes back `undefined`, and the toast falls through to the bare `HTTP 422` the comment
+three lines above that fallback exists to avoid — the exact defect the 422 was supposed to fix.
+Fixed by restoring `allow_nan=False` (byte-identical to Starlette's `JSONResponse.render`) and
+adding a new `_stringify_non_finite` helper that walks `jsonable_encoder(exc.errors())`
+recursively (dict values, list items, and tuple items) and replaces any `float('inf')` /
+`float('-inf')` / `float('nan')` with its `str()` form (`"inf"` / `"-inf"` / `"nan"`) before
+`json.dumps` ever sees it — so the encoder never has a non-finite value to choke on, and
+`allow_nan` itself no longer matters. The helper is a no-op for every other value, which is what
+keeps the handler byte-identical to FastAPI's own `request_validation_exception_handler` for
+every ordinary validation error: verified directly by calling both handlers with 6 synthetic
+`RequestValidationError`s (`gt=0` int, `string_too_short`, `missing`, `float_parsing`, a
+two-error list, and a Unicode message) and comparing `.body` byte-for-byte — all 6 matched. For
+the previously-crashing case (`cost_per_kg: Infinity`), FastAPI's own default handler was called
+directly and confirmed to still raise `ValueError: Out of range float values are not JSON
+compliant: inf`, while this handler returns `{"detail":[{...,"input":"inf"}]}`, which
+`json.loads(..., parse_constant=<reject>)` accepts (no bare literal reaches the parser).
+
+New tests: `backend/tests/unit/test_main_validation_handler.py` (`TestStringifyNonFinite`, 9
+cases) exercises `_stringify_non_finite` directly, including nested cases the route-level tests
+can't reach on their own — a non-finite float inside a list inside a dict inside a list — since a
+real Pydantic validation error's `input` is always the single rejected leaf value; the
+integration-level cases in `backend/tests/unit/test_calculator_routes.py`
+(`test_non_finite_cost_response_is_strict_json`, parametrized over inf/-inf/nan, and
+`test_ordinary_validation_error_body_unchanged`) drive the real route end-to-end and parse the
+raw response bytes with a `parse_constant` callback that raises `AssertionError` on any bare
+non-finite literal, so a regression back to `allow_nan=True` fails loudly rather than silently
+passing a lenient parse.
+
+Mutation-tested: reverting the handler to its exact pre-fix state (`content =
+{"detail": jsonable_encoder(exc.errors())}` and `allow_nan=True`, no sanitisation) made all three
+`test_non_finite_cost_response_is_strict_json` cases fail with `AssertionError: strict JSON parse
+hit a bare non-finite literal: 'NaN'` (and equivalents for inf/-inf) — confirming the strict-parse
+test actually exercises the fix. (Flipping `allow_nan` alone, with sanitisation left in place,
+does NOT reproduce the bug and was not used as the mutation — the sanitised payload has already
+removed every non-finite float by the time `json.dumps` runs, so `allow_nan` is inert in the
+fixed code; the real regression requires reverting the sanitisation too, which is what was done.)
+
+user-approved 2026-08-23: "a client sending Infinity/NaN would start receiving a parseable 422
+whose detail[].input is the string 'inf'/'nan' instead of a bare literal, so the UI toast would
+show 'Input should be a finite number' where it currently shows 'HTTP 422'."
+
+T-096: `CalculatorFilamentsPanel.tsx`'s Zoho price-sync walk (`runSync`) wraps each chunk request
+in `withTimeout` (T-075), which is documented as never aborting the underlying request — a chunk
+that crosses the 60s `SYNC_CHUNK_TIMEOUT_MS` budget is still running server-side when the walk
+gives up on it. The `catch` block treated a timeout exactly like any other chunk failure: set a
+flat "Sync stopped: ..." error and immediately `invalidateQueries(['calculatorFilaments'])`. That
+immediate refetch fires before the abandoned request has had any chance to land, so it reliably
+shows PRE-sync prices under a red failure banner, even though the walk itself is not actually
+done — the abandoned request can still commit up to 25 more rows seconds later, with nothing
+telling the table to look again.
+
+Fixed with a `SyncTimeoutError` subclass thrown by `withTimeout` in place of the previous plain
+`Error`, so the `catch` block can `instanceof`-distinguish a timeout from a genuine chunk failure
+without matching on message text. On a timeout specifically: (a) the wording switches to a new
+`calculator.syncTimedOut` i18n key ("Sync timed out; some chunks may have applied" in English,
+translated — not copied — into all 13 locale files) instead of interpolating the raw English
+`withTimeout` rejection message into `calculator.syncFailed`, fixing the known defect the task
+called out (that raw string was untranslated in every locale); (b) a second
+`invalidateQueries(['calculatorFilaments'])` is scheduled via `setTimeout` for
+`SYNC_CHUNK_TIMEOUT_MS` after the immediate one, giving the abandoned request the same worst-case
+window T-075 already budgets for a chunk to land, so the table picks up whatever it committed
+instead of being stuck on what the immediate refetch caught mid-flight. No `AbortController` was
+added — the auditor's alternative suggestion was explicitly declined by the user because aborting
+would leave a partially-synced catalogue where today the walk always runs to completion; the
+walk's actual behavior (never cancelled, may commit after the client gives up) is unchanged, only
+how the UI reports and re-checks it.
+
+i18n: `syncTimedOut` added directly after the existing `syncFailed` key in `calculator.*` in all
+13 locale files (en/de/es/fr/it/ja/ko/pt-BR/ru/tr/uk/zh-CN/zh-TW) — real translations, not
+English copies (`frontend/scripts/check-i18n-parity.mjs`'s identical-to-English gate passes with
+no new `IDENTICAL_TO_EN_ALLOWED` entries needed). `npx vitest run src/__tests__/i18n/` (26 tests)
+and `node scripts/check-i18n-parity.mjs` both pass; all 13 locales report the same 6867 leaf keys
+as `en`.
+
+New/changed test: `CalculatorSettingsPanels.test.tsx`'s existing T-075 timeout test (`ends a chunk
+request that never settles...`) was renamed and extended — `reports a timed-out chunk as
+indeterminate, re-enables the button, and refetches again to pick up what the abandoned request
+commits` — driven entirely with `vi.useFakeTimers`/`vi.advanceTimersByTimeAsync` (never a
+wall-clock sleep). It asserts the indeterminate wording appears (not "sync stopped: ..."), that
+exactly one `api.getCalculatorFilaments` refetch happens at the moment of timeout (table still
+shows the pre-sync row), and that a SECOND refetch after a further `SYNC_CHUNK_TIMEOUT_MS`
+(60s) picks up a row mutated in between — simulating the abandoned request's late commit.
+
+Mutation-tested: removing the scheduled second `invalidateQueries` call made the new test fail at
+`expect(await screen.findByRole('cell', { name: 'PETG' }))` (the late commit never surfaces,
+`getFilaments.mock.calls.length` stays one short) — confirming the test actually exercises the
+re-invalidation, not just the wording change.
+
+user-approved 2026-08-23: "a timed-out sync would stop leaving the table showing pre-sync prices,
+and its message would say the result is indeterminate rather than failed." AbortController
+explicitly declined.
+
+Verification: `ruff check backend/` and `ruff format --check backend/` clean; `npx tsc -b
+--noEmit` and `npx eslint .` clean; full backend suite 11710 passed, 1 skipped (no new failures);
+full frontend suite passed apart from the documented known-flake files (PrintModal,
+CalculatorPage, StatsPageUserFilter1894, ModelViewerModal), each re-run alone and green.
+`tools/snapshot.py verify`: 10/10 probes matched, none moved. `SURFACE.md`
+(`bash tools/gen_surface_calc.sh`): unchanged — `SyncTimeoutError` and `_stringify_non_finite`
+are both module-private (not exported), so neither adds to the scanned surface.
+`tools/coverage_calc.sh backend`: 683/686 = 99.56%, exactly matching the ratchet in every run.
+`tools/coverage_calc.sh frontend`: this machine was under heavy, fluctuating concurrent load for
+the whole of this iteration (other agents' `pytest`/`vitest` processes observed running
+simultaneously via `ps`/`uptime`, load average 30-53). Measured 7 times: 5 runs read 90.31%
+(988/1094) and 2 runs read 92.23% (1009/1094), correlating exactly with host load at
+measurement time, not with any code change — the FAIL list on every low-reading run is 100%
+the pre-documented known-flake files (CalculatorPage.test.tsx, StatsPageUserFilter1894.test.tsx,
+ModelViewerModal.test.tsx, PrintModal.test.tsx; none touched by this change) exhausting the
+harness's own `--retry=3`, while `CalculatorFilamentsPanel`'s own coverage held flat at 92.3% and
+`CalculatorSettingsPanels.test.tsx` passed 100% of the time across every run. On the two clean
+(lower-load) reads, 1009/1094 clears the 92.16% (1000/1085) ratchet, and all 9 of the statements
+added by this change (1094-1085) are covered (1009-1000). Reported honestly per instruction rather
+than asserting a single confident number: this machine's shared-load condition made a
+majority-of-runs measurement land below the ratchet even though the change itself is fully
+covered and no in-scope file's own coverage dropped.

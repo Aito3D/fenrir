@@ -97,6 +97,52 @@ class TestCalculatorFilaments:
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("value", "expected_input"),
+        [
+            (float("inf"), "inf"),
+            (float("-inf"), "-inf"),
+            (float("nan"), "nan"),
+        ],
+    )
+    async def test_non_finite_cost_response_is_strict_json(self, async_client, value, expected_input):
+        """T-093: the 422 body for a non-finite value must be RFC 8259 JSON.
+
+        Python's own ``json.dumps`` default (``allow_nan=True``) happily
+        emits the bare ``Infinity``/``-Infinity``/``NaN`` literals, which are
+        not valid JSON and make a strict parser (e.g. the frontend's
+        ``response.json()``) throw. ``parse_constant`` is how ``json.loads``
+        lets us reject those literals the way a strict RFC 8259 parser would;
+        if the body still contains one, this raises before the assertions
+        below ever run.
+        """
+        resp = await _post_non_standard_json(
+            async_client, "/api/v1/calculator/filaments/", {**FILAMENT_PAYLOAD, "cost_per_kg": value}
+        )
+        assert resp.status_code == 422
+
+        def _reject_non_finite_literal(token):
+            raise AssertionError(f"strict JSON parse hit a bare non-finite literal: {token!r}")
+
+        parsed = json.loads(resp.content, parse_constant=_reject_non_finite_literal)
+        [error] = [e for e in parsed["detail"] if e["loc"][-1] == "cost_per_kg"]
+        assert error["input"] == expected_input
+
+    @pytest.mark.asyncio
+    async def test_ordinary_validation_error_body_unchanged(self, async_client):
+        """An everyday validation failure keeps the framework's exact shape."""
+        resp = await async_client.post("/api/v1/calculator/filaments/", json={**FILAMENT_PAYLOAD, "cost_per_kg": -5})
+        assert resp.status_code == 422
+        assert resp.headers["content-type"] == "application/json"
+        body = resp.json()
+        [error] = [e for e in body["detail"] if e["loc"][-1] == "cost_per_kg"]
+        assert error["input"] == -5
+        assert error["type"] == "greater_than"
+        # Compact, framework-standard separators — no re-encoding artifacts.
+        assert b", " not in resp.content
+        assert b": " not in resp.content
+
+    @pytest.mark.asyncio
     async def test_create_rejects_cost_above_ceiling(self, async_client):
         """A finite-but-astronomical cost must not slip through either.
 

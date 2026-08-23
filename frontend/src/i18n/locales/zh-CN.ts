@@ -8131,6 +8131,7 @@ export default {
     syncSummary:
       '已更新 {{updated}} 个 · 未变化 {{unchanged}} 个 · {{skipped}} 个无经销商价格 · {{missing}} 个在 Zoho 中缺失',
     syncFailed: '同步已停止：{{error}}',
+    syncTimedOut: '同步已超时；部分批次可能仍已应用',
     zohoDuplicateWarning: '{{name}} 的耗材已存在',
     addFilament: '添加耗材',
     editFilament: '编辑耗材',

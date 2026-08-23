@@ -7748,6 +7748,7 @@ export default {
     syncSummary:
       "{{updated}} обновлено · {{unchanged}} без изменений · {{skipped}} без цены дилера · {{missing}} отсутствует в Zoho",
     syncFailed: "Синхронизация остановлена: {{error}}",
+    syncTimedOut: "Истекло время ожидания синхронизации; некоторые блоки могли всё же примениться",
     zohoDuplicateWarning: "Филамент для {{name}} уже существует",
     addFilament: "Добавить филамент",
     editFilament: "Изменить филамент",

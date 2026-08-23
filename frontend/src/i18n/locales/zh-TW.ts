@@ -8131,6 +8131,7 @@ export default {
     syncSummary:
       '已更新 {{updated}} 個 · 未變化 {{unchanged}} 個 · {{skipped}} 個無經銷商價格 · {{missing}} 個 Zoho 中缺失',
     syncFailed: '同步已停止：{{error}}',
+    syncTimedOut: '同步已逾時；部分批次可能仍已套用',
     zohoDuplicateWarning: '{{name}} 的線材已存在',
     addFilament: '新增線材',
     editFilament: '編輯線材',
