@@ -819,3 +819,79 @@ def test_split_materials_splits_uppercases_dedupes_and_sorts():
 
 def test_split_materials_drops_empty_segments():
     assert _split_materials("PLA,, ,PETG") == ["PETG", "PLA"]
+
+
+# --- T-102: `_printer_names` unknown-printer fallback ------------------------
+#
+# `printer_names.get(printer_id, f"#{printer_id}")` is called at four sites
+# (_failure_rates, _time_accuracy, _power_draw, _daily_usage). Every existing
+# test logs runs against a printer created via `printer_factory`, i.e. a real
+# `Printer` row, so `printer_names.get(...)` always hits and the `f"#{id}"`
+# default is never actually evaluated anywhere in the suite. This test logs
+# runs against a printer_id with NO corresponding Printer row (simulating a
+# printer that was later deleted, since `printer_id` carries no FK) and
+# checks the fallback fires at all four sites, in one shared dataset: one
+# printer_id, one dataset, one GET, four assertions. `_time_accuracy` and
+# `_power_draw` pre-filter in SQL (see calculator_insights.py), so every row
+# below is deliberately placed in-band (accuracy 100%, watts 200, duration
+# within both the power and staleness bounds) rather than relying on the
+# Python fold to save an out-of-band row.
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_unknown_printer_falls_back_to_hash_id_label(async_client: AsyncClient, archive_factory, db_session):
+    deleted_printer_id = 987654  # no Printer row exists with this id
+
+    # _time_accuracy: 3 runs (the per-printer >=3 gate), accuracy 100% (in-band).
+    archive = await archive_factory(deleted_printer_id, print_time_seconds=3600, with_run=False)
+    for _ in range(3):
+        db_session.add(_run(deleted_printer_id, "completed", archive_id=archive.id, duration_seconds=3600))
+
+    # _power_draw: 5 runs (MIN_SAMPLE), duration 3600s / 0.2 kWh -> 200 W (in-band).
+    for _ in range(5):
+        db_session.add(_run(deleted_printer_id, "completed", duration_seconds=3600, energy_kwh=0.2))
+
+    # _daily_usage: 10 runs of 6h spread over 20 observed days (>= _MIN_USAGE_DAYS).
+    for i in range(10):
+        db_session.add(
+            _run(
+                deleted_printer_id,
+                "completed",
+                duration_seconds=21600,
+                created_at=NOW - timedelta(days=20 - i),
+            )
+        )
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    data = response.json()
+    expected_name = f"#{deleted_printer_id}"
+
+    # All 18 runs above are "completed", so _failure_rates' MIN_SAMPLE (5) is
+    # cleared for this printer_id too — one dataset pins all four sites.
+    failure_row = next(r for r in data["failure"]["by_printer"] if r["printer_id"] == deleted_printer_id)
+    assert failure_row["printer_name"] == expected_name
+    assert failure_row["sample"] == 18
+
+    accuracy_row = data["time_accuracy"]["by_printer"][0]
+    assert accuracy_row["printer_id"] == deleted_printer_id
+    assert accuracy_row["printer_name"] == expected_name
+    assert accuracy_row["sample"] == 3
+
+    power_row = data["power_by_printer"][0]
+    assert power_row["printer_id"] == deleted_printer_id
+    assert power_row["printer_name"] == expected_name
+    assert power_row["sample"] == 5
+
+    # `_daily_usage` groups by printer_id alone (no archive_id/energy_kwh
+    # filter), so it also sums the 3 time-accuracy rows and the 5 power-draw
+    # rows above (all `duration_seconds`-bearing, all "completed"): sample
+    # 3 + 5 + 10 = 18, total 3*3600 + 5*3600 + 10*21600 = 244800s over the
+    # 20 observed days set by the earliest usage row -> 3.4 h/day.
+    usage_row = data["usage_by_printer"][0]
+    assert usage_row["printer_id"] == deleted_printer_id
+    assert usage_row["printer_name"] == expected_name
+    assert usage_row["sample"] == 18
+    assert usage_row["hours_per_day"] == 3.4
+    assert usage_row["observed_days"] == 20

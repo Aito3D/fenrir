@@ -1391,6 +1391,52 @@ describe('CalculatorDefaultsPanel', () => {
   });
 });
 
+describe('CalculatorDefaultsPanel disables Save on a non-finite field (T-103)', () => {
+  // parseNum's `Number.isFinite` guard (calculatorSettingsShared.ts) is what
+  // stands between a non-finite value and CalculatorDefaultsPanel's
+  // `allValid` gate letting Save through. The obvious way to prove the gate
+  // is wired to it would be typing 'Infinity' into a field — but that
+  // doesn't reach parseNum at all here: NumberField renders a native
+  // `<input type="number">`, and per the HTML value-sanitization algorithm
+  // (which jsdom implements faithfully — verified directly: neither
+  // userEvent.type, userEvent.paste nor fireEvent.change can leave
+  // 'Infinity', '-Infinity', 'NaN' or an overflowing literal like '1e309' in
+  // a type="number" input's value; React's own reconciliation also
+  // continuously re-asserts `type="number"` on every render, so even
+  // forcing the DOM attribute to 'text' between renders gets reverted
+  // before a bypassed value can stick) — the browser's own input rejects
+  // those strings before onChange ever fires, so `form[key]` never becomes
+  // a non-finite-parsing string via typing. The literal scenario the task
+  // named is therefore untestable at the DOM level; it isn't reachable.
+  //
+  // The gate still matters for a value that reaches `form` state a
+  // different way: `defaultsFormValues` seeds the form straight from the
+  // GET /calculator/defaults response via `String(defaults[key])`, no DOM
+  // involved. A corrupted or overflowing row — e.g. a stale value left over
+  // from before T-071/T-090 closed the server-side holes, or any other
+  // upstream corruption — lands in `form` as the string "Infinity" this
+  // way, and it's this path the test below drives. JSON itself has no
+  // Infinity/NaN literal, so `HttpResponse.json({ ...Infinity })` cannot
+  // express it (JSON.stringify(Infinity) serializes to `null`); the raw
+  // response body below instead carries an overflowing numeric *literal*
+  // (`1e400`), which JSON.parse resolves to the actual `Infinity` value —
+  // exactly as a hand-crafted or corrupted payload could.
+  it('disables Save when the loaded row holds a value that resolves to Infinity', async () => {
+    const rawBody = JSON.stringify(baseDefaults).replace('"electricity_tariff":120', '"electricity_tariff":1e400');
+    server.use(
+      http.get('/api/v1/calculator/defaults', () => new HttpResponse(rawBody, { headers: { 'Content-Type': 'application/json' } })),
+    );
+
+    render(<CalculatorDefaultsPanel canUpdate />);
+
+    // Positive evidence the panel actually rendered from this response
+    // before asserting on the Save button — an untouched, finite field.
+    expect(await screen.findByLabelText(/Labor rate/)).toHaveValue(3000);
+
+    expect(screen.getByRole('button', { name: 'Save defaults' })).toBeDisabled();
+  });
+});
+
 describe('CalculatorDefaultsPanel permission gating (T-020)', () => {
   it('hides the Save control without calculator:update, while the values stay visible', async () => {
     server.use(http.get('/api/v1/calculator/defaults', () => HttpResponse.json(baseDefaults)));

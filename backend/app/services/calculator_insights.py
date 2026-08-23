@@ -52,6 +52,16 @@ _MIN_USAGE_DAYS = 14
 _FAILED_STATUSES = ("failed", "aborted")
 
 
+def _duration_usable_expr():
+    """SQL predicate: ``duration_seconds`` is present and non-zero (usable as-is)."""
+    return and_(PrintLogEntry.duration_seconds.isnot(None), PrintLogEntry.duration_seconds != 0)
+
+
+def _duration_missing_expr():
+    """SQL predicate: ``duration_seconds`` is absent or zero (needs the elapsed-time fallback)."""
+    return or_(PrintLogEntry.duration_seconds.is_(None), PrintLogEntry.duration_seconds == 0)
+
+
 class CalculatorInsightsService:
     """Aggregates measured pricing signals for GET /calculator/insights."""
 
@@ -151,14 +161,8 @@ class CalculatorInsightsService:
         # null or 0) are always fetched and still resolved/banded in Python,
         # since replicating that elapsed-time fallback in SQL would risk
         # timezone/precision drift this task explicitly warns against.
-        duration_usable = and_(
-            PrintLogEntry.duration_seconds.isnot(None),
-            PrintLogEntry.duration_seconds != 0,
-        )
-        duration_missing = or_(
-            PrintLogEntry.duration_seconds.is_(None),
-            PrintLogEntry.duration_seconds == 0,
-        )
+        duration_usable = _duration_usable_expr()
+        duration_missing = _duration_missing_expr()
         accuracy_in_band = (PrintArchive.print_time_seconds * 1.0 / PrintLogEntry.duration_seconds * 100).between(
             _ACCURACY_BAND_LO, _ACCURACY_BAND_HI
         )
@@ -235,14 +239,8 @@ class CalculatorInsightsService:
         # Python's automatic int/int promotion). Rows needing the
         # started_at/completed_at fallback are always fetched, unresolved,
         # and handled by the unchanged Python loop.
-        duration_usable = and_(
-            PrintLogEntry.duration_seconds.isnot(None),
-            PrintLogEntry.duration_seconds != 0,
-        )
-        duration_missing = or_(
-            PrintLogEntry.duration_seconds.is_(None),
-            PrintLogEntry.duration_seconds == 0,
-        )
+        duration_usable = _duration_usable_expr()
+        duration_missing = _duration_missing_expr()
         hours_expr = PrintLogEntry.duration_seconds * 1.0 / 3600
         implied_watts_expr = PrintLogEntry.energy_kwh * 1000 / hours_expr
         rows = await db.execute(
