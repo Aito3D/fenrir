@@ -11,7 +11,8 @@ import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { computePricing, formatMoney } from '../../utils/pricing';
 import { buildQuoteSummary } from '../../utils/quoteSummary';
-import { DEFAULT_STATE } from '../../hooks/useCalculatorState';
+import { DEFAULT_STATE, num, splitDecimalHours } from '../../hooks/useCalculatorState';
+import { correctedTimeH } from '../../utils/calculatorInsights';
 
 const mockFilaments = [
   {
@@ -156,6 +157,28 @@ const measuredFailureTotal = collapseSpaces(
       referencePricingFilament,
       referencePricingPrinter,
       { ...referencePricingDefaults, failure_rate_pct: 8 },
+    ).total_ttc,
+    'XPF',
+  ),
+);
+
+// Time-correction chip scenario: the reference case's 2 h slicer estimate
+// measured at 120% of actual (accuracy_pct) → the corrected wall-clock time
+// is shorter. Both the corrected field split and the resulting total are
+// derived from the real correctedTimeH/splitDecimalHours/computePricing
+// helpers — exactly what the component itself computes on Apply — instead
+// of a hand-typed literal that could silently drift from the source.
+const timeCorrectionAccuracyPct = 120;
+const timeCorrectionSplit = splitDecimalHours(correctedTimeH(2, timeCorrectionAccuracyPct));
+const timeCorrectionReconstructedH =
+  num(timeCorrectionSplit.timeD) * 24 + num(timeCorrectionSplit.timeH) + num(timeCorrectionSplit.timeM) / 60;
+const timeCorrectionTotal = collapseSpaces(
+  formatMoney(
+    computePricing(
+      { ...referencePricingInputs, printing_time_h: timeCorrectionReconstructedH },
+      referencePricingFilament,
+      referencePricingPrinter,
+      referencePricingDefaults,
     ).total_ttc,
     'XPF',
   ),
@@ -532,6 +555,122 @@ describe('CalculatorPage', () => {
     // dropped, after the failed save.
     const rowAfter = screen.getByText('Filament cost (PA6-CF)').closest('.animate-calc-tab-in') as HTMLElement;
     expect(within(rowAfter).getByRole('button', { name: 'Update profile' })).toBeInTheDocument();
+  });
+
+  it('easy mode: the time-correction chip applies the corrected time split and re-prices the job', async () => {
+    // Gate: easyMode (showTimeChip) + timeFromEstimate true, both seeded via
+    // the persisted state — typing into the time fields would itself clear
+    // timeFromEstimate and un-gate the chip, so the reference case's 2 h
+    // estimate is seeded as already "from a slicer" instead.
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state'
+        ? JSON.stringify({ weight: '40', time: '2', easyMode: true, timeFromEstimate: true })
+        : null,
+    );
+    server.use(
+      http.get('/api/v1/calculator/insights', () =>
+        HttpResponse.json({
+          ...neutralInsights,
+          // 120% vs the assumed 100% is a 20-point drift, well past the 2%
+          // gate; by_printer empty falls through to the overall figure.
+          time_accuracy: { overall_pct: timeCorrectionAccuracyPct, sample: 10, by_printer: [] },
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorPage />);
+    await screen.findByText('2 031 FCFP');
+
+    // Baseline fields before any correction — the reference case's 2 h.
+    expect(screen.getByLabelText('Hours')).toHaveValue(2);
+    expect(screen.getByLabelText('Minutes')).toHaveValue(null);
+
+    // The chip is up with the measured-accuracy hint text.
+    expect(screen.getByText('Your printers average 120% of slicer estimates')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Apply corrected time' }));
+
+    // Fields updated to the exact corrected split (derived from the real
+    // correctedTimeH/splitDecimalHours helpers, not a hand-typed literal).
+    await waitFor(() => {
+      expect(screen.getByLabelText('Hours')).toHaveValue(num(timeCorrectionSplit.timeH) || null);
+    });
+    expect(screen.getByLabelText('Minutes')).toHaveValue(num(timeCorrectionSplit.timeM) || null);
+    expect(screen.getByLabelText('Days')).toHaveValue(num(timeCorrectionSplit.timeD) || null);
+
+    // Total recomputes to the exact value computePricing predicts for the
+    // corrected time.
+    await screen.findByText(timeCorrectionTotal);
+    expect(screen.queryByText('2 031 FCFP')).not.toBeInTheDocument();
+
+    // Applying clears timeFromEstimate, so the chip is gone even though the
+    // drift condition alone would still be satisfied.
+    expect(screen.queryByRole('button', { name: 'Apply corrected time' })).not.toBeInTheDocument();
+  });
+
+  it('easy mode: dismissing the time-correction chip hides it and leaves the time fields unchanged', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state'
+        ? JSON.stringify({ weight: '40', time: '2', easyMode: true, timeFromEstimate: true })
+        : null,
+    );
+    server.use(
+      http.get('/api/v1/calculator/insights', () =>
+        HttpResponse.json({
+          ...neutralInsights,
+          time_accuracy: { overall_pct: timeCorrectionAccuracyPct, sample: 10, by_printer: [] },
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorPage />);
+    await screen.findByText('2 031 FCFP');
+    // Positive evidence the chip rendered before we dismiss it.
+    await screen.findByText('Your printers average 120% of slicer estimates');
+
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+
+    // Positive evidence the card itself is still there (not merely gone as
+    // a side effect of an unmount), then assert the chip's absence.
+    expect(screen.getByLabelText('Hours')).toHaveValue(2);
+    expect(screen.queryByText('Your printers average 120% of slicer estimates')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Apply corrected time' })).not.toBeInTheDocument();
+
+    // The time fields are untouched — dismiss only clears timeFromEstimate,
+    // it never rewrites the split.
+    expect(screen.getByLabelText('Hours')).toHaveValue(2);
+    expect(screen.getByLabelText('Minutes')).toHaveValue(null);
+    expect(screen.getByLabelText('Days')).toHaveValue(null);
+    // The total is still the untouched reference-case total.
+    expect(screen.getByText('2 031 FCFP')).toBeInTheDocument();
+  });
+
+  it('easy mode: the time-correction chip stays hidden when the measured drift is below the 2% threshold', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === 'calculator-state'
+        ? JSON.stringify({ weight: '40', time: '2', easyMode: true, timeFromEstimate: true })
+        : null,
+    );
+    server.use(
+      http.get('/api/v1/calculator/insights', () =>
+        HttpResponse.json({
+          ...neutralInsights,
+          // 101% vs 100% is only a 1-point drift — below the 2% gate.
+          time_accuracy: { overall_pct: 101, sample: 10, by_printer: [] },
+        }),
+      ),
+    );
+
+    render(<CalculatorPage />);
+    await screen.findByText('2 031 FCFP');
+    // Positive evidence the inputs card (and its time fields) rendered
+    // before asserting the chip's absence.
+    expect(screen.getByLabelText('Hours')).toHaveValue(2);
+
+    expect(screen.queryByRole('button', { name: 'Apply corrected time' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/of slicer estimates/)).not.toBeInTheDocument();
   });
 
   it('reality check card stays hidden without insights data', async () => {

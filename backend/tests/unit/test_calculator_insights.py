@@ -569,3 +569,98 @@ async def test_power_draw_matches_reference_implementation_exactly(printer_facto
     samples_by_printer = {row["sample"] for row in new_result}
     assert any(sample >= MIN_SAMPLE for sample in samples_by_printer)
     assert len(new_result) >= 3  # p_main, p5, p6
+
+
+# --- T-087: `_resolve_duration`'s started_at/completed_at fallback ----------
+#
+# The differential tests above mix fallback rows into a larger dataset and
+# only assert loose bounds (`>= 6`, `>= 3`). These two isolate the fallback
+# branch on its own -- every row's `duration_seconds` is None, so the only
+# way any of them contribute is via `_resolve_duration`'s elapsed-time
+# computation -- and assert the exact figures produced, through the real
+# HTTP route (not the service method directly).
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_time_accuracy_resolved_purely_from_timestamp_fallback(
+    async_client: AsyncClient, printer_factory, archive_factory, db_session
+):
+    printer = await printer_factory()
+    archive = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)  # 1h slicer estimate
+    # Three runs with NO duration_seconds at all -- only started_at/completed_at.
+    # Elapsed = 7200s (2h) each, so accuracy = 3600/7200*100 = 50.0%.
+    for _ in range(3):
+        db_session.add(
+            _run(
+                printer.id,
+                "completed",
+                archive_id=archive.id,
+                duration_seconds=None,
+                started_at=NOW - timedelta(seconds=7200),
+                completed_at=NOW,
+            )
+        )
+    # A clock-skew row: completed_at <= started_at -> `_resolve_duration`
+    # returns None -> must be silently excluded, not counted and not
+    # corrupting the average (e.g. via a negative or zero actual_seconds).
+    db_session.add(
+        _run(
+            printer.id,
+            "completed",
+            archive_id=archive.id,
+            duration_seconds=None,
+            started_at=NOW,
+            completed_at=NOW - timedelta(seconds=10),
+        )
+    )
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    acc = response.json()["time_accuracy"]
+    assert acc["overall_pct"] == 50.0
+    assert acc["sample"] == 3
+    assert acc["by_printer"][0]["accuracy_pct"] == 50.0
+    assert acc["by_printer"][0]["sample"] == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_power_draw_resolved_purely_from_timestamp_fallback(
+    async_client: AsyncClient, printer_factory, db_session
+):
+    printer = await printer_factory()
+    # Five runs with NO duration_seconds -- only started_at/completed_at.
+    # Elapsed = 3600s (1h) each, energy 0.2 kWh -> implied 200 W. Five clears
+    # MIN_SAMPLE (5).
+    for _ in range(5):
+        db_session.add(
+            _run(
+                printer.id,
+                "completed",
+                duration_seconds=None,
+                energy_kwh=0.2,
+                started_at=NOW - timedelta(seconds=3600),
+                completed_at=NOW,
+            )
+        )
+    # Clock-skew row: completed_at <= started_at -> `_resolve_duration`
+    # returns None -> excluded rather than dragging the average toward a
+    # bogus (near-infinite or negative) implied wattage.
+    db_session.add(
+        _run(
+            printer.id,
+            "completed",
+            duration_seconds=None,
+            energy_kwh=0.2,
+            started_at=NOW,
+            completed_at=NOW - timedelta(seconds=10),
+        )
+    )
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    rows = response.json()["power_by_printer"]
+    assert len(rows) == 1
+    assert rows[0]["avg_watts"] == 200.0
+    assert rows[0]["sample"] == 5

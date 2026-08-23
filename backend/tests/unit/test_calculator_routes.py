@@ -479,3 +479,54 @@ class TestCalculatorDefaults:
             async_client, "/api/v1/calculator/defaults", {"base_fee_flat": float("inf")}
         )
         assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_get_recovers_from_concurrent_first_insert_race(self, async_client, db_session):
+        """Exercise ``_get_or_create_defaults``'s loser-of-the-race branch.
+
+        Simulates two concurrent first requests: a "winner" row for id=1 is
+        already committed in the database (as if another request's insert won
+        the race), but this request's own initial lookup is intercepted to
+        look empty -- forcing it down the create branch just like it would be
+        if the row genuinely did not exist yet when that lookup ran. Its
+        subsequent INSERT then hits the REAL primary-key constraint (no
+        mocking of the commit/IntegrityError itself), and the handler must
+        catch it, roll back, and re-read -- returning the winner's actual row
+        (recognizable by its distinctive tax_pct) rather than raising or
+        fabricating a fresh empty-defaults row.
+        """
+        from unittest.mock import patch
+
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from backend.app.models.calculator import CalculatorDefaults
+
+        # The "other" concurrent request's winning row -- a value no fresh
+        # CalculatorDefaults() would ever produce (default tax_pct is 13.0),
+        # so a distinct value in the response proves we got THIS row back.
+        db_session.add(CalculatorDefaults(id=1, tax_pct=17.75))
+        await db_session.commit()
+
+        real_execute = AsyncSession.execute
+        state = {"intercepted": False}
+
+        async def flaky_execute(self, statement, *args, **kwargs):
+            sql = str(statement).lower()
+            if not state["intercepted"] and "calculator_defaults" in sql and "insert" not in sql:
+                state["intercepted"] = True
+
+                class _EmptyResult:
+                    def scalar_one_or_none(self_inner):
+                        return None
+
+                return _EmptyResult()
+            return await real_execute(self, statement, *args, **kwargs)
+
+        with patch.object(AsyncSession, "execute", flaky_execute):
+            resp = await async_client.get("/api/v1/calculator/defaults")
+
+        assert state["intercepted"], "the initial lookup was never reached -- test setup is stale"
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["id"] == 1
+        assert body["tax_pct"] == 17.75
