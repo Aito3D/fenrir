@@ -37,9 +37,7 @@ def live_state():
     """
     state = MagicMock()
     state.firmware_version = "01.10.00.00"
-    state.raw_data = {
-        "ams": [{"id": 0, "module_type": "n3f", "tray": [{"id": 0, "exists": True, "tray_type": "PLA"}]}]
-    }
+    state.raw_data = {"ams": [{"id": 0, "module_type": "n3f", "tray": [{"id": 0, "exists": True, "tray_type": "PLA"}]}]}
     with patch(
         "backend.app.services.printer_manager.printer_manager.get_status",
         new=MagicMock(return_value=state),
