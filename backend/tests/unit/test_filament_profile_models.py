@@ -19,6 +19,26 @@ async def test_filament_preset_defaults(db_session):
 
 
 @pytest.mark.asyncio
+async def test_filament_preset_updated_at_has_onupdate(db_session):
+    row = FilamentPreset()
+    db_session.add(row)
+    await db_session.commit()
+    await db_session.refresh(row)
+    created_at_after_insert = row.updated_at
+
+    # SQLite's timestamp granularity is coarse enough that a real UPDATE within the
+    # same test may not produce a strictly-later clock value, so assert the column
+    # is actually wired for refresh-on-update rather than relying on wall-clock drift.
+    assert FilamentPreset.__table__.c.updated_at.onupdate is not None
+
+    row.name = "changed"
+    await db_session.commit()
+    await db_session.refresh(row)
+    assert row.updated_at is not None
+    assert row.updated_at >= created_at_after_insert
+
+
+@pytest.mark.asyncio
 async def test_base_preset_roundtrip(db_session):
     db_session.add(BaseFilamentPreset(name="Bambu PLA Basic", filename="Bambu PLA Basic.json"))
     await db_session.commit()
