@@ -42,6 +42,14 @@ def test_scan_missing_folder_is_silent(bambu_dirs, tmp_path):
     assert svc.scan_user_presets() == []
 
 
+def test_scan_skips_invalid_utf8_file(bambu_dirs):
+    a, b, _ = bambu_dirs
+    (a / "bad.json").write_bytes(b"\xff\xfe{")
+    (a / "good.json").write_text("GOOD")
+    files = {f["filename"]: f["content"] for f in svc.scan_user_presets()}
+    assert files == {"good.json": "GOOD"}
+
+
 def test_compute_sync_stats(bambu_dirs):
     a, b, _ = bambu_dirs
     (a / "same.json").write_text("S")

@@ -36,7 +36,7 @@ def effective_bambu_user_id() -> str:
     well-known default.
     """
     uid = settings.bambu_user_id
-    if uid and uid.isdigit():
+    if uid and uid.isascii() and uid.isdigit():
         return uid
     logger.warning("Invalid BAMBU_USER_ID %r; falling back to default %s", uid, DEFAULT_BAMBU_USER_ID)
     return DEFAULT_BAMBU_USER_ID
@@ -83,8 +83,8 @@ def _read_json_files(folder: Path) -> list[tuple[str, str]]:
         return results
     for path in paths:
         try:
-            results.append((path.name, path.read_text()))
-        except OSError:
+            results.append((path.name, path.read_text(encoding="utf-8")))
+        except (OSError, UnicodeDecodeError):
             logger.warning("Could not read %s", path)
             continue
     return results
@@ -118,8 +118,8 @@ def read_bundle_preset(filename: str) -> str | None:
     if not path.is_file():
         return None
     try:
-        return path.read_text()
-    except OSError:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
         return None
 
 
@@ -196,7 +196,7 @@ def apply_sync(presets: list[dict[str, str]]) -> dict[str, int]:
                 continue
             try:
                 target = safe_join_under(folder, filename, http=False)
-                target.write_text(content)
+                target.write_text(content, encoding="utf-8")
             except (OSError, PathTraversalError):
                 logger.warning("Could not write %s into %s", filename, folder)
 
@@ -230,7 +230,7 @@ def parse_base_preset_file(path: Path) -> dict[str, str]:
     bundle listing stays complete even when a shipped file is malformed.
     """
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return {
             "name": path.stem,
