@@ -16,6 +16,7 @@ from backend.app.services.calculator_insights import (
     _FAILED_STATUSES,
     _MAX_PRINT_SECONDS,
     _MIN_POWER_SECONDS,
+    _MIN_USAGE_DAYS,
     _WATTS_BAND_HI,
     _WATTS_BAND_LO,
     MIN_SAMPLE,
@@ -400,6 +401,42 @@ async def test_daily_usage_short_window_suppressed(async_client: AsyncClient, pr
 
     response = await async_client.get("/api/v1/calculator/insights")
     assert response.json()["usage_by_printer"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_daily_usage_just_below_min_days_suppressed(async_client: AsyncClient, printer_factory, db_session):
+    printer = await printer_factory()
+    # 13 observed days -- one day short of _MIN_USAGE_DAYS (14). The offset
+    # of 12h off the day mark gives headroom against test-run drift on
+    # either side of the exact 13-day boundary.
+    for _ in range(10):
+        db_session.add(
+            _run(printer.id, "completed", duration_seconds=21600, created_at=NOW - timedelta(days=13, hours=12))
+        )
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    assert response.json()["usage_by_printer"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_daily_usage_at_min_days_included(async_client: AsyncClient, printer_factory, db_session):
+    printer = await printer_factory()
+    # 14 observed days -- exactly at _MIN_USAGE_DAYS (14), the low edge that
+    # must clear the gate.
+    for _ in range(10):
+        db_session.add(
+            _run(printer.id, "completed", duration_seconds=21600, created_at=NOW - timedelta(days=14, hours=12))
+        )
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    usage = response.json()["usage_by_printer"]
+    assert len(usage) == 1
+    assert usage[0]["printer_id"] == printer.id
+    assert usage[0]["observed_days"] == 14
 
 
 # --- T-076 differential test -------------------------------------------------
@@ -986,6 +1023,7 @@ def test_band_threshold_constants_have_expected_values():
     assert _WATTS_BAND_HI == 3000.0
     assert _MIN_POWER_SECONDS == 300
     assert _MAX_PRINT_SECONDS == 4 * 24 * 3600
+    assert _MIN_USAGE_DAYS == 14
 
 
 # _ACCURACY_BAND_LO / _ACCURACY_BAND_HI, via `_time_accuracy` (`overall_pct`
