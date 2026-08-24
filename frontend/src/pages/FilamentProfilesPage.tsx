@@ -28,6 +28,7 @@ import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { SearchableSelect } from '../components/SearchableSelect';
 import { PresetCard } from '../components/filament-profiles/PresetCard';
+import { PresetEditorModal } from '../components/filament-profiles/PresetEditorModal';
 import { SyncBaseResultModal } from '../components/filament-profiles/SyncBaseResultModal';
 import { SyncModal } from '../components/filament-profiles/SyncModal';
 import { presetComparator } from '../components/filament-profiles/presetJson';
@@ -106,9 +107,12 @@ export function FilamentProfilesPage() {
 
   const presets = useMemo<FilamentPreset[]>(() => presetsQuery.data ?? [], [presetsQuery.data]);
   const baseFilamentPresets = useMemo<BaseFilamentPreset[]>(() => baseQuery.data ?? [], [baseQuery.data]);
-  // Reserved for the editor modal (Task 12) — resolving `inherits` chains
-  // needs the base-preset list even though nothing here renders it yet.
-  void baseFilamentPresets;
+  // Extends the editor's material dropdown (spec §7.1) with any material
+  // type already used in the filament catalog but not in the built-in list.
+  const extraMaterials = useMemo(
+    () => Array.from(new Set((catalogQuery.data ?? []).map((f) => f.type).filter((m) => m !== ''))),
+    [catalogQuery.data],
+  );
 
   const [search, setSearch] = useState('');
   const [brandFilter, setBrandFilter] = useState(() => readBrandFilter());
@@ -117,8 +121,6 @@ export function FilamentProfilesPage() {
   const [sortField, setSortField] = useState<SortField>('name');
 
   const [editorState, setEditorState] = useState<EditorState>({ mode: 'closed' });
-  // Consumed by PresetEditorModal in Task 12 — this page only owns the state.
-  void editorState;
   const [confirmDelete, setConfirmDelete] = useState<FilamentPreset | null>(null);
   const [importing, setImporting] = useState(false);
   const [syncBaseBusy, setSyncBaseBusy] = useState(false);
@@ -200,8 +202,6 @@ export function FilamentProfilesPage() {
     },
     [queryClient, showToast, t],
   );
-  // Wired into PresetEditorModal in Task 12.
-  void handleSavePreset;
 
   // ── Delete ───────────────────────────────────────────────────────────────
   const handleDeleteConfirm = async () => {
@@ -581,7 +581,21 @@ export function FilamentProfilesPage() {
         </div>
       )}
 
-      {/* PresetEditorModal rendered here in Task 12 */}
+      {editorState.mode !== 'closed' &&
+        (() => {
+          const editingPreset = editorState.mode === 'edit' ? editorState.preset : null;
+          return (
+            <PresetEditorModal
+              preset={editingPreset}
+              presets={presets}
+              basePresets={baseFilamentPresets}
+              extraMaterials={extraMaterials}
+              onSave={(payload) => handleSavePreset(payload, editingPreset)}
+              onDelete={editingPreset ? () => setConfirmDelete(editingPreset) : null}
+              onClose={() => setEditorState({ mode: 'closed' })}
+            />
+          );
+        })()}
 
       {confirmDelete && (
         <ConfirmModal
