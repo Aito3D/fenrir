@@ -72,6 +72,7 @@ describe('PresetEditorModal — create mode', () => {
       expect(screen.getByRole('button', { name: `Remove Bambu Lab ${model} 0.4 nozzle` })).toBeInTheDocument();
     }
     expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Brand' })).toHaveFocus();
   });
 
   it('updates the title and filename as vendor/material/color are picked, and enables Save', async () => {
@@ -239,6 +240,64 @@ describe('PresetEditorModal — edit mode', () => {
       filename: 'SUNLU PETG - Magenta.json',
     });
     expect(typeof payload.content).toBe('string');
+  });
+
+  it('never saves the empty rawJson placeholder when the JSON tab is active', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <PresetEditorModal
+        preset={editPreset()}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={onSave}
+        onDelete={null}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'JSON' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    const payload = onSave.mock.calls[0][0];
+    expect(payload.content).not.toBe('');
+    // Falls back to the same generated content the General tab would save.
+    expect(JSON.parse(payload.content)).toMatchObject({ name: 'SUNLU PETG - Magenta' });
+  });
+
+  it('does not dismiss while a save is in-flight', async () => {
+    const user = userEvent.setup();
+    let resolveSave: () => void = () => {};
+    const onSave = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    const onClose = vi.fn();
+    render(
+      <PresetEditorModal
+        preset={editPreset()}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={onSave}
+        onDelete={null}
+        onClose={onClose}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+
+    resolveSave();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).not.toBeDisabled());
   });
 });
 

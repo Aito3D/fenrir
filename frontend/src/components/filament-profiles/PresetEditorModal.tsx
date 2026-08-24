@@ -113,10 +113,18 @@ export function PresetEditorModal({
 
   const resolveInherits = async (name: string, mergeOnto: (parent: PresetForm) => void) => {
     setParentStatus('resolving');
-    const parent = await buildResolvedParent(name, presets, basePresets, fetchBaseContent);
-    setResolvedParent(parent);
-    setParentStatus(parent ? 'found' : 'not-found');
-    if (parent) mergeOnto(parent);
+    try {
+      const parent = await buildResolvedParent(name, presets, basePresets, fetchBaseContent);
+      setResolvedParent(parent);
+      setParentStatus(parent ? 'found' : 'not-found');
+      if (parent) mergeOnto(parent);
+    } catch {
+      // Defensive: buildResolvedParent already swallows fetch/parse failures
+      // internally, but a stuck 'resolving' state (Reload spinning forever)
+      // is worse than surfacing this the same way as an unresolvable chain.
+      setResolvedParent(null);
+      setParentStatus('not-found');
+    }
   };
 
   // Mount: focus Brand, and resolve an existing `inherits` immediately.
@@ -214,13 +222,23 @@ export function PresetEditorModal({
     });
   };
 
+  const handleDismiss = () => {
+    if (saving) return;
+    requestClose();
+  };
+
   const handleDeleteClick = () => {
     requestClose();
     onDelete?.();
   };
 
   const handleSave = async () => {
-    const content = activeTab === 'json' ? rawJson : buildJson(form, baseData, resolvedParent, computedName);
+    // `rawJson` is only meaningful once Task 14 starts regenerating it on
+    // JSON-tab entry / edit; until then it's permanently '' and must never
+    // be sent as the saved content (this guard removes itself naturally
+    // once that wiring lands, since rawJson stops being '').
+    const content =
+      activeTab === 'json' && rawJson !== '' ? rawJson : buildJson(form, baseData, resolvedParent, computedName);
     let material = form.filament_type.trim();
     if (!material) {
       try {
@@ -260,7 +278,7 @@ export function PresetEditorModal({
         closing ? 'animate-overlay-out' : 'animate-overlay-in'
       }`}
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) requestClose();
+        if (e.target === e.currentTarget) handleDismiss();
       }}
     >
       <div
@@ -322,7 +340,7 @@ export function PresetEditorModal({
           </div>
           <button
             type="button"
-            onClick={requestClose}
+            onClick={handleDismiss}
             aria-label={t('filamentProfiles.close')}
             className="shrink-0 rounded p-1 text-bambu-gray/60 hover:bg-bambu-dark-tertiary hover:text-white"
           >
@@ -501,9 +519,16 @@ export function PresetEditorModal({
             </div>
           )}
 
-          {/* Temps / Cooling / Extrusion / Retract land in Task 13. */}
+          {/* Temps / Cooling / Extrusion / Retract land in Task 13 — a skeleton
+              stands in for the not-yet-built tab body rather than a bare
+              empty pane, with no new i18n strings needed for content that's
+              about to be replaced. */}
           {(activeTab === 'temps' || activeTab === 'cooling' || activeTab === 'extrusion' || activeTab === 'retract') && (
-            <div />
+            <div aria-busy="true" className="flex flex-col gap-3">
+              <div className="h-4 w-1/3 animate-pulse rounded bg-bambu-dark-tertiary" />
+              <div className="h-4 w-2/3 animate-pulse rounded bg-bambu-dark-tertiary" />
+              <div className="h-4 w-1/2 animate-pulse rounded bg-bambu-dark-tertiary" />
+            </div>
           )}
 
           {/* Raw JSON editing lands in Task 14. */}
@@ -522,7 +547,7 @@ export function PresetEditorModal({
                 {t('filamentProfiles.deletePreset')}
               </Button>
             )}
-            <Button variant="secondary" size="sm" onClick={requestClose}>
+            <Button variant="secondary" size="sm" onClick={handleDismiss} disabled={saving}>
               {t('filamentProfiles.cancel')}
             </Button>
             <Button
