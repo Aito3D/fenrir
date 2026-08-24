@@ -349,11 +349,50 @@ class CalculatorInsightsService:
             .where(Spool.cost_per_kg.isnot(None), Spool.archived_at.is_(None))
             .group_by(func.upper(Spool.material))
         )
-        return [
-            {"material": material, "avg_cost_per_kg": round(avg_cost, 2), "sample": count}
-            for material, avg_cost, count in rows.all()
-            if material and count >= MIN_SAMPLE
-        ]
+        published_brand_counts = await self._published_brand_counts_by_material(db)
+        result = []
+        for material, avg_cost, count in rows.all():
+            if not material or count < MIN_SAMPLE:
+                continue
+            # The published brand+material rows for this material are a
+            # visible partition of it. If they leave a small residual
+            # population — this material's total minus the sum of its
+            # published brand subgroups — that residual's average is
+            # recoverable by subtraction even though no single query
+            # discloses it directly (see T-089/T-106). Suppress the whole
+            # material row rather than let that residual leak through it.
+            residual = count - published_brand_counts.get(material, 0)
+            if 0 < residual < MIN_SAMPLE:
+                continue
+            result.append({"material": material, "avg_cost_per_kg": round(avg_cost, 2), "sample": count})
+        return result
+
+    async def _published_brand_counts_by_material(self, db: AsyncSession) -> dict[str, int]:
+        """Per-material sum of counts from the brand+material groups that
+        ``_spool_costs_by_brand`` actually publishes (i.e. that clear its own
+        MIN_SAMPLE floor). Used by ``_spool_costs`` to find the residual
+        population a material's published brand breakdown leaves unaccounted
+        for.
+        """
+        rows = await db.execute(
+            select(
+                func.upper(Spool.material),
+                func.count(Spool.id),
+            )
+            .where(
+                Spool.cost_per_kg.isnot(None),
+                Spool.archived_at.is_(None),
+                Spool.brand.isnot(None),
+            )
+            .group_by(func.upper(Spool.brand), func.upper(Spool.material))
+            .having(func.count(Spool.id) >= MIN_SAMPLE)
+        )
+        totals: dict[str, int] = {}
+        for material, count in rows.all():
+            if not material:
+                continue
+            totals[material] = totals.get(material, 0) + count
+        return totals
 
     async def _spool_costs_by_brand(self, db: AsyncSession) -> list[dict]:
         """Like ``_spool_costs`` but grouped by brand+material for exact matches."""

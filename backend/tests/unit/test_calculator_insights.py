@@ -192,6 +192,68 @@ async def test_spool_costs_by_material_at_min_sample_is_present(async_client: As
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_spool_costs_material_suppressed_when_residual_below_min_sample(async_client: AsyncClient, db_session):
+    """T-106: a material's own MIN_SAMPLE floor isn't enough — if its
+    published brand subgroups leave a residual population smaller than
+    MIN_SAMPLE, that residual's average is recoverable by subtracting the
+    brand rows' contribution from the material row's total (residual =
+    material sample - published brand samples). This reproduces the audit's
+    exact scenario: 5 SUNLU/PLA spools at 20.0 plus 1 unbranded PLA spool at
+    200.0 publish material avg 50.0/sample 6 and brand avg 20.0/sample 5,
+    from which the unbranded spool's cost_per_kg (200.0) is solvable as
+    6*50.0 - 5*20.0. The material row must be suppressed even though its own
+    sample (6) clears MIN_SAMPLE; the brand row is unaffected.
+    """
+    for _ in range(5):
+        db_session.add(Spool(material="PLA", brand="SUNLU", cost_per_kg=20.0))
+    db_session.add(Spool(material="PLA", cost_per_kg=200.0))  # unbranded — the residual
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    data = response.json()
+    material_rows = {r["material"]: r for r in data["spool_cost_by_material"]}
+    brand_rows = {(r["brand"], r["material"]): r for r in data["spool_cost_by_brand"]}
+    assert "PLA" not in material_rows
+    assert brand_rows[("SUNLU", "PLA")]["avg_cost_per_kg"] == 20.0
+    assert brand_rows[("SUNLU", "PLA")]["sample"] == 5
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_spool_costs_material_present_when_residual_at_min_sample(async_client: AsyncClient, db_session):
+    """Boundary: a residual population of exactly MIN_SAMPLE is itself a
+    large-enough group to publish safely — the strict '< MIN_SAMPLE' check
+    must not suppress it."""
+    for _ in range(5):
+        db_session.add(Spool(material="PLA", brand="SUNLU", cost_per_kg=20.0))
+    for _ in range(5):
+        db_session.add(Spool(material="PLA", cost_per_kg=100.0))  # residual of exactly MIN_SAMPLE
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    rows = {r["material"]: r for r in response.json()["spool_cost_by_material"]}
+    assert rows["PLA"]["sample"] == 10
+    assert rows["PLA"]["avg_cost_per_kg"] == 60.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_spool_costs_material_present_when_no_residual(async_client: AsyncClient, db_session):
+    """When a material's published brand subgroups account for its entire
+    sample (residual == 0), there's nothing left to solve for — the material
+    row is redundant with its brand row, not disclosive, and must stay."""
+    for _ in range(5):
+        db_session.add(Spool(material="PLA", brand="SUNLU", cost_per_kg=20.0))
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    rows = {r["material"]: r for r in response.json()["spool_cost_by_material"]}
+    assert rows["PLA"]["sample"] == 5
+    assert rows["PLA"]["avg_cost_per_kg"] == 20.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_spool_costs_average_by_brand(async_client: AsyncClient, db_session):
     """T-089: same suppression, grouped by brand+material. Polymaker/PLA has
     exactly MIN_SAMPLE (5); Bambu Lab/PLA has only one and must not appear —

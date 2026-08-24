@@ -224,7 +224,9 @@ export type RealityCheckSeverity
 ```regen: grep -rhoE --include="*.ts" --include="*.tsx" "^export (default function|function|const|type|interface|class|enum) [A-Za-z0-9_]+" frontend/src/components/calculator frontend/src/components/CalculatorSettingsPanels.tsx frontend/src/pages/CalculatorPage.tsx frontend/src/pages/CalculatorQuotePage.tsx | sort | uniq -c | sed "s/^ *//"```
 ```
 1 export const MARGIN_STEPS
+1 export const parseNum
 1 export const rowCls
+1 export const settingsTdCls
 1 export const stickyTdCls
 1 export const tdCls
 1 export const thCls
@@ -243,12 +245,19 @@ export type RealityCheckSeverity
 1 export function CalculatorTotalsCard
 1 export function CostSplitBar
 1 export function CostWaterfall
+1 export function CountBadge
 1 export function Money
+1 export function NoMatches
 1 export function PrinterComparisonChips
+1 export function SearchBox
 1 export function SegmentLegend
+1 export function SortHeader
+1 export function useEntityCrudMutations
+1 export function useSortToggle
 1 export function ZohoFilamentSearch
 1 export interface PrinterComparisonEntry
 1 export interface Segment
+1 export type SortDir
 ```
 
 ## Calculator API client methods

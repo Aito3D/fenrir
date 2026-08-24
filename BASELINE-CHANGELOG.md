@@ -3555,3 +3555,136 @@ added by this change (1094-1085) are covered (1009-1000). Reported honestly per 
 than asserting a single confident number: this machine's shared-load condition made a
 majority-of-runs measurement land below the ratchet even though the change itself is fully
 covered and no in-scope file's own coverage dropped.
+
+## T-106 fix — 2026-08-24 — a material spool-cost row is now suppressed when its published brand rows leave a small, solvable residual (user-approved behavior change)
+
+Audit `audit-security` found that T-089's per-group `MIN_SAMPLE` floor on `_spool_costs` and
+`_spool_costs_by_brand` in `calculator_insights.py` closes the *direct* per-record disclosure but
+not an *arithmetic* one: both the average and the exact `sample` count are published for every
+surviving group, and `_spool_costs_by_brand` filters out spools with a NULL brand while
+`_spool_costs` does not. With 5 spools `brand='SUNLU' material='PLA' cost_per_kg=20.0` plus one
+spool `brand=NULL material='PLA' cost_per_kg=200.0`, `GET /api/v1/calculator/insights` published
+`by_material: [{material: 'PLA', avg_cost_per_kg: 50.0, sample: 6}]` and
+`by_brand: [{brand: 'SUNLU', material: 'PLA', avg_cost_per_kg: 20.0, sample: 5}]` — from which the
+one unbranded spool's exact `cost_per_kg` (200.0) is recoverable as `6*50.0 - 5*20.0`, even though
+neither query discloses it directly. Gated only by `CALCULATOR_READ` (held by the default Viewers
+role), same class of issue as T-089.
+
+The auditor offered three remedies; the user approved exactly one — **residual suppression**: drop
+a material row whenever its published brand subgroups leave a residual population strictly between
+0 and `MIN_SAMPLE` (`residual = material sample count - sum of that material's published
+brand-group sample counts`). The other two alternatives — adding a NULL-brand bucket to
+`_spool_costs_by_brand` so the two aggregates cover the same population, and no longer publishing
+exact `sample` counts — were explicitly NOT implemented, neither instead nor in addition.
+
+**User-visible effect:** `spool_cost_by_material` in the response will now omit a material's row
+whenever the difference between its own `sample` and the sum of its visible `spool_cost_by_brand`
+rows' `sample`s is between 1 and 4 (i.e. `MIN_SAMPLE`, 5, exclusive on both ends means residuals of
+1-4 trigger suppression; a residual of 0 or ≥5 does not). This affects only materials that have
+*both* a published brand breakdown *and* a small unbranded/off-brand remainder; `spool_cost_by_brand`
+itself is completely unchanged — the SUNLU/PLA row above still appears with `avg_cost_per_kg: 20.0,
+sample: 5`. The calculator's one-click "apply measured average" button disappears with the
+suppressed material row, same as any other `MIN_SAMPLE` suppression.
+
+Implemented in `backend/app/services/calculator_insights.py`: added a private helper
+`_published_brand_counts_by_material` — a `SELECT UPPER(material), COUNT(id) ... GROUP BY
+UPPER(brand), UPPER(material) HAVING COUNT(id) >= MIN_SAMPLE` (i.e. exactly the population
+`_spool_costs_by_brand` actually publishes), summed per material. `_spool_costs` now calls it once
+and, for each material row that already clears its own `MIN_SAMPLE` floor, computes
+`residual = count - published_brand_counts.get(material, 0)` and skips the row when
+`0 < residual < MIN_SAMPLE`. `_spool_costs_by_brand` itself was not touched — no NULL-brand bucket
+was added, and both methods still publish exact `sample` counts, per the chosen alternative.
+
+New tests in `test_calculator_insights.py`: `test_spool_costs_material_suppressed_when_residual_below_min_sample`
+reproduces the audit's exact repro (5 SUNLU/PLA @ 20.0 + 1 unbranded PLA @ 200.0) and asserts the
+`PLA` material row is absent while the `SUNLU`/`PLA` brand row is untouched (`avg_cost_per_kg:
+20.0, sample: 5`). Two boundary tests pin the edges of the new condition:
+`test_spool_costs_material_present_when_residual_at_min_sample` (residual exactly `MIN_SAMPLE` — 5
+SUNLU/PLA @ 20.0 + 5 unbranded PLA @ 100.0 — must still publish, `sample: 10, avg_cost_per_kg:
+60.0`, since a residual that large is itself a safe-to-publish group) and
+`test_spool_costs_material_present_when_no_residual` (residual exactly 0 — 5 SUNLU/PLA @ 20.0 and
+nothing else — must still publish `sample: 5, avg_cost_per_kg: 20.0`, since a zero residual is
+redundant with the brand row, not disclosive). All pre-existing `_spool_costs`/`_spool_costs_by_brand`
+tests (T-089's `test_spool_costs_average_by_material`, `..._by_brand`, and the four
+`..._{below,at}_min_sample_is_{absent,present}` boundary tests) pass unchanged — none of their
+fixtures produce a `0 < residual < MIN_SAMPLE` case.
+
+Verification: `ruff check backend/` and `ruff format --check backend/` clean. Full backend suite:
+11731 passed, 1 skipped, 4 failed under `-n 30` (`test_scheduled_drying_routes.py::{test_create_and_list,
+test_cancel_pending, test_offline_printer_is_still_schedulable}` and
+`test_library_slice_api.py::TestCrossClassSliceAllLoop::test_user_requested_arrange_also_loops_per_plate`)
+— all four re-ran green in isolation (`test_scheduled_drying_routes.py` alone: 13/13 passed), confirming
+parallel-load flakiness unrelated to this change, matching the documented `test_library_slice_api.py`
+flake and the general "suite load flakes" pattern; no new failure. `tools/coverage_calc.sh backend`:
+703/707 = 99.43% statements, 122/130 = 93.85% branches (before: baseline 612/626 = 97.76%; most
+recent prior iteration 687/690 = 99.57%) — `calculator_insights.py` itself rose from its 92.05%
+baseline to 95.79%. Three lines remain uncovered in the file: two pre-existing (`_time_accuracy`
+line 203, `_power_draw` line 281, both untouched by this change) and one new defensive branch (`if
+not material: continue` in `_published_brand_counts_by_material`, mirroring the equally-uncovered
+`if brand and material` guard `_spool_costs_by_brand` already had) — `Spool.material` is a
+non-nullable column (`Mapped[str]`, no `| None`), so this guard is unreachable through the ORM and
+was left untested for the same reason its sibling guard was. `tools/snapshot.py verify`: 10/10
+probes matched, none moved — `calc-insights-pure` only exercises this module's constants,
+`_resolve_duration`, and `_split_materials`, none of which changed. `SURFACE.md`
+(`bash tools/gen_surface_calc.sh`): byte-identical — the new helper is a private class method
+(indented `async def`), invisible to the surface scanner's `^(def|class|async def)` anchor, same
+as every other private method in this file.
+
+## T-109 — 2026-08-24 — CONTRACT DISCLOSURE, not a behavior change (user-approved)
+
+Audit `audit-cleanliness` found that `calculatorSettingsShared.ts` and `CalculatorPanelParts.tsx`
+each justified their bare-footer export style (every binding declared without a leading `export`
+keyword, then re-exported via a trailing `export { ... }` / `export type { ... }` block) with an
+in-code comment claiming this is "what lets react-refresh/only-export-components pass without an
+extra ignore." That rationale was empirically false: rewriting either file with plain leading
+`export const` / `export function` declarations also passes the rule cleanly, because each file
+already exports only one kind of thing (all-non-components in `calculatorSettingsShared.ts`,
+all-components in `CalculatorPanelParts.tsx`) — exactly the case
+`react-refresh/only-export-components` already permits, with no ignore comment and no
+`eslint.config.js` exemption-list entry needed either way. The bare-footer style's only actual
+effect was to hide these files' 8 (now 9, see below) exports from `SURFACE.md`'s
+`^export (default function|function|const|type|interface|class|enum) ...` regex — a frozen-contract
+blind spot, not a lint workaround.
+
+The user was asked whether to approve the resulting `SURFACE.md` growth before this was done, since
+moving a frozen artifact needs an explicit decision. They approved it: switch both files to plain
+leading exports, regenerate `SURFACE.md`, and record the disclosure here.
+
+**This is not a behavior change.** No logic, JSX, control flow, or export *names* changed — only the
+syntax used to export the same 8 bindings each file already exported (`parseNum`, `settingsTdCls`,
+`useSortToggle`, `SortDir`, `SortHeader`, `SearchBox`, `CountBadge`, `NoMatches`), plus a 9th,
+`useEntityCrudMutations`, added earlier this same iteration by T-108 (committed before this task
+started, deliberately left on the old bare-footer convention pending this task). Every existing
+importer (`CalculatorFilamentsPanel.tsx`, `CalculatorPrintersPanel.tsx`,
+`CalculatorDefaultsPanel.tsx`, and the two test files) uses named imports and required no changes.
+
+**Newly visible in `SURFACE.md`** (9 additions under "Calculator component exports", all additive —
+nothing existing was removed or altered):
+```
+1 export const parseNum
+1 export const settingsTdCls
+1 export function CountBadge
+1 export function NoMatches
+1 export function SearchBox
+1 export function SortHeader
+1 export function useEntityCrudMutations
+1 export function useSortToggle
+1 export type SortDir
+```
+
+Also removed the two now-false rationale comments (the react-refresh claim in both files, and the
+bare-footer/SURFACE-regex-dodge explanation in both files); replaced with a short true statement of
+why the non-JSX helpers live in a separate file, or nothing.
+
+Verification: `npx eslint` on both rewritten files alone: zero output, exit 0 — confirms
+`react-refresh/only-export-components` genuinely passes with plain leading exports; no
+`eslint.config.js` exemption was needed. Full `npx eslint .` and `npx tsc -b --noEmit`: clean.
+`npm run build`: succeeds (`static/` reverted after, per worktree convention). `tools/snapshot.py
+verify`: 10/10 probes matched, none moved. Full frontend suite (`npx vitest run --retry=3`): one
+clean run at 347/347 files, 4862/4862 tests; other runs on the same tree saw 1-4 files flake
+(`StatsPageUserFilter1894`, `CalculatorPage`, `QueuePage` — all on the documented known-flaky list)
+under host load averages of 40-51, all passing in isolation. `tools/coverage_calc.sh frontend`:
+90.44%-91.46% statements across repeated runs (985-996/1089), same range as an A/B run against the
+unmodified baseline files under identical load (90.44%, 985/1089 exactly) — confirming the run-to-run
+variance is pre-existing host-load flakiness (the documented `CalculatorPage.test.tsx` degradation
+under load), not caused by this change. All values clear the frozen RATCHET floor of 87.32%.

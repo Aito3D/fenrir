@@ -4,7 +4,7 @@
 
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import {
   api,
@@ -23,8 +23,7 @@ import { inputCls, labelCls } from '../formStyles';
 import { formatMoney, formatPct } from '../../utils/pricing';
 import { getCurrencySymbol } from '../../utils/currency';
 import { FILAMENT_BRANDS, FILAMENT_MATERIALS } from '../../utils/filamentOptions';
-import { useToast } from '../../contexts/ToastContext';
-import { parseNum, settingsTdCls, useSortToggle } from './calculatorSettingsShared';
+import { parseNum, settingsTdCls, useEntityCrudMutations, useSortToggle } from './calculatorSettingsShared';
 import { SortHeader, SearchBox, CountBadge, NoMatches } from './CalculatorPanelParts';
 
 /** Margin choices offered in the dropdown: 0 % to 200 % in 25 % steps. */
@@ -439,7 +438,6 @@ export function CalculatorFilamentsPanel({
   canUpdate: boolean;
 }) {
   const { t } = useTranslation();
-  const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<CalculatorFilament | 'new' | null>(null);
   const [toDelete, setToDelete] = useState<CalculatorFilament | null>(null);
@@ -582,25 +580,17 @@ export function CalculatorFilamentsPanel({
     }
   };
 
-  const saveMutation = useMutation({
-    mutationFn: (data: CalculatorFilamentCreate) =>
-      editing && editing !== 'new' ? api.updateCalculatorFilament(editing.id, data) : api.createCalculatorFilament(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['calculatorFilaments'] });
-      showToast(t(editing === 'new' ? 'calculator.filamentCreated' : 'calculator.filamentUpdated'));
-      setEditing(null);
-    },
-    onError: (error: Error) => showToast(error.message, 'error'),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => api.deleteCalculatorFilament(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['calculatorFilaments'] });
-      showToast(t('calculator.filamentDeleted'));
-      setToDelete(null);
-    },
-    onError: (error: Error) => showToast(error.message, 'error'),
+  const { saveMutation, deleteMutation } = useEntityCrudMutations<CalculatorFilament, CalculatorFilamentCreate>({
+    queryKey: ['calculatorFilaments'],
+    editing,
+    create: api.createCalculatorFilament,
+    update: api.updateCalculatorFilament,
+    remove: api.deleteCalculatorFilament,
+    createdMsg: 'calculator.filamentCreated',
+    updatedMsg: 'calculator.filamentUpdated',
+    deletedMsg: 'calculator.filamentDeleted',
+    onSaved: () => setEditing(null),
+    onDeleted: () => setToDelete(null),
   });
 
   const materials = useMemo(

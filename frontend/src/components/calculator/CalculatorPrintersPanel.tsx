@@ -4,7 +4,7 @@
 
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { api, type CalculatorPrinter, type CalculatorPrinterCreate } from '../../api/client';
 import { Button } from '../Button';
@@ -19,8 +19,7 @@ import {
   printerRepairsPerHour,
 } from '../../utils/pricing';
 import { getCurrencySymbol } from '../../utils/currency';
-import { useToast } from '../../contexts/ToastContext';
-import { parseNum, settingsTdCls, useSortToggle } from './calculatorSettingsShared';
+import { parseNum, settingsTdCls, useEntityCrudMutations, useSortToggle } from './calculatorSettingsShared';
 import { SortHeader, SearchBox, CountBadge, NoMatches } from './CalculatorPanelParts';
 
 interface PrinterFormState {
@@ -157,8 +156,6 @@ export function CalculatorPrintersPanel({
   canUpdate: boolean;
 }) {
   const { t } = useTranslation();
-  const { showToast } = useToast();
-  const queryClient = useQueryClient();
   const [editing, setEditing] = useState<CalculatorPrinter | 'new' | null>(null);
   const [toDelete, setToDelete] = useState<CalculatorPrinter | null>(null);
   const [search, setSearch] = useState('');
@@ -173,25 +170,17 @@ export function CalculatorPrintersPanel({
   const currency = settings?.currency || 'USD';
   const currencySymbol = getCurrencySymbol(currency);
 
-  const saveMutation = useMutation({
-    mutationFn: (data: CalculatorPrinterCreate) =>
-      editing && editing !== 'new' ? api.updateCalculatorPrinter(editing.id, data) : api.createCalculatorPrinter(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['calculatorPrinters'] });
-      showToast(t(editing === 'new' ? 'calculator.printerCreated' : 'calculator.printerUpdated'));
-      setEditing(null);
-    },
-    onError: (error: Error) => showToast(error.message, 'error'),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => api.deleteCalculatorPrinter(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['calculatorPrinters'] });
-      showToast(t('calculator.printerDeleted'));
-      setToDelete(null);
-    },
-    onError: (error: Error) => showToast(error.message, 'error'),
+  const { saveMutation, deleteMutation } = useEntityCrudMutations<CalculatorPrinter, CalculatorPrinterCreate>({
+    queryKey: ['calculatorPrinters'],
+    editing,
+    create: api.createCalculatorPrinter,
+    update: api.updateCalculatorPrinter,
+    remove: api.deleteCalculatorPrinter,
+    createdMsg: 'calculator.printerCreated',
+    updatedMsg: 'calculator.printerUpdated',
+    deletedMsg: 'calculator.printerDeleted',
+    onSaved: () => setEditing(null),
+    onDeleted: () => setToDelete(null),
   });
 
   const visible = useMemo(() => {
