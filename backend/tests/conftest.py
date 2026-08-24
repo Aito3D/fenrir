@@ -261,6 +261,7 @@ async def test_engine():
         color_catalog,
         external_link,
         filament,
+        filament_profile,
         group,
         kprofile_note,
         maintenance,

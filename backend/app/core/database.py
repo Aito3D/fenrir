@@ -299,6 +299,7 @@ async def init_db():
         color_catalog,
         external_link,
         filament,
+        filament_profile,
         filament_sku_settings,
         finance,
         github_backup,
