@@ -179,6 +179,8 @@ const DE_COGNATES = [
   'Auto',  // DE: established abbreviation for "automatisch" in UI labels (camera grid quality)
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
   'Score',  // #1546 AI detection modal — established DE loanword (Duden)
+  // Task 14 — filament profile editor: German technical terms borrowed as-is.
+  'Import', 'Extrusion', '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil',
 ];
 
 // French cognates — many UI labels overlap with English exactly.
@@ -233,6 +235,9 @@ const FR_COGNATES = [
   'Client',  // Task 9 Aito client combobox label — same word in French
   'Simple', 'Expert',  // slicer settings visibility tiers — identical words in French
   'Support',  // same word in French
+  // Task 14 — filament profile editor: French loanwords / model codes.
+  'Import', '{{n}} preset', '{{n}} presets', 'Menu', 'Extrusion',
+  '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil', 'cal', 'Options',
 ];
 
 // Italian cognates.
@@ -271,6 +276,8 @@ const IT_COGNATES = [
   'Off',  // cam-wall status overlay mode — common loanword in Italian UI
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
   'Skirt / brim',  // Italian slicer UIs keep the English terms
+  // Task 14 — filament profile editor: Italian loanwords / model codes.
+  '{{n}} preset', 'Menu', '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil', 'cal',
 ];
 
 // Japanese: very few cognates because of script difference. Almost
@@ -286,6 +293,8 @@ const JA_COGNATES = [
   'EC984C,#6CD4BC,A66EB9,D87694',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
   'username',  // aito.socialHandlePlaceholder — Latin username token, not translated
+  // Task 14 — filament profile editor: Japanese loanwords / model codes.
+  '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil',
 ];
 
 // Portuguese (BR) cognates.
@@ -321,6 +330,8 @@ const PT_BR_COGNATES = [
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
   'Email',  // Task 6 Aito client email field — "Email" is used verbatim in PT-BR (see fromEmail, usernameOrEmail)
   '{{days}} d',  // aito.ageDaysShort — "d" is also the abbreviation for "dia" in Portuguese (BR)
+  // Task 14 — filament profile editor: PT-BR loanwords / model codes.
+  '{{n}} preset', '{{n}} presets', 'Menu', '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil', 'cal',
 ];
 
 // Chinese (Simplified): very few cognates beyond brand names.
@@ -334,6 +345,8 @@ const ZH_CN_COGNATES = [
   'EC984C,#6CD4BC,A66EB9,D87694',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
   'username',  // aito.socialHandlePlaceholder — Latin username token, not translated
+  // Task 14 — filament profile editor: Chinese (Simplified) model codes / brand names.
+  '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil',
 ];
 
 const ZH_TW_COGNATES = [
@@ -346,6 +359,8 @@ const ZH_TW_COGNATES = [
   'EC984C,#6CD4BC,A66EB9,D87694',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
   'username',  // aito.socialHandlePlaceholder — Latin username token, not translated
+  // Task 14 — filament profile editor: Chinese (Traditional) model codes / brand names.
+  '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil',
 ];
 
 // Korean: script difference means almost nothing is identical.
@@ -367,6 +382,8 @@ const KO_COGNATES = [
   'Obico ML API URL',                                 // product name (Obico)
   '{{filament}} @ {{temp}}°C',                        // drying badge format
   'username',                                         // aito.socialHandlePlaceholder — Latin username token, not translated
+  // Task 14 — filament profile editor: Korean model codes / brand names.
+  '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil',
 ];
 
 // Spanish cognates — words/phrases that are genuinely identical in Spanish.
@@ -393,6 +410,8 @@ const ES_COGNATES = [
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
   '{{days}} d',  // aito.ageDaysShort — "d" is also the abbreviation for "día" in Spanish
   'Simple',  // slicer settings visibility tier — identical word in Spanish
+  // Task 14 — filament profile editor: Spanish loanwords / model codes.
+  '{{n}} preset', '{{n}} presets', '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil', 'cal',
 ];
 
 // Turkish cognates — technical UI labels that Turkish speakers use verbatim
@@ -411,6 +430,8 @@ const TR_COGNATES = [
   'Filament {{index}} ({{type}})',
   'EC984C,#6CD4BC,A66EB9,D87694',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
+  // Task 14 — filament profile editor: Turkish technical terms / model codes.
+  '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil', 'Z-hop',
 ];
 
 const RU_COGNATES = [
@@ -425,6 +446,9 @@ const RU_COGNATES = [
   '(25%, 50%, 75%)',
   'Email',  // Task 6 Aito client email field — "email"/"Email" is used as a loanword in RU (see usernameOrEmail)
   'username',  // aito.socialHandlePlaceholder — Latin username token, not translated
+  '+ H2S / H2D / H2C / X2D',
+  'SuperTack',
+  'nil',
 ];
 
 // Ukrainian keeps only Latin brand names and placeholder/punctuation-only
@@ -440,6 +464,9 @@ const UK_COGNATES = [
   '({{count}}/8)',
   '(25%, 50%, 75%)',
   'username',                                         // aito.socialHandlePlaceholder — Latin username token, not translated
+  '+ H2S / H2D / H2C / X2D',
+  'SuperTack',
+  'nil',
 ];
 
 const IDENTICAL_TO_EN_ALLOWED = {

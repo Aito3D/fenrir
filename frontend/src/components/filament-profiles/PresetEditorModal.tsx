@@ -70,9 +70,10 @@ const BRAND_ID = 'fp-editor-brand';
 
 /**
  * The preset editor (spec §6): a fixed-height modal with header / tab bar /
- * scrollable content / footer. General (§7.1) and Temps/Cooling/Extrusion/
- * Retract (§7.2/§7.4-7.6) are implemented here (the latter four delegate to
- * their own EditorTab* components); the JSON tab lands in Task 14.
+ * scrollable content / footer. General (§7.1), Temps/Cooling/Extrusion/
+ * Retract (§7.2/§7.4-7.6), and the bidirectional JSON tab (§7.7) are
+ * implemented here (the middle four delegate to their own EditorTab*
+ * components).
  */
 export function PresetEditorModal({
   preset,
@@ -86,7 +87,7 @@ export function PresetEditorModal({
   const { t } = useTranslation();
   const isCreate = preset === null;
 
-  const [baseData] = useState<Record<string, unknown>>(() => parseBaseData(preset?.content));
+  const [baseData, setBaseData] = useState<Record<string, unknown>>(() => parseBaseData(preset?.content));
   const [form, setForm] = useState<PresetForm>(() => {
     let initial = parseContentToForm(baseData, preset?.color);
     if (preset) {
@@ -105,10 +106,10 @@ export function PresetEditorModal({
   // SearchableSelect always has a value matching one of its own options.
   const [selectedBase, setSelectedBase] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('general');
-  // Both wired for real in Task 14 (JSON tab): regenerated on tab-switch,
-  // re-parsed on every keystroke.
-  const [rawJson] = useState('');
-  const [jsonError] = useState(false);
+  // Regenerated from the form on entering the JSON tab; re-parsed on every
+  // keystroke (spec §7.7 — bidirectional JSON tab).
+  const [rawJson, setRawJson] = useState('');
+  const [jsonError, setJsonError] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const { closing, requestClose, dialogRef } = useDismissableDialog(onClose, { animationMs: 220 });
@@ -236,11 +237,32 @@ export function PresetEditorModal({
     onDelete?.();
   };
 
+  const handleTabClick = (tab: Tab) => {
+    if (tab === 'json' && activeTab !== 'json') {
+      setRawJson(buildJson(form, baseData, resolvedParent, computedName));
+      setJsonError(false);
+    }
+    setActiveTab(tab);
+  };
+
+  const handleRawJsonChange = (text: string) => {
+    setRawJson(text);
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      setJsonError(false);
+      const parsedObject = parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+      setBaseData(parsedObject);
+      setForm((f) => ({ ...parseContentToForm(parsedObject, f.color), nozzle_size: f.nozzle_size }));
+    } catch {
+      setJsonError(true);
+      // Leave form/baseData untouched — an in-progress edit shouldn't blow
+      // away the last-known-good state.
+    }
+  };
+
   const handleSave = async () => {
-    // `rawJson` is only meaningful once Task 14 starts regenerating it on
-    // JSON-tab entry / edit; until then it's permanently '' and must never
-    // be sent as the saved content (this guard removes itself naturally
-    // once that wiring lands, since rawJson stops being '').
+    // Before the JSON tab has ever been entered, `rawJson` is '' and must
+    // never be sent as the saved content.
     const content =
       activeTab === 'json' && rawJson !== '' ? rawJson : buildJson(form, baseData, resolvedParent, computedName);
     let material = form.filament_type.trim();
@@ -358,7 +380,7 @@ export function PresetEditorModal({
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => handleTabClick(tab.id)}
               aria-current={activeTab === tab.id}
               className={`rounded-t-lg px-3 py-2 text-sm font-medium transition-colors ${
                 activeTab === tab.id
@@ -528,8 +550,25 @@ export function PresetEditorModal({
           {activeTab === 'extrusion' && <EditorTabExtrusion form={form} setForm={setForm} />}
           {activeTab === 'retract' && <EditorTabRetract form={form} setForm={setForm} />}
 
-          {/* Raw JSON editing lands in Task 14. */}
-          {activeTab === 'json' && <div />}
+          {activeTab === 'json' && (
+            <div className="flex h-full flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-bambu-gray/70">{t('filamentProfiles.jsonCaption')}</p>
+                {jsonError && (
+                  <span className="shrink-0 rounded-full bg-red-500/20 px-2 py-0.5 text-xs font-medium text-red-400">
+                    {t('filamentProfiles.invalidJson')}
+                  </span>
+                )}
+              </div>
+              <textarea
+                rows={24}
+                spellCheck={false}
+                value={rawJson}
+                onChange={(e) => handleRawJsonChange(e.target.value)}
+                className="w-full flex-1 resize-none rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-3 py-2 font-mono text-xs text-white focus:border-bambu-green focus:outline-none sm:text-sm"
+              />
+            </div>
+          )}
         </div>
 
         {/* Footer */}

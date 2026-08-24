@@ -15,7 +15,7 @@
 
 import { useState } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PresetEditorModal } from '../../../components/filament-profiles/PresetEditorModal';
 import { TagInput } from '../../../components/filament-profiles/TagInput';
@@ -503,5 +503,115 @@ describe('PresetEditorModal — parameter tabs (Task 13)', () => {
 
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
     expect(JSON.parse(onSave.mock.calls[0][0].content).filament_z_hop_types).toEqual(['Slope Lift']);
+  });
+});
+
+describe('PresetEditorModal — JSON tab (Task 14)', () => {
+  it('regenerates the textarea from the form on entering the tab, preserving unknown keys and forcing identity fields', async () => {
+    const user = userEvent.setup();
+    render(
+      <PresetEditorModal
+        preset={editPreset({
+          content: JSON.stringify({ nozzle_temperature: ['230'], custom_key: ['x'] }),
+        })}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={vi.fn()}
+        onDelete={null}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'JSON' }));
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    expect(textarea.value).toContain('"nozzle_temperature"');
+    const parsed = JSON.parse(textarea.value);
+    expect(parsed.custom_key).toEqual(['x']);
+    expect(parsed.name).toBeTruthy();
+    expect(parsed.filament_settings_id).toEqual([parsed.name]);
+    expect(parsed.from).toBe('User');
+    expect(screen.queryByText('Invalid JSON')).not.toBeInTheDocument();
+  });
+
+  it('rebuilds the form from typed valid JSON (a changed temp field is reflected on the Temps tab)', async () => {
+    const user = userEvent.setup();
+    render(
+      <PresetEditorModal
+        preset={editPreset()}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={vi.fn()}
+        onDelete={null}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'JSON' }));
+    const textarea = screen.getByRole('textbox');
+    fireEvent.change(textarea, { target: { value: JSON.stringify({ nozzle_temperature: ['999'] }) } });
+    expect(screen.queryByText('Invalid JSON')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Temperatures' }));
+    // Anchored: several bed-plate rows also have "Print" in their accessible
+    // name (e.g. "Hot Plate Print °C"), but only this field's name starts with it.
+    expect(screen.getByRole('spinbutton', { name: /^Print/ })).toHaveValue(999);
+  });
+
+  it('flags invalid JSON, disables Save, and clears the flag once the text is fixed', async () => {
+    const user = userEvent.setup();
+    render(
+      <PresetEditorModal
+        preset={editPreset()}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={vi.fn()}
+        onDelete={null}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'JSON' }));
+    const textarea = screen.getByRole('textbox');
+    fireEvent.change(textarea, { target: { value: '{broken' } });
+
+    expect(screen.getByText('Invalid JSON')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+
+    fireEvent.change(textarea, { target: { value: JSON.stringify({ nozzle_temperature: ['210'] }) } });
+
+    expect(screen.queryByText('Invalid JSON')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+  });
+
+  it('preserves only the color label through a JSON round-trip', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <PresetEditorModal
+        preset={editPreset()}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={onSave}
+        onDelete={null}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'JSON' }));
+    const textarea = screen.getByRole('textbox');
+    fireEvent.change(textarea, {
+      target: { value: JSON.stringify({ filament_vendor: ['SUNLU'], filament_type: ['PETG'], filament_cost: ['24.99'] }) },
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    const payload = onSave.mock.calls[0][0];
+    expect(payload.color).toBe('Magenta');
   });
 });
