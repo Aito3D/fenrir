@@ -332,6 +332,68 @@ async def test_spool_costs_by_brand_at_min_sample_is_present(async_client: Async
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_spool_costs_material_present_with_empty_string_brand_residual(async_client: AsyncClient, db_session):
+    """T-117: an empty-string brand (``brand=""``) is a legitimate stored
+    value, distinct from NULL — and, like NULL, it is never emitted by
+    ``_spool_costs_by_brand`` (whose own filter is ``if brand and
+    material``, and ``""`` is falsy). A brand+material group meeting
+    MIN_SAMPLE with an empty-string brand must therefore NOT be treated as
+    "published elsewhere" when computing the residual: the old code's
+    `Spool.brand.isnot(None)` wrongly counted it as published, inflating the
+    subtotal and suppressing this material row even though its brand
+    breakdown was never actually shown at ``spool_cost_by_brand``.
+    """
+    for _ in range(5):
+        db_session.add(Spool(material="PLA", brand="", cost_per_kg=20.0))
+    for _ in range(3):
+        db_session.add(Spool(material="PLA", cost_per_kg=200.0))  # unbranded (NULL) — the residual
+
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    data = response.json()
+    material_rows = {r["material"]: r for r in data["spool_cost_by_material"]}
+    brand_rows = {(r["brand"], r["material"]): r for r in data["spool_cost_by_brand"]}
+    assert material_rows["PLA"]["sample"] == 8
+    assert material_rows["PLA"]["avg_cost_per_kg"] == round((5 * 20.0 + 3 * 200.0) / 8, 2)
+    # The empty-string brand group is never emitted by spool_cost_by_brand.
+    assert ("", "PLA") not in brand_rows
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_spool_costs_residual_sums_multiple_published_brands(async_client: AsyncClient, db_session):
+    """The residual is the material's sample minus the SUM of every
+    published brand subgroup's sample, not just one of them. Two distinct
+    brands (SUNLU, POLYMAKER) each independently clear MIN_SAMPLE and are
+    both published; a residual of 3 unbranded spools is only within the
+    suppression band (0, MIN_SAMPLE) — 13 - (5 + 5) = 3 — if both brand
+    counts are folded into the published subtotal. Losing either brand's
+    contribution (e.g. overwriting instead of accumulating) would leave a
+    residual of 13 - 5 = 8, which wrongly escapes suppression.
+    """
+    for _ in range(5):
+        db_session.add(Spool(material="PLA", brand="SUNLU", cost_per_kg=20.0))
+    for _ in range(5):
+        db_session.add(Spool(material="PLA", brand="POLYMAKER", cost_per_kg=30.0))
+    for _ in range(3):
+        db_session.add(Spool(material="PLA", cost_per_kg=200.0))  # unbranded — the residual
+
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    data = response.json()
+    material_rows = {r["material"]: r for r in data["spool_cost_by_material"]}
+    brand_rows = {(r["brand"], r["material"]): r for r in data["spool_cost_by_brand"]}
+    assert "PLA" not in material_rows
+    assert brand_rows[("SUNLU", "PLA")]["sample"] == 5
+    assert brand_rows[("SUNLU", "PLA")]["avg_cost_per_kg"] == 20.0
+    assert brand_rows[("POLYMAKER", "PLA")]["sample"] == 5
+    assert brand_rows[("POLYMAKER", "PLA")]["avg_cost_per_kg"] == 30.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_power_draw_energy_weighted(async_client: AsyncClient, printer_factory, db_session):
     printer = await printer_factory()
     # 5 prints: 2h at 0.2 kWh each → 100 W energy-weighted.

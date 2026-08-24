@@ -189,6 +189,20 @@ async function openTheEditFormFor(filament: CalculatorFilament) {
   return update;
 }
 
+// Stands in for a background refetch of ['calculatorFilaments'] triggered
+// elsewhere (another tab's edit, a Zoho price sync) — invalidating the
+// query without the form itself doing anything. Used to hand back a
+// freshly-deserialized (so reference-distinct) row object for the same id,
+// the way a real refetch would.
+function InvalidateFilamentsButton() {
+  const queryClient = useQueryClient();
+  return (
+    <button type="button" onClick={() => queryClient.invalidateQueries({ queryKey: ['calculatorFilaments'] })}>
+      simulate background refetch
+    </button>
+  );
+}
+
 describe('CalculatorFilamentsPanel', () => {
   beforeEach(() => {
     mockDefaultsHandler();
@@ -431,6 +445,125 @@ describe('CalculatorFilamentsPanel', () => {
     // The row is still there — onDeleted (which clears toDelete) never ran,
     // and the failed delete never invalidated the listing query.
     expect(screen.getByRole('cell', { name: 'PLA' })).toBeInTheDocument();
+  });
+
+  // T-119: useEntityCrudMutations must not resolve a save against whatever
+  // `editing` happens to be *when the response lands* — only against the
+  // form it was actually issued for. Reproduces the exact sequence from the
+  // audit: edit X, hit Save (slow), Cancel before it resolves, open a
+  // different (new) form and type into it, then let X's stale save land.
+  it('does not close a newly opened form or misname the toast when a cancelled save resolves late', async () => {
+    const filaments: CalculatorFilament[] = [baseFilament];
+    let releaseUpdate: (f: CalculatorFilament) => void = () => {};
+    const deferredUpdate = new Promise<CalculatorFilament>((resolve) => {
+      releaseUpdate = resolve;
+    });
+    vi.spyOn(api, 'updateCalculatorFilament').mockReturnValue(deferredUpdate);
+
+    await renderFilamentsPanel(filaments);
+
+    // Edit the only row (Sunlu PLA) and hit Save — the request never
+    // resolves until releaseUpdate() is called below.
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit filament' }));
+    const cost = screen.getByLabelText(/^Cost per kg/);
+    await userEvent.clear(cost);
+    await userEvent.type(cost, '22');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    // Cancel is not gated on the in-flight save, so this succeeds while the
+    // PATCH above is still pending.
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByLabelText(/^Cost per kg/)).not.toBeInTheDocument();
+
+    // Open a brand new form (a different `editing`) and start typing.
+    await userEvent.click(screen.getByRole('button', { name: 'Add filament' }));
+    await userEvent.type(screen.getByLabelText('Brand'), 'Prusament');
+
+    // The stale edit-of-X save now lands.
+    releaseUpdate({ ...baseFilament, cost_per_kg: 22 });
+
+    // The toast names what actually happened (an update), not whatever
+    // `editing` moved on to.
+    expect(await screen.findByText('Filament updated', {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.queryByText('Filament added')).not.toBeInTheDocument();
+
+    // The newly opened Add form is untouched — still open, typed value intact.
+    expect(screen.getByLabelText('Brand')).toHaveValue('Prusament');
+    expect(screen.queryByRole('button', { name: 'Add filament' })).not.toBeInTheDocument();
+  });
+
+  // Companion to the test above: reopening the *same* row (same id) while
+  // its own save is still in flight — rather than a different form — must
+  // still close it once the save lands. This is the `snapshot.id ===
+  // current.id` half of useEntityCrudMutations' `sameTarget` check
+  // (calculatorSettingsShared.ts); the test above never reaches it, since
+  // there `current` is `'new'` and short-circuits on `snapshot === current`
+  // being false without ever comparing ids. A background refetch between
+  // Cancel and reopening is folded in deliberately (see the source
+  // comment's own "even if a background refetch handed back a new object
+  // for it"): without it, `editing` would just be re-set to the exact same
+  // cached row object both times, so `snapshot === current` alone would
+  // already be true and the id comparison would never actually run.
+  it('closes the form when its own save resolves after the same row was reopened for editing via a refetched object', async () => {
+    const filaments: CalculatorFilament[] = [baseFilament];
+    server.use(
+      http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(filaments)),
+      http.get('/api/v1/zoho/status', () =>
+        HttpResponse.json({ configured: true, reachable: null, default_contact_id: '', default_contact_name: '' }),
+      ),
+    );
+    let releaseUpdate: (f: CalculatorFilament) => void = () => {};
+    const deferredUpdate = new Promise<CalculatorFilament>((resolve) => {
+      releaseUpdate = resolve;
+    });
+    vi.spyOn(api, 'updateCalculatorFilament').mockReturnValue(deferredUpdate);
+
+    render(
+      <>
+        <InvalidateFilamentsButton />
+        <CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />
+      </>,
+    );
+    await screen.findByRole('button', { name: 'Add filament' });
+    await screen.findByRole('button', { name: 'Sync prices' });
+
+    // Edit the only row (Sunlu PLA) and hit Save — the request never
+    // resolves until releaseUpdate() is called below.
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit filament' }));
+    const cost = screen.getByLabelText(/^Cost per kg/);
+    await userEvent.clear(cost);
+    await userEvent.type(cost, '22');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    // Cancel is not gated on the in-flight save, so this succeeds while the
+    // PATCH above is still pending.
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByLabelText(/^Cost per kg/)).not.toBeInTheDocument();
+
+    // Something else (another tab) refetches the list after touching an
+    // unrelated field (`updated_at`) — React Query's default structural
+    // sharing would otherwise silently reuse the exact same object
+    // reference for an unchanged row, which would make `snapshot ===
+    // current` true on its own and never actually exercise the id
+    // comparison this test targets.
+    filaments[0] = { ...filaments[0], updated_at: '2026-01-02T00:00:00Z' };
+    await userEvent.click(screen.getByRole('button', { name: 'simulate background refetch' }));
+
+    // Reopen the SAME row (same id, now a different object). The reopened
+    // form shows the unedited value — Cancel discarded the '22' typed
+    // earlier, and the still-pending save hasn't landed yet.
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit filament' }));
+    expect(screen.getByLabelText(/^Cost per kg/)).toHaveValue(20);
+
+    // The stale save for that same row now lands.
+    releaseUpdate({ ...baseFilament, cost_per_kg: 22 });
+
+    expect(await screen.findByText('Filament updated', {}, { timeout: 5000 })).toBeInTheDocument();
+
+    // Same entity by id (even though not the same object reference): the
+    // reopened form closes, back to the listing.
+    expect(await screen.findByRole('button', { name: 'Add filament' }, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Cost per kg/)).not.toBeInTheDocument();
   });
 });
 

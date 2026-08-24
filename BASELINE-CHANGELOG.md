@@ -3788,3 +3788,280 @@ probe's scope; `calc-route-perms`, `calc-ddl`, `calc-column-defaults`, `calc-zoh
 `calc-insights-pure`, `calc-migration-sql`, `calc-pricing`, `calc-frontend-pure` all matched
 byte-for-byte). `SURFACE.md` moved by one line — `class InsightsWindowDays` added to the schema
 class listing (`R3`) — and was regenerated with `bash tools/gen_surface_calc.sh > SURFACE.md`.
+
+## T-117 / T-120 — 2026-08-24 — `_spool_costs` residual publish-predicate mismatch (user-approved behavior change)
+
+Two audits converged on one implementation. `_spool_costs` computes a residual per material —
+its own sample count minus the sum of what `_spool_costs_by_brand` actually publishes for that
+material — and suppresses the material row when that residual is a small (0 < residual <
+`MIN_SAMPLE`), individually-solvable population (T-089/T-106). Two independent defects lived in
+how that residual was computed:
+
+- **T-117 (audit-cleanliness)**: the helper that summed "published brand counts per material"
+  filtered rows with `Spool.brand.isnot(None)` in SQL, while `_spool_costs_by_brand` — the
+  function whose actual output the helper is supposed to mirror — filters with `if brand and
+  material and count >= MIN_SAMPLE` in Python. `Spool.brand` is nullable free text
+  (`models/spool.py`), and an empty string (`""`) is a legitimate stored value: `isnot(None)`
+  admits it, `if brand` (falsy) rejects it. A brand+material group with an empty-string brand
+  meeting `MIN_SAMPLE` was therefore counted as "published elsewhere" by the residual math even
+  though `_spool_costs_by_brand` never emits it — over-suppressing the material row.
+- **T-120 (audit-robustness)**: `_spool_costs` computed its own aggregate, then made a *second*,
+  independent DB round trip for the published-brand subtotal. Between the two awaits, a
+  concurrent spool insert/edit/archive could shift the second population relative to the first,
+  making the residual computed from an inconsistent snapshot (no cross-statement isolation is
+  configured — see `database.py:83`).
+
+Both fixes converge on the same implementation: `_spool_costs` now issues **one** query — `SELECT
+upper(brand), upper(material), sum(cost_per_kg), count(id) ... GROUP BY upper(brand),
+upper(material)` — and folds the rows in Python into (a) each material's total (every priced,
+unarchived spool, including NULL- and empty-string-brand rows, summed across all its brand
+subgroups) and (b) the published-brand subtotal per material, applying the exact same predicate
+`_spool_costs_by_brand` applies: `if brand and count >= MIN_SAMPLE` (material truthiness is
+already guaranteed by an outer `if not material: continue` that applies to both foldings). One
+read, one predicate, both defects gone. The separate `_published_brand_counts_by_material` helper
+method was removed; its logic is now inline in `_spool_costs`. `_spool_costs_by_brand` itself is
+unchanged — it still runs its own query for the actual `spool_cost_by_brand` API field.
+
+Direction confirmed empirically (not just reasoned through): reverted the service to its pre-fix
+form and ran the new empty-string-brand test (5 spools `material="PLA", brand=""`, priced 20.0,
+plus 3 unbranded (`NULL`) spools priced 200.0) against it — `spool_cost_by_material` had no "PLA"
+key at all (`KeyError: 'PLA'`), confirming the material row is hidden today. With the fix restored,
+the same scenario yields `{"material": "PLA", "sample": 8, "avg_cost_per_kg": 87.5}` — the row now
+appears, matching the approved direction (over-suppression only, never under-suppression or leak).
+
+Approved user-facing description, quoted verbatim: "For materials that have an empty-string-brand
+subgroup meeting the sample-size floor, the calculator's spool-cost insight may currently hide
+that material's average cost from the reality-check panel when it should be shown (the
+empty-brand subgroup is wrongly treated as already visible via the brand breakdown, so it's
+subtracted out of the 'how much is unaccounted for' check); fixing the mismatch could make a
+previously-hidden material average reappear." T-120 itself is **not** a behavior change (a
+correctness fix to a race with no observable effect under single-writer test conditions) — it
+rode along in the same commit because both defects live in the same method and converge on the
+same fix.
+
+Tests added (`backend/tests/unit/test_calculator_insights.py`): an empty-string-brand case pinning
+the material row now appears; a multi-brand case (two distinct published brands, SUNLU and
+POLYMAKER, each independently clearing `MIN_SAMPLE`, plus a 3-spool unbranded residual) asserting
+the residual is the material sample minus the SUM of every published brand's count, not just one —
+mutating the fold's `+=` to `=` was verified to make this new test fail (`'PLA' not in
+material_rows` assertion fails, row wrongly present with sample 13) while all pre-existing T-106
+tests kept passing. The three pre-existing T-106 tests
+(`test_spool_costs_material_suppressed_when_residual_below_min_sample`,
+`test_spool_costs_material_present_when_residual_at_min_sample`,
+`test_spool_costs_material_present_when_no_residual`) pass unchanged.
+
+Snapshot fallout: none. `calc-insights-pure` only probes module constants, `_resolve_duration`,
+and `_split_materials` — none of which changed — and matched byte-for-byte; full `verify` run:
+10/10 probes match, none re-recorded. `SURFACE.md` did not move: the removed
+`_published_brand_counts_by_material` was a method indented inside `CalculatorInsightsService`,
+not a module-level `^def`/`^class`, so it was never listed and its removal is invisible to the
+generator (confirmed by diffing `gen_surface_calc.sh` output before/after — byte-identical).
+
+## T-119 — 2026-08-24 — a save's success no longer resolves against whatever form is open when it lands (user-approved behavior change)
+
+`useEntityCrudMutations` (`frontend/src/components/calculator/calculatorSettingsShared.ts`) is the
+shared save/delete `useMutation` pair behind `CalculatorFilamentsPanel` and
+`CalculatorPrintersPanel`. Its save mutation's `onSuccess` used to read the panel's `editing` state
+directly from an enclosing closure: `showToast(t(editing === 'new' ? createdMsg : updatedMsg));
+onSaved();`. Confirmed in `@tanstack/query-core` before changing anything (as directed): React
+Query v5's `useMutation` re-runs `observer.setOptions(options)` in a `useEffect` on *every* render
+(`node_modules/@tanstack/react-query/src/useMutation.ts`), and `MutationObserver#setOptions`
+propagates that straight onto the in-flight `Mutation` — `if (this.#currentMutation?.state.status
+=== 'pending') this.#currentMutation.setOptions(this.options)`
+(`node_modules/@tanstack/query-core/src/mutationObserver.ts`) — and `Mutation#execute` later reads
+`this.options.onSuccess` (not a value captured at the moment the mutation started)
+(`node_modules/@tanstack/query-core/src/mutation.ts`). So a save's `onSuccess` ran against
+whichever `editing` was current *when the response landed*, not whichever it was *when the save
+was issued*. Neither panel disables its Cancel button while saving
+(`CalculatorFilamentsPanel.tsx`, `CalculatorPrintersPanel.tsx`), so: edit filament X, hit Save
+(slow), Cancel before it resolves, open a different form (edit filament Y, or "Add filament") and
+start typing, then let X's save land — `onSaved()` (`setEditing(null)`) fired unconditionally,
+closing Y's form and discarding everything typed into it, with a toast worded for whichever action
+`editing` most recently implied rather than the one the landed save actually performed.
+
+Reproduced first, before changing the fix code: added a test to
+`frontend/src/__tests__/components/CalculatorSettingsPanels.test.tsx` that edits a filament, saves
+it against a `vi.spyOn(api, 'updateCalculatorFilament')` mock returning a manually-controlled
+Promise, cancels before that promise resolves, opens the "Add filament" form and types into its
+Brand field, then resolves the deferred update. Against the pre-fix hook the test failed:
+`findByText('Filament updated', ...)` timed out (the toast said "Filament added" instead — named
+from whatever `editing` had become, not from what the landed save had actually done) and the DOM
+dump at the point of failure showed the Add form already gone, back to the list view (`onSaved()`
+had fired and cleared `editing`, discarding the "Prusament" the test had just typed). After the
+fix, the same test passes: the toast reads "Filament updated" and the Add form's Brand field still
+holds "Prusament".
+
+Fix: `useEntityCrudMutations` now snapshots `editing` into a local (`const snapshot = editing`) at
+the moment `save()` calls `saveMutation.mutate(data, { onSuccess: ... })`, and supplies that
+`onSuccess` as a **per-call** option rather than as one of `useMutation`'s own base options.
+Per-call `mutate(variables, options)` options are captured once in
+`MutationObserver#mutate`'s private `#mutateOptions` and are never refreshed by `setOptions` —
+only the *base* options are — so the closure over `snapshot` genuinely stays fixed to the save
+that issued it. The toast is chosen from `snapshot` (`snapshot === 'new' ? createdMsg :
+updatedMsg`), naming the action that specific save actually performed. `onSaved()` is called only
+when `snapshot` still matches `editing` *as of when the response lands* — read through a plain
+ref (`editingRef.current = editing`, updated every render) rather than a second closure, since a
+second closure captured at the same moment as the fix's own `onSuccess` would have exactly the
+staleness problem being fixed. Entities are compared by id (falling back to `snapshot === current`
+for `'new'`/`null`) so a same-entity re-open surviving an unrelated background refetch (a new
+object, same id) still counts as the same form. `mutationFn` itself was left reading the enclosing
+`editing` directly — it only runs synchronously inside the `mutate()` call that issues the request,
+before any later render could move `editing` out from under it, so it was never part of this bug.
+The auditor's suggested second line of defence (disabling Cancel while `isPending`) was
+deliberately **not** added — it's a separate, unapproved UI change, and the approved behavior
+explicitly covers the case where the operator has *already* cancelled.
+
+No panel call site changed: both `CalculatorFilamentsPanel.tsx` and `CalculatorPrintersPanel.tsx`
+still call `saveMutation.mutate(data)` exactly as before — the hook returns
+`{ ...saveMutation, mutate: save }`, so only `.mutate` itself is swapped for the snapshotting
+wrapper; `.isPending` and everything else callers read is untouched.
+
+Approved user-facing description, quoted verbatim: "A filament or printer save that finishes after
+you have already cancelled it and opened a different form will no longer close that second form
+and throw away what you typed, and its confirmation message will name the right action."
+
+Tests: the new failing-then-passing regression test above, plus all 61 pre-existing tests in
+`CalculatorSettingsPanels.test.tsx` (including T-124's six error-path tests) pass unchanged — 62/62
+in the file. Full frontend suite: 4,863-4,868/4,869 pass depending on host load; every failure seen
+was in a file already on the KNOWN FLAKY list (`ModelViewerModal.test.tsx`, `PrintModal.test.tsx`,
+`StatsPageUserFilter1894.test.tsx`) and passed in an isolated rerun on an idle machine.
+
+Snapshot fallout: none — this is a frontend-only change to a hook's internals. Full `verify` run:
+10/10 probes match, none re-recorded. `SURFACE.md` did not move (diffed byte-for-byte before/after
+`gen_surface_calc.sh`): `useEntityCrudMutations` was already a module-level export before this
+change and its signature (parameters and return shape) is unchanged; only the function body moved.
+
+## T-117 / T-120 follow-up — 2026-08-24 — gate caught two undisclosed behavior changes in the fix above; both reverted
+
+The blind verifier failed the iteration that shipped the T-117/T-120 fix above. Its single-query
+`GROUP BY upper(brand), upper(material)` re-implementation, folded in Python, changed two things
+the changelog entry above never claimed and no one approved:
+
+- **Order.** The old (pre-fix) `_spool_costs` queried `GROUP BY upper(material)` alone and
+  returned rows in whatever order SQLite's grouping produced for that query — empirically,
+  ascending alphabetical by `upper(material)` (confirmed by driving `loop-15`'s actual service
+  against 2,800 randomized inventories; see below). The fix's `GROUP BY upper(brand),
+  upper(material))` changed the physical sort key, so `material_totals` (built by iterating those
+  rows and taking first-appearance order per material) came out primarily ordered by *brand*, with
+  material only a tiebreak — a different order whenever a material had multiple brands or the
+  brand-sort put two materials in a different relative position than the material-sort would have.
+  This is observable: `frontend/src/utils/calculatorInsights.ts` finds the first fuzzy
+  (substring-either-way) match in `spool_cost_by_material`, so `PLA` vs. `PLA-CF` or `PET` vs.
+  `PETG` resolving to the wrong row was a direct, silent consequence of the reorder.
+- **Average.** The old query computed each material's average with a single SQL `avg()` over every
+  row for that material. The fix instead summed `func.sum(cost_per_kg)` per brand+material group in
+  SQL, then re-summed those partial sums and divided in Python. Floating-point addition is not
+  associative, so re-grouping the same values into different partial sums before adding them can
+  flip the last ULP of the total and, with it, the 2-decimal-place rounding (3 of 400 randomized
+  inventories reproduced a one-cent divergence during triage).
+
+Neither was intentional; neither is in the approved user-facing description above (which covers
+only the empty-string-brand residual reappearance). Both are reverted here, without touching either
+approved fix (T-117's predicate, T-120's single read).
+
+**Fix**: `_spool_costs` now issues one `UNION ALL` of two independently-grouped branches in a
+single `db.execute()` — still one read, still one snapshot, so T-120 (no cross-statement
+inconsistency) still holds:
+- `material_agg`: `SELECT 'material', NULL, upper(material), avg(cost_per_kg), count(id) ...
+  GROUP BY upper(material)` — byte-for-byte the same query the pre-fix code ran standalone, so its
+  `avg()`/`count()` values and its row order are exactly what that query has always produced. No
+  Python re-summation of partial sums; SQL's own float accumulation is used, unchanged.
+- `brand_agg`: `SELECT 'brand', upper(brand), upper(material), NULL, count(id) ... GROUP BY
+  upper(brand), upper(material))` — the same grouping `_spool_costs_by_brand` uses, feeding the
+  published-brand subtotal.
+
+`material_totals` is now populated only from `kind == 'material'` rows, in the order they arrive —
+i.e. exactly `material_agg`'s (= the original standalone query's) order, regardless of how
+`brand_agg` rows are interleaved with them in the unioned result. `published_brand_counts` is
+folded from `kind == 'brand'` rows with T-117's exact predicate (`if brand and count >=
+MIN_SAMPLE`), unchanged. The per-material total is still a true superset of every brand subgroup
+(NULL- and empty-string-brand included) because `material_agg` has no brand predicate at all —
+it's the same query that has always produced that total.
+
+**On the order**: the task that caught this warned not to assume `sorted(material_totals.items())`
+would reproduce the old order without checking. It wasn't checked here, because it wasn't needed —
+`material_agg` isn't a *re-derivation* of the old order, it's *the same SQL statement* (as a UNION
+ALL branch) that produced it before, so there is no separate ordering claim to verify beyond
+confirming UNION ALL doesn't reorder a branch's own rows relative to each other (verified: see
+below). Whether that order is itself "defined" by anything beyond SQLite's current query-planner
+behavior for an unindexed `GROUP BY` is a separate question this fix does not need to answer, and
+does not change: the requirement was byte-for-byte parity with `loop-15`, not a principled
+ordering, and reusing `loop-15`'s exact query text is the only way to get that without gambling on
+an assumption.
+
+**On the average**: the `UNION ALL` of the verbatim old query, above, rather than a window function
+or Python re-summation. A `func.avg(...).over(partition_by=...)` was considered, but it would
+either (a) run over the already-brand-grouped rows, averaging *group averages* rather than raw
+values (wrong, and not equal to the old computation), or (b) require restructuring the query around
+raw per-spool rows to get a true full-population window average, which is a materially different
+query shape from the one being reproduced and would need its own byte-for-byte proof rather than
+inheriting one for free. Issuing the original query verbatim as one UNION ALL branch sidesteps the
+question entirely — it cannot drift from what it always computed, because it's the same statement.
+
+**The differential**: built a throwaway `git worktree add <scratch> loop-15`, loaded both
+`calculator_insights.py` module files (HEAD and `loop-15`) via `importlib` against a shared
+in-memory SQLite database (models are identical between the two revisions — diffed, no changes),
+and drove `_spool_costs` on both over randomized inventories seeded with: multiple brands per
+material, empty-string brands, NULL brands, materials that are substrings of one another (`PLA` /
+`PLA-CF` / `PLA-CF-XL`, `PET` / `PETG`), mixed case, non-ASCII brand values (`café`, `北京` — SQLite's
+`upper()` is ASCII-only, left as-is), and archived/priceless spools. 2,800 trials across two runs
+(seeds `1234`/800 trials, `987654`/2,000 trials, plus a targeted deterministic replay of the
+changelog's own empty-string-brand example): **0 unsanctioned differences.** 7 trials produced a
+difference, and in every one it was exactly the sanctioned shape — a material present in HEAD's
+output that is absent from `loop-15`'s (never the reverse, never a value change, never a reorder of
+any material both outputs share), landing in its correct alphabetical slot relative to the
+materials already present (e.g. trial 504/seed 987654: HEAD returned `[ABS, PET, PLA, PLA-CF,
+PLA-CF-XL]` where `loop-15` had `[ABS, PET, PLA-CF, PLA-CF-XL]` — `PLA` appears, in place, nothing
+else moves). Separately confirmed the UNION ALL's `material_agg` branch alone reproduces the
+standalone pre-fix query's row order and `avg()`/`count()` values exactly across 200 additional
+trials before wiring it into the real fix. The scratch worktree was removed
+(`git worktree remove --force`) and pruned; `git worktree list` shows only the real checkouts.
+
+Tests: `backend/tests/unit/test_calculator_insights.py` — all pre-existing tests (66 in the file,
+including the T-117/T-120 empty-string-brand and multi-brand-residual tests above) pass unchanged;
+none of them pinned an order or an exact float average, which is exactly why this regression
+shipped past them and needed the differential above to catch and prove fixed rather than a unit
+test. Full backend suite: 11,758 passed, 1 skipped (matches baseline; no new failures). Full
+frontend suite: `CalculatorSettingsPanels.test.tsx` 63/63 (one test added — see below); full-suite
+runs saw failures confined to `PrintModal.test.tsx`, `ModelViewerModal.test.tsx`,
+`StatsPageUserFilter1894.test.tsx`, all on the KNOWN FLAKY list and confirmed passing in an
+isolated rerun.
+
+Coverage: backend scoped 712/716 = 99.44% (unchanged from the T-117/T-120 measurement, 711/715 =
+99.44% — net +1 statement/+1 covered from this fix's larger query construction, ratio unchanged,
+still above the 97.76% floor). Frontend scoped 1017/1097 = 92.7% statements (up from the prior
+996/1097 = 90.79%, from the new test below; above the 87.32% floor).
+
+Snapshot fallout: none. `calc-insights-pure` does not probe `_spool_costs` (only module constants,
+`_resolve_duration`, `_split_materials`). Full `verify` run: 10/10 probes match, none re-recorded.
+`SURFACE.md` regenerated and diffed byte-for-byte identical to before this fix.
+
+### Companion: mutation-testing gap in the T-119 test, closed
+
+The verifier also mutation-tested `useEntityCrudMutations`'s `sameTarget` check (T-119, above) and
+found that neutering `snapshot.id === current.id` (replacing it with `false`) left all 62
+pre-existing frontend tests green — the existing "different form stays open" test never reaches
+that branch (it short-circuits on `snapshot === current` being false for a `'new'` target without
+ever comparing ids), and nothing else exercised the same-entity-reopened case.
+
+Added `closes the form when its own save resolves after the same row was reopened for editing via
+a refetched object` to `CalculatorSettingsPanels.test.tsx`: edits filament X, hits Save against a
+deferred (never-auto-resolving) mock, Cancels before it resolves, then — critically — triggers a
+simulated background refetch (`queryClient.invalidateQueries`, the same pattern the T-031 tests
+already use for `CalculatorDefaultsPanel`) after mutating an unrelated field (`updated_at`) on the
+seed row, forcing React Query's default structural sharing to hand back a **new object reference**
+for the same id rather than reusing the original. Reopens the same row (now a different object,
+same id) and lets the stale save land. Asserts the form closes (back to the "Add filament" listing
+control, edit fields gone).
+
+The refetch step is load-bearing and was verified necessary, not decorative: without mutating an
+unrelated field before invalidating, React Query's structural sharing reuses the exact same object
+reference for an unchanged row on refetch, so `snapshot === current` would already be true and the
+id-comparison branch would never run — confirmed by instrumenting the hook temporarily and
+observing `snapshot === current` was `true` post-refetch when the seed data was left unchanged,
+and `false` (same id, different reference) once an unrelated field was mutated first.
+
+Mutation evidence: reverted `snapshot.id === current.id` to `false` in
+`calculatorSettingsShared.ts` — the new test failed (`findByRole('button', { name: 'Add filament'
+})` timed out; the form never closed). Restored the source (diffed byte-for-byte identical to
+before) — the new test, and all 63 tests in the file, pass again.

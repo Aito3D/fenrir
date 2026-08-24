@@ -18,7 +18,7 @@ from a couple of prints is noise dressed up as truth.
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, literal_column, null, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.archive import PrintArchive
@@ -340,19 +340,69 @@ class CalculatorInsightsService:
         return sorted(entries.values(), key=lambda r: -r["sample"])
 
     async def _spool_costs(self, db: AsyncSession) -> list[dict]:
-        rows = await db.execute(
+        # One round trip, two independently-aggregated branches unioned
+        # together — not one grouped-by-brand+material read re-folded in
+        # Python. Two things matter here and a single ``GROUP BY upper(brand),
+        # upper(material))`` can't give both at once:
+        #   - the per-material average/count must be bit-identical to a bare
+        #     ``avg(cost_per_kg) ... GROUP BY upper(material)`` (no brand in
+        #     the grouping key), both in the value (SQL's own float
+        #     accumulation, not a Python re-sum of per-brand partial sums,
+        #     which re-associates the additions and can flip the last ULP —
+        #     see the regression this fixes) and in row order (SQLite's
+        #     grouping/sort order for that exact query, which callers rely on
+        #     — see `calculatorInsights.ts`'s first-fuzzy-match lookup);
+        #   - the published-brand subtotal needs counts from exactly the
+        #     brand+material groups ``_spool_costs_by_brand`` emits, which
+        #     does require grouping by brand.
+        # `material_agg` is that bare per-material query, verbatim. `brand_agg`
+        # is `_spool_costs_by_brand`'s own grouping (predicate re-applied in
+        # Python below, identically). UNION ALL keeps both in one statement —
+        # one snapshot, so a spool inserted/edited/archived between the two
+        # populations can't skew the residual (T-120) — while each branch's
+        # own GROUP BY still computes and orders independently, so
+        # `material_agg`'s rows arrive exactly as they would standalone.
+        material_agg = (
             select(
-                func.upper(Spool.material),
-                func.avg(Spool.cost_per_kg),
-                func.count(Spool.id),
+                literal_column("'material'").label("kind"),
+                null().label("brand"),
+                func.upper(Spool.material).label("material"),
+                func.avg(Spool.cost_per_kg).label("avg_cost"),
+                func.count(Spool.id).label("cnt"),
             )
             .where(Spool.cost_per_kg.isnot(None), Spool.archived_at.is_(None))
             .group_by(func.upper(Spool.material))
         )
-        published_brand_counts = await self._published_brand_counts_by_material(db)
+        brand_agg = (
+            select(
+                literal_column("'brand'").label("kind"),
+                func.upper(Spool.brand).label("brand"),
+                func.upper(Spool.material).label("material"),
+                null().label("avg_cost"),
+                func.count(Spool.id).label("cnt"),
+            )
+            .where(Spool.cost_per_kg.isnot(None), Spool.archived_at.is_(None))
+            .group_by(func.upper(Spool.brand), func.upper(Spool.material))
+        )
+        rows = await db.execute(union_all(material_agg, brand_agg))
+
+        # Insertion order into `material_totals` follows only the
+        # `material_agg` rows, in the order they arrive — i.e. exactly the
+        # order a standalone per-material query would emit them in.
+        material_totals: dict[str, dict[str, float]] = {}
+        published_brand_counts: dict[str, int] = {}
+        for kind, brand, material, avg_cost, count in rows.all():
+            if not material:
+                continue
+            if kind == "material":
+                material_totals[material] = {"avg": avg_cost, "count": count}
+            elif brand and count >= MIN_SAMPLE:
+                published_brand_counts[material] = published_brand_counts.get(material, 0) + count
+
         result = []
-        for material, avg_cost, count in rows.all():
-            if not material or count < MIN_SAMPLE:
+        for material, totals in material_totals.items():
+            count = totals["count"]
+            if count < MIN_SAMPLE:
                 continue
             # The published brand+material rows for this material are a
             # visible partition of it. If they leave a small residual
@@ -364,35 +414,8 @@ class CalculatorInsightsService:
             residual = count - published_brand_counts.get(material, 0)
             if 0 < residual < MIN_SAMPLE:
                 continue
-            result.append({"material": material, "avg_cost_per_kg": round(avg_cost, 2), "sample": count})
+            result.append({"material": material, "avg_cost_per_kg": round(totals["avg"], 2), "sample": count})
         return result
-
-    async def _published_brand_counts_by_material(self, db: AsyncSession) -> dict[str, int]:
-        """Per-material sum of counts from the brand+material groups that
-        ``_spool_costs_by_brand`` actually publishes (i.e. that clear its own
-        MIN_SAMPLE floor). Used by ``_spool_costs`` to find the residual
-        population a material's published brand breakdown leaves unaccounted
-        for.
-        """
-        rows = await db.execute(
-            select(
-                func.upper(Spool.material),
-                func.count(Spool.id),
-            )
-            .where(
-                Spool.cost_per_kg.isnot(None),
-                Spool.archived_at.is_(None),
-                Spool.brand.isnot(None),
-            )
-            .group_by(func.upper(Spool.brand), func.upper(Spool.material))
-            .having(func.count(Spool.id) >= MIN_SAMPLE)
-        )
-        totals: dict[str, int] = {}
-        for material, count in rows.all():
-            if not material:
-                continue
-            totals[material] = totals.get(material, 0) + count
-        return totals
 
     async def _spool_costs_by_brand(self, db: AsyncSession) -> list[dict]:
         """Like ``_spool_costs`` but grouped by brand+material for exact matches."""
