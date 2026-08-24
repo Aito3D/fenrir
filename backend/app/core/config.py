@@ -113,6 +113,15 @@ class Settings(BaseSettings):
     slicer_api_url: str = "http://localhost:3003"
     bambu_studio_api_url: str = "http://localhost:3001"
 
+    # Filament Profile Manager: locates the local Bambu Studio app's user
+    # preset folders (per-user, keyed by this Bambu account id) and the
+    # bundled base-preset directory shipped inside the app. The two
+    # overrides below exist for tests and non-macOS deploys where the app
+    # isn't installed at the default Applications path.
+    bambu_user_id: str = "1961034787"
+    bambu_studio_user_dirs: list[str] | None = None
+    bambu_studio_bundle_dir: str | None = None
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
