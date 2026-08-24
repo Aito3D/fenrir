@@ -14,6 +14,8 @@ from backend.app.models.filament_profile import BaseFilamentPreset, FilamentPres
 from backend.app.models.user import User
 from backend.app.schemas.filament_profile import (
     BambuScanResponse,
+    BambuSyncRequest,
+    BambuSyncResponse,
     BaseContentResponse,
     BaseFilamentPresetResponse,
     BaseSyncResult,
@@ -21,7 +23,15 @@ from backend.app.schemas.filament_profile import (
     FilamentPresetResponse,
     FilamentPresetUpdate,
 )
-from backend.app.services.bambu_studio import collect_base_presets, read_bundle_preset, scan_user_presets
+from backend.app.services.bambu_studio import (
+    apply_sync,
+    collect_base_presets,
+    compute_sync_stats,
+    get_user_filament_dirs,
+    read_bundle_preset,
+    read_disk_state,
+    scan_user_presets,
+)
 
 router = APIRouter(prefix="/filament-profiles", tags=["filament-profiles"])
 
@@ -92,6 +102,40 @@ async def sync_base_presets(
 
     await db.commit()
     return {"added": added, "updated": updated, "unchanged": unchanged, "total": len(records)}
+
+
+def _validate_bambu_sync_presets(presets: list) -> list[dict[str, str]]:
+    validated: list[dict[str, str]] = []
+    for i, entry in enumerate(presets):
+        if not isinstance(entry, dict):
+            raise HTTPException(400, f"presets[{i}]: entry must be an object")
+        filename = entry.get("filename")
+        if not isinstance(filename, str):
+            raise HTTPException(400, f"presets[{i}]: filename must be a string")
+        content = entry.get("content")
+        if not isinstance(content, str):
+            raise HTTPException(400, f"presets[{i}]: content must be a string")
+        if not filename or ".." in filename or "/" in filename or "\\" in filename:
+            raise HTTPException(400, f"presets[{i}]: filename must be a bare file name")
+        validated.append({"filename": filename, "content": content})
+    return validated
+
+
+@router.post("/bambu-sync", response_model=BambuSyncResponse)
+async def bambu_sync(
+    payload: BambuSyncRequest,
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
+):
+    validated = _validate_bambu_sync_presets(payload.presets)
+
+    if payload.dry_run:
+        stats = await asyncio.to_thread(
+            lambda: compute_sync_stats(validated, read_disk_state(), get_user_filament_dirs())
+        )
+    else:
+        stats = await asyncio.to_thread(apply_sync, validated)
+
+    return {"stats": stats}
 
 
 @router.get("", response_model=list[FilamentPresetResponse])

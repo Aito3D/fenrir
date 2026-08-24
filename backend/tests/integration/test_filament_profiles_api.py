@@ -136,3 +136,52 @@ class TestFilamentProfilesFilesystem:
         assert r3 == {"added": 1, "updated": 1, "unchanged": 0, "total": 2}
         presets = (await async_client.get("/api/v1/filament-profiles/base-presets")).json()
         assert [p["name"] for p in presets] == ["P1", "Root"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bambu_sync_dry_run_and_execute(self, async_client, bambu_dirs):
+        a, b, _ = bambu_dirs
+        (a / "keep.json").write_text("K")
+        (b / "keep.json").write_text("K")
+        (a / "gone.json").write_text("bye")
+        payload = {
+            "presets": [{"filename": "keep.json", "content": "K"}, {"filename": "new.json", "content": "N"}],
+            "dry_run": True,
+        }
+        r = await async_client.post("/api/v1/filament-profiles/bambu-sync", json=payload)
+        assert r.json() == {"stats": {"added": 1, "updated": 0, "removed": 1, "unchanged": 1}}
+        assert (a / "gone.json").exists() and not (a / "new.json").exists()  # dry run wrote nothing
+        payload["dry_run"] = False
+        r = await async_client.post("/api/v1/filament-profiles/bambu-sync", json=payload)
+        assert r.json()["stats"]["removed"] == 1
+        assert not (a / "gone.json").exists() and (b / "new.json").read_text() == "N"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bambu_sync_missing_presets_key_deletes_nothing(self, async_client, bambu_dirs):
+        a, _, _ = bambu_dirs
+        (a / "precious.json").write_text("P")
+        r = await async_client.post("/api/v1/filament-profiles/bambu-sync", json={"dry_run": False})
+        assert r.status_code == 422  # spec §9.1: omitted key must error, never default to []
+        assert (a / "precious.json").exists()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bambu_sync_element_validation(self, async_client, bambu_dirs):
+        cases = [
+            ([None], "presets[0]: entry must be an object"),
+            (["str"], "presets[0]: entry must be an object"),
+            ([{"content": "x"}], "presets[0]: filename must be a string"),
+            ([{"filename": "a.json"}], "presets[0]: content must be a string"),
+            (
+                [{"filename": "a.json", "content": "x"}, {"filename": "../b", "content": "x"}],
+                "presets[1]: filename must be a bare file name",
+            ),
+            ([{"filename": "", "content": "x"}], "presets[0]: filename must be a bare file name"),
+            ([{"filename": "a/b.json", "content": "x"}], "presets[0]: filename must be a bare file name"),
+        ]
+        for presets, msg in cases:
+            r = await async_client.post(
+                "/api/v1/filament-profiles/bambu-sync", json={"presets": presets, "dry_run": True}
+            )
+            assert r.status_code == 400 and r.json()["detail"] == msg
