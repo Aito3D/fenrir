@@ -117,9 +117,9 @@ export function EditorTabTemps({ form, setForm }: TabProps) {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs font-semibold uppercase tracking-wide text-bambu-gray/70">
-                <th className="pb-2 pr-3 font-semibold">{t('filamentProfiles.plate')}</th>
-                <th className="pb-2 pr-3 font-semibold">{printCol}</th>
-                <th className="pb-2 font-semibold">{initialCol}</th>
+                <th scope="col" className="pb-2 pr-3 font-semibold">{t('filamentProfiles.plate')}</th>
+                <th scope="col" className="pb-2 pr-3 font-semibold">{printCol}</th>
+                <th scope="col" className="pb-2 font-semibold">{initialCol}</th>
               </tr>
             </thead>
             <tbody>

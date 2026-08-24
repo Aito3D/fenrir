@@ -388,15 +388,41 @@ describe('PresetEditorModal — parameter tabs (Task 13)', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Cooling' }));
-    await user.click(screen.getByRole('button', { name: 'On' }));
+    await user.click(screen.getByRole('button', { name: 'Overhang / bridge fan: On' }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
     expect(JSON.parse(onSave.mock.calls[0][0].content).enable_overhang_bridge_fan).toEqual(['1']);
 
-    await user.click(screen.getByRole('button', { name: 'nil' }));
+    await user.click(screen.getByRole('button', { name: 'Overhang / bridge fan: nil' }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
     expect(JSON.parse(onSave.mock.calls[1][0].content)).not.toHaveProperty('enable_overhang_bridge_fan');
+  });
+
+  it('disambiguates Retract tri-state rows by accessible name and saves the toggled value', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <PresetEditorModal
+        preset={editPreset()}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={onSave}
+        onDelete={null}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Retraction' }));
+    // Retract has two tri-state rows (retractOnLayerChange, wipeOnRetract);
+    // a bare "On" would be ambiguous between them.
+    expect(screen.queryByRole('button', { name: 'On' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Wipe on retraction: On' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(onSave.mock.calls[0][0].content).filament_wipe).toEqual(['1']);
   });
 
   it('applies the cal popover percentage on Enter, and Escape closes without applying', async () => {

@@ -5,8 +5,11 @@ import { inputCls } from '../formStyles';
 /**
  * Shared editor-tab primitives for PresetEditorModal (spec §7): a labeled
  * field wrapper, mono text/number inputs, a tri-state (nil/Off/On) toggle
- * row, and a section divider caption. Extracted so every parameter tab
- * (General now; Temps/Cooling/Extrusion/Retract in Task 13) looks identical.
+ * row (each option button carries an `aria-label` of "{row label}: {option}"
+ * so two tri-state rows on the same tab, e.g. Retract's two options rows,
+ * don't collide on a bare "On"/"Off"/"nil" accessible name), and a section
+ * divider caption. Extracted so every parameter tab (General now;
+ * Temps/Cooling/Extrusion/Retract in Task 13) looks identical.
  *
  * `inputCls` already carries `w-full` — callers must never append another
  * width utility to the same className (it would lose to `w-full`); wrap the
@@ -95,6 +98,7 @@ export function TriStateRow({
             type="button"
             onClick={() => onChange(opt.value)}
             aria-pressed={value === opt.value}
+            aria-label={`${label}: ${t(opt.labelKey)}`}
             className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
               value === opt.value ? 'bg-bambu-green/20 text-bambu-green' : 'text-bambu-gray/70 hover:text-white'
             }`}
