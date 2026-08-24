@@ -111,13 +111,6 @@ export const QUICK_ADD_MODELS = ['H2S', 'H2D', 'H2C', 'X2D'];
 export const DEFAULT_COMPATIBLE_PRINTERS =
   'Bambu Lab H2S 0.4 nozzle, Bambu Lab H2D 0.4 nozzle, Bambu Lab H2C 0.4 nozzle, Bambu Lab X2D 0.4 nozzle';
 
-export const Z_HOP_TYPES = [
-  { value: '', label: 'nil' },
-  { value: 'Normal Lift', label: 'Normal Lift' },
-  { value: 'Slope Lift', label: 'Slope Lift' },
-  { value: 'Spiral Lift', label: 'Spiral Lift' },
-];
-
 /**
  * Maps a display material string to a Tailwind text color class representing its family.
  * Always returns a class (defaults to sky for unrecognized materials).

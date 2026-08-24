@@ -4326,6 +4326,7 @@ export default {
     // Toasts
     createdToast: '"{{name}}" erstellt',
     updatedToast: '"{{name}}" aktualisiert',
+    saveFailed: 'Speichern fehlgeschlagen: {{error}}',
     // Editor shell
     editorNewTitle: 'Neues Preset',
     editorEditTitle: 'Preset bearbeiten',
@@ -4362,6 +4363,7 @@ export default {
     extruder: 'Extruder',
     compatiblePrinters: 'Kompatible Drucker',
     tagHint: 'Eingabetaste zum Hinzufügen · Rücktaste zum Entfernen',
+    removeTag: '{{tag}} entfernen',
     quickAdd: '+ H2S / H2D / H2C / X2D',
     tagPlaceholder: 'Bambu Lab X1C 0,4-mm-Düse…',
     notes: 'Notizen',

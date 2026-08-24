@@ -1,5 +1,5 @@
 import type { BaseFilamentPreset, FilamentPreset } from '../../api/client';
-import { EMPTY_FORM, MATERIAL_ALIASES } from './constants';
+import { EMPTY_FORM, MATERIAL_ALIASES, SYNTHETIC_FIELDS } from './constants';
 import type { PresetForm, SortField } from './types';
 
 const NIL = 'nil';
@@ -127,10 +127,10 @@ export function mergeWithParent(child: PresetForm, parent: PresetForm): PresetFo
       ? child.filament_extruder_variant
       : [...parent.filament_extruder_variant];
 
-  // Synthetic fields (color, nozzle_size, pa_k_value) are never inherited from a parent.
-  merged.color = child.color;
-  merged.nozzle_size = child.nozzle_size;
-  merged.pa_k_value = child.pa_k_value;
+  // Synthetic fields are never inherited from a parent.
+  for (const field of SYNTHETIC_FIELDS) {
+    merged[field] = child[field];
+  }
 
   return merged;
 }
@@ -220,8 +220,18 @@ export function buildJson(
     out.filament_notes = form.filament_notes;
   }
 
-  if (form.filament_type !== '' && (!resolvedParent || resolvedParent.filament_type !== form.filament_type)) {
-    out.filament_type = [MATERIAL_ALIASES[form.filament_type] ?? form.filament_type];
+  if (form.filament_type !== '') {
+    const aliasedForm = MATERIAL_ALIASES[form.filament_type] ?? form.filament_type;
+    // Alias-map BOTH sides before comparing: a resolved parent's raw
+    // filament_type (e.g. "PA-CF") and the form's aliased equivalent for a
+    // synonym typed in the picker (e.g. "PA12-CF" -> "PA-CF") must be
+    // recognized as unchanged, or the delta wrongly re-emits filament_type.
+    const aliasedParent = resolvedParent
+      ? (MATERIAL_ALIASES[resolvedParent.filament_type] ?? resolvedParent.filament_type)
+      : undefined;
+    if (!resolvedParent || aliasedParent !== aliasedForm) {
+      out.filament_type = [aliasedForm];
+    }
   }
 
   const parentEpa = resolvedParent?.enable_pressure_advance ?? false;

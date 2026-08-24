@@ -62,6 +62,11 @@ class SyncStats(BaseModel):
 
 
 class BambuSyncRequest(BaseModel):
+    # Reject unknown fields (e.g. a stray camelCase "dryRun") with a 422
+    # instead of silently ignoring it and running the destructive, non-dry
+    # sync path the caller actually meant to skip.
+    model_config = {"extra": "forbid"}
+
     presets: list[Any]
     dry_run: bool = False
 

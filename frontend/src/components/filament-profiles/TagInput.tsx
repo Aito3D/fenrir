@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { KeyboardEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 
 export interface TagInputProps {
@@ -17,6 +18,7 @@ export interface TagInputProps {
  * its own × button.
  */
 export function TagInput({ value, onChange, placeholder }: TagInputProps) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState('');
   const tags = value
     .split(',')
@@ -59,7 +61,7 @@ export function TagInput({ value, onChange, placeholder }: TagInputProps) {
           <button
             type="button"
             onClick={() => removeAt(i)}
-            aria-label={`Remove ${tag}`}
+            aria-label={t('filamentProfiles.removeTag', { tag })}
             className="text-bambu-gray/70 hover:text-white"
           >
             <X className="h-3 w-3" />

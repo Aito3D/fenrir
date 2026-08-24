@@ -37,7 +37,7 @@ router = APIRouter(prefix="/filament-profiles", tags=["filament-profiles"])
 
 DUPLICATE_FIELDS = ("name", "brand", "material", "color", "color_hex", "filename", "content")
 
-# --- static routes (bambu-scan, base-content, base-presets, sync-base, bambu-sync) go above the /{preset_id} routes; added in Tasks 4-5 ---
+# --- static routes (bambu-scan, base-content, base-presets, sync-base, bambu-sync) must stay above the /{preset_id} routes, or FastAPI matches "base-presets" etc. as a preset_id path param ---
 
 
 @router.get("/base-presets", response_model=list[BaseFilamentPresetResponse])

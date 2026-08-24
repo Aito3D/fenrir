@@ -7,6 +7,7 @@ import type { BaseFilamentPreset, FilamentPreset, FilamentPresetPayload } from '
 import { Button } from '../Button';
 import { SearchableSelect } from '../SearchableSelect';
 import type { SearchableSelectOption } from '../SearchableSelect';
+import { useToast } from '../../contexts/ToastContext';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import {
   DEFAULT_COMPATIBLE_PRINTERS,
@@ -85,6 +86,7 @@ export function PresetEditorModal({
   onClose,
 }: PresetEditorModalProps) {
   const { t } = useTranslation();
+  const { showToast } = useToast();
   const isCreate = preset === null;
 
   const [baseData, setBaseData] = useState<Record<string, unknown>>(() => parseBaseData(preset?.content));
@@ -112,7 +114,16 @@ export function PresetEditorModal({
   const [jsonError, setJsonError] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const { closing, requestClose, dialogRef } = useDismissableDialog(onClose, { animationMs: 220 });
+  const { closing, requestClose, dialogRef } = useDismissableDialog(onClose, {
+    animationMs: 220,
+    // Escape must respect the same in-flight-save guard as the Cancel button
+    // and the overlay click — bypassing it let Escape close (and discard)
+    // the modal mid-save.
+    onEscape: (doRequestClose) => {
+      if (saving) return;
+      doRequestClose();
+    },
+  });
 
   const fetchBaseContent = (filename: string) => api.getBaseFilamentPresetContent(filename).then((r) => r.content);
 
@@ -154,12 +165,12 @@ export function PresetEditorModal({
     for (const p of presets) {
       if (seen.has(p.name)) continue;
       seen.add(p.name);
-      options.push({ value: `user:${p.name}`, label: p.name });
+      options.push({ value: `user:${p.name}`, label: `${t('filamentProfiles.basePresetMine')}: ${p.name}` });
     }
     for (const b of basePresets) {
       if (seen.has(b.name)) continue;
       seen.add(b.name);
-      options.push({ value: `base:${b.name}`, label: b.name });
+      options.push({ value: `base:${b.name}`, label: `${t('filamentProfiles.basePresetBase')}: ${b.name}` });
     }
     return options;
   }, [presets, basePresets, t]);
@@ -233,6 +244,7 @@ export function PresetEditorModal({
   };
 
   const handleDeleteClick = () => {
+    if (saving) return;
     requestClose();
     onDelete?.();
   };
@@ -289,8 +301,12 @@ export function PresetEditorModal({
     try {
       await onSave(payload);
       requestClose();
-    } catch {
-      // The page already toasted the failure — stay open so nothing is lost.
+    } catch (err) {
+      // Surface the failure ourselves — the page's onSave only performs the
+      // API call and query invalidation, it doesn't toast — and stay open
+      // so nothing is lost.
+      const message = err instanceof Error ? err.message : String(err);
+      showToast(t('filamentProfiles.saveFailed', { error: message }), 'error');
     } finally {
       setSaving(false);
     }

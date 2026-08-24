@@ -4314,6 +4314,7 @@ export default {
     // Toasts
     createdToast: '「{{name}}」已建立',
     updatedToast: '「{{name}}」已更新',
+    saveFailed: '儲存失敗：{{error}}',
     // Editor shell
     editorNewTitle: '新增預設',
     editorEditTitle: '編輯預設',
@@ -4350,6 +4351,7 @@ export default {
     extruder: '擠出機',
     compatiblePrinters: '相容印表機',
     tagHint: 'Enter 新增 · Backspace 刪除',
+    removeTag: '移除 {{tag}}',
     quickAdd: '+ H2S / H2D / H2C / X2D',
     tagPlaceholder: 'Bambu Lab X1C 0.4 噴嘴…',
     notes: '備註',

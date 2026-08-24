@@ -51,8 +51,8 @@ const GRID_CLASSES: Record<GridSize, string> = {
 
 const SORT_FIELDS: SortField[] = ['name', 'brand', 'material', 'color'];
 
-/** Every editor open state the page can be in. Task 12 renders the actual
- *  modal off this; for now nothing is rendered for 'create'/'edit'. */
+/** Every editor open state the page can be in — drives the PresetEditorModal
+ *  rendered below (nothing renders for 'closed'). */
 type EditorState = { mode: 'closed' } | { mode: 'create' } | { mode: 'edit'; preset: FilamentPreset };
 
 type SyncBaseModalState = { result?: FilamentBaseSyncResult; error?: string } | null;
@@ -70,9 +70,8 @@ function SkeletonCard() {
 
 /**
  * Filament Profiles page shell (spec §5): header actions, filter bar, and
- * the responsive preset grid, plus the import/export/sync flows and their
- * two supporting modals. The editor modal itself lands in Task 12 — this
- * page only owns the `editorState` that will drive it.
+ * the responsive preset grid, plus the import/export/sync flows, the preset
+ * editor modal, and their supporting confirm/result modals.
  */
 export function FilamentProfilesPage() {
   const { t } = useTranslation();
@@ -81,8 +80,8 @@ export function FilamentProfilesPage() {
 
   const presetsQuery = useQuery({ queryKey: ['filamentPresets'], queryFn: () => api.getFilamentPresets() });
   const baseQuery = useQuery({ queryKey: ['filamentBasePresets'], queryFn: () => api.getBaseFilamentPresets() });
-  // Extends the editor's material dropdown in Task 12; failure is
-  // non-blocking here, just a toast (spec §5.1).
+  // Extends the editor's material dropdown; failure is non-blocking here,
+  // just a toast (spec §5.1).
   const catalogQuery = useQuery({ queryKey: ['filamentCatalogMaterials'], queryFn: () => api.listFilaments() });
 
   // Each of these toasts fires at most once per mount (spec §5.1: "failure
@@ -188,7 +187,7 @@ export function FilamentProfilesPage() {
     writeGridSize(size);
   };
 
-  // ── Save (used by the editor modal in Task 12) ──────────────────────────
+  // ── Save (used by the editor modal) ─────────────────────────────────────
   const handleSavePreset = useCallback(
     async (payload: FilamentPresetPayload, editing: FilamentPreset | null) => {
       if (editing) {
@@ -604,6 +603,7 @@ export function FilamentProfilesPage() {
           cancelText={t('filamentProfiles.cancel')}
           confirmText={t('filamentProfiles.deleteConfirm')}
           variant="danger"
+          overlayZIndex="z-[110]"
           onConfirm={handleDeleteConfirm}
           onCancel={() => setConfirmDelete(null)}
         />

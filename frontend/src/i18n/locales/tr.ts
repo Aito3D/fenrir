@@ -4321,6 +4321,7 @@ export default {
     // Toasts
     createdToast: '"{{name}}" oluşturuldu',
     updatedToast: '"{{name}}" güncellendi',
+    saveFailed: 'Kaydetme başarısız: {{error}}',
     // Editor shell
     editorNewTitle: 'Yeni ön ayar',
     editorEditTitle: 'Ön ayarı düzenle',
@@ -4357,6 +4358,7 @@ export default {
     extruder: 'Ekstruder',
     compatiblePrinters: 'Uyumlu yazıcılar',
     tagHint: 'Eklemek için Enter · Kaldırmak için Backspace',
+    removeTag: '{{tag}} kaldır',
     quickAdd: '+ H2S / H2D / H2C / X2D',
     tagPlaceholder: 'Bambu Lab X1C 0,4 nozül…',
     notes: 'Notlar',

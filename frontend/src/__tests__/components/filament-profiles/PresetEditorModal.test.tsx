@@ -28,11 +28,21 @@ vi.mock('../../../api/client', () => ({
   },
 }));
 
+const mockShowToast = vi.fn();
+vi.mock('../../../contexts/ToastContext', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../contexts/ToastContext')>();
+  return {
+    ...actual,
+    useToast: () => ({ showToast: mockShowToast }),
+  };
+});
+
 const getBaseContent = vi.mocked(api.getBaseFilamentPresetContent);
 
 beforeEach(() => {
   getBaseContent.mockReset();
   getBaseContent.mockResolvedValue({ content: '{}' });
+  mockShowToast.mockReset();
 });
 
 function editPreset(overrides: Partial<FilamentPreset> = {}): FilamentPreset {
@@ -130,11 +140,42 @@ describe('PresetEditorModal — create mode', () => {
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Base preset' }));
-    await user.click(screen.getByRole('option', { name: 'Bambu PETG Base' }));
+    await user.click(screen.getByRole('option', { name: 'Base presets: Bambu PETG Base' }));
 
     await waitFor(() => expect(getBaseContent).toHaveBeenCalledWith('bambu_petg_base.json'));
     expect(await screen.findByText('↳ Bambu PETG Base')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('spinbutton', { name: /Cost/ })).toHaveValue(24.99));
+  });
+
+  it('prefixes base-preset picker options with My/Base so the two sources are distinguishable', async () => {
+    const basePresets: BaseFilamentPreset[] = [
+      {
+        id: 1,
+        name: 'Bambu PETG Base',
+        inherits: '',
+        brand: 'Bambu Lab',
+        material: 'PETG',
+        color: '',
+        color_hex: '',
+        filename: 'bambu_petg_base.json',
+      },
+    ];
+    const user = userEvent.setup();
+    render(
+      <PresetEditorModal
+        preset={null}
+        presets={[editPreset({ name: 'My Custom PETG' })]}
+        basePresets={basePresets}
+        extraMaterials={[]}
+        onSave={vi.fn()}
+        onDelete={null}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('combobox', { name: 'Base preset' }));
+    expect(screen.getByRole('option', { name: 'My presets: My Custom PETG' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Base presets: Bambu PETG Base' })).toBeInTheDocument();
   });
 
   it('writes the PA K value into the generated start G-code on save', async () => {
@@ -298,6 +339,87 @@ describe('PresetEditorModal — edit mode', () => {
 
     resolveSave();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).not.toBeDisabled());
+  });
+
+  it('toasts the error and stays open when onSave rejects', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockRejectedValue(new Error('Network exploded'));
+    const onClose = vi.fn();
+    render(
+      <PresetEditorModal
+        preset={editPreset()}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={onSave}
+        onDelete={null}
+        onClose={onClose}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith(expect.stringContaining('Network exploded'), 'error'),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('ignores Escape while a save is in-flight, same as the Cancel button', async () => {
+    const user = userEvent.setup();
+    let resolveSave: () => void = () => {};
+    const onSave = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    const onClose = vi.fn();
+    render(
+      <PresetEditorModal
+        preset={editPreset()}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={onSave}
+        onDelete={null}
+        onClose={onClose}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+
+    resolveSave();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).not.toBeDisabled());
+  });
+
+  it('ignores the Delete button while a save is in-flight', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn(() => new Promise<void>(() => {}));
+    const onDelete = vi.fn();
+    render(
+      <PresetEditorModal
+        preset={editPreset()}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={onSave}
+        onDelete={onDelete}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(onDelete).not.toHaveBeenCalled();
   });
 });
 

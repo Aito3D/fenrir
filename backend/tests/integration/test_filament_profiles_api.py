@@ -185,3 +185,16 @@ class TestFilamentProfilesFilesystem:
                 "/api/v1/filament-profiles/bambu-sync", json={"presets": presets, "dry_run": True}
             )
             assert r.status_code == 400 and r.json()["detail"] == msg
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bambu_sync_rejects_stray_camelcase_field(self, async_client, bambu_dirs):
+        # A stray camelCase "dryRun" (the JS-native spelling) must 422 rather
+        # than being silently ignored and falling through to the field's
+        # `dry_run = False` default — which would run the destructive sync
+        # path the caller most likely meant to skip.
+        a, _, _ = bambu_dirs
+        (a / "precious.json").write_text("P")
+        r = await async_client.post("/api/v1/filament-profiles/bambu-sync", json={"presets": [], "dryRun": True})
+        assert r.status_code == 422
+        assert (a / "precious.json").exists()

@@ -4139,6 +4139,7 @@ export default {
     // Toasts
     createdToast: '"{{name}}" 생성됨',
     updatedToast: '"{{name}}" 업데이트됨',
+    saveFailed: '저장 실패: {{error}}',
     // Editor shell
     editorNewTitle: '새 프리셋',
     editorEditTitle: '프리셋 편집',
@@ -4175,6 +4176,7 @@ export default {
     extruder: '익스트루더',
     compatiblePrinters: '호환 프린터',
     tagHint: 'Enter로 추가 · Backspace로 제거',
+    removeTag: '{{tag}} 제거',
     quickAdd: '+ H2S / H2D / H2C / X2D',
     tagPlaceholder: 'Bambu Lab X1C 0.4 노즐…',
     notes: '메모',

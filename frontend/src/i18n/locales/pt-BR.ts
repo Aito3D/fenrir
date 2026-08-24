@@ -4314,6 +4314,7 @@ export default {
     // Toasts
     createdToast: '"{{name}}" criado',
     updatedToast: '"{{name}}" atualizado',
+    saveFailed: 'Falha ao salvar: {{error}}',
     // Editor shell
     editorNewTitle: 'Novo preset',
     editorEditTitle: 'Editar preset',
@@ -4350,6 +4351,7 @@ export default {
     extruder: 'Extrusora',
     compatiblePrinters: 'Impressoras compatíveis',
     tagHint: 'Enter para adicionar · Backspace para remover',
+    removeTag: 'Remover {{tag}}',
     quickAdd: '+ H2S / H2D / H2C / X2D',
     tagPlaceholder: 'Bambu Lab X1C bico 0,4…',
     notes: 'Notas',

@@ -4136,6 +4136,7 @@ export default {
     // Toasts
     createdToast: "«{{name}}» створено",
     updatedToast: "«{{name}}» оновлено",
+    saveFailed: "Не вдалося зберегти: {{error}}",
     // Editor shell
     editorNewTitle: "Новий пресет",
     editorEditTitle: "Редагувати пресет",
@@ -4172,6 +4173,7 @@ export default {
     extruder: "Екструдер",
     compatiblePrinters: "Сумісні принтери",
     tagHint: "Enter — додати · Backspace — видалити",
+    removeTag: "Видалити {{tag}}",
     quickAdd: "+ H2S / H2D / H2C / X2D",
     tagPlaceholder: "Bambu Lab X1C сопло 0.4…",
     notes: "Нотатки",

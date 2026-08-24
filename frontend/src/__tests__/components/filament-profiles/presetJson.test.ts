@@ -72,6 +72,14 @@ describe('buildJson (delta writer)', () => {
     const out = JSON.parse(buildJson(form({ filament_type: 'PA12-CF' }), {}, null, 'X'));
     expect(out.filament_type).toEqual(['PA-CF']);
   });
+  it('omits filament_type when the form value aliases to the same material as the parent (spec §9.5 alias leak)', () => {
+    // Parent stores the canonical name; the form has a synonym that aliases
+    // to the same canonical value — this must be recognized as "unchanged"
+    // rather than re-emitting filament_type on every save.
+    const parent = form({ filament_type: 'PA-CF' });
+    const out = JSON.parse(buildJson(form({ filament_type: 'PA12-CF' }), {}, parent, 'X'));
+    expect(out.filament_type).toBeUndefined();
+  });
   it('splits compatible_printers into a real array', () => {
     const out = JSON.parse(buildJson(form({ compatible_printers: 'A 0.4 nozzle, B 0.4 nozzle' }), {}, null, 'X'));
     expect(out.compatible_printers).toEqual(['A 0.4 nozzle', 'B 0.4 nozzle']);

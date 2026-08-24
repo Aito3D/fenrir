@@ -8,8 +8,8 @@ import { inputCls } from '../formStyles';
  * row (each option button carries an `aria-label` of "{row label}: {option}"
  * so two tri-state rows on the same tab, e.g. Retract's two options rows,
  * don't collide on a bare "On"/"Off"/"nil" accessible name), and a section
- * divider caption. Extracted so every parameter tab (General now;
- * Temps/Cooling/Extrusion/Retract in Task 13) looks identical.
+ * divider caption. Extracted so every parameter tab (General, Temps,
+ * Cooling, Extrusion, Retract) looks identical.
  *
  * `inputCls` already carries `w-full` — callers must never append another
  * width utility to the same className (it would lose to `w-full`); wrap the
