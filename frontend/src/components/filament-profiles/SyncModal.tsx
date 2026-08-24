@@ -80,7 +80,7 @@ export function SyncModal({ state, stats, onCancel, onConfirm, onClose }: SyncMo
               <Button variant="secondary" onClick={onCancel} className="flex-1">
                 {t('filamentProfiles.cancel')}
               </Button>
-              <Button onClick={onConfirm} disabled={zeroChanges} className="flex-1">
+              <Button onClick={onConfirm} disabled={!stats || zeroChanges} className="flex-1">
                 {t('filamentProfiles.syncConfirm')}
               </Button>
             </div>

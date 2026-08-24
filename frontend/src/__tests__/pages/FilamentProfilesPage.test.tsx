@@ -102,13 +102,16 @@ describe('FilamentProfilesPage', () => {
     expect(readMaterialFilter()).toBe('PETG');
   });
 
-  it('imports new files sequentially, skipping ones that already exist', async () => {
+  it('imports new files strictly sequentially, in file order, skipping ones that already exist', async () => {
     stubBase();
     const createCalls: string[] = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
     server.use(
       http.get('*/filament-profiles/bambu-scan', () =>
         HttpResponse.json({
           files: [
+            // Already exists (matches a loaded preset's filename) — must be skipped.
             { filename: 'bambu_pla_basic_black.json', content: '{}' },
             {
               filename: 'new_one.json',
@@ -116,16 +119,40 @@ describe('FilamentProfilesPage', () => {
                 name: 'New One',
                 filament_vendor: ['Generic'],
                 filament_type: ['PLA'],
-                filament_colour: ['#123456'],
+                filament_colour: ['#111111'],
+              }),
+            },
+            {
+              filename: 'new_two.json',
+              content: JSON.stringify({
+                name: 'New Two',
+                filament_vendor: ['Generic'],
+                filament_type: ['PETG'],
+                filament_colour: ['#222222'],
+              }),
+            },
+            {
+              filename: 'new_three.json',
+              content: JSON.stringify({
+                name: 'New Three',
+                filament_vendor: ['Generic'],
+                filament_type: ['ABS'],
+                filament_colour: ['#333333'],
               }),
             },
           ],
         }),
       ),
       http.post('*/filament-profiles', async ({ request }) => {
+        // Tracks concurrency: if the page ever fires the next POST before
+        // this one resolves, `maxInFlight` catches it.
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
         const body = (await request.json()) as { filename: string };
+        await delay(20);
         createCalls.push(body.filename);
-        return HttpResponse.json(preset({ id: 99, filename: body.filename }));
+        inFlight -= 1;
+        return HttpResponse.json(preset({ id: 100 + createCalls.length, filename: body.filename }));
       }),
     );
 
@@ -134,8 +161,11 @@ describe('FilamentProfilesPage', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /^Import$/ }));
 
-    await waitFor(() => expect(createCalls).toEqual(['new_one.json']));
-    expect(await screen.findByText(/Imported 1 preset/i)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(createCalls).toEqual(['new_one.json', 'new_two.json', 'new_three.json']),
+    );
+    expect(maxInFlight).toBe(1);
+    expect(await screen.findByText(/Imported 3 preset/i)).toBeInTheDocument();
   });
 
   it('shows dry-run stats including Removed, and only executes after confirming Sync', async () => {

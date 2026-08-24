@@ -4315,11 +4315,15 @@ export default {
     countOne: '{{n}} preset',
     countOther: '{{n}} presets',
     countFiltered: '{{filtered}} / {{total}}',
+    gridSmall: 'Small grid',
+    gridMedium: 'Medium grid',
+    gridLarge: 'Large grid',
     // Grid
     emptyTitle: 'No presets yet',
     emptySubtitle: 'Create a preset manually or import from a folder.',
     noResults: 'No results found',
     // Card menu
+    menu: 'Menu',
     edit: 'Edit',
     duplicate: 'Duplicate',
     delete: 'Delete',

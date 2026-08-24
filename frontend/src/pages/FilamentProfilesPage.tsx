@@ -17,6 +17,7 @@ import {
 
 import { api } from '../api/client';
 import type {
+  BambuScanFile,
   BaseFilamentPreset,
   FilamentBaseSyncResult,
   FilamentPreset,
@@ -83,15 +84,25 @@ export function FilamentProfilesPage() {
   // non-blocking here, just a toast (spec §5.1).
   const catalogQuery = useQuery({ queryKey: ['filamentCatalogMaterials'], queryFn: () => api.listFilaments() });
 
+  // Each of these toasts fires at most once per mount (spec §5.1: "failure
+  // -> error toast" on the initial load, not on every subsequent refetch
+  // attempt) — a ref flag survives across the retry-driven re-renders that
+  // would otherwise re-fire the effect on every new error object identity.
+  const baseErrorToastedRef = useRef(false);
   useEffect(() => {
-    if (baseQuery.isError) showToast(errorMessage(baseQuery.error), 'error');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseQuery.isError, baseQuery.error]);
+    if (baseQuery.isError && !baseErrorToastedRef.current) {
+      baseErrorToastedRef.current = true;
+      showToast(errorMessage(baseQuery.error), 'error');
+    }
+  }, [baseQuery.isError, baseQuery.error, showToast]);
 
+  const catalogErrorToastedRef = useRef(false);
   useEffect(() => {
-    if (catalogQuery.isError) showToast(errorMessage(catalogQuery.error), 'error');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [catalogQuery.isError, catalogQuery.error]);
+    if (catalogQuery.isError && !catalogErrorToastedRef.current) {
+      catalogErrorToastedRef.current = true;
+      showToast(errorMessage(catalogQuery.error), 'error');
+    }
+  }, [catalogQuery.isError, catalogQuery.error, showToast]);
 
   const presets = useMemo<FilamentPreset[]>(() => presetsQuery.data ?? [], [presetsQuery.data]);
   const baseFilamentPresets = useMemo<BaseFilamentPreset[]>(() => baseQuery.data ?? [], [baseQuery.data]);
@@ -221,72 +232,84 @@ export function FilamentProfilesPage() {
     if (importing) return;
     setImporting(true);
     try {
-      const { files } = await api.scanBambuStudioPresets();
+      // Only the scan call's failure is a "scanFailed" toast — per-file
+      // create failures below are counted and reported separately, and must
+      // never be mislabeled as a folder-read error.
+      let scanResult: { files: BambuScanFile[] };
+      try {
+        scanResult = await api.scanBambuStudioPresets();
+      } catch (err) {
+        showToast(t('filamentProfiles.scanFailed', { error: errorMessage(err) }), 'error');
+        return;
+      }
+
       const existingFilenames = new Set(presets.map((p) => p.filename));
-      const newFiles = files.filter((f) => !existingFilenames.has(f.filename));
+      const newFiles = scanResult.files.filter((f) => !existingFilenames.has(f.filename));
 
       if (newFiles.length === 0) {
-        showToast(t('filamentProfiles.allImported', { n: files.length }));
+        showToast(t('filamentProfiles.allImported', { n: scanResult.files.length }));
         return;
       }
 
       showPersistentToast('fp-import', t('filamentProfiles.importing', { current: 0, total: newFiles.length }), 'loading');
+      try {
+        let ok = 0;
+        let failed = 0;
+        for (let i = 0; i < newFiles.length; i++) {
+          const file = newFiles[i];
+          let payload: FilamentPresetPayload;
+          try {
+            const parsed = JSON.parse(file.content) as Record<string, unknown>;
+            const vendor = Array.isArray(parsed.filament_vendor) ? parsed.filament_vendor[0] : undefined;
+            const type = Array.isArray(parsed.filament_type) ? parsed.filament_type[0] : undefined;
+            const colour = Array.isArray(parsed.filament_colour) ? parsed.filament_colour[0] : undefined;
+            const name = typeof parsed.name === 'string' && parsed.name ? parsed.name : file.filename.replace(/\.json$/, '');
+            payload = {
+              name,
+              brand: vendor ? String(vendor) : '',
+              material: type ? String(type) : '',
+              color: '',
+              color_hex: colour ? String(colour) : '',
+              filename: file.filename,
+              content: file.content,
+            };
+          } catch {
+            payload = {
+              name: file.filename.replace(/\.json$/, ''),
+              brand: '',
+              material: '',
+              color: '',
+              color_hex: '',
+              filename: file.filename,
+              content: file.content,
+            };
+          }
 
-      let ok = 0;
-      let failed = 0;
-      for (let i = 0; i < newFiles.length; i++) {
-        const file = newFiles[i];
-        let payload: FilamentPresetPayload;
-        try {
-          const parsed = JSON.parse(file.content) as Record<string, unknown>;
-          const vendor = Array.isArray(parsed.filament_vendor) ? parsed.filament_vendor[0] : undefined;
-          const type = Array.isArray(parsed.filament_type) ? parsed.filament_type[0] : undefined;
-          const colour = Array.isArray(parsed.filament_colour) ? parsed.filament_colour[0] : undefined;
-          const name = typeof parsed.name === 'string' && parsed.name ? parsed.name : file.filename.replace(/\.json$/, '');
-          payload = {
-            name,
-            brand: vendor ? String(vendor) : '',
-            material: type ? String(type) : '',
-            color: '',
-            color_hex: colour ? String(colour) : '',
-            filename: file.filename,
-            content: file.content,
-          };
-        } catch {
-          payload = {
-            name: file.filename.replace(/\.json$/, ''),
-            brand: '',
-            material: '',
-            color: '',
-            color_hex: '',
-            filename: file.filename,
-            content: file.content,
-          };
+          try {
+            // Sequential and awaited — each POST must land before the next
+            // starts (dedupe + progress-toast semantics depend on it).
+            await api.createFilamentPreset(payload);
+            ok += 1;
+          } catch {
+            failed += 1;
+          }
+
+          showPersistentToast(
+            'fp-import',
+            t('filamentProfiles.importing', { current: i + 1, total: newFiles.length }),
+            'loading',
+          );
         }
 
-        try {
-          await api.createFilamentPreset(payload);
-          ok += 1;
-        } catch {
-          failed += 1;
+        if (failed === 0) {
+          showToast(t('filamentProfiles.imported', { n: ok }));
+        } else {
+          showToast(t('filamentProfiles.importPartial', { ok, failed }), 'error');
         }
-
-        showPersistentToast(
-          'fp-import',
-          t('filamentProfiles.importing', { current: i + 1, total: newFiles.length }),
-          'loading',
-        );
+        await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
+      } finally {
+        dismissToast('fp-import');
       }
-
-      if (failed === 0) {
-        showToast(t('filamentProfiles.imported', { n: ok }));
-      } else {
-        showToast(t('filamentProfiles.importPartial', { ok, failed }), 'error');
-      }
-      dismissToast('fp-import');
-      await queryClient.invalidateQueries({ queryKey: ['filamentPresets'] });
-    } catch (err) {
-      showToast(t('filamentProfiles.scanFailed', { error: errorMessage(err) }), 'error');
     } finally {
       setImporting(false);
     }
@@ -294,23 +317,29 @@ export function FilamentProfilesPage() {
 
   // ── Export ZIP (spec §5.9) ──────────────────────────────────────────────
   const handleExport = async () => {
+    // Belt-and-braces: the Export button is disabled via `canExport` below,
+    // but that guard could drift from this filter, so check again here too.
     const candidates = presets.filter((p) => p.filename && p.content);
     if (candidates.length === 0) {
       showToast(t('filamentProfiles.exportEmpty'), 'error');
       return;
     }
-    const { default: JSZip } = await import('jszip');
-    const zip = new JSZip();
-    candidates.forEach((p) => zip.file(p.filename, p.content));
-    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = 'filament-presets.zip';
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
+    try {
+      const { default: JSZip } = await import('jszip');
+      const zip = new JSZip();
+      candidates.forEach((p) => zip.file(p.filename, p.content));
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'filament-presets.zip';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
+    }
   };
 
   const canExport = presets.some((p) => p.filename && p.content);
@@ -386,7 +415,12 @@ export function FilamentProfilesPage() {
             <Upload className="h-4 w-4" />
             {t('filamentProfiles.import')}
           </Button>
-          <Button variant="secondary" size="sm" onClick={handleSyncToPc}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleSyncToPc}
+            disabled={presetsQuery.isLoading || presetsQuery.isError}
+          >
             <RefreshCw className="h-4 w-4" />
             {t('filamentProfiles.syncToPc')}
           </Button>
@@ -419,7 +453,7 @@ export function FilamentProfilesPage() {
               <button
                 type="button"
                 onClick={() => handleGridSizeChange('small')}
-                aria-label={t('filamentProfiles.gridSmall', 'Small grid')}
+                aria-label={t('filamentProfiles.gridSmall')}
                 aria-pressed={gridSize === 'small'}
                 className={`rounded p-1.5 ${gridSize === 'small' ? 'bg-bambu-green/20 text-bambu-green' : 'text-bambu-gray/60 hover:text-white'}`}
               >
@@ -428,7 +462,7 @@ export function FilamentProfilesPage() {
               <button
                 type="button"
                 onClick={() => handleGridSizeChange('medium')}
-                aria-label={t('filamentProfiles.gridMedium', 'Medium grid')}
+                aria-label={t('filamentProfiles.gridMedium')}
                 aria-pressed={gridSize === 'medium'}
                 className={`rounded p-1.5 ${gridSize === 'medium' ? 'bg-bambu-green/20 text-bambu-green' : 'text-bambu-gray/60 hover:text-white'}`}
               >
@@ -437,7 +471,7 @@ export function FilamentProfilesPage() {
               <button
                 type="button"
                 onClick={() => handleGridSizeChange('large')}
-                aria-label={t('filamentProfiles.gridLarge', 'Large grid')}
+                aria-label={t('filamentProfiles.gridLarge')}
                 aria-pressed={gridSize === 'large'}
                 className={`rounded p-1.5 ${gridSize === 'large' ? 'bg-bambu-green/20 text-bambu-green' : 'text-bambu-gray/60 hover:text-white'}`}
               >

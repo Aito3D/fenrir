@@ -103,7 +103,7 @@ export function PresetCard({ preset, onOpen, onEdit, onDuplicate, onDelete }: Pr
             <button
               type="button"
               onClick={handleMenuToggle}
-              aria-label={t('filamentProfiles.menu', 'Menu')}
+              aria-label={t('filamentProfiles.menu')}
               className="rounded p-1 text-bambu-gray/60 opacity-0 transition-opacity hover:bg-bambu-dark-tertiary hover:text-white focus:opacity-100 group-hover:opacity-100"
             >
               <MoreVertical className="h-4 w-4" />
