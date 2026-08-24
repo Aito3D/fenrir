@@ -22,7 +22,7 @@ vi.mock('../../api/client', () => ({
     getCloudStatus: vi.fn().mockResolvedValue({ is_authenticated: false }),
     orcaCloudStatus: vi.fn().mockResolvedValue({ connected: false }),
     orcaCloudListProfiles: vi.fn().mockResolvedValue({ filament: [] }),
-    getFilamentPresets: vi.fn().mockResolvedValue([]),
+    getCloudFilamentPresets: vi.fn().mockResolvedValue([]),
     getSpoolCatalog: vi.fn().mockResolvedValue([]),
     getLocations: vi.fn().mockResolvedValue([]),
     // Elegoo is only known for PLA here — the pairing that used to hide it
