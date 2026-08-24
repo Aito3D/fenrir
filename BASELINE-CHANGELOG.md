@@ -4065,3 +4065,142 @@ Mutation evidence: reverted `snapshot.id === current.id` to `false` in
 `calculatorSettingsShared.ts` — the new test failed (`findByRole('button', { name: 'Add filament'
 })` timed out; the form never closed). Restored the source (diffed byte-for-byte identical to
 before) — the new test, and all 63 tests in the file, pass again.
+
+## T-121 — 2026-08-24 — the daily-hours "Update profile" action is now withheld when it would post a value the API rejects (user-approved behavior change)
+
+Audit `audit-robustness` found that `CalculatorRealityCheckCard`'s power/dailyHours "Update
+profile" action posted `check.measured` straight through, but `CalculatorPrinterUpdate.
+daily_usage_hours` is bounded `gt=0, le=24` (`backend/app/schemas/calculator.py`), and — unlike
+every other reality-check aggregate — `_daily_usage` (`calculator_insights.py`) publishes its
+`hours_per_day` figure with no plausibility band of its own. A handful of very short or
+overlapping print-log entries can therefore produce a measured value that, once rounded the way
+the button posts it (`Math.round(measured * 10) / 10`), is `0` or exceeds `24` — a value the API
+always 422s. The button offered itself anyway and always failed, and the toast for an array-shaped
+422 detail shows only the field-name-stripped message ("Input should be greater than 0"), with no
+indication of which field or why.
+
+The user approved exactly one remedy, narrower than either option the auditor offered: the button
+stops being offered for a measured figure the server would refuse (posts to `0` or below, or above
+`24`), instead of showing a button that always fails with a cryptic error. Explicitly **not**
+approved: hiding the reality-check row itself (the auditor's other option — the row and its
+assumed/measured figures stay visible and informative regardless of whether the action is
+offered), clamping the posted value to the nearest valid figure (would silently post a number the
+operator never saw or chose), and adding a plausibility band to `_daily_usage` in the backend (the
+auditor's other suggested remedy — no backend file was touched).
+
+The power branch was read against its own bound (`power_watts`: `gt=0, le=100_000_000` via
+`_MONEY_CEILING`) and found NOT to have the same hazard: its source, `_power_draw`, filters to an
+`implied_watts` band of `[1, 3000]` W before ever publishing a row, comfortably inside the backend
+bound after `Math.round`. No guard was added to the power branch — it was not broken.
+
+**User-visible effect:** for a `dailyHours` reality-check row, the "Update profile" button no
+longer appears when the row's measured figure, rounded to one decimal the way the button already
+posts it, is `<= 0` or `> 24`. The row itself (label, assumed value, measured value, dismiss/apply
+controls) is unchanged and still shown. The `power` row and its button are unaffected.
+
+Implemented as a pure `postableDailyUsageHours(check)` helper in
+`CalculatorRealityCheckCard.tsx` that recomputes the exact value `onUpdatePrinterProfile` would
+post and returns `null` when it falls outside `(0, 24]`; the button's render condition now checks
+this in addition to the existing `canUpdate`/`printerId` gates. `CalculatorPage.tsx` (the call
+site) needed no change — `onUpdatePrinterProfile` itself is untouched, and the value the card now
+posts is byte-identical to before whenever it is in range.
+
+New tests in `CalculatorRealityCheckCard.test.tsx` (a new file — the component had no direct test
+coverage before this) pin both rounding boundaries exactly: `0.04h` (posts `0`, rejected — no
+button, row still visible with both figures shown), `0.05h` (posts `0.1`, accepted — button
+present, click posts `{ daily_usage_hours: 0.1 }`), `24.04h` (posts `24`, accepted — button posts
+`{ daily_usage_hours: 24 }`), `24.05h` (posts `24.1`, rejected — no button, row still visible).
+Mutation evidence: replaced the guard's `posted > 0 && posted <= 24 ? posted : null` with a bare
+`return posted;` (always postable) — the two out-of-range tests failed exactly as expected (the
+withheld button was found present); the two in-range tests still passed. Reverted (diffed
+byte-for-byte identical to before) — all four tests pass again. The pre-existing
+`CalculatorPage.test.tsx` printer-profile-update test (measured `8` h/day, well in range) was
+re-verified unaffected in isolation.
+
+Coverage: frontend scoped (`bash tools/coverage_calc.sh frontend`) measured 90.75% statements
+(1001/1103) — above the 87.32% floor and within the documented ~2-point swing of the prior
+90.79% reading (996/1097); the small denominator growth is the new guard function itself.
+`ruff`/backend untouched (frontend-only change). `npx eslint` and `npx tsc -b --noEmit`: clean.
+`tools/snapshot.py verify`: 10/10, none moved (frontend-only change; no probe covers this
+component). `SURFACE.md` regenerated and diffed byte-for-byte identical to before this fix.
+
+CalculatorPage.test.tsx and PrintModal.test.tsx both flaked under host load spikes (load average
+~45) during verification; both were confirmed to flake identically on the unmodified tree via a
+stash-based control run (same failures, same tests, with this fix's diff stashed out), and both
+pass cleanly in isolation once load settles — pre-existing, unrelated to this fix.
+
+## T-122 — 2026-08-24 — the calculator defaults form now refuses to submit an out-of-range value and marks the offending field, instead of silently discarding every edit (user-approved behavior change)
+
+Audit `audit-robustness` found `CalculatorDefaultsPanel`'s Save gate checked only `n >= 0` per
+field, while `CalculatorDefaultsUpdate` (`backend/app/schemas/calculator.py`) bounds every field
+tighter: `tax_pct` `le=100`, `default_difficulty_pct` `ge=100`, the eight rate fields `le=1000`,
+and the four money fields (`electricity_tariff`, `labor_rate_per_hour`,
+`consumables_packaging_flat`, `base_fee_flat`) `le=_MONEY_CEILING` (100,000,000). Typing an
+out-of-range value (e.g. `150` into Tax %, or `50` into Default difficulty — which the form
+presents as an ordinary non-negative percentage) left Save enabled; the PATCH then 422s, the
+frontend's error surfacing strips pydantic's `loc`, and the operator sees a bare message like
+"Input should be less than or equal to 100" against a form of thirteen fields with no indication
+which one broke — and every other field they'd edited in the same pass is discarded along with the
+bad one.
+
+The user approved both halves of a single remedy: the form refuses to submit an out-of-range
+value AND marks the specific offending field, rather than only disabling Save with no explanation.
+
+Bounds were transcribed by hand from `CalculatorDefaultsUpdate` (not the auditor's summary, which
+was verified and found accurate): all thirteen `ge`/`le` pairs use `ge`, not `gt` — no field in
+this schema rejects `0` the way `gt=0` would, so the existing `n >= 0` check had no live "accepts
+zero when the server doesn't" defect in this specific class (unlike, e.g., `cost_per_kg` elsewhere
+in the same file, which is out of this task's scope). `default_difficulty_pct`'s `ge=100` is the
+one an operator is most likely to trip: the form has no visual cue that 100 is the floor, not an
+ordinary 0-based percentage, so its inline message names the real bound ("Must be between 100 and
+1000") rather than a generic "invalid".
+
+**User-visible effect:** each of the thirteen fields in `CalculatorDefaultsPanel` now shows its
+own inline error (NumberField's existing `error` prop — no changes to NumberField itself) when its
+typed value parses but falls outside the field's server-side bound, and Save stays disabled while
+any field is out of range — mirroring the exact bound the backend enforces, not a generic
+non-negative check. An empty field is unchanged: still blocks Save (via `required` plus the
+existing null-parse check) but is not additionally flagged with a range message, since "out of
+range" would misdescribe an empty box.
+
+Implemented entirely in `CalculatorDefaultsPanel.tsx`: `DefaultsField` gained `min`/`max`, each of
+the thirteen `DEFAULTS_FIELDS_GENERAL`/`DEFAULTS_FIELDS_FILAMENT` entries now carries its
+transcribed bound (money fields share a local `MONEY_CEILING = 100_000_000` constant, mirroring
+the backend's `_MONEY_CEILING`), a new `fieldErrors` map replaces the old boolean-only `allValid`
+scan and is threaded into each `NumberField`'s `error` prop via `renderFields`, and `allValid` now
+checks `n >= min && n <= max` per field instead of `n >= 0`. The bounds table was deliberately kept
+module-private (not exported from `CalculatorDefaultsPanel.tsx` or moved into
+`calculatorSettingsShared.ts`) so this fix does not widen the campaign's frozen `SURFACE.md`
+contract — `calculatorSettingsShared.ts` itself is untouched. A new i18n key,
+`calculator.valRange` ("Must be between {{min}} and {{max}}" in `en`, translated — not
+copied — into all twelve other locales), supplies the message; `node scripts/check-i18n-parity.mjs`
+passes with all thirteen locale leaf counts equal (6868 each).
+
+New tests in `CalculatorSettingsPanels.test.tsx`: an out-of-range value (`tax_pct` = 150) marks
+that field's own inline error and disables Save while leaving a legitimate same-pass edit
+(`electricity_tariff` = 150) intact in the form; fixing the value back in range clears the mark and
+re-enables Save; `default_difficulty_pct` = 50 is pinned specifically, asserting the inline message
+names the real 100..1000 bound. A further `it.each` test drives all thirteen fields' own rendered
+inputs directly (by `#calc-def-<key>` id) to `max + 1` and back to `max`, asserting the panel names
+the exact transcribed `min`/`max` and toggles Save accordingly for every field — pinning the
+client's mirror of the schema behaviorally (DOM-driven) rather than by importing the now-private
+bounds table, so a schema bound that drifts from this table fails a user-facing assertion instead
+of a bookkeeping one.
+
+Mutation evidence: (1) disabled the `fieldErrors` guard (`if (false && ...)`) and reverted
+`allValid` to the old `n >= 0` check — all three new behavioral tests and all thirteen `it.each`
+mirror-test cases failed as expected (16 failures), reverted, all 79 tests in the file pass again.
+(2) separately mutated `default_difficulty_pct`'s transcribed `min` from `100` to `0` in
+`CalculatorDefaultsPanel.tsx` alone (leaving the test's own transcription at `100`) — both the
+mirror-test case for that field and the dedicated `default_difficulty_pct` behavioral test failed
+as expected; reverted, `git diff` on that file clean again.
+
+Coverage: `bash tools/coverage_calc.sh frontend` measured 92.69% statements (1028/1109) across
+three consecutive runs (identical figure every time) — above the 87.32% floor and the prior 90.75%
+baseline. Each run had 2-5 transient test failures confined to `CalculatorPage.test.tsx`,
+`PrintModal.test.tsx` and `StatsPageUserFilter1894.test.tsx` (all three already on this campaign's
+documented flaky list); all three files were re-run in isolation and passed cleanly (120/120),
+confirming host-load flake unrelated to this change. `npx eslint` and `npx tsc -b --noEmit`:
+clean. `tools/snapshot.py verify`: 10/10, none moved (frontend-only change). `SURFACE.md`
+regenerated and diffed byte-for-byte identical to before this fix (the bounds table's
+module-private status was chosen specifically to keep this true).

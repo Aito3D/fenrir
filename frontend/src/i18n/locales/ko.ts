@@ -7741,6 +7741,7 @@ export default {
     openSettings: '계산기 설정 열기',
     valNonNegative: '0 이상이어야 합니다',
     valQuantityMin: '1 이상이어야 합니다',
+    valRange: '{{min}}에서 {{max}} 사이여야 합니다',
     allMaterials: '모든 소재',
     allBrands: '모든 브랜드',
     noMatches: '일치하는 항목이 없습니다',

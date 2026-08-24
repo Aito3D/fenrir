@@ -14,26 +14,46 @@ import { getCurrencySymbol } from '../../utils/currency';
 import { useToast } from '../../contexts/ToastContext';
 import { parseNum } from './calculatorSettingsShared';
 
-type DefaultsField = { key: keyof Omit<CalculatorDefaults, 'id' | 'updated_at'>; labelKey: string };
+type DefaultsField = {
+  key: keyof Omit<CalculatorDefaults, 'id' | 'updated_at'>;
+  labelKey: string;
+  /** Mirrors the field's `ge`/`le` bound in `CalculatorDefaultsUpdate`
+   *  (backend/app/schemas/calculator.py) — kept in sync manually since the
+   *  frontend has no build-time access to the pydantic schema. Pinned by
+   *  ../../__tests__/components/CalculatorSettingsPanels.test.tsx, which
+   *  drives each field's rendered input directly to its bound rather than
+   *  importing this table (kept module-private so it doesn't widen this
+   *  component's exported surface). */
+  min: number;
+  max: number;
+};
+
+// Ceiling shared by every unbounded money/rate field server-side
+// (`_MONEY_CEILING` in backend/app/schemas/calculator.py) — a generous but
+// finite cap, not a realistic input.
+const MONEY_CEILING = 100_000_000;
 
 const DEFAULTS_FIELDS_GENERAL: DefaultsField[] = [
-  { key: 'electricity_tariff', labelKey: 'calculator.electricityTariff' },
-  { key: 'labor_rate_per_hour', labelKey: 'calculator.laborRate' },
-  { key: 'consumables_packaging_flat', labelKey: 'calculator.consumablesFlat' },
-  { key: 'base_fee_flat', labelKey: 'calculator.baseFee' },
-  { key: 'failure_rate_pct', labelKey: 'calculator.failureRate' },
-  { key: 'prototype_rate_pct', labelKey: 'calculator.prototypeRate' },
-  { key: 'ads_rate_pct', labelKey: 'calculator.adsRate' },
-  { key: 'filament_markup_pct', labelKey: 'calculator.filamentMarkup' },
-  { key: 'global_markup_pct', labelKey: 'calculator.globalMarkup' },
-  { key: 'tax_pct', labelKey: 'calculator.taxPct' },
-  { key: 'stuff_markup_pct', labelKey: 'calculator.stuffMarkup' },
+  { key: 'electricity_tariff', labelKey: 'calculator.electricityTariff', min: 0, max: MONEY_CEILING },
+  { key: 'labor_rate_per_hour', labelKey: 'calculator.laborRate', min: 0, max: MONEY_CEILING },
+  { key: 'consumables_packaging_flat', labelKey: 'calculator.consumablesFlat', min: 0, max: MONEY_CEILING },
+  { key: 'base_fee_flat', labelKey: 'calculator.baseFee', min: 0, max: MONEY_CEILING },
+  { key: 'failure_rate_pct', labelKey: 'calculator.failureRate', min: 0, max: 1000 },
+  { key: 'prototype_rate_pct', labelKey: 'calculator.prototypeRate', min: 0, max: 1000 },
+  { key: 'ads_rate_pct', labelKey: 'calculator.adsRate', min: 0, max: 1000 },
+  { key: 'filament_markup_pct', labelKey: 'calculator.filamentMarkup', min: 0, max: 1000 },
+  { key: 'global_markup_pct', labelKey: 'calculator.globalMarkup', min: 0, max: 1000 },
+  { key: 'tax_pct', labelKey: 'calculator.taxPct', min: 0, max: 100 },
+  { key: 'stuff_markup_pct', labelKey: 'calculator.stuffMarkup', min: 0, max: 1000 },
 ];
 
 // Prefill values for new filament profiles — shown in their own card.
+// `default_difficulty_pct` is bounded `ge=100` server-side (100 = no
+// surcharge is the floor, not an ordinary non-negative number) — the field
+// most likely to trip an operator who reads it as a plain percentage.
 const DEFAULTS_FIELDS_FILAMENT: DefaultsField[] = [
-  { key: 'default_difficulty_pct', labelKey: 'calculator.defaultDifficulty' },
-  { key: 'default_margin_over_cost_pct', labelKey: 'calculator.defaultMargin' },
+  { key: 'default_difficulty_pct', labelKey: 'calculator.defaultDifficulty', min: 100, max: 1000 },
+  { key: 'default_margin_over_cost_pct', labelKey: 'calculator.defaultMargin', min: 0, max: 1000 },
 ];
 
 const DEFAULTS_FIELDS: DefaultsField[] = [...DEFAULTS_FIELDS_GENERAL, ...DEFAULTS_FIELDS_FILAMENT];
@@ -89,9 +109,22 @@ function DefaultsForm({
     onError: (error: Error) => showToast(error.message, 'error'),
   });
 
-  const allValid = DEFAULTS_FIELDS.every(({ key }) => {
+  // Per-field range errors — only for a value that parses but falls outside
+  // the field's server-side bound. An empty field is left error-free here
+  // (same as before this fix): it's still caught by `allValid` below and by
+  // NumberField's own `required`, but flagging it with an "out of range"
+  // message would misdescribe the problem.
+  const fieldErrors = DEFAULTS_FIELDS.reduce<Partial<Record<string, string>>>((errs, { key, min, max }) => {
     const n = parseNum(form[key]);
-    return n !== null && n >= 0;
+    if (n !== null && (n < min || n > max)) {
+      errs[key] = t('calculator.valRange', { min, max });
+    }
+    return errs;
+  }, {});
+
+  const allValid = DEFAULTS_FIELDS.every(({ key, min, max }) => {
+    const n = parseNum(form[key]);
+    return n !== null && n >= min && n <= max;
   });
 
   const setField = (key: string, v: string) => {
@@ -108,6 +141,7 @@ function DefaultsForm({
           label={t(labelKey, { currency: currencySymbol })}
           value={form[key]}
           onChange={(v) => setField(key, v)}
+          error={fieldErrors[key]}
           required
         />
       ))}

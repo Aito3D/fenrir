@@ -8121,6 +8121,7 @@ export default {
     openSettings: 'Rechner-Einstellungen öffnen',
     valNonNegative: 'Muss 0 oder größer sein',
     valQuantityMin: 'Muss mindestens 1 sein',
+    valRange: 'Muss zwischen {{min}} und {{max}} liegen',
     allMaterials: 'Alle Materialien',
     allBrands: 'Alle Marken',
     noMatches: 'Keine Treffer gefunden',

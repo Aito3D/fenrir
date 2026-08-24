@@ -8108,6 +8108,7 @@ export default {
     openSettings: 'Abrir configurações da calculadora',
     valNonNegative: 'Deve ser 0 ou maior',
     valQuantityMin: 'Deve ser pelo menos 1',
+    valRange: 'Deve estar entre {{min}} e {{max}}',
     allMaterials: 'Todos os materiais',
     allBrands: 'Todas as marcas',
     noMatches: 'Nenhum resultado encontrado',

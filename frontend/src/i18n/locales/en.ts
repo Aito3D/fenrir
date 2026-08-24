@@ -8174,6 +8174,7 @@ export default {
     openSettings: 'Open calculator settings',
     valNonNegative: 'Must be 0 or more',
     valQuantityMin: 'Must be at least 1',
+    valRange: 'Must be between {{min}} and {{max}}',
     allMaterials: 'All materials',
     allBrands: 'All brands',
     noMatches: 'No matches found',

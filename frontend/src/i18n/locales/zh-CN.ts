@@ -8107,6 +8107,7 @@ export default {
     openSettings: '打开计算器设置',
     valNonNegative: '必须大于等于0',
     valQuantityMin: '必须至少为1',
+    valRange: '必须介于 {{min}} 和 {{max}} 之间',
     allMaterials: '所有材料',
     allBrands: '所有品牌',
     noMatches: '无匹配结果',

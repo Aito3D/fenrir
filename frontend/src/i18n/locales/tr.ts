@@ -8048,6 +8048,7 @@ export default {
     openSettings: 'Hesaplayıcı ayarlarını aç',
     valNonNegative: '0 veya daha büyük olmalı',
     valQuantityMin: 'En az 1 olmalı',
+    valRange: '{{min}} ile {{max}} arasında olmalı',
     allMaterials: 'Tüm malzemeler',
     allBrands: 'Tüm markalar',
     noMatches: 'Eşleşme bulunamadı',

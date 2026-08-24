@@ -8108,6 +8108,7 @@ export default {
     openSettings: 'Ouvrir les paramètres',
     valNonNegative: 'Doit être supérieur ou égal à 0',
     valQuantityMin: 'Doit être au moins 1',
+    valRange: 'Doit être compris entre {{min}} et {{max}}',
     allMaterials: 'Tous les matériaux',
     allBrands: 'Toutes les marques',
     noMatches: 'Aucun résultat',

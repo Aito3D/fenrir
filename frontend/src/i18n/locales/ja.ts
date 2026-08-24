@@ -8120,6 +8120,7 @@ export default {
     openSettings: '計算機の設定を開く',
     valNonNegative: '0以上で入力してください',
     valQuantityMin: '1以上で入力してください',
+    valRange: '{{min}}〜{{max}}の範囲で入力してください',
     allMaterials: 'すべての素材',
     allBrands: 'すべてのブランド',
     noMatches: '一致する項目がありません',

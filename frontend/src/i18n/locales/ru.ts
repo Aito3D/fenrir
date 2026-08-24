@@ -7724,6 +7724,7 @@ export default {
     openSettings: "Открыть настройки калькулятора",
     valNonNegative: "Значение должно быть не меньше 0",
     valQuantityMin: "Значение должно быть не меньше 1",
+    valRange: "Должно быть от {{min}} до {{max}}",
     allMaterials: "Все материалы",
     allBrands: "Все бренды",
     noMatches: "Ничего не найдено",
