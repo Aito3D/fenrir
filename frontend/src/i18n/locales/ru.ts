@@ -4212,7 +4212,7 @@ export default {
     // Editor Extrusion
     flowSection: "Поток",
     flowRatio: "Коэффициент потока",
-    cal: "кал",
+    cal: "калибр.",
     calTitle: "Изменить коэффициент потока на %",
     apply: "Применить",
     maxVolFlow: "Макс. объёмный поток",

@@ -2008,6 +2008,7 @@ export default {
     },
   },
 
+
   // İstatistikler sayfası
   stats: {
     title: 'İstatistikler',

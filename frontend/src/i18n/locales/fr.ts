@@ -4391,7 +4391,7 @@ export default {
     endOfPrint: "Fin d'impression",
     nil: 'nil',
     off: 'Désactivé',
-    on: 'On',
+    on: 'Activé',
     // Editor Extrusion
     flowSection: 'Débit',
     flowRatio: 'Ratio de débit',
