@@ -27,6 +27,7 @@ from backend.app.schemas.calculator import (
     CalculatorPrinterCreate,
     CalculatorPrinterResponse,
     CalculatorPrinterUpdate,
+    InsightsWindowDays,
     ZohoFilamentProduct,
 )
 from backend.app.services import zoho_filaments
@@ -420,7 +421,7 @@ async def update_calculator_defaults(
 
 @router.get("/insights", response_model=CalculatorInsightsResponse)
 async def get_calculator_insights(
-    days: int = Query(default=365, ge=7, le=3650),
+    days: InsightsWindowDays = Query(default=InsightsWindowDays.ONE_YEAR, description="Lookback window in days."),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CALCULATOR_READ),
 ):

@@ -3688,3 +3688,103 @@ under host load averages of 40-51, all passing in isolation. `tools/coverage_cal
 unmodified baseline files under identical load (90.44%, 985/1089 exactly) — confirming the run-to-run
 variance is pre-existing host-load flakiness (the documented `CalculatorPage.test.tsx` degradation
 under load), not caused by this change. All values clear the frozen RATCHET floor of 87.32%.
+
+## T-118 — 2026-08-24 — user-approved behavior change
+
+The `calculator_filaments` Zoho/margin migration backfill (`core/database.py`, audit-only in this
+campaign, not touched here) computes `margin_pct` from whatever `cost_per_kg`/`sale_price_per_kg`
+were already stored, unclamped. A legacy row where the hand-typed printing cost sits below the
+purchase cost, or more than ~11x it (a plausible decimal-point slip), backfills to a margin outside
+`[0, 1000]`. `CalculatorFilamentBase.margin_pct` still carried the write-side `ge=0, le=1000` bound
+and `CalculatorFilamentResponse` inherited it unchanged, so a `GET /api/v1/calculator/filaments/`
+response containing even one such row raised `ResponseValidationError` and 500'd the **entire**
+list — every healthy filament along with the bad one — leaving the calculator page's "no filaments
+configured" empty state and a blank filaments settings tab, with no in-app way to see or fix the
+offending row.
+
+Fixed the same way `cost_per_kg` on the same class already handles this precise hazard (see that
+field's docstring note, extended to also cover `margin_pct`): dropped `ge=0, le=1000` from
+`CalculatorFilamentBase.margin_pct`, which only the read path (`CalculatorFilamentResponse`)
+inherits unmodified. `CalculatorFilamentCreate` and `CalculatorFilamentUpdate` — the two write
+paths — keep the bound: `CalculatorFilamentCreate` now declares its own
+`margin_pct: float = Field(default=50.0, ge=0, le=1000, ...)` override (previously relying on the
+now-loosened base default), and `CalculatorFilamentUpdate` already declared `margin_pct` as its own
+field on a plain `BaseModel` (not inheriting from `CalculatorFilamentBase` at all), so it was never
+affected and needed no change. Confirmed by a POST/PATCH test asserting `margin_pct` outside
+`[0, 1000]` still returns 422, and by a list-response test — first run against the unfixed schema to
+confirm it reproduces the exact `ResponseValidationError` the audit describes, then re-run against
+the fix to confirm it returns 200 with all three rows (one healthy, one backfilled negative, one
+backfilled above 1000).
+
+Observable change, quoting the approved description verbatim: "Filament profiles whose stored
+printing cost per kg is below their purchase cost (or more than about eleven times it) currently
+make the entire filament list fail to load; after the fix the list loads again and those profiles
+appear with their real, out-of-range margin shown."
+
+Snapshot fallout: `calc-pydantic-schemas` moved and was re-recorded — diffed old vs. new JSON Schema
+output first: only two changes, both `margin_pct`'s `"maximum": 1000` / `"minimum": 0` keys removed,
+once each from `CalculatorFilamentBase.properties.margin_pct` and (via inheritance, unchanged)
+`CalculatorFilamentResponse.properties.margin_pct`, plus the class docstring text captured by the
+same probe. `CalculatorFilamentCreate.properties.margin_pct` and
+`CalculatorFilamentUpdate.properties.margin_pct` are unchanged (still `"maximum": 1000, "minimum":
+0"`), confirmed in the same diff by their absence from it. `calc-openapi` did not move: that probe
+only captures `spec["paths"]`, where request/response bodies appear as a `$ref` to the components
+schema, not the inlined schema itself. `SURFACE.md` did not move (no class, export, or route
+signature added or removed). Full `verify` run: 10/10 probes match.
+
+## T-128 — 2026-08-24 — GET /calculator/insights `days` restricted to a fixed allowlist (user-approved behavior change)
+
+`days: int = Query(default=365, ge=7, le=3650)` let any CALCULATOR_READ-scoped caller (a UI user or
+a read-only API key — `Permission.CALCULATOR_READ` maps to `can_read_status`) sweep an arbitrary
+number of overlapping windows and subtract consecutive results. `MIN_SAMPLE` is enforced per window,
+never across windows, so a one-day-at-a-time sweep differences a suppressed group (sample below
+`MIN_SAMPLE`, absent from the response) into visibility — the audit demonstrated this recovering a
+single failed print and its material from `_failure_rates`, and the same subtraction applies to
+`_daily_usage` and `_power_draw`. The parameter had no real caller: `CalculatorPage.tsx` calls
+`api.getCalculatorInsights()` with no argument.
+
+Fixed by replacing the free integer with a fixed allowlist — `days: InsightsWindowDays` (new
+`IntEnum` in `backend/app/schemas/calculator.py`, values 30/90/365, default `ONE_YEAR` = 365,
+unchanged from today's default) — so a caller can no longer request an arbitrary day count between
+7 and 3650; any other value now 422s outright rather than being coerced to the nearest allowed
+value (coercion would leave a quantised version of the same sweep alive). A plain
+`Literal[30, 90, 365]` was tried first and rejected: Pydantic v2 does not coerce a query string
+(`"30"`) to an int literal member in its default parsing mode, so every request — including the
+three intended values — 422'd. `IntEnum` coerces the string the same way a plain `int` field always
+did, while still restricting the value to the allowlist. Per the user's explicit direction, only the
+allowlist option was implemented — not the alternative the audit also offered (also requiring an
+archives/print-log read permission), which was ratified as the road not taken.
+
+Residual, demonstrated against the real service, not just reasoned through: three fixed windows
+(30/90/365) can still be differenced against each other, so the attack is reduced, not eliminated.
+20 completed PLA + 1 failed ABS print seeded 31-89 days back, plus 15 more completed PLA prints
+95-109 days back: `days=30` → `overall_pct=None, sample=0`; `days=90` →
+`overall_pct=4.8, sample=21`; `days=365` → `overall_pct=2.8, sample=36`. The 90-30 delta
+(sample +21, one of which failed) discloses "somewhere in the 60-day gap between the two windows,
+1 of 21 new prints failed" — the same subtraction the auditor used, just bucketed into ~60/275-day
+slabs instead of 1-day slabs, so it can no longer pin the failure to a specific day. Materially it
+is a narrower leak than before in one respect this demo also confirms: `by_material` never surfaced
+ABS at any window (its count stayed 1, under `MIN_SAMPLE`, in all three), so — unlike the auditor's
+original day-granular attack, which could cross-reference two adjacent single-day windows to
+attribute the recovered failure to a specific material — a 30/90/365 differencer here learns *that*
+a failure occurred in a ~60-275-day span and *how many* new prints appeared, but not which one, on
+which day, or (in this scenario) which material. This is a real reduction, not a full closure: the
+count/rate delta itself is still a leak the allowlist does not fully close.
+
+Observable change, quoting the approved description verbatim: "The calculator's reality-check
+figures would only be available over a few fixed history windows instead of any number of days
+between 7 and 3650. Nothing in Bambuddy's own UI passes a custom window today, so the calculator
+page looks and behaves exactly the same; only an outside script or API key that calls
+`/api/v1/calculator/insights?days=<something else>` would start getting an error and have to pick
+one of the offered windows."
+
+Snapshot fallout: `calc-openapi` moved and was re-recorded — diffed old vs. new JSON output first:
+the `days` query parameter's inline `schema` lost `"maximum": 3650`, `"minimum": 7`, `"type":
+"integer"`, `"title": "Days"` and gained `"$ref": "#/components/schemas/InsightsWindowDays"` (the
+new named enum schema, `type: integer`, `enum: [30, 90, 365]`); the parameter and its schema both
+gained `"description": "Lookback window in days."`; `"default": 365` is unchanged. No other probe
+moved (`calc-pydantic-schemas` — an `IntEnum` is not a `BaseModel` subclass, so it's out of that
+probe's scope; `calc-route-perms`, `calc-ddl`, `calc-column-defaults`, `calc-zoho-pure`,
+`calc-insights-pure`, `calc-migration-sql`, `calc-pricing`, `calc-frontend-pure` all matched
+byte-for-byte). `SURFACE.md` moved by one line — `class InsightsWindowDays` added to the schema
+class listing (`R3`) — and was regenerated with `bash tools/gen_surface_calc.sh > SURFACE.md`.

@@ -71,6 +71,7 @@ class CalculatorPrinterUpdate
 class DailyUsageEntry
 class FailureInsights
 class FailureRateEntry
+class InsightsWindowDays
 class PowerDrawEntry
 class SpoolCostBrandEntry
 class SpoolCostEntry

@@ -69,6 +69,89 @@ class TestCalculatorFilaments:
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
+    async def test_create_rejects_negative_margin(self, async_client):
+        """T-118: the write side must keep the ``ge=0`` bound even though the
+        read side (``CalculatorFilamentBase``/``Response``) had to drop it to
+        tolerate legacy rows backfilled outside [0, 1000]."""
+        resp = await async_client.post("/api/v1/calculator/filaments/", json={**FILAMENT_PAYLOAD, "margin_pct": -0.01})
+        assert resp.status_code == 422
+        assert (await async_client.get("/api/v1/calculator/filaments/")).json() == []
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_margin_above_1000(self, async_client):
+        resp = await async_client.post(
+            "/api/v1/calculator/filaments/", json={**FILAMENT_PAYLOAD, "margin_pct": 1000.01}
+        )
+        assert resp.status_code == 422
+        assert (await async_client.get("/api/v1/calculator/filaments/")).json() == []
+
+    @pytest.mark.asyncio
+    async def test_update_rejects_negative_margin(self, async_client):
+        created = (await async_client.post("/api/v1/calculator/filaments/", json=FILAMENT_PAYLOAD)).json()
+        resp = await async_client.patch(f"/api/v1/calculator/filaments/{created['id']}", json={"margin_pct": -0.01})
+        assert resp.status_code == 422
+        row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
+        assert row["margin_pct"] == 50.0  # unchanged
+
+    @pytest.mark.asyncio
+    async def test_update_rejects_margin_above_1000(self, async_client):
+        created = (await async_client.post("/api/v1/calculator/filaments/", json=FILAMENT_PAYLOAD)).json()
+        resp = await async_client.patch(f"/api/v1/calculator/filaments/{created['id']}", json={"margin_pct": 1000.01})
+        assert resp.status_code == 422
+        row = (await async_client.get("/api/v1/calculator/filaments/")).json()[0]
+        assert row["margin_pct"] == 50.0  # unchanged
+
+    @pytest.mark.asyncio
+    async def test_list_survives_a_legacy_row_with_an_out_of_range_margin(self, async_client, db_session):
+        """T-118: a row backfilled with a margin outside [0, 1000] (e.g. a
+        printing cost typed below the purchase cost, or a decimal-point slip)
+        must not 500 the whole list. Inserted directly through the ORM,
+        bypassing the write-side schema, the way a real pre-existing database
+        row would already be sitting there before this fix.
+        """
+        from backend.app.models.calculator import CalculatorFilament
+
+        healthy = CalculatorFilament(
+            name="Healthy PLA",
+            brand="",
+            material="Healthy",
+            cost_per_kg=25.0,
+            sale_price_per_kg=37.5,
+            margin_pct=50.0,
+            difficulty_pct=100.0,
+        )
+        legacy_negative = CalculatorFilament(
+            name="Legacy Cheap PLA",
+            brand="",
+            material="Legacy Cheap",
+            cost_per_kg=25.0,
+            sale_price_per_kg=20.0,
+            margin_pct=-20.0,  # sale below cost
+            difficulty_pct=100.0,
+        )
+        legacy_high = CalculatorFilament(
+            name="Legacy Typo PETG",
+            brand="",
+            material="Legacy Typo",
+            cost_per_kg=2.5,
+            sale_price_per_kg=55.0,
+            margin_pct=2100.0,  # decimal-point slip on cost
+            difficulty_pct=100.0,
+        )
+        db_session.add_all([healthy, legacy_negative, legacy_high])
+        await db_session.commit()
+
+        resp = await async_client.get("/api/v1/calculator/filaments/")
+
+        assert resp.status_code == 200
+        margins = {row["material"]: row["margin_pct"] for row in resp.json()}
+        assert margins == {
+            "Healthy": 50.0,
+            "Legacy Cheap": -20.0,
+            "Legacy Typo": 2100.0,
+        }
+
+    @pytest.mark.asyncio
     async def test_create_rejects_infinite_cost(self, async_client):
         """``float("inf") > 0`` is True, so ``gt=0`` alone lets it through.
 

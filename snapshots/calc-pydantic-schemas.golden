@@ -276,7 +276,7 @@
   "type": "object"
  },
  "CalculatorFilamentBase": {
-  "description": "Base schema for calculator filaments.\n\n``sale_price_per_kg`` is deliberately absent: it is derived server-side from\n``cost_per_kg`` and ``margin_pct`` and only ever appears in responses.\n\nDeliberately NOT given ``_FINITE_ONLY``/a ceiling on ``cost_per_kg``: this\nclass is also the parent of ``CalculatorFilamentResponse``, which reads\nback whatever is already in the database. Tightening it here would turn a\npre-existing out-of-range row into a 500 on every ``GET`` instead of the\n``null`` it renders today; the write-side schemas below carry the new\nconstraint instead, so only new writes are rejected.",
+  "description": "Base schema for calculator filaments.\n\n``sale_price_per_kg`` is deliberately absent: it is derived server-side from\n``cost_per_kg`` and ``margin_pct`` and only ever appears in responses.\n\nDeliberately NOT given ``_FINITE_ONLY``/a ceiling on ``cost_per_kg``, and\ndeliberately NOT given the ``ge=0, le=1000`` bounds on ``margin_pct``\neither: this class is also the parent of ``CalculatorFilamentResponse``,\nwhich reads back whatever is already in the database. Tightening either\nfield here would turn a pre-existing out-of-range row (e.g. a hand-typed\n``sale_price_per_kg`` below ``cost_per_kg``, backfilled to a negative\nmargin, or one more than ~11x cost, backfilled above 1000) into a 500 for\nthe ENTIRE list on every ``GET`` instead of the real, if unusual, value it\nrenders today; the write-side schemas below carry the new constraints\ninstead, so only new writes are rejected.",
   "properties": {
    "brand": {
     "default": "",
@@ -302,8 +302,6 @@
    "margin_pct": {
     "default": 50.0,
     "description": "Margin over cost, percent",
-    "maximum": 1000,
-    "minimum": 0,
     "title": "Margin Pct",
     "type": "number"
    },
@@ -520,8 +518,6 @@
    "margin_pct": {
     "default": 50.0,
     "description": "Margin over cost, percent",
-    "maximum": 1000,
-    "minimum": 0,
     "title": "Margin Pct",
     "type": "number"
    },

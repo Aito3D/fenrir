@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import IntEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,18 +24,22 @@ class CalculatorFilamentBase(BaseModel):
     ``sale_price_per_kg`` is deliberately absent: it is derived server-side from
     ``cost_per_kg`` and ``margin_pct`` and only ever appears in responses.
 
-    Deliberately NOT given ``_FINITE_ONLY``/a ceiling on ``cost_per_kg``: this
-    class is also the parent of ``CalculatorFilamentResponse``, which reads
-    back whatever is already in the database. Tightening it here would turn a
-    pre-existing out-of-range row into a 500 on every ``GET`` instead of the
-    ``null`` it renders today; the write-side schemas below carry the new
-    constraint instead, so only new writes are rejected.
+    Deliberately NOT given ``_FINITE_ONLY``/a ceiling on ``cost_per_kg``, and
+    deliberately NOT given the ``ge=0, le=1000`` bounds on ``margin_pct``
+    either: this class is also the parent of ``CalculatorFilamentResponse``,
+    which reads back whatever is already in the database. Tightening either
+    field here would turn a pre-existing out-of-range row (e.g. a hand-typed
+    ``sale_price_per_kg`` below ``cost_per_kg``, backfilled to a negative
+    margin, or one more than ~11x cost, backfilled above 1000) into a 500 for
+    the ENTIRE list on every ``GET`` instead of the real, if unusual, value it
+    renders today; the write-side schemas below carry the new constraints
+    instead, so only new writes are rejected.
     """
 
     brand: str = Field(default="", max_length=100, description="Filament brand (optional)")
     material: str = Field(..., min_length=1, max_length=100, description="Filament material, e.g. PLA or PETG-CF")
     cost_per_kg: float = Field(..., gt=0, description="Purchase cost per kg (app currency)")
-    margin_pct: float = Field(default=50.0, ge=0, le=1000, description="Margin over cost, percent")
+    margin_pct: float = Field(default=50.0, description="Margin over cost, percent")
     difficulty_pct: float = Field(
         default=100.0, ge=100, le=1000, description="Difficulty multiplier for this filament (100 = no surcharge)"
     )
@@ -52,6 +57,7 @@ class CalculatorFilamentCreate(CalculatorFilamentBase):
     model_config = _FINITE_ONLY
 
     cost_per_kg: float = Field(..., gt=0, le=_MONEY_CEILING, description="Purchase cost per kg (app currency)")
+    margin_pct: float = Field(default=50.0, ge=0, le=1000, description="Margin over cost, percent")
     spool_weight_kg: float | None = Field(
         default=None,
         ge=0.001,
@@ -196,6 +202,22 @@ class CalculatorDefaultsResponse(BaseModel):
 
 
 # --- Insights (measured "reality check" figures) ---
+
+
+class InsightsWindowDays(IntEnum):
+    """Allowed lookback windows for GET /calculator/insights (T-128).
+
+    Fixed to a handful of values, not an arbitrary ``int`` range, so a
+    per-day sweep can't difference consecutive windows to recover
+    individual print-log rows that ``MIN_SAMPLE`` suppresses within any
+    single window. ``IntEnum`` (not ``Literal[30, 90, 365]``) so a query
+    string like ``"30"`` still coerces the same way a plain ``int`` field
+    always did.
+    """
+
+    THIRTY = 30
+    NINETY = 90
+    ONE_YEAR = 365
 
 
 class FailureRateEntry(BaseModel):

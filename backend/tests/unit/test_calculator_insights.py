@@ -118,6 +118,29 @@ async def test_window_filters_old_runs(async_client: AsyncClient, printer_factor
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+@pytest.mark.parametrize("days", [30, 90, 365])
+async def test_window_allowlist_accepts_each_offered_value(async_client: AsyncClient, days):
+    """T-128: 30/90/365 are the only offered windows; each must still work."""
+    response = await async_client.get(f"/api/v1/calculator/insights?days={days}")
+    assert response.status_code == 200
+    assert response.json()["window_days"] == days
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize("days", [7, 29, 31, 40, 100, 366, 3650, 0, -30])
+async def test_window_rejects_values_outside_allowlist(async_client: AsyncClient, days):
+    """T-128: a caller sweeping arbitrary windows to difference consecutive days
+    and recover individually-suppressed prints must be rejected outright (422),
+    not silently coerced to the nearest allowed value — coercion would leave a
+    quantised version of the same attack alive.
+    """
+    response = await async_client.get(f"/api/v1/calculator/insights?days={days}")
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_time_accuracy_with_band_clamp(async_client: AsyncClient, printer_factory, archive_factory, db_session):
     printer = await printer_factory()
     # Estimate 3600s, actual 3000s → accuracy 120%. Three runs for the min sample.

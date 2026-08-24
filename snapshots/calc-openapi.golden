@@ -446,15 +446,14 @@
    "operationId": "get_calculator_insights_api_v1_calculator_insights_get",
    "parameters": [
     {
+     "description": "Lookback window in days.",
      "in": "query",
      "name": "days",
      "required": false,
      "schema": {
+      "$ref": "#/components/schemas/InsightsWindowDays",
       "default": 365,
-      "maximum": 3650,
-      "minimum": 7,
-      "title": "Days",
-      "type": "integer"
+      "description": "Lookback window in days."
      }
     },
     {

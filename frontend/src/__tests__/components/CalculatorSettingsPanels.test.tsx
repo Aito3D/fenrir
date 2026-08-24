@@ -347,6 +347,91 @@ describe('CalculatorFilamentsPanel', () => {
     expect(screen.getByRole('cell', { name: 'PLA' })).toBeInTheDocument();
     expect(deleteSpy).not.toHaveBeenCalled();
   });
+
+  // T-124: useEntityCrudMutations' onError handlers (create/update/delete)
+  // were previously untested for both panels — a save or delete that starts
+  // failing could silently lose its error toast with nothing to catch it.
+  // These pin today's actual behavior (form/modal stay open, nothing is
+  // removed from the list) rather than any "should" behavior.
+  it('shows an error toast and keeps the add form open when the create request fails', async () => {
+    const filaments: CalculatorFilament[] = [baseFilament];
+    server.use(
+      http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(filaments)),
+      http.post('/api/v1/calculator/filaments/', () =>
+        HttpResponse.json({ detail: 'Save failed' }, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
+
+    await user.click(await screen.findByRole('button', { name: 'Add filament' }));
+    await user.type(screen.getByLabelText('Brand'), 'Prusament');
+    await user.type(screen.getByLabelText('Material'), 'PETG');
+    await user.type(screen.getByLabelText(/^Cost per kg/), '25');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('Save failed')).toBeInTheDocument();
+    // Form stays open with the typed values intact — onSaved (which would
+    // clear `editing` and return to the list) never ran.
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Cost per kg/)).toHaveValue(25);
+    expect(screen.queryByRole('button', { name: 'Add filament' })).not.toBeInTheDocument();
+  });
+
+  it('shows an error toast and keeps the edit form open when the update request fails', async () => {
+    const filaments: CalculatorFilament[] = [baseFilament];
+    server.use(
+      http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(filaments)),
+      http.patch('/api/v1/calculator/filaments/:id', () =>
+        HttpResponse.json({ detail: 'Update failed' }, { status: 422 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit filament' }));
+    const cost = screen.getByLabelText(/^Cost per kg/);
+    await user.clear(cost);
+    await user.type(cost, '22');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('Update failed')).toBeInTheDocument();
+    // Still the edit form, still holding the edited (unsaved) value.
+    expect(screen.getByLabelText(/^Cost per kg/)).toHaveValue(22);
+    expect(screen.getByLabelText('Brand')).toHaveValue('Sunlu');
+    expect(screen.queryByRole('button', { name: 'Add filament' })).not.toBeInTheDocument();
+  });
+
+  it('shows an error toast and keeps the confirm modal open when the delete request fails', async () => {
+    const filaments: CalculatorFilament[] = [baseFilament];
+    server.use(
+      http.get('/api/v1/calculator/filaments/', () => HttpResponse.json(filaments)),
+      http.delete('/api/v1/calculator/filaments/:id', () =>
+        HttpResponse.json({ detail: 'Delete failed' }, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorFilamentsPanel selectedFilamentId={null} canUpdate />);
+
+    await user.click(await screen.findByRole('button', { name: 'Delete filament' }));
+    expect(await screen.findByText('Delete filament')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    expect(await screen.findByText('Delete failed')).toBeInTheDocument();
+    // Confirm modal recovers rather than closing: title still shown, the
+    // Confirm button is no longer stuck in its loading/disabled state.
+    expect(screen.getByText('Delete filament')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled();
+    // The row is still there — onDeleted (which clears toDelete) never ran,
+    // and the failed delete never invalidated the listing query.
+    expect(screen.getByRole('cell', { name: 'PLA' })).toBeInTheDocument();
+  });
 });
 
 describe('CalculatorFilamentsPanel filament form (Zoho link)', () => {
@@ -1189,6 +1274,84 @@ describe('CalculatorPrintersPanel', () => {
     expect(screen.queryByText('Delete printer')).not.toBeInTheDocument();
     expect(screen.getByRole('cell', { name: /H2S/ })).toBeInTheDocument();
     expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  // T-124: same coverage gap as CalculatorFilamentsPanel's onError tests
+  // above — useEntityCrudMutations is shared, but each panel's tests are
+  // independent, so both need their own pin.
+  it('shows an error toast and keeps the add form open when the create request fails', async () => {
+    const printers: CalculatorPrinter[] = [basePrinter];
+    server.use(
+      http.get('/api/v1/calculator/printers/', () => HttpResponse.json(printers)),
+      http.post('/api/v1/calculator/printers/', () =>
+        HttpResponse.json({ detail: 'Save failed' }, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate />);
+
+    await user.click(await screen.findByRole('button', { name: 'Add printer' }));
+    await user.type(screen.getByLabelText('Name'), 'A1 Mini');
+    await user.type(screen.getByLabelText(/Purchase price/), '1000');
+    await user.type(screen.getByLabelText(/Lifetime \(years\)/), '2');
+    await user.type(screen.getByLabelText(/Daily usage/), '5');
+    await user.type(screen.getByLabelText(/Power \(W\)/), '200');
+    await user.type(screen.getByLabelText(/Repairs over lifetime/), '10');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('Save failed')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveValue('A1 Mini');
+    expect(screen.queryByRole('button', { name: 'Add printer' })).not.toBeInTheDocument();
+  });
+
+  it('shows an error toast and keeps the edit form open when the update request fails', async () => {
+    const printers: CalculatorPrinter[] = [basePrinter];
+    server.use(
+      http.get('/api/v1/calculator/printers/', () => HttpResponse.json(printers)),
+      http.patch('/api/v1/calculator/printers/:id', () =>
+        HttpResponse.json({ detail: 'Update failed' }, { status: 422 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate />);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit printer' }));
+    const name = screen.getByLabelText('Name');
+    await user.clear(name);
+    await user.type(name, 'H2S Pro');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('Update failed')).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveValue('H2S Pro');
+    expect(screen.queryByRole('button', { name: 'Add printer' })).not.toBeInTheDocument();
+  });
+
+  it('shows an error toast and keeps the confirm modal open when the delete request fails', async () => {
+    const printers: CalculatorPrinter[] = [basePrinter];
+    server.use(
+      http.get('/api/v1/calculator/printers/', () => HttpResponse.json(printers)),
+      http.delete('/api/v1/calculator/printers/:id', () =>
+        HttpResponse.json({ detail: 'Delete failed' }, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    render(<CalculatorPrintersPanel selectedPrinterId={null} canUpdate />);
+
+    await user.click(await screen.findByRole('button', { name: 'Delete printer' }));
+    expect(await screen.findByText('Delete printer')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    expect(await screen.findByText('Delete failed')).toBeInTheDocument();
+    expect(screen.getByText('Delete printer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled();
+    expect(screen.getByRole('cell', { name: /H2S/ })).toBeInTheDocument();
   });
 
   it('renders profile-table cells with calculatorSettingsShared\'s tdCls, not shared.tsx\'s (T-097)', async () => {
