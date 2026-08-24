@@ -100,10 +100,14 @@ describe('buildResolvedParent', () => {
     expect(merged?.nozzle_temperature).toBe('250');
     expect(merged?.fan_max_speed).toBe('80');
   });
-  it('cycle guard stops (spec §9.13)', async () => {
-    const user = [up('A', JSON.stringify({ inherits: 'B' })), up('B', JSON.stringify({ inherits: 'A' }))];
+  it('cycle guard stops and folds both levels (spec §9.13)', async () => {
+    const user = [
+      up('A', JSON.stringify({ inherits: 'B' })),
+      up('B', JSON.stringify({ inherits: 'A', fan_max_speed: ['80'] })),
+    ];
     const merged = await buildResolvedParent('A', user, [], async () => '{}');
     expect(merged).not.toBeNull();               // terminates, no hang
+    expect(merged?.fan_max_speed).toBe('80');     // B's field folds into the merged result
   });
   it('unknown parent → null', async () => {
     expect(await buildResolvedParent('Ghost', [], [], async () => { throw new Error('404'); })).toBeNull();
@@ -143,5 +147,79 @@ describe('card helpers', () => {
     const list = [p('b', 'Ésun'), p('a', 'esun'), p('c', 'Bambu')];
     list.sort(presetComparator('brand'));
     expect(list.map((x) => x.name)).toEqual(['c', 'a', 'b']);
+  });
+});
+
+describe('buildJson enable_pressure_advance truth table', () => {
+  it('no parent + false -> key omitted', () => {
+    const out = JSON.parse(buildJson(form({ enable_pressure_advance: false }), {}, null, 'X'));
+    expect(out.enable_pressure_advance).toBeUndefined();
+  });
+  it('no parent + true -> [\'1\']', () => {
+    const out = JSON.parse(buildJson(form({ enable_pressure_advance: true }), {}, null, 'X'));
+    expect(out.enable_pressure_advance).toEqual(['1']);
+  });
+  it('parent true + false -> [\'0\']', () => {
+    const parent = form({ enable_pressure_advance: true });
+    const out = JSON.parse(buildJson(form({ enable_pressure_advance: false }), {}, parent, 'X'));
+    expect(out.enable_pressure_advance).toEqual(['0']);
+  });
+  it('parent true + true -> omitted', () => {
+    const parent = form({ enable_pressure_advance: true });
+    const out = JSON.parse(buildJson(form({ enable_pressure_advance: true }), {}, parent, 'X'));
+    expect(out.enable_pressure_advance).toBeUndefined();
+  });
+});
+
+describe('buildJson filament_extruder_variant parent compare', () => {
+  it('equal arrays (same order) -> omitted', () => {
+    const parent = form({ filament_extruder_variant: ['Direct Drive Standard', 'Bowden'] });
+    const out = JSON.parse(
+      buildJson(form({ filament_extruder_variant: ['Direct Drive Standard', 'Bowden'] }), {}, parent, 'X'),
+    );
+    expect(out.filament_extruder_variant).toBeUndefined();
+  });
+  it('different order -> written', () => {
+    const parent = form({ filament_extruder_variant: ['Direct Drive Standard', 'Bowden'] });
+    const out = JSON.parse(
+      buildJson(form({ filament_extruder_variant: ['Bowden', 'Direct Drive Standard'] }), {}, parent, 'X'),
+    );
+    expect(out.filament_extruder_variant).toEqual(['Bowden', 'Direct Drive Standard']);
+  });
+});
+
+describe('buildJson compatible_printers parent compare', () => {
+  it('equal comma-string vs parent -> omitted', () => {
+    const parent = form({ compatible_printers: 'A 0.4 nozzle, B 0.4 nozzle' });
+    const out = JSON.parse(
+      buildJson(form({ compatible_printers: 'A 0.4 nozzle, B 0.4 nozzle' }), {}, parent, 'X'),
+    );
+    expect(out.compatible_printers).toBeUndefined();
+  });
+  it('different -> written', () => {
+    const parent = form({ compatible_printers: 'A 0.4 nozzle, B 0.4 nozzle' });
+    const out = JSON.parse(
+      buildJson(form({ compatible_printers: 'B 0.4 nozzle, A 0.4 nozzle' }), {}, parent, 'X'),
+    );
+    expect(out.compatible_printers).toEqual(['B 0.4 nozzle', 'A 0.4 nozzle']);
+  });
+});
+
+describe('nil round-trip', () => {
+  it('parseContentToForm maps nil to empty and buildJson omits the key', () => {
+    const f = parseContentToForm({ filament_z_hop_types: ['nil'] });
+    expect(f.filament_z_hop_types).toBe('');
+    const out = JSON.parse(buildJson(f, {}, null, 'X'));
+    expect(out.filament_z_hop_types).toBeUndefined();
+  });
+});
+
+describe('EMPTY_FORM.filament_extruder_variant isolation', () => {
+  it('gives each parse a fresh array and never mutates EMPTY_FORM', () => {
+    const a = parseContentToForm({});
+    const b = parseContentToForm({});
+    expect(a.filament_extruder_variant).not.toBe(b.filament_extruder_variant);
+    a.filament_extruder_variant.push('Bowden');
+    expect(EMPTY_FORM.filament_extruder_variant).toEqual([]);
   });
 });

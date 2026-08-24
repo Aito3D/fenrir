@@ -63,6 +63,10 @@ export const EMPTY_FORM: PresetForm = {
   nozzle_size: '0.4',
 };
 
+// Frozen so the single shared empty array can be safely referenced by every `{ ...EMPTY_FORM }`
+// spread without risk of one caller's mutation leaking into another's (or into EMPTY_FORM itself).
+Object.freeze(EMPTY_FORM.filament_extruder_variant);
+
 /** Fields synthesized/managed by the app UI — never inherited from a parent, never written to preset JSON. */
 export const SYNTHETIC_FIELDS = ['color', 'nozzle_size', 'pa_k_value'] as const;
 
@@ -142,7 +146,7 @@ export function materialFamilyClass(material: string): string {
   if (m.startsWith('PC')) {
     return 'text-rose-400';
   }
-  if (m.startsWith('PP') || m.startsWith('PPS')) {
+  if (m.startsWith('PP')) {
     return 'text-amber-400';
   }
 

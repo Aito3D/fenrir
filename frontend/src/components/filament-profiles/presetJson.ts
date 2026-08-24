@@ -42,16 +42,11 @@ const ARRAY_STRING_FIELDS = STRING_FIELDS.filter(
 );
 
 /** Reads a Bambu Studio delta value: array -> first element, 'nil' (string or first element) -> ''. */
-function readString(value: unknown): string {
-  if (Array.isArray(value)) {
-    const first = value[0];
-    if (first === NIL) return '';
-    return first === undefined || first === null ? '' : String(first);
-  }
-  if (typeof value === 'string') {
-    return value === NIL ? '' : value;
-  }
-  return '';
+function readString(raw: unknown): string {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (value === undefined || value === null) return '';
+  const str = String(value);
+  return str === NIL ? '' : str;
 }
 
 export function extractPaK(gcode: string): string {
@@ -71,7 +66,8 @@ export function computeName(vendor: string, type: string, colorLabel: string): s
 }
 
 export function parseContentToForm(data: Record<string, unknown>, colorLabel?: string): PresetForm {
-  const form: PresetForm = { ...EMPTY_FORM };
+  // filament_extruder_variant must never alias EMPTY_FORM's frozen shared array.
+  const form: PresetForm = { ...EMPTY_FORM, filament_extruder_variant: [] };
 
   for (const field of STRING_FIELDS) {
     if (field in data) {
@@ -117,7 +113,10 @@ export function parseContentToForm(data: Record<string, unknown>, colorLabel?: s
 export function mergeWithParent(child: PresetForm, parent: PresetForm): PresetForm {
   const merged: PresetForm = { ...child };
 
+  // inherits names the child's OWN parent pointer; the resolved parent's inherits
+  // (i.e. its own grandparent pointer) must never leak into the child's form.
   for (const field of STRING_FIELDS) {
+    if (field === 'inherits') continue;
     merged[field] = child[field] !== '' ? child[field] : parent[field];
   }
 
