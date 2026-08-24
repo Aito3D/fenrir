@@ -240,14 +240,21 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
         return _cache
 
     # T-094/T-091: a cold cache with a recent failure is served immediately —
-    # re-raising a fresh instance of whatever that failure was — rather than
-    # taking the lock and repeating a walk that is very likely to fail again
-    # the same way. type(...)(str(...)) rebuilds the exception (rather than
-    # reusing the stored instance) so the class — and therefore whether the
-    # route answers 500 or 502 — is preserved without dragging along a stale
-    # traceback from the original failure.
+    # re-raising the memoized failure — rather than taking the lock and
+    # repeating a walk that is very likely to fail again the same way.
+    # T-107: this re-raises the STORED INSTANCE (not a same-class
+    # reconstruction from `str(_fail_exc)`) because `_fail_exc` is whatever
+    # `except Exception` caught around the whole walk, and that walk reaches
+    # SQLAlchemy/httpx — e.g. a DBAPIError subclass whose __init__ takes
+    # (statement, params, orig), not a single string. Rebuilding from one
+    # string argument crashes with a TypeError for those. Re-raising the
+    # instance still preserves the class (and therefore whether the route
+    # answers 500 or 502) without that fragility; `with_traceback(None)`
+    # drops the stale traceback from the original failure — the same goal
+    # the reconstruction was after — so what propagates from here is framed
+    # by this call, not the long-finished walk that first observed it.
     if _cache is None and _fail_at is not None and now - _fail_at < _FAIL_COOLDOWN:
-        raise type(_fail_exc)(str(_fail_exc)) from None
+        raise _fail_exc.with_traceback(None) from None
 
     # Captured once, up front, rather than re-reading the global at release
     # time. reset_cache() no longer rebinds _refresh_lock (T-095), so this is

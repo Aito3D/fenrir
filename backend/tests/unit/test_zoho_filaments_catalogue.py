@@ -587,3 +587,68 @@ async def test_negative_cache_preserves_the_mapping_failure_exception_type(monke
 
     with pytest.raises(zoho_filaments.ZohoFilamentMappingError):
         await zoho_filaments.fetch_catalogue(None)
+
+
+class _TwoArgError(RuntimeError):
+    """Stands in for sqlalchemy.exc.DBAPIError et al: its constructor takes
+    two positional arguments, so ``type(exc)(str(exc))`` cannot rebuild it
+    from a single string."""
+
+    def __init__(self, cause, detail):
+        super().__init__(f"{cause}: {detail}")
+        self.cause = cause
+        self.detail = detail
+
+
+@pytest.mark.asyncio
+async def test_negative_cache_replay_reraises_a_multi_arg_exception_instance(monkeypatch):
+    """T-107: ``_fail_exc`` is whatever ``except Exception`` caught around the
+    whole walk, which reaches SQLAlchemy/httpx and so can be an exception
+    whose constructor needs more than the one string argument
+    ``type(exc)(str(exc))`` would try to hand it (e.g. DBAPIError's
+    ``(statement, params, orig)``). The fast-fail replay must re-raise the
+    stored instance and its real message instead of crashing with a TypeError
+    and burying the real cause for the rest of the cooldown."""
+
+    async def boom(db, **kwargs):
+        raise _TwoArgError("database is locked", "OperationalError")
+
+    monkeypatch.setattr(zoho_service, "list_items_page", boom)
+
+    with pytest.raises(_TwoArgError, match="database is locked"):
+        await zoho_filaments.fetch_catalogue(None)
+
+    # Served from the negative cache: must re-raise the SAME cause, not a
+    # TypeError from failing to reconstruct a two-arg exception.
+    with pytest.raises(_TwoArgError, match="database is locked"):
+        await zoho_filaments.fetch_catalogue(None)
+
+
+@pytest.mark.asyncio
+async def test_warm_cache_stamp_is_the_post_walk_time_not_the_pre_walk_time(monkeypatch):
+    """T-115: the success-path twin of
+    test_cold_cache_failure_memo_survives_a_walk_slower_than_the_cooldown.
+    ``_cache_at`` must be stamped with the time the walk FINISHED, not the
+    time it began — a slow successful walk must not shorten its own
+    _CACHE_TTL window. A walk scripted to take longer than _CACHE_TTL must
+    still leave the cache looking fresh immediately afterwards."""
+    monkeypatch.setattr(zoho_filaments, "_CACHE_TTL", timedelta(seconds=5))
+
+    t_start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    t_finish = t_start + timedelta(seconds=10)  # the walk itself took 10s > the 5s TTL
+    t_check = t_finish + timedelta(seconds=1)  # well within 5s of the OBSERVED finish
+    monkeypatch.setattr(zoho_filaments, "datetime", _ScriptedClock([t_start, t_start, t_finish, t_check]))
+
+    calls = []
+    monkeypatch.setattr(zoho_service, "list_items_page", _fake_request([PAGE_1], calls))
+
+    await zoho_filaments.fetch_catalogue(None)
+    assert len(calls) == 1
+
+    catalogue = await zoho_filaments.fetch_catalogue(None)
+    # Served straight from the cache — must NOT have repeated the walk, which
+    # it would if _cache_at had been stamped with the pre-walk time (11s
+    # before t_check, past the 5s TTL) instead of the post-walk one (1s
+    # before t_check, still within it).
+    assert len(calls) == 1
+    assert [p.item_id for p in catalogue] == ["1", "2", "3", "4"]

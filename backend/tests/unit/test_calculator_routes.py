@@ -155,6 +155,24 @@ class TestCalculatorFilaments:
         assert (await async_client.get("/api/v1/calculator/filaments/")).json() == []
 
     @pytest.mark.asyncio
+    async def test_create_rejects_cost_just_above_the_ceiling(self, async_client):
+        """T-113: 1e308 alone can't distinguish _MONEY_CEILING's actual value
+        (100_000_000.0) from any other large-but-finite ceiling — pin the
+        boundary itself instead."""
+        resp = await async_client.post(
+            "/api/v1/calculator/filaments/", json={**FILAMENT_PAYLOAD, "cost_per_kg": 100_000_001.0}
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_create_accepts_cost_just_below_the_ceiling(self, async_client):
+        resp = await async_client.post(
+            "/api/v1/calculator/filaments/", json={**FILAMENT_PAYLOAD, "cost_per_kg": 99_999_999.0}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["cost_per_kg"] == 99_999_999.0
+
+    @pytest.mark.asyncio
     async def test_create_rejects_empty_material(self, async_client):
         resp = await async_client.post("/api/v1/calculator/filaments/", json={**FILAMENT_PAYLOAD, "material": ""})
         assert resp.status_code == 422
@@ -444,6 +462,23 @@ class TestCalculatorPrinters:
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
+    async def test_create_rejects_purchase_price_just_above_the_ceiling(self, async_client):
+        """T-113: pins _MONEY_CEILING's actual value; 1e308 alone rejects any
+        large-but-finite ceiling and can't distinguish it from a much looser one."""
+        resp = await async_client.post(
+            "/api/v1/calculator/printers/", json={**PRINTER_PAYLOAD, "purchase_price": 100_000_001.0}
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_create_accepts_purchase_price_just_below_the_ceiling(self, async_client):
+        resp = await async_client.post(
+            "/api/v1/calculator/printers/", json={**PRINTER_PAYLOAD, "purchase_price": 99_999_999.0}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["purchase_price"] == 99_999_999.0
+
+    @pytest.mark.asyncio
     async def test_update_rejects_infinite_purchase_price(self, async_client):
         created = (await async_client.post("/api/v1/calculator/printers/", json=PRINTER_PAYLOAD)).json()
         resp = await _patch_non_standard_json(
@@ -529,6 +564,19 @@ class TestCalculatorDefaults:
     async def test_patch_rejects_electricity_tariff_above_ceiling(self, async_client):
         resp = await async_client.patch("/api/v1/calculator/defaults", json={"electricity_tariff": 1e308})
         assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_patch_rejects_electricity_tariff_just_above_the_ceiling(self, async_client):
+        """T-113: pins _MONEY_CEILING's actual value (100_000_000.0) rather
+        than merely confirming SOME finite ceiling exists."""
+        resp = await async_client.patch("/api/v1/calculator/defaults", json={"electricity_tariff": 100_000_001.0})
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_patch_accepts_electricity_tariff_just_below_the_ceiling(self, async_client):
+        resp = await async_client.patch("/api/v1/calculator/defaults", json={"electricity_tariff": 99_999_999.0})
+        assert resp.status_code == 200
+        assert resp.json()["electricity_tariff"] == 99_999_999.0
 
     @pytest.mark.asyncio
     async def test_patch_rejects_infinite_labor_rate(self, async_client):
