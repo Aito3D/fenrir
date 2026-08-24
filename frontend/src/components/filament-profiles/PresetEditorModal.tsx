@@ -28,6 +28,10 @@ import {
 import type { PresetForm } from './types';
 import { Field, NumberInput, SectionDivider, TextInput } from './editorFields';
 import { TagInput } from './TagInput';
+import { EditorTabTemps } from './EditorTabTemps';
+import { EditorTabCooling } from './EditorTabCooling';
+import { EditorTabExtrusion } from './EditorTabExtrusion';
+import { EditorTabRetract } from './EditorTabRetract';
 
 export interface PresetEditorModalProps {
   preset: FilamentPreset | null;
@@ -66,9 +70,9 @@ const BRAND_ID = 'fp-editor-brand';
 
 /**
  * The preset editor (spec §6): a fixed-height modal with header / tab bar /
- * scrollable content / footer. Only the General tab (§7.1) is implemented
- * here — Temps/Cooling/Extrusion/Retract land in Task 13, the JSON tab in
- * Task 14; their tab buttons already exist and render an empty placeholder.
+ * scrollable content / footer. General (§7.1) and Temps/Cooling/Extrusion/
+ * Retract (§7.2/§7.4-7.6) are implemented here (the latter four delegate to
+ * their own EditorTab* components); the JSON tab lands in Task 14.
  */
 export function PresetEditorModal({
   preset,
@@ -519,17 +523,10 @@ export function PresetEditorModal({
             </div>
           )}
 
-          {/* Temps / Cooling / Extrusion / Retract land in Task 13 — a skeleton
-              stands in for the not-yet-built tab body rather than a bare
-              empty pane, with no new i18n strings needed for content that's
-              about to be replaced. */}
-          {(activeTab === 'temps' || activeTab === 'cooling' || activeTab === 'extrusion' || activeTab === 'retract') && (
-            <div aria-busy="true" className="flex flex-col gap-3">
-              <div className="h-4 w-1/3 animate-pulse rounded bg-bambu-dark-tertiary" />
-              <div className="h-4 w-2/3 animate-pulse rounded bg-bambu-dark-tertiary" />
-              <div className="h-4 w-1/2 animate-pulse rounded bg-bambu-dark-tertiary" />
-            </div>
-          )}
+          {activeTab === 'temps' && <EditorTabTemps form={form} setForm={setForm} />}
+          {activeTab === 'cooling' && <EditorTabCooling form={form} setForm={setForm} />}
+          {activeTab === 'extrusion' && <EditorTabExtrusion form={form} setForm={setForm} />}
+          {activeTab === 'retract' && <EditorTabRetract form={form} setForm={setForm} />}
 
           {/* Raw JSON editing lands in Task 14. */}
           {activeTab === 'json' && <div />}

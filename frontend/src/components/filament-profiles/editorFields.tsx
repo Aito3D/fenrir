@@ -47,16 +47,20 @@ interface NumberInputProps {
   value: string;
   onChange: (value: string) => void;
   step?: string;
+  min?: string;
+  max?: string;
   placeholder?: string;
   className?: string;
 }
 
-export function NumberInput({ value, onChange, step, placeholder, className = '' }: NumberInputProps) {
+export function NumberInput({ value, onChange, step, min, max, placeholder, className = '' }: NumberInputProps) {
   return (
     <input
       type="number"
       inputMode="decimal"
       step={step}
+      min={min}
+      max={max}
       value={value}
       onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
       placeholder={placeholder}

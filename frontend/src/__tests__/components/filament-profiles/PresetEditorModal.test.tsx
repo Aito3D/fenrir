@@ -346,3 +346,136 @@ describe('TagInput', () => {
     expect(screen.getByRole('button', { name: 'Remove Gamma' })).toBeInTheDocument();
   });
 });
+
+describe('PresetEditorModal — parameter tabs (Task 13)', () => {
+  it('binds a bed-plate cell to its field and saves it', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <PresetEditorModal
+        preset={editPreset()}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={onSave}
+        onDelete={null}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Temperatures' }));
+    const hotPlatePrint = screen.getByRole('spinbutton', { name: 'Hot Plate Print °C' });
+    await user.type(hotPlatePrint, '60');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(onSave.mock.calls[0][0].content).hot_plate_temp).toEqual(['60']);
+  });
+
+  it('writes tri-state On/nil into enable_overhang_bridge_fan', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <PresetEditorModal
+        preset={editPreset()}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={onSave}
+        onDelete={null}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Cooling' }));
+    await user.click(screen.getByRole('button', { name: 'On' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(onSave.mock.calls[0][0].content).enable_overhang_bridge_fan).toEqual(['1']);
+
+    await user.click(screen.getByRole('button', { name: 'nil' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(onSave.mock.calls[1][0].content)).not.toHaveProperty('enable_overhang_bridge_fan');
+  });
+
+  it('applies the cal popover percentage on Enter, and Escape closes without applying', async () => {
+    const user = userEvent.setup();
+    render(
+      <PresetEditorModal
+        preset={editPreset()}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={vi.fn()}
+        onDelete={null}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Extrusion' }));
+    const flowRatio = screen.getByRole('spinbutton', { name: 'Flow ratio' });
+    await user.clear(flowRatio);
+    await user.type(flowRatio, '1.0');
+
+    await user.click(screen.getByRole('button', { name: 'cal' }));
+    const pctInput = screen.getByRole('spinbutton', { name: 'Adjust flow ratio by %' });
+    await user.type(pctInput, '2{Enter}');
+
+    expect(flowRatio).toHaveValue(1.02);
+    expect(screen.queryByRole('spinbutton', { name: 'Adjust flow ratio by %' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'cal' }));
+    const pctInput2 = screen.getByRole('spinbutton', { name: 'Adjust flow ratio by %' });
+    await user.type(pctInput2, '50{Escape}');
+
+    expect(screen.queryByRole('spinbutton', { name: 'Adjust flow ratio by %' })).not.toBeInTheDocument();
+    expect(flowRatio).toHaveValue(1.02);
+  });
+
+  it('re-derives PA K from an edited start G-code', async () => {
+    const user = userEvent.setup();
+    render(
+      <PresetEditorModal
+        preset={editPreset()}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={vi.fn()}
+        onDelete={null}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Extrusion' }));
+    const startGcode = screen.getByRole('textbox', { name: 'Start G-code' });
+    await user.clear(startGcode);
+    await user.type(startGcode, 'M900 L1000 M10{Enter}M900 K0.05');
+
+    await user.click(screen.getByRole('button', { name: 'General' }));
+    expect(screen.getByRole('spinbutton', { name: /PA K value/ })).toHaveValue(0.05);
+  });
+
+  it('writes the selected z-hop type into filament_z_hop_types on save', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <PresetEditorModal
+        preset={editPreset()}
+        presets={[]}
+        basePresets={[]}
+        extraMaterials={[]}
+        onSave={onSave}
+        onDelete={null}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Retraction' }));
+    await user.click(screen.getByRole('button', { name: 'Slope Lift' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(onSave.mock.calls[0][0].content).filament_z_hop_types).toEqual(['Slope Lift']);
+  });
+});
