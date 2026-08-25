@@ -93,3 +93,28 @@ class BambuSyncResponse(BaseModel):
 
 class BaseContentResponse(BaseModel):
     content: str
+
+
+class FilamentPresetZohoSyncAttention(BaseModel):
+    """One profile the sync would not price, and why."""
+
+    id: int
+    name: str
+    # "no_match" | "ambiguous" | "no_price" — mirrors ProfileMatch.outcome
+    reason: str
+    # Colliding item names for "ambiguous", the single unpriced item for
+    # "no_price", empty for "no_match". A list, not one name: naming only one
+    # of an ambiguous pair would hide the actual problem.
+    candidates: list[str] = []
+
+
+class FilamentPresetZohoSyncResponse(BaseModel):
+    """Counts are disjoint and sum to the profile count.
+
+    ``priced`` and ``unchanged`` are both confident matches, split by whether
+    the value actually moved; ``attention`` is everything else.
+    """
+
+    priced: int
+    unchanged: int
+    attention: list[FilamentPresetZohoSyncAttention] = []
