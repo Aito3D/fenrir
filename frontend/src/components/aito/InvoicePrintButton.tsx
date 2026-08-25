@@ -18,11 +18,9 @@ export function InvoicePrintButton({
    *  the operator never saw. The server still owns the candidate set; this
    *  only says which of them. */
   invoiceId,
-  className = '',
 }: {
   projectId: number;
   invoiceId: string;
-  className?: string;
 }) {
   const { t } = useTranslation();
 
@@ -31,8 +29,6 @@ export function InvoicePrintButton({
       fetchPdf={() => api.getAitoInvoicePdf(projectId, invoiceId)}
       label={t('aito.printInvoice')}
       failureMessage={t('aito.invoicePrintFailed')}
-      withLabel
-      className={className}
     />
   );
 }

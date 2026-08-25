@@ -11,10 +11,8 @@ import { PdfDownloadButton } from './PdfDownloadButton';
  */
 export function QuoteDownloadButton({
   project,
-  className = '',
 }: {
   project: AitoProject;
-  className?: string;
 }) {
   const { t } = useTranslation();
 
@@ -28,7 +26,6 @@ export function QuoteDownloadButton({
       label={t('aito.downloadQuote')}
       filename={project.quote_number || 'quote'}
       failureMessage={t('aito.printFailed')}
-      className={className}
     />
   );
 }

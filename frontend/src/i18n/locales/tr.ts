@@ -4261,6 +4261,7 @@ export default {
   filamentProfiles: {
     // Page/header
     title: 'Filament Profilleri',
+    subtitle: 'Dilimleyici filament ön ayarlarını yönetin ve senkronize edin',
     syncBase: 'Temeli senkronize et',
     syncingBase: 'Temel senkronize ediliyor…',
     import: 'İçe aktar',

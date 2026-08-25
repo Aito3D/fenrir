@@ -5,6 +5,7 @@ import { render } from '../utils';
 import { QuotePrintButton } from '../../components/aito/QuotePrintButton';
 import { api } from '../../api/client';
 import type { AitoProject } from '../../api/client';
+import { ACTION_CELL } from '../../components/aito/quoteActionGroup';
 
 const project = { id: 12, quote_id: 'EST-9', quote_number: 'QT-00412' } as unknown as AitoProject;
 
@@ -65,20 +66,31 @@ describe('QuotePrintButton', () => {
     expect(screen.queryByRole('button', { name: /print quote/i })).not.toBeInTheDocument();
   });
 
-  it('is icon-only by default', () => {
+  it('is icon-only', () => {
     render(<QuotePrintButton project={project} />);
     const button = screen.getByRole('button', { name: /print quote/i });
-    // The accessible name still comes from aria-label; the visible label is
-    // what withLabel adds.
+    // The accessible name comes from aria-label. There is no longer an opt-in
+    // labelled form — see the action-group test below for why.
     expect(button).not.toHaveTextContent('Print quote');
   });
 
-  it('shows a visible "Print quote" label next to the icon when withLabel is set', () => {
-    // Visual-parity fix: the panel footer used to be icon-only while sitting
-    // beside "Open in Zoho", which has a visible label.
-    render(<QuotePrintButton project={project} withLabel />);
+  it('renders as a cell of the shared action group: no visible text at all, name carried by aria-label and title', () => {
+    // The Quote card's row is 230.4px and three labelled pills wanted 253.6px
+    // (measured, not computed — root rem here is 14.4px), so "Print quote"
+    // wrapped mid-phrase. Shortening the label fixed the wrap but left Russian
+    // clearing the row by 1.3px; dropping the visible text entirely removes the
+    // constraint for every locale. Nothing is lost for screen readers, which is
+    // exactly what this pins: no rendered text, full phrase still announced.
+    render(<QuotePrintButton project={project} />);
     const button = screen.getByRole('button', { name: /print quote/i });
-    expect(button).toHaveTextContent('Print quote');
+    expect(button).toHaveTextContent('');
+    expect(button).toHaveAttribute('aria-label', 'Print quote');
+    expect(button).toHaveAttribute('title', 'Print quote');
+    // Pinned against the shared constant rather than a copied class string, so
+    // this tracks quoteActionGroup.ts instead of going stale beside it. Without
+    // it a cell could drift back to standalone pill styling and quietly break
+    // the segmented row on both cards.
+    expect(button).toHaveAttribute('class', ACTION_CELL);
   });
 
   it('does not fall back to a new tab once the component has unmounted', async () => {

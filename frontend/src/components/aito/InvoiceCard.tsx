@@ -9,6 +9,7 @@ import { SendInvoiceButton } from './SendInvoiceButton';
 import { INVOICE_STATUS_TEXT_TONE_CLASSES, invoiceStatusLabelKey, invoiceStatusTone } from './invoiceStatus';
 import { Money } from '../calculator/shared';
 import { useCurrency } from '../../hooks/useCurrency';
+import { ACTION_GROUP } from './quoteActionGroup';
 
 /** How long an invoice stays fresh before the panel re-asks Books.
  *
@@ -157,17 +158,17 @@ export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canU
           row so the two cards read as one family. "Open in Zoho" is still
           absent for the same reason it always was — the number above already
           goes there. */}
-      <div className="flex gap-2 mt-3">
-        <InvoicePrintButton projectId={project.id} invoiceId={invoice.id} className="flex-1 justify-center" />
-        {/* Icon-only between the two labelled pills, mirroring the Quote
-            card's row exactly. Saves the same PDF the print button fetches,
-            named after the invoice number. */}
+      {/* The same segmented control as the Quote card's row, deliberately: the
+          two cards share that 230.4px column and are meant to read as one
+          family. See quoteActionGroup.ts. */}
+      <div className={ACTION_GROUP}>
+        <InvoicePrintButton projectId={project.id} invoiceId={invoice.id} />
+        {/* Saves the same PDF the print button fetches, named after the
+            invoice number. */}
         <InvoiceDownloadButton projectId={project.id} invoiceId={invoice.id} invoiceNumber={invoice.number} />
         {/* POST /{project_id}/invoice-email enforces AITO_UPDATE — same gate,
             same call site pattern, as SendQuoteButton one card up. */}
-        {canUpdate && (
-          <SendInvoiceButton projectId={project.id} invoiceId={invoice.id} className="flex-1 justify-center" />
-        )}
+        {canUpdate && <SendInvoiceButton projectId={project.id} invoiceId={invoice.id} />}
       </div>
     </PanelCard>
   );

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ACTION_CELL } from './quoteActionGroup';
 import { Mail } from 'lucide-react';
 import { type AitoProject } from '../../api/client';
 import { SendQuoteModal } from './SendQuoteModal';
@@ -17,10 +18,8 @@ import { SendQuoteModal } from './SendQuoteModal';
  */
 export function SendQuoteButton({
   project,
-  className = '',
 }: {
   project: AitoProject;
-  className?: string;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -36,10 +35,9 @@ export function SendQuoteButton({
         onClick={() => setOpen(true)}
         aria-label={t('aito.sendQuote')}
         title={t('aito.sendQuote')}
-        className={`inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary px-2.5 py-1 text-sm text-bambu-gray-light hover:text-white hover:border-bambu-gray hover:bg-bambu-dark-tertiary/40 transition-colors motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40 ${className}`}
+        className={ACTION_CELL}
       >
         <Mail className="w-3.5 h-3.5" />
-        {t('aito.sendQuote')}
       </button>
       {open && <SendQuoteModal project={project} onClose={() => setOpen(false)} />}
     </>

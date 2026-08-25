@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { InvoicePrintButton } from '../../components/aito/InvoicePrintButton';
 import { api } from '../../api/client';
+import { ACTION_CELL } from '../../components/aito/quoteActionGroup';
 
 /** Covers what is specific to this wrapper — its own gating, its endpoint,
  *  its label and its failure message. The shared blob/iframe/window.open/
@@ -34,10 +35,19 @@ describe('InvoicePrintButton', () => {
     await waitFor(() => expect(spy).toHaveBeenCalledWith(12, 'inv-1'));
   });
 
-  it('always shows a visible "Print invoice" label next to the icon, unlike QuotePrintButton\'s opt-in withLabel', () => {
+  it('renders as a cell of the shared action group, with "Print invoice" carried by aria-label rather than visible text', () => {
+    // This card shares the Quote card's 230.4px column and its row mirrors it
+    // exactly, so it wrapped for the same reason and takes the same fix. The
+    // accessible name still disambiguates invoice from quote — that is the half
+    // that matters once the visible text is gone, so it is pinned here.
     render(<InvoicePrintButton projectId={12} invoiceId="inv-1" />);
     const button = screen.getByRole('button', { name: /print invoice/i });
-    expect(button).toHaveTextContent('Print invoice');
+    expect(button).toHaveTextContent('');
+    expect(button).toHaveAttribute('aria-label', 'Print invoice');
+    expect(button).toHaveAttribute('title', 'Print invoice');
+    // Same constant as the Quote card's cells: the two rows are meant to be
+    // one family, and this is what stops them drifting apart.
+    expect(button).toHaveAttribute('class', ACTION_CELL);
   });
 
   it('surfaces a failed fetch with the invoice-specific message, not the quote one', async () => {

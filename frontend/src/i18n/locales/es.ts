@@ -4268,6 +4268,7 @@ export default {
   filamentProfiles: {
     // Page/header
     title: 'Perfiles de filamento',
+    subtitle: 'Gestiona y sincroniza tus preajustes de filamento del laminador',
     syncBase: 'Sincronizar base',
     syncingBase: 'Sincronizando base…',
     import: 'Importar',

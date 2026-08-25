@@ -11,13 +11,8 @@ import { PdfPrintButton } from './PdfPrintButton';
  */
 export function QuotePrintButton({
   project,
-  /** Renders "Print quote" beside the icon. See PdfPrintButton. */
-  withLabel = false,
-  className = '',
 }: {
   project: AitoProject;
-  withLabel?: boolean;
-  className?: string;
 }) {
   const { t } = useTranslation();
 
@@ -30,8 +25,6 @@ export function QuotePrintButton({
       fetchPdf={() => api.getAitoQuotePdf(project.id)}
       label={t('aito.printQuote')}
       failureMessage={t('aito.printFailed')}
-      withLabel={withLabel}
-      className={className}
     />
   );
 }

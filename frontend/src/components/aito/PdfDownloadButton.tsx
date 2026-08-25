@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
+import { ACTION_CELL } from './quoteActionGroup';
 
 /** How long to keep the object URL alive after handing it to the anchor.
  *  The click is synchronous but the browser reads the URL lazily when it
@@ -35,13 +36,11 @@ export function PdfDownloadButton({
    *  someone their QUOTE could not be fetched when they clicked Download on
    *  an invoice sends them to look at the wrong document. */
   failureMessage,
-  className = '',
 }: {
   fetchPdf: () => Promise<Blob>;
   label: string;
   filename: string;
   failureMessage: string;
-  className?: string;
 }) {
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
@@ -90,7 +89,7 @@ export function PdfDownloadButton({
       disabled={busy}
       aria-label={label}
       title={label}
-      className={`inline-flex items-center justify-center rounded-md border border-bambu-dark-tertiary px-2.5 py-1 text-sm text-bambu-gray-light hover:text-white hover:border-bambu-gray hover:bg-bambu-dark-tertiary/40 transition-colors motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40 ${className}`}
+      className={ACTION_CELL}
     >
       {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
     </button>

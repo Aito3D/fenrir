@@ -51,6 +51,7 @@ import { focusRingCls, inputCls } from '../formStyles';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useProjectPatchMutation } from './useProjectPatchMutation';
+import { ACTION_GROUP } from './quoteActionGroup';
 
 /** Explicit map rather than a template literal key: the i18n gate scans for
  *  literal `t('...')` calls, and a dynamic key is invisible to it. */
@@ -1205,14 +1206,19 @@ export function ProjectDetailPanel({ project, onClose, onDelete, canCreate, canU
                       quote number above already goes there when clicked, and
                       two affordances for one destination in a six-row card is
                       what got it removed. */}
-                  <div className="flex gap-2 mt-3">
-                    <QuotePrintButton project={project} withLabel className="flex-1 justify-center" />
-                    {/* Icon-only between the two labelled pills: a third full
-                        label does not fit the row in the longer locales. Reads
-                        the same PDF the print button does, but saves it. */}
+                  {/* Print / download / send as one segmented control. The row is
+                      230.4px wide and three labelled pills wanted 253.6px, so the
+                      labels moved to aria-label + title; see quoteActionGroup.ts
+                      for the measurements and for why the dividers are gaps
+                      rather than borders. The Invoice card's row is identical. */}
+                  <div className={ACTION_GROUP}>
+                    <QuotePrintButton project={project} />
+                    {/* Reads the same PDF the print button does, but saves it. */}
                     <QuoteDownloadButton project={project} />
-                    {/* POST /{project_id}/quote-email enforces AITO_UPDATE. */}
-                    {canUpdate && <SendQuoteButton project={project} className="flex-1 justify-center" />}
+                    {/* POST /{project_id}/quote-email enforces AITO_UPDATE. When
+                        it is absent the group is a two-cell control, which the
+                        gap-px dividers handle without any last-child rule. */}
+                    {canUpdate && <SendQuoteButton project={project} />}
                   </div>
                   </>
                   )}

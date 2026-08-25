@@ -4300,6 +4300,7 @@ export default {
   filamentProfiles: {
     // Page/header
     title: 'Filament Profiles',
+    subtitle: 'Manage and sync your slicer filament presets',
     syncBase: 'Sync base',
     syncingBase: 'Syncing base…',
     import: 'Import',

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ACTION_CELL } from './quoteActionGroup';
 import { Loader2, Printer } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 
@@ -30,6 +31,11 @@ const REVOKE_DELAY_MS = 60_000;
  *  browsers — Safari has historically refused it outright. A button that
  *  silently does nothing is worse than one that opens a tab, so a throw or a
  *  load timeout escalates to window.open and says so.
+ *
+ *  Renders icon-only, as one cell of the Quote/Invoice action group — see
+ *  `quoteActionGroup.ts` for why that row carries no visible labels. `label`
+ *  is still required: it supplies aria-label, the tooltip, and the fallback
+ *  download's filename.
  */
 export function PdfPrintButton({
   fetchPdf,
@@ -39,20 +45,10 @@ export function PdfPrintButton({
    *  QUOTE could not be fetched when they clicked Print on an invoice sends
    *  them to look at the wrong document. */
   failureMessage,
-  /** Renders `label` beside the icon, styled as a bordered pill matching the
-   *  panel footer's "Open in Zoho" link. Opt-in (default false) rather than a
-   *  default change: the icon-only rendering is kept for any other caller
-   *  that wants the compact form. */
-  withLabel = false,
-  /** Extra classes for the labelled form — the cards stretch it to share a
-   *  row, or to fill one. */
-  className = '',
 }: {
   fetchPdf: () => Promise<Blob>;
   label: string;
   failureMessage: string;
-  withLabel?: boolean;
-  className?: string;
 }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -219,14 +215,9 @@ export function PdfPrintButton({
       disabled={busy}
       aria-label={label}
       title={label}
-      className={
-        withLabel
-          ? `inline-flex items-center gap-1.5 rounded-md border border-bambu-dark-tertiary px-2.5 py-1 text-sm text-bambu-gray-light hover:text-white hover:border-bambu-gray hover:bg-bambu-dark-tertiary/40 transition-colors motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40 ${className}`
-          : `inline-flex items-center p-1 -m-1 rounded-md text-bambu-gray hover:text-bambu-green hover:bg-bambu-green/10 transition-colors motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40`
-      }
+      className={ACTION_CELL}
     >
       {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
-      {withLabel && label}
     </button>
   );
 }

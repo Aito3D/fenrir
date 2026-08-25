@@ -4254,6 +4254,7 @@ export default {
   filamentProfiles: {
     // Page/header
     title: '耗材預設',
+    subtitle: '管理並同步切片軟體的耗材預設',
     syncBase: '同步基礎庫',
     syncingBase: '正在同步基礎庫…',
     import: '匯入',

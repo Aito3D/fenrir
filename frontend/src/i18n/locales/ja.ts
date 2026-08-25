@@ -4266,6 +4266,7 @@ export default {
   filamentProfiles: {
     // Page/header
     title: 'フィラメントプロファイル',
+    subtitle: 'スライサーのフィラメントプリセットを管理・同期',
     syncBase: 'ベースを同期',
     syncingBase: 'ベースを同期中…',
     import: 'インポート',

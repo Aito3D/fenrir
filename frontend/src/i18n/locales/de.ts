@@ -4266,6 +4266,7 @@ export default {
   filamentProfiles: {
     // Page/header
     title: 'Filamentprofile',
+    subtitle: 'Slicer-Filamentprofile verwalten und synchronisieren',
     syncBase: 'Basis synchronisieren',
     syncingBase: 'Basis wird synchronisiert…',
     import: 'Import',

@@ -4254,6 +4254,7 @@ export default {
   filamentProfiles: {
     // Page/header
     title: 'Perfis de filamento',
+    subtitle: 'Gerencie e sincronize seus presets de filamento do fatiador',
     syncBase: 'Sincronizar base',
     syncingBase: 'Sincronizando base…',
     import: 'Importar',

@@ -4079,6 +4079,7 @@ export default {
   filamentProfiles: {
     // Page/header
     title: '필라멘트 프로필',
+    subtitle: '슬라이서 필라멘트 프리셋 관리 및 동기화',
     syncBase: '베이스 동기화',
     syncingBase: '베이스 동기화 중…',
     import: '가져오기',

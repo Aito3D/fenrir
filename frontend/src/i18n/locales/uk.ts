@@ -4076,6 +4076,7 @@ export default {
   filamentProfiles: {
     // Page/header
     title: "Профілі філаменту",
+    subtitle: 'Керуйте пресетами філаменту слайсера та синхронізуйте їх',
     syncBase: "Синхронізувати базу",
     syncingBase: "Синхронізація бази…",
     import: "Імпорт",
