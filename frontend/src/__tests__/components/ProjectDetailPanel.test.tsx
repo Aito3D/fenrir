@@ -2489,12 +2489,29 @@ describe('ProjectDetailPanel visual parity: quote status tone matches its actual
 });
 
 describe('ProjectDetailPanel visual parity: footer buttons', () => {
-  it('shows a visible "Print quote" label next to the icon, not just an aria-label', async () => {
+  it('groups print / download / send into one segmented control, icon-only, with the names on aria-label', async () => {
+    // This replaces an assertion that "Print quote" was VISIBLE next to the
+    // icon. That was right when the row held one labelled pill; it stopped
+    // being right once the row held three. The card sits in a 230.4px column
+    // and three labelled pills wanted 253.6px, so both labels wrapped
+    // mid-phrase. The labels now live on aria-label + title only.
     show({ quote_id: 'e2', quote_number: 'DEV26-2462' });
     const quoteCard = (await screen.findAllByTestId('panel-card-heading'))
       .find((n) => /quote/i.test(n.textContent ?? ''))!.closest('section')!;
-    const button = within(quoteCard).getByRole('button', { name: /print quote/i });
-    expect(button).toHaveTextContent('Print quote');
+
+    const print = within(quoteCard).getByRole('button', { name: /print quote/i });
+    // Reachable by name, but nothing rendered — that pair is the whole point.
+    expect(print).toHaveTextContent('');
+    expect(print).toHaveAttribute('title', 'Print quote');
+
+    // All three actions are cells of one group, so the row reads as a single
+    // control rather than three loose pills. Asserting the shared parent is
+    // what would catch a cell escaping the group in a future refactor.
+    const download = within(quoteCard).getByRole('button', { name: /download quote/i });
+    const send = within(quoteCard).getByRole('button', { name: /send quote/i });
+    expect(download.parentElement).toBe(print.parentElement);
+    expect(send.parentElement).toBe(print.parentElement);
+    expect(print.parentElement?.className).toContain('gap-px');
   });
 
   it('renders the trash control as a permanent bordered button, not hover-revealed', () => {
