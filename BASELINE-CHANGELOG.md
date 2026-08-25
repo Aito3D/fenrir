@@ -4292,3 +4292,78 @@ displays that value today, so you would see no difference; only a third-party to
 raw error payload would notice." Blast radius stated explicitly: this handler is app-global, so the
 redaction applies to every route in Bambuddy that returns a 422, not only the calculator or the
 auth routes named in the audit evidence.
+
+## T-130 — 2026-08-24 — `time_accuracy.by_printer` now gates on MIN_SAMPLE, not a bare `3` (user-approved behavior change)
+
+T-130: `_time_accuracy` (`backend/app/services/calculator_insights.py`) publishes two figures —
+an `overall_pct`/`sample` pair with no MIN_SAMPLE-style gate of its own (only `if accuracies else
+None`, unaffected by this fix and left alone), and a `by_printer` list, one row per printer. The
+`by_printer` row list alone was gated on a bare literal `if len(values) >= 3`, unlike every other
+grouping in this service (`_failure_rates.by_printer`/`by_material`, `_power_draw.by_printer`,
+`_daily_usage`, and both spool-cost aggregates), which all gate on the module's `MIN_SAMPLE = 5`
+floor. A printer with as few as 3 slicer-estimate-vs-actual comparisons could publish an
+`accuracy_pct` to `CALCULATOR_READ` — the module's own docstring states "Groups with fewer than
+`MIN_SAMPLE` runs are suppressed", and 3 broke that invariant. The fix changes the one comprehension
+filter from `if len(values) >= 3` to `if len(values) >= MIN_SAMPLE`. No other line changed.
+
+user-approved 2026-08-24: "A printer that has only three or four completed prints with a slicer
+estimate to compare against would stop showing its 'measured print time vs estimate' suggestion in
+the calculator's reality-check panel; the suggestion would reappear once that printer has five such
+prints." This explicitly selects raising the floor to `MIN_SAMPLE` over the audit's other offered
+option (naming `3` as a documented, deliberately-lower module constant) — rows disappearing below
+5 samples is exactly what only the first option produces.
+
+Tests updated in `backend/tests/unit/test_calculator_insights.py` to use `MIN_SAMPLE` (not `3`)
+runs wherever a test needed a printer's `by_printer` row to survive the gate:
+`test_time_accuracy_with_band_clamp`, `test_time_accuracy_resolved_purely_from_timestamp_fallback`,
+`test_unknown_printer_falls_back_to_hash_id_label` (counts and derived sums recomputed: 20 total
+runs, 3.5 h/day usage), and the T-076 differential test's own reference implementation
+(`_reference_time_accuracy`) and dataset builder (`_build_time_accuracy_dataset`), whose `p_low`/
+`p_exact`/`p_high` printer counts were re-pinned to `MIN_SAMPLE - 1` / `MIN_SAMPLE` /
+`MIN_SAMPLE + 1` so the SQL-pushdown-equivalence test still exercises the gate at its real boundary
+instead of a stale one. Two new tests pin the boundary directly:
+`test_time_accuracy_by_printer_suppressed_below_min_sample` (`MIN_SAMPLE - 1` runs → `by_printer ==
+[]`, `overall_pct` still present) and `test_time_accuracy_by_printer_published_at_min_sample`
+(`MIN_SAMPLE` runs → one `by_printer` row).
+
+Mutation-tested: reverted `>= MIN_SAMPLE` back to the original `>= 3` — the new boundary test
+(`test_time_accuracy_by_printer_suppressed_below_min_sample`) failed as expected (4 samples
+produced a `by_printer` row instead of `[]`); reverted, `git diff` on `calculator_insights.py`
+clean.
+
+Full backend suite: 11,813 passed, 1 skipped (a `test_library_slice_api.py` failure under `-n 30`
+parallel load was confirmed pre-existing/flaky — passes alone in isolation, per the known
+suite-load-flake pattern; unrelated to this change). `tools/coverage_calc.sh backend` (the
+calculator-scoped gate): 712/716 = 99.44% statements, unchanged from the prior measurement — the
+changed line is an inline literal inside an existing method, not a new statement. Probe
+`calc-insights-pure` diffed byte-for-byte identical before/after re-running it: it only captures
+module-level UPPERCASE constants (`dir(m)` filtered on `k.isupper()`), and the `>= 3` → `>=
+MIN_SAMPLE` change is an inline comprehension-filter literal, not a module constant, so the probe
+never saw it either way — no re-record needed. `SURFACE.md` regenerated
+(`bash tools/gen_surface_calc.sh`) and diffed byte-for-byte identical to before.
+
+T-129 follow-up (rode along in this commit): `_is_secret_field_loc` (`backend/app/main.py`, T-129)
+matched a secret-bearing field name via `field == suffix or field.endswith("_" + suffix)`, which
+missed run-together spellings with no underscore before the suffix — evidenced by
+`CallMeBotConfig.apikey` (`backend/app/schemas/notification.py:230`, an unrenamed field, left
+untouched as out of scope), which doesn't end with `_api_key` and isn't equal to `api_key` either.
+Swept every field name in `backend/app/schemas/*.py` (1,287 names) and every inline-`BaseModel`
+field in `backend/app/api/routes/*.py` (903 names) for both the old rule and a candidate new rule;
+the only name that newly matches is `apikey`. The fix strips underscores from both the field name
+and the suffix set before comparing (`_SECRET_FIELD_NAME_SUFFIXES_NORMALIZED`), which closes
+`apikey` and would also close `authtoken`/`accesstoken`/`clientsecret` if they existed (none do
+today) — one general transform over the existing five suffixes, rather than hand-adding each
+run-together spelling as its own tuple entry. `passwd`/`pwd` remain uncovered (neither exists
+anywhere in this codebase today, confirmed by grep) since they don't end with `password`, not a
+prefix/suffix relationship normalization can bridge. New tests in
+`test_main_validation_handler.py` pin `apikey`/`ApiKey`/`authtoken`/`accesstoken`/`clientsecret` as
+now matching (plus a `_redact_secret_inputs` end-to-end case for `apikey`), and re-confirm every
+trap name the gate recorded stays unmatched, including four not previously covered by name in this
+file (`password_hint`, `max_tokens`, `token_expires_at`, `password2`, `secrets` — `code`, `key`,
+`passwordless_login_enabled`, `tokenizer`, `username` were already pinned). Mutation-tested:
+reverted the normalized comparison back to the original suffix-only rule — all 6 new tests failed
+as expected (`apikey`, `ApiKey`, `authtoken`, `accesstoken`, `clientsecret`,
+`test_run_together_secret_field_input_is_replaced_with_placeholder`); reverted, `git diff` on
+`main.py` clean. This is completing T-129's already-approved change correctly ("password-like
+fields show a placeholder"), not a new behavior change. `main.py` is outside the coverage gate's
+scoped file list, so this follow-up does not move the 99.44% figure (expected, not chased).

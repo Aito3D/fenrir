@@ -143,9 +143,10 @@ async def test_window_rejects_values_outside_allowlist(async_client: AsyncClient
 @pytest.mark.integration
 async def test_time_accuracy_with_band_clamp(async_client: AsyncClient, printer_factory, archive_factory, db_session):
     printer = await printer_factory()
-    # Estimate 3600s, actual 3000s → accuracy 120%. Three runs for the min sample.
+    # Estimate 3600s, actual 3000s → accuracy 120%. MIN_SAMPLE runs to clear the
+    # per-printer gate (T-130).
     archive = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)
-    for _ in range(3):
+    for _ in range(MIN_SAMPLE):
         db_session.add(_run(printer.id, "completed", archive_id=archive.id, duration_seconds=3000))
     # Outlier: actual 400s → 900% — outside [50, 200], must be ignored.
     db_session.add(_run(printer.id, "completed", archive_id=archive.id, duration_seconds=400))
@@ -154,9 +155,53 @@ async def test_time_accuracy_with_band_clamp(async_client: AsyncClient, printer_
     response = await async_client.get("/api/v1/calculator/insights")
     acc = response.json()["time_accuracy"]
     assert acc["overall_pct"] == 120.0
-    assert acc["sample"] == 3
+    assert acc["sample"] == MIN_SAMPLE
     assert acc["by_printer"][0]["accuracy_pct"] == 120.0
-    assert acc["by_printer"][0]["sample"] == 3
+    assert acc["by_printer"][0]["sample"] == MIN_SAMPLE
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_time_accuracy_by_printer_suppressed_below_min_sample(
+    async_client: AsyncClient, printer_factory, archive_factory, db_session
+):
+    """T-130: `_time_accuracy.by_printer` must gate on MIN_SAMPLE like every
+    other grouping in this service — a printer with MIN_SAMPLE - 1 accuracy-
+    eligible runs must not appear in by_printer at all. The overall figure has
+    no MIN_SAMPLE gate of its own (only "if accuracies else None") and is
+    unaffected by this per-printer suppression."""
+    printer = await printer_factory()
+    archive = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)
+    for _ in range(MIN_SAMPLE - 1):
+        db_session.add(_run(printer.id, "completed", archive_id=archive.id, duration_seconds=3600))
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    acc = response.json()["time_accuracy"]
+    assert acc["sample"] == MIN_SAMPLE - 1
+    assert acc["overall_pct"] == 100.0
+    assert acc["by_printer"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_time_accuracy_by_printer_published_at_min_sample(
+    async_client: AsyncClient, printer_factory, archive_factory, db_session
+):
+    """T-130: the boundary, one sample above the suppressed case — exactly
+    MIN_SAMPLE accuracy-eligible runs for a printer must publish a by_printer
+    row."""
+    printer = await printer_factory()
+    archive = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)
+    for _ in range(MIN_SAMPLE):
+        db_session.add(_run(printer.id, "completed", archive_id=archive.id, duration_seconds=3600))
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/calculator/insights")
+    acc = response.json()["time_accuracy"]
+    assert acc["sample"] == MIN_SAMPLE
+    assert len(acc["by_printer"]) == 1
+    assert acc["by_printer"][0]["sample"] == MIN_SAMPLE
 
 
 @pytest.mark.asyncio
@@ -578,7 +623,7 @@ async def _reference_time_accuracy(db: AsyncSession, since: datetime) -> dict:
             "sample": len(values),
         }
         for printer_id, values in per_printer.items()
-        if len(values) >= 3
+        if len(values) >= MIN_SAMPLE  # T-130: raised from a bare `3` to the module's MIN_SAMPLE floor
     ]
     return {
         "overall_pct": round(sum(accuracies) / len(accuracies), 1) if accuracies else None,
@@ -635,7 +680,7 @@ async def _reference_power_draw(db: AsyncSession, since: datetime) -> list[dict]
 
 async def _build_time_accuracy_dataset(printer_factory, archive_factory, db_session):
     """Exercises every `_resolve_duration` branch and every accuracy-band
-    boundary, plus the (hardcoded) `len(values) >= 3` per-printer gate."""
+    boundary, plus the per-printer `len(values) >= MIN_SAMPLE` gate (T-130)."""
     since = NOW - timedelta(days=3650)
 
     p_main = await printer_factory()
@@ -700,20 +745,20 @@ async def _build_time_accuracy_dataset(printer_factory, archive_factory, db_sess
     # estimate_seconds NULL → excluded by the base `.isnot(None)` filter (unchanged by T-076).
     db_session.add(_run(p_main.id, "completed", archive_id=a_null_estimate.id, duration_seconds=3600))
 
-    # Per-printer "len(values) >= 3" gate, with printers isolated from p_main.
+    # Per-printer "len(values) >= MIN_SAMPLE" gate (T-130), with printers isolated from p_main.
     p_low = await printer_factory()
     a_low = await archive_factory(p_low.id, print_time_seconds=3600, with_run=False)
-    for _ in range(2):
+    for _ in range(MIN_SAMPLE - 1):
         db_session.add(_run(p_low.id, "completed", archive_id=a_low.id, duration_seconds=3600))
 
     p_exact = await printer_factory()
     a_exact = await archive_factory(p_exact.id, print_time_seconds=3600, with_run=False)
-    for _ in range(3):
+    for _ in range(MIN_SAMPLE):
         db_session.add(_run(p_exact.id, "completed", archive_id=a_exact.id, duration_seconds=3600))
 
     p_high = await printer_factory()
     a_high = await archive_factory(p_high.id, print_time_seconds=3600, with_run=False)
-    for _ in range(4):
+    for _ in range(MIN_SAMPLE + 1):
         db_session.add(_run(p_high.id, "completed", archive_id=a_high.id, duration_seconds=3600))
 
     await db_session.commit()
@@ -813,7 +858,7 @@ async def test_time_accuracy_matches_reference_implementation_exactly(printer_fa
     # Sanity: the dataset actually reaches every gate/edge it claims to (a
     # differential test that never varies its inputs proves nothing).
     assert new_result["sample"] >= 6  # 4 baseline + 2 band-inclusive edges (fallback-branch rows also add in)
-    assert len(new_result["by_printer"]) >= 3  # p_main, p_exact, p_high all clear the >=3 gate
+    assert len(new_result["by_printer"]) >= 3  # p_main, p_exact, p_high all clear the MIN_SAMPLE gate
 
 
 @pytest.mark.asyncio
@@ -847,9 +892,9 @@ async def test_time_accuracy_resolved_purely_from_timestamp_fallback(
 ):
     printer = await printer_factory()
     archive = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)  # 1h slicer estimate
-    # Three runs with NO duration_seconds at all -- only started_at/completed_at.
+    # MIN_SAMPLE runs with NO duration_seconds at all -- only started_at/completed_at.
     # Elapsed = 7200s (2h) each, so accuracy = 3600/7200*100 = 50.0%.
-    for _ in range(3):
+    for _ in range(MIN_SAMPLE):
         db_session.add(
             _run(
                 printer.id,
@@ -878,9 +923,9 @@ async def test_time_accuracy_resolved_purely_from_timestamp_fallback(
     response = await async_client.get("/api/v1/calculator/insights")
     acc = response.json()["time_accuracy"]
     assert acc["overall_pct"] == 50.0
-    assert acc["sample"] == 3
+    assert acc["sample"] == MIN_SAMPLE
     assert acc["by_printer"][0]["accuracy_pct"] == 50.0
-    assert acc["by_printer"][0]["sample"] == 3
+    assert acc["by_printer"][0]["sample"] == MIN_SAMPLE
 
 
 @pytest.mark.asyncio
@@ -1027,9 +1072,9 @@ def test_split_materials_drops_empty_segments():
 async def test_unknown_printer_falls_back_to_hash_id_label(async_client: AsyncClient, archive_factory, db_session):
     deleted_printer_id = 987654  # no Printer row exists with this id
 
-    # _time_accuracy: 3 runs (the per-printer >=3 gate), accuracy 100% (in-band).
+    # _time_accuracy: MIN_SAMPLE runs (the per-printer gate, T-130), accuracy 100% (in-band).
     archive = await archive_factory(deleted_printer_id, print_time_seconds=3600, with_run=False)
-    for _ in range(3):
+    for _ in range(MIN_SAMPLE):
         db_session.add(_run(deleted_printer_id, "completed", archive_id=archive.id, duration_seconds=3600))
 
     # _power_draw: 5 runs (MIN_SAMPLE), duration 3600s / 0.2 kWh -> 200 W (in-band).
@@ -1052,16 +1097,16 @@ async def test_unknown_printer_falls_back_to_hash_id_label(async_client: AsyncCl
     data = response.json()
     expected_name = f"#{deleted_printer_id}"
 
-    # All 18 runs above are "completed", so _failure_rates' MIN_SAMPLE (5) is
+    # All 20 runs above are "completed", so _failure_rates' MIN_SAMPLE (5) is
     # cleared for this printer_id too — one dataset pins all four sites.
     failure_row = next(r for r in data["failure"]["by_printer"] if r["printer_id"] == deleted_printer_id)
     assert failure_row["printer_name"] == expected_name
-    assert failure_row["sample"] == 18
+    assert failure_row["sample"] == 20
 
     accuracy_row = data["time_accuracy"]["by_printer"][0]
     assert accuracy_row["printer_id"] == deleted_printer_id
     assert accuracy_row["printer_name"] == expected_name
-    assert accuracy_row["sample"] == 3
+    assert accuracy_row["sample"] == MIN_SAMPLE
 
     power_row = data["power_by_printer"][0]
     assert power_row["printer_id"] == deleted_printer_id
@@ -1069,15 +1114,15 @@ async def test_unknown_printer_falls_back_to_hash_id_label(async_client: AsyncCl
     assert power_row["sample"] == 5
 
     # `_daily_usage` groups by printer_id alone (no archive_id/energy_kwh
-    # filter), so it also sums the 3 time-accuracy rows and the 5 power-draw
-    # rows above (all `duration_seconds`-bearing, all "completed"): sample
-    # 3 + 5 + 10 = 18, total 3*3600 + 5*3600 + 10*21600 = 244800s over the
-    # 20 observed days set by the earliest usage row -> 3.4 h/day.
+    # filter), so it also sums the MIN_SAMPLE time-accuracy rows and the 5
+    # power-draw rows above (all `duration_seconds`-bearing, all "completed"):
+    # sample 5 + 5 + 10 = 20, total 5*3600 + 5*3600 + 10*21600 = 252000s over
+    # the 20 observed days set by the earliest usage row -> 3.5 h/day.
     usage_row = data["usage_by_printer"][0]
     assert usage_row["printer_id"] == deleted_printer_id
     assert usage_row["printer_name"] == expected_name
-    assert usage_row["sample"] == 18
-    assert usage_row["hours_per_day"] == 3.4
+    assert usage_row["sample"] == 20
+    assert usage_row["hours_per_day"] == 3.5
     assert usage_row["observed_days"] == 20
 
 

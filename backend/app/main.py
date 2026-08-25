@@ -8665,6 +8665,22 @@ def _stringify_non_finite(value):
 # this or a future schema happens to name.
 _SECRET_FIELD_NAME_SUFFIXES = ("password", "token", "secret", "api_key", "access_code")
 
+# T-129 follow-up: the ``_``-joined suffix rule above misses run-together
+# spellings of the same suffixes, e.g. ``apikey`` (CallMeBotConfig.apikey,
+# schemas/notification.py) doesn't end with ``_api_key`` and isn't equal to
+# ``api_key`` either. Comparing underscore-stripped field names against
+# underscore-stripped suffixes closes that gap for every suffix at once
+# (``apikey``, ``authtoken``, ``accesstoken``, ``clientsecret``, ...) without
+# hard-coding each spelling, and without widening the match to a bare
+# substring: a field still has to actually END with one of these normalised
+# suffixes, so short unrelated names like ``key``/``code``/``secrets`` (a
+# plural, one letter short of the ``secret`` tail) or names that merely
+# start with a suffix word (``password_hint``, ``token_expires_at``) still
+# don't match. Swept against every schema/route field name in this codebase
+# (backend/app/schemas/*.py, backend/app/api/routes/*.py): the only field
+# this newly matches is ``apikey``.
+_SECRET_FIELD_NAME_SUFFIXES_NORMALIZED = tuple(suffix.replace("_", "") for suffix in _SECRET_FIELD_NAME_SUFFIXES)
+
 _REDACTED_INPUT_PLACEHOLDER = "[redacted]"
 
 
@@ -8680,8 +8696,8 @@ def _is_secret_field_loc(loc) -> bool:
     field = loc[-1]
     if not isinstance(field, str):
         return False
-    field = field.lower()
-    return any(field == suffix or field.endswith("_" + suffix) for suffix in _SECRET_FIELD_NAME_SUFFIXES)
+    field = field.lower().replace("_", "")
+    return any(field == suffix or field.endswith(suffix) for suffix in _SECRET_FIELD_NAME_SUFFIXES_NORMALIZED)
 
 
 def _redact_secret_inputs(errors):

@@ -215,7 +215,7 @@ class CalculatorInsightsService:
                 "sample": len(values),
             }
             for printer_id, values in per_printer.items()
-            if len(values) >= 3
+            if len(values) >= MIN_SAMPLE
         ]
         return {
             "overall_pct": round(sum(accuracies) / len(accuracies), 1) if accuracies else None,

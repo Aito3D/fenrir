@@ -115,6 +115,15 @@ class TestIsSecretFieldLoc:
             # Case-insensitivity.
             "Password",
             "NEW_PASSWORD",
+            # T-129 follow-up: run-together spellings of the same suffixes,
+            # closed by underscore-stripped comparison. `apikey` is a real
+            # field (CallMeBotConfig.apikey, schemas/notification.py) the
+            # original `_`-joined-suffix rule missed.
+            "apikey",
+            "ApiKey",
+            "authtoken",
+            "accesstoken",
+            "clientsecret",
         ],
     )
     def test_matches_known_secret_field_names(self, field):
@@ -138,6 +147,16 @@ class TestIsSecretFieldLoc:
             # in the task was about.
             "passwordless_login_enabled",
             "tokenizer",
+            # T-129 follow-up traps: the underscore-stripped comparison must
+            # not turn any of these into a false positive. Each either starts
+            # with (rather than ends with) a suffix word, or is a near-miss
+            # (plural/suffixed) that must stay one character short of the
+            # actual suffix tail.
+            "password_hint",
+            "max_tokens",
+            "token_expires_at",
+            "password2",
+            "secrets",
         ],
     )
     def test_does_not_match_unrelated_field_names(self, field):
@@ -171,6 +190,22 @@ class TestRedactSecretInputs:
         assert result["loc"] == ("body", "password")
         assert result["msg"] == "String should have at most 256 characters"
         assert result["ctx"] == {"max_length": 256}
+
+    def test_run_together_secret_field_input_is_replaced_with_placeholder(self):
+        """T-129 follow-up: `apikey` (no underscore) is missed by the bare
+        `_`-joined suffix rule but must still be redacted — this is the gap
+        CallMeBotConfig.apikey (schemas/notification.py) exposed."""
+        errors = [
+            {
+                "type": "missing",
+                "loc": ("body", "apikey"),
+                "msg": "Field required",
+                "input": "cmb-secret-key-123",
+            }
+        ]
+        [result] = _redact_secret_inputs(errors)
+        assert result["input"] == "[redacted]"
+        assert result["loc"] == ("body", "apikey")
 
     def test_non_secret_field_input_is_returned_verbatim(self):
         """Proves the redaction does not over-redact."""
