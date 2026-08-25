@@ -273,6 +273,54 @@ export function buildJson(
   return JSON.stringify(out, null, 4);
 }
 
+/** Normalizes a preset colour value to a CSS hex string ('' if unusable):
+ *  trims, tolerates a missing leading '#', accepts #RRGGBB and #RRGGBBAA. */
+export function normalizeColorHex(raw: string): string {
+  const value = raw.trim().replace(/^#/, '');
+  return /^[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$/.test(value) ? `#${value}` : '';
+}
+
+/** Reads the filament colour out of a preset's raw JSON.
+ *
+ *  Bambu Studio user presets carry it as `default_filament_colour`; some
+ *  variants (and our own earlier import) use `filament_colour`. Checked in
+ *  that order because the former is what the slicer actually writes. Returns
+ *  '' when neither is present or the value is not a hex colour — the caller
+ *  keeps its neutral placeholder in that case.
+ */
+export function parseColorFromContent(content: string): string {
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(content) as Record<string, unknown>;
+  } catch {
+    return '';
+  }
+  for (const key of ['default_filament_colour', 'filament_colour']) {
+    const colour = normalizeColorHex(readString(data[key]));
+    if (colour !== '') return colour;
+  }
+  return '';
+}
+
+/** The colour name shown on a preset card ("Dark Blue", "White").
+ *
+ *  `color` (the editor's own label field) wins when set. Imported presets
+ *  have it empty, but their NAME follows `computeName`'s convention —
+ *  "{vendor} {type} - {label}" — so the label is recovered from after the
+ *  ' - ' separator, with any trailing '@BBL …' printer-suffix stripped the
+ *  same way `parseNozzleFromName` reads it. '' when the name has no label:
+ *  the card omits the line rather than inventing one.
+ */
+export function displayColorLabel(name: string, color: string): string {
+  if (color !== '') return color;
+  const dashIndex = name.indexOf(' - ');
+  if (dashIndex === -1) return '';
+  return name
+    .slice(dashIndex + 3)
+    .replace(/@.*$/, '')
+    .trim();
+}
+
 export function parsePresetChips(content: string): { temp?: string; flow?: string; pa?: string } | null {
   let data: Record<string, unknown>;
   try {

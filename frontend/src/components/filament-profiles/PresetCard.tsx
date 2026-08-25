@@ -3,7 +3,13 @@ import { useTranslation } from 'react-i18next';
 import { MoreVertical, Pencil, Copy, Trash2 } from 'lucide-react';
 
 import type { FilamentPreset } from '../../api/client';
-import { parsePresetChips, parseNozzleFromCompatible, displayMaterial } from './presetJson';
+import {
+  parsePresetChips,
+  parseNozzleFromCompatible,
+  displayMaterial,
+  displayColorLabel,
+  parseColorFromContent,
+} from './presetJson';
 import { materialFamilyClass } from './constants';
 
 export interface PresetCardProps {
@@ -38,6 +44,10 @@ export function PresetCard({ preset, onOpen, onEdit, onDuplicate, onDelete }: Pr
   const hasChips = !!chips && (chips.temp !== undefined || chips.flow !== undefined || chips.pa !== undefined);
   const nozzle = parseNozzleFromCompatible(preset.content);
   const material = displayMaterial(preset.name, preset.brand, preset.material);
+  // The stored column when the editor filled it; otherwise the colour lives
+  // only inside the imported preset's JSON (`default_filament_colour`).
+  const swatchColor = preset.color_hex || parseColorFromContent(preset.content);
+  const colorLabel = displayColorLabel(preset.name, preset.color);
 
   const handleMenuToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -69,8 +79,8 @@ export function PresetCard({ preset, onOpen, onEdit, onDuplicate, onDelete }: Pr
     >
       <div
         className="w-16 shrink-0 rounded-l-xl"
-        style={{ backgroundColor: preset.color_hex || '#444' }}
-        title={preset.color_hex}
+        style={{ backgroundColor: swatchColor || '#444' }}
+        title={swatchColor}
       />
       <div className="flex flex-1 min-w-0 items-center justify-between gap-2 px-4 py-2">
         <div className="min-w-0 flex-1">
@@ -78,7 +88,7 @@ export function PresetCard({ preset, onOpen, onEdit, onDuplicate, onDelete }: Pr
             <div className="text-xs font-bold uppercase tracking-wide text-bambu-gray/60">{preset.brand}</div>
           )}
           <div className={`truncate font-bold ${materialFamilyClass(material)}`}>{material}</div>
-          {preset.color !== '' && <div className="truncate text-xs text-bambu-gray/60">{preset.color}</div>}
+          {colorLabel !== '' && <div className="truncate text-sm text-bambu-gray-light">{colorLabel}</div>}
           {hasChips && (
             <div className="mt-1 flex flex-wrap items-center gap-1.5 font-mono text-xs">
               {chips!.temp !== undefined && (

@@ -7,6 +7,7 @@ import {
   Columns3,
   Database,
   Download,
+  Droplets,
   Grid2x2,
   Loader2,
   Plus,
@@ -31,7 +32,11 @@ import { PresetCard } from '../components/filament-profiles/PresetCard';
 import { PresetEditorModal } from '../components/filament-profiles/PresetEditorModal';
 import { SyncBaseResultModal } from '../components/filament-profiles/SyncBaseResultModal';
 import { SyncModal } from '../components/filament-profiles/SyncModal';
-import { presetComparator } from '../components/filament-profiles/presetJson';
+import {
+  presetComparator,
+  parseColorFromContent,
+  displayColorLabel,
+} from '../components/filament-profiles/presetJson';
 import type { GridSize, SortField } from '../components/filament-profiles/types';
 import { useToast } from '../contexts/ToastContext';
 import {
@@ -261,14 +266,20 @@ export function FilamentProfilesPage() {
             const parsed = JSON.parse(file.content) as Record<string, unknown>;
             const vendor = Array.isArray(parsed.filament_vendor) ? parsed.filament_vendor[0] : undefined;
             const type = Array.isArray(parsed.filament_type) ? parsed.filament_type[0] : undefined;
-            const colour = Array.isArray(parsed.filament_colour) ? parsed.filament_colour[0] : undefined;
+            // Bambu Studio writes the colour as `default_filament_colour`;
+            // parseColorFromContent reads that (and the older
+            // `filament_colour`) and normalizes it to a CSS hex — the earlier
+            // read of only `filament_colour` is why every imported preset's
+            // swatch came out gray.
             const name = typeof parsed.name === 'string' && parsed.name ? parsed.name : file.filename.replace(/\.json$/, '');
             payload = {
               name,
               brand: vendor ? String(vendor) : '',
               material: type ? String(type) : '',
-              color: '',
-              color_hex: colour ? String(colour) : '',
+              // Slicer presets carry no separate label field — the label is
+              // the part of the NAME after ' - ' ("eSUN PETG - Green").
+              color: displayColorLabel(name, ''),
+              color_hex: parseColorFromContent(file.content),
               filename: file.filename,
               content: file.content,
             };
@@ -393,9 +404,18 @@ export function FilamentProfilesPage() {
         : t('filamentProfiles.countOther', { n: total });
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-xl font-semibold text-white">{t('filamentProfiles.title')}</h1>
+    // Same page shell as Inventory/Archives/Statistics: the outer padding and
+    // the icon + bold title + subtitle header, so this page reads as part of
+    // the same family instead of hugging the viewport edges.
+    <div className="p-4 md:p-8 space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between animate-rise-lg vt-page-title">
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <Droplets className="w-7 h-7 text-bambu-green" />
+            {t('filamentProfiles.title')}
+          </h1>
+          <p className="text-bambu-gray mt-1">{t('filamentProfiles.subtitle')}</p>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="secondary" size="sm" onClick={handleSyncBase} disabled={syncBaseBusy}>
             {syncBaseBusy ? (

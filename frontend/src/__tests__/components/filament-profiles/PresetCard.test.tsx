@@ -124,3 +124,30 @@ describe('PresetCard', () => {
     expect(screen.queryByText('Delete')).toBeNull();
   });
 });
+
+describe('PresetCard color fallbacks (imported presets)', () => {
+  it('falls back to the colour inside the preset JSON and the label inside the name', () => {
+    const content = JSON.stringify({
+      name: 'eSUN PETG - Green',
+      default_filament_colour: ['#00AE42'],
+    });
+    const preset = makePreset({
+      name: 'eSUN PETG - Green',
+      brand: 'eSUN',
+      material: 'PETG',
+      color: '',
+      color_hex: '',
+      content,
+    });
+    const { container } = render(
+      <PresetCard preset={preset} onOpen={vi.fn()} onEdit={vi.fn()} onDuplicate={vi.fn()} onDelete={vi.fn()} />
+    );
+
+    // Label recovered from the name's " - " suffix.
+    expect(screen.getByText('Green')).toBeDefined();
+    // Swatch painted with the JSON's default_filament_colour.
+    const swatch = container.querySelector('[title="#00AE42"]') as HTMLElement;
+    expect(swatch).not.toBeNull();
+    expect(swatch.style.backgroundColor).toBe('rgb(0, 174, 66)');
+  });
+});

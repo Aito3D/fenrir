@@ -82,7 +82,11 @@ describe('PresetEditorModal — create mode', () => {
       expect(screen.getByRole('button', { name: `Remove Bambu Lab ${model} 0.4 nozzle` })).toBeInTheDocument();
     }
     expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
-    expect(screen.getByRole('combobox', { name: 'Brand' })).toHaveFocus();
+    // The DIALOG takes initial focus, not the Brand combobox: SearchableSelect
+    // opens its dropdown on focus, so focusing Brand programmatically popped
+    // the brand list over a freshly opened editor before any interaction.
+    expect(screen.getByRole('dialog')).toHaveFocus();
+    expect(screen.getByRole('combobox', { name: 'Brand' })).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('updates the title and filename as vendor/material/color are picked, and enables Save', async () => {

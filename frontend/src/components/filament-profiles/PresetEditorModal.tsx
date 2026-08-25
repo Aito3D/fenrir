@@ -21,6 +21,7 @@ import {
   buildJson,
   buildResolvedParent,
   computeName,
+  displayColorLabel,
   mergeWithParent,
   parseContentToForm,
   parseNozzleFromName,
@@ -91,7 +92,12 @@ export function PresetEditorModal({
 
   const [baseData, setBaseData] = useState<Record<string, unknown>>(() => parseBaseData(preset?.content));
   const [form, setForm] = useState<PresetForm>(() => {
-    let initial = parseContentToForm(baseData, preset?.color);
+    // Not the raw stored `color`: presets imported before the label was
+    // derived have it empty, and their label lives in the name ("eSUN PETG
+    // - Green"). displayColorLabel prefers the stored value when set, so a
+    // hand-edited label is never overridden — and saving writes the derived
+    // one back, healing the row.
+    let initial = parseContentToForm(baseData, preset ? displayColorLabel(preset.name, preset.color) : undefined);
     if (preset) {
       const nozzle = parseNozzleFromName(preset.name);
       if (nozzle !== null) initial = { ...initial, nozzle_size: nozzle };
@@ -143,9 +149,14 @@ export function PresetEditorModal({
     }
   };
 
-  // Mount: focus Brand, and resolve an existing `inherits` immediately.
+  // Mount: focus the dialog itself, and resolve an existing `inherits`
+  // immediately. NOT the Brand field: SearchableSelect opens its dropdown on
+  // focus (deliberately — a click or Tab into it should open it), so focusing
+  // it programmatically popped the brand list over a freshly opened editor
+  // before the user touched anything. The dialog has tabIndex={-1} exactly so
+  // it can take this initial focus; keyboard users reach Brand with one Tab.
   useEffect(() => {
-    document.getElementById(BRAND_ID)?.focus();
+    dialogRef.current?.focus();
     if (form.inherits) {
       void resolveInherits(form.inherits, (parent) => setForm((f) => mergeWithParent(f, parent)));
     }

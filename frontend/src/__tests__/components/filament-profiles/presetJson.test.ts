@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildJson, buildResolvedParent, computeName, displayMaterial, extractPaK,
   mergeWithParent, parseContentToForm, parsePresetChips, parseNozzleFromCompatible,
-  presetComparator, rewriteCompatibleForNozzle,
+  presetComparator, rewriteCompatibleForNozzle, parseColorFromContent, displayColorLabel,
 } from '../../../components/filament-profiles/presetJson';
 import { EMPTY_FORM } from '../../../components/filament-profiles/constants';
 import type { BaseFilamentPreset, FilamentPreset } from '../../../api/client';
@@ -229,5 +229,35 @@ describe('EMPTY_FORM.filament_extruder_variant isolation', () => {
     expect(a.filament_extruder_variant).not.toBe(b.filament_extruder_variant);
     a.filament_extruder_variant.push('Bowden');
     expect(EMPTY_FORM.filament_extruder_variant).toEqual([]);
+  });
+});
+
+describe('parseColorFromContent', () => {
+  it('reads default_filament_colour and normalizes to a CSS hex', () => {
+    expect(parseColorFromContent(JSON.stringify({ default_filament_colour: ['#00AE42'] }))).toBe('#00AE42');
+    expect(parseColorFromContent(JSON.stringify({ default_filament_colour: ['00AE42'] }))).toBe('#00AE42');
+  });
+
+  it('falls back to filament_colour, and to empty for nil/absent/garbage', () => {
+    expect(parseColorFromContent(JSON.stringify({ filament_colour: ['#FF6A13'] }))).toBe('#FF6A13');
+    expect(parseColorFromContent(JSON.stringify({ default_filament_colour: ['nil'] }))).toBe('');
+    expect(parseColorFromContent(JSON.stringify({}))).toBe('');
+    expect(parseColorFromContent('not json')).toBe('');
+    expect(parseColorFromContent(JSON.stringify({ default_filament_colour: ['red'] }))).toBe('');
+  });
+});
+
+describe('displayColorLabel', () => {
+  it('prefers the stored color over the name', () => {
+    expect(displayColorLabel('eSUN PETG - Green', 'Emerald')).toBe('Emerald');
+  });
+
+  it('recovers the label from after " - " in the name, stripping printer suffixes', () => {
+    expect(displayColorLabel('eSUN PETG - Green', '')).toBe('Green');
+    expect(displayColorLabel('Polymaker PETG - Dark Blue @BBL H2S 0.4 nozzle', '')).toBe('Dark Blue');
+  });
+
+  it('returns empty when the name carries no label', () => {
+    expect(displayColorLabel('Generic PLA', '')).toBe('');
   });
 });
